@@ -12,5 +12,6 @@
 
 ## 调试
 
-- **Desktop**：将 `EasyWriteClient.Desktop` 设为启动项目 → F5  
+- **Desktop**：将 `EasyWriteClient.Desktop` 设为启动项目 → F5（加载 `index.html?host=desktop`：左栏任务 + 对话）  
+  - 前端改完后先在 `Plugin/frontend` 执行 `npm run build`，再编 Desktop（会拷贝 `Plugin/wwwroot`）  
 - **Plugin**：将 `Plugin`（`Plugin/WordAddIn1.csproj`）设为启动项目 → VSTO 启动 Word  

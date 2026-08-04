@@ -1,0 +1,50 @@
+{
+  "Api": {
+    "BaseUrl": "https://addin-api.yi-write.com",
+    "TimeoutSeconds": 30,
+    "MaxRetries": 3,
+    "Endpoints": {
+      "Login": "/auth/login",
+      "LoginSms": "/auth/login/sms",
+      "Register": "/auth/register",
+      "SmsSend": "/auth/sms/send",
+      "Refresh": "/auth/refresh",
+      "Health": "/health"
+    }
+  },
+  "LLMApi": {
+    "BaseUrl": "https://addin-api.yi-write.com",
+    "TimeoutSeconds": 30,
+    "Endpoints": {
+      "ChatCompletions": "/llm/chat/completions"
+    }
+  },
+  "App": {
+    "Name": "WordAddIn1",
+    "Version": "1.0.0",
+    "DebugCategories": ["timing"],
+    "PreferPdfActivePrinterOnStartup": true,
+    "BackendProcessTextLengthThreshold": 60000
+  },
+  "UI": {
+    "Theme": "Black",
+    "Language": "zh-CN"
+  },
+  "DocumentColors": {
+    "StrikethroughBackground": "wdColorGray05",
+    "InsertBackground": "0xC0FFFF",
+    "AcceptButtonBackground": "wdColorLightGreen",
+    "RejectButtonBackground": "0xFF99FF"
+  },
+  "DocumentNavigate": {
+    "AutoNavigateAfterModify": true,
+    "NavigateAnchor": "first_new_sentence"
+  },
+  "DocumentActionsAmbiguity": {
+    "ContextLeftSentences": 2,
+    "ContextRightSentences": 2
+  },
+  "Workspace": {
+    "Mode": "sessions"
+  }
+}

@@ -13,4 +13,8 @@
     <SourceRoot Include="C:\Users\garsing\.nuget\packages\" />
     <SourceRoot Include="C:\Program Files (x86)\Microsoft Visual Studio\Shared\NuGetPackages\" />
   </ItemGroup>
+  <PropertyGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <PkgPdfiumViewer Condition=" '$(PkgPdfiumViewer)' == '' ">C:\Users\garsing\.nuget\packages\pdfiumviewer\2.13.0</PkgPdfiumViewer>
+    <PkgMicrosoft_Web_WebView2 Condition=" '$(PkgMicrosoft_Web_WebView2)' == '' ">C:\Users\garsing\.nuget\packages\microsoft.web.webview2\1.0.3650.58</PkgMicrosoft_Web_WebView2>
+  </PropertyGroup>
 </Project>

@@ -2,24 +2,6 @@
   "version": 4,
   "targets": {
     "net472": {
-      "Microsoft.Office.Interop.Excel/15.0.4795.1001": {
-        "type": "package",
-        "compile": {
-          "lib/net20/Microsoft.Office.Interop.Excel.dll": {}
-        },
-        "runtime": {
-          "lib/net20/Microsoft.Office.Interop.Excel.dll": {}
-        }
-      },
-      "Microsoft.Office.Interop.Word/15.0.4797.1004": {
-        "type": "package",
-        "compile": {
-          "lib/net20/Microsoft.Office.Interop.Word.dll": {}
-        },
-        "runtime": {
-          "lib/net20/Microsoft.Office.Interop.Word.dll": {}
-        }
-      },
       "Microsoft.Web.WebView2/1.0.3650.58": {
         "type": "package",
         "compile": {
@@ -109,32 +91,6 @@
     }
   },
   "libraries": {
-    "Microsoft.Office.Interop.Excel/15.0.4795.1001": {
-      "sha512": "cuvqi/U5MYSM0gvR2l90q0m/urRgmg69EiwP5VWp1RcaJ0YT5G26Va5LaOZ3KJFc22FNihS5CUjeePUp2YpGQA==",
-      "type": "package",
-      "path": "microsoft.office.interop.excel/15.0.4795.1001",
-      "files": [
-        ".nupkg.metadata",
-        ".signature.p7s",
-        "lib/net20/Microsoft.Office.Interop.Excel.dll",
-        "lib/netstandard2.0/Microsoft.Office.Interop.Excel.dll",
-        "microsoft.office.interop.excel.15.0.4795.1001.nupkg.sha512",
-        "microsoft.office.interop.excel.nuspec"
-      ]
-    },
-    "Microsoft.Office.Interop.Word/15.0.4797.1004": {
-      "sha512": "lavTOrMGK/o/t3+gGr7JuVrL8XDdnS0DwPLcYv/StOiysXO4L0C36IXTVtEJo1Mh9Aoxo9a8dgGcPi+faTlv0g==",
-      "type": "package",
-      "path": "microsoft.office.interop.word/15.0.4797.1004",
-      "files": [
-        ".nupkg.metadata",
-        ".signature.p7s",
-        "lib/net20/Microsoft.Office.Interop.Word.dll",
-        "lib/netstandard2.0/Microsoft.Office.Interop.Word.dll",
-        "microsoft.office.interop.word.15.0.4797.1004.nupkg.sha512",
-        "microsoft.office.interop.word.nuspec"
-      ]
-    },
     "Microsoft.Web.WebView2/1.0.3650.58": {
       "sha512": "BrfpVqOuWtW8yA/it365aB6K6H6EYCXjqJkX730UiO7weVsSYjUyKPFVY5WGa+IfRHqknh619uXHMYTOR4WFRw==",
       "type": "package",
@@ -308,8 +264,6 @@
   },
   "projectFileDependencyGroups": {
     "net472": [
-      "Microsoft.Office.Interop.Excel >= 15.0.4795.1001",
-      "Microsoft.Office.Interop.Word >= 15.0.4797.1004",
       "Microsoft.Web.WebView2 >= 1.0.3650.58",
       "Newtonsoft.Json >= 13.0.3",
       "PdfiumViewer >= 2.13.0",
@@ -368,14 +322,6 @@
         "framework": "net472",
         "targetAlias": "net472",
         "dependencies": {
-          "Microsoft.Office.Interop.Excel": {
-            "target": "Package",
-            "version": "[15.0.4795.1001, )"
-          },
-          "Microsoft.Office.Interop.Word": {
-            "target": "Package",
-            "version": "[15.0.4797.1004, )"
-          },
           "Microsoft.Web.WebView2": {
             "target": "Package",
             "version": "[1.0.3650.58, )"

@@ -52,14 +52,6 @@
           "framework": "net472",
           "targetAlias": "net472",
           "dependencies": {
-            "Microsoft.Office.Interop.Excel": {
-              "target": "Package",
-              "version": "[15.0.4795.1001, )"
-            },
-            "Microsoft.Office.Interop.Word": {
-              "target": "Package",
-              "version": "[15.0.4797.1004, )"
-            },
             "Microsoft.Web.WebView2": {
               "target": "Package",
               "version": "[1.0.3650.58, )"

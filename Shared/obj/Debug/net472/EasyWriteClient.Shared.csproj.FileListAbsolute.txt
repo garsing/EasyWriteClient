@@ -19,8 +19,6 @@ d:\project\EasyWrite\EasyWriteClient\Shared\obj\Debug\net472\EasyWriteClient.Sha
 d:\project\EasyWrite\EasyWriteClient\Shared\bin\Debug\net472\runtimes\win-x86\native\WebView2Loader.dll
 d:\project\EasyWrite\EasyWriteClient\Shared\bin\Debug\net472\runtimes\win-x64\native\WebView2Loader.dll
 d:\project\EasyWrite\EasyWriteClient\Shared\bin\Debug\net472\runtimes\win-arm64\native\WebView2Loader.dll
-d:\project\EasyWrite\EasyWriteClient\Shared\bin\Debug\net472\Microsoft.Office.Interop.Excel.dll
-d:\project\EasyWrite\EasyWriteClient\Shared\bin\Debug\net472\Microsoft.Office.Interop.Word.dll
 d:\project\EasyWrite\EasyWriteClient\Shared\bin\Debug\net472\Microsoft.Web.WebView2.Core.dll
 d:\project\EasyWrite\EasyWriteClient\Shared\bin\Debug\net472\Microsoft.Web.WebView2.WinForms.dll
 d:\project\EasyWrite\EasyWriteClient\Shared\bin\Debug\net472\Microsoft.Web.WebView2.Wpf.dll

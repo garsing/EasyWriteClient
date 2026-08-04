@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("EasyWriteClient.Shared")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5293adcb7ac949b5ccf4a3f61cb98e34ce05ecce")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ff6e9beebff0b6556f1c477e7f4b18de6ec8e1bd")]
 [assembly: System.Reflection.AssemblyProductAttribute("EasyWriteClient.Shared")]
 [assembly: System.Reflection.AssemblyTitleAttribute("EasyWriteClient.Shared")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

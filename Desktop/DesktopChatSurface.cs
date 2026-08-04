@@ -1,0 +1,860 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Word = Microsoft.Office.Interop.Word;
+using WordAddIn1;
+
+namespace EasyWriteClient.Desktop
+{
+    /// <summary>
+    /// Desktop 主区：WebView2 + Vue（host=desktop）+ 聊天/登录/会话桥接（B4）。
+    /// </summary>
+    internal sealed class DesktopChatSurface : UserControl
+    {
+        private const string ApiKey = "sk-2e2929af6bde429990eef75c39e6afd7";
+
+        private WebView2 _webView;
+        private WebView2Bridge _bridge;
+        private McpClient _mcpClient;
+        private WsClient _wsClient;
+        private readonly List<ChatMessage> _conversationHistory = new List<ChatMessage>();
+        private string _currentConversationId = "-1";
+        private System.Threading.CancellationTokenSource _cts;
+        private string _authoritativeUploadId;
+        private bool _uploadUiNotified;
+        private bool _isProcessing;
+        private volatile bool _newSessionResetPending;
+        private bool _webReady;
+
+        public DesktopChatSurface()
+        {
+            Dock = DockStyle.Fill;
+            _webView = new WebView2 { Dock = DockStyle.Fill };
+            Controls.Add(_webView);
+            UserService.Instance.OnUserLoggedIn += OnUserLoggedIn;
+            UserService.Instance.OnUserLoggedOut += OnUserLoggedOut;
+            Disposed += (_, __) =>
+            {
+                UserService.Instance.OnUserLoggedIn -= OnUserLoggedIn;
+                UserService.Instance.OnUserLoggedOut -= OnUserLoggedOut;
+            };
+        }
+
+        public async Task InitializeAsync()
+        {
+            if (_webReady)
+            {
+                return;
+            }
+
+            string userData = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "EasyWriteDesktop",
+                "WebView2Data");
+            Directory.CreateDirectory(userData);
+
+            var env = await CoreWebView2Environment.CreateAsync(userDataFolder: userData);
+            await _webView.EnsureCoreWebView2Async(env);
+
+            string wwwroot = ResolveWwwroot();
+            if (!Directory.Exists(wwwroot))
+            {
+                throw new DirectoryNotFoundException("未找到前端 wwwroot: " + wwwroot);
+            }
+
+            _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                "appassets.local",
+                wwwroot,
+                CoreWebView2HostResourceAccessKind.Allow);
+
+            _bridge = new WebView2Bridge(_webView);
+            RegisterHandlers();
+            EnsureClients();
+
+            _webView.CoreWebView2.Navigate("http://appassets.local/index.html?host=desktop");
+            _webReady = true;
+        }
+
+        public async Task EnsureLoggedInAsync()
+        {
+            if (UserService.Instance.CheckLoginStatus())
+            {
+                await EnsureWsReadyAsync().ConfigureAwait(true);
+                return;
+            }
+
+            await LoginForm.ShowDialogAsync(FindForm() ?? (IWin32Window)this, logoutFirst: false)
+                .ConfigureAwait(true);
+            if (UserService.Instance.CheckLoginStatus())
+            {
+                await EnsureWsReadyAsync().ConfigureAwait(true);
+            }
+        }
+
+        private static string ResolveWwwroot()
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string local = Path.GetFullPath(Path.Combine(baseDir, "wwwroot"));
+            if (Directory.Exists(local) && File.Exists(Path.Combine(local, "index.html")))
+            {
+                return local;
+            }
+
+            // 开发：相对 Desktop 输出目录回退到 Plugin/wwwroot
+            string pluginWww = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "Plugin", "wwwroot"));
+            if (Directory.Exists(pluginWww) && File.Exists(Path.Combine(pluginWww, "index.html")))
+            {
+                return pluginWww;
+            }
+
+            return local;
+        }
+
+        private void RegisterHandlers()
+        {
+            _bridge.RegisterHandler("sendMessage", HandleSendMessageAsync);
+            _bridge.RegisterHandler("stopRequest", HandleStopRequestAsync);
+            _bridge.RegisterHandler("openLoginWindow", async _ =>
+            {
+                await LoginForm.ShowDialogAsync(FindForm() ?? (IWin32Window)this, logoutFirst: true)
+                    .ConfigureAwait(true);
+                return new { success = true };
+            });
+            _bridge.RegisterHandler("addConversation", HandleAddConversationAsync);
+            _bridge.RegisterHandler("openConversation", HandleOpenConversationAsync);
+            _bridge.RegisterHandler("getApiConfig", data =>
+                Task.FromResult(KnowledgeBaseService.GetApiConfig(data)));
+            _bridge.RegisterHandler("getDocumentEmptyState", _ =>
+                Task.FromResult<object>(new
+                {
+                    success = true,
+                    data = new { documentEmpty = true }
+                }));
+            _bridge.RegisterHandler("getToolAlias", async data =>
+            {
+                await Task.CompletedTask;
+                string name = null;
+                try
+                {
+                    if (data != null)
+                    {
+                        var jo = data as JObject ?? JObject.FromObject(data);
+                        name = jo["toolName"]?.ToString() ?? jo["name"]?.ToString();
+                    }
+                }
+                catch
+                {
+                }
+
+                return new { success = true, alias = name ?? "" };
+            });
+            _bridge.RegisterHandler("openSettings", async _ =>
+            {
+                await Task.CompletedTask;
+                return new { success = true, message = "桌面版设置入口后续接入" };
+            });
+            _bridge.RegisterHandler("openKnowledgeBase", async _ =>
+            {
+                await Task.CompletedTask;
+                return new { success = true, message = "桌面版知识库入口后续接入" };
+            });
+            _bridge.RegisterHandler("todoListReply", HandleTodoListReplyAsync);
+        }
+
+        private void EnsureClients()
+        {
+            object wordApp = WordHost.GetWordApplicationObject();
+            _mcpClient = new McpClient(ApiKey, wordApp);
+            if (_wsClient == null)
+            {
+                _wsClient = new WsClient(this);
+            }
+
+            if (wordApp != null)
+            {
+                _wsClient.SetWordApplication(wordApp);
+            }
+        }
+
+        private void SyncConversationContext()
+        {
+            ConversationContext.CurrentId = _currentConversationId;
+        }
+
+        private async Task<object> HandleSendMessageAsync(object data)
+        {
+            try
+            {
+                var messageData = data as JObject
+                    ?? JObject.Parse(data?.ToString() ?? "{}");
+                string content = messageData["content"]?.ToString();
+                if (string.IsNullOrEmpty(content))
+                {
+                    return new { success = false, message = "消息内容为空" };
+                }
+
+                if (!UserService.Instance.CheckLoginStatus())
+                {
+                    return new
+                    {
+                        success = false,
+                        requiresLogin = true,
+                        message = "用户未登录，请先登录",
+                        userInput = content
+                    };
+                }
+
+                EnsureClients();
+                Invoke((MethodInvoker)delegate
+                {
+                    _cts = new System.Threading.CancellationTokenSource();
+                    AgentRunCancellation.BeginRun(_cts);
+                    _isProcessing = true;
+                    _bridge.SendToJavaScript("requestStateChanged", new { isProcessing = true });
+                });
+
+                _conversationHistory.Add(new ChatMessage { role = "user", content = content });
+                _bridge.SendToJavaScript("userMessage", new
+                {
+                    id = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
+                    content,
+                    timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds()
+                });
+
+                string uploadId = messageData["uploadId"]?.ToString()
+                    ?? messageData["upload_id"]?.ToString();
+                if (string.IsNullOrWhiteSpace(uploadId))
+                {
+                    uploadId = null;
+                }
+
+                _authoritativeUploadId = uploadId;
+                _uploadUiNotified = false;
+                await ProcessChatRequestAsync(content).ConfigureAwait(true);
+                return new { success = true };
+            }
+            catch (Exception ex)
+            {
+                return new { success = false, message = ex.Message };
+            }
+        }
+
+        private async Task ProcessChatRequestAsync(string userInput)
+        {
+            var responseBuilder = new System.Text.StringBuilder();
+            var reasoningBuilder = new System.Text.StringBuilder();
+            long messageId = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+            try
+            {
+                if (_mcpClient == null)
+                {
+                    EnsureClients();
+                }
+
+                await EnsureWsBoundAsync(_currentConversationId).ConfigureAwait(true);
+
+                bool isFirstChunk = true;
+                string lastToolFinishReason = null;
+
+                var mcpChatResult = await _mcpClient.ChatWithToolsStreamAsync(
+                    userInput,
+                    null,
+                    chunk =>
+                    {
+                        if (chunk?.choices == null || chunk.choices.Count == 0)
+                        {
+                            return;
+                        }
+
+                        var delta = chunk.choices[0].delta;
+                        if (!string.IsNullOrEmpty(delta?.content))
+                        {
+                            responseBuilder.Append(delta.content);
+                        }
+
+                        string reasoningDelta = ExtractReasoningDelta(delta);
+                        if (!string.IsNullOrEmpty(reasoningDelta))
+                        {
+                            reasoningBuilder.Append(reasoningDelta);
+                        }
+
+                        var finishReason = chunk.choices[0].finish_reason;
+                        if (finishReason == "tool_calls" || finishReason == "function_call")
+                        {
+                            lastToolFinishReason = finishReason;
+                        }
+
+                        object toolCallsDelta = BuildToolCallsDelta(delta);
+                        if (!string.IsNullOrEmpty(delta?.content)
+                            || toolCallsDelta != null
+                            || !string.IsNullOrEmpty(reasoningDelta)
+                            || !string.IsNullOrEmpty(finishReason))
+                        {
+                            Invoke((MethodInvoker)delegate
+                            {
+                                if (isFirstChunk)
+                                {
+                                    ResetUploadContext();
+                                }
+
+                                _bridge.SendToJavaScript("systemMessage", new
+                                {
+                                    id = messageId,
+                                    content = responseBuilder.ToString(),
+                                    reasoningContent = reasoningBuilder.Length > 0
+                                        ? reasoningBuilder.ToString()
+                                        : null,
+                                    toolCallsDelta,
+                                    finishReason,
+                                    timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
+                                    isStreaming = true,
+                                    isUpdate = !isFirstChunk
+                                });
+                                isFirstChunk = false;
+                            });
+                        }
+                    },
+                    maxIterations: 30,
+                    cancellationTokenSource: _cts,
+                    conversationId: _currentConversationId,
+                    buildHeaders: CreateApiHeaders,
+                    resetAuthoritativeUploadContext: ResetUploadContext,
+                    onConversationIdKnown: OnConversationIdKnownAsync).ConfigureAwait(true);
+
+                if (mcpChatResult != null
+                    && !string.IsNullOrEmpty(mcpChatResult.ConversationId)
+                    && mcpChatResult.ConversationId != "-1")
+                {
+                    _currentConversationId = mcpChatResult.ConversationId;
+                    SyncConversationContext();
+                    await BindWsAsync(_currentConversationId).ConfigureAwait(true);
+                    _bridge.SendToJavaScript("conversationIdChanged", new
+                    {
+                        conversationId = _currentConversationId
+                    });
+                }
+
+                string finalContent = responseBuilder.ToString();
+                _conversationHistory.Add(new ChatMessage { role = "system", content = finalContent });
+                Invoke((MethodInvoker)delegate
+                {
+                    _bridge.SendToJavaScript("systemMessage", new
+                    {
+                        id = messageId,
+                        content = finalContent,
+                        reasoningContent = reasoningBuilder.Length > 0
+                            ? reasoningBuilder.ToString()
+                            : null,
+                        finishReason = lastToolFinishReason,
+                        timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
+                        isStreaming = false,
+                        isUpdate = true
+                    });
+                    CleanupRequestState();
+                });
+            }
+            catch (DailyQuotaExceededException)
+            {
+                Invoke((MethodInvoker)delegate
+                {
+                    _bridge.SendToJavaScript("systemMessage", new
+                    {
+                        id = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
+                        content = "灵感值已经用完",
+                        timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
+                        isStreaming = false,
+                        isHint = true
+                    });
+                    CleanupRequestState();
+                });
+            }
+            catch (LlmException ex) when (ex.Message.Contains("认证") || ex.Message.Contains("登录"))
+            {
+                Invoke((MethodInvoker)delegate
+                {
+                    _bridge.SendToJavaScript("requiresLogin", new
+                    {
+                        userInput,
+                        message = ex.Message
+                    });
+                    CleanupRequestState();
+                });
+                _ = LoginForm.ShowDialogAsync(FindForm() ?? (IWin32Window)this, logoutFirst: true);
+            }
+            catch (OperationCanceledException)
+            {
+                if (!_newSessionResetPending)
+                {
+                    string partial = responseBuilder.ToString();
+                    if (!string.IsNullOrEmpty(partial))
+                    {
+                        Invoke((MethodInvoker)delegate
+                        {
+                            _bridge.SendToJavaScript("systemMessage", new
+                            {
+                                id = messageId,
+                                content = partial,
+                                timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
+                                isStreaming = false,
+                                isUpdate = true
+                            });
+                        });
+                    }
+
+                    CleanupRequestState();
+                }
+            }
+            catch (Exception ex)
+            {
+                Invoke((MethodInvoker)delegate
+                {
+                    _bridge.SendToJavaScript("systemMessage", new
+                    {
+                        id = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
+                        content = "错误: " + ex.Message,
+                        timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
+                        isStreaming = false
+                    });
+                    CleanupRequestState();
+                });
+            }
+            finally
+            {
+                ResetUploadContext();
+            }
+        }
+
+        private async Task<object> HandleStopRequestAsync(object data)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(_currentConversationId)
+                    && _currentConversationId != "-1"
+                    && _wsClient != null)
+                {
+                    await _wsClient.SendRunCancelAsync(_currentConversationId).ConfigureAwait(false);
+                }
+
+                _wsClient?.CancelActiveInvokeLocal();
+                if (_cts != null && !_cts.IsCancellationRequested)
+                {
+                    _cts.Cancel();
+                }
+
+                return new { success = true };
+            }
+            catch (Exception ex)
+            {
+                return new { success = false, message = ex.Message };
+            }
+        }
+
+        private async Task<object> HandleAddConversationAsync(object data)
+        {
+            try
+            {
+                _newSessionResetPending = true;
+                if (_isProcessing && _cts != null && !_cts.IsCancellationRequested)
+                {
+                    _cts.Cancel();
+                }
+
+                _conversationHistory.Clear();
+                _currentConversationId = "-1";
+                SyncConversationContext();
+                _authoritativeUploadId = null;
+                if (_wsClient != null)
+                {
+                    await _wsClient.UnbindAsync().ConfigureAwait(false);
+                }
+
+                void Notify()
+                {
+                    _bridge.SendToJavaScript("clearMessages", new { });
+                    CleanupRequestState();
+                    _newSessionResetPending = false;
+                }
+
+                if (InvokeRequired)
+                {
+                    Invoke((MethodInvoker)Notify);
+                }
+                else
+                {
+                    Notify();
+                }
+
+                return new { success = true, conversationId = "-1" };
+            }
+            catch (Exception ex)
+            {
+                _newSessionResetPending = false;
+                return new { success = false, message = ex.Message };
+            }
+        }
+
+        private async Task<object> HandleOpenConversationAsync(object data)
+        {
+            try
+            {
+                int id = 0;
+                if (data is JObject jo)
+                {
+                    id = jo["id"]?.Value<int>() ?? jo["conversationId"]?.Value<int>() ?? 0;
+                }
+                else if (data != null)
+                {
+                    var j = JObject.FromObject(data);
+                    id = j["id"]?.Value<int>() ?? j["conversationId"]?.Value<int>() ?? 0;
+                }
+
+                if (id <= 0)
+                {
+                    return new { success = false, message = "无效 conversation id" };
+                }
+
+                string baseUrl = ConfigManager.Config.Api.BaseUrl;
+                string url = baseUrl.TrimEnd('/') + "/conversations/detail";
+                string body = JsonConvert.SerializeObject(new { id });
+                var result = await BackendApiClient.PostJsonAuthenticatedAsync(
+                    url, body, retryOnUnauthorized: true, timeout: null, authHandleAllErrors: true)
+                    .ConfigureAwait(true);
+                if (!result.Success)
+                {
+                    return new { success = false, message = "加载对话失败" };
+                }
+
+                var detail = JsonConvert.DeserializeObject<JObject>(result.Body);
+                string content = detail?["content"]?.ToString();
+                var rawMessages = string.IsNullOrEmpty(content)
+                    ? new List<JObject>()
+                    : (JsonConvert.DeserializeObject<List<JObject>>(content) ?? new List<JObject>());
+                var vueMessages = BuildVueHistoryMessages(rawMessages);
+
+                _currentConversationId = id.ToString();
+                SyncConversationContext();
+                _conversationHistory.Clear();
+                foreach (var m in vueMessages)
+                {
+                    try
+                    {
+                        var dict = JsonConvert.DeserializeObject<Dictionary<string, object>>(
+                            JsonConvert.SerializeObject(m));
+                        if (dict == null)
+                        {
+                            continue;
+                        }
+
+                        string role = dict.ContainsKey("role") ? dict["role"]?.ToString() : null;
+                        string text = dict.ContainsKey("content") ? dict["content"]?.ToString() : null;
+                        if (!string.IsNullOrEmpty(role))
+                        {
+                            _conversationHistory.Add(new ChatMessage
+                            {
+                                role = role,
+                                content = text ?? ""
+                            });
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                _bridge.SendToJavaScript("conversationHistory", new
+                {
+                    messages = vueMessages,
+                    conversationId = _currentConversationId
+                });
+                await EnsureWsBoundAsync(_currentConversationId).ConfigureAwait(true);
+                return new { success = true, conversationId = _currentConversationId };
+            }
+            catch (Exception ex)
+            {
+                return new { success = false, message = ex.Message };
+            }
+        }
+
+        private async Task<object> HandleTodoListReplyAsync(object data)
+        {
+            try
+            {
+                var jo = data as JObject ?? (data != null ? JObject.FromObject(data) : null);
+                string requestId = jo?["requestId"]?.ToString() ?? jo?["request_id"]?.ToString();
+                bool ok = jo?["ok"]?.Value<bool>() ?? false;
+                string error = jo?["error"]?.ToString();
+                if (string.IsNullOrEmpty(requestId) || _wsClient == null)
+                {
+                    return new { success = false };
+                }
+
+                await _wsClient.SendReplyAsync(requestId, ok, null, error).ConfigureAwait(false);
+                return new { success = true };
+            }
+            catch (Exception ex)
+            {
+                return new { success = false, error = ex.Message };
+            }
+        }
+
+        private List<object> BuildVueHistoryMessages(List<JObject> messages)
+        {
+            var result = new List<object>();
+            long idBase = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+            int seq = 0;
+            foreach (var message in messages)
+            {
+                if (message == null)
+                {
+                    continue;
+                }
+
+                string role = message["role"]?.ToString();
+                if (string.IsNullOrEmpty(role) || role == "system" || role == "tool")
+                {
+                    continue;
+                }
+
+                string text = message["content"]?.Type == JTokenType.String
+                    ? message["content"].ToString()
+                    : message["content"]?.ToString();
+                string reasoning = message["reasoning_content"]?.ToString()
+                    ?? message["reasoning"]?.ToString();
+
+                if (role == "user")
+                {
+                    if (string.IsNullOrEmpty(text))
+                    {
+                        continue;
+                    }
+
+                    result.Add(new
+                    {
+                        id = idBase + seq++,
+                        role = "user",
+                        content = text,
+                        timestamp = idBase + seq,
+                        isStreaming = false
+                    });
+                    continue;
+                }
+
+                if (role == "assistant")
+                {
+                    var segments = new List<object>();
+                    if (!string.IsNullOrEmpty(reasoning))
+                    {
+                        segments.Add(new { type = "thinking", content = reasoning, isComplete = true });
+                    }
+
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        segments.Add(new { type = "text", content = text });
+                    }
+
+                    if (segments.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    result.Add(new
+                    {
+                        id = idBase + seq++,
+                        role = "system",
+                        content = text ?? "",
+                        segments,
+                        timestamp = idBase + seq,
+                        isStreaming = false
+                    });
+                }
+            }
+
+            return result;
+        }
+
+        private Dictionary<string, string> CreateApiHeaders(string xConversationId)
+        {
+            var headers = new Dictionary<string, string>();
+            if (!UserService.Instance.CheckLoginStatus())
+            {
+                return headers;
+            }
+
+            var user = UserService.Instance;
+            if (!string.IsNullOrEmpty(user.AccessToken))
+            {
+                headers["Authorization"] = "Bearer " + user.AccessToken;
+            }
+
+            if (!string.IsNullOrEmpty(user.UserName))
+            {
+                headers["X-Username"] = user.UserName;
+            }
+
+            headers["X-Conversation-Id"] = !string.IsNullOrEmpty(xConversationId)
+                ? xConversationId
+                : _currentConversationId;
+            if (!string.IsNullOrWhiteSpace(_authoritativeUploadId))
+            {
+                headers["X-Upload-Id"] = _authoritativeUploadId.Trim();
+            }
+
+            return headers;
+        }
+
+        private void ResetUploadContext()
+        {
+            bool had = !string.IsNullOrWhiteSpace(_authoritativeUploadId);
+            _authoritativeUploadId = null;
+            if (!had || _uploadUiNotified)
+            {
+                return;
+            }
+
+            _uploadUiNotified = true;
+            Invoke((MethodInvoker)delegate
+            {
+                _bridge.SendToJavaScript("uploadAttachmentContextConsumed", new { });
+            });
+        }
+
+        private void CleanupRequestState()
+        {
+            AgentRunCancellation.EndRun();
+            _isProcessing = false;
+            if (_cts != null)
+            {
+                _cts.Dispose();
+                _cts = null;
+            }
+
+            _bridge?.SendToJavaScript("requestStateChanged", new { isProcessing = false });
+        }
+
+        private async Task OnConversationIdKnownAsync(string conversationId)
+        {
+            if (string.IsNullOrWhiteSpace(conversationId)
+                || conversationId == "-1"
+                || conversationId == "0")
+            {
+                return;
+            }
+
+            if (_currentConversationId != conversationId)
+            {
+                _currentConversationId = conversationId;
+                SyncConversationContext();
+                _bridge.SendToJavaScript("conversationIdChanged", new { conversationId });
+            }
+
+            await EnsureWsBoundAsync(conversationId).ConfigureAwait(false);
+        }
+
+        private async Task EnsureWsReadyAsync()
+        {
+            EnsureClients();
+            if (_wsClient == null || !UserService.Instance.CheckLoginStatus())
+            {
+                return;
+            }
+
+            var user = UserService.Instance;
+            await _wsClient.ConnectAsync(
+                ConfigManager.Config.Api.BaseUrl,
+                user.AccessToken,
+                user.UserName).ConfigureAwait(false);
+        }
+
+        private async Task<bool> EnsureWsBoundAsync(string conversationId)
+        {
+            if (string.IsNullOrWhiteSpace(conversationId)
+                || conversationId == "-1"
+                || conversationId == "0")
+            {
+                return false;
+            }
+
+            return await BindWsAsync(conversationId).ConfigureAwait(false);
+        }
+
+        private async Task<bool> BindWsAsync(string conversationId)
+        {
+            await EnsureWsReadyAsync().ConfigureAwait(false);
+            if (_wsClient == null || !_wsClient.IsConnected)
+            {
+                return false;
+            }
+
+            return await _wsClient.BindAsync(conversationId).ConfigureAwait(false);
+        }
+
+        private void OnUserLoggedIn(object sender, UserEventArgs e)
+        {
+            _ = EnsureWsReadyAsync();
+        }
+
+        private void OnUserLoggedOut(object sender, UserEventArgs e)
+        {
+            _ = HandleAddConversationAsync(null);
+        }
+
+        private static object BuildToolCallsDelta(StreamMessage delta)
+        {
+            if (delta?.tool_calls == null || delta.tool_calls.Count == 0)
+            {
+                return null;
+            }
+
+            var list = new List<Dictionary<string, object>>();
+            foreach (var tc in delta.tool_calls)
+            {
+                var item = new Dictionary<string, object> { { "index", tc.index } };
+                if (!string.IsNullOrEmpty(tc.id))
+                {
+                    item["id"] = tc.id;
+                }
+
+                if (tc.function != null)
+                {
+                    item["function"] = new Dictionary<string, object>
+                    {
+                        { "name", tc.function.name },
+                        { "arguments", tc.function.arguments }
+                    };
+                }
+
+                list.Add(item);
+            }
+
+            return list;
+        }
+
+        private static string ExtractReasoningDelta(StreamMessage delta)
+        {
+            if (delta == null)
+            {
+                return null;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            if (!string.IsNullOrEmpty(delta.reasoning_content))
+            {
+                sb.Append(delta.reasoning_content);
+            }
+
+            if (!string.IsNullOrEmpty(delta.reasoning))
+            {
+                sb.Append(delta.reasoning);
+            }
+
+            return sb.Length > 0 ? sb.ToString() : null;
+        }
+    }
+}

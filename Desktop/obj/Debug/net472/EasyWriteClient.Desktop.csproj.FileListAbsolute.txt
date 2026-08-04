@@ -33,3 +33,6 @@ d:\project\EasyWrite\EasyWriteClient\Desktop\bin\Debug\net472\Newtonsoft.Json.dl
 d:\project\EasyWrite\EasyWriteClient\Desktop\bin\Debug\net472\PdfiumViewer.dll
 d:\project\EasyWrite\EasyWriteClient\Desktop\bin\Debug\net472\YamlDotNet.dll
 d:\project\EasyWrite\EasyWriteClient\Desktop\bin\Debug\net472\nl\PdfiumViewer.resources.dll
+d:\project\EasyWrite\EasyWriteClient\Desktop\bin\Debug\net472\config.json
+d:\project\EasyWrite\EasyWriteClient\Desktop\bin\Debug\net472\Microsoft.Web.WebView2.Wpf.dll
+d:\project\EasyWrite\EasyWriteClient\Desktop\bin\Debug\net472\WebView2Loader.dll
