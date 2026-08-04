@@ -39,7 +39,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             }
 
             System.Diagnostics.Debug.WriteLine(
-                $"[StoredTextRangeLocator] 表内 LocateFirst tag={tag} table={tableId}");
+                $"[StoredTextRangeLocator] 表内 LocateFirst（整表 Range 一次 Find）tag={tag} table={tableId}");
             return WordRangeFinder.FindFirstInTable(
                 table,
                 storedText,

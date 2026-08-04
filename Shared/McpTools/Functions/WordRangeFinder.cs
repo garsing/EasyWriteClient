@@ -690,44 +690,29 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 在指定表格内查找句子的第一处命中（无 occurrenceIndex）。
+        /// 在指定表格的 table.Range 内做无序号单次 Find（不再逐 Cell）。
         /// </summary>
         public static Word.Range FindFirstInTable(Word.Table table, string sentenceText, string debugInfo = "")
         {
-            if (table == null || string.IsNullOrEmpty(sentenceText))
+            if (table == null || string.IsNullOrEmpty(sentenceText) || table.Range == null)
             {
                 return null;
             }
 
-            Word.Document doc = table.Range?.Document;
-            if (doc == null)
-            {
-                return null;
-            }
-
-            List<Word.Range> cellRanges = CollectTableCellRanges(table, debugInfo);
-
-            foreach (Word.Range cellRange in cellRanges)
-            {
-                Word.Range hit = FindFirstInRange(cellRange, sentenceText, debugInfo);
-                if (hit != null)
-                {
-                    System.Diagnostics.Debug.WriteLine(
-                        $"[FindFirstInTable] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}Start={hit.Start} End={hit.End}");
-                    return hit;
-                }
-            }
-
-            if (cellRanges.Count == 0 && table.Range != null)
+            Word.Range hit = FindFirstInRange(table.Range, sentenceText, debugInfo);
+            string prefix = string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ";
+            if (hit != null)
             {
                 System.Diagnostics.Debug.WriteLine(
-                    $"[FindFirstInTable] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}无可用Cell，回退 table.Range={table.Range.Start}-{table.Range.End}");
-                return FindFirstInRange(table.Range, sentenceText, debugInfo + "_fallback");
+                    $"[FindFirstInTable] {prefix}Start={hit.Start} End={hit.End} tableRange={table.Range.Start}-{table.Range.End}");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[FindFirstInTable] {prefix}未找到匹配 tableRange={table.Range.Start}-{table.Range.End}");
             }
 
-            System.Diagnostics.Debug.WriteLine(
-                $"[FindFirstInTable] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}未找到匹配");
-            return null;
+            return hit;
         }
 
         /// <summary>
@@ -870,81 +855,6 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine($"[ExpandToParagraphRange] 失败: {ex.Message}");
                 return null;
             }
-        }
-
-        /// <summary>
-        /// 收集表格内可访问的 Cell.Range。优先 table.Range.Cells（兼容纵向合并），回退 Rows 遍历。
-        /// </summary>
-        private static List<Word.Range> CollectTableCellRanges(Word.Table table, string debugInfo = "")
-        {
-            var cellRanges = new List<Word.Range>();
-            if (table == null)
-            {
-                return cellRanges;
-            }
-
-            string tag = string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ";
-
-            try
-            {
-                foreach (Word.Cell cell in table.Range.Cells)
-                {
-                    try
-                    {
-                        Word.Range cellRange = cell.Range;
-                        if (cellRange != null && cellRange.Start < cellRange.End)
-                        {
-                            cellRanges.Add(cellRange);
-                        }
-                    }
-                    catch (System.Runtime.InteropServices.COMException)
-                    {
-                        System.Diagnostics.Debug.WriteLine(
-                            $"[CollectTableCellRanges] {tag}跳过不可访问Cell（Range.Cells）");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[CollectTableCellRanges] {tag}Range.Cells 异常: {ex.Message}");
-            }
-
-            if (cellRanges.Count == 0)
-            {
-                try
-                {
-                    foreach (Word.Row row in table.Rows)
-                    {
-                        foreach (Word.Cell cell in row.Cells)
-                        {
-                            try
-                            {
-                                Word.Range cellRange = cell.Range;
-                                if (cellRange != null && cellRange.Start < cellRange.End)
-                                {
-                                    cellRanges.Add(cellRange);
-                                }
-                            }
-                            catch (System.Runtime.InteropServices.COMException)
-                            {
-                                System.Diagnostics.Debug.WriteLine(
-                                    $"[CollectTableCellRanges] {tag}跳过不可访问Cell（Rows）");
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine(
-                        $"[CollectTableCellRanges] {tag}Rows 遍历异常: {ex.Message}");
-                }
-            }
-
-            cellRanges.Sort((a, b) => a.Start.CompareTo(b.Start));
-            System.Diagnostics.Debug.WriteLine(
-                $"[CollectTableCellRanges] {tag}遍历到 {cellRanges.Count} 个可访问Cell");
-            return cellRanges;
         }
 
         /// <summary>
