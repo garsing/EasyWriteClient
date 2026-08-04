@@ -995,14 +995,14 @@ namespace WordAddIn1
                 FtLog($"heading[{idx}/{headingTotal}] FIND dst={dst} text={preview}");
 
                 var findSw = FtDebugEnabled ? Stopwatch.StartNew() : null;
-                Word.Range range = WordRangeFinder.FindSentenceRangeInDocument(doc, text, "FormatTransfer");
+                List<Word.Range> ranges = WordRangeFinder.FindAllInDocument(doc, text, "FormatTransfer");
                 if (findSw != null)
                 {
                     findSw.Stop();
-                    FtLog($"heading[{idx}/{headingTotal}] FIND done found={range != null} elapsed_ms={findSw.ElapsedMilliseconds}");
+                    FtLog($"heading[{idx}/{headingTotal}] FIND done hits={ranges?.Count ?? 0} elapsed_ms={findSw.ElapsedMilliseconds}");
                 }
 
-                if (range == null)
+                if (ranges == null || ranges.Count == 0)
                 {
                     FtLog($"heading[{idx}/{headingTotal}] miss dst={dst}");
                     System.Diagnostics.Debug.WriteLine($"[FormatTransferHelper] 未找到标题文本: {dst}");
@@ -1015,16 +1015,26 @@ namespace WordAddIn1
                     continue;
                 }
 
-                FtLog($"heading[{idx}/{headingTotal}] APPLY dst={dst}");
-                var applySw = FtDebugEnabled ? Stopwatch.StartNew() : null;
-                FormatInheritHelper.ApplySnapshot(range, snapshot, charFormatOnly: true);
-                if (applySw != null)
+                int hitIndex = 0;
+                foreach (Word.Range range in ranges)
                 {
-                    applySw.Stop();
-                    FtLog($"heading[{idx}/{headingTotal}] APPLY done elapsed_ms={applySw.ElapsedMilliseconds}");
-                }
+                    if (range == null)
+                    {
+                        continue;
+                    }
 
-                count++;
+                    hitIndex++;
+                    FtLog($"heading[{idx}/{headingTotal}] APPLY dst={dst} hit={hitIndex}/{ranges.Count}");
+                    var applySw = FtDebugEnabled ? Stopwatch.StartNew() : null;
+                    FormatInheritHelper.ApplySnapshot(range, snapshot, charFormatOnly: true);
+                    if (applySw != null)
+                    {
+                        applySw.Stop();
+                        FtLog($"heading[{idx}/{headingTotal}] APPLY hit={hitIndex} done elapsed_ms={applySw.ElapsedMilliseconds}");
+                    }
+
+                    count++;
+                }
             }
 
             FtLog($"headings apply end formatted={count}");

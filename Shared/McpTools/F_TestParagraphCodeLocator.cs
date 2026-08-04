@@ -9,8 +9,8 @@ namespace WordAddIn1
 {
     /// <summary>
     /// 开发测试：P_ → Word 段落 Range 定位（批次 0b）。
-    /// 对当前文档 ProcessDocument 后，按 paragraph display 顺序逐 P_ 调用 ResolveParagraphRange。
-    /// 默认 allow_auto_table_scope=false，全文 Find（与 F_test_word_document_extractor 句子测试一致）。
+    /// 对当前文档 ProcessDocument 后，按 paragraph display 顺序逐 P_ 走
+    /// ResolveParagraphSpan + SpanParagraphLocator（与生产 apply 路径一致）。
     /// </summary>
     public static class F_TestParagraphCodeLocator
     {
@@ -107,7 +107,7 @@ namespace WordAddIn1
 
                 orderedCodes = orderedCodes.Distinct(StringComparer.Ordinal).ToList();
                 Console.WriteLine(
-                    $"paragraph display 为空，回退 unique P_ 列表（{orderedCodes.Count} 个，均 index=0）");
+                    $"paragraph display 为空，回退 unique P_ 列表（{orderedCodes.Count} 个，displayStart=0）");
             }
             else
             {
@@ -115,54 +115,95 @@ namespace WordAddIn1
             }
 
             TableScopeIndex tableScope = TableParagraphScopeHelper.BuildIndexFromDocumentState();
-            var occurrenceByCode = new Dictionary<string, int>(StringComparer.Ordinal);
 
             Console.WriteLine("");
-            Console.WriteLine("=== P_ 定位测试（display 序 + suggested_locator_codes）===");
+            Console.WriteLine("=== P_ 定位测试（display 序 + ResolveParagraphSpan）===");
             int seq = 0;
 
             foreach (string code in orderedCodes)
             {
                 seq++;
-                if (!occurrenceByCode.TryGetValue(code, out int nth))
-                {
-                    nth = 0;
-                }
-
-                occurrenceByCode[code] = nth + 1;
-
+                int displayStart = seq - 1;
                 string storedPreview = Truncate(
                     DocumentState.GetParagraphContent(code)?.Replace("\r", "\\r").Replace("\n", "\\n") ?? "",
                     80);
 
-                bool ok = ParagraphCodeResolver.TryResolveParagraphRange(
-                    doc,
-                    code,
-                    out Word.Range range,
-                    out string errorCode,
-                    out string errorMessage,
-                    occurrenceIndex: nth,
-                    tableScope: tableScope,
-                    allowAutoTableScope: allowAutoTableScope,
-                    debugTag: $"{code}#{nth}");
+                string storedText = DocumentState.GetParagraphContent(code);
+                string errorCode = null;
+                string errorMessage = null;
+                Word.Range range = null;
+
+                if (string.IsNullOrEmpty(storedText))
+                {
+                    errorCode = ParagraphCodeResolver.ErrorParagraphMappingMissing;
+                    errorMessage = $"未找到段落映射或 content 为空: {code}";
+                }
+                else if (ParagraphCodeAmbiguityHelper.IsEmptyParagraphStoredText(storedText))
+                {
+                    errorCode = ParagraphCodeResolver.ErrorParagraphRangeNotFound;
+                    errorMessage = $"空段 {code} 无法定位 Word 段落 Range（I4-A）";
+                }
+                else if (doc == null)
+                {
+                    errorCode = ParagraphCodeResolver.ErrorParagraphMappingMissing;
+                    errorMessage = "Word 文档实例不可用";
+                }
+                else
+                {
+                    string tableId = null;
+                    if (allowAutoTableScope)
+                    {
+                        tableId = TableParagraphScopeHelper.ResolveEffectiveTableId(code, null, tableScope);
+                    }
+
+                    var codeList = new List<string> { code };
+                    Word.Range span = DisplayPositionRangeResolver.ResolveParagraphSpan(
+                        doc,
+                        codeList,
+                        displayStart,
+                        tableId,
+                        tableScope,
+                        debugTag: code);
+
+                    if (span == null)
+                    {
+                        errorCode = ParagraphCodeResolver.ErrorParagraphRangeNotFound;
+                        errorMessage = $"无法定位段落 Span: {code} displayStart={displayStart}";
+                    }
+                    else
+                    {
+                        Word.Range hit = SpanParagraphLocator.LocateParagraph(
+                            doc,
+                            span,
+                            code,
+                            debugTag: code);
+                        range = hit != null ? WordRangeFinder.ExpandToParagraphRange(hit) : null;
+
+                        if (range == null)
+                        {
+                            errorCode = ParagraphCodeResolver.ErrorParagraphRangeNotFound;
+                            errorMessage = $"Span 内未命中段落: {code} displayStart={displayStart}";
+                        }
+                    }
+                }
 
                 var item = new LocateTestItem
                 {
                     Sequence = seq,
                     ParagraphCode = code,
-                    OccurrenceIndex = nth,
+                    DisplayStart = displayStart,
                     StoredPreview = storedPreview,
                     ErrorCode = errorCode,
                     ErrorMessage = errorMessage,
                 };
 
-                if (ok && range != null)
+                if (range != null)
                 {
                     item.RangeStart = range.Start;
                     item.RangeEnd = range.End;
                     summary.LocateSuccessCount++;
                     Console.WriteLine(
-                        $"  [{seq}] ✅ {code} index={nth} Range={range.Start}-{range.End} text={storedPreview}");
+                        $"  [{seq}] ✅ {code} displayStart={displayStart} Range={range.Start}-{range.End} text={storedPreview}");
 
                     if (selectOnSuccess)
                     {
@@ -186,7 +227,7 @@ namespace WordAddIn1
                     summary.EmptyParagraphCount++;
                     item.Outcome = "expected_empty";
                     Console.WriteLine(
-                        $"  [{seq}] ⚪ {code} index={nth} 空段（I4-A）→ {errorCode}: {errorMessage}");
+                        $"  [{seq}] ⚪ {code} displayStart={displayStart} 空段（I4-A）→ {errorCode}: {errorMessage}");
                 }
                 else if (string.Equals(
                              errorCode,
@@ -197,7 +238,7 @@ namespace WordAddIn1
                     item.Outcome = "mapping_missing";
                     summary.Failures.Add(item);
                     Console.WriteLine(
-                        $"  [{seq}] ❌ {code} index={nth} mapping 缺失: {errorMessage}");
+                        $"  [{seq}] ❌ {code} displayStart={displayStart} mapping 缺失: {errorMessage}");
                 }
                 else
                 {
@@ -205,7 +246,7 @@ namespace WordAddIn1
                     item.Outcome = "locate_fail";
                     summary.Failures.Add(item);
                     Console.WriteLine(
-                        $"  [{seq}] ❌ {code} index={nth} → {errorCode}: {errorMessage} text={storedPreview}");
+                        $"  [{seq}] ❌ {code} displayStart={displayStart} → {errorCode}: {errorMessage} text={storedPreview}");
                 }
             }
 
@@ -256,7 +297,7 @@ namespace WordAddIn1
         {
             public int Sequence { get; set; }
             public string ParagraphCode { get; set; }
-            public int OccurrenceIndex { get; set; }
+            public int DisplayStart { get; set; }
             public string StoredPreview { get; set; }
             public string ErrorCode { get; set; }
             public string ErrorMessage { get; set; }
@@ -270,7 +311,7 @@ namespace WordAddIn1
                 {
                     ["sequence"] = Sequence,
                     ["paragraph_code"] = ParagraphCode,
-                    ["occurrence_index"] = OccurrenceIndex,
+                    ["display_start"] = DisplayStart,
                     ["outcome"] = Outcome ?? "success",
                     ["stored_preview"] = StoredPreview,
                 };

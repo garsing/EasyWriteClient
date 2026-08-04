@@ -1369,31 +1369,6 @@ namespace WordAddIn1
             return segIndices;
         }
 
-        public static bool TryResolveOccurrence(
-            string code,
-            int occurrenceIndex,
-            out int snapshotPosition,
-            out int wordFindOrdinal,
-            string snapshot = null)
-        {
-            snapshotPosition = -1;
-            wordFindOrdinal = occurrenceIndex;
-
-            if (occurrenceIndex < 0)
-            {
-                return false;
-            }
-
-            var positions = GetSnapshotPositionsForCode(code, snapshot);
-            if (occurrenceIndex >= positions.Count)
-            {
-                return false;
-            }
-
-            snapshotPosition = positions[occurrenceIndex];
-            return true;
-        }
-
         private static Dictionary<string, object> CloneSnapshot(Dictionary<string, object> snapshot)
         {
             var copy = new Dictionary<string, object>();

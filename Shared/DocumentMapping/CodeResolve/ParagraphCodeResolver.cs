@@ -54,7 +54,6 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
         public static Word.Range ResolveParagraphRange(
             Word.Document doc,
             string paragraphCode,
-            int occurrenceIndex = 0,
             string tableId = null,
             TableScopeIndex tableScope = null,
             bool allowAutoTableScope = false,
@@ -63,28 +62,10 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             return ParagraphCodeLocator.LocateRange(
                 doc,
                 paragraphCode,
-                occurrenceIndex,
                 tableId,
                 tableScope,
                 allowAutoTableScope,
                 debugTag);
-        }
-
-        public static Word.Range ResolveParagraphRangeByDisplayStart(
-            Word.Document doc,
-            string paragraphCode,
-            int displayStartPosition,
-            string tableId = null,
-            TableScopeIndex tableScope = null,
-            string debugTag = null)
-        {
-            return DisplayPositionRangeResolver.ResolveParagraphSingle(
-                doc,
-                paragraphCode,
-                displayStartPosition,
-                tableId,
-                tableScope,
-                debugTag: debugTag);
         }
 
         /// <summary>带 errorCode 的解析；Find / mapping 失败时不抛异常。</summary>
@@ -94,7 +75,6 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             out Word.Range paragraphRange,
             out string errorCode,
             out string errorMessage,
-            int occurrenceIndex = 0,
             string tableId = null,
             TableScopeIndex tableScope = null,
             bool allowAutoTableScope = false,
@@ -136,7 +116,6 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             paragraphRange = ParagraphCodeLocator.LocateRange(
                 doc,
                 paragraphCode,
-                occurrenceIndex,
                 tableId,
                 tableScope,
                 allowAutoTableScope,
@@ -148,7 +127,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             }
 
             errorCode = ErrorParagraphRangeNotFound;
-            errorMessage = $"无法定位段落 Range: {paragraphCode} (index={occurrenceIndex})";
+            errorMessage = $"无法定位段落 Range: {paragraphCode}";
             return false;
         }
     }

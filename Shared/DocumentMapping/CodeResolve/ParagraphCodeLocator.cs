@@ -5,14 +5,13 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
 {
     /// <summary>
     /// P_ → Word 段落 Range 定位（0b Step B+）。
-    /// Find 走 StoredTextRangeLocator；命中后再 ExpandToParagraphRange。
+    /// Find 走 StoredTextRangeLocator.LocateFirst；命中后再 ExpandToParagraphRange。
     /// </summary>
     public static class ParagraphCodeLocator
     {
         public static Word.Range LocateRange(
             Word.Document doc,
             string paragraphCode,
-            int occurrenceIndex,
             string explicitTableId,
             TableScopeIndex tableScope,
             bool allowAutoTableScope = false,
@@ -49,17 +48,16 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
 
             string tag = string.IsNullOrEmpty(debugTag) ? paragraphCode : debugTag;
 
-            Word.Range hit = StoredTextRangeLocator.Locate(
+            Word.Range hit = StoredTextRangeLocator.LocateFirst(
                 doc,
                 paragraphContent,
-                occurrenceIndex,
                 tableId,
                 tag);
 
             if (hit == null)
             {
                 System.Diagnostics.Debug.WriteLine(
-                    $"[ParagraphLocator] Find 未命中 P_={paragraphCode} nth={occurrenceIndex}");
+                    $"[ParagraphLocator] Find 未命中 P_={paragraphCode}");
                 return null;
             }
 
@@ -67,7 +65,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             if (paragraphRange != null)
             {
                 System.Diagnostics.Debug.WriteLine(
-                    $"[ParagraphLocator] P_={paragraphCode} nth={occurrenceIndex} 段落 Start={paragraphRange.Start} End={paragraphRange.End}");
+                    $"[ParagraphLocator] P_={paragraphCode} 段落 Start={paragraphRange.Start} End={paragraphRange.End}");
             }
 
             return paragraphRange;

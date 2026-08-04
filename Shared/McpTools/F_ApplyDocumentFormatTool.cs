@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using Word = Microsoft.Office.Interop.Word;
+using WordAddIn1.DocumentMapping.CodeResolve;
 
 namespace WordAddIn1
 {
@@ -113,13 +114,21 @@ namespace WordAddIn1
 
                         int inheritDisplayStart = ApplyFormatAmbiguityHelper.GetDisplayStartAt(
                             ambiguityResult, 0, "inherit_from");
-                        Word.Range sourceRange = inheritDisplayStart >= 0
-                            ? SentenceCodeLocator.LocateRangeByDisplayStart(
+                        var inheritCodes = new List<string> { inheritFrom };
+                        Word.Range inheritSpan = inheritDisplayStart >= 0
+                            ? DisplayPositionRangeResolver.ResolveSpan(
                                 doc,
-                                inheritFrom,
+                                inheritCodes,
                                 inheritDisplayStart,
                                 scopeArgs.InheritFromTableId,
                                 tableScope,
+                                debugTag: $"apply_inherit_span:{inheritFrom}")
+                            : null;
+                        Word.Range sourceRange = inheritSpan != null
+                            ? SpanSentenceLocator.LocateFirstSentence(
+                                doc,
+                                inheritSpan,
+                                inheritCodes,
                                 debugTag: $"apply_source:{inheritFrom}")
                             : null;
                         if (sourceRange == null)
@@ -134,8 +143,6 @@ namespace WordAddIn1
                     var appliedCodes = new List<string>();
                     var skippedCodes = new List<string>();
                     var applyErrors = new List<string>();
-                    string lastAppliedCode = null;
-                    int lastAppliedTargetIndex = -1;
 
                     foreach (string code in targetCodes)
                     {
@@ -143,57 +150,77 @@ namespace WordAddIn1
                         {
                             skippedCodes.Add(code);
                             applyErrors.Add($"{code}: 非 S_ 编码");
-                            continue;
                         }
-
-                        string content = DocumentState.GetSentenceContent(code);
-                        if (string.IsNullOrEmpty(content))
+                        else if (string.IsNullOrEmpty(DocumentState.GetSentenceContent(code)))
                         {
                             skippedCodes.Add(code);
                             applyErrors.Add($"{code}: 映射表中不存在");
-                            continue;
                         }
+                    }
 
-                        int targetIndex = targetCodes.IndexOf(code);
+                    Word.Range targetSpan = null;
+                    if (skippedCodes.Count < targetCodes.Count)
+                    {
                         int targetDisplayStart = ApplyFormatAmbiguityHelper.GetDisplayStartAt(
-                            ambiguityResult, targetIndex, "target_codes");
-                        Word.Range targetRange = targetDisplayStart >= 0
-                            ? SentenceCodeLocator.LocateRangeByDisplayStart(
+                            ambiguityResult, 0, "target_codes");
+                        if (targetDisplayStart >= 0)
+                        {
+                            targetSpan = DisplayPositionRangeResolver.ResolveSpan(
                                 doc,
-                                code,
+                                targetCodes,
                                 targetDisplayStart,
                                 scopeArgs.TableId,
                                 tableScope,
-                                debugTag: $"apply_target:{code}")
-                            : null;
-                        if (targetRange == null)
-                        {
-                            skippedCodes.Add(code);
-                            applyErrors.Add($"{code}: 无法在文档中定位");
-                            continue;
+                                debugTag: "apply_target_span");
                         }
 
-                        try
+                        if (targetSpan == null)
                         {
-                            FormatInheritHelper.ApplySnapshot(targetRange, snapshot, charFormatOnly: true);
-                            appliedCodes.Add(code);
-                            lastAppliedCode = code;
-                            lastAppliedTargetIndex = targetIndex;
-                            if (responseMode == "inherit")
+                            foreach (string code in targetCodes)
                             {
-                                FormatContextHelper.DbgLog(
-                                    $"apply {code} <- {inheritFrom} fingerprint={FormatInheritHelper.BuildFingerprint(snapshot)}");
-                            }
-                            else
-                            {
-                                FormatContextHelper.DbgLog(
-                                    $"apply explicit {code} fields={string.Join(",", explicitFieldsApplied)}");
+                                if (!skippedCodes.Contains(code))
+                                {
+                                    skippedCodes.Add(code);
+                                    applyErrors.Add($"{code}: 无法在文档中定位序列 Span");
+                                }
                             }
                         }
-                        catch (Exception ex)
+                        else
                         {
-                            skippedCodes.Add(code);
-                            applyErrors.Add($"{code}: {ex.Message}");
+                            try
+                            {
+                                FormatInheritHelper.ApplySnapshot(targetSpan, snapshot, charFormatOnly: true);
+                                foreach (string code in targetCodes)
+                                {
+                                    if (skippedCodes.Contains(code))
+                                    {
+                                        continue;
+                                    }
+
+                                    appliedCodes.Add(code);
+                                    if (responseMode == "inherit")
+                                    {
+                                        FormatContextHelper.DbgLog(
+                                            $"apply {code} <- {inheritFrom} fingerprint={FormatInheritHelper.BuildFingerprint(snapshot)}");
+                                    }
+                                    else
+                                    {
+                                        FormatContextHelper.DbgLog(
+                                            $"apply explicit {code} fields={string.Join(",", explicitFieldsApplied)}");
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                foreach (string code in targetCodes)
+                                {
+                                    if (!skippedCodes.Contains(code))
+                                    {
+                                        skippedCodes.Add(code);
+                                        applyErrors.Add($"{code}: {ex.Message}");
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -242,24 +269,10 @@ namespace WordAddIn1
                     }
 
                     Word.Application app = wordApplication as Word.Application;
-                    if (app != null && !string.IsNullOrEmpty(lastAppliedCode) && lastAppliedTargetIndex >= 0)
+                    if (app != null && targetSpan != null)
                     {
-                        int lastDisplayStart = ApplyFormatAmbiguityHelper.GetDisplayStartAt(
-                            ambiguityResult, lastAppliedTargetIndex, "target_codes");
-                        Word.Range navRange = lastDisplayStart >= 0
-                            ? SentenceCodeLocator.LocateRangeByDisplayStart(
-                                doc,
-                                lastAppliedCode,
-                                lastDisplayStart,
-                                scopeArgs.TableId,
-                                tableScope,
-                                debugTag: $"apply_document_format_nav:{lastAppliedCode}")
-                            : null;
-                        if (navRange != null)
-                        {
-                            PostModifyNavigateHelper.NavigateAfterEnd(
-                                app, navRange, "apply_document_format");
-                        }
+                        PostModifyNavigateHelper.NavigateAfterEnd(
+                            app, targetSpan, "apply_document_format");
                     }
 
                     return Task.FromResult(new ToolResult { Success = true, Data = data });

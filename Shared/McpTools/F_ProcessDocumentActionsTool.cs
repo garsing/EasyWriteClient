@@ -592,23 +592,6 @@ namespace WordAddIn1
             }
         }
 
-        private static Word.Range FindSentenceRangeForAnchor(
-            Word.Document doc,
-            string code,
-            int occurrenceIndex,
-            string explicitTableId,
-            TableScopeIndex tableScope = null)
-        {
-            return SentenceCodeLocator.LocateRange(
-                doc,
-                code,
-                occurrenceIndex,
-                explicitTableId,
-                tableScope,
-                allowAutoTableScope: true,
-                debugTag: $"process_actions:{code}");
-        }
-
         private static Word.Table ResolveTableById(Word.Document doc, string tableId)
         {
             return SentenceCodeLocator.ResolveTableById(doc, tableId);
@@ -820,16 +803,16 @@ namespace WordAddIn1
                     return 0;
                 }
 
-                Word.Range range = DisplayPositionRangeResolver.ResolveSingle(
+                Word.Range span = DisplayPositionRangeResolver.ResolveSpan(
                     doc,
-                    names[0],
+                    names,
                     displayStartPosition.Value,
                     tableId,
                     tableScope,
                     debugTag: "process_actions_sort");
-                if (range != null)
+                if (span != null)
                 {
-                    return range.Start;
+                    return span.Start;
                 }
             }
             catch
@@ -1044,56 +1027,6 @@ namespace WordAddIn1
             }
         }
 
-        private static FormatInheritContext BuildInheritContext(
-            Word.Document doc,
-            List<string> names,
-            int displayStartPosition,
-            string tableId = null,
-            TableScopeIndex tableScope = null)
-        {
-            FormatInheritHelper.DbgLog($"BuildInheritContext codes=[{string.Join(",", names)}]");
-            Word.Range first = DisplayPositionRangeResolver.ResolveSingle(
-                doc,
-                names[0],
-                displayStartPosition,
-                tableId,
-                tableScope,
-                debugTag: "process_actions_inherit_first");
-            FormatInheritHelper.DbgLogRangeFonts("BuildInheritContext anchor first", first);
-            var snapshot = FormatInheritHelper.ExtractSnapshot(first);
-            var ctx = new FormatInheritContext { Snapshot = snapshot };
-
-            if (names.Count == 2)
-            {
-                Word.Range second = DisplayPositionRangeResolver.ResolveSingle(
-                    doc,
-                    names[1],
-                    displayStartPosition + 1,
-                    tableId,
-                    tableScope,
-                    debugTag: "process_actions_inherit_second");
-                FormatInheritHelper.DbgLogRangeFonts("BuildInheritContext anchor second", second);
-                ctx.FingerprintFirst = FormatInheritHelper.BuildFingerprint(snapshot);
-                ctx.FingerprintSecond = FormatInheritHelper.BuildFingerprint(
-                    FormatInheritHelper.ExtractSnapshot(second));
-                ctx.FormatWarning = ctx.FingerprintFirst != ctx.FingerprintSecond;
-                FormatInheritHelper.DbgLog(
-                    $"BuildInheritContext fingerprint first=\"{ctx.FingerprintFirst}\" second=\"{ctx.FingerprintSecond}\" warning={ctx.FormatWarning}");
-                if (ctx.FormatWarning)
-                {
-                    ctx.ReplacedFingerprints = new Dictionary<string, string>
-                    {
-                        [names[0]] = ctx.FingerprintFirst,
-                        [names[1]] = ctx.FingerprintSecond
-                    };
-                    FormatInheritHelper.DbgLog(
-                        $"action=replace codes={string.Join(",", names)} format_warning=true");
-                }
-            }
-
-            return ctx;
-        }
-
         /// <summary>
         /// 根据 S_ 编码序列执行删除操作（delete 不支持 T_）
         /// </summary>
@@ -1244,18 +1177,16 @@ namespace WordAddIn1
                         return result;
                     }
 
-                    string lastName = names[names.Count - 1];
-                    int lastPos = targetDisplayStart.Value + names.Count - 1;
-                    Word.Range range = DisplayPositionRangeResolver.ResolveSingle(
+                    Word.Range span = DisplayPositionRangeResolver.ResolveSpan(
                         doc,
-                        lastName,
-                        lastPos,
+                        names,
+                        targetDisplayStart.Value,
                         target.InTableId,
                         tableScope,
                         debugTag: "process_actions_insert_target");
-                    if (range != null)
+                    if (span != null)
                     {
-                        insertRange = range;
+                        insertRange = span;
                         insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
                     }
                 }

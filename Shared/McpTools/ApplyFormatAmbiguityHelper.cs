@@ -75,19 +75,22 @@ namespace WordAddIn1
                 });
             }
 
-            for (int i = 0; i < targetCodes.Count; i++)
+            var validTargetCodes = new List<string>();
+            foreach (string code in targetCodes)
             {
-                string code = targetCodes[i];
-                if (string.IsNullOrWhiteSpace(code))
+                if (!string.IsNullOrWhiteSpace(code))
                 {
-                    continue;
+                    validTargetCodes.Add(code.Trim());
                 }
+            }
 
+            if (validTargetCodes.Count > 0)
+            {
                 anchors.Add(new DocumentActionAmbiguityAnchor
                 {
-                    ActionIndex = i,
+                    ActionIndex = 0,
                     Field = "target_codes",
-                    Codes = code,
+                    Codes = string.Join(",", validTargetCodes),
                     TableId = scopeArgs.TableId
                 });
             }

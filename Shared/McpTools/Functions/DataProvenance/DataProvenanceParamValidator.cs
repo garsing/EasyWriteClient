@@ -54,11 +54,6 @@ namespace WordAddIn1
             if (anchor != null)
             {
                 item.Anchor.Code = anchor["code"]?.ToString()?.Trim();
-                if (anchor["index"] != null && anchor["index"].Type != JTokenType.Null)
-                {
-                    item.Anchor.Index = anchor["index"].Value<int>();
-                }
-
                 item.Anchor.TableId = anchor["in_table"]?.ToString()?.Trim();
             }
 
@@ -219,9 +214,8 @@ namespace WordAddIn1
         public static string BuildAnchorKey(ProvenanceAnchorInput anchor)
         {
             string code = anchor?.Code ?? "";
-            int idx = anchor?.Index ?? 0;
             string tableId = anchor?.TableId ?? "";
-            return $"{code}|{idx}|{tableId}";
+            return $"{code}|{tableId}";
         }
 
         private static ProvenanceValidationResult Fail(string error) =>

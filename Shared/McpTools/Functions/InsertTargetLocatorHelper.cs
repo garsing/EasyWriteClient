@@ -341,12 +341,10 @@ namespace WordAddIn1
                 }
 
                 int displayStart = locate.DisplayStartPosition.Value;
-                string lastName = names[names.Count - 1];
-                int lastPos = displayStart + names.Count - 1;
-                Word.Range range = DisplayPositionRangeResolver.ResolveSingle(
+                Word.Range range = DisplayPositionRangeResolver.ResolveSpan(
                     doc,
-                    lastName,
-                    lastPos,
+                    names,
+                    displayStart,
                     target.InTableId,
                     tableScope,
                     locate.OrderedDomainCodes,

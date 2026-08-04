@@ -140,22 +140,11 @@ namespace WordAddIn1
             }
 
             string code = item.Anchor?.Code;
-            int occurrenceIndex = item.Anchor?.Index ?? 0;
-            string tableId = item.Anchor?.TableId;
 
-            Word.Range sentence = SentenceCodeLocator.LocateRange(
+            Word.Range sentence = DataProvenanceSentenceLocator.LocateLastSentenceRange(
                 doc,
-                code,
-                occurrenceIndex,
-                tableId,
-                tableScope: null,
-                allowAutoTableScope: true,
+                item.Anchor,
                 debugTag: $"provenance_write:{code}");
-
-            if (sentence == null)
-            {
-                throw new InvalidOperationException($"无法定位句子 {code}");
-            }
 
             sentence.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
             sentence.Text = $"[{sentenceNumber}]";
@@ -211,16 +200,14 @@ namespace WordAddIn1
             foreach (RenderedProvenanceItem item in sentenceItems)
             {
                 string code = item.Anchor?.Code;
-                int occurrenceIndex = item.Anchor?.Index ?? 0;
-                string tableId = item.Anchor?.TableId;
-                Word.Range range = SentenceCodeLocator.LocateRange(
+                Word.Range range = DataProvenanceSentenceLocator.TryLocateLastSentenceRange(
                     doc,
-                    code,
-                    occurrenceIndex,
-                    tableId,
-                    tableScope: null,
-                    allowAutoTableScope: true,
-                    debugTag: $"provenance_sort:{code}");
+                    item.Anchor,
+                    debugTag: $"provenance_sort:{code}",
+                    out Word.Range located,
+                    out _)
+                    ? located
+                    : null;
                 int start = range?.Start ?? 0;
                 withStart.Add((item, start));
             }

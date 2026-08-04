@@ -9,7 +9,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
     public static class DisplayPositionRangeResolver
     {
         /// <summary>
-        /// 多码跨度定位：将编码序列对应 storedText 拼接后整体 Find（短文本枚举 nth / 长文本包围搜索），
+        /// 多码跨度定位：将编码序列对应 storedText 拼接后整体 Find（短文本单次 / 长文本包围搜索），
         /// 不再分别定位首句与末句再拼 Range（短/高频末句如「）」会导致 occurrence 错配）。
         /// </summary>
         public static Word.Range ResolveSpan(
@@ -48,187 +48,78 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 return null;
             }
 
-            int sequenceOccurrence = ComputeSequenceOccurrenceIndexBefore(
-                domain,
-                codeList,
-                displayStartPosition);
-
             string tag = string.IsNullOrEmpty(debugTag)
                 ? $"span[{string.Join(",", codeList)}]"
                 : debugTag;
 
             System.Diagnostics.Debug.WriteLine(
                 $"[DisplayPositionRangeResolver] ResolveSpan combinedFind " +
-                $"codes={codeList.Count} textLen={combinedText.Length} nth={sequenceOccurrence} tag={tag}");
+                $"codes={codeList.Count} textLen={combinedText.Length} tag={tag}");
 
             if (EasyWriteDiagnostics.IsEnabled(DebugCategory.DocumentMapping))
             {
-                LogCombinedSpanDetails(codeList, combinedText, sequenceOccurrence, tag);
+                LogCombinedSpanDetails(codeList, combinedText, tag);
             }
 
-            return StoredTextRangeLocator.Locate(
+            return StoredTextRangeLocator.LocateFirst(
                 doc,
                 combinedText,
-                sequenceOccurrence,
                 tableId,
                 tag);
         }
 
-        public static Word.Range ResolveSingle(
+        /// <summary>
+        /// P_ 多码跨度定位：拼接段落 storedText 后整体 Find（镜像 ResolveSpan）。
+        /// </summary>
+        public static Word.Range ResolveParagraphSpan(
             Word.Document doc,
-            string code,
+            IReadOnlyList<string> codeList,
             int displayStartPosition,
             string tableId,
             TableScopeIndex tableScope,
             IReadOnlyList<string> domainOrderedCodes = null,
             string debugTag = null)
         {
-            if (doc == null || string.IsNullOrEmpty(code) || displayStartPosition < 0)
-            {
-                return null;
-            }
-
-            IReadOnlyList<string> domain = domainOrderedCodes ?? BuildDomain(tableId, tableScope);
-            if (domain == null || displayStartPosition >= domain.Count)
-            {
-                return null;
-            }
-
-            if (!string.Equals(domain[displayStartPosition], code, StringComparison.Ordinal))
-            {
-                return null;
-            }
-
-            int occurrenceIndex = ComputeOccurrenceIndexBefore(domain, code, displayStartPosition);
-            return LocateSingleCode(doc, code, occurrenceIndex, tableId, tableScope, debugTag);
-        }
-
-        public static Word.Range ResolveParagraphSingle(
-            Word.Document doc,
-            string paragraphCode,
-            int displayStartPosition,
-            string tableId,
-            TableScopeIndex tableScope,
-            IReadOnlyList<string> domainOrderedCodes = null,
-            string debugTag = null)
-        {
-            if (doc == null || string.IsNullOrEmpty(paragraphCode) || displayStartPosition < 0)
+            if (doc == null || codeList == null || codeList.Count == 0 || displayStartPosition < 0)
             {
                 return null;
             }
 
             IReadOnlyList<string> domain = domainOrderedCodes ?? BuildParagraphDomain(tableId, tableScope);
-            if (domain == null || displayStartPosition >= domain.Count)
+            if (domain == null || displayStartPosition + codeList.Count > domain.Count)
             {
                 return null;
-            }
-
-            if (!string.Equals(domain[displayStartPosition], paragraphCode, StringComparison.Ordinal))
-            {
-                return null;
-            }
-
-            int occurrenceIndex = ComputeOccurrenceIndexBefore(domain, paragraphCode, displayStartPosition);
-            return ParagraphCodeLocator.LocateRange(
-                doc,
-                paragraphCode,
-                occurrenceIndex,
-                tableId,
-                tableScope,
-                allowAutoTableScope: false,
-                debugTag: string.IsNullOrEmpty(debugTag) ? paragraphCode : debugTag);
-        }
-
-        public static List<int> ComputeOccurrenceIndexesFromDisplayStart(
-            IReadOnlyList<string> codeList,
-            int displayStartPosition,
-            IReadOnlyList<string> domain)
-        {
-            var indexes = new List<int>();
-            if (codeList == null || domain == null || displayStartPosition < 0)
-            {
-                return indexes;
             }
 
             for (int i = 0; i < codeList.Count; i++)
             {
-                int pos = displayStartPosition + i;
-                indexes.Add(pos < domain.Count
-                    ? ComputeOccurrenceIndexBefore(domain, codeList[i], pos)
-                    : 0);
-            }
-
-            return indexes;
-        }
-
-        public static int ComputeOccurrenceIndexBefore(
-            IReadOnlyList<string> domain,
-            string code,
-            int displayPosition)
-        {
-            if (domain == null || string.IsNullOrEmpty(code) || displayPosition < 0)
-            {
-                return 0;
-            }
-
-            int count = 0;
-            int limit = Math.Min(displayPosition, domain.Count);
-            for (int i = 0; i < limit; i++)
-            {
-                if (string.Equals(domain[i], code, StringComparison.Ordinal))
+                if (!string.Equals(domain[displayStartPosition + i], codeList[i], StringComparison.Ordinal))
                 {
-                    count++;
+                    return null;
                 }
             }
 
-            return count;
-        }
-
-        /// <summary>
-        /// 统计 displayStartPosition 之前，与 codeList 完全一致的连续序列出现次数（0-based nth）。
-        /// </summary>
-        public static int ComputeSequenceOccurrenceIndexBefore(
-            IReadOnlyList<string> domain,
-            IReadOnlyList<string> codeList,
-            int displayStartPosition)
-        {
-            if (domain == null || codeList == null || codeList.Count == 0 || displayStartPosition <= 0)
+            string combinedText = BuildCombinedParagraphStoredText(codeList);
+            if (string.IsNullOrEmpty(combinedText))
             {
-                return 0;
+                System.Diagnostics.Debug.WriteLine(
+                    $"[DisplayPositionRangeResolver] ResolveParagraphSpan 拼接文本为空 codes=[{string.Join(",", codeList)}]");
+                return null;
             }
 
-            int count = 0;
-            int maxStart = Math.Min(displayStartPosition, domain.Count - codeList.Count + 1);
-            for (int i = 0; i < maxStart; i++)
-            {
-                if (MatchesSequenceAt(domain, codeList, i))
-                {
-                    count++;
-                }
-            }
+            string tag = string.IsNullOrEmpty(debugTag)
+                ? $"para_span[{string.Join(",", codeList)}]"
+                : debugTag;
 
-            return count;
-        }
+            System.Diagnostics.Debug.WriteLine(
+                $"[DisplayPositionRangeResolver] ResolveParagraphSpan combinedFind " +
+                $"codes={codeList.Count} textLen={combinedText.Length} tag={tag}");
 
-        private static bool MatchesSequenceAt(
-            IReadOnlyList<string> domain,
-            IReadOnlyList<string> codeList,
-            int start)
-        {
-            if (start < 0 || start + codeList.Count > domain.Count)
-            {
-                return false;
-            }
-
-            for (int j = 0; j < codeList.Count; j++)
-            {
-                if (!string.Equals(domain[start + j], codeList[j], StringComparison.Ordinal))
-                {
-                    return false;
-                }
-            }
-
-            return true;
+            return StoredTextRangeLocator.LocateFirst(
+                doc,
+                combinedText,
+                tableId,
+                tag);
         }
 
         private static string BuildCombinedStoredText(IReadOnlyList<string> codeList)
@@ -250,16 +141,34 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             return sb.ToString();
         }
 
+        private static string BuildCombinedParagraphStoredText(IReadOnlyList<string> codeList)
+        {
+            var sb = new StringBuilder();
+            foreach (string code in codeList)
+            {
+                string content = DocumentState.GetParagraphContent(code);
+                if (string.IsNullOrEmpty(content))
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[DisplayPositionRangeResolver] 段落编码无 storedText: {code}");
+                    return null;
+                }
+
+                sb.Append(content);
+            }
+
+            return sb.ToString();
+        }
+
         private static void LogCombinedSpanDetails(
             IReadOnlyList<string> codeList,
             string combinedText,
-            int sequenceOccurrence,
             string tag)
         {
             bool hasCr = combinedText.IndexOf('\r') >= 0;
             bool hasLf = combinedText.IndexOf('\n') >= 0;
             System.Diagnostics.Debug.WriteLine(
-                $"[DisplayPositionRangeResolver] ResolveSpan detail tag={tag} nth={sequenceOccurrence} " +
+                $"[DisplayPositionRangeResolver] ResolveSpan detail tag={tag} " +
                 $"textLen={combinedText.Length} hasCR={hasCr} hasLF={hasLf}");
 
             for (int i = 0; i < codeList.Count; i++)
@@ -295,24 +204,6 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             }
 
             return ParagraphCodeAmbiguityHelper.GetOrderedParagraphCodesFromDisplay();
-        }
-
-        private static Word.Range LocateSingleCode(
-            Word.Document doc,
-            string code,
-            int occurrenceIndex,
-            string tableId,
-            TableScopeIndex tableScope,
-            string debugTag)
-        {
-            return SentenceCodeLocator.LocateRange(
-                doc,
-                code,
-                occurrenceIndex,
-                tableId,
-                tableScope,
-                allowAutoTableScope: false,
-                debugTag: debugTag);
         }
     }
 }

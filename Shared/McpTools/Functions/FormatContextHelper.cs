@@ -82,7 +82,7 @@ namespace WordAddIn1
         {
             var result = new FormatContextBuildResult
             {
-                ContextWindow = contextWindow ?? DefaultContextWindow
+                ContextWindow = 0
             };
 
             if (doc == null)
@@ -112,58 +112,47 @@ namespace WordAddIn1
 
             result.TargetParagraphCodes = targetCodes;
 
-            List<string> orderedCodes = GetOrderedParagraphCodes();
-            if (orderedCodes.Count == 0)
+            if (precheckResult == null)
             {
                 result.Success = false;
-                result.Error = "文档段落快照为空，请先调用 F_get_document_content 刷新映射";
+                result.Error = "缺少段落消歧结果，请先完成 precheck";
                 return result;
             }
 
-            var codeToIndex = BuildCodeIndex(orderedCodes);
-            var targetSet = new HashSet<string>(targetCodes, StringComparer.Ordinal);
-            List<int> targetIndices = precheckResult != null
-                ? CollectTargetParagraphDisplayIndices(targetCodes, precheckResult, result.Errors)
-                : CollectTargetIndices(targetCodes, codeToIndex, result.Errors);
-            if (targetIndices.Count == 0)
+            int displayStart = ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
+                precheckResult, 0, "target_paragraph_codes");
+            if (displayStart < 0)
             {
                 result.Success = false;
-                result.Error = "target_paragraph_codes 均无法在段落快照中定位";
+                result.Error = "target_paragraph_codes 无法在段落快照中定位";
                 return result;
             }
 
-            List<string> selectedCodes = SelectCodesWithWindow(
-                orderedCodes,
-                codeToIndex,
-                targetIndices,
+            Word.Range span = DisplayPositionRangeResolver.ResolveParagraphSpan(
+                doc,
                 targetCodes,
-                result.ContextWindow);
-
-            foreach (string code in selectedCodes)
+                displayStart,
+                tableId,
+                tableScope,
+                debugTag: "format_context_para_span");
+            if (span == null)
             {
-                bool isTarget = targetSet.Contains(code);
-                int? displayStart = null;
-                if (isTarget && precheckResult != null)
-                {
-                    int targetIndex = targetCodes.IndexOf(code);
-                    if (targetIndex >= 0)
-                    {
-                        int resolved = ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
-                            precheckResult, targetIndex, "target_paragraph_codes");
-                        if (resolved >= 0)
-                        {
-                            displayStart = resolved;
-                        }
-                    }
-                }
+                result.Success = false;
+                result.Error = "无法定位 target_paragraph_codes 序列 Span";
+                return result;
+            }
 
-                Dictionary<string, object> entry = BuildParagraphEntry(
+            foreach (string code in targetCodes)
+            {
+                Word.Range paragraphRange = SpanParagraphLocator.LocateParagraph(
                     doc,
+                    span,
                     code,
-                    isTarget,
-                    displayStart,
-                    tableId,
-                    tableScope);
+                    $"format_context:{code}");
+                Dictionary<string, object> entry = BuildParagraphEntryFromRange(
+                    code,
+                    paragraphRange,
+                    isTarget: true);
                 if (entry != null)
                 {
                     result.Entries.Add(entry);
@@ -181,32 +170,9 @@ namespace WordAddIn1
             }
 
             DbgLog(
-                $"BuildParagraphContext targets=[{string.Join(",", targetCodes)}] window={result.ContextWindow} " +
+                $"BuildParagraphContext targets=[{string.Join(",", targetCodes)}] " +
                 $"entries={result.Entries.Count} warnings={result.Errors.Count}");
             return result;
-        }
-
-        private static List<int> CollectTargetParagraphDisplayIndices(
-            List<string> targetCodes,
-            AmbiguityCheckResult precheckResult,
-            List<string> errors)
-        {
-            var targetIndices = new List<int>();
-            for (int i = 0; i < targetCodes.Count; i++)
-            {
-                int displayStart = ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
-                    precheckResult, i, "target_paragraph_codes");
-                if (displayStart >= 0)
-                {
-                    targetIndices.Add(displayStart);
-                }
-                else
-                {
-                    errors.Add($"无法定位 target paragraph code: {targetCodes[i]}");
-                }
-            }
-
-            return targetIndices;
         }
 
         private static FormatContextBuildResult BuildSentenceContext(
@@ -219,7 +185,7 @@ namespace WordAddIn1
         {
             var result = new FormatContextBuildResult
             {
-                ContextWindow = contextWindow ?? DefaultContextWindow
+                ContextWindow = 0
             };
 
             if (doc == null)
@@ -249,59 +215,44 @@ namespace WordAddIn1
 
             result.TargetCodes = targetCodes;
 
-            List<string> orderedCodes = GetOrderedSentenceCodes();
-            if (orderedCodes.Count == 0)
+            if (precheckResult == null)
             {
                 result.Success = false;
-                result.Error = "文档句子快照为空，请先调用 F_get_document_content 刷新映射";
+                result.Error = "缺少句子消歧结果，请先完成 precheck";
                 return result;
             }
 
-            var codeToIndex = BuildCodeIndex(orderedCodes);
-
-            var targetSet = new HashSet<string>(targetCodes, StringComparer.Ordinal);
-            List<int> targetIndices = precheckResult != null
-                ? CollectTargetDisplayIndices(targetCodes, precheckResult, result.Errors)
-                : CollectTargetIndices(targetCodes, codeToIndex, result.Errors);
-            if (targetIndices.Count == 0)
+            int displayStart = ApplyFormatAmbiguityHelper.GetDisplayStartAt(
+                precheckResult, 0, "target_codes");
+            if (displayStart < 0)
             {
                 result.Success = false;
-                result.Error = "target_codes 均无法在文档快照中定位";
+                result.Error = "target_codes 无法在文档快照中定位";
                 return result;
             }
 
-            List<string> selectedCodes = SelectCodesWithWindow(
-                orderedCodes,
-                codeToIndex,
-                targetIndices,
+            Word.Range span = DisplayPositionRangeResolver.ResolveSpan(
+                doc,
                 targetCodes,
-                result.ContextWindow);
-
-            foreach (string code in selectedCodes)
+                displayStart,
+                tableId,
+                tableScope,
+                debugTag: "format_context_span");
+            if (span == null)
             {
-                bool isTarget = targetSet.Contains(code);
-                int? displayStart = null;
-                if (isTarget && precheckResult != null)
-                {
-                    int targetIndex = targetCodes.IndexOf(code);
-                    if (targetIndex >= 0)
-                    {
-                        int resolved = ApplyFormatAmbiguityHelper.GetDisplayStartAt(
-                            precheckResult, targetIndex, "target_codes");
-                        if (resolved >= 0)
-                        {
-                            displayStart = resolved;
-                        }
-                    }
-                }
+                result.Success = false;
+                result.Error = "无法定位 target_codes 序列 Span";
+                return result;
+            }
 
-                Dictionary<string, object> entry = BuildEntry(
+            foreach (string code in targetCodes)
+            {
+                Word.Range range = SpanSentenceLocator.LocateSentence(
                     doc,
+                    span,
                     code,
-                    isTarget,
-                    displayStart,
-                    tableId,
-                    tableScope);
+                    $"format_context:{code}");
+                Dictionary<string, object> entry = BuildEntryFromRange(doc, code, range, isTarget: true);
                 if (entry != null)
                 {
                     result.Entries.Add(entry);
@@ -319,7 +270,7 @@ namespace WordAddIn1
             }
 
             DbgLog(
-                $"BuildContext targets=[{string.Join(",", targetCodes)}] window={result.ContextWindow} " +
+                $"BuildContext targets=[{string.Join(",", targetCodes)}] " +
                 $"entries={result.Entries.Count} warnings={result.Errors.Count}");
             return result;
         }
@@ -350,122 +301,13 @@ namespace WordAddIn1
             return codes;
         }
 
-        private static Dictionary<string, int> BuildCodeIndex(List<string> orderedCodes)
-        {
-            var codeToIndex = new Dictionary<string, int>(StringComparer.Ordinal);
-            for (int i = 0; i < orderedCodes.Count; i++)
-            {
-                if (!codeToIndex.ContainsKey(orderedCodes[i]))
-                {
-                    codeToIndex[orderedCodes[i]] = i;
-                }
-            }
-
-            return codeToIndex;
-        }
-
-        private static List<int> CollectTargetIndices(
-            List<string> targetCodes,
-            Dictionary<string, int> codeToIndex,
-            List<string> errors)
-        {
-            var targetIndices = new List<int>();
-            foreach (string code in targetCodes)
-            {
-                if (codeToIndex.TryGetValue(code, out int idx))
-                {
-                    targetIndices.Add(idx);
-                }
-                else
-                {
-                    errors.Add($"无法定位 target code: {code}");
-                }
-            }
-
-            return targetIndices;
-        }
-
-        private static List<string> SelectCodesWithWindow(
-            List<string> orderedCodes,
-            Dictionary<string, int> codeToIndex,
-            List<int> targetIndices,
-            List<string> targetCodes,
-            int contextWindow)
-        {
-            int minIdx = targetIndices.Min() - contextWindow;
-            int maxIdx = targetIndices.Max() + contextWindow;
-            if (minIdx < 0)
-            {
-                minIdx = 0;
-            }
-
-            if (maxIdx >= orderedCodes.Count)
-            {
-                maxIdx = orderedCodes.Count - 1;
-            }
-
-            var selectedCodes = new List<string>();
-            var selectedSet = new HashSet<string>(StringComparer.Ordinal);
-            for (int i = minIdx; i <= maxIdx; i++)
-            {
-                string code = orderedCodes[i];
-                if (selectedSet.Add(code))
-                {
-                    selectedCodes.Add(code);
-                }
-            }
-
-            foreach (string code in targetCodes)
-            {
-                if (selectedSet.Add(code))
-                {
-                    selectedCodes.Add(code);
-                }
-            }
-
-            return selectedCodes
-                .OrderBy(c => codeToIndex.TryGetValue(c, out int idx) ? idx : int.MaxValue)
-                .ThenBy(c => c, StringComparer.Ordinal)
-                .ToList();
-        }
-
-        private static Dictionary<string, object> BuildParagraphEntry(
-            Word.Document doc,
+        private static Dictionary<string, object> BuildParagraphEntryFromRange(
             string paragraphCode,
-            bool isTarget,
-            int? displayStart = null,
-            string tableId = null,
-            TableScopeIndex tableScope = null)
+            Word.Range paragraphRange,
+            bool isTarget)
         {
             string content = DocumentState.GetParagraphContent(paragraphCode);
-            if (string.IsNullOrEmpty(content))
-            {
-                return null;
-            }
-
-            Word.Range paragraphRange;
-            if (isTarget && displayStart.HasValue && displayStart.Value >= 0)
-            {
-                paragraphRange = ParagraphCodeResolver.ResolveParagraphRangeByDisplayStart(
-                    doc,
-                    paragraphCode,
-                    displayStart.Value,
-                    tableId,
-                    tableScope,
-                    debugTag: $"format_context:{paragraphCode}");
-            }
-            else
-            {
-                paragraphRange = ParagraphCodeResolver.ResolveParagraphRange(
-                    doc,
-                    paragraphCode,
-                    0,
-                    null,
-                    null,
-                    false,
-                    $"format_context:{paragraphCode}");
-            }
-            if (paragraphRange == null)
+            if (string.IsNullOrEmpty(content) || paragraphRange == null)
             {
                 return null;
             }
@@ -481,60 +323,14 @@ namespace WordAddIn1
             };
         }
 
-        private static List<int> CollectTargetDisplayIndices(
-            List<string> targetCodes,
-            AmbiguityCheckResult precheckResult,
-            List<string> errors)
-        {
-            var targetIndices = new List<int>();
-            for (int i = 0; i < targetCodes.Count; i++)
-            {
-                int displayStart = ApplyFormatAmbiguityHelper.GetDisplayStartAt(
-                    precheckResult, i, "target_codes");
-                if (displayStart >= 0)
-                {
-                    targetIndices.Add(displayStart);
-                }
-                else
-                {
-                    errors.Add($"无法定位 target code: {targetCodes[i]}");
-                }
-            }
-
-            return targetIndices;
-        }
-
-        private static Dictionary<string, object> BuildEntry(
+        private static Dictionary<string, object> BuildEntryFromRange(
             Word.Document doc,
             string code,
-            bool isTarget,
-            int? displayStart = null,
-            string tableId = null,
-            TableScopeIndex tableScope = null)
+            Word.Range range,
+            bool isTarget)
         {
             string content = DocumentState.GetSentenceContent(code);
-            if (string.IsNullOrEmpty(content))
-            {
-                return null;
-            }
-
-            Word.Range range;
-            if (isTarget && displayStart.HasValue && displayStart.Value >= 0)
-            {
-                range = DisplayPositionRangeResolver.ResolveSingle(
-                    doc,
-                    code,
-                    displayStart.Value,
-                    tableId,
-                    tableScope,
-                    domainOrderedCodes: null,
-                    debugTag: $"format_context:{code}");
-            }
-            else
-            {
-                range = WordRangeFinder.FindSentenceRangeInDocument(doc, content, $"format_context:{code}");
-            }
-            if (range == null)
+            if (string.IsNullOrEmpty(content) || range == null)
             {
                 return null;
             }

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Web.Script.Serialization;
+using WordAddIn1.DocumentMapping.CodeResolve;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
@@ -145,45 +147,69 @@ namespace WordAddIn1
                 return true;
             }
 
-            string primaryCode = FirstSentenceCode(spec.InheritFrom);
-            if (string.IsNullOrEmpty(primaryCode))
+            List<string> names = ParseSentenceCodeList(spec.InheritFrom);
+            if (names.Count == 0)
             {
                 error = "inherit_from 须为 S_ 句子编码";
                 return false;
             }
 
-            if (!FormatContextHelper.IsSentenceCode(primaryCode))
+            foreach (string code in names)
             {
-                error = $"inherit_from 须为 S_ 句子编码: {primaryCode}";
+                if (!FormatContextHelper.IsSentenceCode(code))
+                {
+                    error = $"inherit_from 须为 S_ 句子编码: {code}";
+                    return false;
+                }
+            }
+
+            var locateOptions = new DisplaySequenceLocateOptions
+            {
+                TableId = spec.InheritFromTableId,
+                TableScope = tableScope,
+                StreamKind = CodeStreamKind.SentenceReadText,
+                Snapshot = DocumentState.Snapshot
+            };
+
+            DisplaySequenceLocateResult locate = DisplaySequenceLocator.TryResolve(names, locateOptions);
+            if (locate == null || locate.MatchCount != 1 || !locate.DisplayStartPosition.HasValue)
+            {
+                error = BuildInheritLocateError(names, locate);
                 return false;
             }
 
-            string content = DocumentState.GetSentenceContent(primaryCode);
-            if (string.IsNullOrEmpty(content))
-            {
-                error = $"无法定位 inherit_from 源句（映射中不存在）: {primaryCode}";
-                return false;
-            }
-
-            Word.Range sourceRange = SentenceCodeLocator.LocateRange(
+            int displayStart = locate.DisplayStartPosition.Value;
+            Word.Range span = DisplayPositionRangeResolver.ResolveSpan(
                 doc,
-                primaryCode,
-                occurrenceIndex: 0,
-                explicitTableId: spec.InheritFromTableId,
-                tableScope: tableScope,
-                allowAutoTableScope: false,
-                debugTag: $"action_format_inherit:{primaryCode}");
+                names,
+                displayStart,
+                spec.InheritFromTableId,
+                tableScope,
+                locate.OrderedDomainCodes,
+                debugTag: "action_format_inherit");
+
+            if (span == null)
+            {
+                error = $"无法定位 inherit_from 源句: {names[0]}";
+                return false;
+            }
+
+            Word.Range sourceRange = SpanSentenceLocator.LocateFirstSentence(
+                doc,
+                span,
+                names,
+                debugTag: "action_format_inherit_first");
 
             if (sourceRange == null)
             {
-                error = $"无法定位 inherit_from 源句: {primaryCode}";
+                error = $"无法定位 inherit_from 源句: {names[0]}";
                 return false;
             }
 
             snapshot = FormatInheritHelper.ExtractSnapshot(sourceRange);
             if (snapshot == null || snapshot.Count == 0)
             {
-                error = $"inherit_from 源句无可用字符格式: {primaryCode}";
+                error = $"inherit_from 源句无可用字符格式: {names[0]}";
                 return false;
             }
 
@@ -191,23 +217,58 @@ namespace WordAddIn1
             return true;
         }
 
-        private static string FirstSentenceCode(string inheritFrom)
+        private static List<string> ParseSentenceCodeList(string inheritFrom)
         {
             if (string.IsNullOrWhiteSpace(inheritFrom))
             {
-                return null;
+                return new List<string>();
             }
 
-            foreach (string part in inheritFrom.Split(','))
+            return inheritFrom.Split(',')
+                .Select(s => s?.Trim())
+                .Where(s => !string.IsNullOrEmpty(s))
+                .ToList();
+        }
+
+        private static string BuildInheritLocateError(
+            List<string> names,
+            DisplaySequenceLocateResult locate)
+        {
+            if (locate != null
+                && locate.MatchCount > 1
+                && string.Equals(
+                    locate.ErrorCode,
+                    DisplaySequenceLocator.ErrorAmbiguousSentenceCode,
+                    StringComparison.Ordinal))
             {
-                string code = part?.Trim();
-                if (!string.IsNullOrEmpty(code))
+                var suggestions = new List<string>();
+                if (locate.MatchStartPositions != null && locate.OrderedDomainCodes != null)
                 {
-                    return code;
+                    foreach (int startPos in locate.MatchStartPositions)
+                    {
+                        string suggested = DisplaySequenceLocator.TryExpandSuggestedLocatorCodes(
+                            names,
+                            startPos,
+                            locate.OrderedDomainCodes,
+                            locate.SegIndexByPosition);
+                        if (!string.IsNullOrEmpty(suggested) && !suggestions.Contains(suggested))
+                        {
+                            suggestions.Add(suggested);
+                        }
+                    }
                 }
+
+                if (suggestions.Count > 0)
+                {
+                    return $"inherit_from 句子编码歧义（{DisplaySequenceLocator.ErrorAmbiguousSentenceCode}），"
+                        + $"请改用 suggested_locator_codes，例如: {string.Join(" | ", suggestions)}";
+                }
+
+                return $"inherit_from 句子编码歧义（{DisplaySequenceLocator.ErrorAmbiguousSentenceCode}），"
+                    + "请扩充 codes 或加 inherit_from_table_id";
             }
 
-            return null;
+            return $"无法定位 inherit_from 源句（{locate?.ErrorCode ?? "unknown"}）";
         }
 
         private static Dictionary<string, object> ParseNested(Dictionary<string, object> args, string key)

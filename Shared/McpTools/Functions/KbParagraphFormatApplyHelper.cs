@@ -155,8 +155,6 @@ namespace WordAddIn1
             var applyErrors = new List<string>();
             var applyWarnings = new List<string>();
             var appliedFieldsUnion = new List<string>();
-            string lastAppliedCode = null;
-            int lastAppliedIndex = -1;
 
             foreach (string code in targetParagraphCodes)
             {
@@ -164,56 +162,82 @@ namespace WordAddIn1
                 {
                     skippedParagraphCodes.Add(code);
                     applyErrors.Add($"{code}: 非 P_ 编码");
-                    continue;
                 }
+                else if (string.IsNullOrEmpty(DocumentState.GetParagraphContent(code)))
+                {
+                    skippedParagraphCodes.Add(code);
+                    applyErrors.Add($"{code}: 映射表中不存在");
+                }
+            }
 
-                int targetIndex = targetParagraphCodes.IndexOf(code);
+            Word.Range targetSpan = null;
+            if (skippedParagraphCodes.Count < targetParagraphCodes.Count)
+            {
                 int targetDisplayStart = ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
-                    ambiguityResult, targetIndex, "target_paragraph_codes");
-                Word.Range targetRange = targetDisplayStart >= 0
-                    ? ParagraphCodeResolver.ResolveParagraphRangeByDisplayStart(
+                    ambiguityResult, 0, "target_paragraph_codes");
+                if (targetDisplayStart >= 0)
+                {
+                    targetSpan = DisplayPositionRangeResolver.ResolveParagraphSpan(
                         doc,
-                        code,
+                        targetParagraphCodes,
                         targetDisplayStart,
                         tableId,
                         tableScope,
-                        debugTag: $"apply_kb_para_format:{code}")
-                    : null;
-                if (targetRange == null)
-                {
-                    skippedParagraphCodes.Add(code);
-                    applyErrors.Add($"{code}: 无法在文档中定位");
-                    continue;
+                        debugTag: "apply_kb_para_format_span");
                 }
 
-                try
+                if (targetSpan == null)
                 {
-                    List<string> fieldWarnings;
-                    List<string> appliedFields = ParaFormatWriter.Apply(targetRange, paraFormat, out fieldWarnings);
-                    foreach (string w in fieldWarnings)
+                    foreach (string code in targetParagraphCodes)
                     {
-                        if (!applyWarnings.Contains(w))
+                        if (!skippedParagraphCodes.Contains(code))
                         {
-                            applyWarnings.Add(w);
+                            skippedParagraphCodes.Add(code);
+                            applyErrors.Add($"{code}: 无法在文档中定位序列 Span");
                         }
                     }
-
-                    foreach (string f in appliedFields)
-                    {
-                        if (!appliedFieldsUnion.Contains(f))
-                        {
-                            appliedFieldsUnion.Add(f);
-                        }
-                    }
-
-                    appliedParagraphCodes.Add(code);
-                    lastAppliedCode = code;
-                    lastAppliedIndex = targetIndex;
                 }
-                catch (Exception ex)
+                else
                 {
-                    skippedParagraphCodes.Add(code);
-                    applyErrors.Add($"{code}: {ex.Message}");
+                    try
+                    {
+                        List<string> fieldWarnings;
+                        List<string> appliedFields = ParaFormatWriter.Apply(targetSpan, paraFormat, out fieldWarnings);
+                        foreach (string w in fieldWarnings)
+                        {
+                            if (!applyWarnings.Contains(w))
+                            {
+                                applyWarnings.Add(w);
+                            }
+                        }
+
+                        foreach (string f in appliedFields)
+                        {
+                            if (!appliedFieldsUnion.Contains(f))
+                            {
+                                appliedFieldsUnion.Add(f);
+                            }
+                        }
+
+                        foreach (string code in targetParagraphCodes)
+                        {
+                            if (!skippedParagraphCodes.Contains(code))
+                            {
+                                appliedParagraphCodes.Add(code);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        foreach (string code in targetParagraphCodes)
+                        {
+                            if (!skippedParagraphCodes.Contains(code))
+                            {
+                                skippedParagraphCodes.Add(code);
+                                applyErrors.Add($"{code}: {ex.Message}");
+                            }
+                        }
+                    }
                 }
             }
 
@@ -238,24 +262,10 @@ namespace WordAddIn1
                 };
             }
 
-            if (!string.IsNullOrEmpty(lastAppliedCode) && lastAppliedIndex >= 0)
+            if (targetSpan != null)
             {
-                int lastDisplayStart = ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
-                    ambiguityResult, lastAppliedIndex, "target_paragraph_codes");
-                Word.Range navRange = lastDisplayStart >= 0
-                    ? ParagraphCodeResolver.ResolveParagraphRangeByDisplayStart(
-                        doc,
-                        lastAppliedCode,
-                        lastDisplayStart,
-                        tableId,
-                        tableScope,
-                        debugTag: $"apply_kb_para_format_nav:{lastAppliedCode}")
-                    : null;
-                if (navRange != null)
-                {
-                    PostModifyNavigateHelper.NavigateAfterEnd(
-                        wordApp, navRange, "apply_kb_paragraph_format");
-                }
+                PostModifyNavigateHelper.NavigateAfterEnd(
+                    wordApp, targetSpan, "apply_kb_paragraph_format");
             }
 
             return new ToolResult { Success = true, Data = data };

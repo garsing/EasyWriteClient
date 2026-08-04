@@ -67,20 +67,27 @@ namespace WordAddIn1
             var applyErrors = new List<string>();
             var applyWarnings = new List<string>(warnings);
             var appliedFieldsUnion = new List<string>();
-            string lastAppliedCode = null;
-            int lastAppliedIndex = -1;
+            Word.Range targetSpan = null;
 
             if (string.Equals(mode, "inherit", StringComparison.OrdinalIgnoreCase))
             {
                 int inheritDisplayStart = ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
                     ambiguityResult, 0, "inherit_from_paragraph");
-                Word.Range sourceRange = inheritDisplayStart >= 0
-                    ? ParagraphCodeResolver.ResolveParagraphRangeByDisplayStart(
+                var inheritCodes = new List<string> { inheritFromParagraph };
+                Word.Range inheritSpan = inheritDisplayStart >= 0
+                    ? DisplayPositionRangeResolver.ResolveParagraphSpan(
                         doc,
-                        inheritFromParagraph,
+                        inheritCodes,
                         inheritDisplayStart,
                         scopeArgs.InheritFromTableId,
                         tableScope,
+                        debugTag: $"apply_para_inherit_span:{inheritFromParagraph}")
+                    : null;
+                Word.Range sourceRange = inheritSpan != null
+                    ? SpanParagraphLocator.LocateFirstParagraph(
+                        doc,
+                        inheritSpan,
+                        inheritCodes,
                         debugTag: $"apply_para_inherit_source:{inheritFromParagraph}")
                     : null;
                 if (sourceRange == null)
@@ -92,38 +99,37 @@ namespace WordAddIn1
                     });
                 }
 
-                ApplyInheritToTargets(
+                targetSpan = ApplyToTargetParagraphSpan(
                     doc,
                     sourceRange,
                     targetParagraphCodes,
                     ambiguityResult,
                     scopeArgs,
                     tableScope,
-                    appliedParagraphCodes,
-                    skippedParagraphCodes,
-                    applyErrors,
-                    ref lastAppliedCode,
-                    ref lastAppliedIndex);
-            }
-            else
-            {
-                ApplyExplicitToTargets(
-                    doc,
-                    paraFormat,
-                    targetParagraphCodes,
-                    ambiguityResult,
-                    scopeArgs,
-                    tableScope,
+                    isInherit: true,
+                    paraFormat: null,
                     appliedParagraphCodes,
                     skippedParagraphCodes,
                     applyErrors,
                     applyWarnings,
                     appliedFieldsUnion);
-                if (appliedParagraphCodes.Count > 0)
-                {
-                    lastAppliedCode = appliedParagraphCodes[appliedParagraphCodes.Count - 1];
-                    lastAppliedIndex = targetParagraphCodes.IndexOf(lastAppliedCode);
-                }
+            }
+            else
+            {
+                targetSpan = ApplyToTargetParagraphSpan(
+                    doc,
+                    sourceRange: null,
+                    targetParagraphCodes,
+                    ambiguityResult,
+                    scopeArgs,
+                    tableScope,
+                    isInherit: false,
+                    paraFormat,
+                    appliedParagraphCodes,
+                    skippedParagraphCodes,
+                    applyErrors,
+                    applyWarnings,
+                    appliedFieldsUnion);
             }
 
             var data = BuildResponseData(
@@ -144,91 +150,23 @@ namespace WordAddIn1
                 });
             }
 
-            if (!string.IsNullOrEmpty(lastAppliedCode) && lastAppliedIndex >= 0)
+            if (targetSpan != null)
             {
-                int lastDisplayStart = ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
-                    ambiguityResult, lastAppliedIndex, "target_paragraph_codes");
-                Word.Range navRange = lastDisplayStart >= 0
-                    ? ParagraphCodeResolver.ResolveParagraphRangeByDisplayStart(
-                        doc,
-                        lastAppliedCode,
-                        lastDisplayStart,
-                        scopeArgs.TableId,
-                        tableScope,
-                        debugTag: $"apply_paragraph_format_nav:{lastAppliedCode}")
-                    : null;
-                if (navRange != null)
-                {
-                    PostModifyNavigateHelper.NavigateAfterEnd(wordApp, navRange, "apply_paragraph_format");
-                }
+                PostModifyNavigateHelper.NavigateAfterEnd(wordApp, targetSpan, "apply_paragraph_format");
             }
 
             return Task.FromResult(new ToolResult { Success = true, Data = data });
         }
 
-        private static void ApplyInheritToTargets(
+        private static Word.Range ApplyToTargetParagraphSpan(
             Word.Document doc,
             Word.Range sourceRange,
             List<string> targetParagraphCodes,
             AmbiguityCheckResult ambiguityResult,
             ApplyFormatScopeArgs scopeArgs,
             TableScopeIndex tableScope,
-            List<string> appliedParagraphCodes,
-            List<string> skippedParagraphCodes,
-            List<string> applyErrors,
-            ref string lastAppliedCode,
-            ref int lastAppliedIndex)
-        {
-            foreach (string code in targetParagraphCodes)
-            {
-                if (!FormatContextHelper.IsParagraphCode(code))
-                {
-                    skippedParagraphCodes.Add(code);
-                    applyErrors.Add($"{code}: 非 P_ 编码");
-                    continue;
-                }
-
-                int targetIndex = targetParagraphCodes.IndexOf(code);
-                int targetDisplayStart = ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
-                    ambiguityResult, targetIndex, "target_paragraph_codes");
-                Word.Range targetRange = targetDisplayStart >= 0
-                    ? ParagraphCodeResolver.ResolveParagraphRangeByDisplayStart(
-                        doc,
-                        code,
-                        targetDisplayStart,
-                        scopeArgs.TableId,
-                        tableScope,
-                        debugTag: $"apply_para_inherit_target:{code}")
-                    : null;
-                if (targetRange == null)
-                {
-                    skippedParagraphCodes.Add(code);
-                    applyErrors.Add($"{code}: 无法在文档中定位");
-                    continue;
-                }
-
-                try
-                {
-                    ParagraphFormatInheritHelper.CopyParagraphFormat(sourceRange, targetRange);
-                    appliedParagraphCodes.Add(code);
-                    lastAppliedCode = code;
-                    lastAppliedIndex = targetIndex;
-                }
-                catch (Exception ex)
-                {
-                    skippedParagraphCodes.Add(code);
-                    applyErrors.Add($"{code}: {ex.Message}");
-                }
-            }
-        }
-
-        private static void ApplyExplicitToTargets(
-            Word.Document doc,
+            bool isInherit,
             Dictionary<string, object> paraFormat,
-            List<string> targetParagraphCodes,
-            AmbiguityCheckResult ambiguityResult,
-            ApplyFormatScopeArgs scopeArgs,
-            TableScopeIndex tableScope,
             List<string> appliedParagraphCodes,
             List<string> skippedParagraphCodes,
             List<string> applyErrors,
@@ -241,32 +179,66 @@ namespace WordAddIn1
                 {
                     skippedParagraphCodes.Add(code);
                     applyErrors.Add($"{code}: 非 P_ 编码");
-                    continue;
                 }
-
-                int targetIndex = targetParagraphCodes.IndexOf(code);
-                int targetDisplayStart = ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
-                    ambiguityResult, targetIndex, "target_paragraph_codes");
-                Word.Range targetRange = targetDisplayStart >= 0
-                    ? ParagraphCodeResolver.ResolveParagraphRangeByDisplayStart(
-                        doc,
-                        code,
-                        targetDisplayStart,
-                        scopeArgs.TableId,
-                        tableScope,
-                        debugTag: $"apply_para_explicit_target:{code}")
-                    : null;
-                if (targetRange == null)
+                else if (string.IsNullOrEmpty(DocumentState.GetParagraphContent(code)))
                 {
                     skippedParagraphCodes.Add(code);
-                    applyErrors.Add($"{code}: 无法在文档中定位");
-                    continue;
+                    applyErrors.Add($"{code}: 映射表中不存在");
+                }
+            }
+
+            if (skippedParagraphCodes.Count >= targetParagraphCodes.Count)
+            {
+                return null;
+            }
+
+            int targetDisplayStart = ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
+                ambiguityResult, 0, "target_paragraph_codes");
+            if (targetDisplayStart < 0)
+            {
+                foreach (string code in targetParagraphCodes)
+                {
+                    if (!skippedParagraphCodes.Contains(code))
+                    {
+                        skippedParagraphCodes.Add(code);
+                        applyErrors.Add($"{code}: 无法在文档中定位序列 Span");
+                    }
                 }
 
-                try
+                return null;
+            }
+
+            Word.Range targetSpan = DisplayPositionRangeResolver.ResolveParagraphSpan(
+                doc,
+                targetParagraphCodes,
+                targetDisplayStart,
+                scopeArgs.TableId,
+                tableScope,
+                debugTag: isInherit ? "apply_para_inherit_target_span" : "apply_para_explicit_target_span");
+            if (targetSpan == null)
+            {
+                foreach (string code in targetParagraphCodes)
+                {
+                    if (!skippedParagraphCodes.Contains(code))
+                    {
+                        skippedParagraphCodes.Add(code);
+                        applyErrors.Add($"{code}: 无法在文档中定位序列 Span");
+                    }
+                }
+
+                return null;
+            }
+
+            try
+            {
+                if (isInherit)
+                {
+                    ParagraphFormatInheritHelper.CopyParagraphFormat(sourceRange, targetSpan);
+                }
+                else
                 {
                     List<string> fieldWarnings;
-                    List<string> appliedFields = ParaFormatWriter.Apply(targetRange, paraFormat, out fieldWarnings);
+                    List<string> appliedFields = ParaFormatWriter.Apply(targetSpan, paraFormat, out fieldWarnings);
                     foreach (string w in fieldWarnings)
                     {
                         if (!applyWarnings.Contains(w))
@@ -282,15 +254,31 @@ namespace WordAddIn1
                             appliedFieldsUnion.Add(f);
                         }
                     }
-
-                    appliedParagraphCodes.Add(code);
                 }
-                catch (Exception ex)
+
+                foreach (string code in targetParagraphCodes)
                 {
-                    skippedParagraphCodes.Add(code);
-                    applyErrors.Add($"{code}: {ex.Message}");
+                    if (!skippedParagraphCodes.Contains(code))
+                    {
+                        appliedParagraphCodes.Add(code);
+                    }
                 }
             }
+            catch (Exception ex)
+            {
+                foreach (string code in targetParagraphCodes)
+                {
+                    if (!skippedParagraphCodes.Contains(code))
+                    {
+                        skippedParagraphCodes.Add(code);
+                        applyErrors.Add($"{code}: {ex.Message}");
+                    }
+                }
+
+                return null;
+            }
+
+            return targetSpan;
         }
 
         private static Dictionary<string, object> BuildResponseData(

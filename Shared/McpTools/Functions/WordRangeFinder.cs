@@ -434,60 +434,6 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 在指定 Range 内查找句子文本的第 N 次出现（0-based）。禁止回退到全文 doc.Content。
-        /// </summary>
-        public static Word.Range FindSentenceRangeInRangeNth(
-            Word.Range scope,
-            string sentenceText,
-            int occurrenceIndex,
-            string debugInfo = "")
-        {
-            if (scope == null || string.IsNullOrEmpty(sentenceText) || occurrenceIndex < 0)
-            {
-                return null;
-            }
-
-            Word.Document doc = scope.Document;
-            if (doc == null)
-            {
-                return null;
-            }
-
-            string convertedText = ConvertNewlinesToWordCodes(sentenceText);
-            const int MAX_SEARCH_LENGTH = 250;
-
-            if (convertedText.Length <= MAX_SEARCH_LENGTH)
-            {
-                List<Word.Range> matches = FindAllMatchesInRange(doc, scope, convertedText, debugInfo);
-                if (occurrenceIndex < matches.Count)
-                {
-                    Word.Range hit = matches[occurrenceIndex];
-                    System.Diagnostics.Debug.WriteLine(
-                        $"[FindSentenceRangeInRangeNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}nth={occurrenceIndex} Start={hit.Start} End={hit.End}");
-                    return hit;
-                }
-
-                System.Diagnostics.Debug.WriteLine(
-                    $"[FindSentenceRangeInRangeNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}nth={occurrenceIndex} 仅找到 {matches.Count} 处");
-                return null;
-            }
-
-            if (occurrenceIndex == 0)
-            {
-                return FindLongTextRangeBySurroundSearch(
-                    doc,
-                    sentenceText,
-                    (searchText, tag) => FindAllMatchesInRange(doc, scope, searchText, tag),
-                    debugInfo,
-                    "FindSentenceRangeInRangeNth");
-            }
-
-            System.Diagnostics.Debug.WriteLine(
-                $"[FindSentenceRangeInRangeNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}长文本 nth={occurrenceIndex} 暂不支持");
-            return null;
-        }
-
-        /// <summary>
         /// 长文本包围搜索：前 250 + 后 250 分别 Find，再遍历前缀/后缀 Range 组合并按长度校验。
         /// F_test_word_document_extractor（正文）、表内 P_ 定位、限定 Range 搜索均复用此函数。
         /// </summary>
@@ -538,31 +484,141 @@ namespace WordAddIn1
                 debugInfo);
         }
 
-        private static Word.Range FindSentenceRangeInScope(
-            Word.Document doc,
-            Word.Range scope,
-            string sentenceText,
-            string debugInfo = "")
+        /// <summary>
+        /// 在指定 scope 内查找第一处完全落在 scope 内的命中（无 occurrenceIndex）。
+        /// 短文本：BuildFindTextCandidates + ConfigureFind；窗外命中视为 stale 并跳过。
+        /// 长文本：包围搜索，最终命中须 IsFullyInsideScope。
+        /// </summary>
+        public static Word.Range FindFirstInRange(Word.Range scope, string sentenceText, string debugInfo = "")
         {
-            if (doc == null || scope == null || string.IsNullOrEmpty(sentenceText))
+            if (scope == null || string.IsNullOrEmpty(sentenceText))
+            {
+                return null;
+            }
+
+            Word.Document doc = scope.Document;
+            if (doc == null)
             {
                 return null;
             }
 
             string convertedText = ConvertNewlinesToWordCodes(sentenceText);
             const int MAX_SEARCH_LENGTH = 250;
+
             if (convertedText.Length <= MAX_SEARCH_LENGTH)
             {
-                List<Word.Range> matches = FindAllMatchesInRange(doc, scope, convertedText, debugInfo);
-                return matches.Count > 0 ? matches[0] : null;
+                foreach (string candidate in BuildFindTextCandidates(convertedText))
+                {
+                    Word.Range hit = FindFirstMatchInScope(doc, scope, candidate, sentenceText, debugInfo);
+                    if (hit != null)
+                    {
+                        if (candidate != convertedText)
+                        {
+                            System.Diagnostics.Debug.WriteLine(
+                                $"[FindFirstInRange] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}使用 Find 回退候选: \"{candidate}\"");
+                        }
+
+                        return hit;
+                    }
+                }
+
+                System.Diagnostics.Debug.WriteLine(
+                    $"[FindFirstInRange] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}未找到匹配 scope={scope.Start}-{scope.End}");
+                return null;
             }
 
-            return FindLongTextRangeBySurroundSearch(
+            Word.Range longHit = FindLongTextRangeBySurroundSearch(
                 doc,
                 sentenceText,
                 (searchText, tag) => FindAllMatchesInRange(doc, scope, searchText, tag),
                 debugInfo,
-                "FindSentenceRangeInScope");
+                "FindFirstInRange");
+
+            if (longHit != null && IsFullyInsideScope(longHit, scope))
+            {
+                return longHit;
+            }
+
+            if (longHit != null)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[FindFirstInRange] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}长文本命中落在 scope 外 Start={longHit.Start} End={longHit.End} scope={scope.Start}-{scope.End}");
+            }
+
+            return null;
+        }
+
+        private static Word.Range FindFirstMatchInScope(
+            Word.Document doc,
+            Word.Range scope,
+            string candidate,
+            string sentenceText,
+            string debugInfo)
+        {
+            try
+            {
+                int scopeStart = scope.Start;
+                int scopeEnd = scope.End;
+                int searchStart = scopeStart;
+                int maxIterations = 1000;
+                int iterationCount = 0;
+
+                while (searchStart < scopeEnd && iterationCount < maxIterations)
+                {
+                    iterationCount++;
+                    Word.Range searchRange = doc.Range(searchStart, scopeEnd);
+                    ConfigureFind(searchRange.Find, candidate);
+
+                    if (!searchRange.Find.Execute())
+                    {
+                        break;
+                    }
+
+                    int foundStart = searchRange.Start;
+                    int foundEnd = searchRange.End;
+                    Word.Range foundRange = doc.Range(foundStart, foundEnd);
+
+                    if (IsFullyInsideScope(foundRange, scope))
+                    {
+                        Word.Range adjusted = AdjustRangeToExpectedLength(doc, foundRange, sentenceText);
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[FindFirstInRange] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}✅ 找到匹配 Start={adjusted.Start} End={adjusted.End} scope={scopeStart}-{scopeEnd}");
+                        return adjusted;
+                    }
+
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[FindFirstInRange] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}⚠️ 跳过 scope 外命中 Start={foundStart} End={foundEnd} scope={scopeStart}-{scopeEnd}");
+
+                    int newSearchStart = foundEnd + 1;
+                    if (newSearchStart <= searchStart)
+                    {
+                        break;
+                    }
+
+                    searchStart = newSearchStart;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[FindFirstInRange] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}❌ 异常: {ex.GetType().Name} - {ex.Message}");
+            }
+
+            return null;
+        }
+
+        private static bool IsFullyInsideScope(Word.Range hit, Word.Range scope)
+        {
+            return hit != null && scope != null && hit.Start >= scope.Start && hit.End <= scope.End;
+        }
+
+        private static Word.Range FindSentenceRangeInScope(
+            Word.Document doc,
+            Word.Range scope,
+            string sentenceText,
+            string debugInfo = "")
+        {
+            return FindFirstInRange(scope, sentenceText, debugInfo);
         }
 
         /// <summary>
@@ -623,6 +679,98 @@ namespace WordAddIn1
             System.Diagnostics.Debug.WriteLine(
                 $"[MatchSurroundSearchCombinations] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}遍历 {combinationIndex} 个组合未匹配");
             return null;
+        }
+
+        /// <summary>
+        /// 在整个文档中查找句子的第一处命中（无 occurrenceIndex）。
+        /// </summary>
+        public static Word.Range FindFirstInDocument(Word.Document doc, string sentenceText, string debugInfo = "")
+        {
+            return FindSentenceRangeInDocument(doc, sentenceText, debugInfo);
+        }
+
+        /// <summary>
+        /// 在指定表格内查找句子的第一处命中（无 occurrenceIndex）。
+        /// </summary>
+        public static Word.Range FindFirstInTable(Word.Table table, string sentenceText, string debugInfo = "")
+        {
+            if (table == null || string.IsNullOrEmpty(sentenceText))
+            {
+                return null;
+            }
+
+            Word.Document doc = table.Range?.Document;
+            if (doc == null)
+            {
+                return null;
+            }
+
+            List<Word.Range> cellRanges = CollectTableCellRanges(table, debugInfo);
+
+            foreach (Word.Range cellRange in cellRanges)
+            {
+                Word.Range hit = FindFirstInRange(cellRange, sentenceText, debugInfo);
+                if (hit != null)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[FindFirstInTable] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}Start={hit.Start} End={hit.End}");
+                    return hit;
+                }
+            }
+
+            if (cellRanges.Count == 0 && table.Range != null)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[FindFirstInTable] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}无可用Cell，回退 table.Range={table.Range.Start}-{table.Range.End}");
+                return FindFirstInRange(table.Range, sentenceText, debugInfo + "_fallback");
+            }
+
+            System.Diagnostics.Debug.WriteLine(
+                $"[FindFirstInTable] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}未找到匹配");
+            return null;
+        }
+
+        /// <summary>
+        /// 在整个文档中查找所有匹配指定文本的 Range（无 occurrenceIndex）。
+        /// 短文本枚举全部命中；超长文本与 FindSentenceRangeInDocument 相同，至多返回一处。
+        /// </summary>
+        public static List<Word.Range> FindAllInDocument(Word.Document doc, string searchText, string debugInfo = "")
+        {
+            try
+            {
+                if (doc == null || string.IsNullOrEmpty(searchText))
+                {
+                    return new List<Word.Range>();
+                }
+
+                string convertedText = ConvertNewlinesToWordCodes(searchText);
+                const int MAX_SEARCH_LENGTH = 250;
+
+                if (convertedText.Length <= MAX_SEARCH_LENGTH)
+                {
+                    return FindAllMatches(doc, convertedText, debugInfo);
+                }
+
+                Word.Range single = FindLongTextRangeBySurroundSearch(
+                    doc,
+                    searchText,
+                    (text, tag) => FindAllMatches(doc, text, tag),
+                    debugInfo,
+                    "FindAllInDocument");
+
+                if (single == null)
+                {
+                    return new List<Word.Range>();
+                }
+
+                return new List<Word.Range> { single };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[FindAllInDocument] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}❌ 异常: {ex.GetType().Name} - {ex.Message}");
+                return new List<Word.Range>();
+            }
         }
 
         /// <summary>
@@ -703,131 +851,6 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 在文档中查找句子文本的第 N 次出现（0-based）。
-        /// </summary>
-        public static Word.Range FindSentenceRangeInDocumentNth(
-            Word.Document doc,
-            string sentenceText,
-            int occurrenceIndex,
-            string debugInfo = "")
-        {
-            if (doc == null || string.IsNullOrEmpty(sentenceText) || occurrenceIndex < 0)
-            {
-                return null;
-            }
-
-            string convertedText = ConvertNewlinesToWordCodes(sentenceText);
-            const int MAX_SEARCH_LENGTH = 250;
-
-            if (convertedText.Length <= MAX_SEARCH_LENGTH)
-            {
-                List<Word.Range> matches = FindAllMatches(doc, convertedText, debugInfo);
-                if (occurrenceIndex < matches.Count)
-                {
-                    Word.Range hit = matches[occurrenceIndex];
-                    System.Diagnostics.Debug.WriteLine(
-                        $"[FindSentenceRangeInDocumentNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}nth={occurrenceIndex} Start={hit.Start} End={hit.End}");
-                    return hit;
-                }
-
-                System.Diagnostics.Debug.WriteLine(
-                    $"[FindSentenceRangeInDocumentNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}nth={occurrenceIndex} 仅找到 {matches.Count} 处");
-                return null;
-            }
-
-            if (occurrenceIndex == 0)
-            {
-                return FindSentenceRangeInDocument(doc, sentenceText, debugInfo);
-            }
-
-            System.Diagnostics.Debug.WriteLine(
-                $"[FindSentenceRangeInDocumentNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}长文本 nth={occurrenceIndex} 暂不支持");
-            return null;
-        }
-
-        /// <summary>
-        /// 在指定表格内查找句子文本的第 N 次出现（0-based）。
-        /// 遍历表内所有可访问的 Cell.Range，逐格搜索后按文档位置排序，支持纵向合并单元格表。
-        /// </summary>
-        public static Word.Range FindSentenceRangeInTableNth(
-            Word.Table table,
-            string sentenceText,
-            int occurrenceIndex,
-            string debugInfo = "")
-        {
-            if (table == null || string.IsNullOrEmpty(sentenceText) || occurrenceIndex < 0)
-            {
-                return null;
-            }
-
-            Word.Document doc = table.Range?.Document;
-            if (doc == null)
-            {
-                return null;
-            }
-
-            string convertedText = ConvertNewlinesToWordCodes(sentenceText);
-            const int MAX_SEARCH_LENGTH = 250;
-            bool isLongText = convertedText.Length > MAX_SEARCH_LENGTH;
-
-            if (isLongText && occurrenceIndex > 0)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[FindSentenceRangeInTableNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}长文本 nth={occurrenceIndex} 暂不支持");
-                return null;
-            }
-
-            if (isLongText)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[FindSentenceRangeInTableNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}转换后文本长度 {convertedText.Length} 超过限制 {MAX_SEARCH_LENGTH}，逐格使用包围搜索");
-            }
-
-            // 收集所有可访问的 Cell.Range（优先 Range.Cells，兼容纵向合并表）
-            List<Word.Range> cellRanges = CollectTableCellRanges(table, debugInfo);
-
-            // 逐格搜索，收集所有匹配
-            var allMatches = new List<Word.Range>();
-            foreach (Word.Range cellRange in cellRanges)
-            {
-                if (!isLongText)
-                {
-                    List<Word.Range> matchesInCell = FindAllMatchesInRange(doc, cellRange, convertedText, debugInfo);
-                    allMatches.AddRange(matchesInCell);
-                }
-                else
-                {
-                    // 逐格复用 FindLongTextRangeBySurroundSearch（与 F_test_word_document_extractor 正文路径一致）
-                    Word.Range longHit = FindSentenceRangeInScope(doc, cellRange, sentenceText, debugInfo);
-                    if (longHit != null)
-                    {
-                        allMatches.Add(longHit);
-                    }
-                }
-            }
-
-            if (occurrenceIndex < allMatches.Count)
-            {
-                Word.Range hit = allMatches[occurrenceIndex];
-                System.Diagnostics.Debug.WriteLine(
-                    $"[FindSentenceRangeInTableNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}nth={occurrenceIndex} Start={hit.Start} End={hit.End} (共{allMatches.Count}处)");
-                return hit;
-            }
-
-            // 无可用 Cell 时回退 table.Range（至少能覆盖部分合并表）
-            if (cellRanges.Count == 0 && table.Range != null)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[FindSentenceRangeInTableNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}无可用Cell，回退 table.Range={table.Range.Start}-{table.Range.End}");
-                return FindSentenceRangeInRangeNth(table.Range, sentenceText, occurrenceIndex, debugInfo + "_fallback");
-            }
-
-            System.Diagnostics.Debug.WriteLine(
-                $"[FindSentenceRangeInTableNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}nth={occurrenceIndex} 仅找到 {allMatches.Count} 处");
-            return null;
-        }
-
-        /// <summary>
         /// 将 Find 命中 Range 上卷为整段 Paragraph.Range（0b I2）。
         /// </summary>
         public static Word.Range ExpandToParagraphRange(Word.Range hit)
@@ -847,70 +870,6 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine($"[ExpandToParagraphRange] 失败: {ex.Message}");
                 return null;
             }
-        }
-
-        /// <summary>
-        /// 在文档中查找段落 storedText 的第 N 次出现，并返回整段 Paragraph.Range。
-        /// </summary>
-        public static Word.Range FindParagraphRangeInDocumentNth(
-            Word.Document doc,
-            string paragraphText,
-            int occurrenceIndex,
-            string debugInfo = "")
-        {
-            if (doc == null || string.IsNullOrEmpty(paragraphText) || occurrenceIndex < 0)
-            {
-                return null;
-            }
-
-            Word.Range hit = FindSentenceRangeInDocumentNth(doc, paragraphText, occurrenceIndex, debugInfo);
-            if (hit == null)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[FindParagraphRangeInDocumentNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}nth={occurrenceIndex} Find 未命中");
-                return null;
-            }
-
-            Word.Range paragraphRange = ExpandToParagraphRange(hit);
-            if (paragraphRange != null)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[FindParagraphRangeInDocumentNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}nth={occurrenceIndex} 段落 Start={paragraphRange.Start} End={paragraphRange.End}");
-            }
-
-            return paragraphRange;
-        }
-
-        /// <summary>
-        /// 在表格内查找段落 storedText 的第 N 次出现，并返回整段 Paragraph.Range。
-        /// </summary>
-        public static Word.Range FindParagraphRangeInTableNth(
-            Word.Table table,
-            string paragraphText,
-            int occurrenceIndex,
-            string debugInfo = "")
-        {
-            if (table == null || string.IsNullOrEmpty(paragraphText) || occurrenceIndex < 0)
-            {
-                return null;
-            }
-
-            Word.Range hit = FindSentenceRangeInTableNth(table, paragraphText, occurrenceIndex, debugInfo);
-            if (hit == null)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[FindParagraphRangeInTableNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}nth={occurrenceIndex} Find 未命中");
-                return null;
-            }
-
-            Word.Range paragraphRange = ExpandToParagraphRange(hit);
-            if (paragraphRange != null)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[FindParagraphRangeInTableNth] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}nth={occurrenceIndex} 段落 Start={paragraphRange.Start} End={paragraphRange.End}");
-            }
-
-            return paragraphRange;
         }
 
         /// <summary>

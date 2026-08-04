@@ -61,30 +61,25 @@ namespace WordAddIn1
             int itemIndex)
         {
             string code = anchor?.Code;
-            int occurrenceIndex = anchor?.Index ?? 0;
-            string tableId = anchor?.TableId;
 
-            Word.Range range = SentenceCodeLocator.LocateRange(
-                doc,
-                code,
-                occurrenceIndex,
-                tableId,
-                tableScope: null,
-                allowAutoTableScope: true,
-                debugTag: $"provenance:{code}");
-
-            if (range == null)
+            if (!DataProvenanceSentenceLocator.TryLocateLastSentenceRange(
+                    doc,
+                    anchor,
+                    debugTag: $"provenance:{code}",
+                    out Word.Range range,
+                    out string locateError))
             {
                 return new ProvenanceValidationResult
                 {
                     Ok = false,
-                    Error = $"无法定位句子 {code}",
+                    Error = locateError ?? $"无法定位句子 {code}",
                     FailedIndex = itemIndex,
                     AnchorCode = code,
                 };
             }
 
-            string expected = DocumentState.GetSentenceContent(code);
+            string lastCode = DataProvenanceSentenceLocator.GetLastSentenceCode(code);
+            string expected = DocumentState.GetSentenceContent(lastCode);
             if (!string.IsNullOrEmpty(expected))
             {
                 string actual = NormalizeCompareText(range.Text);
