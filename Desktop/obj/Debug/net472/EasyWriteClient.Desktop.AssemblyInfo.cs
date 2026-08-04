@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("EasyWriteClient.Desktop")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+65b69fe428bcedaba42cbaf468e6e70fdbb3c15c")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+976406d150866964bbd4943e3300552741806401")]
 [assembly: System.Reflection.AssemblyProductAttribute("EasyWriteClient.Desktop")]
 [assembly: System.Reflection.AssemblyTitleAttribute("EasyWriteClient.Desktop")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

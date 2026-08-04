@@ -4,9 +4,9 @@
 
 | 目录 | 说明 |
 |------|------|
-| `Shared/` | 公用类库；Channels（含 WordChannel / ResolveWordDocument）+ McpTools / DocumentMapping / Client / Auth 等 |
-| `Plugin/` | 薄 VSTO 宿主（原 `WordAddIn2`）；工程文件暂仍为 `WordAddIn1.csproj` |
-| `Desktop/` | WinForms 桌面壳「易写」；可单独 F5 |
+| `Shared/` | 公用类库：Channels + McpTools / DocumentMapping / Client / Auth / LlmClient 等（唯一工具副本） |
+| `Plugin/` | 薄 VSTO 宿主；工程文件暂仍为 `WordAddIn1.csproj`；前端源码仍在 `Plugin/frontend`（I9 迁 Shared 延后） |
+| `Desktop/` | WinForms 桌面壳「易写」；WebView2 + `?host=desktop`；可单独 F5 |
 
 解决方案：[`EasyWriteClient.sln`](./EasyWriteClient.sln)
 
