@@ -16,7 +16,8 @@ namespace WordAddIn1
         /// <summary>
         /// 格式融合 / BodyFormat 明细 DBG 总开关。false = 代码保留但不输出；排查时改 true。
         /// </summary>
-        public const bool EnableDbg = false;
+        /// <summary>调试开关；用 static readonly（非 const）避免 EnableDbg=false 时 CS0162 不可达警告。</summary>
+        public static readonly bool EnableDbg = false;
 
         public static Dictionary<string, object> ExtractSnapshot(Word.Range range)
         {

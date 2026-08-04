@@ -46,7 +46,11 @@ namespace EasyWriteClient.Desktop
             try
             {
                 UseWaitCursor = true;
+                PerformLayout();
+                _chatSurface.BringToFront();
                 await _chatSurface.InitializeAsync().ConfigureAwait(true);
+                UseWaitCursor = false;
+                // 等主界面 WebView 就绪后再弹登录，避免模态对话框挡住首次绘制
                 await _chatSurface.EnsureLoggedInAsync().ConfigureAwait(true);
             }
             catch (Exception ex)

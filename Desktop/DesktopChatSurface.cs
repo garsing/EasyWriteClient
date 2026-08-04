@@ -36,7 +36,11 @@ namespace EasyWriteClient.Desktop
         public DesktopChatSurface()
         {
             Dock = DockStyle.Fill;
-            _webView = new WebView2 { Dock = DockStyle.Fill };
+            _webView = new WebView2
+            {
+                Dock = DockStyle.Fill,
+                DefaultBackgroundColor = System.Drawing.Color.FromArgb(247, 247, 245)
+            };
             Controls.Add(_webView);
             UserService.Instance.OnUserLoggedIn += OnUserLoggedIn;
             UserService.Instance.OnUserLoggedOut += OnUserLoggedOut;
@@ -54,32 +58,169 @@ namespace EasyWriteClient.Desktop
                 return;
             }
 
-            string userData = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "EasyWriteDesktop",
-                "WebView2Data");
-            Directory.CreateDirectory(userData);
-
-            var env = await CoreWebView2Environment.CreateAsync(userDataFolder: userData);
-            await _webView.EnsureCoreWebView2Async(env);
-
-            string wwwroot = ResolveWwwroot();
-            if (!Directory.Exists(wwwroot))
+            // WebView2 在 Size=0 时初始化容易一直白屏；先保证有布局尺寸
+            if (Width < 32 || Height < 32)
             {
-                throw new DirectoryNotFoundException("未找到前端 wwwroot: " + wwwroot);
+                var parent = FindForm();
+                if (parent != null)
+                {
+                    parent.PerformLayout();
+                    Width = Math.Max(parent.ClientSize.Width, 800);
+                    Height = Math.Max(parent.ClientSize.Height, 600);
+                }
             }
 
-            _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+            string logDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "EasyWriteDesktop");
+            Directory.CreateDirectory(logDir);
+            string logPath = Path.Combine(logDir, "webview-init.log");
+            void Log(string msg)
+            {
+                string line = DateTime.Now.ToString("HH:mm:ss.fff") + " " + msg;
+                System.Diagnostics.Debug.WriteLine("[DesktopChatSurface] " + line);
+                try
+                {
+                    File.AppendAllText(logPath, line + Environment.NewLine);
+                }
+                catch
+                {
+                }
+            }
+
+            Log($"begin Size={Size} ClientSize={ClientSize} www check…");
+
+            string userData = Path.Combine(logDir, "WebView2Data");
+            Directory.CreateDirectory(userData);
+
+            var env = await CoreWebView2Environment.CreateAsync(userDataFolder: userData)
+                .ConfigureAwait(true);
+            await _webView.EnsureCoreWebView2Async(env).ConfigureAwait(true);
+
+            string wwwroot = ResolveWwwroot();
+            if (!Directory.Exists(wwwroot) || !File.Exists(Path.Combine(wwwroot, "index.html")))
+            {
+                throw new DirectoryNotFoundException("未找到前端 wwwroot/index.html: " + wwwroot);
+            }
+
+            string mainJs = Path.Combine(wwwroot, "assets", "main.js");
+            Log("wwwroot=" + wwwroot + " main.js=" + File.Exists(mainJs));
+
+            var core = _webView.CoreWebView2;
+            core.Settings.AreDevToolsEnabled = true;
+            core.Settings.AreDefaultScriptDialogsEnabled = true;
+            core.Settings.IsScriptEnabled = true;
+            core.Settings.IsWebMessageEnabled = true;
+            core.Settings.AreDefaultContextMenusEnabled = true;
+
+            core.SetVirtualHostNameToFolderMapping(
                 "appassets.local",
                 wwwroot,
                 CoreWebView2HostResourceAccessKind.Allow);
 
+            core.ProcessFailed += (_, e) =>
+                Log("ProcessFailed kind=" + e.ProcessFailedKind);
+
+            var navTcs = new TaskCompletionSource<bool>();
+            core.NavigationCompleted += (_, e) =>
+            {
+                Log("NavigationCompleted success=" + e.IsSuccess
+                    + " status=" + e.WebErrorStatus
+                    + " url=" + core.Source);
+                navTcs.TrySetResult(e.IsSuccess);
+            };
+
+            // 捕获前端脚本错误到日志
+            await core.AddScriptToExecuteOnDocumentCreatedAsync(
+                @"(function(){
+  window.addEventListener('error', function(e){
+    console.error('[EasyWrite] error', e.message, e.filename, e.lineno);
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    console.error('[EasyWrite] unhandledrejection', e.reason);
+  });
+})();").ConfigureAwait(true);
+
             _bridge = new WebView2Bridge(_webView);
             RegisterHandlers();
-            EnsureClients();
 
-            _webView.CoreWebView2.Navigate("http://appassets.local/index.html?host=desktop");
+            // 先加载前端；勿在启动时 new Word
+            const string url = "http://appassets.local/index.html?host=desktop";
+            Log("Navigate " + url);
+            core.Navigate(url);
+
+            // 强制一次尺寸刷新（部分机器上 WebView2 初始化后需 resize 才绘制）
+            var sz = _webView.Size;
+            if (sz.Width > 0 && sz.Height > 0)
+            {
+                _webView.Size = new System.Drawing.Size(sz.Width + 1, sz.Height);
+                _webView.Size = sz;
+            }
+
+            var completed = await Task.WhenAny(navTcs.Task, Task.Delay(15000)).ConfigureAwait(true);
+            if (completed != navTcs.Task)
+            {
+                Log("NavigationCompleted timeout");
+                MessageBox.Show(
+                    "前端页面加载超时。\r\n日志: " + logPath,
+                    "易写",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+            else if (!navTcs.Task.Result)
+            {
+                MessageBox.Show(
+                    "前端页面导航失败。\r\n日志: " + logPath,
+                    "易写",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+            else
+            {
+                // 等模块/Vue 挂载；失败则打开 DevTools 并给出可见提示
+                await Task.Delay(800).ConfigureAwait(true);
+                try
+                {
+                    string check = await core.ExecuteScriptAsync(
+                        @"(function(){
+  var app=document.getElementById('app');
+  return JSON.stringify({
+    href: location.href,
+    appHtmlLen: app ? app.innerHTML.length : -1,
+    readyState: document.readyState,
+    title: document.title
+  });
+})();").ConfigureAwait(true);
+                    Log("vue-check " + check);
+                    // ExecuteScriptAsync 返回 JSON 字符串字面量
+                    if (check != null && check.Contains("\"appHtmlLen\":0"))
+                    {
+                        Log("Vue #app still empty — opening DevTools");
+                        core.OpenDevToolsWindow();
+                        MessageBox.Show(
+                            "页面已打开但 Vue 未渲染（#app 为空）。\r\n已打开开发者工具，请查看 Console。\r\n日志: "
+                            + logPath,
+                            "易写",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log("vue-check failed: " + ex.Message);
+                }
+            }
+
             _webReady = true;
+
+            try
+            {
+                EnsureClients(createWordIfMissing: false);
+            }
+            catch (Exception ex)
+            {
+                Log("EnsureClients(startup): " + ex.Message);
+            }
         }
 
         public async Task EnsureLoggedInAsync()
@@ -168,9 +309,14 @@ namespace EasyWriteClient.Desktop
             _bridge.RegisterHandler("todoListReply", HandleTodoListReplyAsync);
         }
 
-        private void EnsureClients()
+        /// <param name="createWordIfMissing">仅工具路径为 true；启动/登录为 false。</param>
+        private void EnsureClients(bool createWordIfMissing = false)
         {
-            object wordApp = WordHost.GetWordApplicationObject();
+            object wordApp = createWordIfMissing
+                ? WordHost.GetWordApplicationForTools()
+                : WordHost.TryGetExistingWordApplication();
+
+            // wordApp 可为 null：纯聊天不强制 Word；工具 invoke 时再 create
             _mcpClient = new McpClient(ApiKey, wordApp);
             if (_wsClient == null)
             {
@@ -211,7 +357,8 @@ namespace EasyWriteClient.Desktop
                     };
                 }
 
-                EnsureClients();
+                // 发消息：附着已有 Word 即可，不主动 new（Agent 调打开文档工具时再创建）
+                EnsureClients(createWordIfMissing: false);
                 Invoke((MethodInvoker)delegate
                 {
                     _cts = new System.Threading.CancellationTokenSource();
@@ -255,7 +402,7 @@ namespace EasyWriteClient.Desktop
             {
                 if (_mcpClient == null)
                 {
-                    EnsureClients();
+                    EnsureClients(createWordIfMissing: false);
                 }
 
                 await EnsureWsBoundAsync(_currentConversationId).ConfigureAwait(true);
@@ -759,7 +906,7 @@ namespace EasyWriteClient.Desktop
 
         private async Task EnsureWsReadyAsync()
         {
-            EnsureClients();
+            EnsureClients(createWordIfMissing: false);
             if (_wsClient == null || !UserService.Instance.CheckLoginStatus())
             {
                 return;

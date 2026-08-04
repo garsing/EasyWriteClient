@@ -6,14 +6,19 @@ using WordAddIn1;
 namespace EasyWriteClient.Desktop
 {
     /// <summary>
-    /// Desktop 侧 Word.Application 附着/创建（I5 / I8）。B4：按需获取；退出时保守不 Quit。
+    /// Desktop 侧 Word.Application：默认只附着已运行的 Word，不主动 new（避免启动就弹 Word）。
+    /// 仅在工具确实需要且本机无 Word 时才 createIfMissing。
     /// </summary>
     internal static class WordHost
     {
         private static readonly object Gate = new object();
         private static Word.Application _app;
 
-        public static Word.Application GetOrAttach(bool createIfMissing = true)
+        /// <param name="createIfMissing">
+        /// false（默认）：仅 GetActiveObject；没有运行中的 Word 则返回 null。
+        /// true：无运行实例时才 new Application（Visible=true）。
+        /// </param>
+        public static Word.Application GetOrAttach(bool createIfMissing = false)
         {
             lock (Gate)
             {
@@ -67,19 +72,28 @@ namespace EasyWriteClient.Desktop
             }
         }
 
-        public static object GetWordApplicationObject()
+        /// <summary>启动/聊天：不创建 Word；仅附着已有实例。</summary>
+        public static object TryGetExistingWordApplication()
+        {
+            return GetOrAttach(createIfMissing: false);
+        }
+
+        /// <summary>工具调用：必要时才创建 Word。</summary>
+        public static object GetWordApplicationForTools()
         {
             return GetOrAttach(createIfMissing: true);
         }
 
         /// <summary>
-        /// 关闭 Desktop：清理渠道引用；不 Quit 用户 Word（I8 保守）。
+        /// 关闭 Desktop：清理渠道；不 Quit 用户 Word。
+        /// 仅对本进程 new 出的、且无打开文档时尝试 Quit（仍保守：默认不 Quit）。
         /// </summary>
         public static void Shutdown()
         {
             lock (Gate)
             {
                 ChannelRegistry.ClearAll();
+                // I8 保守：不 Quit（避免误关用户文档）
                 if (_app != null)
                 {
                     try

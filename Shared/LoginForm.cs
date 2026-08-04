@@ -11,7 +11,7 @@ namespace WordAddIn1
 {
     /// <summary>
     /// Vue 登录/注册独立模态窗口（WebView2）。
-    /// ShowDialog 前完成 WebView2 引擎初始化；Shown 后再 Navigate，避免模态阻塞导致白屏。
+    /// 必须在窗口 Shown（可见）后再 EnsureCoreWebView2 + Navigate，否则 Desktop 上常见整页白屏。
     /// </summary>
     public class LoginForm : Form
     {
@@ -22,8 +22,7 @@ namespace WordAddIn1
         private Button btnClose;
         private bool isDragging;
         private Point dragStartPoint;
-        private bool _htmlLoaded;
-        private TaskCompletionSource<bool> _initTcs = new TaskCompletionSource<bool>();
+        private bool _loadStarted;
 
         public static bool IsOpen =>
             _activeInstance != null && !_activeInstance.IsDisposed;
@@ -41,10 +40,10 @@ namespace WordAddIn1
 
         public static Task ShowDialogAsync(IWin32Window owner, bool logoutFirst = false)
         {
-            var tcs = new TaskCompletionSource<bool>();
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var invokeTarget = owner as Control;
 
-            async void ShowOnUiThreadAsync()
+            void ShowOnUiThread()
             {
                 try
                 {
@@ -62,11 +61,7 @@ namespace WordAddIn1
 
                     using (var form = new LoginForm())
                     {
-                        System.Diagnostics.Debug.WriteLine("[LoginForm] 等待 WebView2 引擎就绪…");
-                        await form.WaitForInitializationAsync().ConfigureAwait(true);
-                        System.Diagnostics.Debug.WriteLine(
-                            $"[LoginForm] 引擎就绪 ClientSize={form.ClientSize}，显示对话框");
-
+                        // 不再在 ShowDialog 前初始化 WebView2（会导致白屏）
                         if (owner != null)
                         {
                             form.ShowDialog(owner);
@@ -88,15 +83,15 @@ namespace WordAddIn1
 
             if (invokeTarget != null && !invokeTarget.IsDisposed)
             {
-                invokeTarget.BeginInvoke(new Action(ShowOnUiThreadAsync));
+                invokeTarget.BeginInvoke(new Action(ShowOnUiThread));
             }
             else if (Application.OpenForms.Count > 0)
             {
-                Application.OpenForms[0].BeginInvoke(new Action(ShowOnUiThreadAsync));
+                Application.OpenForms[0].BeginInvoke(new Action(ShowOnUiThread));
             }
             else
             {
-                ShowOnUiThreadAsync();
+                ShowOnUiThread();
             }
 
             return tcs.Task;
@@ -108,25 +103,14 @@ namespace WordAddIn1
             FormClosed += LoginForm_FormClosed;
             Shown += LoginForm_Shown;
             InitializeComponent();
-
-            if (!IsHandleCreated)
-            {
-                CreateControl();
-            }
-
-            _ = PrepareWebViewEngineAsync();
-        }
-
-        public Task WaitForInitializationAsync()
-        {
-            return _initTcs.Task;
         }
 
         private void LoginForm_Shown(object sender, EventArgs e)
         {
             System.Diagnostics.Debug.WriteLine(
                 $"[LoginForm] Shown ClientSize={ClientSize}, webView2={webView2?.Size}");
-            TryLoadHtmlContent();
+            // 可见后再初始化引擎并加载页面
+            _ = InitAndLoadAsync();
         }
 
         private void LoginForm_FormClosed(object sender, FormClosedEventArgs e)
@@ -141,11 +125,14 @@ namespace WordAddIn1
         {
             SuspendLayout();
 
-            Text = string.Empty;
-            Size = new Size(1080, 1040);
-            MinimumSize = new Size(1080, 1040);
-            MaximumSize = new Size(1080, 1040);
-            StartPosition = FormStartPosition.CenterScreen;
+            Text = "登录";
+            // 适配常见笔记本分辨率；过大且在 Show 前 Init 的 WebView2 易白屏
+            var screen = Screen.FromControl(this).WorkingArea;
+            int w = Math.Min(920, Math.Max(720, screen.Width - 80));
+            int h = Math.Min(720, Math.Max(560, screen.Height - 80));
+            Size = new Size(w, h);
+            MinimumSize = new Size(640, 480);
+            StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.None;
             ShowIcon = false;
             BackColor = Color.FromArgb(247, 247, 245);
@@ -168,7 +155,7 @@ namespace WordAddIn1
             };
             btnClose.FlatAppearance.BorderSize = 0;
             btnClose.FlatAppearance.MouseOverBackColor = Color.FromArgb(232, 232, 228);
-            btnClose.Click += (s, e) => Close();
+            btnClose.Click += (s, ev) => Close();
             LoadCloseIcon();
             Controls.Add(btnClose);
             btnClose.BringToFront();
@@ -217,58 +204,103 @@ namespace WordAddIn1
             }
         }
 
-        /// <summary>
-        /// 在 ShowDialog 之前完成 WebView2 引擎初始化（不 Navigate）。
-        /// </summary>
-        private async Task PrepareWebViewEngineAsync()
+        private static void Log(string msg)
         {
+            string line = DateTime.Now.ToString("HH:mm:ss.fff") + " " + msg;
+            System.Diagnostics.Debug.WriteLine("[LoginForm] " + line);
             try
             {
+                string dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "EasyWriteDesktop");
+                Directory.CreateDirectory(dir);
+                File.AppendAllText(
+                    Path.Combine(dir, "login-webview.log"),
+                    line + Environment.NewLine);
+            }
+            catch
+            {
+            }
+        }
+
+        private async Task InitAndLoadAsync()
+        {
+            if (_loadStarted)
+            {
+                return;
+            }
+
+            _loadStarted = true;
+
+            try
+            {
+                Log($"InitAndLoad Size={Size} ClientSize={ClientSize} webViewSize={webView2.Size}");
+
+                // 强制布局，避免 Size=0 初始化
+                PerformLayout();
+                if (webView2.Width < 32 || webView2.Height < 32)
+                {
+                    webView2.Size = new Size(Math.Max(ClientSize.Width, 640), Math.Max(ClientSize.Height, 480));
+                }
+
                 string userDataFolder = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "WordAddIn1",
-                    "WebView2DataLogin"
-                );
+                    "EasyWriteDesktop",
+                    "WebView2DataLogin");
+                Directory.CreateDirectory(userDataFolder);
 
-                System.Diagnostics.Debug.WriteLine($"[LoginForm] 创建 WebView2 环境…");
                 var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder)
                     .ConfigureAwait(true);
                 await webView2.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
 
-                string outputDir = AppDomain.CurrentDomain.BaseDirectory;
-                string wwwrootPath = Path.Combine(outputDir, "wwwroot");
-                string absoluteWwwrootPath = Path.GetFullPath(wwwrootPath);
+                string wwwroot = Path.GetFullPath(
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wwwroot"));
+                string htmlPath = Path.Combine(wwwroot, "login.html");
+                string jsPath = Path.Combine(wwwroot, "assets", "login.js");
+                string cssPath = Path.Combine(wwwroot, "assets", "login.css");
+                Log($"wwwroot={wwwroot} html={File.Exists(htmlPath)} js={File.Exists(jsPath)} css={File.Exists(cssPath)}");
 
-                System.Diagnostics.Debug.WriteLine($"[LoginForm] wwwroot: {absoluteWwwrootPath}");
-
-                if (Directory.Exists(absoluteWwwrootPath))
+                if (!Directory.Exists(wwwroot)
+                    || !File.Exists(htmlPath)
+                    || !File.Exists(jsPath)
+                    || !File.Exists(cssPath))
                 {
-                    webView2.CoreWebView2.SetVirtualHostNameToFolderMapping(
-                        "appassets.local",
-                        absoluteWwwrootPath,
-                        CoreWebView2HostResourceAccessKind.Allow
-                    );
+                    ShowFallbackHtml("未找到 login 前端文件，请在 Plugin/frontend 执行 npm run build 后重新生成 Desktop。");
+                    return;
                 }
 
-                webView2.CoreWebView2.Settings.AreDevToolsEnabled = true;
-                webView2.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = true;
-                webView2.CoreWebView2.Settings.IsScriptEnabled = true;
-                webView2.CoreWebView2.Settings.IsWebMessageEnabled = true;
+                var core = webView2.CoreWebView2;
+                core.Settings.AreDevToolsEnabled = true;
+                core.Settings.AreDefaultScriptDialogsEnabled = true;
+                core.Settings.IsScriptEnabled = true;
+                core.Settings.IsWebMessageEnabled = true;
                 webView2.ZoomFactor = 1.0;
 
-                webView2.CoreWebView2.NavigationCompleted += async (navSender, navArgs) =>
+                core.SetVirtualHostNameToFolderMapping(
+                    "appassets.local",
+                    wwwroot,
+                    CoreWebView2HostResourceAccessKind.Allow);
+
+                core.ProcessFailed += (_, ev) =>
+                    Log("ProcessFailed kind=" + ev.ProcessFailedKind);
+
+                var navTcs = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                core.NavigationCompleted += async (_, navArgs) =>
                 {
-                    System.Diagnostics.Debug.WriteLine(
-                        $"[LoginForm] 导航完成: success={navArgs.IsSuccess}, url={webView2.CoreWebView2.Source}");
+                    Log("NavigationCompleted success=" + navArgs.IsSuccess
+                        + " status=" + navArgs.WebErrorStatus
+                        + " url=" + core.Source);
+                    navTcs.TrySetResult(navArgs.IsSuccess);
                     if (!navArgs.IsSuccess)
                     {
-                        ShowFallbackHtml($"页面加载失败 ({navArgs.WebErrorStatus})");
+                        ShowFallbackHtml("页面加载失败 (" + navArgs.WebErrorStatus + ")");
                         return;
                     }
 
                     try
                     {
-                        await webView2.CoreWebView2.ExecuteScriptAsync(@"
+                        await core.ExecuteScriptAsync(@"
 (function () {
   function fit() {
     var h = window.innerHeight, w = window.innerWidth;
@@ -279,51 +311,78 @@ namespace WordAddIn1
   }
   fit();
   window.addEventListener('resize', fit);
-})();");
+})();").ConfigureAwait(true);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Log("fit script: " + ex.Message);
+                    }
                 };
 
                 bridge = new WebView2Bridge(webView2);
                 RegisterMessageHandlers();
 
-                _initTcs.TrySetResult(true);
-                System.Diagnostics.Debug.WriteLine("[LoginForm] WebView2 引擎就绪");
+                // 尺寸刷新后再导航（部分机器上首帧不绘制）
+                var sz = webView2.Size;
+                if (sz.Width > 0 && sz.Height > 0)
+                {
+                    webView2.Size = new Size(sz.Width + 1, sz.Height);
+                    webView2.Size = sz;
+                }
+
+                Log("Navigate login.html");
+                core.Navigate("http://appassets.local/login.html");
+                btnClose.BringToFront();
+
+                var finished = await Task.WhenAny(navTcs.Task, Task.Delay(12000)).ConfigureAwait(true);
+                if (finished != navTcs.Task)
+                {
+                    Log("NavigationCompleted timeout");
+                    ShowFallbackHtml("登录页加载超时。日志: %LOCALAPPDATA%\\EasyWriteDesktop\\login-webview.log");
+                    return;
+                }
+
+                if (navTcs.Task.Result)
+                {
+                    await Task.Delay(500).ConfigureAwait(true);
+                    try
+                    {
+                        string check = await core.ExecuteScriptAsync(
+                            @"(function(){
+  var app=document.getElementById('login-app');
+  return JSON.stringify({
+    href: location.href,
+    appHtmlLen: app ? app.innerHTML.length : -1,
+    readyState: document.readyState
+  });
+})();").ConfigureAwait(true);
+                        Log("vue-check " + check);
+                        if (check != null && (check.Contains("\"appHtmlLen\":0")
+                            || check.Contains("正在加载登录界面")))
+                        {
+                            // 仍停在 loading 文案或空节点：打开 DevTools 便于排查
+                            if (check.Contains("正在加载登录界面"))
+                            {
+                                Log("login Vue still on loading placeholder");
+                                core.OpenDevToolsWindow();
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("vue-check failed: " + ex.Message);
+                    }
+                }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[LoginForm] WebView2 初始化失败: {ex}");
-                _initTcs.TrySetException(ex);
-                MessageBox.Show($"WebView2 初始化失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Log("InitAndLoad failed: " + ex);
+                MessageBox.Show(
+                    "登录界面初始化失败: " + ex.Message,
+                    "错误",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
             }
-        }
-
-        private void TryLoadHtmlContent()
-        {
-            if (_htmlLoaded || webView2?.CoreWebView2 == null)
-            {
-                return;
-            }
-
-            _htmlLoaded = true;
-
-            string outputDir = AppDomain.CurrentDomain.BaseDirectory;
-            string htmlPath = Path.Combine(outputDir, "wwwroot", "login.html");
-            string jsPath = Path.Combine(outputDir, "wwwroot", "assets", "login.js");
-            string cssPath = Path.Combine(outputDir, "wwwroot", "assets", "login.css");
-
-            System.Diagnostics.Debug.WriteLine(
-                $"[LoginForm] login.html={File.Exists(htmlPath)}, login.js={File.Exists(jsPath)}, login.css={File.Exists(cssPath)}");
-
-            if (!File.Exists(htmlPath) || !File.Exists(jsPath) || !File.Exists(cssPath))
-            {
-                ShowFallbackHtml("未找到 login 前端文件，请在 frontend 目录执行 npm run build 后重新生成。");
-                return;
-            }
-
-            System.Diagnostics.Debug.WriteLine("[LoginForm] Navigate login.html");
-            webView2.CoreWebView2.Navigate("http://appassets.local/login.html");
-            btnClose.BringToFront();
         }
 
         private void ShowFallbackHtml(string message)

@@ -20,14 +20,26 @@ namespace WordAddIn1
             document = null;
             errorResult = null;
 
+            // Desktop 启动不注入 Word；F_open 之后同轮工具需附着已运行实例
             if (wordApplication == null)
             {
-                errorResult = new ToolResult
+                if (!WordApplicationResolver.TryResolve(
+                        null,
+                        out Word.Application attached,
+                        out string attachError,
+                        createIfMissing: false))
                 {
-                    Success = false,
-                    Error = "Word应用程序实例不可用"
-                };
-                return false;
+                    errorResult = new ToolResult
+                    {
+                        Success = false,
+                        Error = string.IsNullOrEmpty(attachError)
+                            ? "Word应用程序实例不可用"
+                            : attachError
+                    };
+                    return false;
+                }
+
+                wordApplication = attached;
             }
 
             if (!ChannelContext.TryResolveWordDocument(
