@@ -1,0 +1,119 @@
+{
+  "format": 1,
+  "restore": {
+    "d:\\project\\EasyWrite\\EasyWriteClient\\Desktop\\EasyWriteClient.Desktop.csproj": {}
+  },
+  "projects": {
+    "d:\\project\\EasyWrite\\EasyWriteClient\\Desktop\\EasyWriteClient.Desktop.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "d:\\project\\EasyWrite\\EasyWriteClient\\Desktop\\EasyWriteClient.Desktop.csproj",
+        "projectName": "EasyWriteClient.Desktop",
+        "projectPath": "d:\\project\\EasyWrite\\EasyWriteClient\\Desktop\\EasyWriteClient.Desktop.csproj",
+        "packagesPath": "C:\\Users\\garsing\\.nuget\\packages\\",
+        "outputPath": "d:\\project\\EasyWrite\\EasyWriteClient\\Desktop\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\garsing\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net472"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net472": {
+            "framework": "net472",
+            "targetAlias": "net472",
+            "projectReferences": {
+              "d:\\project\\EasyWrite\\EasyWriteClient\\Shared\\EasyWriteClient.Shared.csproj": {
+                "projectPath": "d:\\project\\EasyWrite\\EasyWriteClient\\Shared\\EasyWriteClient.Shared.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net472": {
+          "framework": "net472",
+          "targetAlias": "net472",
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.302\\RuntimeIdentifierGraph.json"
+        }
+      },
+      "runtimes": {
+        "win-x86": {
+          "#import": []
+        }
+      }
+    },
+    "d:\\project\\EasyWrite\\EasyWriteClient\\Shared\\EasyWriteClient.Shared.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "d:\\project\\EasyWrite\\EasyWriteClient\\Shared\\EasyWriteClient.Shared.csproj",
+        "projectName": "EasyWriteClient.Shared",
+        "projectPath": "d:\\project\\EasyWrite\\EasyWriteClient\\Shared\\EasyWriteClient.Shared.csproj",
+        "packagesPath": "C:\\Users\\garsing\\.nuget\\packages\\",
+        "outputPath": "d:\\project\\EasyWrite\\EasyWriteClient\\Shared\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\garsing\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net472"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net472": {
+            "framework": "net472",
+            "targetAlias": "net472",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net472": {
+          "framework": "net472",
+          "targetAlias": "net472",
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.302\\RuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

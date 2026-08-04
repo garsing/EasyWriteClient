@@ -1,0 +1,105 @@
+{
+  "version": 4,
+  "targets": {
+    "net472": {
+      "EasyWriteClient.Shared/1.0.0": {
+        "type": "project",
+        "framework": ".NETFramework,Version=v4.7.2",
+        "compile": {
+          "bin/placeholder/EasyWriteClient.Shared.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/EasyWriteClient.Shared.dll": {}
+        }
+      }
+    },
+    "net472/win-x86": {
+      "EasyWriteClient.Shared/1.0.0": {
+        "type": "project",
+        "framework": ".NETFramework,Version=v4.7.2",
+        "compile": {
+          "bin/placeholder/EasyWriteClient.Shared.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/EasyWriteClient.Shared.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "EasyWriteClient.Shared/1.0.0": {
+      "type": "project",
+      "path": "../Shared/EasyWriteClient.Shared.csproj",
+      "msbuildProject": "../Shared/EasyWriteClient.Shared.csproj"
+    }
+  },
+  "projectFileDependencyGroups": {
+    "net472": [
+      "EasyWriteClient.Shared >= 1.0.0"
+    ]
+  },
+  "packageFolders": {
+    "C:\\Users\\garsing\\.nuget\\packages\\": {},
+    "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "d:\\project\\EasyWrite\\EasyWriteClient\\Desktop\\EasyWriteClient.Desktop.csproj",
+      "projectName": "EasyWriteClient.Desktop",
+      "projectPath": "d:\\project\\EasyWrite\\EasyWriteClient\\Desktop\\EasyWriteClient.Desktop.csproj",
+      "packagesPath": "C:\\Users\\garsing\\.nuget\\packages\\",
+      "outputPath": "d:\\project\\EasyWrite\\EasyWriteClient\\Desktop\\obj\\",
+      "projectStyle": "PackageReference",
+      "fallbackFolders": [
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+      ],
+      "configFilePaths": [
+        "C:\\Users\\garsing\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+      ],
+      "originalTargetFrameworks": [
+        "net472"
+      ],
+      "sources": {
+        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "net472": {
+          "framework": "net472",
+          "targetAlias": "net472",
+          "projectReferences": {
+            "d:\\project\\EasyWrite\\EasyWriteClient\\Shared\\EasyWriteClient.Shared.csproj": {
+              "projectPath": "d:\\project\\EasyWrite\\EasyWriteClient\\Shared\\EasyWriteClient.Shared.csproj"
+            }
+          }
+        }
+      },
+      "warningProperties": {
+        "warnAsError": [
+          "NU1605"
+        ]
+      },
+      "restoreAuditProperties": {
+        "enableAudit": "true",
+        "auditLevel": "low",
+        "auditMode": "direct"
+      },
+      "SdkAnalysisLevel": "10.0.300"
+    },
+    "frameworks": {
+      "net472": {
+        "framework": "net472",
+        "targetAlias": "net472",
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.302\\RuntimeIdentifierGraph.json"
+      }
+    },
+    "runtimes": {
+      "win-x86": {
+        "#import": []
+      }
+    }
+  }
+}

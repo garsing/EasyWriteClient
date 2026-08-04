@@ -1,0 +1,100 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Word = Microsoft.Office.Interop.Word;
+
+namespace WordAddIn1
+{
+    /// <summary>
+    /// 测试Word文档提取器工具
+    /// 用于测试WordDocumentExtractor的功能，提取当前文档内容并打印到控制台
+    /// </summary>
+    public static class F_TestWordDocumentExtractor
+    {
+        /// <summary>
+        /// 注册测试Word文档提取器工具
+        /// </summary>
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+                        toolRegistry["F_test_word_document_extractor"] = async (args) =>
+            {
+                try
+                {
+                    if (wordApplication == null)
+                    {
+                        return new ToolResult { Success = false, Error = "Word应用程序实例不可用" };
+                    }
+
+                    dynamic wordApp = wordApplication;
+
+                    if (wordApp.ActiveDocument == null)
+                    {
+                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
+                    }
+
+                    Word.Document doc = wordApp.ActiveDocument;
+
+                    System.Diagnostics.Debug.WriteLine("");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine("=== F_test_word_document_extractor 工具执行 ===");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine($"文档名称: {doc.Name ?? "未命名文档"}");
+                    System.Diagnostics.Debug.WriteLine("");
+
+                    // 调用WordDocumentExtractor提取文档内容
+                    var processingResult = WordDocumentExtractor.ProcessDocument(doc);
+                    string content = processingResult.ReadText ?? "";
+
+                    // 打印提取的内容到控制台
+                    System.Diagnostics.Debug.WriteLine("提取的文档内容:");
+                    System.Diagnostics.Debug.WriteLine("------------------------------------------");
+                    System.Diagnostics.Debug.WriteLine(content);
+                    System.Diagnostics.Debug.WriteLine("------------------------------------------");
+                    System.Diagnostics.Debug.WriteLine($"内容长度: {content.Length} 字符");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine("");
+
+                    // 同时输出到控制台（Console）
+                    Console.WriteLine("");
+                    Console.WriteLine("==========================================");
+                    Console.WriteLine("=== F_test_word_document_extractor 工具执行 ===");
+                    Console.WriteLine("==========================================");
+                    Console.WriteLine($"文档名称: {doc.Name ?? "未命名文档"}");
+                    Console.WriteLine("");
+                    Console.WriteLine("提取的文档内容:");
+                    Console.WriteLine("------------------------------------------");
+                    Console.WriteLine(content);
+                    Console.WriteLine("------------------------------------------");
+                    Console.WriteLine($"内容长度: {content.Length} 字符");
+                    Console.WriteLine("==========================================");
+                    Console.WriteLine("");
+
+                    await Task.CompletedTask;
+
+                    return new ToolResult
+                    {
+                        Success = true,
+                        Data = new Dictionary<string, object>
+                        {
+                            { "document_name", doc.Name ?? "未命名文档" },
+                            { "content_length", content.Length },
+                            { "content", content }
+                        }
+                    };
+                }
+                catch (Exception ex)
+                {
+                    string errorMsg = $"测试Word文档提取器失败: {ex.Message}";
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 堆栈跟踪: {ex.StackTrace}");
+                    Console.WriteLine($"[ERROR] {errorMsg}");
+                    Console.WriteLine($"[ERROR] 堆栈跟踪: {ex.StackTrace}");
+                    return new ToolResult { Success = false, Error = errorMsg };
+                }
+            };
+}
+    }
+}
+

@@ -1,0 +1,43 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)">
+  <Profiles>
+    <Profile Name="(Default)" />
+  </Profiles>
+  <Settings>
+    <Setting Name="IsLoggedIn" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="UserName" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="AccessToken" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="RefreshToken" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="TokenExpiry" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <!-- API Configuration -->
+    <Setting Name="ApiBaseUrl" Type="System.String" Scope="Application">
+      <Value Profile="(Default)">http://120.55.78.48:18028</Value>
+    </Setting>
+    <Setting Name="ApiTimeoutSeconds" Type="System.Int32" Scope="Application">
+      <Value Profile="(Default)">30</Value>
+    </Setting>
+    <Setting Name="ApiMaxRetries" Type="System.Int32" Scope="Application">
+      <Value Profile="(Default)">3</Value>
+    </Setting>
+    <!-- API Endpoints -->
+    <Setting Name="ApiEndpointLogin" Type="System.String" Scope="Application">
+      <Value Profile="(Default)">/auth/login</Value>
+    </Setting>
+    <Setting Name="ApiEndpointRegister" Type="System.String" Scope="Application">
+      <Value Profile="(Default)">/auth/register</Value>
+    </Setting>
+    <Setting Name="ApiEndpointHealth" Type="System.String" Scope="Application">
+      <Value Profile="(Default)">/health</Value>
+    </Setting>
+  </Settings>
+</SettingsFile>

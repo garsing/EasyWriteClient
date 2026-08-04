@@ -1,0 +1,48 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Word = Microsoft.Office.Interop.Word;
+
+namespace WordAddIn1
+{
+    public static class F_CaptureCursorPageImageTool
+    {
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+            toolRegistry["F_capture_cursor_page_image"] = async (args) =>
+            {
+                await Task.CompletedTask;
+                try
+                {
+                    if (wordApplication == null)
+                    {
+                        return new ToolResult { Success = false, Error = "Word应用程序不可用" };
+                    }
+
+                    dynamic wordApp = wordApplication;
+                    var capture = PageCaptureHelper.CaptureCursorPage((Word.Application)wordApp);
+                    return new ToolResult
+                    {
+                        Success = true,
+                        Data = new
+                        {
+                            page_number = capture.PageNumber,
+                            format = capture.Format,
+                            width_px = capture.WidthPx,
+                            height_px = capture.HeightPx,
+                            image_base64 = capture.ImageBase64,
+                            captured_at = capture.CapturedAt,
+                            doc_title = capture.DocTitle
+                        }
+                    };
+                }
+                catch (Exception ex)
+                {
+                    return new ToolResult { Success = false, Error = $"截取光标所在页失败: {ex.Message}" };
+                }
+            };
+        }
+    }
+}

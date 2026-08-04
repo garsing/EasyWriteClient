@@ -1,0 +1,877 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
+using Word = Microsoft.Office.Interop.Word;
+
+namespace WordAddIn1
+{
+    /// <summary>
+    /// 测试标题识别工具
+    /// 读取Word文档，识别其中的标题，并总结识别结果
+    /// </summary>
+    public static class F_TestHeadingRecognizer
+    {
+        /// <summary>
+        /// 注册测试标题识别工具
+        /// </summary>
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+                        toolRegistry["F_test_heading_recognizer"] = async (args) =>
+            {
+                try
+                {
+                    if (wordApplication == null)
+                    {
+                        return new ToolResult { Success = false, Error = "Word应用程序实例不可用" };
+                    }
+
+                    dynamic wordApp = wordApplication;
+
+                    if (wordApp.ActiveDocument == null)
+                    {
+                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
+                    }
+
+                    Word.Document doc = wordApp.ActiveDocument;
+
+                    System.Diagnostics.Debug.WriteLine("");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine("=== F_test_heading_recognizer 工具执行 ===");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine($"文档名称: {doc.Name ?? "未命名文档"}");
+                    System.Diagnostics.Debug.WriteLine("");
+
+                    var totalStartTime = System.Diagnostics.Stopwatch.StartNew();
+
+                    // 第一步：调用WordDocumentExtractor读取文档
+                    System.Diagnostics.Debug.WriteLine("[步骤1] 调用WordDocumentExtractor读取文档...");
+                    var step1StartTime = System.Diagnostics.Stopwatch.StartNew();
+                    var processingResult = WordDocumentExtractor.ProcessDocument(doc);
+                    step1StartTime.Stop();
+                    
+                    if (processingResult == null)
+                    {
+                        return new ToolResult { Success = false, Error = "文档处理失败" };
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"[步骤1] ✅ 文档处理完成，处理方式: {processingResult.ProcessingMethod}，耗时: {step1StartTime.ElapsedMilliseconds}ms ({step1StartTime.ElapsedMilliseconds / 1000.0:F2}秒)");
+
+                    // 第二步：从DocumentState获取快照和名称映射表
+                    // 注意：NameToContentMap 返回的是新字典，不会修改 DocumentState 中的原始数据
+                    System.Diagnostics.Debug.WriteLine("[步骤2] 从DocumentState获取快照和名称映射表...");
+                    var step2StartTime = System.Diagnostics.Stopwatch.StartNew();
+                    string snapshot = DocumentState.Snapshot;
+                    Dictionary<string, string> nameToContentMap = DocumentState.NameToContentMap;
+                    step2StartTime.Stop();
+
+                    if (string.IsNullOrEmpty(snapshot))
+                    {
+                        return new ToolResult { Success = false, Error = "快照为空，文档可能未正确处理" };
+                    }
+
+                    if (nameToContentMap == null || nameToContentMap.Count == 0)
+                    {
+                        return new ToolResult { Success = false, Error = "名称到内容的映射表为空，文档可能未正确处理" };
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"[步骤2] ✅ 快照包含 {snapshot.Split(',').Length} 个句子名称");
+                    System.Diagnostics.Debug.WriteLine($"[步骤2] ✅ 名称映射表包含 {nameToContentMap.Count} 条映射，耗时: {step2StartTime.ElapsedMilliseconds}ms");
+
+                    // 第三步：遍历每个句子，识别标题并建立映射
+                    System.Diagnostics.Debug.WriteLine("[步骤3] 遍历每个句子，识别标题...");
+                    var step3StartTime = System.Diagnostics.Stopwatch.StartNew();
+                    string[] sentenceNames = snapshot.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                    
+                    // 创建HeadingRecognizer实例
+                    HeadingRecognizer recognizer = new HeadingRecognizer();
+                    
+                    // 用于统计的标题列表（用于后续计算层级）
+                    List<Dictionary<string, object>> allHeadingsForStatistics = new List<Dictionary<string, object>>();
+                    
+                    // 句子名称到标题信息的映射表
+                    Dictionary<string, Dictionary<string, object>> sentenceNameToHeadingMap = new Dictionary<string, Dictionary<string, object>>();
+                    
+                    int sentenceIndex = 0;
+                    foreach (string sentenceName in sentenceNames)
+                    {
+                        string trimmedName = sentenceName.Trim();
+                        if (string.IsNullOrEmpty(trimmedName))
+                        {
+                            continue;
+                        }
+
+                        if (nameToContentMap.ContainsKey(trimmedName))
+                        {
+                            // 从字典中获取内容
+                            string content = nameToContentMap[trimmedName];
+                            
+                            // 检查句子后面是否有\r，如果没有则加上
+                            if (!string.IsNullOrEmpty(content) && !content.EndsWith("\r"))
+                            {
+                                content += "\r";
+                            }
+                            
+                            // 对每个句子单独进行标题识别
+                            var isHeadingResult = recognizer.IsHeading(content);
+                            bool isHeading = isHeadingResult.Item1;
+                            string langType = isHeadingResult.Item2;
+                            string headingType = isHeadingResult.Item3;
+                            
+                            if (isHeading)
+                            {
+                                // 获取详细的子类型
+                                string detailedSubtype = recognizer.GetDetailedSubtype(content, langType, headingType);
+                                
+                                // 创建标题信息（先不包含level，后面用统计方法计算）
+                                Dictionary<string, object> headingInfo = new Dictionary<string, object>
+                                {
+                                    { "type", "heading" },
+                                    { "text", content.Trim() },
+                                    { "line", sentenceIndex + 1 },
+                                    { "language", langType },
+                                    { "subtype", headingType },
+                                    { "detailed_subtype", detailedSubtype }
+                                };
+                                
+                                // 添加到统计列表
+                                allHeadingsForStatistics.Add(headingInfo);
+                                
+                                // 建立句子名称到标题信息的映射（先不包含level）
+                                sentenceNameToHeadingMap[trimmedName] = new Dictionary<string, object>(headingInfo);
+                            }
+                            else
+                            {
+                                // 正文：建立正文映射
+                                Dictionary<string, object> bodyInfo = new Dictionary<string, object>
+                                {
+                                    { "type", "body" },
+                                    { "subtype", "" },
+                                    { "detailed_subtype", "body" },
+                                    { "language", "" },
+                                    { "text", content.Trim() },
+                                    { "line", sentenceIndex + 1 }
+                                };
+                                
+                                // 建立句子名称到正文信息的映射
+                                sentenceNameToHeadingMap[trimmedName] = bodyInfo;
+                            }
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[步骤3] ⚠️ 警告：未找到句子名称 '{trimmedName}' 的内容");
+                        }
+                        
+                        sentenceIndex++;
+                    }
+                    step3StartTime.Stop();
+
+                    int headingCount = sentenceNameToHeadingMap.Values.Count(v => v.ContainsKey("type") && v["type"]?.ToString() == "heading");
+                    int bodyCount = sentenceNameToHeadingMap.Count - headingCount;
+                    System.Diagnostics.Debug.WriteLine($"[步骤3] ✅ 共处理 {sentenceNameToHeadingMap.Count} 个句子，其中标题 {headingCount} 个，正文 {bodyCount} 个，耗时: {step3StartTime.ElapsedMilliseconds}ms ({step3StartTime.ElapsedMilliseconds / 1000.0:F2}秒)");
+
+                    // 第四步：使用统计方法计算层级
+                    System.Diagnostics.Debug.WriteLine("[步骤4] 使用统计方法计算标题层级...");
+                    var step4StartTime = System.Diagnostics.Stopwatch.StartNew();
+                    Dictionary<string, string> levelMapping = recognizer.CalculateLevelByStatistics(allHeadingsForStatistics);
+                    
+                    // 更新映射表中的层级信息（只更新标题，正文不需要）
+                    foreach (var kvp in sentenceNameToHeadingMap)
+                    {
+                        string sentenceName = kvp.Key;
+                        Dictionary<string, object> info = kvp.Value;
+                        
+                        // 只处理标题
+                        if (info.ContainsKey("type") && info["type"]?.ToString() == "heading")
+                        {
+                            string headingText = info.ContainsKey("text") ? info["text"]?.ToString() ?? "" : "";
+                            
+                            if (levelMapping.ContainsKey(headingText))
+                            {
+                                info["level"] = levelMapping[headingText];
+                            }
+                            else
+                            {
+                                info["level"] = "Heading 1"; // 默认层级
+                            }
+                        }
+                    }
+                    
+                    // 按子类型分组（用于统计和展示）
+                    Dictionary<string, List<Dictionary<string, object>>> headingsBySubtype = new Dictionary<string, List<Dictionary<string, object>>>();
+                    foreach (var heading in allHeadingsForStatistics)
+                    {
+                        string detailedSubtype = heading.ContainsKey("detailed_subtype") ? heading["detailed_subtype"]?.ToString() ?? "" : "";
+                        string headingText = heading.ContainsKey("text") ? heading["text"]?.ToString() ?? "" : "";
+                        string level = levelMapping.ContainsKey(headingText) ? levelMapping[headingText] : "Heading 1";
+                        heading["level"] = level;
+                        
+                        if (!headingsBySubtype.ContainsKey(detailedSubtype))
+                        {
+                            headingsBySubtype[detailedSubtype] = new List<Dictionary<string, object>>();
+                        }
+                        headingsBySubtype[detailedSubtype].Add(heading);
+                    }
+                    step4StartTime.Stop();
+
+                    System.Diagnostics.Debug.WriteLine($"[步骤4] ✅ 层级计算完成，共 {headingsBySubtype.Values.Sum(v => v.Count)} 个标题，耗时: {step4StartTime.ElapsedMilliseconds}ms");
+
+                    // 第五步：按快照表顺序输出每个句子的信息
+                    System.Diagnostics.Debug.WriteLine("[步骤5] 按快照表顺序输出每个句子的信息...");
+                    var step5StartTime = System.Diagnostics.Stopwatch.StartNew();
+                    System.Diagnostics.Debug.WriteLine($"[步骤5] 快照表包含 {sentenceNames.Length} 个句子名称");
+                    System.Diagnostics.Debug.WriteLine($"[步骤5] 映射表包含 {sentenceNameToHeadingMap.Count} 个映射");
+                    
+                    // 按快照表顺序输出到控制台（同时输出到Debug和Console）
+                    System.Diagnostics.Debug.WriteLine("");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine("句子类型识别结果（按快照表顺序）");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    
+                    Console.WriteLine("");
+                    Console.WriteLine("==========================================");
+                    Console.WriteLine("句子类型识别结果（按快照表顺序）");
+                    Console.WriteLine("==========================================");
+                    
+                    // 按照快照表的顺序遍历句子
+                    int outputCount = 0;
+                    foreach (string sentenceName in sentenceNames)
+                    {
+                        string trimmedName = sentenceName.Trim();
+                        if (string.IsNullOrEmpty(trimmedName))
+                        {
+                            continue;
+                        }
+                        
+                        if (sentenceNameToHeadingMap.ContainsKey(trimmedName))
+                        {
+                            Dictionary<string, object> info = sentenceNameToHeadingMap[trimmedName];
+                            
+                            string type = info.ContainsKey("type") ? info["type"]?.ToString() ?? "" : "";
+                            string subtype = info.ContainsKey("subtype") ? info["subtype"]?.ToString() ?? "" : "";
+                            string detailedSubtype = info.ContainsKey("detailed_subtype") ? info["detailed_subtype"]?.ToString() ?? "" : "";
+                            string language = info.ContainsKey("language") ? info["language"]?.ToString() ?? "" : "";
+                            string text = info.ContainsKey("text") ? info["text"]?.ToString() ?? "" : "";
+                            
+                            string outputLine = $"句子名称: {trimmedName}\n  type: {type}\n  subtype: {subtype}\n  detailed_subtype: {detailedSubtype}\n  language: {language}\n  text: {text}\n";
+                            
+                            System.Diagnostics.Debug.WriteLine(outputLine);
+                            Console.WriteLine(outputLine);
+                            outputCount++;
+                        }
+                        else
+                        {
+                            // 如果映射表中没有，说明是正文（理论上不应该发生，但为了安全起见）
+                            // 尝试从nameToContentMap获取文本内容
+                            string text = "";
+                            if (nameToContentMap.ContainsKey(trimmedName))
+                            {
+                                text = nameToContentMap[trimmedName] ?? "";
+                            }
+                            
+                            string outputLine = $"句子名称: {trimmedName}\n  type: body\n  subtype: \n  detailed_subtype: body\n  language: \n  text: {text}\n";
+                            
+                            System.Diagnostics.Debug.WriteLine(outputLine);
+                            Console.WriteLine(outputLine);
+                            outputCount++;
+                        }
+                    }
+                    step5StartTime.Stop();
+                    
+                    System.Diagnostics.Debug.WriteLine($"[步骤5] ✅ 共输出了 {outputCount} 个句子的信息，耗时: {step5StartTime.ElapsedMilliseconds}ms");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine("");
+                    
+                    Console.WriteLine("==========================================");
+                    Console.WriteLine("");
+
+                    // 第六步：提取每个detailed_subtype的格式并计算众数
+                    System.Diagnostics.Debug.WriteLine("[步骤6] 提取每个detailed_subtype的格式并计算众数...");
+                    var step6StartTime = System.Diagnostics.Stopwatch.StartNew();
+                    
+                    // 6.1: 按detailed_subtype分组，找出有句子对应的类别
+                    var step61StartTime = System.Diagnostics.Stopwatch.StartNew();
+                    Dictionary<string, List<Dictionary<string, object>>> sentencesByDetailedSubtype = new Dictionary<string, List<Dictionary<string, object>>>();
+                    
+                    foreach (var kvp in sentenceNameToHeadingMap)
+                    {
+                        Dictionary<string, object> info = kvp.Value;
+                        if (info.ContainsKey("type") && info["type"]?.ToString() == "heading")
+                        {
+                            string detailedSubtype = info.ContainsKey("detailed_subtype") ? info["detailed_subtype"]?.ToString() ?? "" : "";
+                            if (!string.IsNullOrEmpty(detailedSubtype))
+                            {
+                                if (!sentencesByDetailedSubtype.ContainsKey(detailedSubtype))
+                                {
+                                    sentencesByDetailedSubtype[detailedSubtype] = new List<Dictionary<string, object>>();
+                                }
+                                sentencesByDetailedSubtype[detailedSubtype].Add(info);
+                            }
+                        }
+                    }
+                    step61StartTime.Stop();
+                    System.Diagnostics.Debug.WriteLine($"[步骤6.1] ✅ 找到 {sentencesByDetailedSubtype.Count} 个有句子对应的detailed_subtype，耗时: {step61StartTime.ElapsedMilliseconds}ms");
+                    
+                    // 6.2: 提取格式（标题类型抽样5个，正文类型抽样10个）
+                    var step62StartTime = System.Diagnostics.Stopwatch.StartNew();
+                    Dictionary<string, List<Dictionary<string, object>>> formatListBySubtype = new Dictionary<string, List<Dictionary<string, object>>>();
+                    
+                    // 先提取正文格式（随机抽样10个句子）
+                    List<Dictionary<string, object>> bodyFormats = new List<Dictionary<string, object>>();
+                    var bodySentences = sentenceNameToHeadingMap.Values
+                        .Where(v => v.ContainsKey("type") && v["type"]?.ToString() == "body")
+                        .ToList();
+                    
+                    if (bodySentences.Count > 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[步骤6.2] 提取正文格式，共 {bodySentences.Count} 个正文句子，随机抽样 10 个");
+                        
+                        // 随机抽样10个正文句子
+                        var random = new Random();
+                        var sampledBodySentences = bodySentences.OrderBy(x => random.Next()).Take(Math.Min(10, bodySentences.Count)).ToList();
+                        
+                        foreach (var sentenceInfo in sampledBodySentences)
+                        {
+                            string sentenceText = sentenceInfo.ContainsKey("text") ? sentenceInfo["text"]?.ToString() ?? "" : "";
+                            if (string.IsNullOrEmpty(sentenceText))
+                            {
+                                continue;
+                            }
+                            
+                            // 在Word中搜索该句子
+                            List<Word.Range> foundRanges = FindAllSentenceMatches(doc, sentenceText);
+                            
+                            // 对每个找到的Range提取格式
+                            foreach (Word.Range range in foundRanges)
+                            {
+                                Dictionary<string, object> format = ExtractFormatFromRange(range);
+                                bodyFormats.Add(format);
+                            }
+                        }
+                        
+                        System.Diagnostics.Debug.WriteLine($"[步骤6.2]   正文格式样本收集完成，共 {bodyFormats.Count} 个格式样本");
+                    }
+                    
+                    // 计算正文格式的众数
+                    Dictionary<string, object> bodyModeFormat = bodyFormats.Count > 0 ? CalculateModeFormat(bodyFormats) : new Dictionary<string, object>();
+                    
+                    int totalSentencesProcessed = 0;
+                    int totalRangesFound = 0;
+                    int totalFormatsExtracted = 0;
+                    
+                    // 遍历每个detailed_subtype（标题类型）
+                    foreach (var kvp in sentencesByDetailedSubtype)
+                    {
+                        string detailedSubtype = kvp.Key;
+                        List<Dictionary<string, object>> sentences = kvp.Value;
+                        
+                        var subtypeStartTime = System.Diagnostics.Stopwatch.StartNew();
+                        System.Diagnostics.Debug.WriteLine($"[步骤6.2] 处理 detailed_subtype: {detailedSubtype}，包含 {sentences.Count} 个句子，随机抽样 5 个");
+                        
+                        List<Dictionary<string, object>> formatsForThisSubtype = new List<Dictionary<string, object>>();
+                        
+                        // 随机抽样5个句子
+                        var random = new Random();
+                        var sampledSentences = sentences.OrderBy(x => random.Next()).Take(Math.Min(5, sentences.Count)).ToList();
+                        
+                        // 遍历抽样后的句子
+                        foreach (var sentenceInfo in sampledSentences)
+                        {
+                            string sentenceText = sentenceInfo.ContainsKey("text") ? sentenceInfo["text"]?.ToString() ?? "" : "";
+                            if (string.IsNullOrEmpty(sentenceText))
+                            {
+                                continue;
+                            }
+                            
+                            totalSentencesProcessed++;
+                            
+                            // 在Word中搜索该句子（可能找到多个匹配）
+                            var searchStartTime = System.Diagnostics.Stopwatch.StartNew();
+                            List<Word.Range> foundRanges = FindAllSentenceMatches(doc, sentenceText);
+                            searchStartTime.Stop();
+                            
+                            totalRangesFound += foundRanges.Count;
+                            
+                            if (foundRanges.Count > 0)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[步骤6.2]   句子 \"{sentenceText.Substring(0, Math.Min(30, sentenceText.Length))}...\" 找到 {foundRanges.Count} 个匹配，搜索耗时: {searchStartTime.ElapsedMilliseconds}ms");
+                            }
+                            
+                            // 对每个找到的Range提取格式
+                            var extractStartTime = System.Diagnostics.Stopwatch.StartNew();
+                            foreach (Word.Range range in foundRanges)
+                            {
+                                Dictionary<string, object> format = ExtractFormatFromRange(range);
+                                formatsForThisSubtype.Add(format);
+                                totalFormatsExtracted++;
+                            }
+                            extractStartTime.Stop();
+                            
+                            if (foundRanges.Count > 0)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[步骤6.2]     提取格式耗时: {extractStartTime.ElapsedMilliseconds}ms（平均每个Range: {(foundRanges.Count > 0 ? extractStartTime.ElapsedMilliseconds / (double)foundRanges.Count : 0):F2}ms）");
+                            }
+                        }
+                        
+                        subtypeStartTime.Stop();
+                        
+                        if (formatsForThisSubtype.Count > 0)
+                        {
+                            formatListBySubtype[detailedSubtype] = formatsForThisSubtype;
+                            System.Diagnostics.Debug.WriteLine($"[步骤6.2]   detailed_subtype {detailedSubtype} 共收集到 {formatsForThisSubtype.Count} 个格式样本，总耗时: {subtypeStartTime.ElapsedMilliseconds}ms");
+                        }
+                    }
+                    step62StartTime.Stop();
+                    System.Diagnostics.Debug.WriteLine($"[步骤6.2] ✅ 格式提取完成，处理了 {totalSentencesProcessed} 个标题句子（抽样），正文格式样本 {bodyFormats.Count} 个，找到 {totalRangesFound} 个Range，提取了 {totalFormatsExtracted} 个格式样本，总耗时: {step62StartTime.ElapsedMilliseconds}ms");
+                    
+                    // 6.3: 计算每个detailed_subtype的众数格式（排除与正文格式一致的格式）
+                    var step63StartTime = System.Diagnostics.Stopwatch.StartNew();
+                    List<Dictionary<string, object>> subtypeFormatMapping = new List<Dictionary<string, object>>();
+                    
+                    foreach (var kvp in formatListBySubtype)
+                    {
+                        string detailedSubtype = kvp.Key;
+                        List<Dictionary<string, object>> formats = kvp.Value;
+                        
+                        var modeStartTime = System.Diagnostics.Stopwatch.StartNew();
+                        
+                        // 过滤掉与正文格式一致的格式
+                        List<Dictionary<string, object>> filteredFormats = formats.Where(format => !IsFormatEqual(format, bodyModeFormat)).ToList();
+                        
+                        Dictionary<string, object> modeFormat;
+                        if (filteredFormats.Count > 0)
+                        {
+                            // 有与正文不一致的格式，计算这些格式的众数
+                            modeFormat = CalculateModeFormat(filteredFormats);
+                            System.Diagnostics.Debug.WriteLine($"[步骤6.3]   detailed_subtype {detailedSubtype}: 过滤后剩余 {filteredFormats.Count} 个格式样本（排除了 {formats.Count - filteredFormats.Count} 个与正文格式一致的样本）");
+                        }
+                        else
+                        {
+                            // 所有格式都与正文一致，使用正文格式
+                            modeFormat = new Dictionary<string, object>(bodyModeFormat);
+                            System.Diagnostics.Debug.WriteLine($"[步骤6.3]   detailed_subtype {detailedSubtype}: 所有格式都与正文格式一致，使用正文格式");
+                        }
+                        
+                        modeStartTime.Stop();
+                        
+                        // 从 sentencesByDetailedSubtype 中获取第一个句子的分类信息
+                        string type = "heading";
+                        string subtype = "";
+                        string language = "";
+                        if (sentencesByDetailedSubtype.ContainsKey(detailedSubtype) && sentencesByDetailedSubtype[detailedSubtype].Count > 0)
+                        {
+                            var firstSentence = sentencesByDetailedSubtype[detailedSubtype][0];
+                            type = firstSentence.ContainsKey("type") ? firstSentence["type"]?.ToString() ?? "heading" : "heading";
+                            subtype = firstSentence.ContainsKey("subtype") ? firstSentence["subtype"]?.ToString() ?? "" : "";
+                            language = firstSentence.ContainsKey("language") ? firstSentence["language"]?.ToString() ?? "" : "";
+                        }
+                        
+                        Dictionary<string, object> subtypeFormat = new Dictionary<string, object>
+                        {
+                            { "type", type },
+                            { "subtype", subtype },
+                            { "detailed_subtype", detailedSubtype },
+                            { "language", language },
+                            { "format", modeFormat }
+                        };
+                        
+                        subtypeFormatMapping.Add(subtypeFormat);
+                        System.Diagnostics.Debug.WriteLine($"[步骤6.3]   detailed_subtype {detailedSubtype} 计算众数格式耗时: {modeStartTime.ElapsedMilliseconds}ms（原始 {formats.Count} 个样本）");
+                    }
+                    step63StartTime.Stop();
+                    System.Diagnostics.Debug.WriteLine($"[步骤6.3] ✅ 共计算了 {subtypeFormatMapping.Count} 个detailed_subtype的众数格式，总耗时: {step63StartTime.ElapsedMilliseconds}ms");
+                    
+                    // 添加正文格式到输出列表
+                    if (bodyModeFormat.Count > 0)
+                    {
+                        Dictionary<string, object> bodyFormat = new Dictionary<string, object>
+                        {
+                            { "type", "body" },
+                            { "subtype", "" },
+                            { "detailed_subtype", "body" },
+                            { "language", "" },
+                            { "format", bodyModeFormat }
+                        };
+                        subtypeFormatMapping.Add(bodyFormat);
+                        System.Diagnostics.Debug.WriteLine($"[步骤6.3] ✅ 已添加正文格式到输出列表");
+                    }
+                    
+                    step6StartTime.Stop();
+                    System.Diagnostics.Debug.WriteLine($"[步骤6] ✅ 步骤6完成，总耗时: {step6StartTime.ElapsedMilliseconds}ms ({step6StartTime.ElapsedMilliseconds / 1000.0:F2}秒)");
+                    System.Diagnostics.Debug.WriteLine($"[步骤6]   时间分布: 分组 {step61StartTime.ElapsedMilliseconds}ms, 搜索和提取 {step62StartTime.ElapsedMilliseconds}ms, 计算众数 {step63StartTime.ElapsedMilliseconds}ms");
+                    
+                    // 输出JSON格式的映射关系
+                    System.Diagnostics.Debug.WriteLine("");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine("detailed_subtype 格式映射关系（JSON）");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    
+                    string jsonOutput = JsonConvert.SerializeObject(subtypeFormatMapping, Formatting.Indented);
+                    
+                    System.Diagnostics.Debug.WriteLine(jsonOutput);
+                    Console.WriteLine("");
+                    Console.WriteLine("==========================================");
+                    Console.WriteLine("detailed_subtype 格式映射关系（JSON）");
+                    Console.WriteLine("==========================================");
+                    Console.WriteLine(jsonOutput);
+                    Console.WriteLine("==========================================");
+                    Console.WriteLine("");
+
+                    totalStartTime.Stop();
+                    System.Diagnostics.Debug.WriteLine("");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine("总耗时统计");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine($"步骤1（文档读取）: {step1StartTime.ElapsedMilliseconds}ms ({step1StartTime.ElapsedMilliseconds / 1000.0:F2}秒)");
+                    System.Diagnostics.Debug.WriteLine($"步骤2（获取快照和映射）: {step2StartTime.ElapsedMilliseconds}ms");
+                    System.Diagnostics.Debug.WriteLine($"步骤3（识别标题）: {step3StartTime.ElapsedMilliseconds}ms ({step3StartTime.ElapsedMilliseconds / 1000.0:F2}秒)");
+                    System.Diagnostics.Debug.WriteLine($"步骤4（计算层级）: {step4StartTime.ElapsedMilliseconds}ms");
+                    System.Diagnostics.Debug.WriteLine($"步骤5（输出结果）: {step5StartTime.ElapsedMilliseconds}ms");
+                    System.Diagnostics.Debug.WriteLine($"步骤6（提取格式）: {step6StartTime.ElapsedMilliseconds}ms ({step6StartTime.ElapsedMilliseconds / 1000.0:F2}秒)");
+                    System.Diagnostics.Debug.WriteLine($"   - 6.1（分组）: {step61StartTime.ElapsedMilliseconds}ms");
+                    System.Diagnostics.Debug.WriteLine($"   - 6.2（搜索和提取）: {step62StartTime.ElapsedMilliseconds}ms ({step62StartTime.ElapsedMilliseconds / 1000.0:F2}秒)");
+                    System.Diagnostics.Debug.WriteLine($"   - 6.3（计算众数）: {step63StartTime.ElapsedMilliseconds}ms");
+                    System.Diagnostics.Debug.WriteLine($"总耗时: {totalStartTime.ElapsedMilliseconds}ms ({totalStartTime.ElapsedMilliseconds / 1000.0:F2}秒)");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine("");
+
+                    // 构建返回数据（简化，主要用于测试）
+                    var resultData = new Dictionary<string, object>
+                    {
+                        { "message", "标题识别完成，结果已输出到控制台" },
+                        { "sentence_count", sentenceNameToHeadingMap.Count },
+                        { "subtype_format_mapping", subtypeFormatMapping },
+                        { "timing", new Dictionary<string, object>
+                            {
+                                { "step1_document_reading_ms", step1StartTime.ElapsedMilliseconds },
+                                { "step2_get_snapshot_ms", step2StartTime.ElapsedMilliseconds },
+                                { "step3_heading_recognition_ms", step3StartTime.ElapsedMilliseconds },
+                                { "step4_level_calculation_ms", step4StartTime.ElapsedMilliseconds },
+                                { "step5_output_ms", step5StartTime.ElapsedMilliseconds },
+                                { "step6_format_extraction_ms", step6StartTime.ElapsedMilliseconds },
+                                { "step6_1_grouping_ms", step61StartTime.ElapsedMilliseconds },
+                                { "step6_2_search_and_extract_ms", step62StartTime.ElapsedMilliseconds },
+                                { "step6_3_mode_calculation_ms", step63StartTime.ElapsedMilliseconds },
+                                { "total_ms", totalStartTime.ElapsedMilliseconds }
+                            }
+                        }
+                    };
+
+                    return new ToolResult
+                    {
+                        Success = true,
+                        Data = resultData
+                    };
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[F_test_heading_recognizer] ⚠️ 异常: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"[F_test_heading_recognizer] ⚠️ 堆栈跟踪: {ex.StackTrace}");
+                    return new ToolResult { Success = false, Error = $"测试标题识别失败: {ex.Message}" };
+                }
+            };
+}
+        
+        /// <summary>
+        /// 在Word文档中查找所有匹配指定文本的Range位置
+        /// </summary>
+        private static List<Word.Range> FindAllSentenceMatches(Word.Document doc, string sentenceText)
+        {
+            List<Word.Range> matches = new List<Word.Range>();
+            
+            try
+            {
+                if (doc == null || string.IsNullOrEmpty(sentenceText))
+                {
+                    return matches;
+                }
+                
+                // 转换换行符为Word代码格式
+                string convertedText = WordRangeFinder.ConvertNewlinesToWordCodes(sentenceText);
+                
+                // 使用WordRangeFinder的FindAllMatches方法
+                // 注意：FindAllMatches是private的，我们需要自己实现
+                int searchStart = 0;
+                int lastFoundStart = -1;
+                int lastFoundEnd = -1;
+                int maxIterations = 1000;
+                int iterationCount = 0;
+                
+                while (searchStart < doc.Content.End && iterationCount < maxIterations)
+                {
+                    iterationCount++;
+                    
+                    Word.Range searchRange = doc.Range(searchStart, doc.Content.End);
+                    searchRange.Find.ClearFormatting();
+                    searchRange.Find.Text = convertedText;
+                    searchRange.Find.MatchCase = true;
+                    searchRange.Find.MatchWholeWord = false;
+                    searchRange.Find.Wrap = Word.WdFindWrap.wdFindStop;
+                    
+                    if (searchRange.Find.Execute())
+                    {
+                        // 检查是否找到了新的匹配
+                        if (searchRange.Start == lastFoundStart && searchRange.End == lastFoundEnd)
+                        {
+                            break;
+                        }
+                        
+                        if (searchRange.Start < searchStart)
+                        {
+                            break;
+                        }
+                        
+                        Word.Range foundRange = doc.Range(searchRange.Start, searchRange.End);
+                        matches.Add(foundRange);
+                        
+                        lastFoundStart = searchRange.Start;
+                        lastFoundEnd = searchRange.End;
+                        
+                        int newSearchStart = searchRange.End + 1;
+                        if (newSearchStart <= searchStart)
+                        {
+                            break;
+                        }
+                        
+                        searchStart = newSearchStart;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[FindAllSentenceMatches] ❌ 异常: {ex.Message}");
+            }
+            
+            return matches;
+        }
+        
+        /// <summary>
+        /// 从Word Range提取格式信息
+        /// </summary>
+        private static Dictionary<string, object> ExtractFormatFromRange(Word.Range range)
+        {
+            Dictionary<string, object> format = new Dictionary<string, object>();
+            
+            try
+            {
+                if (range == null)
+                {
+                    return format;
+                }
+                
+                // 字体名称
+                string fontName = range.Font?.Name ?? "";
+                format["font_name"] = fontName;
+                
+                // 字体大小
+                float fontSize = range.Font?.Size ?? 0f;
+                format["font_size"] = fontSize;
+                
+                // 字体颜色（转换为RGB十六进制字符串）
+                string fontColor = ConvertWdColorToRgb(range.Font?.Color ?? Word.WdColor.wdColorAutomatic);
+                format["font_color"] = fontColor;
+                
+                // 背景颜色（转换为RGB十六进制字符串）
+                string backgroundColor = ConvertWdColorToRgb(range.Shading?.BackgroundPatternColor ?? Word.WdColor.wdColorAutomatic);
+                format["background_color"] = backgroundColor;
+                
+                // 是否加粗
+                bool isBold = (range.Font?.Bold ?? 0) != 0;
+                format["is_bold"] = isBold;
+                
+                // 是否有下划线
+                bool hasUnderline = (range.Font?.Underline ?? Word.WdUnderline.wdUnderlineNone) != Word.WdUnderline.wdUnderlineNone;
+                format["has_underline"] = hasUnderline;
+                
+                // 是否有删除线
+                bool hasStrikethrough = (range.Font?.StrikeThrough ?? 0) != 0;
+                format["has_strikethrough"] = hasStrikethrough;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ExtractFormatFromRange] ❌ 异常: {ex.Message}");
+            }
+            
+            return format;
+        }
+        
+        /// <summary>
+        /// 将Word.WdColor转换为RGB十六进制字符串（如 #RRGGBB）
+        /// </summary>
+        private static string ConvertWdColorToRgb(Word.WdColor wdColor)
+        {
+            try
+            {
+                // Word.WdColor.wdColorAutomatic 的值是 -16777216
+                if (wdColor == Word.WdColor.wdColorAutomatic || (int)wdColor == -16777216)
+                {
+                    return "automatic";
+                }
+                
+                // Word颜色值是BGR格式，需要转换为RGB
+                int colorValue = (int)wdColor;
+                
+                // 提取RGB分量（BGR格式）
+                int b = (colorValue & 0xFF0000) >> 16;
+                int g = (colorValue & 0x00FF00) >> 8;
+                int r = colorValue & 0x0000FF;
+                
+                // 转换为RGB十六进制字符串
+                return $"#{r:X2}{g:X2}{b:X2}";
+            }
+            catch
+            {
+                return "unknown";
+            }
+        }
+        
+        /// <summary>
+        /// 判断两个格式是否相等
+        /// </summary>
+        private static bool IsFormatEqual(Dictionary<string, object> format1, Dictionary<string, object> format2)
+        {
+            if (format1 == null || format2 == null)
+            {
+                return format1 == format2;
+            }
+            
+            if (format1.Count != format2.Count)
+            {
+                return false;
+            }
+            
+            string[] formatKeys = { "font_name", "font_size", "font_color", "background_color", "is_bold", "has_underline", "has_strikethrough" };
+            
+            foreach (string key in formatKeys)
+            {
+                object value1 = format1.ContainsKey(key) ? format1[key] : null;
+                object value2 = format2.ContainsKey(key) ? format2[key] : null;
+                
+                // 处理浮点数比较（字体大小）
+                if (key == "font_size")
+                {
+                    float size1 = value1 is float f1 ? f1 : (value1 != null && float.TryParse(value1.ToString(), out float s1) ? s1 : 0f);
+                    float size2 = value2 is float f2 ? f2 : (value2 != null && float.TryParse(value2.ToString(), out float s2) ? s2 : 0f);
+                    if (Math.Abs(size1 - size2) > 0.01f) // 允许0.01的误差
+                    {
+                        return false;
+                    }
+                }
+                // 处理布尔值比较
+                else if (key == "is_bold" || key == "has_underline" || key == "has_strikethrough")
+                {
+                    bool bool1 = value1 is bool b1 ? b1 : (value1?.ToString() == "True" || value1?.ToString() == "true");
+                    bool bool2 = value2 is bool b2 ? b2 : (value2?.ToString() == "True" || value2?.ToString() == "true");
+                    if (bool1 != bool2)
+                    {
+                        return false;
+                    }
+                }
+                // 处理字符串比较
+                else
+                {
+                    string str1 = value1?.ToString() ?? "";
+                    string str2 = value2?.ToString() ?? "";
+                    if (str1 != str2)
+                    {
+                        return false;
+                    }
+                }
+            }
+            
+            return true;
+        }
+        
+        /// <summary>
+        /// 计算格式列表的众数格式
+        /// </summary>
+        private static Dictionary<string, object> CalculateModeFormat(List<Dictionary<string, object>> formats)
+        {
+            Dictionary<string, object> modeFormat = new Dictionary<string, object>();
+            
+            if (formats == null || formats.Count == 0)
+            {
+                return modeFormat;
+            }
+            
+            // 对每个格式属性计算众数
+            string[] formatKeys = { "font_name", "font_size", "font_color", "background_color", "is_bold", "has_underline", "has_strikethrough" };
+            
+            foreach (string key in formatKeys)
+            {
+                // 统计每个值的出现次数
+                Dictionary<string, int> valueCounts = new Dictionary<string, int>();
+                
+                foreach (var format in formats)
+                {
+                    if (format.ContainsKey(key))
+                    {
+                        string value = format[key]?.ToString() ?? "";
+                        if (!valueCounts.ContainsKey(value))
+                        {
+                            valueCounts[value] = 0;
+                        }
+                        valueCounts[value]++;
+                    }
+                }
+                
+                // 找出出现次数最多的值（众数）
+                if (valueCounts.Count > 0)
+                {
+                    string modeValue = valueCounts.OrderByDescending(kvp => kvp.Value).First().Key;
+                    
+                    // 根据key的类型转换值
+                    if (key == "font_size")
+                    {
+                        if (float.TryParse(modeValue, out float fontSize))
+                        {
+                            modeFormat[key] = fontSize;
+                        }
+                        else
+                        {
+                            modeFormat[key] = 0f;
+                        }
+                    }
+                    else if (key == "is_bold" || key == "has_underline" || key == "has_strikethrough")
+                    {
+                        // 布尔值：统计True和False的数量，取众数
+                        int trueCount = formats.Count(f => f.ContainsKey(key) && (f[key] is bool b && b || f[key]?.ToString() == "True" || f[key]?.ToString() == "true"));
+                        int falseCount = formats.Count - trueCount;
+                        modeFormat[key] = trueCount >= falseCount;
+                    }
+                    else
+                    {
+                        modeFormat[key] = modeValue;
+                    }
+                }
+                else
+                {
+                    // 如果没有找到值，设置默认值
+                    if (key == "font_size")
+                    {
+                        modeFormat[key] = 0f;
+                    }
+                    else if (key == "is_bold" || key == "has_underline" || key == "has_strikethrough")
+                    {
+                        modeFormat[key] = false;
+                    }
+                    else
+                    {
+                        modeFormat[key] = "";
+                    }
+                }
+            }
+            
+            return modeFormat;
+        }
+    }
+}
+

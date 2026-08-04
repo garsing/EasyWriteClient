@@ -1,0 +1,2937 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Xml.Linq;
+using Word = Microsoft.Office.Interop.Word;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
+using YamlDotNet.Core;
+using YamlDotNet.Core.Events;
+using YamlDotNet.Serialization.TypeInspectors;
+using YamlDotNet.Serialization.TypeResolvers;
+using Newtonsoft.Json;
+
+namespace WordAddIn1
+{
+    /// <summary>
+    /// 表格格式提取工具
+    /// 从Word文档中提取表格格式并保存为YAML配置文件
+    /// </summary>
+    public static class F_ExtractTableFormatTool
+    {
+        /// <summary>
+        /// YAML配置的数据结构
+        /// </summary>
+        public class TableConfig
+        {
+            public LocationInfo Location { get; set; }
+            public TableInfo Table { get; set; }
+            public List<List<int>> Merge { get; set; }
+            public List<List<string>> Data { get; set; }
+        }
+
+        /// <summary>
+        /// 位置信息
+        /// </summary>
+        public class LocationInfo
+        {
+            public string Type { get; set; }
+            public int Start { get; set; }
+            public int End { get; set; }
+        }
+
+        /// <summary>
+        /// 表格信息
+        /// </summary>
+        public class TableInfo
+        {
+            public int Rows { get; set; }
+            public int Cols { get; set; }
+            public List<float> ColWidths { get; set; }
+            public string Style { get; set; }
+            public string TableFontColor { get; set; }
+        }
+
+        /// <summary>
+        /// 注册表格格式提取工具
+        /// </summary>
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+                        toolRegistry["F_extract_table_format"] = async (args) =>
+            {
+                try
+                {
+                    // // System.Diagnostics.Debug.WriteLine("[DEBUG] extract_table_format工具开始执行");
+
+                    if (wordApplication == null)
+                    {
+                        return new ToolResult { Success = false, Error = "Word应用程序实例不可用" };
+                    }
+
+                    dynamic wordApp = wordApplication;
+
+                    if (wordApp.ActiveDocument == null)
+                    {
+                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
+                    }
+
+                    // 解析表格选择参数
+                    var tableSelection = args["table_selection"] as Dictionary<string, object>;
+                    if (tableSelection == null)
+                    {
+                        return new ToolResult { Success = false, Error = "table_selection必须是对象格式" };
+                    }
+
+                    string selectionType = tableSelection.ContainsKey("type") ? tableSelection["type"]?.ToString() : "";
+                    Word.Table targetTable = null;
+                    int tableIndex = 0;
+
+                    // 根据选择类型选择表格
+                    if (selectionType == "by_index")
+                    {
+                        if (!tableSelection.ContainsKey("index"))
+                        {
+                            return new ToolResult { Success = false, Error = "选择类型为by_index时，必须提供index参数" };
+                        }
+
+                        tableIndex = Convert.ToInt32(tableSelection["index"]);
+                        if (tableIndex <= 0 || tableIndex > wordApp.ActiveDocument.Tables.Count)
+                        {
+                            return new ToolResult { Success = false, Error = $"表格序号{tableIndex}无效，文档中只有{wordApp.ActiveDocument.Tables.Count}个表格" };
+                        }
+
+                        try
+                        {
+                            targetTable = wordApp.ActiveDocument.Tables[tableIndex];
+                            // // System.Diagnostics.Debug.WriteLine($"[DEBUG] 成功获取表格{tableIndex}，尺寸：{targetTable.Rows.Count}行×{targetTable.Columns.Count}列");
+                        }
+                        catch (Exception ex)
+                        {
+                            // System.Diagnostics.Debug.WriteLine($"[DEBUG] 获取表格{tableIndex}失败：{ex.Message}");
+                            return new ToolResult { Success = false, Error = $"获取表格{tableIndex}失败：{ex.Message}" };
+                        }
+                    }
+                    else if (selectionType == "by_context")
+                    {
+                        string contextBefore = tableSelection.ContainsKey("context_before") ? tableSelection["context_before"]?.ToString() ?? "" : "";
+                        string contextAfter = tableSelection.ContainsKey("context_after") ? tableSelection["context_after"]?.ToString() ?? "" : "";
+
+                        if (string.IsNullOrEmpty(contextBefore))
+                        {
+                            return new ToolResult { Success = false, Error = "选择类型为by_context时，必须提供context_before参数" };
+                        }
+
+                        try
+                        {
+                            // 查找前上下文
+                            Word.Range beforeRange = McpToolsHelpers.FindText(wordApp.ActiveDocument.Content, contextBefore);
+                            if (beforeRange == null)
+                            {
+                                return new ToolResult { Success = false, Error = $"找不到上下文'{contextBefore}'" };
+                            }
+
+                            // 从前上下文位置开始，向后查找第一个表格
+                            foreach (Word.Table table in wordApp.ActiveDocument.Tables)
+                            {
+                                if (table.Range.Start >= beforeRange.End)
+                                {
+                                    // 如果提供了后上下文，验证表格是否在正确位置
+                                    if (!string.IsNullOrEmpty(contextAfter))
+                                    {
+                                        Word.Range afterRange = McpToolsHelpers.FindText(wordApp.ActiveDocument.Content, contextAfter);
+                                        if (afterRange != null && table.Range.End <= afterRange.Start)
+                                        {
+                                            targetTable = table;
+                                            tableIndex = GetTableIndex(wordApp.ActiveDocument, table);
+                                            // System.Diagnostics.Debug.WriteLine($"[DEBUG] 通过上下文找到表格，尺寸：{table.Rows.Count}行×{table.Columns.Count}列");
+                                            break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // 没有后上下文，直接返回找到的表格
+                                        targetTable = table;
+                                        tableIndex = GetTableIndex(wordApp.ActiveDocument, table);
+                                        // System.Diagnostics.Debug.WriteLine($"[DEBUG] 通过上下文找到表格，尺寸：{table.Rows.Count}行×{table.Columns.Count}列");
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (targetTable == null)
+                            {
+                                return new ToolResult { Success = false, Error = $"找不到上下文匹配的表格" };
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            // System.Diagnostics.Debug.WriteLine($"[DEBUG] 通过上下文查找表格失败：{ex.Message}");
+                            return new ToolResult { Success = false, Error = $"通过上下文查找表格失败：{ex.Message}" };
+                        }
+                    }
+                    else
+                    {
+                        return new ToolResult { Success = false, Error = $"不支持的选择类型：{selectionType}" };
+                    }
+
+                    // 提取表格格式
+                    TableConfig config = ExtractTableFormat(targetTable, tableIndex);
+                    if (config == null)
+                    {
+                        return new ToolResult { Success = false, Error = "表格格式提取失败" };
+                    }
+
+                    // 生成文件名并保存
+                    string filename = GenerateFilename(wordApp.ActiveDocument, tableIndex);
+                    bool saved = await SaveTableFormat(config, filename);
+
+                    return new ToolResult
+                    {
+                        Success = saved,
+                        Data = new
+                        {
+                            table_extracted = true,
+                            table_info = new
+                            {
+                                rows = config.Table.Rows,
+                                columns = config.Table.Cols,
+                                table_index = tableIndex,
+                                selection_type = selectionType
+                            },
+                            format_file = filename,
+                            format_saved = saved,
+                            message = saved ? $"表格格式提取并保存成功，文件名为：{filename}" : "表格格式保存失败"
+                        }
+                    };
+                }
+                catch (Exception ex)
+                {
+                    // System.Diagnostics.Debug.WriteLine($"[DEBUG] extract_table_format工具执行失败: {ex.Message}");
+                    return new ToolResult { Success = false, Error = $"表格格式提取失败: {ex.Message}" };
+                }
+            };
+}
+
+        /// <summary>
+        /// 获取表格在文档中的序号
+        /// </summary>
+        private static int GetTableIndex(Word.Document document, Word.Table table)
+        {
+            try
+            {
+                for (int i = 1; i <= document.Tables.Count; i++)
+                {
+                    if (document.Tables[i].Range.Start == table.Range.Start)
+                    {
+                        return i;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // System.Diagnostics.Debug.WriteLine($"[DEBUG] 获取表格序号失败：{ex.Message}");
+            }
+            return 1; // 默认返回1
+        }
+
+        /// <summary>
+        /// 提取表格格式（使用XML方式）
+        /// </summary>
+        private static TableConfig ExtractTableFormat(Word.Table table, int tableIndex)
+        {
+            try
+            {
+                // 获取表格的 XML
+                string tableXml = table.Range.WordOpenXML;
+                if (string.IsNullOrEmpty(tableXml))
+                {
+                    throw new Exception("无法获取表格的 XML 内容");
+                }
+
+                // 解析 XML
+                XDocument xmlDoc = XDocument.Parse(tableXml);
+                XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+                // 查找表格元素
+                var tableElement = xmlDoc.Descendants(w + "tbl").FirstOrDefault();
+                if (tableElement == null)
+                {
+                    throw new Exception("无法找到表格元素");
+                }
+
+                // 提取表格基本信息
+                var rows = tableElement.Elements(w + "tr").ToList();
+                int actualRows = rows.Count;
+                int actualCols = table.Columns.Count; // 使用 Word API 获取列数（更准确）
+
+                // 提取表格样式
+                string tableStyle = ExtractTableStyleFromXml(tableElement, w, table);
+
+                // 提取列宽
+                List<float> colWidths = ExtractColWidthsFromXml(tableElement, w, actualCols);
+
+                // 提取合并信息和数据（一起处理，因为需要知道合并信息才能正确提取数据）
+                var merge = new List<List<int>>();
+                var data = new List<List<string>>();
+                string mostCommonColor = ExtractMergeInfoAndDataFromXml(tableElement, w, actualRows, actualCols, merge, data);
+
+                var config = new TableConfig
+                {
+                    Location = new LocationInfo
+                    {
+                        Type = "char_pos",
+                        Start = table.Range.Start,
+                        End = table.Range.End
+                    },
+                    Table = new TableInfo
+                    {
+                        Rows = actualRows,
+                        Cols = actualCols,
+                        ColWidths = colWidths,
+                        Style = tableStyle,
+                        TableFontColor = mostCommonColor
+                    },
+                    Merge = merge,
+                    Data = data
+                };
+
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 表格格式提取完成：{actualRows}行×{actualCols}列");
+                return config;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 表格格式提取失败：{ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 提取表格样式（从XML）
+        /// </summary>
+        private static string ExtractTableStyleFromXml(XElement tableElement, XNamespace w, Word.Table table)
+        {
+            try
+            {
+                // 首先尝试从 XML 中提取样式
+                var tblPr = tableElement.Element(w + "tblPr");
+                if (tblPr != null)
+                {
+                    var tblStyle = tblPr.Element(w + "tblStyle");
+                    if (tblStyle != null)
+                    {
+                        var valAttr = tblStyle.Attribute(w + "val");
+                        if (valAttr != null && !string.IsNullOrEmpty(valAttr.Value))
+                        {
+                            return valAttr.Value;
+                        }
+                    }
+                }
+
+                // 如果 XML 中没有，降级使用 Word API
+                var style = table.get_Style();
+                if (style != null)
+                {
+                    return style.ToString();
+                }
+            }
+            catch (Exception)
+            {
+                // System.Diagnostics.Debug.WriteLine($"[DEBUG] 提取表格样式失败：{ex.Message}");
+            }
+            return "Grid Table 4 - Accent 1"; // 默认样式
+        }
+
+        /// <summary>
+        /// 提取表格样式（保留原方法以兼容）
+        /// </summary>
+        private static string ExtractTableStyle(Word.Table table)
+        {
+            try
+            {
+                var style = table.get_Style();
+                if (style != null)
+                {
+                    string styleName = style.ToString();
+                    // System.Diagnostics.Debug.WriteLine($"[DEBUG] 提取到表格样式：{styleName}");
+                    return styleName;
+                }
+            }
+            catch (Exception)
+            {
+                // System.Diagnostics.Debug.WriteLine($"[DEBUG] 提取表格样式失败：{ex.Message}");
+            }
+            return "Grid Table 4 - Accent 1"; // 默认样式
+        }
+
+        /// <summary>
+        /// 从XML提取列宽
+        /// </summary>
+        private static List<float> ExtractColWidthsFromXml(XElement tableElement, XNamespace w, int cols)
+        {
+            var colWidths = new List<float>();
+            
+            try
+            {
+                // 从表格属性中获取列定义
+                var tblGrid = tableElement.Element(w + "tblGrid");
+                if (tblGrid != null)
+                {
+                    var gridCols = tblGrid.Elements(w + "gridCol").ToList();
+                    foreach (var gridCol in gridCols)
+                    {
+                        var wAttr = gridCol.Attribute(w + "w");
+                        if (wAttr != null && int.TryParse(wAttr.Value, out int width))
+                        {
+                            // Word XML 中的宽度单位是 twips (1/20 point)，需要转换为 points
+                            colWidths.Add(width / 20.0f);
+                        }
+                        else
+                        {
+                            colWidths.Add(80.0f); // 默认值
+                        }
+                    }
+                }
+
+                // 如果从 XML 中提取的列数不够，补充默认值
+                while (colWidths.Count < cols)
+                {
+                    colWidths.Add(80.0f);
+                }
+
+                // 如果提取的列数超过需要的，截断
+                if (colWidths.Count > cols)
+                {
+                    colWidths = colWidths.Take(cols).ToList();
+                }
+            }
+            catch (Exception)
+            {
+                // 如果提取失败，使用默认值
+                for (int i = 0; i < cols; i++)
+                {
+                    colWidths.Add(80.0f);
+                }
+            }
+
+            return colWidths;
+        }
+
+
+        /// <summary>
+        /// 合并信息比较器，用于去重
+        /// </summary>
+        private class MergeInfoComparer : IEqualityComparer<List<int>>
+        {
+            public bool Equals(List<int> x, List<int> y)
+            {
+                if (x == null || y == null) return x == y;
+                if (x.Count != y.Count) return false;
+                for (int i = 0; i < x.Count; i++)
+                {
+                    if (x[i] != y[i]) return false;
+                }
+                return true;
+            }
+
+            public int GetHashCode(List<int> obj)
+            {
+                if (obj == null) return 0;
+                int hash = 17;
+                foreach (int value in obj)
+                {
+                    hash = hash * 31 + value.GetHashCode();
+                }
+                return hash;
+            }
+        }
+
+        /// <summary>
+        /// 整合连续的合并信息（行合并和列合并）
+        /// </summary>
+        private static List<List<int>> ConsolidateAllMerges(List<List<int>> merges)
+        {
+            var result = new List<List<int>>();
+
+            // 按列分组，然后按行排序
+            var groupedByColumn = merges
+                .GroupBy(c => c[1]) // 按列号分组
+                .ToDictionary(g => g.Key, g => g.OrderBy(c => c[0]).ToList()); // 按起始行排序
+
+            foreach (var columnGroup in groupedByColumn)
+            {
+                int col = columnGroup.Key;
+                var columnMerges = columnGroup.Value;
+
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 整合列{col}的合并，共有{columnMerges.Count}个记录");
+
+                // 合并连续的行范围
+                int startRow = -1;
+                int endRow = -1;
+
+                foreach (var merge in columnMerges)
+                {
+                    int currentStartRow = merge[0];
+                    int currentEndRow = merge[2];
+
+                    if (startRow == -1)
+                    {
+                        // 第一个合并
+                        startRow = currentStartRow;
+                        endRow = currentEndRow;
+                    }
+                    else if (currentStartRow == endRow)
+                    {
+                        // 连续的合并，扩展结束行
+                        endRow = currentEndRow;
+                    }
+                    else
+                    {
+                        // 不连续，保存之前的合并，开始新的合并
+                        result.Add(new List<int> { startRow, col, endRow, col });
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   保存行合并: [{startRow}, {col}, {endRow}, {col}]");
+
+                        startRow = currentStartRow;
+                        endRow = currentEndRow;
+                    }
+                }
+
+                // 保存最后一个合并
+                if (startRow != -1)
+                {
+                    result.Add(new List<int> { startRow, col, endRow, col });
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]   保存行合并: [{startRow}, {col}, {endRow}, {col}]");
+                }
+            }
+
+            // 保留列合并（行相等，列不同的合并）
+            var existingColumnMerges = merges.Where(m => m[0] == m[2] && m[1] != m[3]).ToList();
+            result.AddRange(existingColumnMerges);
+
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] 整合完成，得到{result.Count}个合并范围（包含行合并和列合并）");
+            return result;
+        }
+
+        /// <summary>
+        /// 整理行合并：将首尾相接的行合并记录合并
+        /// 例如：[[2,3,3,3],[3,3,4,3]] 合并为 [[2,3,4,3]]
+        /// </summary>
+        private static List<List<int>> ConsolidateRowMerges(List<List<int>> merges)
+        {
+            var result = new List<List<int>>();
+
+            // 分离出行合并和列合并
+            var rowMerges = merges.Where(m => m[1] == m[3]).ToList(); // 行合并：startCol == endCol
+            var columnMerges = merges.Where(m => m[0] == m[2] && m[1] != m[3]).ToList(); // 列合并：startRow == endRow 且 startCol != endCol
+
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] 整理前：行合并 {rowMerges.Count} 个，列合并 {columnMerges.Count} 个");
+
+            // 按列分组处理行合并
+            var groupedByColumn = rowMerges
+                .GroupBy(m => m[1]) // 按列号分组
+                .ToDictionary(g => g.Key, g => g.OrderBy(m => m[0]).ToList()); // 按起始行排序
+
+            foreach (var columnGroup in groupedByColumn)
+            {
+                int col = columnGroup.Key;
+                var mergesForColumn = columnGroup.Value;
+
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 整理列{col}的行合并，共有{mergesForColumn.Count}个记录");
+
+                // 合并首尾相接的记录
+                int startRow = -1;
+                int endRow = -1;
+
+                foreach (var merge in mergesForColumn)
+                {
+                    int currentStartRow = merge[0];
+                    int currentEndRow = merge[2];
+
+                    if (startRow == -1)
+                    {
+                        // 第一个合并
+                        startRow = currentStartRow;
+                        endRow = currentEndRow;
+                    }
+                    else if (currentStartRow == endRow + 1 || currentStartRow == endRow)
+                    {
+                        // 首尾相接（endRow + 1）或重叠（endRow），扩展结束行
+                        endRow = Math.Max(endRow, currentEndRow);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   合并记录: [{startRow}, {col}, {endRow}, {col}]");
+                    }
+                    else
+                    {
+                        // 不连续，保存之前的合并，开始新的合并
+                        result.Add(new List<int> { startRow, col, endRow, col });
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   保存行合并: [{startRow}, {col}, {endRow}, {col}]");
+
+                        startRow = currentStartRow;
+                        endRow = currentEndRow;
+                    }
+                }
+
+                // 保存最后一个合并
+                if (startRow != -1)
+                {
+                    result.Add(new List<int> { startRow, col, endRow, col });
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]   保存行合并: [{startRow}, {col}, {endRow}, {col}]");
+                }
+            }
+
+            // 添加列合并
+            result.AddRange(columnMerges);
+
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] 整理后：共 {result.Count} 个合并记录（行合并 {result.Count - columnMerges.Count} 个，列合并 {columnMerges.Count} 个）");
+            return result;
+        }
+
+        /// <summary>
+        /// 打印 ColumnMergeInfo（列对应关系）
+        /// </summary>
+        private static void PrintColumnMergeInfo(Dictionary<int, List<List<int>>> columnMapping, string context = "")
+        {
+            if (!string.IsNullOrEmpty(context))
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== ColumnMergeInfo {context} ==========");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== ColumnMergeInfo ==========");
+            }
+            
+            var result = new List<object>();
+            foreach (var kvp in columnMapping.OrderBy(x => x.Key))
+            {
+                int row = kvp.Key;
+                var mapping = kvp.Value;
+                result.Add(new List<object> { row, mapping });
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("[");
+            for (int i = 0; i < result.Count; i++)
+            {
+                var rowMapping = result[i] as List<object>;
+                int row = (int)rowMapping[0];
+                var mapping = rowMapping[1] as List<List<int>>;
+                
+                sb.Append($"  [{row},[");
+                for (int j = 0; j < mapping.Count; j++)
+                {
+                    sb.Append($"[{mapping[j][0]},{mapping[j][1]}]");
+                    if (j < mapping.Count - 1)
+                        sb.Append(",");
+                }
+                sb.Append("]]");
+                if (i < result.Count - 1)
+                    sb.Append(",");
+                sb.AppendLine();
+            }
+            sb.AppendLine("]");
+
+            string mappingStr = sb.ToString();
+            System.Diagnostics.Debug.WriteLine(mappingStr);
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] =====================================");
+        }
+
+        /// <summary>
+        /// 打印 RowMergeInfo（行合并记录，只包含行合并，不包含列合并）
+        /// </summary>
+        private static void PrintRowMergeInfo(List<List<int>> merge, string context = "")
+        {
+            if (!string.IsNullOrEmpty(context))
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== RowMergeInfo {context} ==========");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== RowMergeInfo ==========");
+            }
+            
+            // 在第二步时，不进行过滤，直接打印所有记录
+            // 在其他步骤时，只过滤出行合并记录（startCol == endCol）
+            var rowMerges = context.Contains("第二步") ? merge : merge.Where(m => m[1] == m[3]).ToList();
+            
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("[");
+            for (int i = 0; i < rowMerges.Count; i++)
+            {
+                var m = rowMerges[i];
+                sb.Append($"  [{m[0]},{m[1]},{m[2]},{m[3]}]");
+                if (i < rowMerges.Count - 1)
+                    sb.Append(",");
+                sb.AppendLine();
+            }
+            sb.AppendLine("]");
+            
+            string mergeStr = sb.ToString();
+            System.Diagnostics.Debug.WriteLine(mergeStr);
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] =====================================");
+        }
+
+        /// <summary>
+        /// 从XML提取合并信息和数据
+        /// </summary>
+        private static string ExtractMergeInfoAndDataFromXml(
+            XElement tableElement, 
+            XNamespace w, 
+            int rows, 
+            int cols, 
+            List<List<int>> merge, 
+            List<List<string>> data)
+        {
+            var colorCounts = new Dictionary<string, int>();
+            int totalRuns = 0;
+
+            try
+            {
+                // 获取所有行
+                var xmlRows = tableElement.Elements(w + "tr").ToList();
+                
+                // 预先扫描表格，计算所有纵向合并的 rowspan
+                var rowspanMap = CalculateAllRowspansFromXml(xmlRows, w);
+
+                // 初始化数据矩阵（rows x cols）
+                for (int r = 0; r < rows; r++)
+                {
+                    data.Add(new List<string>());
+                    for (int c = 0; c < cols; c++)
+                    {
+                        data[r].Add(""); // 初始化为空字符串
+                    }
+                }
+
+                // 处理每一行
+                int currentRowIndex = 0; // 0-based
+                int currentLogicalColIndex = 0; // 逻辑列索引（考虑gridSpan）
+
+                foreach (var row in xmlRows)
+                {
+                    if (currentRowIndex >= rows) break;
+
+                    currentLogicalColIndex = 0;
+                    var cells = row.Elements(w + "tc").ToList();
+
+                    foreach (var cell in cells)
+                    {
+                        // 提取单元格合并信息和内容
+                        var cellInfo = ProcessCellFromXml(
+                            cell, 
+                            w, 
+                            currentRowIndex, 
+                            currentLogicalColIndex, 
+                            rowspanMap,
+                            colorCounts,
+                            ref totalRuns);
+
+                        // 如果有合并信息，添加到 merge 列表
+                        if (cellInfo.HasMerge)
+                        {
+                            // 格式：[起始行, 起始列, 结束行, 结束列] (1-based)
+                            merge.Add(new List<int>
+                            {
+                                cellInfo.StartRow + 1,      // 转换为1-based
+                                cellInfo.StartCol + 1,      // 转换为1-based
+                                cellInfo.EndRow + 1,        // 转换为1-based
+                                cellInfo.EndCol + 1         // 转换为1-based
+                            });
+                        }
+
+                        // 如果是合并的起始单元格，保存数据
+                        if (!cellInfo.IsVerticalMergeContinue)
+                        {
+                            int dataRow = cellInfo.StartRow;
+                            int dataCol = cellInfo.StartCol;
+                            
+                            if (dataRow < rows && dataCol < cols)
+                            {
+                                data[dataRow][dataCol] = cellInfo.Content;
+                            }
+                        }
+
+                        // 更新逻辑列索引
+                        currentLogicalColIndex += cellInfo.Colspan;
+                    }
+
+                    currentRowIndex++;
+                }
+
+                // 计算最常见的颜色
+                var explicitColors = colorCounts.Where(kvp => kvp.Key != "auto");
+                if (explicitColors.Any())
+                {
+                    var mostCommonColor = explicitColors.OrderByDescending(kvp => kvp.Value).First();
+                    return mostCommonColor.Key;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 提取合并信息和数据失败：{ex.Message}");
+            }
+
+            return "000000"; // 默认黑色
+        }
+
+        /// <summary>
+        /// 单元格信息
+        /// </summary>
+        private class CellInfo
+        {
+            public int StartRow { get; set; }
+            public int StartCol { get; set; }
+            public int EndRow { get; set; }
+            public int EndCol { get; set; }
+            public int Colspan { get; set; }
+            public int Rowspan { get; set; }
+            public bool HasMerge { get; set; }
+            public bool IsVerticalMergeContinue { get; set; }
+            public string Content { get; set; }
+        }
+
+        /// <summary>
+        /// 处理单元格，提取合并信息和内容
+        /// </summary>
+        private static CellInfo ProcessCellFromXml(
+            XElement cell,
+            XNamespace w,
+            int currentRowIndex,
+            int currentLogicalColIndex,
+            Dictionary<(int row, int col), int> rowspanMap,
+            Dictionary<string, int> colorCounts,
+            ref int totalRuns)
+        {
+            var cellInfo = new CellInfo
+            {
+                StartRow = currentRowIndex,
+                StartCol = currentLogicalColIndex,
+                EndRow = currentRowIndex,
+                EndCol = currentLogicalColIndex,
+                Colspan = 1,
+                Rowspan = 1,
+                HasMerge = false,
+                IsVerticalMergeContinue = false,
+                Content = ""
+            };
+
+            try
+            {
+                var tcPr = cell.Element(w + "tcPr");
+
+                // 1. 提取 gridSpan（横向合并）
+                var gridSpan = tcPr?.Element(w + "gridSpan");
+                if (gridSpan != null)
+                {
+                    string gridSpanVal = GetValAttributeFromXml(gridSpan);
+                    if (!string.IsNullOrEmpty(gridSpanVal) && int.TryParse(gridSpanVal, out int parsedColspan))
+                    {
+                        cellInfo.Colspan = parsedColspan;
+                    }
+                }
+
+                // 2. 提取 vMerge（纵向合并）
+                var vMerge = tcPr?.Element(w + "vMerge");
+                if (vMerge != null)
+                {
+                    string vMergeVal = GetValAttributeFromXml(vMerge);
+                    if (vMergeVal == "restart")
+                    {
+                        // 纵向合并起始
+                        if (rowspanMap.TryGetValue((currentRowIndex, currentLogicalColIndex), out int calculatedRowspan))
+                        {
+                            cellInfo.Rowspan = calculatedRowspan;
+                        }
+                    }
+                    else
+                    {
+                        // 纵向合并延续
+                        cellInfo.IsVerticalMergeContinue = true;
+                        if (rowspanMap.TryGetValue((currentRowIndex, currentLogicalColIndex), out int calculatedRowspan))
+                        {
+                            cellInfo.Rowspan = calculatedRowspan;
+                        }
+                        // 延续单元格不输出内容，直接返回
+                        return cellInfo;
+                    }
+                }
+
+                // 3. 计算合并范围
+                cellInfo.EndRow = cellInfo.StartRow + cellInfo.Rowspan - 1;
+                cellInfo.EndCol = cellInfo.StartCol + cellInfo.Colspan - 1;
+                cellInfo.HasMerge = (cellInfo.Colspan > 1) || (cellInfo.Rowspan > 1);
+
+                // 4. 提取单元格内容
+                cellInfo.Content = ExtractCellContentFromXml(cell, w, colorCounts, ref totalRuns);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 处理单元格失败：{ex.Message}");
+            }
+
+            return cellInfo;
+        }
+
+        /// <summary>
+        /// 从XML提取单元格内容
+        /// </summary>
+        private static string ExtractCellContentFromXml(
+            XElement cell,
+            XNamespace w,
+            Dictionary<string, int> colorCounts,
+            ref int totalRuns)
+        {
+            var sb = new StringBuilder();
+            
+            try
+            {
+                // 提取段落
+                var paragraphs = cell.Elements(w + "p");
+                foreach (var para in paragraphs)
+                {
+                    // 提取文本运行
+                    var runs = para.Elements(w + "r");
+                    foreach (var r in runs)
+                    {
+                        string txt = string.Join("", r.Descendants(w + "t").Select(t => (string)t));
+                        if (string.IsNullOrEmpty(txt)) continue;
+
+                        totalRuns++;
+                        var rPr = r.Element(w + "rPr");
+                        
+                        // 统计颜色
+                        string color = rPr?.Elements(w + "color").FirstOrDefault()?.Attribute(w + "val")?.Value;
+                        string effectiveColor;
+                        if (string.IsNullOrEmpty(color))
+                        {
+                            effectiveColor = "auto";
+                        }
+                        else
+                        {
+                            effectiveColor = ConvertBgrToRgb(color.ToUpper());
+                        }
+
+                        if (!colorCounts.ContainsKey(effectiveColor))
+                            colorCounts[effectiveColor] = 0;
+                        colorCounts[effectiveColor]++;
+
+                        // 提取格式信息
+                        bool bold = rPr?.Elements(w + "b").Any() == true;
+                        bool italic = rPr?.Elements(w + "i").Any() == true;
+
+                        // 构建HTML内容
+                        if (bold || italic || (!string.IsNullOrEmpty(color) && color.ToUpper() != "AUTO"))
+                        {
+                            sb.Append("<span");
+                            var styles = new List<string>();
+                            if (bold) styles.Add("font-weight:bold");
+                            if (italic) styles.Add("font-style:italic");
+                            if (!string.IsNullOrEmpty(color) && color.ToUpper() != "AUTO")
+                            {
+                                styles.Add($"color:#{effectiveColor}");
+                            }
+
+                            if (styles.Any())
+                            {
+                                sb.Append($" style='{string.Join(";", styles)}'");
+                            }
+                            sb.Append($">{System.Web.HttpUtility.HtmlEncode(txt)}</span>");
+                        }
+                        else
+                        {
+                            sb.Append(System.Web.HttpUtility.HtmlEncode(txt));
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 提取单元格内容失败：{ex.Message}");
+            }
+
+            string content = sb.ToString();
+            // 清理末尾的换行符
+            if (content.EndsWith("\r\a"))
+                content = content.Substring(0, content.Length - 2);
+            else if (content.EndsWith("\r"))
+                content = content.Substring(0, content.Length - 1);
+
+            return content;
+        }
+
+        /// <summary>
+        /// 获取元素的 val 属性值
+        /// </summary>
+        private static string GetValAttributeFromXml(XElement element)
+        {
+            if (element == null) return null;
+            
+            // 方法1：直接获取 val 属性
+            var valAttr = element.Attribute("val");
+            if (valAttr != null)
+            {
+                return valAttr.Value;
+            }
+            
+            // 方法2：尝试带命名空间的属性
+            var ns = element.Name.Namespace;
+            var valAttrWithNs = element.Attribute(ns + "val");
+            if (valAttrWithNs != null)
+            {
+                return valAttrWithNs.Value;
+            }
+            
+            return null;
+        }
+
+        /// <summary>
+        /// 预先扫描表格，计算所有纵向合并的rowspan值
+        /// </summary>
+        private static Dictionary<(int row, int col), int> CalculateAllRowspansFromXml(List<XElement> rows, XNamespace w)
+        {
+            var rowspanMap = new Dictionary<(int row, int col), int>();
+            var verticalMergeStarts = new Dictionary<int, (int startRow, int startCol, int gridSpan)>();
+            
+            // 第一遍扫描：找到所有纵向合并的起始位置
+            for (int rowIdx = 0; rowIdx < rows.Count; rowIdx++)
+            {
+                var row = rows[rowIdx];
+                int logicalColIdx = 0;
+                
+                foreach (var cell in row.Elements(w + "tc"))
+                {
+                    var tcPr = cell.Element(w + "tcPr");
+                    
+                    // 获取gridSpan
+                    int gridSpan = 1;
+                    var gridSpanElem = tcPr?.Element(w + "gridSpan");
+                    if (gridSpanElem != null)
+                    {
+                        string gridSpanVal = GetValAttributeFromXml(gridSpanElem);
+                        if (!string.IsNullOrEmpty(gridSpanVal))
+                        {
+                            int.TryParse(gridSpanVal, out gridSpan);
+                        }
+                    }
+                    
+                    // 检查vMerge
+                    var vMerge = tcPr?.Element(w + "vMerge");
+                    if (vMerge != null)
+                    {
+                        string vMergeVal = GetValAttributeFromXml(vMerge);
+                        if (vMergeVal == "restart")
+                        {
+                            // 记录纵向合并起始
+                            verticalMergeStarts[logicalColIdx] = (rowIdx, logicalColIdx, gridSpan);
+                        }
+                    }
+                    
+                    logicalColIdx += gridSpan;
+                }
+            }
+            
+            // 第二遍扫描：计算每个纵向合并的rowspan
+            foreach (var kvp in verticalMergeStarts)
+            {
+                int startCol = kvp.Key;
+                int startRow = kvp.Value.startRow;
+                int gridSpan = kvp.Value.gridSpan;
+                
+                // 从起始行开始，向下查找延续单元格
+                int rowspan = 1;
+                for (int rowIdx = startRow + 1; rowIdx < rows.Count; rowIdx++)
+                {
+                    var row = rows[rowIdx];
+                    int logicalColIdx = 0;
+                    bool foundContinue = false;
+                    
+                    foreach (var cell in row.Elements(w + "tc"))
+                    {
+                        var tcPr = cell.Element(w + "tcPr");
+                        
+                        // 获取gridSpan
+                        int cellGridSpan = 1;
+                        var gridSpanElem = tcPr?.Element(w + "gridSpan");
+                        if (gridSpanElem != null)
+                        {
+                            string gridSpanVal = GetValAttributeFromXml(gridSpanElem);
+                            if (!string.IsNullOrEmpty(gridSpanVal))
+                            {
+                                int.TryParse(gridSpanVal, out cellGridSpan);
+                            }
+                        }
+                        
+                        // 检查是否是对应列的延续单元格
+                        if (logicalColIdx == startCol)
+                        {
+                            var vMerge = tcPr?.Element(w + "vMerge");
+                            if (vMerge != null)
+                            {
+                                string vMergeVal = GetValAttributeFromXml(vMerge);
+                                if (vMergeVal != "restart")  // 延续单元格：val 为空或不存在
+                                {
+                                    // 找到延续单元格
+                                    foundContinue = true;
+                                    rowspan++;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        logicalColIdx += cellGridSpan;
+                    }
+                    
+                    if (!foundContinue)
+                    {
+                        // 没有找到延续单元格，合并结束
+                        break;
+                    }
+                }
+                
+                // 记录rowspan值（起始单元格和所有延续单元格都使用相同的rowspan）
+                for (int r = startRow; r < startRow + rowspan; r++)
+                {
+                    rowspanMap[(r, startCol)] = rowspan;
+                }
+            }
+            
+            return rowspanMap;
+        }
+
+        /// <summary>
+        /// 提取合并信息（保留原方法以兼容，但已不使用）
+        /// </summary>
+        private static void ExtractMergeInfo(Word.Table table, List<List<int>> merge, List<float> colWidths)
+        {
+            int rows = table.Rows.Count;
+            int cols = table.Columns.Count;
+
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== 开始合并检测 - 表格尺寸: {rows}行 × {cols}列 ==========");
+
+            // ========== 第一步：提取所有格子的宽度 ==========
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== 第一步：提取所有格子的宽度 ==========");
+            var widthInfo = ExtractWidthInfo(table, rows, cols);
+            PrintWidthInfo(widthInfo, "第一步完成");
+
+            // ========== 第二步：识别被行合并的格子，并填充空的宽度 ==========
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== 第二步：识别被行合并的格子 ==========");
+            var rowMergeInfo = new List<List<int>>();
+            widthInfo = IdentifyRowMergesAndFillWidths(table, widthInfo, rows, cols, rowMergeInfo, colWidths);
+            PrintWidthInfo(widthInfo, "第二步完成（行合并识别并填充宽度后）");
+            PrintRowMergeInfo(rowMergeInfo, "第二步完成（RowMergeInfo）");
+
+            // 第二步完成后，重新计算每一列的众数宽度
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== 第二步完成后：重新计算列宽众数 ==========");
+            var newColWidths = CalculateColumnWidthsFromWidthInfo(widthInfo, rows, cols);
+            
+            // 更新传入的colWidths列表（直接修改列表内容，保持引用不变）
+            colWidths.Clear();
+            colWidths.AddRange(newColWidths);
+            
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] 重新计算后的列宽众数:");
+            for (int c = 0; c < colWidths.Count; c++)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG]   列{c + 1}: {colWidths[c]}");
+            }
+
+            // ========== 第三步：识别列合并 ==========
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== 第三步：识别列合并 ==========");
+            var columnMergeInfo = IdentifyColumnMerges(table, widthInfo, rows, cols, colWidths);
+            PrintColumnMergeInfo(columnMergeInfo, "第三步完成（ColumnMergeInfo）");
+
+            // ========== 第四步：得到最终的合并表示 ==========
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== 第四步：得到最终的合并表示 ==========");
+            
+            // 4.1 合并行合并
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== 第四步4.1：合并行合并 ==========");
+            var mergedCells = new HashSet<string>(); // 存储已被合并的格子序号，格式："行号,列号"
+            var consolidatedRowMerges = ConsolidateRowMergesStep4_1(rowMergeInfo, columnMergeInfo, mergedCells);
+            PrintRowMergeInfo(consolidatedRowMerges, "第四步4.1完成（合并后的行合并）");
+            
+            // 4.2 行合并过滤
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== 第四步4.2：行合并过滤 ==========");
+            var filteredColumnMergeInfo = FilterColumnMergeInfo(columnMergeInfo, mergedCells);
+            PrintColumnMergeInfo(filteredColumnMergeInfo, "第四步4.2完成（过滤后的ColumnMergeInfo）");
+            
+            // 4.3 列合并合并
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== 第四步4.3：列合并合并 ==========");
+            var columnMerges = IdentifyColumnMergesFromFiltered(filteredColumnMergeInfo);
+            PrintRowMergeInfo(columnMerges, "第四步4.3完成（列合并）");
+
+            // ========== 第五步：整理得到所有的合并表示 ==========
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== 第五步：整理得到所有的合并表示 ==========");
+            var finalMerges = new List<List<int>>();
+            finalMerges.AddRange(consolidatedRowMerges);
+            finalMerges.AddRange(columnMerges);
+            
+            // 更新merge列表
+            merge.Clear();
+            merge.AddRange(finalMerges);
+            
+            PrintRowMergeInfo(finalMerges, "第五步完成（最终合并表示）");
+            
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== 合并检测完成，共找到 {finalMerges.Count} 个合并单元格 ==========");
+        }
+
+        /// <summary>
+        /// 第一步：提取所有格子的宽度
+        /// </summary>
+        private static List<List<string>> ExtractWidthInfo(Word.Table table, int rows, int cols)
+        {
+            var widthInfo = new List<List<string>>();
+            
+            // 计算表格总宽度（通过累加所有列的宽度）
+            float tableTotalWidth = 0.0f;
+            try
+            {
+                for (int c = 1; c <= cols; c++)
+                {
+                    tableTotalWidth += table.Columns[c].Width;
+                }
+            }
+            catch (Exception)
+            {
+                // 如果无法获取列宽度，尝试通过第一行计算
+                try
+                {
+                    for (int c = 1; c <= cols; c++)
+                    {
+                        Word.Cell cell = table.Cell(1, c);
+                        tableTotalWidth += cell.Width;
+                    }
+                }
+                catch (Exception)
+                {
+                    // 如果还是失败，使用默认值0
+                }
+            }
+            
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] 表格总宽度: {tableTotalWidth}");
+            
+            for (int r = 1; r <= rows; r++)
+            {
+                var rowWidths = new List<string>();
+                float rowPrefixWidth = 0.0f; // 当前行前面所有列的宽度和
+                
+                for (int c = 1; c <= cols; c++)
+                {
+                    try
+                    {
+                        Word.Cell cell = table.Cell(r, c);
+                        float cellWidth = cell.Width;
+                        
+                        // 检查是否为异常大的值（9999999或类似值）
+                        if (cellWidth > 1000000)
+                        {
+                            // 该列宽度 = 表格总宽度 - 前面所有列的宽度和
+                            float calculatedWidth = tableTotalWidth - rowPrefixWidth;
+                            if (calculatedWidth > 0)
+                            {
+                                rowWidths.Add(calculatedWidth.ToString("F0"));
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 第{r}行第{c}列：检测到异常宽度值{cellWidth}，计算为{calculatedWidth}（表格总宽度{tableTotalWidth} - 前缀宽度{rowPrefixWidth}）");
+                                rowPrefixWidth += calculatedWidth; // 累加计算出的宽度
+                            }
+                            else
+                            {
+                                // 如果计算出的宽度小于等于0，保持原值（可能是表格总宽度计算不准确）
+                                rowWidths.Add(cellWidth.ToString("F0"));
+                                rowPrefixWidth += cellWidth;
+                            }
+                        }
+                        else
+                        {
+                            rowWidths.Add(cellWidth.ToString("F0")); // 转换为字符串，保留0位小数
+                            rowPrefixWidth += cellWidth; // 累加前缀宽度
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        rowWidths.Add(""); // 无法访问的格子用空字符串表示
+                        // 空字符串不累加到前缀宽度中
+                    }
+                }
+                widthInfo.Add(rowWidths);
+            }
+            
+            return widthInfo;
+        }
+
+        /// <summary>
+        /// 基于填充后的widthInfo重新计算每一列的众数宽度
+        /// 只统计拥有最大列数（完整列数）的行
+        /// </summary>
+        private static List<float> CalculateColumnWidthsFromWidthInfo(List<List<string>> widthInfo, int rows, int cols)
+        {
+            // 先找到最大列数（完整列数）
+            int maxColCount = 0;
+            for (int r = 0; r < rows; r++)
+            {
+                var row = widthInfo[r];
+                int actualCellCount = 0;
+                for (int c = 0; c < cols; c++)
+                {
+                    if (!string.IsNullOrEmpty(row[c]))
+                    {
+                        actualCellCount++;
+                    }
+                }
+                if (actualCellCount > maxColCount)
+                {
+                    maxColCount = actualCellCount;
+                }
+            }
+
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] 最大列数（完整列数）: {maxColCount}");
+
+            // 统计每一列的宽度出现频率（只统计拥有最大列数的行）
+            var widthCounter = new Dictionary<int, Dictionary<float, int>>();
+            // 外层 key = 列号(0-based)，内层 key = 宽度，value = 出现次数
+
+            for (int r = 0; r < rows; r++)
+            {
+                var row = widthInfo[r];
+                
+                // 检查这一行是否拥有最大列数
+                int actualCellCount = 0;
+                for (int c = 0; c < cols; c++)
+                {
+                    if (!string.IsNullOrEmpty(row[c]))
+                    {
+                        actualCellCount++;
+                    }
+                }
+                
+                // 只统计拥有最大列数的行
+                if (actualCellCount == maxColCount)
+                {
+                    for (int c = 0; c < cols; c++)
+                    {
+                        if (!string.IsNullOrEmpty(row[c]))
+                        {
+                            if (float.TryParse(row[c], out float width))
+                            {
+                                if (!widthCounter.ContainsKey(c))
+                                    widthCounter[c] = new Dictionary<float, int>();
+                                if (!widthCounter[c].ContainsKey(width))
+                                    widthCounter[c][width] = 0;
+                                widthCounter[c][width]++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 对每一列取众数
+            var colWidths = new List<float>();
+            for (int c = 0; c < cols; c++)
+            {
+                if (widthCounter.ContainsKey(c) && widthCounter[c].Count > 0)
+                {
+                    var most = widthCounter[c].OrderByDescending(kv => kv.Value).First();
+                    colWidths.Add(most.Key);
+                }
+                else
+                {
+                    colWidths.Add(80.0f); // 保底值
+                }
+            }
+
+            return colWidths;
+        }
+
+        /// <summary>
+        /// 打印 width_info
+        /// </summary>
+        private static void PrintWidthInfo(List<List<string>> widthInfo, string context = "")
+        {
+            if (!string.IsNullOrEmpty(context))
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== WidthInfo {context} ==========");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== WidthInfo ==========");
+            }
+            
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("[");
+            for (int i = 0; i < widthInfo.Count; i++)
+            {
+                var row = widthInfo[i];
+                sb.Append("[");
+                for (int j = 0; j < row.Count; j++)
+                {
+                    sb.Append($"'{row[j]}'");
+                    if (j < row.Count - 1)
+                        sb.Append(",");
+                }
+                sb.Append("]");
+                if (i < widthInfo.Count - 1)
+                    sb.Append(",");
+                sb.AppendLine();
+            }
+            sb.AppendLine("]");
+            
+            string widthInfoStr = sb.ToString();
+            System.Diagnostics.Debug.WriteLine(widthInfoStr);
+            Console.WriteLine($"========== WidthInfo {context} ==========");
+            Console.WriteLine(widthInfoStr);
+            Console.WriteLine("====================================");
+        }
+
+        /// <summary>
+        /// 第二步：识别被行合并的格子，并填充空的宽度
+        /// </summary>
+        private static List<List<string>> IdentifyRowMergesAndFillWidths(
+            Word.Table table, 
+            List<List<string>> widthInfo, 
+            int rows, 
+            int cols, 
+            List<List<int>> rowMergeInfo,
+            List<float> colWidths)
+        {
+            // 计算表格总宽度
+            float tableTotalWidth = 0.0f;
+            for (int c = 0; c < colWidths.Count; c++)
+            {
+                tableTotalWidth += colWidths[c];
+            }
+
+            // 从第二行开始遍历（第一行没有上一行）
+            for (int r = 1; r < rows; r++) // r是0-based索引，对应第r+1行
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 处理第{r+1}行（0-based索引{r}）...");
+                var currentRow = widthInfo[r];
+                var prevRow = widthInfo[r - 1];
+                
+                // 找到最后一个非空字符串的列索引
+                int lastNonEmptyCol = -1;
+                for (int checkC = cols - 1; checkC >= 0; checkC--)
+                {
+                    if (!string.IsNullOrEmpty(currentRow[checkC]))
+                    {
+                        lastNonEmptyCol = checkC;
+                        break;
+                    }
+                }
+                
+                // 遍历当前行的每一列（包括最后一个非空列之后的一个空列）
+                int maxColToCheck = lastNonEmptyCol + 1;
+                if (maxColToCheck >= cols)
+                    maxColToCheck = cols - 1;
+                
+                for (int c = 0; c <= maxColToCheck; c++)
+                {
+                    if (string.IsNullOrEmpty(currentRow[c]))
+                    {
+                        // 这是一个空字符串，可能是行合并
+                        
+                        // 计算当前行前面所有列的总宽度
+                        float prefixWidth = 0.0f;
+                        for (int prevC = 0; prevC < c; prevC++)
+                        {
+                            if (!string.IsNullOrEmpty(currentRow[prevC]))
+                            {
+                                if (float.TryParse(currentRow[prevC], out float w))
+                                {
+                                    prefixWidth += w;
+                                }
+                            }
+                        }
+                        
+                        // 判断是否是行合并
+                        bool isRowMerge = false;
+                        
+                        if (c <= lastNonEmptyCol)
+                        {
+                            // 非最后一列为空，必然是被行合并的格子
+                            isRowMerge = true;
+                        }
+                        else if (c == lastNonEmptyCol + 1)
+                        {
+                            // 这是最后一个非空列之后的第一个空列
+                            // 判断前面所有格子的宽度加起来是否等于表格总宽度
+                            if (Math.Abs(prefixWidth - tableTotalWidth) > 0.1f)
+                            {
+                                // 小于表格总宽度，证明这个位置依然是被行合并的
+                                isRowMerge = true;
+                            }
+                            // 如果等于表格总宽度，证明前面进行了列合并空出来，不是行合并
+                        }
+                        
+                        if (isRowMerge)
+                        {
+                            // 在上一行中找到对应位置
+                            // 方法：找到上一行前面多少个格子加起来等于prefixWidth，那么当前行的空格子对应上一行的下一个格子
+                            float accumulatedWidth = 0.0f;
+                            int prevRowCol = -1;
+                            
+                            for (int prevC = 0; prevC < prevRow.Count; prevC++)
+                            {
+                                if (!string.IsNullOrEmpty(prevRow[prevC]))
+                                {
+                                    if (float.TryParse(prevRow[prevC], out float w))
+                                    {
+                                        accumulatedWidth += w;
+                                        
+                                        // 当累计宽度等于前缀宽度时，说明上一行前prevC+1个格子总宽等于当前行前面列总宽
+                                        // 那么当前行的空格子对应上一行的第prevC+2个格子（索引为prevC+1）
+                                        if (Math.Abs(accumulatedWidth - prefixWidth) < 0.1f)
+                                        {
+                                            // 当前行的空格子对应上一行的第prevC+2个格子（索引为prevC+1）
+                                            // 需要确保下一列存在
+                                            for (int nextC = prevC + 1; nextC < prevRow.Count; nextC++)
+                                            {
+                                                if (!string.IsNullOrEmpty(prevRow[nextC]))
+                                                {
+                                                    prevRowCol = nextC;
+                                                    break;
+                                                }
+                                            }
+                                            break;
+                                        }
+                                        else if (accumulatedWidth > prefixWidth + 0.1f)
+                                        {
+                                            // 累计宽度大于前缀宽度，说明当前列（prevC）就是对应的列
+                                            prevRowCol = prevC;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if (prevRowCol >= 0)
+                            {
+                                // 找到对应的格子，记录行合并
+                                // 注意：r是0-based，当前行的索引
+                                int row1 = r - 1; // 上一行（0-based，对应第r行）
+                                int col1 = prevRowCol + 1; // 转换为1-based列号
+                                int row2 = r; // 当前行（0-based，对应第r+1行）
+                                int col2 = c + 1; // 转换为1-based列号
+                                
+                                var mergeRecord = new List<int> { row1 + 1, col1, row2 + 1, col2 }; // 转换为1-based行号
+                                rowMergeInfo.Add(mergeRecord);
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 添加行合并记录: [{mergeRecord[0]},{mergeRecord[1]},{mergeRecord[2]},{mergeRecord[3]}]，当前rowMergeInfo.Count={rowMergeInfo.Count}");
+                                
+                                // 填充当前格子的宽度（使用上一行对应格子的宽度）
+                                if (!string.IsNullOrEmpty(prevRow[prevRowCol]))
+                                {
+                                    currentRow[c] = prevRow[prevRowCol];
+                                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 填充第{r+1}行第{c+1}列的宽度为: {prevRow[prevRowCol]}");
+                                }
+                            }
+                            else
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 第{r+1}行第{c+1}列：未找到对应的上一行列，prefixWidth={prefixWidth}");
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return widthInfo;
+        }
+
+        /// <summary>
+        /// 第三步：识别列合并
+        /// </summary>
+        private static Dictionary<int, List<List<int>>> IdentifyColumnMerges(
+            Word.Table table,
+            List<List<string>> widthInfo,
+            int rows,
+            int cols,
+            List<float> colWidths)
+        {
+            var columnMergeInfo = new Dictionary<int, List<List<int>>>();
+            
+            // 计算表格总宽度
+            float tableTotalWidth = 0.0f;
+            for (int c = 0; c < colWidths.Count; c++)
+            {
+                tableTotalWidth += colWidths[c];
+            }
+            
+            // 遍历每一行，把每一行看做独立的行使用列合并检测算法
+            for (int r = 0; r < rows; r++) // r是0-based索引
+            {
+                var row = widthInfo[r];
+                
+                // 计算这一行的实际单元格数量和总宽度
+                int actualCellCount = 0;
+                float rowTotalWidth = 0.0f;
+                List<float> rowWidths = new List<float>();
+                List<int> cellColumns = new List<int>();
+                
+                for (int c = 0; c < cols; c++)
+                {
+                    if (!string.IsNullOrEmpty(row[c]))
+                    {
+                        if (float.TryParse(row[c], out float cellWidth))
+                        {
+                            actualCellCount++;
+                            rowTotalWidth += cellWidth;
+                            rowWidths.Add(cellWidth);
+                            cellColumns.Add(c + 1); // 转换为1-based列号
+                        }
+                    }
+                }
+                
+                // 构建列对应关系
+                var rowMapping = new List<List<int>>();
+                
+                if (actualCellCount == cols)
+                {
+                    // 没有列合并，新老表序号一一对应
+                    for (int col = 1; col <= cols; col++)
+                    {
+                        rowMapping.Add(new List<int> { col, col });
+                    }
+                }
+                else if (Math.Abs(rowTotalWidth - tableTotalWidth) < 0.1f && actualCellCount < cols)
+                {
+                    // 存在列合并，构建列对应关系
+                    int newColIndex = 1; // 新表的列号（从1开始）
+                    int currentColIndex = 0; // 当前处理的老表列索引（从0开始）
+                    
+                    for (int i = 0; i < rowWidths.Count; i++)
+                    {
+                        float cellWidth = rowWidths[i];
+                        int cellCol = cellColumns[i];
+                        
+                        // 计算这个单元格覆盖了多少列
+                        int coveredCols = 1;
+                        float expectedWidth = colWidths[currentColIndex];
+                        
+                        if (cellWidth > expectedWidth + 0.1f)
+                        {
+                            float accumulatedWidth = expectedWidth;
+                            for (int j = currentColIndex + 1; j < colWidths.Count; j++)
+                            {
+                                accumulatedWidth += colWidths[j];
+                                coveredCols++;
+                                if (Math.Abs(cellWidth - accumulatedWidth) < 0.1f)
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // 构建列对应关系：新表的newColIndex列对应老表的currentColIndex+1到currentColIndex+coveredCols列
+                        for (int oldCol = currentColIndex + 1; oldCol <= currentColIndex + coveredCols; oldCol++)
+                        {
+                            rowMapping.Add(new List<int> { newColIndex, oldCol });
+                        }
+                        
+                        newColIndex++;
+                        currentColIndex += coveredCols;
+                    }
+                }
+                else
+                {
+                    // 存在行合并，但这一行可能也有列合并，需要根据实际单元格来构建
+                    // 这种情况比较复杂，暂时先创建1:1对应
+                    for (int col = 1; col <= cols; col++)
+                    {
+                        rowMapping.Add(new List<int> { col, col });
+                    }
+                }
+                
+                // 保存该行的列对应关系（使用1-based行号）
+                columnMergeInfo[r + 1] = rowMapping;
+            }
+            
+            return columnMergeInfo;
+        }
+
+        /// <summary>
+        /// 第四步4.1：合并行合并
+        /// </summary>
+        private static List<List<int>> ConsolidateRowMergesStep4_1(
+            List<List<int>> rowMergeInfo,
+            Dictionary<int, List<List<int>>> columnMergeInfo,
+            HashSet<string> mergedCells)
+        {
+            var consolidated = new List<List<int>>();
+            
+            if (rowMergeInfo.Count == 0)
+                return consolidated;
+            
+            // rowMergeInfo格式：[startRow, startCol, endRow, endCol]，都是新表坐标
+            
+            // 第一步：合并首尾相接的记录（使用新表坐标）
+            // 按起始行、起始列、结束行、结束列排序
+            var sorted = rowMergeInfo.OrderBy(m => m[0]).ThenBy(m => m[1]).ThenBy(m => m[2]).ThenBy(m => m[3]).ToList();
+            
+            var processed = new bool[sorted.Count];
+            
+            for (int i = 0; i < sorted.Count; i++)
+            {
+                if (processed[i])
+                    continue;
+                
+                // 找到所有首尾相接的记录（使用新表坐标）
+                var chain = new List<List<int>> { sorted[i] };
+                processed[i] = true;
+                
+                bool foundMore = true;
+                while (foundMore)
+                {
+                    foundMore = false;
+                    var lastMerge = chain[chain.Count - 1];
+                    int lastEndRow = lastMerge[2];
+                    int lastEndCol = lastMerge[3];
+                    
+                    // 查找下一个首尾相接的记录（新表坐标）
+                    for (int j = 0; j < sorted.Count; j++)
+                    {
+                        if (processed[j])
+                            continue;
+                        
+                        var nextMerge = sorted[j];
+                        if (nextMerge[0] == lastEndRow && nextMerge[1] == lastEndCol)
+                        {
+                            chain.Add(nextMerge);
+                            processed[j] = true;
+                            foundMore = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // 第二步：检查链中所有涉及的单元格对应的原始列列表是否一致
+                if (chain.Count > 0)
+                {
+                    // 提取涉及的单元格（新表坐标）
+                    var involvedCells = new List<Tuple<int, int>>(); // (row, col) 新表坐标
+                    foreach (var merge in chain)
+                    {
+                        // 每个merge涉及两个单元格：起始和结束
+                        involvedCells.Add(new Tuple<int, int>(merge[0], merge[1])); // 起始单元格
+                        involvedCells.Add(new Tuple<int, int>(merge[2], merge[3])); // 结束单元格
+                    }
+                    
+                    // 去重
+                    involvedCells = involvedCells.Distinct().ToList();
+                    
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 链包含{chain.Count}个行合并记录，涉及{involvedCells.Count}个单元格");
+                    foreach (var cell in involvedCells)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   涉及单元格（新表坐标）: ({cell.Item1},{cell.Item2})");
+                    }
+                    
+                    // 查表找到每个单元格对应的原始列列表
+                    var allOriginalColLists = new List<List<int>>();
+                    foreach (var cell in involvedCells)
+                    {
+                        var originalCols = GetOriginalColumns(cell.Item1, cell.Item2, columnMergeInfo);
+                        originalCols.Sort();
+                        allOriginalColLists.Add(originalCols);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   单元格({cell.Item1},{cell.Item2})对应的原始列: [{string.Join(",", originalCols)}]");
+                    }
+                    
+                    // 检查所有单元格对应的原始列列表是否一致
+                    bool allMatch = true;
+                    if (allOriginalColLists.Count > 0)
+                    {
+                        var firstList = allOriginalColLists[0];
+                        foreach (var otherList in allOriginalColLists)
+                        {
+                            if (firstList.Count != otherList.Count)
+                            {
+                                allMatch = false;
+                                break;
+                            }
+                            for (int k = 0; k < firstList.Count; k++)
+                            {
+                                if (firstList[k] != otherList[k])
+                                {
+                                    allMatch = false;
+                                    break;
+                                }
+                            }
+                            if (!allMatch)
+                                break;
+                        }
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]   所有单元格对应的原始列列表是否一致: {allMatch}");
+                    
+                    if (allMatch && allOriginalColLists.Count > 0)
+                    {
+                        // 所有单元格对应的原始列列表一致，找到所有单元格对应的原始单元格坐标
+                        var originalCells = new List<Tuple<int, int>>(); // (row, col) 原始单元格坐标
+                        foreach (var cell in involvedCells)
+                        {
+                            var originalCols = GetOriginalColumns(cell.Item1, cell.Item2, columnMergeInfo);
+                            foreach (int origCol in originalCols)
+                            {
+                                originalCells.Add(new Tuple<int, int>(cell.Item1, origCol));
+                            }
+                        }
+                        
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   所有单元格对应的原始单元格坐标:");
+                        foreach (var cell in originalCells)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG]      ({cell.Item1},{cell.Item2})");
+                        }
+                        
+                        // 取左上角和右下角
+                        if (originalCells.Count > 0)
+                        {
+                            int minRow = originalCells.Min(c => c.Item1);
+                            int minCol = originalCells.Min(c => c.Item2);
+                            int maxRow = originalCells.Max(c => c.Item1);
+                            int maxCol = originalCells.Max(c => c.Item2);
+                            
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG]   合并后的范围: [{minRow},{minCol},{maxRow},{maxCol}]");
+                            
+                            consolidated.Add(new List<int> { minRow, minCol, maxRow, maxCol });
+                            
+                            // 记录被合并的格子
+                            foreach (var cell in originalCells)
+                            {
+                                mergedCells.Add($"{cell.Item1},{cell.Item2}");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 原始列列表不一致，保持原样
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   原始列列表不一致，保持原样");
+                        foreach (var merge in chain)
+                        {
+                            consolidated.Add(merge);
+                        }
+                    }
+                }
+            }
+            
+            return consolidated;
+        }
+
+        /// <summary>
+        /// 检查两个行合并记录对应的原始列是否一样
+        /// </summary>
+        private static bool AreOriginalColumnsSame(
+            List<int> merge1,
+            List<int> merge2,
+            Dictionary<int, List<List<int>>> columnMergeInfo)
+        {
+            // merge1: [row1, col1, row2, col2]
+            // merge2: [row2, col2, row3, col3]
+            // 需要检查merge1的结束位置和merge2的起始位置对应的原始列是否一样
+            
+            int row1 = merge1[0];
+            int col1 = merge1[1];
+            int row2 = merge1[2];
+            int col2 = merge1[3];
+            
+            // 找到merge1结束位置（row2, col2）对应的原始列
+            var originalCols1 = GetOriginalColumns(row2, col2, columnMergeInfo);
+            
+            // 找到merge2起始位置（row2, col2）对应的原始列（应该和merge1结束位置一样）
+            var originalCols2 = GetOriginalColumns(row2, col2, columnMergeInfo);
+            
+            // 比较原始列是否一样
+            if (originalCols1.Count != originalCols2.Count)
+                return false;
+            
+            originalCols1.Sort();
+            originalCols2.Sort();
+            
+            for (int i = 0; i < originalCols1.Count; i++)
+            {
+                if (originalCols1[i] != originalCols2[i])
+                    return false;
+            }
+            
+            return true;
+        }
+
+        /// <summary>
+        /// 获取指定位置对应的原始列号列表
+        /// </summary>
+        private static List<int> GetOriginalColumns(
+            int row,
+            int col,
+            Dictionary<int, List<List<int>>> columnMergeInfo)
+        {
+            var originalCols = new List<int>();
+            
+            if (columnMergeInfo.ContainsKey(row))
+            {
+                var rowMapping = columnMergeInfo[row];
+                // 找到新表列号col对应的所有老表列号
+                foreach (var map in rowMapping)
+                {
+                    if (map[0] == col) // 新表列号
+                    {
+                        originalCols.Add(map[1]); // 老表列号
+                    }
+                }
+            }
+            else
+            {
+                // 如果没有列合并记录，说明是1:1对应
+                originalCols.Add(col);
+            }
+            
+            return originalCols;
+        }
+
+        /// <summary>
+        /// 记录被合并的格子
+        /// </summary>
+        private static void RecordMergedCells(
+            List<int> merge1,
+            List<int> merge2,
+            Dictionary<int, List<List<int>>> columnMergeInfo,
+            HashSet<string> mergedCells)
+        {
+            // merge1: [row1, col1, row2, col2]
+            // merge2: [row2, col2, row3, col3]
+            // 合并后：[row1, col1, row3, col3]
+            
+            int startRow = merge1[0];
+            int startCol = merge1[1];
+            int endRow = merge2[2];
+            int endCol = merge2[3];
+            
+            // 找到所有涉及的原始列
+            var originalCols = GetOriginalColumns(startRow, startCol, columnMergeInfo);
+            
+            // 记录所有被合并的格子
+            for (int r = startRow; r <= endRow; r++)
+            {
+                foreach (int origCol in originalCols)
+                {
+                    mergedCells.Add($"{r},{origCol}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// 第四步4.2：行合并过滤
+        /// </summary>
+        private static Dictionary<int, List<List<int>>> FilterColumnMergeInfo(
+            Dictionary<int, List<List<int>>> columnMergeInfo,
+            HashSet<string> mergedCells)
+        {
+            var filtered = new Dictionary<int, List<List<int>>>();
+            
+            foreach (var kvp in columnMergeInfo)
+            {
+                int row = kvp.Key;
+                var rowMapping = kvp.Value;
+                
+                var filteredRowMapping = new List<List<int>>();
+                
+                foreach (var map in rowMapping)
+                {
+                    int newCol = map[0];
+                    int oldCol = map[1];
+                    
+                    // 检查这个格子是否被合并
+                    string cellKey = $"{row},{oldCol}";
+                    if (!mergedCells.Contains(cellKey))
+                    {
+                        filteredRowMapping.Add(map);
+                    }
+                }
+                
+                if (filteredRowMapping.Count > 0)
+                {
+                    filtered[row] = filteredRowMapping;
+                }
+            }
+            
+            return filtered;
+        }
+
+        /// <summary>
+        /// 第四步4.3：列合并合并
+        /// </summary>
+        private static List<List<int>> IdentifyColumnMergesFromFiltered(
+            Dictionary<int, List<List<int>>> filteredColumnMergeInfo)
+        {
+            var columnMerges = new List<List<int>>();
+            
+            foreach (var kvp in filteredColumnMergeInfo)
+            {
+                int row = kvp.Key;
+                var rowMapping = kvp.Value;
+                
+                // 按新表列号分组
+                var groups = rowMapping.GroupBy(m => m[0]).ToList();
+                
+                foreach (var group in groups)
+                {
+                    int newCol = group.Key;
+                    var oldCols = group.Select(m => m[1]).OrderBy(c => c).ToList();
+                    
+                    if (oldCols.Count > 1)
+                    {
+                        // 存在列合并
+                        int startCol = oldCols[0];
+                        int endCol = oldCols[oldCols.Count - 1];
+                        columnMerges.Add(new List<int> { row, startCol, row, endCol });
+                    }
+                }
+            }
+            
+            return columnMerges;
+        }
+
+        /// <summary>
+        /// 打印新老表格列对应表
+        /// </summary>
+        private static void PrintColumnMapping(Dictionary<int, List<List<int>>> columnMapping)
+        {
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] 开始打印列对应表，共有 {columnMapping.Count} 行");
+            
+            if (columnMapping.Count == 0)
+            {
+                System.Diagnostics.Debug.WriteLine("[DEBUG] 警告：列对应表为空！");
+                return;
+            }
+            
+            var result = new List<object>();
+            foreach (var kvp in columnMapping.OrderBy(x => x.Key))
+            {
+                int row = kvp.Key;
+                var mapping = kvp.Value;
+                result.Add(new List<object> { row, mapping });
+            }
+
+            // 格式化输出
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("[");
+            for (int i = 0; i < result.Count; i++)
+            {
+                var rowMapping = result[i] as List<object>;
+                int row = (int)rowMapping[0];
+                var mapping = rowMapping[1] as List<List<int>>;
+                
+                sb.Append($"  [{row},[");
+                for (int j = 0; j < mapping.Count; j++)
+                {
+                    sb.Append($"[{mapping[j][0]},{mapping[j][1]}]");
+                    if (j < mapping.Count - 1)
+                        sb.Append(",");
+                }
+                sb.Append("]]");
+                if (i < result.Count - 1)
+                    sb.Append(",");
+                sb.AppendLine();
+            }
+            sb.AppendLine("]");
+
+            string mappingStr = sb.ToString();
+            
+            // 输出到调试窗口
+            System.Diagnostics.Debug.WriteLine(mappingStr);
+            Console.WriteLine(mappingStr);
+        }
+
+        /// <summary>
+        /// 整理最终的合并表示（结合行合并和列合并）
+        /// 例如：行合并[[2,2,3,2],[3,2,4,2]]和列对应表显示第2、3、4行的列对应关系相同，
+        /// 且第2列对应老表的第2、3、4列（列合并），最终整理为[2,2,4,4]
+        /// </summary>
+        private static void ConsolidateFinalMerges(List<List<int>> merge, Dictionary<int, List<List<int>>> columnMapping)
+        {
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] ========== 整理最终的合并表示 ==========");
+            
+            // 分离出行合并和列合并
+            var rowMerges = merge.Where(m => m[1] == m[3]).ToList(); // 行合并：startCol == endCol
+            var columnMerges = merge.Where(m => m[0] == m[2] && m[1] != m[3]).ToList(); // 列合并：startRow == endRow 且 startCol != endCol
+            
+            var finalMerges = new List<List<int>>();
+            
+            // 按列分组处理行合并
+            var rowMergesByColumn = rowMerges.GroupBy(m => m[1]).ToList(); // 按列号分组
+            
+            foreach (var columnGroup in rowMergesByColumn)
+            {
+                int col = columnGroup.Key;
+                var mergesForColumn = columnGroup.OrderBy(m => m[0]).ToList();
+                
+                // 找出连续的行合并范围
+                int startRow = mergesForColumn[0][0];
+                int endRow = mergesForColumn[0][2];
+                
+                for (int i = 1; i < mergesForColumn.Count; i++)
+                {
+                    if (mergesForColumn[i][0] == endRow + 1 || mergesForColumn[i][0] == endRow)
+                    {
+                        // 连续的行合并，扩展结束行
+                        endRow = Math.Max(endRow, mergesForColumn[i][2]);
+                    }
+                    else
+                    {
+                        // 不连续，处理之前的合并范围
+                        ProcessRowMergeRange(startRow, endRow, col, columnMapping, finalMerges);
+                        startRow = mergesForColumn[i][0];
+                        endRow = mergesForColumn[i][2];
+                    }
+                }
+                
+                // 处理最后一个合并范围
+                ProcessRowMergeRange(startRow, endRow, col, columnMapping, finalMerges);
+            }
+            
+            // 添加纯列合并（没有行合并的列合并）
+            finalMerges.AddRange(columnMerges);
+            
+            // 打印最终的合并表示
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("[");
+            for (int i = 0; i < finalMerges.Count; i++)
+            {
+                var m = finalMerges[i];
+                sb.Append($"  [{m[0]},{m[1]},{m[2]},{m[3]}]");
+                if (i < finalMerges.Count - 1)
+                    sb.Append(",");
+                sb.AppendLine();
+            }
+            sb.AppendLine("]");
+            
+            string finalMergesStr = sb.ToString();
+            System.Diagnostics.Debug.WriteLine(finalMergesStr);
+            Console.WriteLine("========== 最终的合并表示 ==========");
+            Console.WriteLine(finalMergesStr);
+            Console.WriteLine("====================================");
+        }
+
+        /// <summary>
+        /// 处理行合并范围，结合列合并信息整理为最终的合并表示
+        /// </summary>
+        private static void ProcessRowMergeRange(int startRow, int endRow, int oldCol, Dictionary<int, List<List<int>>> columnMapping, List<List<int>> finalMerges)
+        {
+            // 检查这个行合并范围内的所有行是否有相同的列对应关系
+            bool allRowsHaveSameMapping = true;
+            List<List<int>> referenceMapping = null;
+            
+            for (int r = startRow; r <= endRow; r++)
+            {
+                if (!columnMapping.ContainsKey(r))
+                {
+                    allRowsHaveSameMapping = false;
+                    break;
+                }
+                
+                var rowMapping = columnMapping[r];
+                if (referenceMapping == null)
+                {
+                    referenceMapping = rowMapping;
+                }
+                else
+                {
+                    // 比较列对应关系是否相同
+                    if (referenceMapping.Count != rowMapping.Count)
+                    {
+                        allRowsHaveSameMapping = false;
+                        break;
+                    }
+                    
+                    for (int i = 0; i < referenceMapping.Count; i++)
+                    {
+                        if (referenceMapping[i][0] != rowMapping[i][0] || referenceMapping[i][1] != rowMapping[i][1])
+                        {
+                            allRowsHaveSameMapping = false;
+                            break;
+                        }
+                    }
+                    
+                    if (!allRowsHaveSameMapping)
+                        break;
+                }
+            }
+            
+            if (allRowsHaveSameMapping && referenceMapping != null)
+            {
+                // 找到老表列oldCol对应的新表列号
+                int? newColForOldCol = null;
+                foreach (var map in referenceMapping)
+                {
+                    if (map[1] == oldCol) // 老表列号等于oldCol
+                    {
+                        newColForOldCol = map[0]; // 新表列号
+                        break;
+                    }
+                }
+                
+                if (newColForOldCol.HasValue)
+                {
+                    // 找到所有对应新表列号newColForOldCol的老表列号（列合并的范围）
+                    var mergedOldCols = referenceMapping
+                        .Where(m => m[0] == newColForOldCol.Value)
+                        .Select(m => m[1])
+                        .OrderBy(c => c)
+                        .ToList();
+                    
+                    if (mergedOldCols.Count > 1)
+                    {
+                        // 既有行合并又有列合并，整理为最终的合并表示
+                        // 使用新表的行号和列号
+                        // 新表列号是newColForOldCol.Value，对应老表的mergedOldCols[0]到mergedOldCols[mergedOldCols.Count-1]
+                        // 由于列合并，新表的列号是newColForOldCol.Value，但对应多列老表列
+                        // 最终合并表示：[startRow, newCol, endRow, newCol]
+                        // 但我们需要找到新表中对应老表最后一列的列号
+                        
+                        // 找到新表中对应老表最后一列（mergedOldCols[mergedOldCols.Count-1]）的列号
+                        int? newColForLastOldCol = null;
+                        foreach (var map in referenceMapping)
+                        {
+                            if (map[1] == mergedOldCols[mergedOldCols.Count - 1])
+                            {
+                                newColForLastOldCol = map[0];
+                                break;
+                            }
+                        }
+                        
+                        if (newColForLastOldCol.HasValue)
+                        {
+                            // 最终合并表示：[startRow, startNewCol, endRow, endNewCol]
+                            finalMerges.Add(new List<int> { startRow, newColForOldCol.Value, endRow, newColForLastOldCol.Value });
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 整理合并: 新表行{startRow}-{endRow}, 新表列{newColForOldCol.Value}-{newColForLastOldCol.Value} (对应老表列{mergedOldCols[0]}-{mergedOldCols[mergedOldCols.Count-1]})");
+                        }
+                        else
+                        {
+                            // 如果找不到，使用相同的列号
+                            finalMerges.Add(new List<int> { startRow, newColForOldCol.Value, endRow, newColForOldCol.Value });
+                        }
+                    }
+                    else
+                    {
+                        // 只有行合并，没有列合并
+                        finalMerges.Add(new List<int> { startRow, newColForOldCol.Value, endRow, newColForOldCol.Value });
+                    }
+                }
+                else
+                {
+                    // 找不到对应的新表列号，使用老表列号（这种情况不应该发生）
+                    finalMerges.Add(new List<int> { startRow, oldCol, endRow, oldCol });
+                }
+            }
+            else
+            {
+                // 行合并范围内的行没有相同的列对应关系，只记录行合并（使用老表列号）
+                // 这种情况需要转换为新表列号，但如果没有列对应关系，无法转换
+                finalMerges.Add(new List<int> { startRow, oldCol, endRow, oldCol });
+            }
+        }
+
+        /// <summary>
+        /// 统计表格中所有单元格的颜色频率
+        /// </summary>
+        private static string CalculateMostCommonColor(Word.Table table)
+        {
+            var colorCounts = new Dictionary<string, int>();
+            int totalRuns = 0;
+
+            try
+            {
+                for (int row = 1; row <= table.Rows.Count; row++)
+                {
+                    for (int col = 1; col <= table.Columns.Count; col++)
+                    {
+                        try
+                        {
+                            Word.Cell cell = table.Cell(row, col);
+                            string xml = cell.Range.WordOpenXML;
+                            XDocument doc = XDocument.Parse(xml);
+                            XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+                            var runs = doc.Descendants(w + "r");
+                            foreach (var r in runs)
+                            {
+                                totalRuns++;
+                                var rPr = r.Element(w + "rPr");
+                                string color = rPr?.Elements(w + "color").FirstOrDefault()?.Attribute(w + "val")?.Value;
+
+                                // 如果没有显式颜色，认为是自动颜色（通常是黑色或继承颜色）
+                                string effectiveColor;
+                                if (string.IsNullOrEmpty(color))
+                                {
+                                    effectiveColor = "auto";
+                                }
+                                else
+                                {
+                                    // Word使用BGR格式，需要转换为RGB格式
+                                    effectiveColor = ConvertBgrToRgb(color.ToUpper());
+                                }
+
+                                if (!colorCounts.ContainsKey(effectiveColor))
+                                    colorCounts[effectiveColor] = 0;
+                                colorCounts[effectiveColor]++;
+                            }
+                        }
+                        catch (Exception)
+                        {
+                            // System.Diagnostics.Debug.WriteLine($"[DEBUG] 统计单元格({row},{col})颜色失败：{ex.Message}");
+                        }
+                    }
+                }
+
+                // 找出出现次数最多的颜色（排除auto，因为auto表示默认颜色）
+                var explicitColors = colorCounts.Where(kvp => kvp.Key != "auto");
+                if (explicitColors.Any())
+                {
+                    var mostCommonColor = explicitColors.OrderByDescending(kvp => kvp.Value).First();
+                    // System.Diagnostics.Debug.WriteLine($"[DEBUG] 最常见的显式颜色：#{mostCommonColor.Key}，出现次数：{mostCommonColor.Value}，总文本段数：{totalRuns}");
+                    return mostCommonColor.Key;
+                }
+                else
+                {
+                    // System.Diagnostics.Debug.WriteLine($"[DEBUG] 没有找到显式颜色设置，默认使用黑色，总文本段数：{totalRuns}");
+                }
+            }
+            catch (Exception)
+            {
+                // System.Diagnostics.Debug.WriteLine($"[DEBUG] 统计颜色失败：{ex.Message}");
+            }
+
+            return "000000"; // 默认黑色
+        }
+
+        /// <summary>
+        /// 将BGR颜色格式转换为RGB格式
+        /// </summary>
+        private static string ConvertBgrToRgb(string bgrColor)
+        {
+            try
+            {
+                if (bgrColor.Length != 6)
+                    return bgrColor;
+
+                // BGR -> RGB: 反转字节顺序
+                // 例如: FF0000(BGR) -> 0000FF(RGB)
+                string b = bgrColor.Substring(0, 2); // Blue
+                string g = bgrColor.Substring(2, 2); // Green
+                string r = bgrColor.Substring(4, 2); // Red
+
+                return r + g + b; // RGB格式
+            }
+            catch
+            {
+                return bgrColor;
+            }
+        }
+
+        /// <summary>
+        /// 将单元格格式转换为HTML
+        /// </summary>
+        private static string CellToHtml(Word.Cell cell, string defaultColor = null)
+        {
+            try
+            {
+                // 取出单元格的 WordOpenXML
+                string xml = cell.Range.WordOpenXML;
+                XDocument doc = XDocument.Parse(xml);
+                XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+                var runs = doc.Descendants(w + "r");
+                if (!runs.Any()) return cell.Range.Text;
+
+                var sb = new StringBuilder();
+                foreach (var r in runs)
+                {
+                    string txt = string.Join("", r.Descendants(w + "t").Select(t => (string)t));
+                    if (string.IsNullOrEmpty(txt)) continue;
+
+                    var rPr = r.Element(w + "rPr");
+                    bool bold = rPr?.Elements(w + "b").Any() == true;
+                    bool italic = rPr?.Elements(w + "i").Any() == true;
+                    string color = rPr?.Elements(w + "color").FirstOrDefault()?.Attribute(w + "val")?.Value;
+
+                    // 如果有默认颜色，且当前颜色与默认颜色相同，或者是auto颜色，则不添加颜色样式
+                    bool shouldIncludeColor = !string.IsNullOrEmpty(color) &&
+                                            color.ToUpper() != "auto" &&
+                                            (string.IsNullOrEmpty(defaultColor) || !ConvertBgrToRgb(color).Equals(defaultColor, StringComparison.OrdinalIgnoreCase));
+
+                    // 拼最小 HTML
+                    if (bold || italic || shouldIncludeColor)
+                    {
+                        sb.Append("<span");
+                        var styles = new List<string>();
+                        if (bold) styles.Add("font-weight:bold");
+                        if (italic) styles.Add("font-style:italic");
+                        if (shouldIncludeColor) styles.Add($"color:#{ConvertBgrToRgb(color)}");
+
+                        if (styles.Any())
+                        {
+                            sb.Append($" style='{string.Join(";", styles)}'");
+                        }
+                        sb.Append($">{System.Web.HttpUtility.HtmlEncode(txt)}</span>");
+                    }
+                    else
+                    {
+                        sb.Append(System.Web.HttpUtility.HtmlEncode(txt));
+                    }
+                }
+                return sb.ToString();
+            }
+            catch (Exception)
+            {
+                // System.Diagnostics.Debug.WriteLine($"[DEBUG] 单元格HTML转换失败：{ex.Message}");
+                // 降级到纯文本
+                return cell.Range.Text?.Trim() ?? "";
+            }
+        }
+
+        /// <summary>
+        /// 检查指定位置是否在合并范围内（被合并覆盖）
+        /// </summary>
+        private static bool IsInMergeRange(int row, int col, List<List<int>> merge)
+        {
+            foreach (var mergeInfo in merge)
+            {
+                // mergeInfo格式: [startRow, startCol, endRow, endCol]
+                int startRow = mergeInfo[0], startCol = mergeInfo[1];
+                int endRow = mergeInfo[2], endCol = mergeInfo[3];
+
+                if (row >= startRow && row <= endRow && col >= startCol && col <= endCol)
+                {
+                    // 如果是起始点，返回false（起始点有数据）
+                    if (row == startRow && col == startCol)
+                        return false;
+                    // 其他点都被覆盖，返回true
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 提取表格数据
+        /// </summary>
+        private static void ExtractTableData(Word.Table table, List<List<string>> data, string defaultColor, List<List<int>> merge)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 开始提取表格数据，基于{merge.Count}个合并信息进行重新排列");
+
+                for (int row = 1; row <= table.Rows.Count; row++)
+                {
+                    // 1. 先用原来的逻辑提取Word实际存在的单元格数据
+                    var rawRowData = new List<string>();
+                    int actualColIndex = 0;
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 提取第{row}行的原始数据...");
+
+                    for (int col = 1; col <= table.Columns.Count; col++)
+                    {
+                        try
+                        {
+                            Word.Cell cell = table.Cell(row, col);
+
+                            // 检查这个单元格是否是合并单元格的左上角
+                            if (cell.RowIndex == row && cell.ColumnIndex == col)
+                            {
+                                // 这是一个有效的单元格，提取内容
+                                string cellHtml = CellToHtml(cell, defaultColor);
+
+                                if (string.IsNullOrWhiteSpace(cellHtml))
+                                {
+                                    string cellText = cell.Range.Text?.Trim() ?? "";
+                                    if (cellText.EndsWith("\r\a"))
+                                        cellText = cellText.Substring(0, cellText.Length - 2);
+                                    else if (cellText.EndsWith("\r"))
+                                        cellText = cellText.Substring(0, cellText.Length - 1);
+
+                                    rawRowData.Add(cellText);
+                                    System.Diagnostics.Debug.WriteLine($"[DEBUG]   列{col} (实际索引{actualColIndex + 1}): '{cellText}'");
+                                }
+                                else
+                                {
+                                    rawRowData.Add(cellHtml);
+                                    System.Diagnostics.Debug.WriteLine($"[DEBUG]   列{col} (实际索引{actualColIndex + 1}): '{cellHtml}'");
+                                }
+
+                                actualColIndex++;
+                            }
+                            // 其他情况（被合并或不存在）跳过，由后续逻辑处理
+                        }
+                        catch (Exception)
+                        {
+                            // 这个位置不存在单元格
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG]   列{col}: 不存在");
+                        }
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 第{row}行原始数据: {rawRowData.Count}个有效单元格");
+
+                    // 2. 根据Merge信息重新排列数据
+                    var finalRowData = new List<string>();
+                    int rawDataIndex = 0;
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 根据合并信息重新排列第{row}行数据...");
+
+                    for (int col = 1; col <= table.Columns.Count; col++)
+                    {
+                        if (IsInMergeRange(row, col, merge))
+                        {
+                            // 这个位置被合并覆盖，添加空字符串
+                            finalRowData.Add("");
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG]   列{col}: 空（被合并覆盖）");
+                        }
+                        else
+                        {
+                            // 这个位置应该有数据
+                            if (rawDataIndex < rawRowData.Count)
+                            {
+                                finalRowData.Add(rawRowData[rawDataIndex]);
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG]   列{col}: '{rawRowData[rawDataIndex]}'（来自原始数据索引{rawDataIndex}）");
+                                rawDataIndex++;
+                            }
+                            else
+                            {
+                                // 不应该发生的情况，但为了安全
+                                finalRowData.Add("");
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG]   列{col}: 空（无原始数据）");
+                            }
+                        }
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 第{row}行最终数据: [{string.Join(", ", finalRowData.Select(s => $"\"{s}\""))}]");
+                    data.Add(finalRowData);
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 表格数据提取完成：{data.Count}行，每行{table.Columns.Count}列");
+            }
+            catch (Exception)
+            {
+                // System.Diagnostics.Debug.WriteLine($"[DEBUG] 提取表格数据失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 生成文件名
+        /// </summary>
+        private static string GenerateFilename(Word.Document document, int tableIndex)
+        {
+            try
+            {
+                // 获取文档文件名（不含扩展名）
+                string docName = Path.GetFileNameWithoutExtension(document.Name);
+
+                // 获取当前时间戳
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+
+                // 生成文件名：文档名_第几个表格_format_时间戳.yaml
+                string filename = $"{docName}_{tableIndex}_format_{timestamp}.yaml";
+
+                // System.Diagnostics.Debug.WriteLine($"[DEBUG] 生成文件名：{filename}");
+                return filename;
+            }
+            catch (Exception)
+            {
+                // System.Diagnostics.Debug.WriteLine($"[DEBUG] 生成文件名失败：{ex.Message}");
+                // 使用默认文件名
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+                return $"table_{tableIndex}_format_{timestamp}.yaml";
+            }
+        }
+
+        /// <summary>
+        /// 保存表格格式到文件
+        /// </summary>
+        private static async Task<bool> SaveTableFormat(TableConfig config, string filename)
+        {
+            try
+            {
+                // 获取用户名
+                var userService = UserService.Instance;
+                string username = userService.IsLoggedIn ? userService.UserName : "anonymous";
+
+                // 获取项目根目录
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string projectRoot = baseDir;
+
+                if (baseDir.Contains("bin\\Debug") || baseDir.Contains("bin/Debug"))
+                {
+                    string debugDir = Path.GetDirectoryName(baseDir.TrimEnd('\\', '/'));
+                    projectRoot = Path.GetDirectoryName(debugDir);
+                }
+
+                // 构建format_files目录路径
+                string formatDir = Path.Combine(projectRoot, "tmp", username, "format_files");
+
+                // 确保目录存在
+                if (!Directory.Exists(formatDir))
+                {
+                    Directory.CreateDirectory(formatDir);
+                }
+
+                // 构建完整文件路径
+                string filePath = Path.Combine(formatDir, filename);
+
+                // 序列化为YAML - 使用基础配置和自定义序列化器
+                var serializer = new SerializerBuilder()
+                    .WithNamingConvention(PascalCaseNamingConvention.Instance)
+                    .WithTypeConverter(new ListListStringConverter())
+                    .WithTypeConverter(new ListFloatConverter())
+                    .Build();
+
+                string yamlContent = serializer.Serialize(config);
+
+                // 保存文件
+                File.WriteAllText(filePath, yamlContent, Encoding.UTF8);
+
+                // 上传生成的表格格式文件到用户工作目录
+                bool uploadSuccess = await UploadTableFormatFileToUserDirectory(filePath, filename);
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 表格格式文件上传结果: {uploadSuccess}");
+
+                // System.Diagnostics.Debug.WriteLine($"[DEBUG] 表格格式已保存到：{filePath}");
+                return true;
+            }
+            catch (Exception)
+            {
+                // System.Diagnostics.Debug.WriteLine($"[DEBUG] 保存表格格式失败：{ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 上传生成的表格格式文件到用户工作目录
+        /// </summary>
+        private static async Task<bool> UploadTableFormatFileToUserDirectory(string filePath, string filename)
+        {
+            try
+            {
+                // 检查用户是否已登录
+                var userService = UserService.Instance;
+                if (!userService.CheckLoginStatus())
+                {
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] 用户未登录，跳过文件上传");
+                    return false;
+                }
+
+                // 检查文件是否存在
+                if (!File.Exists(filePath))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 表格格式文件不存在: {filePath}");
+                    return false;
+                }
+
+                // 获取API配置
+                string baseUrl = ConfigManager.Config.Api.BaseUrl;
+                string uploadUrl = $"{baseUrl}/files/upload";
+
+                using (var httpClient = new HttpClient())
+                {
+                    // 设置超时时间
+                    httpClient.Timeout = TimeSpan.FromSeconds(30);
+
+                    // 创建multipart/form-data内容
+                    using (var formData = new MultipartFormDataContent())
+                    using (var fileStream = File.OpenRead(filePath))
+                    using (var streamContent = new StreamContent(fileStream))
+                    {
+                        // 设置文件内容
+                        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                        formData.Add(streamContent, "file", filename);
+
+                        // 设置请求头
+                        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", userService.AccessToken);
+                        httpClient.DefaultRequestHeaders.Add("X-Username", userService.UserName);
+
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 正在上传表格格式文件到: {uploadUrl}");
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 用户名: {userService.UserName}");
+
+                        // 发送上传请求
+                        var response = await httpClient.PostAsync(uploadUrl, formData);
+                        var responseContent = await response.Content.ReadAsStringAsync();
+
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 上传响应状态码: {response.StatusCode}");
+
+                        if (response.IsSuccessStatusCode)
+                        {
+                            // 解析响应
+                            var uploadResponse = JsonConvert.DeserializeObject<UploadResponse>(responseContent);
+                            if (uploadResponse != null && uploadResponse.success)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 文件上传成功: {uploadResponse.data?.filename ?? filename}");
+                                return true;
+                            }
+                            else
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 文件上传失败: {uploadResponse?.message ?? "未知错误"}");
+                                return false;
+                            }
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 文件上传HTTP错误: {response.StatusCode} - {responseContent}");
+                            return false;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 文件上传异常: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 文件上传API响应模型
+        /// </summary>
+        private class UploadResponse
+        {
+            public bool success { get; set; }
+            public string message { get; set; }
+            public UploadData data { get; set; }
+        }
+
+        private class UploadData
+        {
+            public string filename { get; set; }
+            public string original_filename { get; set; }
+            public long size { get; set; }
+            public string path { get; set; }
+            public string uploaded_at { get; set; }
+            public bool overwritten { get; set; }
+        }
+
+        /// <summary>
+        /// 将数值数组转换为流式格式，并修复Data字段格式
+        /// </summary>
+        private static string ConvertNumericArraysToFlowStyle(string yamlContent)
+        {
+            var lines = yamlContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            var result = new List<string>();
+            var inDataSection = false;
+            var dataRows = new List<List<string>>();
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                var trimmed = line.Trim();
+
+                // 检查是否进入Data字段
+                if (trimmed.StartsWith("Data:"))
+                {
+                    inDataSection = true;
+                    result.Add(line);
+                    continue;
+                }
+
+                if (inDataSection)
+                {
+                    // 检查是否离开Data字段
+                    if (!trimmed.StartsWith(" ") && !trimmed.StartsWith("-") && trimmed.Contains(":") && !trimmed.StartsWith("Data:"))
+                    {
+                        // 处理完Data字段，转换为正确格式
+                        if (dataRows.Count > 0)
+                        {
+                            foreach (var row in dataRows)
+                            {
+                                var rowArray = "[" + string.Join(", ", row.Select(s => "'" + s.Replace("'", "''") + "'")) + "]";
+                                result.Add("  - " + rowArray);
+                            }
+                        }
+                        inDataSection = false;
+                        result.Add(line); // 添加下一个字段
+                        continue;
+                    }
+
+                    // 解析Data字段的内容
+                    if (trimmed.StartsWith("- "))
+                    {
+                        var rowData = new List<string>();
+                        var rowIndent = line.Length - trimmed.Length;
+
+                        // 收集这一行的所有列
+                        rowData.Add(trimmed.Substring(2));
+
+                        // 查找同一行的其他列
+                        var k = i + 1;
+                        while (k < lines.Length)
+                        {
+                            var nextLine = lines[k];
+                            var nextTrimmed = nextLine.Trim();
+                            var nextIndent = nextLine.Length - nextTrimmed.Length;
+
+                            if (nextIndent > rowIndent && nextTrimmed.StartsWith("- "))
+                            {
+                                rowData.Add(nextTrimmed.Substring(2));
+                                k++;
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+
+                        dataRows.Add(rowData);
+                        i = k - 1; // 跳过已处理的行
+                    }
+                }
+                else
+                {
+                    // 检查是否是数值数组字段（以冒号结尾的字段名后跟数值列表）
+                    if (trimmed.EndsWith(":") && !trimmed.StartsWith("Data:") && !trimmed.StartsWith("Merge:"))
+                    {
+                        var fieldName = trimmed.TrimEnd(':');
+                        var fieldIndent = line.Length - trimmed.Length;
+
+                        // 检查接下来的行是否是数值数组
+                        var arrayLines = new List<string>();
+                        var j = i + 1;
+
+                        while (j < lines.Length)
+                        {
+                            var nextLine = lines[j];
+                            var nextTrimmed = nextLine.Trim();
+
+                            if (string.IsNullOrWhiteSpace(nextLine))
+                            {
+                                // 空行，跳过
+                                j++;
+                                continue;
+                            }
+
+                            var nextIndent = nextLine.Length - nextTrimmed.Length;
+
+                            // 如果缩进小于或等于字段缩进，说明这个字段结束了
+                            if (nextIndent <= fieldIndent && nextTrimmed.Contains(":"))
+                            {
+                                break;
+                            }
+
+                            // 如果是数值行（以 - 开头且后面是数字）
+                            if (nextTrimmed.StartsWith("- ") && IsNumericValue(nextTrimmed.Substring(2).Trim()))
+                            {
+                                arrayLines.Add(nextTrimmed.Substring(2).Trim());
+                                j++;
+                            }
+                            else
+                            {
+                                // 不是数值行，跳出
+                                break;
+                            }
+                        }
+
+                        // 如果找到至少2个数值，转换为流式格式
+                        if (arrayLines.Count >= 2)
+                        {
+                            // 直接在字段名后添加数组，避免额外缩进
+                            var flowSequence = "[" + string.Join(", ", arrayLines) + "]";
+                            result.Add(line.Replace(":", ": " + flowSequence));
+
+                            // 跳过已经处理的数组行
+                            i = j - 1;
+                        }
+                        else
+                        {
+                            // 保持原样
+                            result.Add(line);
+                        }
+                    }
+                    else
+                    {
+                        result.Add(line);
+                    }
+                }
+            }
+
+            // 处理文件末尾的Data字段
+            if (inDataSection && dataRows.Count > 0)
+            {
+                foreach (var row in dataRows)
+                {
+                    var rowArray = "[" + string.Join(", ", row.Select(s => "'" + s.Replace("'", "''") + "'")) + "]";
+                    result.Add("  - " + rowArray);
+                }
+            }
+
+            return string.Join("\n", result);
+        }
+
+        /// <summary>
+        /// 检查字符串是否是数值
+        /// </summary>
+        private static bool IsNumericValue(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            // 检查是否是数字（包括浮点数）
+            return double.TryParse(value, out _);
+        }
+
+        /// <summary>
+        /// 自定义类型转换器：确保List<float>序列化为流式格式
+        /// </summary>
+        private class ListFloatConverter : IYamlTypeConverter
+        {
+            public bool Accepts(Type type)
+            {
+                return type == typeof(List<float>);
+            }
+
+            public object ReadYaml(IParser parser, Type type)
+            {
+                // 反序列化时保持默认行为
+                var deserializer = new DeserializerBuilder().Build();
+                return deserializer.Deserialize<List<float>>(parser);
+            }
+
+            public void WriteYaml(IEmitter emitter, object value, Type type)
+            {
+                var list = (List<float>)value;
+                emitter.Emit(new SequenceStart(null, null, true, SequenceStyle.Flow));
+
+                foreach (var item in list)
+                {
+                    emitter.Emit(new Scalar(item.ToString()));
+                }
+
+                emitter.Emit(new SequenceEnd());
+            }
+        }
+
+        /// <summary>
+        /// 自定义类型转换器：确保List<List<string>>序列化为流式格式
+        /// </summary>
+        private class ListListStringConverter : IYamlTypeConverter
+        {
+            public bool Accepts(Type type)
+            {
+                return type == typeof(List<List<string>>);
+            }
+
+            public object ReadYaml(IParser parser, Type type)
+            {
+                // 反序列化时保持默认行为
+                var deserializer = new DeserializerBuilder().Build();
+                return deserializer.Deserialize<List<List<string>>>(parser);
+            }
+
+            public void WriteYaml(IEmitter emitter, object value, Type type)
+            {
+                var list = (List<List<string>>)value;
+                emitter.Emit(new SequenceStart(null, null, false, SequenceStyle.Flow)); // 使用流式序列
+
+                foreach (var subList in list)
+                {
+                    emitter.Emit(new SequenceStart(null, null, true, SequenceStyle.Flow)); // 每个子数组使用流式
+                    foreach (var item in subList)
+                    {
+                        emitter.Emit(new Scalar(item ?? ""));
+                    }
+                    emitter.Emit(new SequenceEnd());
+                }
+
+                emitter.Emit(new SequenceEnd());
+            }
+        }
+    }
+}

@@ -1,0 +1,473 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using Word = Microsoft.Office.Interop.Word;
+
+namespace WordAddIn1
+{
+    /// <summary>
+    /// 问好工具
+    /// 提供友好的问候功能，支持多语言和智能时间问候
+    /// </summary>
+    public static class F_GreetTool
+    {
+        // 支持的语言列表
+        private static readonly string[] SupportedLanguages = { "zh", "en", "ja", "ko", "fr", "de", "es" };
+        
+        // 支持的风格列表
+        private static readonly string[] SupportedStyles = { "casual", "formal", "friendly", "professional" };
+
+        /// <summary>
+        /// 注册问好工具
+        /// </summary>
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+                        toolRegistry["F_greet"] = async (args) =>
+            {
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] greet工具开始执行");
+                    System.Diagnostics.Debug.WriteLine($"您好20260216");
+
+                    // 解析参数
+                    string name = args.ContainsKey("name") && !string.IsNullOrWhiteSpace(args["name"]?.ToString()) 
+                        ? args["name"].ToString().Trim() 
+                        : "朋友";
+                    string language = args.ContainsKey("language") ? args["language"].ToString().ToLower() : "zh";
+                    string style = args.ContainsKey("style") ? args["style"].ToString().ToLower() : "friendly";
+                    bool useTimeGreeting = args.ContainsKey("use_time_greeting") 
+                        ? Convert.ToBoolean(args["use_time_greeting"]) 
+                        : true;
+
+                    // 验证语言参数
+                    if (!SupportedLanguages.Contains(language))
+                    {
+                        language = "zh"; // 默认使用中文
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 不支持的语言，使用默认语言: zh");
+                    }
+
+                    // 验证风格参数
+                    if (!SupportedStyles.Contains(style))
+                    {
+                        style = "friendly"; // 默认使用友好风格
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 不支持的风格，使用默认风格: friendly");
+                    }
+
+                    // 获取当前时间信息
+                    DateTime now = DateTime.Now;
+                    int hour = now.Hour;
+                    string timeOfDay = GetTimeOfDay(hour, language);
+                    string season = GetSeason(now.Month, language);
+
+                    // 生成问候语
+                    string greeting = GenerateGreeting(name, language, style, useTimeGreeting, timeOfDay, now);
+
+                    var result = new
+                    {
+                        greeting = greeting,
+                        name = name,
+                        language = language,
+                        style = style,
+                        time_of_day = timeOfDay,
+                        season = season,
+                        timestamp = now.ToString("yyyy-MM-dd HH:mm:ss"),
+                        date = now.ToString("yyyy-MM-dd"),
+                        time = now.ToString("HH:mm:ss"),
+                        day_of_week = GetDayOfWeek(now.DayOfWeek, language),
+                        hour = hour,
+                        month = now.Month
+                    };
+
+                    await Task.CompletedTask; // 避免异步方法警告
+
+                    var toolResult = new ToolResult
+                    {
+                        Success = true,
+                        Data = result
+                    };
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] greet工具执行成功: {greeting}");
+                    return toolResult;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] greet工具执行失败: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 异常堆栈: {ex.StackTrace}");
+                    return new ToolResult { Success = false, Error = $"问好失败: {ex.Message}" };
+                }
+            };
+}
+
+        /// <summary>
+        /// 时间段翻译字典
+        /// </summary>
+        private static readonly Dictionary<string, Dictionary<string, string>> TimeOfDayTranslations = new Dictionary<string, Dictionary<string, string>>
+        {
+            ["morning"] = new Dictionary<string, string>
+            {
+                { "zh", "早晨" }, { "en", "morning" }, { "ja", "朝" }, { "ko", "아침" },
+                { "fr", "matin" }, { "de", "Morgen" }, { "es", "mañana" }
+            },
+            ["noon"] = new Dictionary<string, string>
+            {
+                { "zh", "中午" }, { "en", "noon" }, { "ja", "昼" }, { "ko", "정오" },
+                { "fr", "midi" }, { "de", "Mittag" }, { "es", "mediodía" }
+            },
+            ["afternoon"] = new Dictionary<string, string>
+            {
+                { "zh", "下午" }, { "en", "afternoon" }, { "ja", "午後" }, { "ko", "오후" },
+                { "fr", "après-midi" }, { "de", "Nachmittag" }, { "es", "tarde" }
+            },
+            ["evening"] = new Dictionary<string, string>
+            {
+                { "zh", "晚上" }, { "en", "evening" }, { "ja", "夕方" }, { "ko", "저녁" },
+                { "fr", "soir" }, { "de", "Abend" }, { "es", "noche" }
+            },
+            ["night"] = new Dictionary<string, string>
+            {
+                { "zh", "深夜" }, { "en", "night" }, { "ja", "夜" }, { "ko", "밤" },
+                { "fr", "nuit" }, { "de", "Nacht" }, { "es", "noche" }
+            }
+        };
+
+        /// <summary>
+        /// 根据小时获取时间段
+        /// </summary>
+        private static string GetTimeOfDay(int hour, string language)
+        {
+            string timePeriod;
+            if (hour >= 5 && hour < 12)
+            {
+                timePeriod = "morning";
+            }
+            else if (hour >= 12 && hour < 14)
+            {
+                timePeriod = "noon";
+            }
+            else if (hour >= 14 && hour < 18)
+            {
+                timePeriod = "afternoon";
+            }
+            else if (hour >= 18 && hour < 22)
+            {
+                timePeriod = "evening";
+            }
+            else
+            {
+                timePeriod = "night";
+            }
+
+            if (TimeOfDayTranslations.ContainsKey(timePeriod) && 
+                TimeOfDayTranslations[timePeriod].ContainsKey(language))
+            {
+                return TimeOfDayTranslations[timePeriod][language];
+            }
+
+            // 默认返回中文
+            return TimeOfDayTranslations[timePeriod]["zh"];
+        }
+
+        /// <summary>
+        /// 获取季节
+        /// </summary>
+        private static string GetSeason(int month, string language)
+        {
+            string season;
+            if (month >= 3 && month <= 5)
+            {
+                season = "spring";
+            }
+            else if (month >= 6 && month <= 8)
+            {
+                season = "summer";
+            }
+            else if (month >= 9 && month <= 11)
+            {
+                season = "autumn";
+            }
+            else
+            {
+                season = "winter";
+            }
+
+            Dictionary<string, Dictionary<string, string>> seasonTranslations = new Dictionary<string, Dictionary<string, string>>
+            {
+                ["spring"] = new Dictionary<string, string>
+                {
+                    { "zh", "春季" }, { "en", "spring" }, { "ja", "春" }, { "ko", "봄" },
+                    { "fr", "printemps" }, { "de", "Frühling" }, { "es", "primavera" }
+                },
+                ["summer"] = new Dictionary<string, string>
+                {
+                    { "zh", "夏季" }, { "en", "summer" }, { "ja", "夏" }, { "ko", "여름" },
+                    { "fr", "été" }, { "de", "Sommer" }, { "es", "verano" }
+                },
+                ["autumn"] = new Dictionary<string, string>
+                {
+                    { "zh", "秋季" }, { "en", "autumn" }, { "ja", "秋" }, { "ko", "가을" },
+                    { "fr", "automne" }, { "de", "Herbst" }, { "es", "otoño" }
+                },
+                ["winter"] = new Dictionary<string, string>
+                {
+                    { "zh", "冬季" }, { "en", "winter" }, { "ja", "冬" }, { "ko", "겨울" },
+                    { "fr", "hiver" }, { "de", "Winter" }, { "es", "invierno" }
+                }
+            };
+
+            if (seasonTranslations.ContainsKey(season) && 
+                seasonTranslations[season].ContainsKey(language))
+            {
+                return seasonTranslations[season][language];
+            }
+
+            return seasonTranslations[season]["zh"];
+        }
+
+        /// <summary>
+        /// 生成问候语
+        /// </summary>
+        private static string GenerateGreeting(string name, string language, string style, bool useTimeGreeting, string timeOfDay, DateTime now)
+        {
+            string greeting = "";
+
+            if (language == "zh")
+            {
+                if (useTimeGreeting)
+                {
+                    int hour = now.Hour;
+                    if (hour >= 5 && hour < 12)
+                    {
+                        greeting = style == "formal" ? $"早上好，{name}！" 
+                            : style == "casual" ? $"早啊，{name}！" 
+                            : style == "professional" ? $"您好，{name}，新的一天开始了。" 
+                            : $"早上好，{name}！新的一天开始了！";
+                    }
+                    else if (hour >= 12 && hour < 14)
+                    {
+                        greeting = style == "formal" ? $"中午好，{name}！" 
+                            : style == "casual" ? $"中午好，{name}！" 
+                            : style == "professional" ? $"您好，{name}，午间愉快。" 
+                            : $"中午好，{name}！用餐愉快！";
+                    }
+                    else if (hour >= 14 && hour < 18)
+                    {
+                        greeting = style == "formal" ? $"下午好，{name}！" 
+                            : style == "casual" ? $"下午好，{name}！" 
+                            : style == "professional" ? $"您好，{name}，下午工作顺利。" 
+                            : $"下午好，{name}！工作顺利！";
+                    }
+                    else if (hour >= 18 && hour < 22)
+                    {
+                        greeting = style == "formal" ? $"晚上好，{name}！" 
+                            : style == "casual" ? $"晚上好，{name}！" 
+                            : style == "professional" ? $"您好，{name}，晚间愉快。" 
+                            : $"晚上好，{name}！今天过得怎么样？";
+                    }
+                    else
+                    {
+                        greeting = style == "formal" ? $"深夜好，{name}，请注意休息。" 
+                            : style == "casual" ? $"这么晚了，{name}，还在忙呢？" 
+                            : style == "professional" ? $"您好，{name}，深夜时分请注意休息。" 
+                            : $"晚上好，{name}！这么晚了还在工作，辛苦了！";
+                    }
+                }
+                else
+                {
+                    greeting = style == "formal" ? $"您好，{name}！" 
+                        : style == "casual" ? $"嗨，{name}！" 
+                        : style == "professional" ? $"您好，{name}，很高兴为您服务。" 
+                        : $"你好，{name}！很高兴见到你！";
+                }
+            }
+            else if (language == "en")
+            {
+                if (useTimeGreeting)
+                {
+                    int hour = now.Hour;
+                    if (hour >= 5 && hour < 12)
+                    {
+                        greeting = style == "formal" ? $"Good morning, {name}!" 
+                            : style == "casual" ? $"Morning, {name}!" 
+                            : style == "professional" ? $"Good morning, {name}. Have a great day." 
+                            : $"Good morning, {name}! Have a wonderful day!";
+                    }
+                    else if (hour >= 12 && hour < 14)
+                    {
+                        greeting = style == "formal" ? $"Good afternoon, {name}!" 
+                            : style == "casual" ? $"Hey {name}!" 
+                            : style == "professional" ? $"Good afternoon, {name}. Enjoy your lunch." 
+                            : $"Good afternoon, {name}! Hope you're having a great day!";
+                    }
+                    else if (hour >= 14 && hour < 18)
+                    {
+                        greeting = style == "formal" ? $"Good afternoon, {name}!" 
+                            : style == "casual" ? $"Hey {name}!" 
+                            : style == "professional" ? $"Good afternoon, {name}. How can I assist you?" 
+                            : $"Good afternoon, {name}! How's your day going?";
+                    }
+                    else if (hour >= 18 && hour < 22)
+                    {
+                        greeting = style == "formal" ? $"Good evening, {name}!" 
+                            : style == "casual" ? $"Evening, {name}!" 
+                            : style == "professional" ? $"Good evening, {name}. How may I help you?" 
+                            : $"Good evening, {name}! How was your day?";
+                    }
+                    else
+                    {
+                        greeting = style == "formal" ? $"Good night, {name}. Please rest well." 
+                            : style == "casual" ? $"Late night, {name}! Still up?" 
+                            : style == "professional" ? $"Good evening, {name}. It's late, please take care." 
+                            : $"Good evening, {name}! It's late, hope you're doing well!";
+                    }
+                }
+                else
+                {
+                    greeting = style == "formal" ? $"Hello, {name}!" 
+                        : style == "casual" ? $"Hey, {name}!" 
+                        : style == "professional" ? $"Hello, {name}. Nice to meet you." 
+                        : $"Hello, {name}! Nice to meet you!";
+                }
+            }
+            else if (language == "ja")
+            {
+                if (useTimeGreeting)
+                {
+                    int hour = now.Hour;
+                    if (hour >= 5 && hour < 12)
+                    {
+                        greeting = style == "formal" ? $"おはようございます、{name}さん！" 
+                            : style == "casual" ? $"おはよう、{name}！" 
+                            : style == "professional" ? $"おはようございます、{name}さん。よろしくお願いします。" 
+                            : $"おはようございます、{name}さん！良い一日を！";
+                    }
+                    else if (hour >= 12 && hour < 18)
+                    {
+                        greeting = style == "formal" ? $"こんにちは、{name}さん！" 
+                            : style == "casual" ? $"こんにちは、{name}！" 
+                            : style == "professional" ? $"こんにちは、{name}さん。お疲れ様です。" 
+                            : $"こんにちは、{name}さん！お会いできて嬉しいです！";
+                    }
+                    else
+                    {
+                        greeting = style == "formal" ? $"こんばんは、{name}さん！" 
+                            : style == "casual" ? $"こんばんは、{name}！" 
+                            : style == "professional" ? $"こんばんは、{name}さん。お疲れ様です。" 
+                            : $"こんばんは、{name}さん！今日はどうでしたか？";
+                    }
+                }
+                else
+                {
+                    greeting = style == "formal" ? $"こんにちは、{name}さん！" 
+                        : style == "casual" ? $"やあ、{name}！" 
+                        : style == "professional" ? $"はじめまして、{name}さん。" 
+                        : $"こんにちは、{name}さん！";
+                }
+            }
+            else if (language == "ko")
+            {
+                if (useTimeGreeting)
+                {
+                    int hour = now.Hour;
+                    if (hour >= 5 && hour < 12)
+                    {
+                        greeting = style == "formal" ? $"좋은 아침입니다, {name}님!" 
+                            : style == "casual" ? $"좋은 아침, {name}!" 
+                            : style == "professional" ? $"좋은 아침입니다, {name}님. 좋은 하루 되세요." 
+                            : $"좋은 아침입니다, {name}님! 좋은 하루 보내세요!";
+                    }
+                    else if (hour >= 12 && hour < 18)
+                    {
+                        greeting = style == "formal" ? $"안녕하세요, {name}님!" 
+                            : style == "casual" ? $"안녕, {name}!" 
+                            : style == "professional" ? $"안녕하세요, {name}님. 반갑습니다." 
+                            : $"안녕하세요, {name}님! 만나서 반갑습니다!";
+                    }
+                    else
+                    {
+                        greeting = style == "formal" ? $"안녕하세요, {name}님! 좋은 저녁 되세요." 
+                            : style == "casual" ? $"안녕, {name}! 저녁 잘 보내고 있어?" 
+                            : style == "professional" ? $"안녕하세요, {name}님. 오늘 하루 수고하셨습니다." 
+                            : $"안녕하세요, {name}님! 오늘 하루는 어땠어요?";
+                    }
+                }
+                else
+                {
+                    greeting = style == "formal" ? $"안녕하세요, {name}님!" 
+                        : style == "casual" ? $"안녕, {name}!" 
+                        : style == "professional" ? $"안녕하세요, {name}님." 
+                        : $"안녕하세요, {name}님!";
+                }
+            }
+            else if (language == "fr")
+            {
+                greeting = useTimeGreeting 
+                    ? (style == "formal" ? $"Bonjour, {name}!" 
+                        : style == "casual" ? $"Salut, {name}!" 
+                        : style == "professional" ? $"Bonjour, {name}. Comment puis-je vous aider?" 
+                        : $"Bonjour, {name}! Ravi de vous rencontrer!")
+                    : (style == "formal" ? $"Bonjour, {name}!" 
+                        : style == "casual" ? $"Salut, {name}!" 
+                        : style == "professional" ? $"Bonjour, {name}." 
+                        : $"Bonjour, {name}!");
+            }
+            else if (language == "de")
+            {
+                greeting = useTimeGreeting 
+                    ? (style == "formal" ? $"Guten Tag, {name}!" 
+                        : style == "casual" ? $"Hallo, {name}!" 
+                        : style == "professional" ? $"Guten Tag, {name}. Wie kann ich Ihnen helfen?" 
+                        : $"Guten Tag, {name}! Freut mich, Sie kennenzulernen!")
+                    : (style == "formal" ? $"Guten Tag, {name}!" 
+                        : style == "casual" ? $"Hallo, {name}!" 
+                        : style == "professional" ? $"Guten Tag, {name}." 
+                        : $"Guten Tag, {name}!");
+            }
+            else if (language == "es")
+            {
+                greeting = useTimeGreeting 
+                    ? (style == "formal" ? $"¡Buenos días, {name}!" 
+                        : style == "casual" ? $"¡Hola, {name}!" 
+                        : style == "professional" ? $"Buenos días, {name}. ¿En qué puedo ayudarle?" 
+                        : $"¡Hola, {name}! ¡Encantado de conocerte!")
+                    : (style == "formal" ? $"¡Hola, {name}!" 
+                        : style == "casual" ? $"¡Hola, {name}!" 
+                        : style == "professional" ? $"Buenos días, {name}." 
+                        : $"¡Hola, {name}!");
+            }
+            else
+            {
+                // 默认中文
+                greeting = $"你好，{name}！很高兴见到你！";
+            }
+
+            return greeting;
+        }
+
+        /// <summary>
+        /// 获取星期几的本地化名称
+        /// </summary>
+        private static string GetDayOfWeek(DayOfWeek dayOfWeek, string language)
+        {
+            Dictionary<DayOfWeek, Dictionary<string, string>> dayNames = new Dictionary<DayOfWeek, Dictionary<string, string>>
+            {
+                { DayOfWeek.Monday, new Dictionary<string, string> { { "zh", "星期一" }, { "en", "Monday" }, { "ja", "月曜日" }, { "ko", "월요일" }, { "fr", "Lundi" }, { "de", "Montag" }, { "es", "Lunes" } } },
+                { DayOfWeek.Tuesday, new Dictionary<string, string> { { "zh", "星期二" }, { "en", "Tuesday" }, { "ja", "火曜日" }, { "ko", "화요일" }, { "fr", "Mardi" }, { "de", "Dienstag" }, { "es", "Martes" } } },
+                { DayOfWeek.Wednesday, new Dictionary<string, string> { { "zh", "星期三" }, { "en", "Wednesday" }, { "ja", "水曜日" }, { "ko", "수요일" }, { "fr", "Mercredi" }, { "de", "Mittwoch" }, { "es", "Miércoles" } } },
+                { DayOfWeek.Thursday, new Dictionary<string, string> { { "zh", "星期四" }, { "en", "Thursday" }, { "ja", "木曜日" }, { "ko", "목요일" }, { "fr", "Jeudi" }, { "de", "Donnerstag" }, { "es", "Jueves" } } },
+                { DayOfWeek.Friday, new Dictionary<string, string> { { "zh", "星期五" }, { "en", "Friday" }, { "ja", "金曜日" }, { "ko", "금요일" }, { "fr", "Vendredi" }, { "de", "Freitag" }, { "es", "Viernes" } } },
+                { DayOfWeek.Saturday, new Dictionary<string, string> { { "zh", "星期六" }, { "en", "Saturday" }, { "ja", "土曜日" }, { "ko", "토요일" }, { "fr", "Samedi" }, { "de", "Samstag" }, { "es", "Sábado" } } },
+                { DayOfWeek.Sunday, new Dictionary<string, string> { { "zh", "星期日" }, { "en", "Sunday" }, { "ja", "日曜日" }, { "ko", "일요일" }, { "fr", "Dimanche" }, { "de", "Sonntag" }, { "es", "Domingo" } } }
+            };
+
+            if (dayNames.ContainsKey(dayOfWeek) && dayNames[dayOfWeek].ContainsKey(language))
+            {
+                return dayNames[dayOfWeek][language];
+            }
+            return dayNames[dayOfWeek]["zh"]; // 默认返回中文
+        }
+    }
+}

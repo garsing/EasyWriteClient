@@ -1,0 +1,1456 @@
+#pragma warning disable CS0119 // Disable "method is not valid in this context" warnings that may be cached
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Xml.Linq;
+using Word = Microsoft.Office.Interop.Word;
+using Excel = Microsoft.Office.Interop.Excel;
+
+namespace WordAddIn1
+{
+    /// <summary>
+    /// 从XML配置文件创建Word图表的工具
+    /// </summary>
+    public static class F_CreateChartFromXmlTool
+    {
+        /// <summary>
+        /// XML配置的数据结构
+        /// </summary>
+        public class ChartConfig
+        {
+            public ChartInfo Chart { get; set; }
+        }
+
+        /// <summary>
+        /// 图表信息
+        /// </summary>
+        public class ChartInfo
+        {
+            public string Type { get; set; }
+            public string Title { get; set; }
+            public List<List<object>> Data { get; set; }
+            public string Theme { get; set; }
+            public int Width { get; set; }
+            public int Height { get; set; }
+            public bool ShowDataLabels { get; set; }
+            public string LegendPosition { get; set; }
+            public string PlotColor { get; set; }
+            public int TitleFontSize { get; set; }
+            public bool TitleFontBold { get; set; }
+            public string TitleFontColor { get; set; }
+            public string Gridlines { get; set; }
+
+            // 柱状图特有属性
+            public int GapWidth { get; set; }
+
+            // 折线图特有属性
+            public bool DataMarkers { get; set; }
+            public int MarkerSize { get; set; }
+            public double LineWeight { get; set; }
+            public double YAxisMin { get; set; }
+            public double YAxisMax { get; set; }
+            public double YAxisMajorUnit { get; set; }
+
+            // 饼图特有属性
+            public string DataLabelType { get; set; }
+            public int Explosion { get; set; }
+        }
+
+        /// <summary>
+        /// 注册工具
+        /// </summary>
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+                        toolRegistry["F_create_chart_from_xml"] = async (args) =>
+            {
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] 开始创建图表");
+
+                    if (wordApplication == null)
+                    {
+                        return new ToolResult { Success = false, Error = "Word应用程序不可用" };
+                    }
+
+                    dynamic wordApp = wordApplication;
+                    if (wordApp.ActiveDocument == null)
+                    {
+                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
+                    }
+
+                    // 获取文件名
+                    string filename = args.ContainsKey("filename") ? args["filename"]?.ToString() : "";
+                    if (string.IsNullOrEmpty(filename))
+                    {
+                        return new ToolResult { Success = false, Error = "未提供文件名" };
+                    }
+
+                    // 获取用户名
+                    var userService = UserService.Instance;
+                    string username = userService.IsLoggedIn ? userService.UserName : "anonymous";
+
+                    // 构建文件路径
+                    string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                    string projectRoot = baseDir;
+
+                    if (baseDir.Contains("bin\\Debug") || baseDir.Contains("bin/Debug"))
+                    {
+                        string debugDir = Path.GetDirectoryName(baseDir.TrimEnd('\\', '/'));
+                        projectRoot = Path.GetDirectoryName(debugDir);
+                    }
+
+                    string xmlFilePath = Path.Combine(projectRoot, "tmp", username, "format_files", filename);
+                    if (!File.Exists(xmlFilePath))
+                    {
+                        // 尝试从后端下载文件
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 本地XML文件不存在，尝试从云端下载: {filename}");
+                        bool downloadSuccess = await FileDownloader.DownloadFileFromUserDirectory(filename, xmlFilePath);
+
+                        if (!downloadSuccess)
+                        {
+                            return new ToolResult { Success = false, Error = $"文件不存在: {filename}（在format_files目录和云端均未找到）" };
+                        }
+
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 成功从云端下载XML文件: {filename}");
+                    }
+
+                    // 解析XML
+                    var parseResult = ParseXmlFile(xmlFilePath);
+                    if (parseResult.Config == null)
+                    {
+                        return new ToolResult { Success = false, Error = $"XML解析失败: {parseResult.Error}" };
+                    }
+
+                    // 验证配置
+                    var validationResult = ValidateConfig(parseResult.Config);
+                    if (!validationResult.IsValid)
+                    {
+                        return new ToolResult { Success = false, Error = $"配置验证失败: {validationResult.Error}" };
+                    }
+
+                    // 获取位置参数
+                    int? position = null;
+                    if (args.ContainsKey("position"))
+                    {
+                        if (int.TryParse(args["position"]?.ToString(), out int pos))
+                        {
+                            position = pos;
+                        }
+                    }
+
+                    // 创建图表
+                    var createResult = CreateChartAtLocation(wordApp.ActiveDocument, parseResult.Config, position);
+                    if (!createResult.Success)
+                    {
+                        return new ToolResult { Success = false, Error = $"图表创建失败: {createResult.Error}" };
+                    }
+
+                    await Task.CompletedTask;
+
+                    // 构建返回消息，如果有警告信息也包含进去
+                    string message = "图表创建成功";
+                    if (!string.IsNullOrEmpty(createResult.Error))
+                    {
+                        message += $"，但存在以下警告: {createResult.Error}";
+                    }
+
+                    return new ToolResult
+                    {
+                        Success = true,
+                        Data = new
+                        {
+                            chart_created = true,
+                            chart_type = parseResult.Config.Chart.Type,
+                            title = parseResult.Config.Chart.Title,
+                            xml_file = filename,
+                            message = message
+                        }
+                    };
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 工具执行失败: {ex.Message}");
+                    return new ToolResult { Success = false, Error = $"执行失败: {ex.Message}" };
+                }
+            };
+}
+
+        /// <summary>
+        /// XML解析结果
+        /// </summary>
+        private class ParseResult
+        {
+            public ChartConfig Config { get; set; }
+            public string Error { get; set; }
+        }
+
+        /// <summary>
+        /// 解析XML文件
+        /// </summary>
+        private static ParseResult ParseXmlFile(string filePath)
+        {
+            try
+            {
+                XDocument doc = XDocument.Load(filePath);
+                XElement root = doc.Root;
+
+                if (root == null || root.Name != "ChartConfig")
+                {
+                    return new ParseResult { Config = null, Error = "XML根元素必须是ChartConfig" };
+                }
+
+                var config = new ChartConfig();
+
+                // 解析Chart
+                var chartElement = root.Element("Chart");
+                if (chartElement != null)
+                {
+                    config.Chart = new ChartInfo
+                    {
+                        Type = chartElement.Element("Type")?.Value ?? "",
+                        Title = chartElement.Element("Title")?.Value ?? "",
+                        Theme = chartElement.Element("Theme")?.Value ?? "",
+                        Width = int.TryParse(chartElement.Element("Width")?.Value, out int width) ? width : 0,
+                        Height = int.TryParse(chartElement.Element("Height")?.Value, out int height) ? height : 0,
+                        ShowDataLabels = bool.TryParse(chartElement.Element("ShowDataLabels")?.Value, out bool showDataLabels) && showDataLabels,
+                        LegendPosition = chartElement.Element("LegendPosition")?.Value ?? "",
+                        PlotColor = chartElement.Element("PlotColor")?.Value ?? "",
+                        TitleFontSize = int.TryParse(chartElement.Element("TitleFontSize")?.Value, out int titleFontSize) ? titleFontSize : 0,
+                        TitleFontBold = bool.TryParse(chartElement.Element("TitleFontBold")?.Value, out bool titleFontBold) && titleFontBold,
+                        TitleFontColor = chartElement.Element("TitleFontColor")?.Value ?? "",
+                        Gridlines = chartElement.Element("Gridlines")?.Value ?? "",
+                        GapWidth = int.TryParse(chartElement.Element("GapWidth")?.Value, out int gapWidth) ? gapWidth : 0,
+                        DataMarkers = bool.TryParse(chartElement.Element("DataMarkers")?.Value, out bool dataMarkers) && dataMarkers,
+                        MarkerSize = int.TryParse(chartElement.Element("MarkerSize")?.Value, out int markerSize) ? markerSize : 0,
+                        LineWeight = double.TryParse(chartElement.Element("LineWeight")?.Value, out double lineWeight) ? lineWeight : 0,
+                        YAxisMin = double.TryParse(chartElement.Element("YAxisMin")?.Value, out double yAxisMin) ? yAxisMin : 0,
+                        YAxisMax = double.TryParse(chartElement.Element("YAxisMax")?.Value, out double yAxisMax) ? yAxisMax : 0,
+                        YAxisMajorUnit = double.TryParse(chartElement.Element("YAxisMajorUnit")?.Value, out double yAxisMajorUnit) ? yAxisMajorUnit : 0,
+                        DataLabelType = chartElement.Element("DataLabelType")?.Value ?? "",
+                        Explosion = int.TryParse(chartElement.Element("Explosion")?.Value, out int explosion) ? explosion : 0
+                    };
+
+                    // 解析Data
+                    var dataElement = chartElement.Element("Data");
+                    if (dataElement != null)
+                    {
+                        config.Chart.Data = new List<List<object>>();
+                        foreach (var rowElement in dataElement.Elements("Row"))
+                        {
+                            var row = new List<object>();
+                            foreach (var cellElement in rowElement.Elements("Cell"))
+                            {
+                                string cellValue = cellElement.Value ?? "";
+                                // 尝试解析为数字，如果失败则保持字符串
+                                if (double.TryParse(cellValue, out double numValue))
+                                {
+                                    row.Add(numValue);
+                                }
+                                else
+                                {
+                                    row.Add(cellValue);
+                                }
+                            }
+                            config.Chart.Data.Add(row);
+                        }
+                    }
+                }
+
+                return new ParseResult { Config = config, Error = null };
+            }
+            catch (Exception ex)
+            {
+                string errorMsg = $"XML解析失败: {ex.Message}";
+                if (ex.InnerException != null)
+                {
+                    errorMsg += $"\n详细信息: {ex.InnerException.Message}";
+                }
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] XML解析异常: {errorMsg}");
+                return new ParseResult { Config = null, Error = errorMsg };
+            }
+        }
+
+
+
+        /// <summary>
+        /// 验证结果
+        /// </summary>
+        private class ValidationResult
+        {
+            public bool IsValid { get; set; }
+            public string Error { get; set; }
+        }
+
+        /// <summary>
+        /// 验证配置
+        /// </summary>
+        private static ValidationResult ValidateConfig(ChartConfig config)
+        {
+            var errors = new List<string>();
+
+            if (config == null)
+            {
+                return new ValidationResult { IsValid = false, Error = "配置对象为空" };
+            }
+
+            if (config.Chart == null)
+            {
+                errors.Add("缺少Chart配置");
+            }
+            else
+            {
+                if (string.IsNullOrEmpty(config.Chart.Type))
+                {
+                    errors.Add("Chart.Type字段为空或缺失");
+                }
+                else
+                {
+                    // 验证图表类型
+                    string[] validTypes = { "column_clustered", "line", "pie3d" };
+                    if (!validTypes.Contains(config.Chart.Type))
+                    {
+                        errors.Add($"Chart.Type值无效: '{config.Chart.Type}'，有效值为: {string.Join(", ", validTypes)}");
+                    }
+                }
+
+                // 标题现在是可选的，不再验证
+
+                if (config.Chart.Data == null)
+                {
+                    errors.Add("Chart.Data字段为空或缺失");
+                }
+                else if (config.Chart.Data.Count < 2)
+                {
+                    errors.Add($"Chart.Data数据行数不足: 至少需要2行（标题行+数据行），当前只有{config.Chart.Data.Count}行");
+                }
+                else
+                {
+                    // 验证数据格式
+                    if (config.Chart.Data[0] == null || config.Chart.Data[0].Count == 0)
+                    {
+                        errors.Add("Chart.Data第一行（标题行）为空或没有列");
+                    }
+                    else
+                    {
+                        int expectedColCount = config.Chart.Data[0].Count;
+                        for (int i = 1; i < config.Chart.Data.Count; i++)
+                        {
+                            if (config.Chart.Data[i] == null)
+                            {
+                                errors.Add($"Chart.Data第{i + 1}行为空");
+                            }
+                            else if (config.Chart.Data[i].Count != expectedColCount)
+                            {
+                                errors.Add($"Chart.Data第{i + 1}行列数不一致: 期望{expectedColCount}列，实际{config.Chart.Data[i].Count}列");
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (errors.Count > 0)
+            {
+                return new ValidationResult { IsValid = false, Error = string.Join("; ", errors) };
+            }
+
+            return new ValidationResult { IsValid = true, Error = null };
+        }
+
+        /// <summary>
+        /// 创建结果
+        /// </summary>
+        private class CreateResult
+        {
+            public bool Success { get; set; }
+            public string Error { get; set; }
+        }
+
+        /// <summary>
+        /// 创建图表
+        /// </summary>
+        private static CreateResult CreateChartAtLocation(Word.Document document, ChartConfig config, int? position = null)
+        {
+            var errors = new List<string>();
+
+            try
+            {
+                Word.Range insertRange;
+
+                if (position.HasValue)
+                {
+                    // 在指定位置创建图表
+                    try
+                    {
+                        if (position.Value < 0)
+                        {
+                            return new CreateResult { Success = false, Error = $"位置参数无效: {position.Value}，必须大于等于0" };
+                        }
+
+                        if (position.Value > document.Content.End)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 位置 {position.Value} 超出文档范围（文档长度: {document.Content.End}），将在文档末尾创建");
+                            insertRange = document.Content;
+                            insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                        }
+                        else
+                        {
+                            insertRange = document.Range(position.Value, position.Value);
+                            insertRange.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 在位置 {position.Value} 创建图表");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        string errorMsg = $"无法在指定位置创建图表: {ex.Message}，将使用文档末尾";
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                        insertRange = document.Content;
+                        insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                    }
+                }
+                else
+                {
+                    // 默认在当前光标处插入图表
+                    insertRange = document.Application.Selection.Range;
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] 在当前光标处创建图表");
+                }
+
+                // 创建图表
+                Word.InlineShape chartShape = document.InlineShapes.AddChart();
+                Word.Chart chart = chartShape.Chart;
+
+                // 立即禁用标题（防止Word自动添加标题），如果后面有提供标题再启用
+                try
+                {
+                    chart.HasTitle = false;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 初始禁用标题失败: {ex.Message}");
+                }
+
+                // 设置图表类型（通过ChartType属性）
+                try
+                {
+                    chart.ChartType = (Microsoft.Office.Core.XlChartType)GetChartType(config.Chart.Type);
+                }
+                catch (Exception ex)
+                {
+                    string errorMsg = $"设置图表类型失败: {ex.Message}";
+                    errors.Add(errorMsg);
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                }
+
+                // 设置图表大小（宽度不能超过400）
+                chartShape.Width = config.Chart.Width > 0 ? Math.Min(config.Chart.Width, 400) : 400;
+                chartShape.Height = config.Chart.Height > 0 ? config.Chart.Height : 300;
+
+                // 设置图表主题
+                if (!string.IsNullOrEmpty(config.Chart.Theme))
+                {
+                    try
+                    {
+                        chart.ChartStyle = GetChartStyle(config.Chart.Theme);
+                    }
+                    catch (Exception ex)
+                    {
+                        string errorMsg = $"设置主题失败: {ex.Message}";
+                        errors.Add(errorMsg);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    }
+                }
+
+                // 填充数据
+                var fillDataResult = FillChartData(chart, config.Chart);
+                if (!fillDataResult.Success)
+                {
+                    errors.Add($"填充图表数据失败: {fillDataResult.Error}");
+                }
+
+                // 设置标题（可选）
+                if (!string.IsNullOrEmpty(config.Chart.Title))
+                {
+                    try
+                    {
+                        chart.HasTitle = true;
+                        chart.ChartTitle.Text = config.Chart.Title;
+
+                        // 设置标题字体
+                        if (config.Chart.TitleFontSize > 0)
+                        {
+                            chart.ChartTitle.Format.TextFrame2.TextRange.Font.Size = config.Chart.TitleFontSize;
+                        }
+
+                        if (config.Chart.TitleFontBold)
+                        {
+                            chart.ChartTitle.Format.TextFrame2.TextRange.Font.Bold = Microsoft.Office.Core.MsoTriState.msoTrue;
+                        }
+
+                        if (!string.IsNullOrEmpty(config.Chart.TitleFontColor))
+                        {
+                            try
+                            {
+                                int colorValue = Convert.ToInt32(config.Chart.TitleFontColor, 16);
+                                chart.ChartTitle.Font.Color = (Word.WdColor)colorValue;
+                            }
+                            catch (Exception ex)
+                            {
+                                string errorMsg = $"设置标题颜色失败: {ex.Message}（颜色值格式可能不正确，应为16进制字符串）";
+                                errors.Add(errorMsg);
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        string errorMsg = $"设置标题失败: {ex.Message}";
+                        errors.Add(errorMsg);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    }
+                }
+                else
+                {
+                    // 如果没有标题，明确隐藏标题
+                    try
+                    {
+                        chart.HasTitle = false;
+                        System.Diagnostics.Debug.WriteLine("[DEBUG] 未提供标题，已隐藏图表标题");
+                    }
+                    catch (Exception ex)
+                    {
+                        string errorMsg = $"隐藏标题失败: {ex.Message}";
+                        errors.Add(errorMsg);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    }
+                }
+
+                // 设置图例位置（默认放在顶部）
+                try
+                {
+                    chart.HasLegend = true;
+                    string legendPosition = !string.IsNullOrEmpty(config.Chart.LegendPosition) 
+                        ? config.Chart.LegendPosition 
+                        : "top"; // 默认图例位置为顶部
+                    chart.Legend.Position = (Word.XlLegendPosition)GetLegendPosition(legendPosition);
+                }
+                catch (Exception ex)
+                {
+                    string errorMsg = $"设置图例位置失败: {ex.Message}";
+                    errors.Add(errorMsg);
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                }
+
+                // 设置网格线（默认显示虚线主要网格线）
+                if (!string.IsNullOrEmpty(config.Chart.Gridlines))
+                {
+                    var gridlinesResult = SetGridlines(chart, config.Chart.Gridlines);
+                    if (!gridlinesResult.Success)
+                    {
+                        errors.Add($"设置网格线失败: {gridlinesResult.Error}");
+                    }
+                }
+                else
+                {
+                    // 默认显示虚线主要网格线
+                    try
+                    {
+                        Word.Axis valueAxis = chart.Axes(Word.XlAxisType.xlValue);
+                        valueAxis.HasMajorGridlines = true;
+                        valueAxis.HasMinorGridlines = false;
+                        valueAxis.MajorGridlines.Format.Line.DashStyle = Microsoft.Office.Core.MsoLineDashStyle.msoLineDash;
+                        System.Diagnostics.Debug.WriteLine("[DEBUG] 已设置默认虚线主要网格线");
+                    }
+                    catch (Exception ex)
+                    {
+                        string errorMsg = $"设置默认网格线失败: {ex.Message}";
+                        errors.Add(errorMsg);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    }
+                }
+
+                // 根据图表类型应用特定格式
+                var formattingResult = ApplyChartSpecificFormatting(chart, config.Chart);
+                if (!formattingResult.Success)
+                {
+                    errors.Add($"应用图表格式失败: {formattingResult.Error}");
+                }
+
+                // 最后再次确保标题状态正确（防止格式操作重新启用标题）
+                try
+                {
+                    if (string.IsNullOrEmpty(config.Chart.Title))
+                    {
+                        chart.HasTitle = false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 最终检查标题状态失败: {ex.Message}");
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 图表创建成功: {config.Chart.Type}");
+
+                // 将光标移动到图表后面并换行
+                try
+                {
+                    Word.Range chartRange = chartShape.Range;
+                    chartRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                    // 插入换行符（段落标记）
+                    chartRange.InsertParagraphAfter();
+                    // 移动光标到新行的开头
+                    chartRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                    document.Application.Selection.SetRange(chartRange.Start, chartRange.End);
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] 光标已移动到图表后面并换行");
+                }
+                catch (Exception ex)
+                {
+                    string errorMsg = $"移动光标失败: {ex.Message}";
+                    errors.Add(errorMsg);
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                }
+
+                if (errors.Count > 0)
+                {
+                    return new CreateResult { Success = true, Error = $"图表已创建，但存在以下警告: {string.Join("; ", errors)}" };
+                }
+
+                return new CreateResult { Success = true, Error = null };
+            }
+            catch (Exception ex)
+            {
+                string errorMsg = $"图表创建异常: {ex.Message}";
+                if (ex.InnerException != null)
+                {
+                    errorMsg += $"\n详细信息: {ex.InnerException.Message}";
+                }
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                return new CreateResult { Success = false, Error = errorMsg };
+            }
+        }
+
+        /// <summary>
+        /// 获取图表类型
+        /// </summary>
+        private static Excel.XlChartType GetChartType(string type)
+        {
+            switch (type.ToLower())
+            {
+                case "column_clustered":
+                    return Excel.XlChartType.xlColumnClustered;
+                case "line":
+                    return Excel.XlChartType.xlLine;
+                case "pie3d":
+                    return Excel.XlChartType.xl3DPie;
+                default:
+                    return Excel.XlChartType.xlColumnClustered;
+            }
+        }
+
+        /// <summary>
+        /// 获取图表样式
+        /// </summary>
+        private static int GetChartStyle(string theme)
+        {
+            switch (theme.ToLower())
+            {
+                case "office":
+                    return 1; // Office style
+                default:
+                    return 1;
+            }
+        }
+
+        /// <summary>
+        /// 获取图例位置
+        /// </summary>
+        private static int GetLegendPosition(string position)
+        {
+            switch (position.ToLower())
+            {
+                case "top":
+                    return -4160; // xlLegendPositionTop
+                case "bottom":
+                    return -4107; // xlLegendPositionBottom
+                case "left":
+                    return -4131; // xlLegendPositionLeft
+                case "right":
+                    return -4152; // xlLegendPositionRight
+                default:
+                    return -4107; // xlLegendPositionBottom
+            }
+        }
+
+        /// <summary>
+        /// 填充图表数据（合并方法：先填充Excel工作表，然后直接设置系列值）
+        /// </summary>
+        private static CreateResult FillChartData(Word.Chart chart, ChartInfo chartInfo)
+        {
+            var errors = new List<string>();
+
+            try
+            {
+                // 获取图表的数据工作簿
+                dynamic chartData = chart.ChartData;
+                dynamic workbook = chartData.Workbook;
+                dynamic worksheet = workbook.Worksheets[1];
+
+                // 获取数据范围 - 确保只使用实际存在的列数
+                int rowCount = chartInfo.Data.Count;
+                int colCount = chartInfo.Data[0].Count; // 使用第一行的列数作为标准
+
+                // 验证所有行都有相同的列数，如果不一致则只使用最小的列数
+                for (int r = 1; r < rowCount; r++)
+                {
+                    if (chartInfo.Data[r].Count < colCount)
+                    {
+                        colCount = chartInfo.Data[r].Count;
+                        errors.Add($"第{r + 1}行列数不足，已调整为{colCount}列");
+                    }
+                }
+
+                // 清理Excel中可能存在的默认数据（防止影响系列创建）
+                try
+                {
+                    // 清理所有多余列的数据（从colCount+1列开始，清理足够多的行和列）
+                    for (int c = colCount + 1; c <= 20; c++)
+                    {
+                        for (int r = 1; r <= Math.Max(rowCount, 10); r++)
+                        {
+                            try
+                            {
+                                worksheet.Cells[r, c] = "";
+                            }
+                            catch
+                            {
+                                // 忽略清理过程中的错误
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    string errorMsg = $"清理默认数据失败: {ex.Message}";
+                    errors.Add(errorMsg);
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                }
+
+                // 填充数据到工作表，只填充有效的列
+                for (int r = 0; r < rowCount; r++)
+                {
+                    for (int c = 0; c < colCount && c < chartInfo.Data[r].Count; c++)
+                    {
+                        try
+                        {
+                            object value = chartInfo.Data[r][c];
+                            worksheet.Cells[r + 1, c + 1] = value?.ToString() ?? "";
+                        }
+                        catch (Exception ex)
+                        {
+                            string errorMsg = $"设置单元格数据失败 (行{r + 1},列{c + 1}): {ex.Message}";
+                            errors.Add(errorMsg);
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                        }
+                    }
+                }
+
+                // // 设置图表数据源范围，只包含实际有数据的列
+                // try
+                // {
+                //     dynamic dataRange = worksheet.Range[worksheet.Cells[1, 1], worksheet.Cells[rowCount, colCount]];
+                //     chart.SetSourceData(dataRange);
+                // }
+                // catch (Exception ex)
+                // {
+                //     string errorMsg = $"设置数据源范围失败: {ex.Message}";
+                //     errors.Add(errorMsg);
+                //     System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                // }
+
+                // 直接设置系列值（确保数据正确）
+                if (chartInfo.Data.Count >= 2)
+                {
+                    var headers = chartInfo.Data[0];
+                    int validSeriesCount = 0;
+
+                    // 收集X轴标签（第一列的所有值，从第2行开始）
+                    var xAxisLabels = new List<string>();
+                    for (int r = 1; r < chartInfo.Data.Count; r++)
+                    {
+                        if (chartInfo.Data[r].Count > 0)
+                        {
+                            xAxisLabels.Add(chartInfo.Data[r][0]?.ToString() ?? "");
+                        }
+                    }
+
+                    for (int c = 1; c < headers.Count && c < colCount; c++) // 从第二列开始，检查每列是否有有效的数值数据
+                    {
+                        var values = new List<double>();
+                        bool hasValidData = false;
+
+                        // 收集该列的数值数据
+                        for (int r = 1; r < chartInfo.Data.Count; r++)
+                        {
+                            if (chartInfo.Data[r].Count > c)
+                            {
+                                double val;
+                                string cellValue = chartInfo.Data[r][c]?.ToString();
+                                if (!string.IsNullOrEmpty(cellValue) && double.TryParse(cellValue, out val))
+                                {
+                                    values.Add(val);
+                                    hasValidData = true;
+                                }
+                            }
+                        }
+
+                        // 只为包含有效数值数据的列设置系列值
+                        if (hasValidData && values.Count > 0)
+                        {
+                            validSeriesCount++;
+                            try
+                            {
+                                // 使用系列计数访问系列，确保只设置有效的系列
+                                dynamic series = chart.SeriesCollection(validSeriesCount);
+                                if (series != null)
+                                {
+                                    series.Values = values.ToArray();
+                                    
+                                    // 设置X轴标签（Categories），确保所有标签都能显示
+                                    if (xAxisLabels.Count > 0)
+                                    {
+                                        // 确保X轴标签数量与Y轴值数量匹配
+                                        var labelsToUse = new List<string>();
+                                        for (int i = 0; i < values.Count && i < xAxisLabels.Count; i++)
+                                        {
+                                            labelsToUse.Add(xAxisLabels[i]);
+                                        }
+                                        if (labelsToUse.Count > 0)
+                                        {
+                                            series.XValues = labelsToUse.ToArray();
+                                        }
+                                    }
+                                    
+                                    // 设置系列名称
+                                    if (headers.Count > c)
+                                    {
+                                        series.Name = headers[c]?.ToString() ?? $"系列{validSeriesCount}";
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                string errorMsg = $"设置系列{validSeriesCount}数据失败: {ex.Message}";
+                                errors.Add(errorMsg);
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                            }
+                        }
+                    }
+
+                    // 删除多余的系列
+                    try
+                    {
+                        int totalSeries = chart.SeriesCollection().Count;
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 填充了 {validSeriesCount} 个有效系列，图表共有 {totalSeries} 个系列");
+
+                        for (int i = totalSeries; i > validSeriesCount; i--)
+                        {
+                            try
+                            {
+                                chart.SeriesCollection(i).Delete();
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 已删除多余系列{i}");
+                            }
+                            catch (Exception ex)
+                            {
+                                string errorMsg = $"删除多余系列{i}失败: {ex.Message}";
+                                errors.Add(errorMsg);
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        string errorMsg = $"删除多余系列异常: {ex.Message}";
+                        errors.Add(errorMsg);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    }
+                }
+
+                if (errors.Count > 0)
+                {
+                    return new CreateResult { Success = true, Error = string.Join("; ", errors) };
+                }
+
+                return new CreateResult { Success = true, Error = null };
+            }
+            catch (Exception ex)
+            {
+                string errorMsg = $"填充图表数据异常: {ex.Message}";
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                return new CreateResult { Success = false, Error = errorMsg };
+            }
+        }
+
+
+        /// <summary>
+        /// 设置网格线
+        /// </summary>
+        private static CreateResult SetGridlines(Word.Chart chart, string gridlines)
+        {
+            try
+            {
+                Word.Axis valueAxis = chart.Axes(Word.XlAxisType.xlValue);
+                
+                switch (gridlines.ToLower())
+                {
+                    case "none":
+                        valueAxis.HasMajorGridlines = false;
+                        valueAxis.HasMinorGridlines = false;
+                        break;
+                    case "major":
+                        valueAxis.HasMajorGridlines = true;
+                        valueAxis.HasMinorGridlines = false;
+                        // 设置主要网格线为虚线
+                        try
+                        {
+                            valueAxis.MajorGridlines.Format.Line.DashStyle = Microsoft.Office.Core.MsoLineDashStyle.msoLineDash;
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 设置主要网格线虚线样式失败: {ex.Message}");
+                        }
+                        break;
+                    case "minor":
+                        valueAxis.HasMajorGridlines = false;
+                        valueAxis.HasMinorGridlines = true;
+                        // 设置次要网格线为虚线
+                        try
+                        {
+                            valueAxis.MinorGridlines.Format.Line.DashStyle = Microsoft.Office.Core.MsoLineDashStyle.msoLineDash;
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 设置次要网格线虚线样式失败: {ex.Message}");
+                        }
+                        break;
+                    case "both":
+                        valueAxis.HasMajorGridlines = true;
+                        valueAxis.HasMinorGridlines = true;
+                        // 设置主要和次要网格线为虚线
+                        try
+                        {
+                            valueAxis.MajorGridlines.Format.Line.DashStyle = Microsoft.Office.Core.MsoLineDashStyle.msoLineDash;
+                            valueAxis.MinorGridlines.Format.Line.DashStyle = Microsoft.Office.Core.MsoLineDashStyle.msoLineDash;
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 设置网格线虚线样式失败: {ex.Message}");
+                        }
+                        break;
+                    default:
+                        return new CreateResult { Success = false, Error = $"Gridlines值无效: '{gridlines}'，有效值为: none, major, minor, both" };
+                }
+
+                return new CreateResult { Success = true, Error = null };
+            }
+            catch (Exception ex)
+            {
+                string errorMsg = $"设置网格线失败: {ex.Message}";
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                return new CreateResult { Success = false, Error = errorMsg };
+            }
+        }
+
+        /// <summary>
+        /// Y轴范围计算结果
+        /// </summary>
+        private class YAxisRange
+        {
+            public double Min { get; set; }
+            public double Max { get; set; }
+            public double MajorUnit { get; set; }
+        }
+
+        /// <summary>
+        /// 获取默认颜色数组（BGR格式）
+        /// 颜色顺序：粉色、蓝色、橙色、绿色
+        /// </summary>
+        private static int[] GetDefaultColors()
+        {
+            // RGB颜色转换为BGR格式（Word API使用BGR）
+            // (216,104,164) 粉色 -> (164,104,216) -> A468D8
+            // (131,165,215) 蓝色 -> (215,165,131) -> D7A583
+            // (225,165,102) 橙色 -> (102,165,225) -> 66A5E1
+            // (118,182,204) 绿色 -> (204,182,118) -> CCB676
+            return new int[]
+            {
+                0xA468D8, // 粉色 (216,104,164)
+                0xD7A583, // 蓝色 (131,165,215)
+                0x66A5E1, // 橙色 (225,165,102)
+                0xCCB676  // 绿色 (118,182,204)
+            };
+        }
+
+        /// <summary>
+        /// 计算合适的网格线间隔（major unit）
+        /// </summary>
+        private static double CalculateMajorUnit(double span)
+        {
+            if (span <= 0) return 10;
+            
+            // 计算数量级（10的幂次）
+            double magnitude = Math.Pow(10, Math.Floor(Math.Log10(span)));
+            
+            // 将跨度归一化到1-10之间
+            double normalized = span / magnitude;
+            
+            // 根据归一化的值选择合适的间隔
+            double unit;
+            if (normalized <= 2)
+            {
+                unit = 1; // 1, 2, 5, 10, 20, 50, 100...
+            }
+            else if (normalized <= 5)
+            {
+                unit = 2; // 2, 5, 10, 20, 50, 100...
+            }
+            else
+            {
+                unit = 5; // 5, 10, 20, 50, 100...
+            }
+            
+            return unit * magnitude;
+        }
+
+        /// <summary>
+        /// 根据数据自动计算Y轴范围
+        /// </summary>
+#pragma warning disable CS8632 // 禁用可空引用类型警告
+        private static YAxisRange? CalculateYAxisRange(ChartInfo chartInfo)
+#pragma warning restore CS8632
+        {
+            if (chartInfo.Data == null || chartInfo.Data.Count < 2)
+            {
+                return null;
+            }
+
+            double minValue = double.MaxValue;
+            double maxValue = double.MinValue;
+            bool hasValidData = false;
+
+            // 遍历所有数据行（从第2行开始，第1行是标题）
+            for (int r = 1; r < chartInfo.Data.Count; r++)
+            {
+                if (chartInfo.Data[r] == null) continue;
+
+                // 遍历所有数据列（从第2列开始，第1列通常是X轴标签）
+                for (int c = 1; c < chartInfo.Data[r].Count; c++)
+                {
+                    string cellValue = chartInfo.Data[r][c]?.ToString();
+                    if (!string.IsNullOrEmpty(cellValue) && double.TryParse(cellValue, out double val))
+                    {
+                        if (val < minValue) minValue = val;
+                        if (val > maxValue) maxValue = val;
+                        hasValidData = true;
+                    }
+                }
+            }
+
+            if (!hasValidData)
+            {
+                return null;
+            }
+
+            // 计算跨度
+            double span = maxValue - minValue;
+            
+            // 计算合适的网格线间隔（major unit）
+            double majorUnit;
+            if (span == 0)
+            {
+                // 如果跨度为0，使用最小值的绝对值来计算间隔
+                majorUnit = CalculateMajorUnit(Math.Abs(minValue));
+            }
+            else
+            {
+                majorUnit = CalculateMajorUnit(span);
+            }
+            
+            // 将最小值和最大值对齐到网格线刻度（向下取整和向上取整）
+            double roundedMin = Math.Floor(minValue / majorUnit) * majorUnit;
+            double roundedMax = Math.Ceiling(maxValue / majorUnit) * majorUnit;
+            
+            // 如果跨度为0（所有值相同），设置一个默认范围
+            if (span == 0)
+            {
+                if (minValue == 0)
+                {
+                    return new YAxisRange { Min = 0, Max = 10, MajorUnit = 10 };
+                }
+                else
+                {
+                    // 上下各预留两个网格线刻度
+                    return new YAxisRange { Min = roundedMin - majorUnit * 2, Max = roundedMax + majorUnit * 2, MajorUnit = majorUnit };
+                }
+            }
+            
+            // 上下各多预留两个网格线的刻度
+            double calculatedMin = roundedMin - majorUnit * 2;
+            double calculatedMax = roundedMax + majorUnit * 2;
+            
+            // 如果数据都是非负数，确保Y轴最小值不小于0
+            if (minValue >= 0 && calculatedMin < 0)
+            {
+                // 将下方空隙移到上方
+                double extraPadding = Math.Abs(calculatedMin);
+                calculatedMin = 0;
+                calculatedMax = roundedMax + majorUnit * 2 + extraPadding;
+            }
+            
+            return new YAxisRange { Min = calculatedMin, Max = calculatedMax, MajorUnit = majorUnit };
+        }
+
+        /// <summary>
+        /// 应用图表特定格式
+        /// </summary>
+        private static CreateResult ApplyChartSpecificFormatting(Word.Chart chart, ChartInfo chartInfo)
+        {
+            var errors = new List<string>();
+
+            try
+            {
+                // 默认隐藏Y轴线，但保留左侧数值刻度标签（适用于折线图和柱状图）
+                if (chartInfo.Type == "line" || chartInfo.Type == "column_clustered")
+                {
+                    try
+                    {
+                        Word.Axis yAxis = chart.Axes(Word.XlAxisType.xlValue);
+                        // 将Y轴标签位置设置为左侧（保留刻度数值）
+                        yAxis.TickLabelPosition = Word.XlTickLabelPosition.xlTickLabelPositionLow;
+                        // 隐藏Y轴刻度线（不显示刻度标记）
+                        yAxis.MajorTickMark = Word.XlTickMark.xlTickMarkNone;
+                        yAxis.MinorTickMark = Word.XlTickMark.xlTickMarkNone;
+                        // 隐藏Y轴线本身（不显示轴线）
+                        yAxis.Format.Line.Visible = Microsoft.Office.Core.MsoTriState.msoFalse;
+                        
+                        System.Diagnostics.Debug.WriteLine("[DEBUG] 已隐藏Y轴线，保留左侧刻度标签");
+                    }
+                    catch (Exception ex)
+                    {
+                        string errorMsg = $"设置Y轴格式失败: {ex.Message}";
+                        errors.Add(errorMsg);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    }
+                }
+
+                // 设置数据标签
+                if (chartInfo.ShowDataLabels)
+                {
+                    try
+                    {
+                        dynamic series1 = chart.SeriesCollection(1);
+                        series1.HasDataLabels = true;
+
+                        // 设置数据标签类型（针对饼图）
+                        if (chartInfo.Type == "pie3d" && !string.IsNullOrEmpty(chartInfo.DataLabelType))
+                        {
+                            try
+                            {
+                                switch (chartInfo.DataLabelType.ToLower())
+                                {
+                                    case "percent":
+                                        series1.DataLabels.ShowPercentage = true;
+                                        series1.DataLabels.ShowValue = false;
+                                        break;
+                                    case "value":
+                                        series1.DataLabels.ShowPercentage = false;
+                                        series1.DataLabels.ShowValue = true;
+                                        break;
+                                    case "both":
+                                        series1.DataLabels.ShowPercentage = true;
+                                        series1.DataLabels.ShowValue = true;
+                                        break;
+                                    default:
+                                        errors.Add($"DataLabelType值无效: '{chartInfo.DataLabelType}'，有效值为: percent, value, both");
+                                        break;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                string errorMsg = $"设置数据标签类型失败: {ex.Message}";
+                                errors.Add(errorMsg);
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        string errorMsg = $"设置数据标签失败: {ex.Message}";
+                        errors.Add(errorMsg);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    }
+                }
+
+                // 设置图表颜色（仅对非折线图，折线图的颜色在折线图特定设置中处理）
+                if (chartInfo.Type != "line")
+                {
+                    try
+                    {
+                        int seriesCount = chart.SeriesCollection().Count;
+                        int[] defaultColors = GetDefaultColors();
+                        
+                        for (int i = 1; i <= seriesCount; i++)
+                        {
+                            dynamic series = chart.SeriesCollection(i);
+                            int colorValue;
+                            
+                            if (!string.IsNullOrEmpty(chartInfo.PlotColor))
+                            {
+                                // 用户指定了颜色，使用用户指定的颜色
+                                string colorStr = chartInfo.PlotColor.Trim();
+                                if (colorStr.Length == 6)
+                                {
+                                    // 将RGB转换为BGR格式（交换R和B的位置）
+                                    string r = colorStr.Substring(0, 2);
+                                    string g = colorStr.Substring(2, 2);
+                                    string b = colorStr.Substring(4, 2);
+                                    string bgrStr = b + g + r; // BGR格式
+                                    colorValue = Convert.ToInt32(bgrStr, 16);
+                                }
+                                else
+                                {
+                                    colorValue = Convert.ToInt32(colorStr, 16);
+                                }
+                            }
+                            else
+                            {
+                                // 用户没有指定颜色，使用默认颜色（按系列顺序）
+                                int colorIndex = (i - 1) % defaultColors.Length; // 循环使用颜色
+                                colorValue = defaultColors[colorIndex];
+                            }
+                            
+                            series.Format.Fill.ForeColor.RGB = colorValue;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        string errorMsg = $"设置颜色失败: {ex.Message}（颜色值格式可能不正确，应为16进制字符串，如'FF0000'）";
+                        errors.Add(errorMsg);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    }
+                }
+
+                // 柱状图特定设置
+                if (chartInfo.Type == "column_clustered" && chartInfo.GapWidth > 0)
+                {
+                    try
+                    {
+                        dynamic series1 = chart.SeriesCollection(1);
+                        series1.GapWidth = chartInfo.GapWidth;
+                    }
+                    catch (Exception ex)
+                    {
+                        string errorMsg = $"设置柱间隙失败: {ex.Message}";
+                        errors.Add(errorMsg);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    }
+                }
+
+                // 折线图特定设置
+                if (chartInfo.Type == "line")
+                {
+                    try
+                    {
+                        // 遍历所有系列，设置数据点标记（默认不显示）和线条颜色
+                        int seriesCount = chart.SeriesCollection().Count;
+                        for (int i = 1; i <= seriesCount; i++)
+                        {
+                            dynamic series = chart.SeriesCollection(i);
+                            
+                            // 确保线条可见（必须先设置）
+                            try
+                            {
+                                series.Format.Line.Visible = Microsoft.Office.Core.MsoTriState.msoTrue;
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 设置线条可见性失败: {ex.Message}");
+                            }
+                            
+                            // 设置折线图线条颜色
+                            try
+                            {
+                                int colorValue;
+                                if (!string.IsNullOrEmpty(chartInfo.PlotColor))
+                                {
+                                    // 用户指定了颜色，使用用户指定的颜色
+                                    string colorStr = chartInfo.PlotColor.Trim();
+                                    if (colorStr.Length == 6)
+                                    {
+                                        // 将RGB转换为BGR格式（交换R和B的位置）
+                                        string r = colorStr.Substring(0, 2);
+                                        string g = colorStr.Substring(2, 2);
+                                        string b = colorStr.Substring(4, 2);
+                                        string bgrStr = b + g + r; // BGR格式
+                                        colorValue = Convert.ToInt32(bgrStr, 16);
+                                    }
+                                    else
+                                    {
+                                        // 如果格式不对，直接使用原值
+                                        colorValue = Convert.ToInt32(colorStr, 16);
+                                    }
+                                }
+                                else
+                                {
+                                    // 用户没有指定颜色，使用默认颜色（按系列顺序）
+                                    int[] defaultColors = GetDefaultColors();
+                                    int colorIndex = (i - 1) % defaultColors.Length; // 循环使用颜色
+                                    colorValue = defaultColors[colorIndex];
+                                }
+                                series.Format.Line.ForeColor.RGB = colorValue;
+                            }
+                            catch (Exception ex)
+                            {
+                                string errorMsg = $"设置折线图线条颜色失败: {ex.Message}";
+                                errors.Add(errorMsg);
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                            }
+                            
+                            // 默认不显示数据点标记（节点）
+                            if (chartInfo.DataMarkers)
+                            {
+                                series.MarkerStyle = Word.XlMarkerStyle.xlMarkerStyleCircle;
+                                if (chartInfo.MarkerSize > 0)
+                                {
+                                    series.MarkerSize = chartInfo.MarkerSize;
+                                }
+                            }
+                            else
+                            {
+                                // 明确设置为无标记
+                                series.MarkerStyle = Word.XlMarkerStyle.xlMarkerStyleNone;
+                            }
+
+                            if (chartInfo.LineWeight > 0)
+                            {
+                                series.Format.Line.Weight = (float)chartInfo.LineWeight;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        string errorMsg = $"设置折线图属性失败: {ex.Message}";
+                        errors.Add(errorMsg);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    }
+                }
+
+                // 设置Y轴范围（适用于折线图和柱状图）
+                if (chartInfo.Type == "line" || chartInfo.Type == "column_clustered")
+                {
+                    try
+                    {
+                        Word.Axis yAxis = chart.Axes(Word.XlAxisType.xlValue);
+                        
+                        // 如果用户没有设置Y轴范围，自动根据数据计算
+                        if (chartInfo.YAxisMin == 0 && chartInfo.YAxisMax == 0)
+                        {
+                            var calculatedRange = CalculateYAxisRange(chartInfo);
+                            if (calculatedRange != null)
+                            {
+                                yAxis.MinimumScale = calculatedRange.Min;
+                                yAxis.MaximumScale = calculatedRange.Max;
+                                // 设置计算出的主要单位，确保刻度是整数
+                                yAxis.MajorUnit = calculatedRange.MajorUnit;
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 自动计算Y轴范围: Min={calculatedRange.Min}, Max={calculatedRange.Max}, MajorUnit={calculatedRange.MajorUnit}");
+                            }
+                        }
+                        else
+                        {
+                            // 用户明确设置了Y轴范围
+                            if (chartInfo.YAxisMin != 0) yAxis.MinimumScale = chartInfo.YAxisMin;
+                            if (chartInfo.YAxisMax != 0) yAxis.MaximumScale = chartInfo.YAxisMax;
+                        }
+                        
+                        // 设置主要单位（如果用户没有设置，且自动计算也没有设置，则使用默认值）
+                        if (chartInfo.YAxisMajorUnit > 0)
+                        {
+                            yAxis.MajorUnit = chartInfo.YAxisMajorUnit;
+                        }
+                        else if (chartInfo.YAxisMin == 0 && chartInfo.YAxisMax == 0)
+                        {
+                            // 如果自动计算了范围，MajorUnit已经在上面设置了
+                            // 这里不需要额外设置
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        string errorMsg = $"设置Y轴范围失败: {ex.Message}";
+                        errors.Add(errorMsg);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    }
+                }
+
+                // 设置X轴刻度线类型（仅适用于折线图）
+                if (chartInfo.Type == "line")
+                {
+                    try
+                    {
+                        Word.Axis xAxis = chart.Axes(Word.XlAxisType.xlCategory);
+                        
+                        // 设置主刻度线类型为"无"（None）
+                        xAxis.MajorTickMark = Word.XlTickMark.xlTickMarkNone;
+                        
+                        // 设置次刻度线类型为"内部"（Inside）
+                        xAxis.MinorTickMark = Word.XlTickMark.xlTickMarkInside;
+                        
+                        // 设置刻度线间隔为1
+                        xAxis.TickMarkSpacing = 1;
+                        
+                        System.Diagnostics.Debug.WriteLine("[DEBUG] 设置X轴刻度线：主刻度线=无，次刻度线=内部，间隔=1");
+                    }
+                    catch (Exception ex)
+                    {
+                        string errorMsg = $"设置X轴刻度线失败: {ex.Message}";
+                        errors.Add(errorMsg);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    }
+                }
+
+                // 饼图特定设置
+                if (chartInfo.Type == "pie3d" && chartInfo.Explosion > 0)
+                {
+                    try
+                    {
+                        dynamic series1 = chart.SeriesCollection(1);
+                        series1.Explosion = chartInfo.Explosion;
+                    }
+                    catch (Exception ex)
+                    {
+                        string errorMsg = $"设置分离程度失败: {ex.Message}";
+                        errors.Add(errorMsg);
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    }
+                }
+
+                if (errors.Count > 0)
+                {
+                    return new CreateResult { Success = true, Error = string.Join("; ", errors) };
+                }
+
+                return new CreateResult { Success = true, Error = null };
+            }
+            catch (Exception ex)
+            {
+                string errorMsg = $"应用图表格式异常: {ex.Message}";
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                return new CreateResult { Success = false, Error = errorMsg };
+            }
+        }
+    }
+}
+
+

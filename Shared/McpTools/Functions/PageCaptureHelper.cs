@@ -1,0 +1,489 @@
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
+using PdfiumViewer;
+using Word = Microsoft.Office.Interop.Word;
+
+namespace WordAddIn1
+{
+    internal static class PageCaptureHelper
+    {
+        private const int MaxImageBytes = 4194304;
+        private const int MaxImageDimension = 2048;
+        private const int RenderDpi = 175;
+        private const int JpegQualityStart = 85;
+
+        internal sealed class PageOutOfRangeException : Exception
+        {
+            public int RequestedPage { get; }
+            public int TotalPages { get; }
+
+            public PageOutOfRangeException(int requestedPage, int totalPages)
+                : base($"页码 {requestedPage} 超出范围，文档共 {totalPages} 页")
+            {
+                RequestedPage = requestedPage;
+                TotalPages = totalPages;
+            }
+        }
+
+        internal sealed class CaptureResult
+        {
+            public int PageNumber { get; set; }
+            public int TotalPages { get; set; }
+            public string Format { get; set; }
+            public int WidthPx { get; set; }
+            public int HeightPx { get; set; }
+            public string ImageBase64 { get; set; }
+            public string CapturedAt { get; set; }
+            public string DocTitle { get; set; }
+        }
+
+        public static CaptureResult CaptureDocumentPage(Word.Application wordApp, int? requestedPageNumber = null)
+        {
+            PdfiumNativeLoader.EnsureLoaded();
+
+            if (wordApp == null)
+            {
+                throw new InvalidOperationException("Word应用程序不可用");
+            }
+
+            Word.Document doc = wordApp.ActiveDocument;
+            if (doc == null)
+            {
+                throw new InvalidOperationException("没有活动的 Word 文档");
+            }
+
+            int totalPages = doc.ComputeStatistics(Word.WdStatistic.wdStatisticPages);
+            if (totalPages < 1)
+            {
+                totalPages = 1;
+            }
+
+            int pageNumber;
+            if (requestedPageNumber.HasValue)
+            {
+                pageNumber = requestedPageNumber.Value;
+                if (pageNumber < 1)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(requestedPageNumber),
+                        "page_number 必须是 ≥1 的整数");
+                }
+
+                if (pageNumber > totalPages)
+                {
+                    throw new PageOutOfRangeException(pageNumber, totalPages);
+                }
+            }
+            else
+            {
+                pageNumber = GetCursorPageNumber(wordApp);
+                if (pageNumber < 1)
+                {
+                    pageNumber = 1;
+                }
+
+                if (pageNumber > totalPages)
+                {
+                    pageNumber = totalPages;
+                }
+            }
+            string tempDir = Path.Combine(Path.GetTempPath(), "EasyWrite", "capture", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            string pdfPath = Path.Combine(tempDir, "page.pdf");
+
+            try
+            {
+                int pageIndex = ExportPageToPdf(wordApp, doc, pdfPath, pageNumber);
+                using (var pdfDocument = PdfDocument.Load(pdfPath))
+                {
+                    if (pdfDocument.PageCount <= 0)
+                    {
+                        throw new InvalidOperationException("PDF 导出结果为空");
+                    }
+
+                    if (pageIndex < 0 || pageIndex >= pdfDocument.PageCount)
+                    {
+                        pageIndex = Math.Max(0, Math.Min(pageNumber - 1, pdfDocument.PageCount - 1));
+                    }
+
+                    using (var bitmap = (Bitmap)pdfDocument.Render(pageIndex, RenderDpi, RenderDpi, PdfRenderFlags.Annotations))
+                    {
+                        var compressed = CompressImage(bitmap);
+                        return new CaptureResult
+                        {
+                            PageNumber = pageNumber,
+                            TotalPages = totalPages,
+                            Format = compressed.Format,
+                            WidthPx = compressed.Width,
+                            HeightPx = compressed.Height,
+                            ImageBase64 = Convert.ToBase64String(compressed.Bytes),
+                            CapturedAt = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz"),
+                            DocTitle = doc.Name ?? string.Empty
+                        };
+                    }
+                }
+            }
+            finally
+            {
+                TryDeleteFile(pdfPath);
+                TryDeleteDirectory(tempDir);
+            }
+        }
+
+        internal sealed class DocumentPageInfo
+        {
+            public int TotalPages { get; set; }
+            public int CursorPageNumber { get; set; }
+            public string DocTitle { get; set; }
+        }
+
+        public static DocumentPageInfo GetDocumentPageInfo(Word.Application wordApp)
+        {
+            if (wordApp == null)
+            {
+                throw new InvalidOperationException("Word应用程序不可用");
+            }
+
+            Word.Document doc = wordApp.ActiveDocument;
+            if (doc == null)
+            {
+                throw new InvalidOperationException("没有活动的 Word 文档");
+            }
+
+            int totalPages = doc.ComputeStatistics(Word.WdStatistic.wdStatisticPages);
+            if (totalPages < 1)
+            {
+                totalPages = 1;
+            }
+
+            int cursorPage = GetCursorPageNumber(wordApp);
+            if (cursorPage < 1)
+            {
+                cursorPage = 1;
+            }
+
+            if (cursorPage > totalPages)
+            {
+                cursorPage = totalPages;
+            }
+
+            return new DocumentPageInfo
+            {
+                TotalPages = totalPages,
+                CursorPageNumber = cursorPage,
+                DocTitle = doc.Name ?? string.Empty
+            };
+        }
+
+        private static int GetCursorPageNumber(Word.Application wordApp)
+        {
+            object pageObj = wordApp.Selection?.Information[Word.WdInformation.wdActiveEndPageNumber];
+            if (pageObj == null)
+            {
+                return 1;
+            }
+
+            return Convert.ToInt32(pageObj);
+        }
+
+        private static int ExportPageToPdf(Word.Application wordApp, Word.Document doc, string pdfPath, int pageNumber)
+        {
+            if (TryExportPageRange(doc, pdfPath, pageNumber))
+            {
+                return 0;
+            }
+
+            if (TryExportSinglePageViaTempDocument(wordApp, doc, pdfPath, pageNumber))
+            {
+                return 0;
+            }
+
+            throw new InvalidOperationException(
+                $"无法导出第 {pageNumber} 页为 PDF（单页范围导出与临时文档导出均失败）");
+        }
+
+        /// <summary>
+        /// 单页范围导出失败时，复制该页到临时文档再导出，避免全文 PDF 导出阻塞 UI/WebSocket。
+        /// </summary>
+        private static bool TryExportSinglePageViaTempDocument(
+            Word.Application wordApp,
+            Word.Document doc,
+            string pdfPath,
+            int pageNumber)
+        {
+            Word.Document tempDoc = null;
+            try
+            {
+                int totalPages = doc.ComputeStatistics(Word.WdStatistic.wdStatisticPages);
+                if (pageNumber < 1)
+                {
+                    pageNumber = 1;
+                }
+
+                if (pageNumber > totalPages)
+                {
+                    pageNumber = totalPages;
+                }
+
+                Word.Range pageStart = doc.GoTo(
+                    Word.WdGoToItem.wdGoToPage,
+                    Word.WdGoToDirection.wdGoToAbsolute,
+                    pageNumber);
+
+                Word.Range pageEnd;
+                if (pageNumber >= totalPages)
+                {
+                    pageEnd = doc.Content;
+                }
+                else
+                {
+                    pageEnd = doc.GoTo(
+                        Word.WdGoToItem.wdGoToPage,
+                        Word.WdGoToDirection.wdGoToAbsolute,
+                        pageNumber + 1);
+                }
+
+                int endPos = Math.Max(pageStart.Start, pageEnd.Start - 1);
+                Word.Range pageRange = doc.Range(pageStart.Start, endPos);
+                pageRange.Copy();
+
+                tempDoc = wordApp.Documents.Add(Visible: false);
+                tempDoc.Content.Paste();
+
+                tempDoc.ExportAsFixedFormat(
+                    pdfPath,
+                    Word.WdExportFormat.wdExportFormatPDF,
+                    OpenAfterExport: false,
+                    OptimizeFor: Word.WdExportOptimizeFor.wdExportOptimizeForPrint);
+
+                if (!File.Exists(pdfPath) || new FileInfo(pdfPath).Length == 0)
+                {
+                    return false;
+                }
+
+                using (var pdfDocument = PdfDocument.Load(pdfPath))
+                {
+                    return pdfDocument.PageCount > 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[PageCaptureHelper] 临时文档单页导出失败: {ex.Message}");
+                return false;
+            }
+            finally
+            {
+                if (tempDoc != null)
+                {
+                    try
+                    {
+                        tempDoc.Close(SaveChanges: false);
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+                }
+            }
+        }
+
+        private static bool TryExportPageRange(Word.Document doc, string pdfPath, int pageNumber)
+        {
+            try
+            {
+                doc.ExportAsFixedFormat(
+                    pdfPath,
+                    Word.WdExportFormat.wdExportFormatPDF,
+                    OpenAfterExport: false,
+                    OptimizeFor: Word.WdExportOptimizeFor.wdExportOptimizeForPrint,
+                    Range: Word.WdExportRange.wdExportFromTo,
+                    From: pageNumber,
+                    To: pageNumber);
+
+                if (!File.Exists(pdfPath) || new FileInfo(pdfPath).Length == 0)
+                {
+                    return false;
+                }
+
+                using (var pdfDocument = PdfDocument.Load(pdfPath))
+                {
+                    return pdfDocument.PageCount > 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PageCaptureHelper] 单页导出失败，将尝试临时文档导出: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static CompressedImage CompressImage(Bitmap source)
+        {
+            using (var pngCopy = new Bitmap(source))
+            {
+                byte[] pngBytes = EncodePng(pngCopy);
+                if (pngBytes.Length <= MaxImageBytes &&
+                    Math.Max(pngCopy.Width, pngCopy.Height) <= MaxImageDimension)
+                {
+                    return new CompressedImage
+                    {
+                        Bytes = pngBytes,
+                        Format = "png",
+                        Width = pngCopy.Width,
+                        Height = pngCopy.Height
+                    };
+                }
+            }
+
+            int quality = JpegQualityStart;
+            double scale = 1.0;
+            Bitmap working = new Bitmap(source);
+
+            try
+            {
+                while (true)
+                {
+                    int width = Math.Max(1, (int)Math.Round(working.Width * scale));
+                    int height = Math.Max(1, (int)Math.Round(working.Height * scale));
+                    if (Math.Max(width, height) > MaxImageDimension)
+                    {
+                        double fit = (double)MaxImageDimension / Math.Max(working.Width, working.Height);
+                        width = Math.Max(1, (int)Math.Round(working.Width * fit));
+                        height = Math.Max(1, (int)Math.Round(working.Height * fit));
+                    }
+
+                    using (var resized = ResizeBitmap(working, width, height))
+                    {
+                        byte[] jpegBytes = EncodeJpeg(resized, quality);
+                        if (jpegBytes.Length <= MaxImageBytes)
+                        {
+                            return new CompressedImage
+                            {
+                                Bytes = jpegBytes,
+                                Format = "jpeg",
+                                Width = resized.Width,
+                                Height = resized.Height
+                            };
+                        }
+                    }
+
+                    if (quality > 55)
+                    {
+                        quality -= 10;
+                        continue;
+                    }
+
+                    if (scale > 0.35)
+                    {
+                        scale *= 0.85;
+                        quality = JpegQualityStart;
+                        continue;
+                    }
+
+                    throw new InvalidOperationException(
+                        $"截图压缩后仍超过大小限制({MaxImageBytes} bytes)");
+                }
+            }
+            finally
+            {
+                working.Dispose();
+            }
+        }
+
+        private static Bitmap ResizeBitmap(Bitmap source, int width, int height)
+        {
+            var target = new Bitmap(width, height);
+            using (var graphics = Graphics.FromImage(target))
+            {
+                graphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+                graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                graphics.DrawImage(source, 0, 0, width, height);
+            }
+
+            return target;
+        }
+
+        private static byte[] EncodePng(Bitmap bitmap)
+        {
+            using (var stream = new MemoryStream())
+            {
+                bitmap.Save(stream, ImageFormat.Png);
+                return stream.ToArray();
+            }
+        }
+
+        private static byte[] EncodeJpeg(Bitmap bitmap, int quality)
+        {
+            var codec = GetJpegCodec();
+            using (var stream = new MemoryStream())
+            {
+                if (codec == null)
+                {
+                    bitmap.Save(stream, ImageFormat.Jpeg);
+                    return stream.ToArray();
+                }
+
+                var encoderParams = new EncoderParameters(1);
+                encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)quality);
+                bitmap.Save(stream, codec, encoderParams);
+                return stream.ToArray();
+            }
+        }
+
+        private static ImageCodecInfo GetJpegCodec()
+        {
+            ImageCodecInfo[] codecs = ImageCodecInfo.GetImageEncoders();
+            foreach (var codec in codecs)
+            {
+                if (codec.FormatID == ImageFormat.Jpeg.Guid)
+                {
+                    return codec;
+                }
+            }
+
+            return null;
+        }
+
+        private static void TryDeleteFile(string path)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
+                // ignore cleanup errors
+            }
+        }
+
+        private static void TryDeleteDirectory(string path)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
+                {
+                    Directory.Delete(path, recursive: true);
+                }
+            }
+            catch
+            {
+                // ignore cleanup errors
+            }
+        }
+
+        private sealed class CompressedImage
+        {
+            public byte[] Bytes { get; set; }
+            public string Format { get; set; }
+            public int Width { get; set; }
+            public int Height { get; set; }
+        }
+    }
+}

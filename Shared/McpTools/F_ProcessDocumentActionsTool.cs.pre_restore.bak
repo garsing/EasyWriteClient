@@ -1,0 +1,1379 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using Word = Microsoft.Office.Interop.Word;
+
+namespace WordAddIn1
+{
+    /// <summary>
+    /// 处理句子操作工具
+    /// 支持通过文本定位对Word文档进行句子级别的替换、删除、插入等操作
+    /// 新流程：更新映射表 -> 启用审阅模式 -> 直接修改文档
+    /// </summary>
+    public static class F_ProcessDocumentActionsTool
+    {
+        /// <summary>
+        /// 注册处理句子操作工具
+        /// </summary>
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+                        toolRegistry["F_process_document_actions"] = async (args) =>
+            {
+                try
+                {
+                    if (wordApplication == null)
+                    {
+                        return new ToolResult { Success = false, Error = "Word应用程序实例不可用" };
+                    }
+
+                    dynamic wordApp = wordApplication;
+
+                    if (wordApp.ActiveDocument == null)
+                    {
+                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 操作前文档状态: 段落总数={wordApp.ActiveDocument.Paragraphs.Count}");
+
+                    if (!args.ContainsKey("action"))
+                    {
+                        System.Diagnostics.Debug.WriteLine("[ERROR] 缺少必需参数：action");
+                        return new ToolResult { Success = false, Error = "缺少必需参数：action" };
+                    }
+
+                    // 第一步：更新句子与名称映射表（必须在解析参数之前，确保验证时能找到句子）
+                    System.Diagnostics.Debug.WriteLine("[第一步] 更新句子与名称映射表");
+                    try
+                    {
+                        string mappingError = await UpdateSentenceNameMapping(wordApp.ActiveDocument);
+                        if (!string.IsNullOrEmpty(mappingError))
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[ERROR] 更新映射表失败: {mappingError}");
+                            return new ToolResult { Success = false, Error = mappingError };
+                        }
+                        System.Diagnostics.Debug.WriteLine("[第一步完成]");
+                        
+                        // 打印映射表内容（用于调试）
+                        System.Diagnostics.Debug.WriteLine("");
+                        System.Diagnostics.Debug.WriteLine("==========================================");
+                        System.Diagnostics.Debug.WriteLine("=== 映射表内容（第一步后） ===");
+                        System.Diagnostics.Debug.WriteLine("==========================================");
+                        var nameToContentMap = DocumentState.NameToContentMap;
+                        System.Diagnostics.Debug.WriteLine($"映射表总数: {nameToContentMap.Count}");
+                        int debugMappingIndex = 1;
+                        foreach (var kvp in nameToContentMap.OrderBy(x => x.Key))
+                        {
+                            string sentenceName = kvp.Key;
+                            string sentenceContent = kvp.Value ?? "";
+                            // 使用 TextUtils 转义换行符以便调试输出
+                            string displayContent = TextUtils.EscapeNewlinesForDb(sentenceContent);
+                            // 限制显示长度，避免输出过长
+                            string shortContent = displayContent.Length > 100 ? displayContent.Substring(0, 100) + "..." : displayContent;
+                            System.Diagnostics.Debug.WriteLine($"[映射{debugMappingIndex}] {sentenceName}: {shortContent}");
+                            debugMappingIndex++;
+                        }
+                        System.Diagnostics.Debug.WriteLine("==========================================");
+                        System.Diagnostics.Debug.WriteLine("");
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[ERROR] 更新映射表异常: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($"[ERROR] 异常堆栈: {ex.StackTrace}");
+                        return new ToolResult { Success = false, Error = $"更新映射表失败: {ex.Message}" };
+                    }
+
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] 开始解析操作参数");
+                    var parseResult = ParseActions(args["action"], wordApp.ActiveDocument);
+                    bool parseSuccess = parseResult.Item1;
+                    string parseError = parseResult.Item2;
+                    List<ParagraphAction> actions = parseResult.Item3;
+                    
+                    if (!parseSuccess)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[ERROR] 解析操作失败: {parseError}");
+                        return new ToolResult { Success = false, Error = parseError };
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 解析操作成功，共 {actions.Count} 个操作");
+
+                    // 第一步半：为新内容创建句子名称
+                    System.Diagnostics.Debug.WriteLine("[第一步半] 为新内容创建句子名称");
+                    try
+                    {
+                        string mappingError = await CreateSentenceNamesForNewContent(actions, wordApp.ActiveDocument);
+                        if (!string.IsNullOrEmpty(mappingError))
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[ERROR] 创建句子名称失败: {mappingError}");
+                            return new ToolResult { Success = false, Error = mappingError };
+                        }
+                        System.Diagnostics.Debug.WriteLine("[第一步半完成]");
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[ERROR] 创建句子名称异常: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($"[ERROR] 异常堆栈: {ex.StackTrace}");
+                        return new ToolResult { Success = false, Error = $"创建句子名称失败: {ex.Message}" };
+                    }
+
+                    // 第二步：打开word的审阅模式，需要跟踪文档变更，并且打开修订显示
+                    System.Diagnostics.Debug.WriteLine("[第二步] 打开Word审阅模式并启用修订显示");
+                    EnableTrackRevisions(wordApp.ActiveDocument);
+                    System.Diagnostics.Debug.WriteLine("[第二步完成]");
+
+                    // 打印名字句子映射表
+                    System.Diagnostics.Debug.WriteLine("");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine("=== 名字句子映射表（第三步前） ===");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    var nameToContentMapFromState = DocumentState.NameToContentMap;
+                    System.Diagnostics.Debug.WriteLine($"映射表总数: {nameToContentMapFromState.Count}");
+                    int mappingIndex = 1;
+                    foreach (var kvp in nameToContentMapFromState.OrderBy(x => x.Key))
+                    {
+                        string sentenceName = kvp.Key;
+                        string sentenceContent = kvp.Value;
+                        // 使用 TextUtils 转义换行符以便调试输出
+                        string displayContent = TextUtils.EscapeNewlinesForDb(sentenceContent);
+                        System.Diagnostics.Debug.WriteLine($"[映射{mappingIndex}] {sentenceName}: {displayContent}");
+                        mappingIndex++;
+                    }
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine("");
+
+                    // 第三步：直接修改文档
+                    System.Diagnostics.Debug.WriteLine("[第三步] 直接修改文档");
+                    List<ActionResult> modifyResults = await ModifyDocumentDirectly(wordApp.ActiveDocument, actions);
+                    System.Diagnostics.Debug.WriteLine("[第三步完成]");
+
+                    // 为了兼容性，仍然返回操作结果
+                    var results = actions.Select((ParagraphAction action, int index) => new ActionResult
+                    {
+                        action_index = index,
+                        type = action.Type,
+                        target_index = 0,
+                        success = modifyResults.Any((ActionResult r) => r.action_index == index && r.success),
+                        message = modifyResults.FirstOrDefault((ActionResult r) => r.action_index == index)?.message ?? "操作完成"
+                    }).ToList();
+
+                    var result = new ToolResult
+                    {
+                        Success = true,
+                        Data = new
+                        {
+                            document_name = wordApp.ActiveDocument.Name ?? "未命名文档",
+                            total_actions = actions.Count,
+                            executed_actions = results.Count(r => r.success),
+                            results = results
+                        }
+                    };
+
+                    return result;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ERROR] 处理句子操作异常: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"[ERROR] 异常堆栈: {ex.StackTrace}");
+                    return new ToolResult { Success = false, Error = $"处理句子操作失败: {ex.Message}" };
+                }
+            };
+}
+
+        /// <summary>
+        /// 解析操作列表（新格式：存储句子编号序列）
+        /// </summary>
+        private static (bool success, string error, List<ParagraphAction> actions) ParseActions(object actionsObj, Word.Document doc)
+        {
+            var actions = new List<ParagraphAction>();
+
+            try
+            {
+                if (actionsObj is System.Collections.IEnumerable actionsList)
+                {
+                    foreach (var actionObj in actionsList)
+                    {
+                        var actionDict = actionObj as Dictionary<string, object>;
+                        if (actionDict == null || !actionDict.ContainsKey("type"))
+                            continue;
+
+                        var action = new ParagraphAction();
+                        action.Type = actionDict["type"]?.ToString();
+                        
+                        var detail = actionDict.ContainsKey("detail") ? actionDict["detail"] as Dictionary<string, object> : null;
+                        if (detail == null)
+                            continue;
+
+                        switch (action.Type?.ToLower())
+                        {
+                            case "replace":
+                                // 解析replace操作：original.sentence_names（句子编号序列，如 "AAAAA,AAAAB,AAAAC"）, new
+                                object original = detail.ContainsKey("original") ? detail["original"] : null;
+                                if (original is Dictionary<string, object> originalDict)
+                                {
+                                    action.SentenceNames = originalDict.ContainsKey("sentence_names") ? originalDict["sentence_names"]?.ToString() : null;
+                                }
+                                
+                                // 解析新内容
+                                if (detail.ContainsKey("new"))
+                                {
+                                    string newContent = detail["new"]?.ToString();
+                                    // 删除句子编号标识，如 (AAAAA)
+                                    action.Content = RemoveSentenceIdentifiers(newContent);
+                                }
+                                break;
+
+                            case "delete":
+                                // 解析delete操作：deletion.sentence_names（句子编号序列）
+                                object deletion = detail.ContainsKey("deletion") ? detail["deletion"] : null;
+                                if (deletion is Dictionary<string, object> deletionDict)
+                                {
+                                    action.SentenceNames = deletionDict.ContainsKey("sentence_names") ? deletionDict["sentence_names"]?.ToString() : null;
+                                }
+                                break;
+
+                            case "insert":
+                                // 解析insert操作：pre.sentence_names, post.sentence_names, insert
+                                object pre = detail.ContainsKey("pre") ? detail["pre"] : null;
+                                if (pre is Dictionary<string, object> preDict)
+                                {
+                                    action.PreSentenceNames = preDict.ContainsKey("sentence_names") ? preDict["sentence_names"]?.ToString() : null;
+                                }
+                                
+                                object post = detail.ContainsKey("post") ? detail["post"] : null;
+                                if (post is Dictionary<string, object> postDict)
+                                {
+                                    action.PostSentenceNames = postDict.ContainsKey("sentence_names") ? postDict["sentence_names"]?.ToString() : null;
+                                }
+                                
+                                action.Position = "after"; // 默认在定位句子之后插入
+                                
+                                // 解析插入内容
+                                if (detail.ContainsKey("insert"))
+                                {
+                                    string insertContent = detail["insert"]?.ToString();
+                                    // 删除句子编号标识，如 (AAAAA)
+                                    action.Content = RemoveSentenceIdentifiers(insertContent);
+                                }
+                                break;
+                        }
+
+                        // 验证必要字段并检查句子序列连续性
+                        bool isValid = false;
+                        string continuityError = null;
+                        
+                        if (action.Type?.ToLower() == "replace")
+                        {
+                            // replace操作：需要sentence_names和new内容
+                            isValid = !string.IsNullOrEmpty(action.SentenceNames) && !string.IsNullOrEmpty(action.Content);
+                            if (isValid && !string.IsNullOrEmpty(action.SentenceNames))
+                            {
+                                continuityError = ValidateSentenceSequenceContinuity(action.SentenceNames, action.Type);
+                            }
+                        }
+                        else if (action.Type?.ToLower() == "delete")
+                        {
+                            // delete操作：需要sentence_names
+                            isValid = !string.IsNullOrEmpty(action.SentenceNames);
+                            if (isValid && !string.IsNullOrEmpty(action.SentenceNames))
+                            {
+                                continuityError = ValidateSentenceSequenceContinuity(action.SentenceNames, action.Type);
+                            }
+                        }
+                        else if (action.Type?.ToLower() == "insert")
+                        {
+                            // insert操作：只需要insert内容，pre.sentence_names和post.sentence_names可选（如果都不提供，则在光标处插入）
+                            isValid = !string.IsNullOrEmpty(action.Content);
+                            if (isValid)
+                            {
+                                // 检查pre和post的连续性（如果存在）
+                                if (!string.IsNullOrEmpty(action.PreSentenceNames))
+                                {
+                                    continuityError = ValidateSentenceSequenceContinuity(action.PreSentenceNames, action.Type + " (pre)");
+                                    if (continuityError != null) isValid = false;
+                                }
+                                if (isValid && !string.IsNullOrEmpty(action.PostSentenceNames))
+                                {
+                                    continuityError = ValidateSentenceSequenceContinuity(action.PostSentenceNames, action.Type + " (post)");
+                                    if (continuityError != null) isValid = false;
+                                }
+                            }
+                        }
+                        
+                        // 如果连续性检查失败，返回错误
+                        if (!string.IsNullOrEmpty(continuityError))
+                        {
+                            return (false, continuityError, null);
+                        }
+
+                        if (isValid)
+                        {
+                            actions.Add(action);
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 解析操作失败：缺少必要字段，操作类型={action.Type}, SentenceNames={action.SentenceNames}, PreSentenceNames={action.PreSentenceNames}, PostSentenceNames={action.PostSentenceNames}, Content={action.Content}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 解析操作失败: {ex.Message}");
+                return (false, $"解析操作失败: {ex.Message}", null);
+            }
+
+            return (true, null, actions);
+        }
+
+        /// <summary>
+        /// 第一步：更新句子与名称映射表（只更新现有文档的映射表，不处理新内容）
+        /// 调用 WordDocumentExtractor.ProcessDocument 获取文章句子和名字的对应
+        /// </summary>
+        /// <param name="doc">Word文档</param>
+        /// <returns>错误信息，如果成功则返回null或空字符串</returns>
+        private static async Task<string> UpdateSentenceNameMapping(Word.Document doc)
+        {
+            try
+            {
+                // 调用 WordDocumentExtractor.ProcessDocument 获取文章句子和名字的对应
+                System.Diagnostics.Debug.WriteLine("[更新映射表] 调用 WordDocumentExtractor.ProcessDocument 获取文章句子和名字的对应");
+                var processingResult = WordDocumentExtractor.ProcessDocument(doc);
+                System.Diagnostics.Debug.WriteLine($"[更新映射表] 文档处理完成，共 {processingResult.ChunkInfo.Count} 个chunk");
+
+                await Task.CompletedTask;
+                return null; // 成功
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[更新映射表] 更新映射表失败: {ex.Message}");
+                return $"更新映射表失败: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// 为新内容创建句子名称
+        /// 对于新增的句子（replace的new内容、insert的insert内容），使用 SentenceSplitter 切分为句子，再调用 DocumentState 添加
+        /// </summary>
+        /// <param name="actions">操作列表</param>
+        /// <param name="doc">Word文档</param>
+        /// <returns>错误信息，如果成功则返回null或空字符串</returns>
+        private static async Task<string> CreateSentenceNamesForNewContent(List<ParagraphAction> actions, Word.Document doc)
+        {
+            try
+            {
+                if (actions == null || actions.Count == 0)
+                {
+                    return null;
+                }
+
+                // 遍历所有操作，为新增内容创建句子名称
+                foreach (var action in actions)
+                {
+                    try
+                    {
+                        switch (action.Type?.ToLower())
+                        {
+                            case "replace":
+                                // replace操作：将new内容切分为句子，为每个句子创建名字
+                                if (!string.IsNullOrEmpty(action.Content))
+                                {
+                                    // 使用 SentenceSplitter 进行句子划分
+                                    List<string> newSentences = SentenceSplitter.SplitTextBySentences(action.Content);
+                                    if (newSentences.Count > 0)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"[更新映射表] replace操作：为 {newSentences.Count} 个新句子创建名称");
+                                        foreach (var sentence in newSentences)
+                                        {
+                                            string name = DocumentState.FindOrCreateSentenceName(sentence);
+                                            System.Diagnostics.Debug.WriteLine($"[更新映射表] 句子名称: {name}");
+                                        }
+                                    }
+                                }
+                                break;
+
+                            case "insert":
+                                // insert操作：将insert内容切分为句子，为每个句子创建名字
+                                if (!string.IsNullOrEmpty(action.Content))
+                                {
+                                    // 使用 SentenceSplitter 进行句子划分
+                                    List<string> insertSentences = SentenceSplitter.SplitTextBySentences(action.Content);
+                                    if (insertSentences.Count > 0)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"[更新映射表] insert操作：为 {insertSentences.Count} 个新句子创建名称");
+                                        foreach (var sentence in insertSentences)
+                                        {
+                                            string name = DocumentState.FindOrCreateSentenceName(sentence);
+                                            System.Diagnostics.Debug.WriteLine($"[更新映射表] 句子名称: {name}");
+                                        }
+                                    }
+                                }
+                                break;
+
+                            case "delete":
+                                // delete操作不需要创建新句子名称
+                                break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[更新映射表] 处理操作失败: {ex.Message}");
+                    }
+                }
+
+                await Task.CompletedTask;
+                return null; // 成功
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[更新映射表] 更新映射表失败: {ex.Message}");
+                return $"更新映射表失败: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// 第二步：打开Word审阅模式并启用修订显示
+        /// </summary>
+        /// <param name="doc">Word文档</param>
+        private static void EnableTrackRevisions(Word.Document doc)
+        {
+            try
+            {
+                // 启用修订跟踪
+                doc.TrackRevisions = true;
+                System.Diagnostics.Debug.WriteLine("[审阅模式] 已启用修订跟踪");
+
+                // 显示修订标记
+                doc.Application.ActiveWindow.View.ShowRevisionsAndComments = true;
+                System.Diagnostics.Debug.WriteLine("[审阅模式] 已显示修订标记");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[审阅模式] 启用审阅模式失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 第三步：直接修改文档
+        /// 基于句子名称序列定位句子并执行操作
+        /// </summary>
+        /// <param name="doc">Word文档</param>
+        /// <param name="actions">操作列表</param>
+        /// <returns>操作结果列表</returns>
+        private static async Task<List<ActionResult>> ModifyDocumentDirectly(Word.Document doc, List<ParagraphAction> actions)
+        {
+            var results = new List<ActionResult>();
+
+            try
+            {
+                // 按操作顺序处理（从后往前处理，避免位置偏移）
+                var sortedActions = actions
+                    .Select((action, originalIndex) => new { Action = action, OriginalIndex = originalIndex })
+                    .ToList();
+
+                // 先处理delete和replace（从后往前），再处理insert（从后往前）
+                var deleteAndReplaceActions = sortedActions
+                    .Where(x => x.Action.Type?.ToLower() == "delete" || x.Action.Type?.ToLower() == "replace")
+                    .OrderByDescending(x => GetSentencePositionInDocument(doc, x.Action.SentenceNames))
+                    .ToList();
+
+                var insertActions = sortedActions
+                    .Where(x => x.Action.Type?.ToLower() == "insert")
+                    .OrderByDescending(x => GetSentencePositionInDocument(doc, x.Action.PreSentenceNames ?? x.Action.PostSentenceNames))
+                    .ToList();
+
+                // 先执行delete和replace操作
+                foreach (var item in deleteAndReplaceActions)
+                {
+                    var action = item.Action;
+                    var result = new ActionResult
+                    {
+                        action_index = item.OriginalIndex,
+                        type = action.Type,
+                        target_index = 0
+                    };
+
+                    try
+                    {
+                        switch (action.Type?.ToLower())
+                        {
+                            case "replace":
+                                result.success = ExecuteReplaceBySentenceNames(doc, action.SentenceNames, action.Content);
+                                result.message = result.success ? "替换成功" : "替换失败";
+                                break;
+
+                            case "delete":
+                                result.success = ExecuteDeleteBySentenceNames(doc, action.SentenceNames);
+                                result.message = result.success ? "删除成功" : "删除失败";
+                                break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        result.success = false;
+                        result.message = $"操作失败: {ex.Message}";
+                    }
+
+                    results.Add(result);
+                }
+
+                // 再执行insert操作
+                foreach (var item in insertActions)
+                {
+                    var action = item.Action;
+                    var result = new ActionResult
+                    {
+                        action_index = item.OriginalIndex,
+                        type = action.Type,
+                        target_index = 0
+                    };
+
+                    try
+                    {
+                        result.success = ExecuteInsertBySentenceNames(doc, action.PreSentenceNames, action.PostSentenceNames, action.Content);
+                        result.message = result.success ? "插入成功" : "插入失败";
+                    }
+                    catch (Exception ex)
+                    {
+                        result.success = false;
+                        result.message = $"操作失败: {ex.Message}";
+                    }
+
+                    results.Add(result);
+                }
+
+                // 按原始顺序排序
+                results = results.OrderBy(r => r.action_index).ToList();
+
+                await Task.CompletedTask;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[直接修改文档] 修改文档失败: {ex.Message}");
+            }
+
+            return results;
+        }
+
+        /// <summary>
+        /// 根据句子名称序列获取在文档中的位置（用于排序）
+        /// </summary>
+        private static int GetSentencePositionInDocument(Word.Document doc, string sentenceNames)
+        {
+            if (string.IsNullOrEmpty(sentenceNames))
+                return 0;
+
+            try
+            {
+                var names = sentenceNames.Split(',').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
+                if (names.Count == 0)
+                    return 0;
+
+                // 获取第一个句子的内容并查找位置
+                string firstName = names[0];
+                string sentenceContent = DocumentState.GetSentenceContent(firstName);
+                if (!string.IsNullOrEmpty(sentenceContent))
+                {
+                    Word.Range range = FindSentenceRangeInDocument(doc, sentenceContent);
+                    if (range != null)
+                    {
+                        return range.Start;
+                    }
+                }
+            }
+            catch { }
+
+            return 0;
+        }
+
+        /// <summary>
+        /// 根据句子名称序列执行替换操作
+        /// </summary>
+        private static bool ExecuteReplaceBySentenceNames(Word.Document doc, string sentenceNames, string newContent)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(sentenceNames))
+                    return false;
+
+                // 解析句子名称序列
+                var names = sentenceNames.Split(',').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
+                if (names.Count == 0)
+                    return false;
+
+                // 查找所有句子的Range
+                var ranges = new List<Word.Range>();
+                foreach (var name in names)
+                {
+                    string content = DocumentState.GetSentenceContent(name);
+                    if (!string.IsNullOrEmpty(content))
+                    {
+                        Word.Range range = FindSentenceRangeInDocument(doc, content);
+                        if (range != null)
+                        {
+                            ranges.Add(range);
+                        }
+                    }
+                }
+
+                if (ranges.Count == 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[替换操作] 未找到任何句子Range");
+                    return false;
+                }
+
+                // 合并所有Range
+                Word.Range targetRange = doc.Range(ranges[0].Start, ranges[ranges.Count - 1].End);
+
+                // 将新内容切分为句子（使用 SentenceSplitter）
+                List<string> newSentences = SentenceSplitter.SplitTextBySentences(newContent);
+                if (newSentences.Count == 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[替换操作] 新内容无法切分为句子");
+                    return false;
+                }
+
+                // 拼接新内容
+                var newContentBuilder = new StringBuilder();
+                foreach (var sentence in newSentences)
+                {
+                    newContentBuilder.Append(sentence);
+                }
+                string finalNewContent = newContentBuilder.ToString();
+
+                // 执行替换（Word会自动跟踪修订）
+                targetRange.Text = finalNewContent;
+
+                // 记录新插入文本的 Range（替换后 targetRange 会更新为新文本的范围）
+                Word.Range insertedRange = doc.Range(targetRange.Start, targetRange.End);
+                
+                // 对新插入的文本设置格式
+                ApplyFormatToInsertedText(doc, insertedRange, newSentences);
+
+                System.Diagnostics.Debug.WriteLine($"[替换操作] 已替换 {names.Count} 个句子");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[替换操作] 替换失败: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 根据句子名称序列执行删除操作
+        /// </summary>
+        private static bool ExecuteDeleteBySentenceNames(Word.Document doc, string sentenceNames)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(sentenceNames))
+                    return false;
+
+                // 解析句子名称序列
+                var names = sentenceNames.Split(',').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
+                if (names.Count == 0)
+                    return false;
+
+                // 查找所有句子的Range
+                var ranges = new List<Word.Range>();
+                foreach (var name in names)
+                {
+                    string content = DocumentState.GetSentenceContent(name);
+                    if (!string.IsNullOrEmpty(content))
+                    {
+                        Word.Range range = FindSentenceRangeInDocument(doc, content);
+                        if (range != null)
+                        {
+                            ranges.Add(range);
+                        }
+                    }
+                }
+
+                if (ranges.Count == 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[删除操作] 未找到任何句子Range");
+                    return false;
+                }
+
+                // 合并所有Range
+                Word.Range targetRange = doc.Range(ranges[0].Start, ranges[ranges.Count - 1].End);
+
+                // 执行删除（Word会自动跟踪修订）
+                targetRange.Delete();
+
+                System.Diagnostics.Debug.WriteLine($"[删除操作] 已删除 {names.Count} 个句子");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[删除操作] 删除失败: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 根据句子名称序列执行插入操作
+        /// </summary>
+        private static bool ExecuteInsertBySentenceNames(Word.Document doc, string preSentenceNames, string postSentenceNames, string insertContent)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(insertContent))
+                    return false;
+
+                // 确定插入位置
+                Word.Range insertRange = null;
+
+                if (!string.IsNullOrEmpty(preSentenceNames))
+                {
+                    // 在pre序列之后插入
+                    var preNames = preSentenceNames.Split(',').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
+                    if (preNames.Count > 0)
+                    {
+                        string lastName = preNames[preNames.Count - 1];
+                        string content = DocumentState.GetSentenceContent(lastName);
+                        if (!string.IsNullOrEmpty(content))
+                        {
+                            Word.Range range = FindSentenceRangeInDocument(doc, content);
+                            if (range != null)
+                            {
+                                insertRange = range;
+                                insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                            }
+                        }
+                    }
+                }
+                else if (!string.IsNullOrEmpty(postSentenceNames))
+                {
+                    // 在post序列之前插入
+                    var postNames = postSentenceNames.Split(',').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
+                    if (postNames.Count > 0)
+                    {
+                        string firstName = postNames[0];
+                        string content = DocumentState.GetSentenceContent(firstName);
+                        if (!string.IsNullOrEmpty(content))
+                        {
+                            Word.Range range = FindSentenceRangeInDocument(doc, content);
+                            if (range != null)
+                            {
+                                insertRange = range;
+                                insertRange.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+                            }
+                        }
+                    }
+                }
+
+                // 如果pre和post都为空，则在当前光标处插入
+                if (insertRange == null)
+                {
+                    if (string.IsNullOrEmpty(preSentenceNames) && string.IsNullOrEmpty(postSentenceNames))
+                    {
+                        // 使用当前光标位置
+                        insertRange = doc.Application.Selection.Range;
+                        System.Diagnostics.Debug.WriteLine($"[插入操作] 未提供句子编号，将在光标处插入");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[插入操作] 无法确定插入位置");
+                        return false;
+                    }
+                }
+
+                // 将插入内容切分为句子（使用 SentenceSplitter）
+                List<string> insertSentences = SentenceSplitter.SplitTextBySentences(insertContent);
+                if (insertSentences.Count == 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[插入操作] 插入内容无法切分为句子");
+                    return false;
+                }
+
+                // 拼接插入内容
+                var insertContentBuilder = new StringBuilder();
+                foreach (var sentence in insertSentences)
+                {
+                    insertContentBuilder.Append(sentence);
+                }
+                string finalInsertContent = insertContentBuilder.ToString();
+
+                // 记录插入位置
+                int insertStart = insertRange.Start;
+                
+                // 执行插入（Word会自动跟踪修订）
+                insertRange.Text = finalInsertContent;
+                
+                // 记录新插入文本的 Range（插入后 insertRange 会更新为新文本的范围）
+                Word.Range insertedRange = doc.Range(insertStart, insertRange.End);
+                
+                // 对新插入的文本设置格式
+                ApplyFormatToInsertedText(doc, insertedRange, insertSentences);
+
+                System.Diagnostics.Debug.WriteLine($"[插入操作] 已插入 {insertSentences.Count} 个句子");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[插入操作] 插入失败: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 对插入的文本设置格式
+        /// 在插入的 Range 中按顺序遍历每个句子，识别类型并设置格式
+        /// </summary>
+        /// <param name="doc">Word文档</param>
+        /// <param name="insertedRange">新插入文本的 Range</param>
+        /// <param name="sentences">句子列表（已切分）</param>
+        private static void ApplyFormatToInsertedText(Word.Document doc, Word.Range insertedRange, List<string> sentences)
+        {
+            try
+            {
+                if (doc == null || insertedRange == null || sentences == null || sentences.Count == 0)
+                {
+                    return;
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[格式设置] 开始为新插入的文本设置格式，共 {sentences.Count} 个句子");
+                
+                // 记录插入范围
+                int rangeStart = insertedRange.Start;
+                int rangeEnd = insertedRange.End;
+                
+                // 创建 HeadingRecognizer
+                HeadingRecognizer recognizer = new HeadingRecognizer();
+                
+                // 获取格式映射表
+                var formatMapping = DocumentState.SubtypeFormatMapping;
+                
+                // 在插入的 range 中按顺序处理每个句子
+                int currentPosition = rangeStart;
+                
+                foreach (var sentence in sentences)
+                {
+                    if (string.IsNullOrEmpty(sentence))
+                    {
+                        continue;
+                    }
+                    
+                    try
+                    {
+                        // 在 insertedRange 中查找这个句子（从 currentPosition 开始）
+                        if (currentPosition >= rangeEnd)
+                        {
+                            break; // 已经超出范围
+                        }
+                        
+                        Word.Range searchRange = doc.Range(currentPosition, rangeEnd);
+                        Word.Range sentenceRange = FindSentenceInRange(doc, searchRange, sentence);
+                        
+                        if (sentenceRange != null)
+                        {
+                            // 1. 识别类型
+                            var isHeadingResult = recognizer.IsHeading(sentence);
+                            bool isHeading = isHeadingResult.Item1;
+                            string langType = isHeadingResult.Item2;
+                            string headingType = isHeadingResult.Item3;
+                            string detailedSubtype;
+                            
+                            if (isHeading)
+                            {
+                                detailedSubtype = recognizer.GetDetailedSubtype(sentence, langType, headingType);
+                            }
+                            else
+                            {
+                                detailedSubtype = "body";
+                            }
+                            
+                            System.Diagnostics.Debug.WriteLine($"[格式设置] 句子类型识别: \"{sentence.Substring(0, Math.Min(30, sentence.Length))}...\" -> {detailedSubtype}");
+                            
+                            // 2. 从 DocumentState 获取格式
+                            Dictionary<string, object> format = GetFormatBySubtype(formatMapping, detailedSubtype);
+                            
+                            if (format != null && format.Count > 0)
+                            {
+                                // 3. 设置格式
+                                ApplyFormatToRange(sentenceRange, format);
+                                System.Diagnostics.Debug.WriteLine($"[格式设置] ✅ 已设置格式: {detailedSubtype}");
+                            }
+                            else
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[格式设置] ⚠️ 未找到格式映射: {detailedSubtype}");
+                            }
+                            
+                            // 更新当前位置
+                            currentPosition = sentenceRange.End;
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[格式设置] ⚠️ 未在插入范围内找到句子: \"{sentence.Substring(0, Math.Min(30, sentence.Length))}...\"");
+                            // 如果找不到，尝试跳过这个句子（使用句子长度估算）
+                            // 注意：这里可能需要更精确的处理
+                            currentPosition += sentence.Length;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[格式设置] ⚠️ 处理句子时发生异常: {ex.Message}");
+                    }
+                }
+                
+                System.Diagnostics.Debug.WriteLine($"[格式设置] ✅ 格式设置完成");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[格式设置] ❌ 设置格式失败: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// 在指定的 Range 内查找句子
+        /// </summary>
+        /// <param name="doc">Word文档</param>
+        /// <param name="searchRange">搜索范围</param>
+        /// <param name="sentenceText">句子文本</param>
+        /// <returns>找到的 Range，如果未找到返回 null</returns>
+        private static Word.Range FindSentenceInRange(Word.Document doc, Word.Range searchRange, string sentenceText)
+        {
+            try
+            {
+                if (doc == null || searchRange == null || string.IsNullOrEmpty(sentenceText))
+                {
+                    return null;
+                }
+                
+                // 记录搜索范围的边界
+                int searchStart = searchRange.Start;
+                int searchEnd = searchRange.End;
+                
+                // 转换换行符为Word代码格式
+                string convertedText = ConvertNewlinesToWordCodes(sentenceText);
+                
+                // 创建新的 Range 用于搜索，避免修改原始 searchRange
+                Word.Range findRange = doc.Range(searchStart, searchEnd);
+                findRange.Find.ClearFormatting();
+                findRange.Find.Text = convertedText;
+                findRange.Find.MatchCase = true;
+                findRange.Find.MatchWholeWord = false;
+                findRange.Find.Wrap = Word.WdFindWrap.wdFindStop;
+                
+                if (findRange.Find.Execute())
+                {
+                    // 确保找到的 range 在搜索范围内
+                    int foundStart = findRange.Start;
+                    int foundEnd = findRange.End;
+                    
+                    if (foundStart >= searchStart && foundEnd <= searchEnd)
+                    {
+                        // 创建新的 Range 对象返回
+                        Word.Range foundRange = doc.Range(foundStart, foundEnd);
+                        return foundRange;
+                    }
+                }
+                
+                return null;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[FindSentenceInRange] ❌ 查找句子失败: {ex.Message}");
+                return null;
+            }
+        }
+        
+        /// <summary>
+        /// 根据 detailed_subtype 从格式映射表中获取格式
+        /// </summary>
+        /// <param name="formatMapping">格式映射列表</param>
+        /// <param name="detailedSubtype">详细的子类型</param>
+        /// <returns>格式字典，如果未找到返回 null</returns>
+        private static Dictionary<string, object> GetFormatBySubtype(List<Dictionary<string, object>> formatMapping, string detailedSubtype)
+        {
+            try
+            {
+                if (formatMapping == null || string.IsNullOrEmpty(detailedSubtype))
+                {
+                    return null;
+                }
+                
+                foreach (var item in formatMapping)
+                {
+                    if (item.ContainsKey("detailed_subtype") && item["detailed_subtype"]?.ToString() == detailedSubtype)
+                    {
+                        if (item.ContainsKey("format") && item["format"] is Dictionary<string, object> format)
+                        {
+                            return format;
+                        }
+                    }
+                }
+                
+                return null;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[GetFormatBySubtype] ❌ 获取格式失败: {ex.Message}");
+                return null;
+            }
+        }
+        
+        /// <summary>
+        /// 将格式应用到 Word Range
+        /// </summary>
+        /// <param name="range">Word Range</param>
+        /// <param name="format">格式字典</param>
+        private static void ApplyFormatToRange(Word.Range range, Dictionary<string, object> format)
+        {
+            try
+            {
+                if (range == null || format == null || format.Count == 0)
+                {
+                    return;
+                }
+                
+                // 字体名称
+                if (format.ContainsKey("font_name"))
+                {
+                    string fontName = format["font_name"]?.ToString() ?? "";
+                    if (!string.IsNullOrEmpty(fontName))
+                    {
+                        range.Font.Name = fontName;
+                    }
+                }
+                
+                // 字体大小
+                if (format.ContainsKey("font_size"))
+                {
+                    float fontSize = format["font_size"] is float f ? f : 
+                        (format["font_size"] != null && float.TryParse(format["font_size"].ToString(), out float fs) ? fs : 0f);
+                    if (fontSize > 0)
+                    {
+                        range.Font.Size = fontSize;
+                    }
+                }
+                
+                // 字体颜色
+                if (format.ContainsKey("font_color"))
+                {
+                    string fontColor = format["font_color"]?.ToString() ?? "";
+                    Word.WdColor wdColor = ConvertRgbToWdColor(fontColor);
+                    range.Font.Color = wdColor;
+                }
+                
+                // 背景颜色
+                if (format.ContainsKey("background_color"))
+                {
+                    string backgroundColor = format["background_color"]?.ToString() ?? "";
+                    Word.WdColor wdColor = ConvertRgbToWdColor(backgroundColor);
+                    range.Shading.BackgroundPatternColor = wdColor;
+                }
+                
+                // 是否加粗
+                if (format.ContainsKey("is_bold"))
+                {
+                    bool isBold = format["is_bold"] is bool b ? b : 
+                        (format["is_bold"]?.ToString() == "True" || format["is_bold"]?.ToString() == "true");
+                    range.Font.Bold = isBold ? 1 : 0;
+                }
+                
+                // 是否有下划线
+                if (format.ContainsKey("has_underline"))
+                {
+                    bool hasUnderline = format["has_underline"] is bool b ? b : 
+                        (format["has_underline"]?.ToString() == "True" || format["has_underline"]?.ToString() == "true");
+                    range.Font.Underline = hasUnderline ? Word.WdUnderline.wdUnderlineSingle : Word.WdUnderline.wdUnderlineNone;
+                }
+                
+                // 是否有删除线
+                if (format.ContainsKey("has_strikethrough"))
+                {
+                    bool hasStrikethrough = format["has_strikethrough"] is bool b ? b : 
+                        (format["has_strikethrough"]?.ToString() == "True" || format["has_strikethrough"]?.ToString() == "true");
+                    range.Font.StrikeThrough = hasStrikethrough ? 1 : 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ApplyFormatToRange] ❌ 应用格式失败: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// 将RGB十六进制字符串转换为Word.WdColor
+        /// </summary>
+        /// <param name="rgbString">RGB字符串（如 #RRGGBB 或 "automatic"）</param>
+        /// <returns>Word.WdColor</returns>
+        private static Word.WdColor ConvertRgbToWdColor(string rgbString)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(rgbString) || rgbString == "automatic")
+                {
+                    return Word.WdColor.wdColorAutomatic;
+                }
+                
+                // 移除 # 符号（如果有）
+                string hex = rgbString.TrimStart('#');
+                
+                if (hex.Length == 6)
+                {
+                    // 解析RGB值
+                    int r = Convert.ToInt32(hex.Substring(0, 2), 16);
+                    int g = Convert.ToInt32(hex.Substring(2, 2), 16);
+                    int b = Convert.ToInt32(hex.Substring(4, 2), 16);
+                    
+                    // Word颜色值是BGR格式，需要转换
+                    int bgrValue = (b << 16) | (g << 8) | r;
+                    
+                    return (Word.WdColor)bgrValue;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ConvertRgbToWdColor] ❌ 转换颜色失败: {ex.Message}");
+            }
+            
+            return Word.WdColor.wdColorAutomatic;
+        }
+        
+        /// <summary>
+        /// 将换行符转换为Word Find功能的特殊字符代码
+        /// </summary>
+        /// <param name="text">原始文本</param>
+        /// <returns>转换后的文本（\r -> ^p, \n -> ^l）</returns>
+        private static string ConvertNewlinesToWordCodes(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+
+            // 先处理 \r\n 组合（转换为 ^p）
+            string result = text.Replace("\r\n", "^p");
+            
+            // 再处理单独的 \r（段落标记）
+            result = result.Replace("\r", "^p");
+            
+            // 最后处理单独的 \n（手动换行符）
+            result = result.Replace("\n", "^l");
+            
+            return result;
+        }
+
+        /// <summary>
+        /// 在整个文档中查找句子的Range位置
+        /// 简化版本：直接在文档中搜索句子文本
+        /// </summary>
+        /// <param name="doc">Word文档</param>
+        /// <param name="sentenceText">句子文本</param>
+        /// <returns>句子的Range</returns>
+        private static Word.Range FindSentenceRangeInDocument(Word.Document doc, string sentenceText)
+        {
+            try
+            {
+                if (doc == null || string.IsNullOrEmpty(sentenceText))
+                    return null;
+
+                // 将换行符转换为Word Find功能的特殊字符代码
+                string searchText = ConvertNewlinesToWordCodes(sentenceText);
+                
+                // 使用 Word 的 Find 功能在文档中搜索
+                Word.Range searchRange = doc.Content;
+                searchRange.Find.ClearFormatting();
+                searchRange.Find.Text = searchText;
+                searchRange.Find.MatchCase = true;
+                searchRange.Find.MatchWholeWord = false;
+                searchRange.Find.Wrap = Word.WdFindWrap.wdFindStop;
+                
+                if (searchRange.Find.Execute())
+                {
+                    // 找到匹配的文本
+                    Word.Range sentenceRange = searchRange;
+                    
+                    // 调试信息
+                    string sentenceDisplayText = sentenceText.Replace("\r", "\\r").Replace("\n", "\\n");
+                    System.Diagnostics.Debug.WriteLine($"[FindSentenceRangeInDocument] 查找句子: \"{sentenceDisplayText}\"");
+                    System.Diagnostics.Debug.WriteLine($"[FindSentenceRangeInDocument] 搜索文本（转换后）: \"{searchText}\"");
+                    System.Diagnostics.Debug.WriteLine($"[FindSentenceRangeInDocument] 在Word文档中的位置: Start={sentenceRange.Start}, End={sentenceRange.End}");
+                    string foundText = sentenceRange.Text ?? "";
+                    string foundDisplayText = foundText.Replace("\r", "\\r").Replace("\n", "\\n");
+                    System.Diagnostics.Debug.WriteLine($"[FindSentenceRangeInDocument] 找到的Range内容: \"{foundDisplayText}\"");
+                    
+                    return sentenceRange;
+                }
+                else
+                {
+                    // 未找到匹配
+                    string sentenceDisplayTextNotFound = sentenceText.Replace("\r", "\\r").Replace("\n", "\\n");
+                    System.Diagnostics.Debug.WriteLine($"[FindSentenceRangeInDocument] 未找到匹配的句子: \"{sentenceDisplayTextNotFound}\"");
+                    System.Diagnostics.Debug.WriteLine($"[FindSentenceRangeInDocument] 搜索文本（转换后）: \"{searchText}\"");
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 查找句子Range失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 验证句子序列在快照中是否连续
+        /// </summary>
+        /// <param name="sentenceNames">句子名称序列（逗号分隔）</param>
+        /// <param name="actionType">操作类型（用于错误消息）</param>
+        /// <returns>如果连续返回null，如果不连续返回错误消息</returns>
+        private static string ValidateSentenceSequenceContinuity(string sentenceNames, string actionType)
+        {
+            if (string.IsNullOrEmpty(sentenceNames))
+                return null;
+
+            // 解析句子名称序列
+            var sentenceList = sentenceNames.Split(',')
+                .Select(s => s.Trim())
+                .Where(s => !string.IsNullOrEmpty(s))
+                .ToList();
+
+            if (sentenceList.Count == 0)
+                return null;
+
+            // 获取当前快照
+            string snapshot = DocumentState.Snapshot;
+            if (string.IsNullOrEmpty(snapshot))
+            {
+                return $"错误：无法验证句子序列连续性，因为快照为空。请先调用F_get_document_content工具获取文档内容。";
+            }
+
+            // 将快照转换为列表
+            var snapshotList = snapshot.Split(',')
+                .Select(s => s.Trim())
+                .Where(s => !string.IsNullOrEmpty(s))
+                .ToList();
+
+            if (snapshotList.Count == 0)
+            {
+                return $"错误：无法验证句子序列连续性，因为快照为空。请先调用F_get_document_content工具获取文档内容。";
+            }
+
+            // 在快照中查找每个句子的位置
+            var positions = new List<(string name, int index)>();
+            foreach (var sentenceName in sentenceList)
+            {
+                int index = snapshotList.IndexOf(sentenceName);
+                if (index < 0)
+                {
+                    return $"错误：句子 \"{sentenceName}\" 在快照中不存在。请先调用F_get_document_content工具获取当前文档的句子编号序列。";
+                }
+                positions.Add((sentenceName, index));
+            }
+
+            // 按位置排序
+            positions = positions.OrderBy(p => p.index).ToList();
+
+            // 如果只有一个句子，总是连续的
+            if (positions.Count <= 1)
+                return null;
+
+            // 检查是否连续
+            var groups = new List<List<string>>();
+            var currentGroup = new List<string> { positions[0].name };
+
+            for (int i = 1; i < positions.Count; i++)
+            {
+                // 如果当前位置和前一个位置连续（相差1），添加到当前组
+                if (positions[i].index == positions[i - 1].index + 1)
+                {
+                    currentGroup.Add(positions[i].name);
+                }
+                else
+                {
+                    // 不连续，开始新组
+                    groups.Add(currentGroup);
+                    currentGroup = new List<string> { positions[i].name };
+                }
+            }
+            groups.Add(currentGroup);
+
+            // 如果只有一个组，说明连续
+            if (groups.Count == 1)
+                return null;
+
+            // 不连续，构造错误消息
+            // 格式："AAAAA","AAABD" 和 "AAAQA","ABAQA"
+            var groupStrings = groups.Select(g => "\"" + string.Join("\",\"", g) + "\"").ToList();
+            var groupDetails = string.Join(" 和 ", groupStrings);
+
+            // 构造建议的正确格式
+            var suggestedActions = new List<string>();
+            for (int i = 0; i < groups.Count; i++)
+            {
+                var groupSentenceNames = string.Join(",", groups[i]);
+                if (actionType.ToLower().StartsWith("replace"))
+                {
+                    suggestedActions.Add($"{{\"type\": \"replace\",\"detail\": {{\"original\": {{\"sentence_names\": \"{groupSentenceNames}\"}},\"new\": \"新内容{i + 1}\"}}}}");
+                }
+                else if (actionType.ToLower().StartsWith("delete"))
+                {
+                    suggestedActions.Add($"{{\"type\": \"delete\",\"detail\": {{\"deletion\": {{\"sentence_names\": \"{groupSentenceNames}\"}}}}}}");
+                }
+                else if (actionType.ToLower().StartsWith("insert"))
+                {
+                    // insert操作需要pre或post，这里简化处理
+                    suggestedActions.Add($"{{\"type\": \"insert\",\"detail\": {{\"pre\": {{\"sentence_names\": \"{groupSentenceNames}\"}},\"insert\": \"插入内容{i + 1}\"}}}}");
+                }
+            }
+
+            var suggestedFormat = "{\"action\": [" + string.Join(",", suggestedActions) + "]}";
+
+            return $"{groupDetails}不连续，需要分开来写，应该的结构是：{suggestedFormat}";
+        }
+
+        /// <summary>
+        /// 删除文本中的句子编号标识，如 (AAAAA) 或 [AAAAA-start] 和 [AAAAA-end]
+        /// </summary>
+        /// <param name="text">输入文本</param>
+        /// <returns>删除句子编号标识后的文本</returns>
+        private static string RemoveSentenceIdentifiers(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+            
+            // 使用正则表达式删除句子编号标识
+            // 旧格式：括号内5个大写字母，如 (AAAAA)
+            // 新格式：方括号内5个大写字母加-start或-end，如 [AAAAA-start] 和 [AAAAA-end]
+            // 正则表达式：\([A-Z]{5}\)|\[[A-Z]{5}-start\]|\[[A-Z]{5}-end\]
+            string pattern = @"\([A-Z]{5}\)|\[[A-Z]{5}-start\]|\[[A-Z]{5}-end\]";
+            string result = Regex.Replace(text, pattern, "");
+            
+            return result;
+        }
+
+        /// <summary>
+        /// 段落操作类
+        /// </summary>
+        private class ParagraphAction
+        {
+            public string Type { get; set; }
+            public int TargetIndex { get; set; } // 句子序号（不再使用）
+            public string Position { get; set; }
+            public string Content { get; set; }
+            
+            // 用于通过句子编号定位的字段
+            public string SentenceNames { get; set; } // 句子编号序列，如 "AAAAA,AAAAB,AAAAC"（replace和delete操作使用）
+            public string PreSentenceNames { get; set; } // 上文句子编号序列（insert操作使用）
+            public string PostSentenceNames { get; set; } // 下文句子编号序列（insert操作使用）
+        }
+
+        /// <summary>
+        /// 操作结果类
+        /// </summary>
+        private class ActionResult
+        {
+            public int action_index { get; set; }
+            public string type { get; set; }
+            public int target_index { get; set; }
+            public bool success { get; set; }
+            public string message { get; set; }
+        }
+    }
+}
+

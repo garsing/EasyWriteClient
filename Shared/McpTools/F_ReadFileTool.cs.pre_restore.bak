@@ -1,0 +1,182 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using Newtonsoft.Json;
+
+namespace WordAddIn1
+{
+    /// <summary>
+    /// 文件读取工具
+    /// 读取系统内置目录中的文件
+    /// </summary>
+    public static class F_ReadFileTool
+    {
+        /// <summary>
+        /// 注册文件读取工具
+        /// </summary>
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+                        toolRegistry["F_read_file"] = async (args) =>
+            {
+                await Task.CompletedTask; // 确保异步执行
+
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] read_file工具开始执行");
+
+                    string filename = args.ContainsKey("filename") ? args["filename"]?.ToString() : "";
+                    string encoding = args.ContainsKey("encoding") ? args["encoding"]?.ToString().ToLower() : "auto";
+                    int maxLength = args.ContainsKey("max_length") ? Convert.ToInt32(args["max_length"]) : -1;
+                    int offset = args.ContainsKey("offset") ? Convert.ToInt32(args["offset"]) : 0;
+
+                    if (string.IsNullOrEmpty(filename))
+                    {
+                        return new ToolResult { Success = false, Error = "必须提供filename参数" };
+                    }
+
+                    // 根据文件扩展名选择目录
+                    string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                    string targetDirectory;
+
+                    // 获取用户名
+                    var userService = UserService.Instance;
+                    string username = userService.IsLoggedIn ? userService.UserName : "anonymous";
+
+                    // 在开发环境中，AppDomain.CurrentDomain.BaseDirectory 指向 bin\Debug
+                    // 我们需要向上两级目录到达项目根目录
+                    string projectRoot;
+                    if (baseDir.Contains("bin\\Debug") || baseDir.Contains("bin/Debug"))
+                    {
+                        // 从 bin\Debug 向上两级到达项目根目录
+                        string debugDir = Path.GetDirectoryName(baseDir.TrimEnd('\\', '/'));
+                        projectRoot = Path.GetDirectoryName(debugDir);
+                    }
+                    else
+                    {
+                        // 在生产环境中，使用标准的相对路径
+                        projectRoot = baseDir;
+                    }
+
+                    // 根据文件扩展名选择目录
+                    string extension = Path.GetExtension(filename).ToLower();
+                    if (extension == ".csv")
+                    {
+                        targetDirectory = Path.Combine(projectRoot, "tmp", username, "csv");
+                    }
+                    else
+                    {
+                        // 默认使用format_files目录（YAML、JSON等其他文件）
+                        targetDirectory = Path.Combine(projectRoot, "tmp", username, "format_files");
+                    }
+
+                    // 构建完整的文件路径
+                    string absolutePath = Path.Combine(targetDirectory, filename);
+
+                    if (!File.Exists(absolutePath))
+                    {
+                        // 尝试从后端下载文件
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 本地文件不存在，尝试从后端下载: {filename}");
+                        bool downloadSuccess = await FileDownloader.DownloadFileFromUserDirectory(filename, absolutePath);
+
+                        if (!downloadSuccess)
+                        {
+                            string directoryName = extension == ".csv" ? "csv" : "format_files";
+                            return new ToolResult { Success = false, Error = $"文件不存在: {filename}（在{directoryName}目录和云端均未找到）" };
+                        }
+
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 成功从后端下载文件: {filename}");
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 读取文件: {absolutePath}");
+
+                    // 获取文件信息
+                    FileInfo fileInfo = new FileInfo(absolutePath);
+                    string detectedEncoding = encoding;
+
+                    // 读取文件内容
+                    string content;
+                    if (encoding == "auto")
+                    {
+                        // 自动检测编码
+                        using (var reader = new StreamReader(absolutePath, true))
+                        {
+                            content = reader.ReadToEnd();
+                            detectedEncoding = reader.CurrentEncoding.WebName.ToLower();
+                        }
+                    }
+                    else
+                    {
+                        // 指定编码读取
+                        Encoding fileEncoding;
+                        switch (encoding)
+                        {
+                            case "gb2312":
+                                fileEncoding = Encoding.GetEncoding("GB2312");
+                                break;
+                            case "ascii":
+                                fileEncoding = Encoding.ASCII;
+                                break;
+                            case "unicode":
+                                fileEncoding = Encoding.Unicode;
+                                break;
+                            case "utf-8":
+                            default:
+                                fileEncoding = Encoding.UTF8;
+                                break;
+                        }
+
+                        content = File.ReadAllText(absolutePath, fileEncoding);
+                        detectedEncoding = encoding;
+                    }
+
+                    // 处理偏移和最大长度
+                    int actualOffset = Math.Max(0, Math.Min(offset, content.Length));
+                    int actualMaxLength = maxLength < 0 ? content.Length - actualOffset : Math.Min(maxLength, content.Length - actualOffset);
+
+                    string resultContent = content.Substring(actualOffset, actualMaxLength);
+                    bool isPartial = actualOffset > 0 || actualMaxLength < content.Length;
+
+                    var result = new ToolResult
+                    {
+                        Success = true,
+                        Data = new
+                        {
+                            filename = filename,
+                            file_path = absolutePath,
+                            encoding = detectedEncoding,
+                            file_size = fileInfo.Length,
+                            total_characters = content.Length,
+                            read_characters = resultContent.Length,
+                            offset = actualOffset,
+                            max_length = maxLength,
+                            is_partial = isPartial,
+                            content = resultContent,
+                            created = fileInfo.CreationTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                            modified = fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                            directory = extension == ".csv" ? "csv" : "format_files",
+                            message = isPartial ?
+                                $"成功读取 {filename} 部分内容（{actualOffset}-{actualOffset + actualMaxLength}），共 {resultContent.Length} 个字符" :
+                                $"成功读取 {filename} 全部内容，共 {resultContent.Length} 个字符"
+                        }
+                    };
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] read_file工具执行成功，读取文件 {filename}，共 {resultContent.Length} 个字符");
+                    return result;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] read_file工具执行失败: {ex.Message}");
+                    return new ToolResult { Success = false, Error = $"文件读取失败: {ex.Message}" };
+                }
+            };
+}
+
+    }
+}

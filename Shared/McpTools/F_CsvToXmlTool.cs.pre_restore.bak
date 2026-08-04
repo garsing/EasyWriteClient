@@ -1,0 +1,552 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Xml.Linq;
+using Newtonsoft.Json;
+
+namespace WordAddIn1
+{
+    /// <summary>
+    /// XML文件类型枚举
+    /// </summary>
+    public enum XmlFileType
+    {
+        TableFormat,  // 表格格式：TableConfig/Table/Data
+        ChartFormat   // 图表格式：ChartConfig/Chart/Data
+    }
+
+    /// <summary>
+    /// CSV转XML工具
+    /// 将CSV文件转换为XML格式的data节点
+    /// </summary>
+    public static class F_CsvToXmlTool
+    {
+        /// <summary>
+        /// 注册CSV转YAML工具
+        /// </summary>
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+                        toolRegistry["F_csv_to_xml"] = async (args) =>
+            {
+                await Task.CompletedTask; // 确保异步执行
+
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] csv_to_xml工具开始执行");
+
+                    string csvFilename = args.ContainsKey("csv_filename") ? args["csv_filename"]?.ToString() : "";
+                    string xmlFilename = args.ContainsKey("xml_filename") ? args["xml_filename"]?.ToString() : "";
+
+                    if (string.IsNullOrEmpty(csvFilename))
+                    {
+                        return new ToolResult { Success = false, Error = "必须提供csv_filename参数（CSV文件名）" };
+                    }
+
+                    if (string.IsNullOrEmpty(xmlFilename))
+                    {
+                        return new ToolResult { Success = false, Error = "必须提供xml_filename参数（XML文件名）" };
+                    }
+
+                    // 获取用户名
+                    var userService = UserService.Instance;
+                    string username = userService.IsLoggedIn ? userService.UserName : "anonymous";
+
+                    // 构建CSV文件路径（相对路径）
+                    string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                    string csvFilePath;
+
+                    // 在开发环境中，AppDomain.CurrentDomain.BaseDirectory 指向 bin\Debug
+                    // 我们需要向上两级目录到达项目根目录
+                    if (baseDir.Contains("bin\\Debug") || baseDir.Contains("bin/Debug"))
+                    {
+                        // 从 bin\Debug 向上两级到达项目根目录
+                        string debugDir = Path.GetDirectoryName(baseDir.TrimEnd('\\', '/'));
+                        string projectRoot = Path.GetDirectoryName(debugDir);
+                        csvFilePath = Path.Combine(projectRoot, "tmp", username, "csv", csvFilename);
+                    }
+                    else
+                    {
+                        // 在生产环境中，使用标准的相对路径
+                        csvFilePath = Path.Combine(baseDir, "tmp", username, "csv", csvFilename);
+                    }
+
+                    // 检查CSV文件是否存在，如果不存在尝试从云端下载
+                    if (!File.Exists(csvFilePath))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 本地CSV文件不存在，尝试从云端下载: {csvFilename}");
+                        bool csvDownloadSuccess = await FileDownloader.DownloadFileFromUserDirectory(csvFilename, csvFilePath);
+
+                        if (!csvDownloadSuccess)
+                        {
+                            return new ToolResult { Success = false, Error = $"CSV文件不存在: {csvFilename}（在csv目录和云端均未找到）" };
+                        }
+
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 成功从云端下载CSV文件: {csvFilename}");
+                    }
+
+                    // 构建XML文件路径
+                    string xmlFilePath;
+
+                    if (baseDir.Contains("bin\\Debug") || baseDir.Contains("bin/Debug"))
+                    {
+                        string debugDir = Path.GetDirectoryName(baseDir.TrimEnd('\\', '/'));
+                        string projectRoot = Path.GetDirectoryName(debugDir);
+                        xmlFilePath = Path.Combine(projectRoot, "tmp", username, "format_files", xmlFilename);
+                    }
+                    else
+                    {
+                        xmlFilePath = Path.Combine(baseDir, "tmp", username, "format_files", xmlFilename);
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 读取CSV文件: {csvFilePath}");
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 操作XML文件: {xmlFilePath}");
+
+                    // 确保用户目录存在
+                    string csvDir = Path.GetDirectoryName(csvFilePath);
+                    string xmlDir = Path.GetDirectoryName(xmlFilePath);
+                    Directory.CreateDirectory(csvDir);
+                    Directory.CreateDirectory(xmlDir);
+
+                    // 读取并解析CSV文件
+                    var csvData = ParseCsvFile(csvFilePath);
+                    if (csvData == null || csvData.Count == 0)
+                    {
+                        return new ToolResult { Success = false, Error = "CSV文件解析失败或文件为空" };
+                    }
+
+                    // 检查XML文件是否存在，如果不存在尝试从云端下载
+                    if (!File.Exists(xmlFilePath))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 本地XML文件不存在，尝试从云端下载: {xmlFilename}");
+                        bool xmlDownloadSuccess = await FileDownloader.DownloadFileFromUserDirectory(xmlFilename, xmlFilePath);
+
+                        if (!xmlDownloadSuccess)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 云端XML文件不存在，将创建新的文件: {xmlFilename}");
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 成功从云端下载XML文件: {xmlFilename}");
+                        }
+                    }
+
+                    // 读取或创建XML文件
+                    XDocument xmlDoc;
+                    bool xmlFileExists = File.Exists(xmlFilePath);
+                    XmlFileType xmlFileType = XmlFileType.TableFormat;
+
+                    if (xmlFileExists)
+                    {
+                        // 读取现有XML文件并检测类型
+                        xmlDoc = XDocument.Load(xmlFilePath);
+                        xmlFileType = DetectXmlFileType(xmlDoc);
+                    }
+                    else
+                    {
+                        // 创建新的XML文档（默认为表格格式）
+                        xmlDoc = new XDocument();
+                        xmlFileType = XmlFileType.TableFormat;
+                    }
+
+                    // 根据XML文件类型更新或添加Data节点
+                    if (xmlFileType == XmlFileType.TableFormat)
+                    {
+                        // 表格格式：TableConfig/Table/Data
+                        ImportDataToTableFormat(xmlDoc, csvData);
+                    }
+                    else if (xmlFileType == XmlFileType.ChartFormat)
+                    {
+                        // 图表格式：ChartConfig/Chart/Data
+                        ImportDataToChartFormat(xmlDoc, csvData);
+                    }
+                    else
+                    {
+                        return new ToolResult { Success = false, Error = "无法识别的XML文件格式" };
+                    }
+
+                    // 保存XML文件
+                    xmlDoc.Save(xmlFilePath);
+
+                    // 上传生成的XML文件到用户工作目录
+                    bool uploadSuccess = await UploadXmlFileToUserDirectory(xmlFilePath, xmlFilename);
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] XML文件上传结果: {uploadSuccess}");
+
+                    // 获取文件信息
+                    FileInfo xmlFileInfo = new FileInfo(xmlFilePath);
+
+                    var result = new ToolResult
+                    {
+                        Success = true,
+                        Data = new
+                        {
+                            csv_filename = csvFilename,
+                            xml_filename = xmlFilename,
+                            csv_file_path = csvFilePath,
+                            xml_file_path = xmlFilePath,
+                            csv_rows = csvData.Count,
+                            csv_columns = csvData.Count > 0 ? csvData[0].Count : 0,
+                            xml_file_created = !xmlFileExists,
+                            xml_file_type = xmlFileType.ToString(),
+                            xml_file_size = xmlFileInfo.Length,
+                            modified = xmlFileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                            upload_success = uploadSuccess,
+                            message = xmlFileExists ?
+                                $"成功将CSV文件转换为XML的data节点，已更新 {xmlFilename}（格式：{xmlFileType.ToString()}）{(uploadSuccess ? " 并上传到用户工作目录" : "（上传失败）")}" :
+                                $"成功将CSV文件转换为XML的data节点，已创建 {xmlFilename}（格式：{xmlFileType.ToString()}）{(uploadSuccess ? " 并上传到用户工作目录" : "（上传失败）")}"
+                        }
+                    };
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] csv_to_xml工具执行成功，已处理 {csvData.Count} 行数据");
+                    return result;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] csv_to_xml工具执行失败: {ex.Message}");
+                    return new ToolResult { Success = false, Error = $"CSV转XML失败: {ex.Message}" };
+                }
+            };
+}
+
+        /// <summary>
+        /// 上传生成的XML文件到用户工作目录
+        /// </summary>
+        private static async Task<bool> UploadXmlFileToUserDirectory(string xmlFilePath, string xmlFilename)
+        {
+            try
+            {
+                // 检查用户是否已登录
+                var userService = UserService.Instance;
+                if (!userService.CheckLoginStatus())
+                {
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] 用户未登录，跳过文件上传");
+                    return false;
+                }
+
+                // 检查文件是否存在
+                if (!File.Exists(xmlFilePath))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] XML文件不存在: {xmlFilePath}");
+                    return false;
+                }
+
+                // 获取API配置
+                string baseUrl = ConfigManager.Config.Api.BaseUrl;
+                string uploadUrl = $"{baseUrl}/files/upload";
+
+                using (var httpClient = new HttpClient())
+                {
+                    // 设置超时时间
+                    httpClient.Timeout = TimeSpan.FromSeconds(30);
+
+                    // 创建multipart/form-data内容
+                    using (var formData = new MultipartFormDataContent())
+                    using (var fileStream = File.OpenRead(xmlFilePath))
+                    using (var streamContent = new StreamContent(fileStream))
+                    {
+                        // 设置文件内容
+                        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                        formData.Add(streamContent, "file", xmlFilename);
+
+                        // 设置请求头
+                        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", userService.AccessToken);
+                        httpClient.DefaultRequestHeaders.Add("X-Username", userService.UserName);
+
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 正在上传XML文件到: {uploadUrl}");
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 用户名: {userService.UserName}");
+
+                        // 发送上传请求
+                        var response = await httpClient.PostAsync(uploadUrl, formData);
+                        var responseContent = await response.Content.ReadAsStringAsync();
+
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 上传响应状态码: {response.StatusCode}");
+
+                        if (response.IsSuccessStatusCode)
+                        {
+                            // 解析响应
+                            var uploadResponse = JsonConvert.DeserializeObject<UploadResponse>(responseContent);
+                            if (uploadResponse != null && uploadResponse.success)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 文件上传成功: {uploadResponse.data?.filename ?? xmlFilename}");
+                                return true;
+                            }
+                            else
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 文件上传失败: {uploadResponse?.message ?? "未知错误"}");
+                                return false;
+                            }
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 文件上传HTTP错误: {response.StatusCode} - {responseContent}");
+                            return false;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 文件上传异常: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 文件上传API响应模型
+        /// </summary>
+        private class UploadResponse
+        {
+            public bool success { get; set; }
+            public string message { get; set; }
+            public UploadData data { get; set; }
+        }
+
+        private class UploadData
+        {
+            public string filename { get; set; }
+            public string original_filename { get; set; }
+            public long size { get; set; }
+            public string path { get; set; }
+            public string uploaded_at { get; set; }
+            public bool overwritten { get; set; }
+        }
+
+        /// <summary>
+        /// 解析CSV文件
+        /// </summary>
+        private static List<List<string>> ParseCsvFile(string filePath)
+        {
+            try
+            {
+                var lines = File.ReadAllLines(filePath, Encoding.UTF8);
+                var result = new List<List<string>>();
+
+                foreach (var line in lines)
+                {
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
+
+                    var row = ParseCsvLine(line);
+                    if (row.Count > 0)
+                    {
+                        result.Add(row);
+                    }
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] CSV文件解析失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 解析CSV行，支持带引号的字段
+        /// </summary>
+        private static List<string> ParseCsvLine(string line)
+        {
+            var result = new List<string>();
+            var current = new StringBuilder();
+            var inQuotes = false;
+            var quoteChar = '"';
+
+            for (int i = 0; i < line.Length; i++)
+            {
+                var c = line[i];
+
+                if (!inQuotes)
+                {
+                    if (c == '"' || c == '\'')
+                    {
+                        // 开始引号
+                        inQuotes = true;
+                        quoteChar = c;
+                    }
+                    else if (c == ',')
+                    {
+                        // 字段结束
+                        result.Add(current.ToString().Trim());
+                        current.Clear();
+                    }
+                    else
+                    {
+                        current.Append(c);
+                    }
+                }
+                else
+                {
+                    if (c == quoteChar)
+                    {
+                        // 检查是否是转义的引号
+                        if (i + 1 < line.Length && line[i + 1] == quoteChar)
+                        {
+                            current.Append(quoteChar);
+                            i++; // 跳过下一个引号
+                        }
+                        else
+                        {
+                            // 引号结束
+                            inQuotes = false;
+                        }
+                    }
+                    else
+                    {
+                        current.Append(c);
+                    }
+                }
+            }
+
+            // 添加最后一个字段
+            result.Add(current.ToString().Trim());
+
+            return result;
+        }
+
+        /// <summary>
+        /// 检测XML文件的类型
+        /// </summary>
+        private static XmlFileType DetectXmlFileType(XDocument xmlDoc)
+        {
+            try
+            {
+                if (xmlDoc.Root == null)
+                {
+                    return XmlFileType.TableFormat;
+                }
+
+                // 检查根元素名称
+                if (xmlDoc.Root.Name == "ChartConfig")
+                {
+                    return XmlFileType.ChartFormat;
+                }
+                else if (xmlDoc.Root.Name == "TableConfig")
+                {
+                    return XmlFileType.TableFormat;
+                }
+
+                // 默认认为是表格格式
+                return XmlFileType.TableFormat;
+            }
+            catch
+            {
+                // 出错时默认为表格格式
+                return XmlFileType.TableFormat;
+            }
+        }
+
+        /// <summary>
+        /// 将CSV数据导入到表格格式的XML文件中
+        /// </summary>
+        private static void ImportDataToTableFormat(XDocument xmlDoc, List<List<string>> csvData)
+        {
+            try
+            {
+                XElement root;
+                if (xmlDoc.Root == null)
+                {
+                    root = new XElement("TableConfig");
+                    xmlDoc.Add(root);
+                }
+                else
+                {
+                    root = xmlDoc.Root;
+                }
+
+                // 确保Table节点存在
+                XElement tableElement = root.Element("Table");
+                if (tableElement == null)
+                {
+                    tableElement = new XElement("Table");
+                    root.Add(tableElement);
+                }
+
+                // 创建或更新Data节点
+                XElement dataElement = tableElement.Element("Data");
+                if (dataElement != null)
+                {
+                    dataElement.Remove();
+                }
+                dataElement = new XElement("Data");
+
+                foreach (var row in csvData)
+                {
+                    var rowElement = new XElement("Row");
+                    foreach (var cell in row)
+                    {
+                        rowElement.Add(new XElement("Cell", cell));
+                    }
+                    dataElement.Add(rowElement);
+                }
+
+                tableElement.Add(dataElement);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 表格格式数据导入失败: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// 将CSV数据导入到图表格式的XML文件中
+        /// </summary>
+        private static void ImportDataToChartFormat(XDocument xmlDoc, List<List<string>> csvData)
+        {
+            try
+            {
+                XElement root;
+                if (xmlDoc.Root == null)
+                {
+                    root = new XElement("ChartConfig");
+                    xmlDoc.Add(root);
+                }
+                else
+                {
+                    root = xmlDoc.Root;
+                }
+
+                // 确保Chart节点存在
+                XElement chartElement = root.Element("Chart");
+                if (chartElement == null)
+                {
+                    chartElement = new XElement("Chart");
+                    root.Add(chartElement);
+                }
+
+                // 创建或更新Data节点
+                XElement dataElement = chartElement.Element("Data");
+                if (dataElement != null)
+                {
+                    dataElement.Remove();
+                }
+                dataElement = new XElement("Data");
+
+                foreach (var row in csvData)
+                {
+                    var rowElement = new XElement("Row");
+                    foreach (var cell in row)
+                    {
+                        rowElement.Add(new XElement("Cell", cell));
+                    }
+                    dataElement.Add(rowElement);
+                }
+
+                chartElement.Add(dataElement);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 图表格式数据导入失败: {ex.Message}");
+                throw;
+            }
+        }
+
+    }
+}

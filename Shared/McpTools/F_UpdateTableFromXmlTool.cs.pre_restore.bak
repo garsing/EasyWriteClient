@@ -1,0 +1,1354 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Xml.Linq;
+using Word = Microsoft.Office.Interop.Word;
+
+namespace WordAddIn1
+{
+    /// <summary>
+    /// 从XML配置文件更新Word表格的工具
+    /// </summary>
+    public static class F_UpdateTableFromXmlTool
+    {
+        /// <summary>
+        /// XML配置的数据结构（支持部分参数）
+        /// </summary>
+        public class TableConfig
+        {
+            public TableInfo Table { get; set; }
+            public List<List<int>> Merge { get; set; }
+            public List<List<string>> Data { get; set; }
+        }
+
+        /// <summary>
+        /// 表格信息（所有字段可选）
+        /// </summary>
+        public class TableInfo
+        {
+            public int? Rows { get; set; }
+            public int? Cols { get; set; }
+            public List<float> ColWidths { get; set; }
+            public string TableFontColor { get; set; }
+        }
+
+        /// <summary>
+        /// 注册工具
+        /// </summary>
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+                        toolRegistry["F_update_table_from_xml"] = async (args) =>
+            {
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] 开始更新表格");
+
+                    if (wordApplication == null)
+                    {
+                        return new ToolResult { Success = false, Error = "Word应用程序不可用" };
+                    }
+
+                    dynamic wordApp = wordApplication;
+                    if (wordApp.ActiveDocument == null)
+                    {
+                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
+                    }
+
+                    // 获取表格编号
+                    string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
+                    if (string.IsNullOrEmpty(tableId))
+                    {
+                        return new ToolResult { Success = false, Error = "未提供表格编号" };
+                    }
+
+                    // 首先运行 WordReader.ReadWord 来生成表格编号和顺序序号映射表
+                    try
+                    {
+                        WordReader.ReadWord(wordApp.ActiveDocument);
+                    }
+                    catch (Exception ex)
+                    {
+                        return new ToolResult { Success = false, Error = $"生成表格映射表失败：{ex.Message}" };
+                    }
+
+                    // 将表格编号转换为顺序序号
+                    int tableOrderIndex = DocumentState.GetTableIndex(tableId);
+                    if (tableOrderIndex < 0)
+                    {
+                        return new ToolResult { Success = false, Error = $"找不到表格编号 '{tableId}'，请确认表格编号是否正确" };
+                    }
+
+                    // 收集所有表格（包括嵌套表格），按照在文档中的位置（Range.Start）排序
+                    List<Word.Table> allTables = GetAllTablesInOrder(wordApp.ActiveDocument);
+                    
+                    if (tableOrderIndex >= allTables.Count)
+                    {
+                        return new ToolResult { Success = false, Error = $"表格编号 '{tableId}' 对应的索引{tableOrderIndex}无效，文档中只有{allTables.Count}个表格（包括嵌套表格）" };
+                    }
+
+                    Word.Table targetTable = null;
+                    try
+                    {
+                        targetTable = allTables[tableOrderIndex];
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 成功获取表格（编号：{tableId}，顺序索引：{tableOrderIndex}），尺寸：{targetTable.Rows.Count}行×{targetTable.Columns.Count}列");
+                    }
+                    catch (Exception ex)
+                    {
+                        return new ToolResult { Success = false, Error = $"获取表格（编号：{tableId}）失败：{ex.Message}" };
+                    }
+
+                    // 第一步：提取现有表格格式
+                    var existingConfig = ExtractTableFormat(targetTable);
+                    if (existingConfig == null)
+                    {
+                        return new ToolResult { Success = false, Error = "提取现有表格格式失败" };
+                    }
+
+                    // 第二步：解析XML格式文件
+                    string xmlContent = null;
+                    if (args.ContainsKey("xml_content") && !string.IsNullOrEmpty(args["xml_content"]?.ToString()))
+                    {
+                        xmlContent = args["xml_content"].ToString();
+                    }
+                    else if (args.ContainsKey("filename") && !string.IsNullOrEmpty(args["filename"]?.ToString()))
+                    {
+                        string filename = args["filename"].ToString();
+                        var userService = UserService.Instance;
+                        string username = userService.IsLoggedIn ? userService.UserName : "anonymous";
+                        
+                        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                        string projectRoot = baseDir;
+                        if (baseDir.Contains("bin\\Debug") || baseDir.Contains("bin/Debug"))
+                        {
+                            string debugDir = Path.GetDirectoryName(baseDir.TrimEnd('\\', '/'));
+                            projectRoot = Path.GetDirectoryName(debugDir);
+                        }
+                        
+                        string xmlFilePath = Path.Combine(projectRoot, "tmp", username, "format_files", filename);
+                        if (!File.Exists(xmlFilePath))
+                        {
+                            bool downloadSuccess = await FileDownloader.DownloadFileFromUserDirectory(filename, xmlFilePath);
+                            if (!downloadSuccess)
+                            {
+                                return new ToolResult { Success = false, Error = $"文件不存在: {filename}" };
+                            }
+                        }
+                        
+                        xmlContent = File.ReadAllText(xmlFilePath, Encoding.UTF8);
+                    }
+                    else
+                    {
+                        return new ToolResult { Success = false, Error = "必须提供filename或xml_content参数" };
+                    }
+
+                    var parseResult = ParseXmlContent(xmlContent);
+                    if (parseResult.Config == null)
+                    {
+                        return new ToolResult { Success = false, Error = $"XML解析失败: {parseResult.Error}" };
+                    }
+
+                    // 合并现有配置和目标配置（目标配置优先）
+                    var mergedConfig = MergeConfigs(existingConfig, parseResult.Config);
+
+                    // 第三步：先设置表格默认字体颜色（TableFontColor）
+                    // 这样后续的HTML单元格颜色可以覆盖默认颜色
+                    var fontColorResult = SetTableFontColor(targetTable, mergedConfig);
+                    if (!fontColorResult.Success)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 警告：设置表格默认字体颜色失败: {fontColorResult.Error}");
+                    }
+
+                    // 第四步：修改表格结构（包括更新单元格内容，HTML颜色会覆盖默认颜色）
+                    var updateResult = UpdateTableStructure(targetTable, mergedConfig);
+                    if (!updateResult.Success)
+                    {
+                        return new ToolResult { Success = false, Error = $"表格结构更新失败: {updateResult.Error}" };
+                    }
+
+                    // 第五步：更新其他通用格式（列宽等）
+                    var formatResult = UpdateGeneralFormat(targetTable, mergedConfig);
+                    if (!formatResult.Success)
+                    {
+                        return new ToolResult { Success = false, Error = $"通用格式更新失败: {formatResult.Error}" };
+                    }
+
+                    await Task.CompletedTask;
+
+                    return new ToolResult
+                    {
+                        Success = true,
+                        Data = new
+                        {
+                            table_updated = true,
+                            table_id = tableId,
+                            rows = targetTable.Rows.Count,
+                            columns = targetTable.Columns.Count,
+                            message = "表格更新成功"
+                        }
+                    };
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 工具执行失败: {ex.Message}");
+                    return new ToolResult { Success = false, Error = $"执行失败: {ex.Message}" };
+                }
+            };
+}
+
+        /// <summary>
+        /// 递归收集所有表格（包括嵌套表格），按照在文档中的位置（Range.Start）排序
+        /// </summary>
+        private static List<Word.Table> GetAllTablesInOrder(Word.Document document)
+        {
+            List<Word.Table> allTables = new List<Word.Table>();
+            
+            try
+            {
+                foreach (Word.Table table in document.Tables)
+                {
+                    CollectTablesRecursive(table, allTables);
+                }
+                
+                allTables.Sort((t1, t2) => t1.Range.Start.CompareTo(t2.Range.Start));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 收集表格失败：{ex.Message}");
+            }
+            
+            return allTables;
+        }
+
+        /// <summary>
+        /// 递归收集表格及其嵌套表格
+        /// </summary>
+        private static void CollectTablesRecursive(Word.Table table, List<Word.Table> allTables)
+        {
+            if (table == null) return;
+            
+            try
+            {
+                allTables.Add(table);
+                
+                foreach (Word.Row row in table.Rows)
+                {
+                    foreach (Word.Cell cell in row.Cells)
+                    {
+                        foreach (Word.Table nestedTable in cell.Tables)
+                        {
+                            CollectTablesRecursive(nestedTable, allTables);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 递归收集表格失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 提取表格格式（简化版，只提取基本信息）
+        /// </summary>
+        private static TableConfig ExtractTableFormat(Word.Table table)
+        {
+            try
+            {
+                var config = new TableConfig
+                {
+                    Table = new TableInfo
+                    {
+                        Rows = table.Rows.Count,
+                        Cols = table.Columns.Count,
+                        ColWidths = new List<float>(),
+                        TableFontColor = ""
+                    },
+                    Merge = new List<List<int>>(),
+                    Data = new List<List<string>>()
+                };
+
+                // 提取列宽
+                for (int i = 1; i <= table.Columns.Count; i++)
+                {
+                    try
+                    {
+                        config.Table.ColWidths.Add(table.Columns[i].Width);
+                    }
+                    catch
+                    {
+                        config.Table.ColWidths.Add(80.0f);
+                    }
+                }
+
+                // 提取数据（简化版，不考虑合并）
+                for (int r = 1; r <= table.Rows.Count; r++)
+                {
+                    var row = new List<string>();
+                    for (int c = 1; c <= table.Columns.Count; c++)
+                    {
+                        try
+                        {
+                            Word.Cell cell = table.Cell(r, c);
+                            if (cell.RowIndex == r && cell.ColumnIndex == c)
+                            {
+                                row.Add(cell.Range.Text?.Trim() ?? "");
+                            }
+                            else
+                            {
+                                row.Add("");
+                            }
+                        }
+                        catch
+                        {
+                            row.Add("");
+                        }
+                    }
+                    config.Data.Add(row);
+                }
+
+                return config;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 提取表格格式失败：{ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// XML解析结果
+        /// </summary>
+        private class ParseResult
+        {
+            public TableConfig Config { get; set; }
+            public string Error { get; set; }
+        }
+
+        /// <summary>
+        /// 解析XML内容
+        /// </summary>
+        private static ParseResult ParseXmlContent(string xmlContent)
+        {
+            try
+            {
+                XDocument doc = XDocument.Parse(xmlContent);
+                XElement root = doc.Root;
+
+                if (root == null || root.Name != "TableConfig")
+                {
+                    return new ParseResult { Config = null, Error = "XML根元素必须是TableConfig" };
+                }
+
+                var config = new TableConfig();
+
+                // 解析General（通用格式）
+                var generalElement = root.Element("General");
+                string tableFontColor = null;
+                List<float> colWidths = null;
+                
+                if (generalElement != null)
+                {
+                    var tableFontColorElement = generalElement.Element("TableFontColor");
+                    if (tableFontColorElement != null)
+                    {
+                        tableFontColor = tableFontColorElement.Value;
+                    }
+                    
+                    var colWidthsElement = generalElement.Element("ColWidths");
+                    if (colWidthsElement != null)
+                    {
+                        colWidths = new List<float>();
+                        foreach (var widthElement in colWidthsElement.Elements("float"))
+                        {
+                            if (float.TryParse(widthElement.Value, out float width))
+                            {
+                                colWidths.Add(width);
+                            }
+                        }
+                    }
+                }
+
+                // 解析Table
+                var tableElement = root.Element("Table");
+                if (tableElement != null)
+                {
+                    config.Table = new TableInfo
+                    {
+                        ColWidths = colWidths,
+                        TableFontColor = tableFontColor
+                    };
+
+                    // 解析Properties
+                    var propertiesElement = tableElement.Element("Properties");
+                    if (propertiesElement != null)
+                    {
+                        var rowsElement = propertiesElement.Element("Rows");
+                        if (rowsElement != null && int.TryParse(rowsElement.Value, out int rows))
+                        {
+                            config.Table.Rows = rows;
+                        }
+
+                        var colsElement = propertiesElement.Element("Cols");
+                        if (colsElement != null && int.TryParse(colsElement.Value, out int cols))
+                        {
+                            config.Table.Cols = cols;
+                        }
+
+                        // 解析Merge
+                        var mergeElement = propertiesElement.Element("Merge");
+                        if (mergeElement != null)
+                        {
+                            config.Merge = new List<List<int>>();
+                            foreach (var mergeItemElement in mergeElement.Elements("MergeItem"))
+                            {
+                                var mergeItem = new List<int>();
+                                foreach (var intElement in mergeItemElement.Elements("int"))
+                                {
+                                    if (int.TryParse(intElement.Value, out int value))
+                                    {
+                                        mergeItem.Add(value);
+                                    }
+                                }
+                                if (mergeItem.Count == 4)
+                                {
+                                    config.Merge.Add(mergeItem);
+                                }
+                            }
+                        }
+                    }
+
+                    // 解析Data
+                    var dataElement = tableElement.Element("Data");
+                    if (dataElement != null)
+                    {
+                        config.Data = new List<List<string>>();
+                        foreach (var rowElement in dataElement.Elements("Row"))
+                        {
+                            var row = new List<string>();
+                            foreach (var cellElement in rowElement.Elements("Cell"))
+                            {
+                                row.Add(cellElement.Value ?? "");
+                            }
+                            config.Data.Add(row);
+                        }
+                    }
+                }
+
+                return new ParseResult { Config = config, Error = null };
+            }
+            catch (Exception ex)
+            {
+                return new ParseResult { Config = null, Error = $"XML解析失败: {ex.Message}" };
+            }
+        }
+
+        /// <summary>
+        /// 合并配置（目标配置优先）
+        /// </summary>
+        private static TableConfig MergeConfigs(TableConfig existing, TableConfig target)
+        {
+            var merged = new TableConfig
+            {
+                Table = new TableInfo(),
+                Merge = target.Merge ?? existing.Merge,
+                Data = target.Data ?? existing.Data
+            };
+
+            // 合并Table信息
+            merged.Table.Rows = target.Table?.Rows ?? existing.Table.Rows;
+            merged.Table.Cols = target.Table?.Cols ?? existing.Table.Cols;
+            merged.Table.ColWidths = target.Table?.ColWidths ?? existing.Table.ColWidths;
+            merged.Table.TableFontColor = target.Table?.TableFontColor ?? existing.Table.TableFontColor;
+
+            return merged;
+        }
+
+        /// <summary>
+        /// 更新结果
+        /// </summary>
+        private class UpdateResult
+        {
+            public bool Success { get; set; }
+            public string Error { get; set; }
+        }
+
+        /// <summary>
+        /// 更新表格结构
+        /// </summary>
+        private static UpdateResult UpdateTableStructure(Word.Table table, TableConfig config)
+        {
+            try
+            {
+                // 3.1步：拆分所有合并的单元格
+                SplitAllMergedCells(table, config.Table?.ColWidths);
+
+                // 3.2步：调整行数和列数
+                int targetRows = config.Table.Rows ?? table.Rows.Count;
+                int targetCols = config.Table.Cols ?? table.Columns.Count;
+                AdjustTableSize(table, targetRows, targetCols);
+
+                // 3.3步：更新单元格内容（仅更新有差异的）
+                if (config.Data != null)
+                {
+                    UpdateCellContents(table, config.Data);
+                }
+
+                // 3.4步：重新应用合并信息
+                if (config.Merge != null && config.Merge.Count > 0)
+                {
+                    ApplyCellMerging(table, config.Merge);
+                }
+
+                return new UpdateResult { Success = true, Error = null };
+            }
+            catch (Exception ex)
+            {
+                return new UpdateResult { Success = false, Error = ex.Message };
+            }
+        }
+
+        /// <summary>
+        /// 拆分所有合并的单元格
+        /// </summary>
+        private static void SplitAllMergedCells(Word.Table table, List<float> colWidths)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ===== 开始拆分合并单元格 =====");
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 表格当前尺寸：{table.Rows.Count}行×{table.Columns.Count}列");
+                
+                // 获取表格的XML来扫描实际结构
+                string tableXml = table.Range.WordOpenXML;
+                if (string.IsNullOrEmpty(tableXml))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ 无法获取表格的XML内容");
+                    return;
+                }
+
+                XDocument xmlDoc = XDocument.Parse(tableXml);
+                XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+                
+                var tableElement = xmlDoc.Descendants(w + "tbl").FirstOrDefault();
+                if (tableElement == null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ 无法找到表格元素");
+                    return;
+                }
+
+                // 收集所有需要拆分的单元格信息（从后往前处理，避免索引变化）
+                var cellsToSplit = new List<(int row, int col, int rowSpan, int colSpan)>();
+
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 开始通过XML扫描表格，查找合并单元格...");
+                
+                // 使用 TableFormatExtractor 提取合并单元格信息
+                var mergedCells = TableFormatExtractor.ExtractMergedCellsFromXml(tableElement, w);
+                
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 使用 TableFormatExtractor 提取到 {mergedCells.Count} 个合并单元格");
+                
+                foreach (var (row, col, rowSpan, colSpan) in mergedCells)
+                {
+                    string mergeType = "";
+                    if (rowSpan > 1 && colSpan > 1)
+                        mergeType = "行+列合并";
+                    else if (rowSpan > 1)
+                        mergeType = "行合并（纵向）";
+                    else if (colSpan > 1)
+                        mergeType = "列合并（横向）";
+                    
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] ✅ 找到需要拆分的单元格：({row},{col})，类型：{mergeType}，rowSpan={rowSpan}, colSpan={colSpan}");
+                    cellsToSplit.Add((row, col, rowSpan, colSpan));
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 扫描完成，共找到 {cellsToSplit.Count} 个需要拆分的单元格");
+
+                if (cellsToSplit.Count == 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 没有找到需要拆分的单元格，跳过拆分步骤");
+                    return;
+                }
+
+                // 从后往前拆分单元格（避免索引变化影响）
+                cellsToSplit.Reverse();
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 开始拆分单元格（从后往前处理）...");
+                
+                foreach (var (row, col, rowSpan, colSpan) in cellsToSplit)
+                {
+                    try
+                    {
+                        string mergeType = "";
+                        if (rowSpan > 1 && colSpan > 1)
+                            mergeType = "行+列合并";
+                        else if (rowSpan > 1)
+                            mergeType = "行合并（纵向）";
+                        else if (colSpan > 1)
+                            mergeType = "列合并（横向）";
+                        
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 准备拆分单元格({row},{col})，类型：{mergeType}，行跨度：{rowSpan}，列跨度：{colSpan}");
+                        
+                        Word.Cell cell = table.Cell(row, col);
+                        
+                        // 拆分单元格：Split(行数, 列数)
+                        // 注意：Word的Split方法会将合并的单元格拆分成指定数量的行和列
+                        // Split(rowSpan, colSpan) 会将单元格拆分成 rowSpan 行 × colSpan 列
+                        cell.Split(rowSpan, colSpan);
+                        
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] ✅ 成功拆分单元格({row},{col})，类型：{mergeType}，拆分成 {rowSpan}行×{colSpan}列");
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ 拆分单元格({row},{col})失败：{ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 异常详情：{ex}");
+                    }
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 拆分完成，表格当前尺寸：{table.Rows.Count}行×{table.Columns.Count}列");
+
+                // 所有拆分完成后再统一设置列宽
+                // 拆分后列数就是最大列数，应该和XML中的ColWidths一一对应
+                if (colWidths != null && colWidths.Count > 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 开始设置列宽，XML中有 {colWidths.Count} 个列宽值，表格有 {table.Columns.Count} 列");
+                    
+                    // 确保列宽数量和表格列数匹配
+                    if (colWidths.Count != table.Columns.Count)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] ⚠️ 警告：列宽数量({colWidths.Count})与表格列数({table.Columns.Count})不匹配");
+                    }
+                    
+                    // 方法1：先通过设置第一行的每个单元格宽度来统一列宽
+                    // 这样可以避免"混合的单元格宽度"错误
+                    try
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 方法1：通过设置第一行单元格宽度来统一列宽...");
+                        if (table.Rows.Count > 0)
+                        {
+                            Word.Row firstRow = table.Rows[1];
+                            int colsToSet = Math.Min(colWidths.Count, firstRow.Cells.Count);
+                            for (int i = 0; i < colsToSet; i++)
+                            {
+                                try
+                                {
+                                    Word.Cell cell = firstRow.Cells[i + 1];
+                                    cell.Width = colWidths[i];
+                                    System.Diagnostics.Debug.WriteLine($"[DEBUG] ✅ 设置第1行第{i + 1}列单元格宽度：{colWidths[i]}");
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ 设置第1行第{i + 1}列单元格宽度失败：{ex.Message}");
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] ⚠️ 方法1失败：{ex.Message}，尝试方法2");
+                    }
+                    
+                    // 方法2：直接设置列宽（在方法1之后，表格应该已经统一了列宽）
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 方法2：直接设置列宽...");
+                    int colsToSetDirect = Math.Min(colWidths.Count, table.Columns.Count);
+                    for (int i = 0; i < colsToSetDirect; i++)
+                    {
+                        int colIndex = i + 1; // Word列索引从1开始
+                        try
+                        {
+                            table.Columns[colIndex].Width = colWidths[i];
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] ✅ 设置第{colIndex}列宽度：{colWidths[i]}（对应XML中第{i + 1}个ColWidths值）");
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ 设置第{colIndex}列宽度失败：{ex.Message}");
+                            
+                            // 如果直接设置列宽失败，尝试通过设置该列所有单元格的宽度
+                            try
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 尝试通过设置第{colIndex}列所有单元格宽度来设置列宽...");
+                                for (int row = 1; row <= table.Rows.Count; row++)
+                                {
+                                    try
+                                    {
+                                        Word.Cell cell = table.Cell(row, colIndex);
+                                        cell.Width = colWidths[i];
+                                    }
+                                    catch
+                                    {
+                                        // 忽略单个单元格设置失败
+                                    }
+                                }
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] ✅ 通过单元格宽度设置第{colIndex}列宽度成功：{colWidths[i]}");
+                            }
+                            catch (Exception ex2)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ 通过单元格宽度设置第{colIndex}列宽度也失败：{ex2.Message}");
+                            }
+                        }
+                    }
+                    
+                    // 如果表格列数多于XML中的列宽数量，剩余的列使用最后一个列宽值
+                    if (table.Columns.Count > colWidths.Count)
+                    {
+                        float lastWidth = colWidths[colWidths.Count - 1];
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 表格列数({table.Columns.Count})多于XML列宽数量({colWidths.Count})，剩余列使用最后一个列宽值：{lastWidth}");
+                        for (int i = colWidths.Count; i < table.Columns.Count; i++)
+                        {
+                            try
+                            {
+                                int colIndex = i + 1;
+                                // 先尝试设置单元格宽度
+                                if (table.Rows.Count > 0)
+                                {
+                                    Word.Cell cell = table.Cell(1, colIndex);
+                                    cell.Width = lastWidth;
+                                }
+                                // 再尝试设置列宽
+                                table.Columns[colIndex].Width = lastWidth;
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] ✅ 设置第{colIndex}列宽度：{lastWidth}");
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ 设置第{i + 1}列宽度失败：{ex.Message}");
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] ⚠️ 警告：XML中没有提供ColWidths，跳过列宽设置");
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ===== 拆分合并单元格完成 =====");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ 拆分合并单元格失败：{ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 异常详情：{ex}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// 调整表格大小
+        /// </summary>
+        private static void AdjustTableSize(Word.Table table, int targetRows, int targetCols)
+        {
+            try
+            {
+                int currentRows = table.Rows.Count;
+                int currentCols = table.Columns.Count;
+
+                // 调整行数
+                if (targetRows < currentRows)
+                {
+                    // 删除多余的行（从最后开始删除）
+                    for (int i = currentRows; i > targetRows; i--)
+                    {
+                        table.Rows[i].Delete();
+                    }
+                }
+                else if (targetRows > currentRows)
+                {
+                    // 添加不足的行
+                    for (int i = currentRows; i < targetRows; i++)
+                    {
+                        table.Rows.Add();
+                    }
+                }
+
+                // 调整列数
+                if (targetCols < currentCols)
+                {
+                    // 删除多余的列（从最后开始删除）
+                    for (int i = currentCols; i > targetCols; i--)
+                    {
+                        table.Columns[i].Delete();
+                    }
+                }
+                else if (targetCols > currentCols)
+                {
+                    // 添加不足的列
+                    for (int i = currentCols; i < targetCols; i++)
+                    {
+                        table.Columns.Add(table.Columns[table.Columns.Count]);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 调整表格大小失败：{ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// 更新单元格内容（仅更新有差异的）
+        /// </summary>
+        private static void UpdateCellContents(Word.Table table, List<List<string>> targetData)
+        {
+            if (targetData == null) return;
+
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ===== 开始更新单元格内容 =====");
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 目标数据：{targetData.Count}行 × {targetData[0]?.Count ?? 0}列");
+                
+                for (int r = 0; r < targetData.Count && r < table.Rows.Count; r++)
+                {
+                    for (int c = 0; c < targetData[r].Count && c < table.Columns.Count; c++)
+                    {
+                        try
+                        {
+                            Word.Cell cell = table.Cell(r + 1, c + 1);
+                            string currentContent = cell.Range.Text?.Trim() ?? "";
+                            string targetContent = targetData[r][c] ?? "";
+
+                            // 对比内容，如果不一样则更新
+                            if (currentContent != targetContent)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 单元格({r + 1},{c + 1})内容不同，准备更新");
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG]   当前内容：{currentContent}");
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG]   目标内容：{targetContent}");
+                                
+                                Word.Range cellRange = cell.Range;
+                                
+                                // 清空单元格所有内容，只保留一个空段落（Word单元格需要至少一个段落）
+                                // 删除所有多余的段落（保留第一个）
+                                while (cellRange.Paragraphs.Count > 1)
+                                {
+                                    cellRange.Paragraphs[cellRange.Paragraphs.Count].Range.Delete();
+                                }
+                                
+                                // 清除第一个段落的内容，只保留段落标记
+                                // 循环结束后，cellRange.Paragraphs.Count 必然 = 1（Word单元格必须至少有一个段落）
+                                Word.Range firstPara = cellRange.Paragraphs[1].Range;
+                                firstPara.Text = ""; // 直接设置为空，Word会自动保留段落标记
+                                
+                                // 处理HTML内容
+                                if (targetContent.Contains("<"))
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 单元格({r + 1},{c + 1})检测到HTML内容，调用InjectHtml");
+                                    System.Diagnostics.Debug.WriteLine($"[DEBUG]   HTML内容：{targetContent}");
+                                    
+                                    var htmlResult = InjectHtml(cellRange, targetContent);
+                                    if (!htmlResult.Success)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ 单元格({r + 1},{c + 1})HTML注入失败：{htmlResult.Error}");
+                                        throw new Exception($"单元格({r + 1},{c + 1})HTML注入失败：{htmlResult.Error}");
+                                    }
+                                    else
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"[DEBUG] ✅ 单元格({r + 1},{c + 1})HTML注入成功，HTML中的颜色会覆盖默认颜色");
+                                    }
+                                    
+                                    // 删除HTML插入后可能产生的多余段落（使用与InjectHtml相同的逻辑）
+                                    while (cellRange.Paragraphs.Count > 1)
+                                    {
+                                        try
+                                        {
+                                            int lastIndex = cellRange.Paragraphs.Count;
+                                            Word.Range lastPara = cellRange.Paragraphs[lastIndex].Range;
+                                            string lastParaText = lastPara.Text;
+                                            string lastParaTextTrimmed = lastParaText.Trim();
+                                            
+                                            // 检查是否为空段落（只有段落标记、空白字符或控制字符）
+                                            // Trim后如果为空，或者Trim后只包含空白字符、控制字符等，都认为是空段落
+                                            // 控制字符包括：\r、\n、ASCII 7（响铃字符）等Word可能添加的字符
+                                            bool isEmpty = string.IsNullOrEmpty(lastParaTextTrimmed) || 
+                                                          string.IsNullOrWhiteSpace(lastParaTextTrimmed) ||
+                                                          lastParaTextTrimmed.All(c => 
+                                                              c == '\r' || 
+                                                              c == '\n' || 
+                                                              char.IsWhiteSpace(c) || 
+                                                              char.IsControl(c));  // 包括所有控制字符（如ASCII 7）
+                                            
+                                            if (isEmpty)
+                                            {
+                                                System.Diagnostics.Debug.WriteLine($"[DEBUG]   删除多余的空段落 {lastIndex}");
+                                                lastPara.Delete();
+                                            }
+                                            else
+                                            {
+                                                // 如果不是空段落，停止删除
+                                                System.Diagnostics.Debug.WriteLine($"[DEBUG]   段落 {lastIndex} 不是空段落，停止删除");
+                                                break;
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            // 如果删除失败，停止删除避免无限循环
+                                            System.Diagnostics.Debug.WriteLine($"[DEBUG]   ⚠️ 删除段落失败：{ex.Message}，停止删除");
+                                            break;
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    // 纯文本：设置到第一个段落（会使用默认的TableFontColor）
+                                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 单元格({r + 1},{c + 1})纯文本内容，直接设置（使用默认TableFontColor）");
+                                    cellRange.Paragraphs[1].Range.Text = targetContent;
+                                }
+                            }
+                            else
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 单元格({r + 1},{c + 1})内容相同，跳过更新");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ 更新单元格({r + 1},{c + 1})失败：{ex.Message}");
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 异常详情：{ex}");
+                        }
+                    }
+                }
+                
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ===== 单元格内容更新完成 =====");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ 更新单元格内容失败：{ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 异常详情：{ex}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// 应用单元格合并
+        /// </summary>
+        private static void ApplyCellMerging(Word.Table table, List<List<int>> mergeConfig)
+        {
+            if (mergeConfig == null || mergeConfig.Count == 0) return;
+
+            try
+            {
+                foreach (var merge in mergeConfig)
+                {
+                    if (merge == null || merge.Count != 4) continue;
+
+                    int startRow = merge[0], startCol = merge[1];
+                    int endRow = merge[2], endCol = merge[3];
+
+                    try
+                    {
+                        if (startRow >= 1 && startRow <= table.Rows.Count &&
+                            startCol >= 1 && startCol <= table.Columns.Count &&
+                            endRow >= 1 && endRow <= table.Rows.Count &&
+                            endCol >= 1 && endCol <= table.Columns.Count)
+                        {
+                            Word.Cell startCell = table.Cell(startRow, startCol);
+                            Word.Cell endCell = table.Cell(endRow, endCol);
+                            startCell.Merge(endCell);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 合并单元格({startRow},{startCol})->({endRow},{endCol})失败：{ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 应用单元格合并失败：{ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// 设置表格默认字体颜色（TableFontColor）
+        /// 应该在更新单元格内容之前调用，这样HTML中的颜色可以覆盖默认颜色
+        /// </summary>
+        private static UpdateResult SetTableFontColor(Word.Table table, TableConfig config)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(config.Table?.TableFontColor))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] XML中没有提供TableFontColor，跳过默认字体颜色设置");
+                    return new UpdateResult { Success = true, Error = null };
+                }
+
+                int colorValue = Convert.ToInt32(config.Table.TableFontColor, 16);
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ===== 开始设置表格默认字体颜色 =====");
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 颜色值：{config.Table.TableFontColor} (0x{colorValue:X6})");
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 表格尺寸：{table.Rows.Count}行 × {table.Columns.Count}列");
+
+                int appliedCount = 0;
+                for (int r = 1; r <= table.Rows.Count; r++)
+                {
+                    for (int c = 1; c <= table.Columns.Count; c++)
+                    {
+                        try
+                        {
+                            Word.Cell cell = table.Cell(r, c);
+                            if (cell.RowIndex == r && cell.ColumnIndex == c)
+                            {
+                                // 只更新非合并单元格或合并单元格的起始单元格
+                                cell.Range.Font.Color = (Word.WdColor)colorValue;
+                                appliedCount++;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 设置单元格({r},{c})默认字体颜色失败：{ex.Message}");
+                        }
+                    }
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ✅ 表格默认字体颜色设置完成，共应用了 {appliedCount} 个单元格");
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ===== 表格默认字体颜色设置完成 =====");
+                return new UpdateResult { Success = true, Error = null };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ 设置表格默认字体颜色失败：{ex.Message}");
+                return new UpdateResult { Success = false, Error = ex.Message };
+            }
+        }
+
+        /// <summary>
+        /// 更新通用格式（列宽等，不包含字体颜色）
+        /// </summary>
+        private static UpdateResult UpdateGeneralFormat(Word.Table table, TableConfig config)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ===== 开始更新通用格式（列宽等）=====");
+                
+                // 更新列宽
+                if (config.Table?.ColWidths != null && config.Table.ColWidths.Count > 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 开始设置列宽，XML中有 {config.Table.ColWidths.Count} 个列宽值");
+                    for (int i = 0; i < config.Table.ColWidths.Count && i < table.Columns.Count; i++)
+                    {
+                        try
+                        {
+                            table.Columns[i + 1].Width = config.Table.ColWidths[i];
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] ✅ 设置第{i + 1}列宽度：{config.Table.ColWidths[i]}");
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ 设置列{i + 1}宽度失败：{ex.Message}");
+                        }
+                    }
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] XML中没有提供ColWidths，跳过列宽设置");
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ===== 通用格式更新完成 =====");
+                return new UpdateResult { Success = true, Error = null };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ 更新通用格式失败：{ex.Message}");
+                return new UpdateResult { Success = false, Error = ex.Message };
+            }
+        }
+
+        /// <summary>
+        /// 使用Word的MSHTML引擎注入HTML内容
+        /// </summary>
+        private static UpdateResult InjectHtml(Word.Range range, string htmlContent)
+        {
+            try
+            {
+                // 问题分析：
+                // 1. Word单元格本身有一个段落标记（空行）
+                // 2. 插入HTML时，Word可能会将多个<span>解析为多个段落，每个段落有一个段落标记（空行）
+                // 3. 结果：单元格本身的段落标记 + HTML产生的段落标记 = 多个空行
+                
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] InjectHtml: 开始注入HTML内容");
+                System.Diagnostics.Debug.WriteLine($"[DEBUG]   HTML内容：{htmlContent}");
+                
+                // 检查HTML中是否包含颜色设置
+                var colorMatches = System.Text.RegularExpressions.Regex.Matches(htmlContent, @"color\s*:\s*([^;'""]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (colorMatches.Count > 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]   检测到 {colorMatches.Count} 个颜色设置：");
+                    foreach (System.Text.RegularExpressions.Match match in colorMatches)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]     颜色：{match.Groups[1].Value.Trim()}");
+                    }
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]   这些颜色会覆盖默认的TableFontColor");
+                }
+                
+                string fullHtml = $"<html><body>{htmlContent}</body></html>";
+                string tempFile = Path.GetTempFileName() + ".htm";
+                File.WriteAllText(tempFile, fullHtml, Encoding.UTF8);
+                System.Diagnostics.Debug.WriteLine($"[DEBUG]   临时HTML文件：{tempFile}");
+
+                // 直接替换内容，而不是先清空再插入
+                // 获取第一个段落的内容部分（不包括段落标记），用InsertFile替换它
+                Word.Range replaceRange = null;
+                if (range.Paragraphs.Count >= 1)
+                {
+                    Word.Range firstPara = range.Paragraphs[1].Range;
+                    string firstParaText = firstPara.Text;
+                    
+                    // 设置Range为第一个段落的内容部分（不包括段落标记）
+                    if (firstParaText.EndsWith("\r"))
+                    {
+                        // 排除段落标记
+                        replaceRange = range.Document.Range(firstPara.Start, firstPara.End - 1);
+                    }
+                    else
+                    {
+                        replaceRange = firstPara;
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]   准备替换第一个段落内容：Start={replaceRange.Start}, End={replaceRange.End}, 原文本长度={replaceRange.Text.Length}");
+                }
+                else
+                {
+                    // 如果没有段落，使用整个Range（但排除最后的段落标记）
+                    replaceRange = range;
+                    if (range.Text.EndsWith("\r"))
+                    {
+                        replaceRange = range.Document.Range(range.Start, range.End - 1);
+                    }
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]   准备替换Range内容：Start={replaceRange.Start}, End={replaceRange.End}, 原文本长度={replaceRange.Text.Length}");
+                }
+                
+                // 使用InsertFile替换Range的内容（如果Range包含内容，InsertFile会替换它，而不是插入）
+                System.Diagnostics.Debug.WriteLine($"[DEBUG]   正在替换HTML内容到Word（直接替换，不清空）...");
+                replaceRange.InsertFile(tempFile, Link: false, Attachment: false);
+
+                File.Delete(tempFile);
+                System.Diagnostics.Debug.WriteLine($"[DEBUG]   临时文件已删除");
+
+                // 立即删除空段落（在修改任何段落之前，避免引用失效）
+                System.Diagnostics.Debug.WriteLine($"[DEBUG]   检查并删除空段落...");
+                int initialParaCount = range.Paragraphs.Count;
+                System.Diagnostics.Debug.WriteLine($"[DEBUG]   InsertFile后，初始段落数：{initialParaCount}");
+                
+                // 从后往前删除空段落（避免索引变化）
+                while (range.Paragraphs.Count > 1)
+                {
+                    int lastParaIndex = range.Paragraphs.Count;
+                    try
+                    {
+                        // 重新获取最后一个段落的引用（避免引用失效）
+                        Word.Range lastPara = range.Paragraphs[lastParaIndex].Range;
+                        string lastParaText = lastPara.Text;
+                        string lastParaTextTrimmed = lastParaText.Trim();
+                        
+                        // 详细的调试信息：分析原始文本的每个字符
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   ===== 段落 {lastParaIndex} 详细分析 =====");
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   原始文本长度：{lastParaText.Length}");
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   原始文本（转义）：'{lastParaText.Replace("\r", "\\r").Replace("\n", "\\n").Replace("\t", "\\t")}'");
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   原始文本每个字符：");
+                        for (int i = 0; i < lastParaText.Length; i++)
+                        {
+                            char c = lastParaText[i];
+                            string charDesc = c == '\r' ? "\\r" : c == '\n' ? "\\n" : c == '\t' ? "\\t" : c == ' ' ? "[空格]" : c.ToString();
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG]     位置 {i}: '{charDesc}' (ASCII: {(int)c}, IsWhiteSpace: {char.IsWhiteSpace(c)}, IsControl: {char.IsControl(c)})");
+                        }
+                        
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   Trim后文本长度：{lastParaTextTrimmed.Length}");
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   Trim后文本（转义）：'{lastParaTextTrimmed.Replace("\r", "\\r").Replace("\n", "\\n").Replace("\t", "\\t")}'");
+                        if (lastParaTextTrimmed.Length > 0)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG]   Trim后文本每个字符：");
+                            for (int i = 0; i < lastParaTextTrimmed.Length; i++)
+                            {
+                                char c = lastParaTextTrimmed[i];
+                                string charDesc = c == '\r' ? "\\r" : c == '\n' ? "\\n" : c == '\t' ? "\\t" : c == ' ' ? "[空格]" : c.ToString();
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG]     位置 {i}: '{charDesc}' (ASCII: {(int)c}, IsWhiteSpace: {char.IsWhiteSpace(c)}, IsControl: {char.IsControl(c)})");
+                            }
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG]   Trim后文本为空字符串");
+                        }
+                        
+                        // 检查是否为空段落（只有段落标记或空白字符）
+                        // Trim后如果为空，或者Trim后只包含空白字符、控制字符等，都认为是空段落
+                        // 控制字符包括：\r、\n、ASCII 7（响铃字符）等Word可能添加的字符
+                        bool check1 = string.IsNullOrEmpty(lastParaTextTrimmed);
+                        bool check2 = string.IsNullOrWhiteSpace(lastParaTextTrimmed);
+                        bool check3 = lastParaTextTrimmed.Length > 0 && lastParaTextTrimmed.All(c => 
+                            c == '\r' || 
+                            c == '\n' || 
+                            char.IsWhiteSpace(c) || 
+                            char.IsControl(c));  // 包括所有控制字符（如ASCII 7）
+                        bool isEmpty = check1 || check2 || check3;
+                        
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   判断条件：");
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]     IsNullOrEmpty: {check1}");
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]     IsNullOrWhiteSpace: {check2}");
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]     All检查（只包含\\r/\\n/空白字符/控制字符）: {check3}");
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   最终判断 isEmpty: {isEmpty}");
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   ===== 段落 {lastParaIndex} 分析完成 =====");
+                        
+                        if (isEmpty)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG]   发现空段落 {lastParaIndex}，原始文本：'{lastParaText.Replace("\r", "\\r").Replace("\n", "\\n")}'，Trim后：'{lastParaTextTrimmed}'，准备删除");
+                            
+                            // 尝试多种方法删除空段落
+                            bool deleted = false;
+                            
+                            // 方法1：直接删除
+                            try
+                            {
+                                lastPara.Delete();
+                                deleted = true;
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG]   ✅ 方法1成功：直接删除空段落 {lastParaIndex}，剩余段落数：{range.Paragraphs.Count}");
+                            }
+                            catch (Exception ex1)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG]   ⚠️ 方法1失败：{ex1.Message}，尝试方法2");
+                                
+                                // 方法2：先Collapse到开始位置，然后删除
+                                try
+                                {
+                                    Word.Range paraRange = range.Paragraphs[lastParaIndex].Range;
+                                    paraRange.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+                                    paraRange.MoveEnd(Word.WdUnits.wdParagraph, 1);
+                                    paraRange.Delete();
+                                    deleted = true;
+                                    System.Diagnostics.Debug.WriteLine($"[DEBUG]   ✅ 方法2成功：Collapse后删除空段落 {lastParaIndex}，剩余段落数：{range.Paragraphs.Count}");
+                                }
+                                catch (Exception ex2)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[DEBUG]   ⚠️ 方法2失败：{ex2.Message}，尝试方法3");
+                                    
+                                    // 方法3：通过设置Text为空来清除内容（如果删除失败，至少清除内容）
+                                    try
+                                    {
+                                        Word.Range paraRange = range.Paragraphs[lastParaIndex].Range;
+                                        // 清除段落内容，设置为空（Word会自动保留段落标记）
+                                        paraRange.Text = "";
+                                        deleted = true;
+                                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   ⚠️ 方法3：无法删除段落 {lastParaIndex}，已清除其内容（段落仍存在但为空）");
+                                    }
+                                    catch (Exception ex3)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   ❌ 方法3也失败：{ex3.Message}，无法处理段落 {lastParaIndex}");
+                                        // 所有方法都失败，跳出循环
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            if (!deleted)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG]   ⚠️ 所有删除方法都失败，停止删除");
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            // 如果不是空段落，停止删除
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG]   段落 {lastParaIndex} 不是空段落（原始文本：'{lastParaText.Replace("\r", "\\r")}'，Trim后：'{lastParaTextTrimmed}'），停止删除");
+                            break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]   ⚠️ 删除段落 {lastParaIndex} 失败：{ex.Message}");
+                        // 如果删除失败，尝试继续处理下一个段落
+                        break;
+                    }
+                }
+                
+                int finalParaCount = range.Paragraphs.Count;
+                System.Diagnostics.Debug.WriteLine($"[DEBUG]   空段落清理完成，最终段落数：{finalParaCount}（删除了 {initialParaCount - finalParaCount} 个空段落）");
+
+                // 打印Word解析后的结构（模拟DOM树+CSS样式）
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ===== Word解析后的结构（类似DOM树+CSS样式）=====");
+                int paragraphCount = range.Paragraphs.Count;
+                System.Diagnostics.Debug.WriteLine($"[DEBUG]   段落数：{paragraphCount}");
+                
+                for (int p = 1; p <= paragraphCount; p++)
+                {
+                    Word.Range paraRange = range.Paragraphs[p].Range;
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]   --- 段落 {p} ---");
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]     文本内容: '{paraRange.Text.Replace("\r", "\\r")}'");
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]     文本长度: {paraRange.Text.Length}");
+                    
+                    // 遍历段落中的所有字符，检查格式变化
+                    int charCount = paraRange.Characters.Count;
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]     字符数: {charCount}");
+                    
+                    // 检查段落级别的格式
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]     段落格式:");
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]       - 字体颜色: {paraRange.Font.Color}");
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]       - 粗体: {paraRange.Font.Bold}");
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]       - 字体名称: {paraRange.Font.Name}");
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG]       - 字体大小: {paraRange.Font.Size}");
+                    
+                    // 尝试获取WordOpenXML来查看内部结构（前500字符）
+                    try
+                    {
+                        string wordXml = range.WordOpenXML;
+                        if (!string.IsNullOrEmpty(wordXml) && wordXml.Length > 0)
+                        {
+                            int previewLength = Math.Min(500, wordXml.Length);
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG]     WordOpenXML预览（前{previewLength}字符）:");
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG]       {wordXml.Substring(0, previewLength)}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]     无法获取WordOpenXML: {ex.Message}");
+                    }
+                    
+                    // 检查格式变化点（通过遍历字符）
+                    if (charCount > 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG]     格式变化点分析:");
+                        Word.WdColor lastColor = (Word.WdColor)(-1);
+                        int lastBold = -1;
+                        int formatChangeCount = 0;
+                        
+                        for (int i = 1; i <= Math.Min(charCount, 100); i++) // 最多检查100个字符
+                        {
+                            try
+                            {
+                                Word.Range charRange = paraRange.Characters[i];
+                                Word.WdColor currentColor = charRange.Font.Color;
+                                int currentBold = charRange.Font.Bold;
+                                
+                                if (currentColor != lastColor || currentBold != lastBold)
+                                {
+                                    formatChangeCount++;
+                                    string charText = charRange.Text.Replace("\r", "\\r");
+                                    System.Diagnostics.Debug.WriteLine($"[DEBUG]       位置 {i}: 字符='{charText}', 颜色={currentColor}, 粗体={currentBold}");
+                                    lastColor = currentColor;
+                                    lastBold = currentBold;
+                                    
+                                    if (formatChangeCount >= 10) // 最多显示10个格式变化点
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"[DEBUG]       ... (还有更多格式变化点)");
+                                        break;
+                                    }
+                                }
+                            }
+                            catch
+                            {
+                                // 忽略单个字符访问失败
+                            }
+                        }
+                    }
+                }
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ===== Word解析结构打印完成 =====");
+                
+                // 空段落已经在InsertFile后立即删除了，这里只需要确认最终结果
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ✅ HTML注入成功，最终段落数：{range.Paragraphs.Count}");
+
+                return new UpdateResult { Success = true, Error = null };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] ❌ HTML注入失败：{ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 异常详情：{ex}");
+                return new UpdateResult { Success = false, Error = $"HTML注入失败: {ex.Message}" };
+            }
+        }
+    }
+}
+

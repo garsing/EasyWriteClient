@@ -1,0 +1,43 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Word = Microsoft.Office.Interop.Word;
+
+namespace WordAddIn1
+{
+    public static class F_FormatTransferTool
+    {
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+            toolRegistry["F_format_transfer"] = async (args) =>
+            {
+                try
+                {
+                    if (wordApplication == null)
+                    {
+                        return new ToolResult { Success = false, Error = "Word应用程序不可用" };
+                    }
+
+                    dynamic wordApp = wordApplication;
+                    string wordFilePath = args != null && args.ContainsKey("word_file_path")
+                        ? args["word_file_path"]?.ToString()
+                        : null;
+                    string targetDocumentName = args != null && args.ContainsKey("target_document_name")
+                        ? args["target_document_name"]?.ToString()
+                        : null;
+
+                    return await FormatTransferHelper.RunFormatTransferAsync(
+                        (Word.Application)wordApp,
+                        wordFilePath,
+                        targetDocumentName);
+                }
+                catch (Exception ex)
+                {
+                    return new ToolResult { Success = false, Error = $"格式转移失败: {ex.Message}" };
+                }
+            };
+        }
+    }
+}

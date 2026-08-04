@@ -1,0 +1,420 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
+using YamlDotNet.RepresentationModel;
+using Newtonsoft.Json;
+
+namespace WordAddIn1
+{
+    /// <summary>
+    /// YAML文件修改工具
+    /// 修改指定YAML文件中的节点内容
+    /// </summary>
+    public static class F_ModifyYamlFileTool
+    {
+        /// <summary>
+        /// 注册YAML文件修改工具
+        /// </summary>
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+                        toolRegistry["F_modify_yaml_file"] = async (args) =>
+            {
+                await Task.CompletedTask; // 确保异步执行
+
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] modify_yaml_file工具开始执行");
+
+                    string filename = args.ContainsKey("filename") ? args["filename"]?.ToString() : "";
+                    string nodePath = args.ContainsKey("node_path") ? args["node_path"]?.ToString() : "";
+                    string newContent = args.ContainsKey("new_content") ? args["new_content"]?.ToString() : "";
+
+                    if (string.IsNullOrEmpty(filename))
+                    {
+                        return new ToolResult { Success = false, Error = "必须提供filename参数（YAML文件名）" };
+                    }
+
+                    if (string.IsNullOrEmpty(nodePath))
+                    {
+                        return new ToolResult { Success = false, Error = "必须提供node_path参数（节点路径）" };
+                    }
+
+                    if (newContent == null)
+                    {
+                        return new ToolResult { Success = false, Error = "必须提供new_content参数（新的内容）" };
+                    }
+
+                    // 获取用户名
+                    var userService = UserService.Instance;
+                    string username = userService.IsLoggedIn ? userService.UserName : "anonymous";
+
+                    // 构建format_files目录路径（相对路径）
+                    string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                    string formatFilesPath;
+
+                    // 在开发环境中，AppDomain.CurrentDomain.BaseDirectory 指向 bin\Debug
+                    // 我们需要向上两级目录到达项目根目录
+                    if (baseDir.Contains("bin\\Debug") || baseDir.Contains("bin/Debug"))
+                    {
+                        // 从 bin\Debug 向上两级到达项目根目录
+                        string debugDir = Path.GetDirectoryName(baseDir.TrimEnd('\\', '/'));
+                        string projectRoot = Path.GetDirectoryName(debugDir);
+                        formatFilesPath = Path.Combine(projectRoot, "tmp", username, "format_files");
+                    }
+                    else
+                    {
+                        // 在生产环境中，使用标准的相对路径
+                        formatFilesPath = Path.Combine(baseDir, "tmp", username, "format_files");
+                    }
+
+                    // 构建完整的文件路径
+                    string filePath = Path.Combine(formatFilesPath, filename);
+
+                    if (!File.Exists(filePath))
+                    {
+                        // 尝试从后端下载文件
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 本地YAML文件不存在，尝试从云端下载: {filename}");
+                        bool downloadSuccess = await FileDownloader.DownloadFileFromUserDirectory(filename, filePath);
+
+                        if (!downloadSuccess)
+                        {
+                            return new ToolResult { Success = false, Error = $"文件不存在: {filename}（在format_files目录和云端均未找到）" };
+                        }
+
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 成功从云端下载YAML文件: {filename}");
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 修改YAML文件: {filePath}");
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 节点路径: {nodePath}");
+
+                    // 读取并解析YAML文件
+                    string yamlContent = File.ReadAllText(filePath, Encoding.UTF8);
+                    var yamlStream = new YamlStream();
+                    yamlStream.Load(new StringReader(yamlContent));
+
+                    if (yamlStream.Documents.Count == 0)
+                    {
+                        return new ToolResult { Success = false, Error = "YAML文件为空或格式无效" };
+                    }
+
+                    // 获取根节点
+                    var rootNode = yamlStream.Documents[0].RootNode as YamlMappingNode;
+                    if (rootNode == null)
+                    {
+                        return new ToolResult { Success = false, Error = "YAML文件的根节点不是映射节点" };
+                    }
+
+                    // 解析节点路径
+                    string[] pathParts = nodePath.Split('.');
+                    YamlNode currentNode = rootNode;
+                    YamlNode parentNode = null;
+                    string lastKey = null;
+
+                    // 遍历路径，找到目标节点
+                    for (int i = 0; i < pathParts.Length; i++)
+                    {
+                        string part = pathParts[i];
+                        bool isLastPart = (i == pathParts.Length - 1);
+
+                        if (currentNode is YamlMappingNode mappingNode)
+                        {
+                            if (!mappingNode.Children.ContainsKey(new YamlScalarNode(part)))
+                            {
+                                return new ToolResult { Success = false, Error = $"节点路径不存在: {string.Join(".", pathParts.Take(i + 1))}" };
+                            }
+
+                            parentNode = currentNode;
+                            lastKey = part;
+                            currentNode = mappingNode.Children[new YamlScalarNode(part)];
+                        }
+                        else if (currentNode is YamlSequenceNode sequenceNode)
+                        {
+                            if (!int.TryParse(part, out int index) || index < 0 || index >= sequenceNode.Children.Count)
+                            {
+                                return new ToolResult { Success = false, Error = $"数组索引无效: {part}，数组长度为: {sequenceNode.Children.Count}" };
+                            }
+
+                            parentNode = currentNode;
+                            lastKey = part;
+                            currentNode = sequenceNode.Children[index];
+                        }
+                        else
+                        {
+                            return new ToolResult { Success = false, Error = $"节点路径中的中间节点类型不支持: {currentNode.GetType().Name}" };
+                        }
+                    }
+
+                    // 修改节点内容
+                    YamlNode newNode;
+                    if (newContent == "null" || newContent == "~")
+                    {
+                        newNode = new YamlScalarNode("~");
+                    }
+                    else if (int.TryParse(newContent, out int intValue))
+                    {
+                        newNode = new YamlScalarNode(intValue.ToString());
+                    }
+                    else if (float.TryParse(newContent, out float floatValue))
+                    {
+                        newNode = new YamlScalarNode(floatValue.ToString());
+                    }
+                    else if ((newContent.StartsWith("[") && newContent.EndsWith("]")) ||
+                             (newContent.StartsWith("{") && newContent.EndsWith("}")))
+                    {
+                        // 尝试解析为JSON数组或对象
+                        try
+                        {
+                            var jsonData = JsonConvert.DeserializeObject(newContent);
+
+                            // 将JSON转换为YAML节点
+                            newNode = ConvertJsonToYamlNode(jsonData);
+                        }
+                        catch (Exception jsonEx)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] JSON解析失败: {jsonEx.Message}，回退到字符串处理");
+                            newNode = new YamlScalarNode(newContent);
+                        }
+                    }
+                    else
+                    {
+                        newNode = new YamlScalarNode(newContent);
+                    }
+
+                    // 替换节点
+                    if (parentNode is YamlMappingNode mappingParent)
+                    {
+                        mappingParent.Children[new YamlScalarNode(lastKey)] = newNode;
+                    }
+                    else if (parentNode is YamlSequenceNode sequenceParent && int.TryParse(lastKey, out int arrayIndex))
+                    {
+                        sequenceParent.Children[arrayIndex] = newNode;
+                    }
+                    else
+                    {
+                        return new ToolResult { Success = false, Error = "无法确定父节点类型进行替换" };
+                    }
+
+                    // 保存修改后的YAML文件
+                    var stringBuilder = new StringBuilder();
+                    using (var writer = new StringWriter(stringBuilder))
+                    {
+                        yamlStream.Save(writer, false);
+                    }
+
+                    string updatedYamlContent = stringBuilder.ToString();
+                    File.WriteAllText(filePath, updatedYamlContent, Encoding.UTF8);
+
+                    // 上传修改后的YAML文件到用户工作目录
+                    bool uploadSuccess = await UploadModifiedYamlFileToUserDirectory(filePath, filename);
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 修改后的YAML文件上传结果: {uploadSuccess}");
+
+                    // 获取文件信息
+                    FileInfo fileInfo = new FileInfo(filePath);
+
+                    var result = new ToolResult
+                    {
+                        Success = true,
+                        Data = new
+                        {
+                            filename = filename,
+                            file_path = filePath,
+                            node_path = nodePath,
+                            old_content = GetNodeValueAsString(currentNode),
+                            new_content = newContent,
+                            file_size = fileInfo.Length,
+                            modified = fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                            directory = "format_files",
+                            upload_success = uploadSuccess,
+                            message = $"YAML文件节点修改成功：{filename} -> {nodePath}{(uploadSuccess ? " 并同步到云端" : "（同步失败）")}"
+                        }
+                    };
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] modify_yaml_file工具执行成功，已修改节点 {nodePath}");
+                    return result;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] modify_yaml_file工具执行失败: {ex.Message}");
+                    return new ToolResult { Success = false, Error = $"YAML文件修改失败: {ex.Message}" };
+                }
+            };
+}
+
+
+
+        /// <summary>
+        /// 将JSON对象转换为YAML节点
+        /// </summary>
+        private static YamlNode ConvertJsonToYamlNode(object jsonData)
+        {
+            if (jsonData == null)
+            {
+                return new YamlScalarNode("~");
+            }
+            else if (jsonData is Newtonsoft.Json.Linq.JArray jsonArray)
+            {
+                var sequenceNode = new YamlSequenceNode();
+                foreach (var item in jsonArray)
+                {
+                    sequenceNode.Children.Add(ConvertJsonToYamlNode(item));
+                }
+                return sequenceNode;
+            }
+            else if (jsonData is Newtonsoft.Json.Linq.JObject jsonObject)
+            {
+                var mappingNode = new YamlMappingNode();
+                foreach (var property in jsonObject.Properties())
+                {
+                    var keyNode = new YamlScalarNode(property.Name);
+                    var valueNode = ConvertJsonToYamlNode(property.Value);
+                    mappingNode.Children.Add(keyNode, valueNode);
+                }
+                return mappingNode;
+            }
+            else if (jsonData is Newtonsoft.Json.Linq.JValue jsonValue)
+            {
+                return new YamlScalarNode(jsonValue.ToString());
+            }
+            else
+            {
+                // 处理基本类型
+                return new YamlScalarNode(jsonData.ToString());
+            }
+        }
+
+        /// <summary>
+        /// 将YAML节点转换为字符串表示
+        /// </summary>
+        private static string GetNodeValueAsString(YamlNode node)
+        {
+            if (node is YamlScalarNode scalarNode)
+            {
+                return scalarNode.Value;
+            }
+            else if (node is YamlSequenceNode sequenceNode)
+            {
+                return $"[{string.Join(", ", sequenceNode.Children.Select(GetNodeValueAsString))}]";
+            }
+            else if (node is YamlMappingNode mappingNode)
+            {
+                return "{...}";
+            }
+            else
+            {
+                return node.ToString();
+            }
+        }
+
+        /// <summary>
+        /// 上传修改后的YAML文件到用户工作目录
+        /// </summary>
+        private static async Task<bool> UploadModifiedYamlFileToUserDirectory(string filePath, string filename)
+        {
+            try
+            {
+                // 检查用户是否已登录
+                var userService = UserService.Instance;
+                if (!userService.CheckLoginStatus())
+                {
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] 用户未登录，跳过文件上传");
+                    return false;
+                }
+
+                // 检查文件是否存在
+                if (!File.Exists(filePath))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] YAML文件不存在: {filePath}");
+                    return false;
+                }
+
+                // 获取API配置
+                string baseUrl = ConfigManager.Config.Api.BaseUrl;
+                string uploadUrl = $"{baseUrl}/files/upload";
+
+                using (var httpClient = new HttpClient())
+                {
+                    // 设置超时时间
+                    httpClient.Timeout = TimeSpan.FromSeconds(30);
+
+                    // 创建multipart/form-data内容
+                    using (var formData = new MultipartFormDataContent())
+                    using (var fileStream = File.OpenRead(filePath))
+                    using (var streamContent = new StreamContent(fileStream))
+                    {
+                        // 设置文件内容
+                        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                        formData.Add(streamContent, "file", filename);
+
+                        // 设置请求头
+                        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", userService.AccessToken);
+                        httpClient.DefaultRequestHeaders.Add("X-Username", userService.UserName);
+
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 正在上传修改后的YAML文件到: {uploadUrl}");
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 用户名: {userService.UserName}");
+
+                        // 发送上传请求
+                        var response = await httpClient.PostAsync(uploadUrl, formData);
+                        var responseContent = await response.Content.ReadAsStringAsync();
+
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 上传响应状态码: {response.StatusCode}");
+
+                        if (response.IsSuccessStatusCode)
+                        {
+                            // 解析响应
+                            var uploadResponse = JsonConvert.DeserializeObject<UploadResponse>(responseContent);
+                            if (uploadResponse != null && uploadResponse.success)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 文件上传成功: {uploadResponse.data?.filename ?? filename}");
+                                return true;
+                            }
+                            else
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 文件上传失败: {uploadResponse?.message ?? "未知错误"}");
+                                return false;
+                            }
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 文件上传HTTP错误: {response.StatusCode} - {responseContent}");
+                            return false;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 文件上传异常: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 文件上传API响应模型
+        /// </summary>
+        private class UploadResponse
+        {
+            public bool success { get; set; }
+            public string message { get; set; }
+            public UploadData data { get; set; }
+        }
+
+        private class UploadData
+        {
+            public string filename { get; set; }
+            public string original_filename { get; set; }
+            public long size { get; set; }
+            public string path { get; set; }
+            public string uploaded_at { get; set; }
+            public bool overwritten { get; set; }
+        }
+    }
+}

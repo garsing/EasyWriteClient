@@ -1,0 +1,191 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Word = Microsoft.Office.Interop.Word;
+
+namespace WordAddIn1
+{
+    /// <summary>
+    /// 位置查找工具
+    /// 提供两种方式查找位置：文本搜索（返回文本结尾处的位置）和光标位置
+    /// </summary>
+    public static class F_FindPositionTool
+    {
+        /// <summary>
+        /// 注册位置查找工具
+        /// </summary>
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+            toolRegistry["F_find_position"] = async (args) =>
+            {
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] find_position工具开始执行");
+
+                    if (wordApplication == null)
+                    {
+                        return new ToolResult { Success = false, Error = "Word应用程序未初始化" };
+                    }
+
+                    Word.Application app = wordApplication as Word.Application;
+                    if (app == null || app.Documents == null || app.Documents.Count == 0)
+                    {
+                        return new ToolResult { Success = false, Error = "没有打开的Word文档" };
+                    }
+
+                    Word.Document doc = app.ActiveDocument;
+                    if (doc == null)
+                    {
+                        return new ToolResult { Success = false, Error = "无法获取活动文档" };
+                    }
+
+                    string mode = args.ContainsKey("mode") ? args["mode"]?.ToString() : "text_search";
+
+                    if (mode == "cursor")
+                    {
+                        // 获取光标位置
+                        int cursorPosition = app.Selection?.Start ?? doc.Content.Start;
+                        
+                        var result = new
+                        {
+                            mode = "cursor",
+                            position = cursorPosition,
+                            selection_start = app.Selection?.Start ?? cursorPosition,
+                            selection_end = app.Selection?.End ?? cursorPosition,
+                            has_selection = app.Selection != null && app.Selection.Start != app.Selection.End
+                        };
+
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 光标位置: {cursorPosition}");
+                        return new ToolResult { Success = true, Data = result };
+                    }
+                    else if (mode == "text_search")
+                    {
+                        // 文本搜索模式
+                        if (!args.ContainsKey("search_text") || string.IsNullOrWhiteSpace(args["search_text"]?.ToString()))
+                        {
+                            return new ToolResult { Success = false, Error = "文本搜索模式需要提供 search_text 参数" };
+                        }
+
+                        string searchText = args["search_text"].ToString();
+                        List<int> positions = FindTextEndPositions(doc, searchText);
+
+                        if (positions.Count == 0)
+                        {
+                            return new ToolResult 
+                            { 
+                                Success = false, 
+                                Error = $"未找到文本 '{searchText}'" 
+                            };
+                        }
+
+                        var result = new
+                        {
+                            mode = "text_search",
+                            search_text = searchText,
+                            positions = positions,
+                            match_count = positions.Count,
+                            first_position = positions.FirstOrDefault(),
+                            last_position = positions.LastOrDefault()
+                        };
+
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 找到 {positions.Count} 个匹配，位置: {string.Join(", ", positions)}");
+                        return new ToolResult { Success = true, Data = result };
+                    }
+                    else
+                    {
+                        return new ToolResult { Success = false, Error = $"不支持的查找模式: {mode}" };
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] find_position工具执行失败: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 异常堆栈: {ex.StackTrace}");
+                    return new ToolResult { Success = false, Error = $"查找位置失败: {ex.Message}" };
+                }
+            };
+        }
+
+        /// <summary>
+        /// 查找文本的所有匹配位置（返回文本结尾处的位置）
+        /// </summary>
+        /// <param name="doc">Word文档</param>
+        /// <param name="searchText">要搜索的文本</param>
+        /// <returns>所有匹配文本结尾处的位置列表</returns>
+        private static List<int> FindTextEndPositions(Word.Document doc, string searchText)
+        {
+            List<int> positions = new List<int>();
+
+            try
+            {
+                if (doc == null || string.IsNullOrEmpty(searchText))
+                {
+                    return positions;
+                }
+
+                // 创建搜索范围（整个文档）
+                Word.Range searchRange = doc.Content;
+                Word.Range searchRangeCopy = searchRange.Duplicate;
+
+                // 设置查找参数
+                Word.Find find = searchRangeCopy.Find;
+                find.ClearFormatting();
+                find.Text = searchText;
+                find.Forward = true;
+                find.Wrap = Word.WdFindWrap.wdFindStop;
+                find.MatchCase = false;
+                find.MatchWholeWord = false;
+                find.MatchWildcards = false;
+                find.MatchSoundsLike = false;
+                find.MatchAllWordForms = false;
+
+                // 循环查找所有匹配
+                int findCount = 0;
+                int lastMatchEnd = -1;
+
+                while (find.Execute())
+                {
+                    int currentMatchEnd = searchRangeCopy.End;
+
+                    // 检查是否是重复的匹配（防止死循环）
+                    if (currentMatchEnd == lastMatchEnd)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 检测到重复匹配，停止搜索以防止死循环");
+                        break;
+                    }
+
+                    // 保存匹配文本的结尾位置
+                    positions.Add(currentMatchEnd);
+                    findCount++;
+
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 找到第{findCount}个匹配: 文本结尾位置 {currentMatchEnd}");
+
+                    // 记录这次匹配的位置
+                    lastMatchEnd = currentMatchEnd;
+
+                    // 移动到下一个位置继续搜索（强制前进至少一个字符）
+                    int nextStart = Math.Max(currentMatchEnd, searchRangeCopy.Start + 1);
+                    searchRangeCopy.Start = nextStart;
+                    searchRangeCopy.End = searchRange.End;
+
+                    // 如果已经到达搜索范围的末尾，停止
+                    if (searchRangeCopy.Start >= searchRange.End)
+                    {
+                        break;
+                    }
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] 总共找到 {positions.Count} 个匹配");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEBUG] FindTextEndPositions 错误: {ex.Message}");
+            }
+
+            return positions;
+        }
+    }
+}
+

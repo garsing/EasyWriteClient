@@ -1,0 +1,149 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Word = Microsoft.Office.Interop.Word;
+
+namespace WordAddIn1
+{
+    /// <summary>
+    /// 按句子划分文档内容工具
+    /// 将Word文档按句子划分，并返回display_contents
+    /// </summary>
+    public static class F_GetDocumentContentTool
+    {
+        /// <summary>
+        /// 注册按句子划分文档内容工具
+        /// </summary>
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+                        toolRegistry["F_get_document_content"] = async (args) =>
+            {
+                try
+                {
+                    if (wordApplication == null)
+                    {
+                        return new ToolResult { Success = false, Error = "Word应用程序实例不可用" };
+                    }
+
+                    dynamic wordApp = wordApplication;
+
+                    if (wordApp.ActiveDocument == null)
+                    {
+                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
+                    }
+
+                    // 直接调用 WordDocumentExtractor.ProcessDocument
+                    var processingResult = WordDocumentExtractor.ProcessDocument(wordApp.ActiveDocument);
+                    
+                    // 根据处理方式构建返回内容
+                    string documentContent = "";
+                    if (processingResult.ProcessingMethod == "Local")
+                    {
+                        // 本地处理：返回唯一一个chunk的DisplayContent
+                        if (processingResult.ChunkInfo != null && processingResult.ChunkInfo.Count > 0)
+                        {
+                            documentContent = processingResult.ChunkInfo[0].DisplayContent ?? "";
+                        }
+                    }
+                    else if (processingResult.ProcessingMethod == "API")
+                    {
+                        // API处理：返回所有chunk的Summary，并标明是第几个分块
+                        // ⚠️ 重要：返回的是摘要（Summary），不是原文内容（DisplayContent）
+                        var summaryParts = new List<string>();
+                        summaryParts.Add("⚠️ 重要提示：以下内容是各分块的摘要（Summary），不是文档的原文内容。如需获取原文内容，请使用 F_get_chunk_display_content 工具。");
+                        summaryParts.Add("");
+                        
+                        if (processingResult.ChunkInfo != null && processingResult.ChunkInfo.Count > 0)
+                        {
+                            for (int i = 0; i < processingResult.ChunkInfo.Count; i++)
+                            {
+                                var chunkInfo = processingResult.ChunkInfo[i];
+                                string summary = chunkInfo.Summary ?? "";
+                                if (!string.IsNullOrEmpty(summary))
+                                {
+                                    summaryParts.Add($"第{chunkInfo.ChunkIdx}个分块的摘要：{summary}");
+                                }
+                                else
+                                {
+                                    summaryParts.Add($"第{chunkInfo.ChunkIdx}个分块的摘要：（无摘要）");
+                                }
+                            }
+                        }
+                        documentContent = string.Join("\n\n", summaryParts);
+                    }
+                    
+                    // 构建返回数据
+                    string note = "";
+                    if (processingResult.ProcessingMethod == "API")
+                    {
+                        note = "⚠️ 重要提示：当前返回的是各分块的摘要（Summary），不是文档的原文内容（DisplayContent）。摘要仅用于了解文档大致内容，不能用于修改操作。如需获取原文内容进行修改，请使用 F_get_chunk_display_content 工具，输入具体的 chunk_idx 来获取对应分块的完整 DisplayContent。\n\n注意：像[AAAAA-start]和[AAAAA-end]这样的标识不是文档原文的内容，而是原文每一个句子的编号标记，所以在使用F_process_document_actions工具时，表示只用来定位原文内容，new中不要包含[AAAAA-start]和[AAAAA-end]这样的标识。";
+                    }
+                    else
+                    {
+                        note = "注意：像[AAAAA-start]和[AAAAA-end]这样的标识不是文档原文的内容，而是原文每一个句子的编号标记，所以在使用F_process_document_actions工具时，表示只用来定位原文内容，new中不要包含[AAAAA-start]和[AAAAA-end]这样的标识。";
+                    }
+                    
+                    var resultData = new Dictionary<string, object>
+                    {
+                        { "document_content", documentContent },
+                        { "processing_method", processingResult.ProcessingMethod ?? "Unknown" },
+                        { "note", note }
+                    };
+
+                    // 打印工具返回结果到控制台（方便调试）
+                    System.Diagnostics.Debug.WriteLine("");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine("=== F_get_document_content 工具返回 ===");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine($"文档名称: {wordApp.ActiveDocument.Name ?? "未命名文档"}");
+                    System.Diagnostics.Debug.WriteLine($"处理方式: {resultData["processing_method"]}");
+                    System.Diagnostics.Debug.WriteLine($"Chunk Info 数量: {processingResult.ChunkInfo?.Count ?? 0}");
+                    if (processingResult.ChunkInfo != null)
+                    {
+                        for (int i = 0; i < processingResult.ChunkInfo.Count; i++)
+                        {
+                            var chunkInfo = processingResult.ChunkInfo[i];
+                            System.Diagnostics.Debug.WriteLine($"  [Chunk {chunkInfo.ChunkIdx}] Content长度: {chunkInfo.Content?.Length ?? 0} 字符, DisplayContent长度: {chunkInfo.DisplayContent?.Length ?? 0} 字符");
+                            if (processingResult.ProcessingMethod == "API")
+                            {
+                                System.Diagnostics.Debug.WriteLine($"    Summary: {chunkInfo.Summary ?? "(无摘要)"}");
+                            }
+                        }
+                    }
+                    System.Diagnostics.Debug.WriteLine($"返回内容长度: {documentContent.Length} 字符");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine("");
+
+                    // ========== 大模型看到的内容 ==========
+                    // 这是大模型实际接收到的 document_content 内容
+                    System.Diagnostics.Debug.WriteLine("");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine("========== 大模型看到的内容 ==========");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine($"处理方式: {resultData["processing_method"]}");
+                    System.Diagnostics.Debug.WriteLine($"内容长度: {documentContent.Length} 字符");
+                    System.Diagnostics.Debug.WriteLine("------------------------------------------");
+                    System.Diagnostics.Debug.WriteLine("大模型接收到的完整内容：");
+                    System.Diagnostics.Debug.WriteLine("------------------------------------------");
+                    System.Diagnostics.Debug.WriteLine(documentContent);
+                    System.Diagnostics.Debug.WriteLine("------------------------------------------");
+                    System.Diagnostics.Debug.WriteLine("==========================================");
+                    System.Diagnostics.Debug.WriteLine("");
+                    // ========== 大模型看到的内容（结束）==========
+
+                    return new ToolResult
+                    {
+                        Success = true,
+                        Data = resultData
+                    };
+                }
+                catch (Exception ex)
+                {
+                    return new ToolResult { Success = false, Error = $"按句子划分文档内容失败: {ex.Message}" };
+                }
+            };
+}
+    }
+}

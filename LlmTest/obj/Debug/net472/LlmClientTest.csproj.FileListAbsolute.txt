@@ -1,0 +1,11 @@
+C:\project\WordAddIn1\LlmTest\bin\Debug\net472\LlmClientTest.exe.config
+C:\project\WordAddIn1\LlmTest\bin\Debug\net472\LlmClientTest.exe
+C:\project\WordAddIn1\LlmTest\bin\Debug\net472\LlmClientTest.pdb
+C:\project\WordAddIn1\LlmTest\obj\Debug\net472\LlmClientTest.csproj.AssemblyReference.cache
+C:\project\WordAddIn1\LlmTest\obj\Debug\net472\LlmClientTest.GeneratedMSBuildEditorConfig.editorconfig
+C:\project\WordAddIn1\LlmTest\obj\Debug\net472\LlmClientTest.AssemblyInfoInputs.cache
+C:\project\WordAddIn1\LlmTest\obj\Debug\net472\LlmClientTest.AssemblyInfo.cs
+C:\project\WordAddIn1\LlmTest\obj\Debug\net472\LlmClientTest.csproj.CoreCompileInputs.cache
+C:\project\WordAddIn1\LlmTest\obj\Debug\net472\LlmClientTest.exe
+C:\project\WordAddIn1\LlmTest\obj\Debug\net472\LlmClientTest.pdb
+C:\project\WordAddIn1\LlmTest\obj\Debug\net472\LlmClientTest.exe.config

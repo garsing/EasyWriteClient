@@ -1,0 +1,11 @@
+C:\project\WordAddIn1\ParameterTestConsole\bin\Debug\net472\ParameterTestConsole.exe.config
+C:\project\WordAddIn1\ParameterTestConsole\bin\Debug\net472\ParameterTestConsole.exe
+C:\project\WordAddIn1\ParameterTestConsole\bin\Debug\net472\ParameterTestConsole.pdb
+C:\project\WordAddIn1\ParameterTestConsole\obj\Debug\net472\ParameterTestConsole.csproj.AssemblyReference.cache
+C:\project\WordAddIn1\ParameterTestConsole\obj\Debug\net472\ParameterTestConsole.GeneratedMSBuildEditorConfig.editorconfig
+C:\project\WordAddIn1\ParameterTestConsole\obj\Debug\net472\ParameterTestConsole.AssemblyInfoInputs.cache
+C:\project\WordAddIn1\ParameterTestConsole\obj\Debug\net472\ParameterTestConsole.AssemblyInfo.cs
+C:\project\WordAddIn1\ParameterTestConsole\obj\Debug\net472\ParameterTestConsole.csproj.CoreCompileInputs.cache
+C:\project\WordAddIn1\ParameterTestConsole\obj\Debug\net472\ParameterTestConsole.exe
+C:\project\WordAddIn1\ParameterTestConsole\obj\Debug\net472\ParameterTestConsole.pdb
+C:\project\WordAddIn1\ParameterTestConsole\obj\Debug\net472\ParameterTestConsole.exe.config
