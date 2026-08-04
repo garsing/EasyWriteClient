@@ -58,13 +58,14 @@ namespace WordAddIn1
 
         private static readonly SemaphoreSlim InvokeGate = new SemaphoreSlim(1, 1);
 
+        /// <summary>
+        /// 注入 Word.Application。Desktop 启动时可为 null：仍须建立 Registry，
+        /// 以便 document.open（F_open_word_document）按需 new Word；否则会误报 not ready。
+        /// </summary>
         public void SetWordApplication(object wordApplication)
         {
             _wordApplication = wordApplication;
-            if (_wordApplication != null)
-            {
-                _registry = new WsMethodRegistry(_wordApplication);
-            }
+            _registry = new WsMethodRegistry(_wordApplication);
         }
 
         public async Task ConnectAsync(string httpBaseUrl, string accessToken, string username)

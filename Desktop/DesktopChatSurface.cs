@@ -44,11 +44,25 @@ namespace EasyWriteClient.Desktop
             Controls.Add(_webView);
             UserService.Instance.OnUserLoggedIn += OnUserLoggedIn;
             UserService.Instance.OnUserLoggedOut += OnUserLoggedOut;
+            HostCallbacks.WordApplicationResolved = OnWordApplicationResolved;
             Disposed += (_, __) =>
             {
                 UserService.Instance.OnUserLoggedIn -= OnUserLoggedIn;
                 UserService.Instance.OnUserLoggedOut -= OnUserLoggedOut;
+                if (ReferenceEquals(HostCallbacks.WordApplicationResolved, (Action<object>)OnWordApplicationResolved))
+                {
+                    HostCallbacks.WordApplicationResolved = null;
+                }
             };
+        }
+
+        private void OnWordApplicationResolved(object wordApp)
+        {
+            WordHost.Attach(wordApp);
+            if (_wsClient != null)
+            {
+                _wsClient.SetWordApplication(wordApp);
+            }
         }
 
         public async Task InitializeAsync()
@@ -316,17 +330,15 @@ namespace EasyWriteClient.Desktop
                 ? WordHost.GetWordApplicationForTools()
                 : WordHost.TryGetExistingWordApplication();
 
-            // wordApp 可为 null：纯聊天不强制 Word；工具 invoke 时再 create
+            // wordApp 可为 null：纯聊天不强制 Word；但必须挂上 WS Registry，
+            // 否则 document.open 在进工具前就被 WsClient 以 not ready 拒绝。
             _mcpClient = new McpClient(ApiKey, wordApp);
             if (_wsClient == null)
             {
                 _wsClient = new WsClient(this);
             }
 
-            if (wordApp != null)
-            {
-                _wsClient.SetWordApplication(wordApp);
-            }
+            _wsClient.SetWordApplication(wordApp);
         }
 
         private void SyncConversationContext()

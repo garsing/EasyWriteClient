@@ -84,6 +84,27 @@ namespace EasyWriteClient.Desktop
             return GetOrAttach(createIfMissing: true);
         }
 
+        /// <summary>F_open 等路径已拿到 Application 时写回缓存。</summary>
+        public static void Attach(object wordApplication)
+        {
+            if (!(wordApplication is Word.Application app))
+            {
+                return;
+            }
+
+            lock (Gate)
+            {
+                _app = app;
+                try
+                {
+                    DocumentCheckpointService.SetWordApplication(_app);
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
         /// <summary>
         /// 关闭 Desktop：清理渠道；不 Quit 用户 Word。
         /// 仅对本进程 new 出的、且无打开文档时尝试 Quit（仍保守：默认不 Quit）。

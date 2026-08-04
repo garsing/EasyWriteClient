@@ -50,6 +50,16 @@ namespace WordAddIn1
                         return Fail(resolveError);
                     }
 
+                    // Desktop 启动未注入 Word：此处可能刚 new 出 Application，写回宿主供后续工具使用
+                    try
+                    {
+                        DocumentCheckpointService.SetWordApplication(app);
+                        HostCallbacks.RaiseWordApplicationResolved(app);
+                    }
+                    catch (Exception)
+                    {
+                    }
+
                     bool fileExists = File.Exists(fullPath);
                     if (createBlank)
                     {
