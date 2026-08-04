@@ -125,6 +125,7 @@ namespace WordAddIn1
             if (!string.IsNullOrEmpty(uuid))
             {
                 SessionsByUuid.Remove(uuid);
+                ChannelRegistry.RemoveByDocUuid(uuid);
                 if (string.Equals(_activeDocUuid, uuid, StringComparison.Ordinal))
                 {
                     _activeSession = null;
@@ -145,6 +146,7 @@ namespace WordAddIn1
             _activeDocUuid = "";
             DocumentIdentity.ClearAll();
             DocumentCheckpointService.ClearAllOnShutdown();
+            ChannelRegistry.ClearAll();
             System.Diagnostics.Debug.WriteLine("[DocumentState] all sessions cleared on shutdown");
         }
 

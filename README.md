@@ -4,7 +4,7 @@
 
 | 目录 | 说明 |
 |------|------|
-| `Shared/` | 公用类库；Channels 骨架 + McpTools / DocumentMapping / Client / Auth 等（B1） |
+| `Shared/` | 公用类库；Channels（含 WordChannel / ResolveWordDocument）+ McpTools / DocumentMapping / Client / Auth 等 |
 | `Plugin/` | 薄 VSTO 宿主（原 `WordAddIn2`）；工程文件暂仍为 `WordAddIn1.csproj` |
 | `Desktop/` | WinForms 桌面壳「易写」；可单独 F5 |
 

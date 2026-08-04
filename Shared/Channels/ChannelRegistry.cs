@@ -1,17 +1,19 @@
 using System;
 using System.Collections.Generic;
+using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
     /// 进程级操作渠道注册表。与 conversation 不强绑定（D15）。
-    /// B0：骨架；B2 起接入 WordChannel / Document。
     /// </summary>
     public static class ChannelRegistry
     {
         private static readonly object Gate = new object();
         private static readonly Dictionary<string, IOperationChannel> Channels =
             new Dictionary<string, IOperationChannel>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, string> DocUuidToChannelId =
+            new Dictionary<string, string>(StringComparer.Ordinal);
         private static string _defaultChannelId;
 
         public static string DefaultChannelId
@@ -22,6 +24,43 @@ namespace WordAddIn1
                 {
                     return _defaultChannelId;
                 }
+            }
+        }
+
+        /// <summary>
+        /// 为 Word 文档查找或创建渠道；channel_id 形如 <c>word:{doc_uuid}</c>。
+        /// </summary>
+        public static WordChannel CreateOrGetWord(Word.Document doc, string filePath = null)
+        {
+            if (doc == null)
+            {
+                throw new ArgumentNullException(nameof(doc));
+            }
+
+            string uuid = DocumentIdentity.EnsureUuid(doc);
+            DocumentIdentity.EnsureCloseHandler(doc);
+
+            lock (Gate)
+            {
+                if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
+                    && Channels.TryGetValue(existingId, out IOperationChannel existing)
+                    && existing is WordChannel wordChannel)
+                {
+                    wordChannel.UpdateDocument(doc, filePath);
+                    return wordChannel;
+                }
+
+                string channelId = "word:" + uuid;
+                var created = new WordChannel(channelId, uuid, doc, filePath);
+                Channels[channelId] = created;
+                DocUuidToChannelId[uuid] = channelId;
+
+                if (string.IsNullOrEmpty(_defaultChannelId))
+                {
+                    _defaultChannelId = channelId;
+                }
+
+                return created;
             }
         }
 
@@ -40,6 +79,11 @@ namespace WordAddIn1
             lock (Gate)
             {
                 Channels[channel.ChannelId] = channel;
+                if (channel is WordChannel wc && !string.IsNullOrEmpty(wc.DocUuid))
+                {
+                    DocUuidToChannelId[wc.DocUuid] = channel.ChannelId;
+                }
+
                 if (setAsDefault || string.IsNullOrEmpty(_defaultChannelId))
                 {
                     _defaultChannelId = channel.ChannelId;
@@ -58,6 +102,43 @@ namespace WordAddIn1
             lock (Gate)
             {
                 return Channels.TryGetValue(channelId, out channel);
+            }
+        }
+
+        public static bool TryGetWord(string channelId, out WordChannel channel)
+        {
+            channel = null;
+            if (!TryGet(channelId, out IOperationChannel ch) || !(ch is WordChannel wc))
+            {
+                return false;
+            }
+
+            channel = wc;
+            return true;
+        }
+
+        public static bool TryGetByDocUuid(string docUuid, out WordChannel channel)
+        {
+            channel = null;
+            if (string.IsNullOrWhiteSpace(docUuid))
+            {
+                return false;
+            }
+
+            lock (Gate)
+            {
+                if (!DocUuidToChannelId.TryGetValue(docUuid, out string channelId))
+                {
+                    return false;
+                }
+
+                if (!Channels.TryGetValue(channelId, out IOperationChannel ch) || !(ch is WordChannel wc))
+                {
+                    return false;
+                }
+
+                channel = wc;
+                return true;
             }
         }
 
@@ -80,6 +161,11 @@ namespace WordAddIn1
             }
         }
 
+        public static IOperationChannel GetDefaultOrNull()
+        {
+            return TryGetDefault(out IOperationChannel channel) ? channel : null;
+        }
+
         public static bool TryGetDefault(out IOperationChannel channel)
         {
             channel = null;
@@ -94,6 +180,33 @@ namespace WordAddIn1
             }
         }
 
+        public static bool TryGetDefaultWord(out WordChannel channel)
+        {
+            channel = null;
+            if (!TryGetDefault(out IOperationChannel ch) || !(ch is WordChannel wc))
+            {
+                return false;
+            }
+
+            channel = wc;
+            return true;
+        }
+
+        /// <summary>
+        /// Plugin：活动文档变化时查找/创建 Word 渠道并设为默认（§4.3）。
+        /// </summary>
+        public static WordChannel SyncDefaultFromActiveDocument(Word.Document document)
+        {
+            if (document == null)
+            {
+                return null;
+            }
+
+            WordChannel channel = CreateOrGetWord(document);
+            SetDefault(channel.ChannelId);
+            return channel;
+        }
+
         public static bool Remove(string channelId)
         {
             if (string.IsNullOrWhiteSpace(channelId))
@@ -103,14 +216,43 @@ namespace WordAddIn1
 
             lock (Gate)
             {
-                bool removed = Channels.Remove(channelId);
-                if (removed && string.Equals(_defaultChannelId, channelId, StringComparison.Ordinal))
+                if (!Channels.TryGetValue(channelId, out IOperationChannel ch))
+                {
+                    return false;
+                }
+
+                Channels.Remove(channelId);
+                if (ch is WordChannel wc && !string.IsNullOrEmpty(wc.DocUuid))
+                {
+                    DocUuidToChannelId.Remove(wc.DocUuid);
+                }
+
+                if (string.Equals(_defaultChannelId, channelId, StringComparison.Ordinal))
                 {
                     _defaultChannelId = null;
                 }
 
-                return removed;
+                return true;
             }
+        }
+
+        public static bool RemoveByDocUuid(string docUuid)
+        {
+            if (string.IsNullOrWhiteSpace(docUuid))
+            {
+                return false;
+            }
+
+            string channelId;
+            lock (Gate)
+            {
+                if (!DocUuidToChannelId.TryGetValue(docUuid, out channelId))
+                {
+                    return false;
+                }
+            }
+
+            return Remove(channelId);
         }
 
         /// <summary>测试/进程退出用。</summary>
@@ -119,6 +261,7 @@ namespace WordAddIn1
             lock (Gate)
             {
                 Channels.Clear();
+                DocUuidToChannelId.Clear();
                 _defaultChannelId = null;
             }
         }
