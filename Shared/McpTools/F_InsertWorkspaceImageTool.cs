@@ -34,19 +34,10 @@ namespace WordAddIn1
                 var sw = Stopwatch.StartNew();
                 try
                 {
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
                     {
-                        return Fail("Word应用程序不可用");
+                        return Fail(resolveError.Error);
                     }
-
-                    dynamic wordApp = wordApplication;
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return Fail("没有活动的Word文档");
-                    }
-
-                    Word.Document document = wordApp.ActiveDocument;
-                    DocumentState.BindAndActivate(document);
 
                     string rawName = args != null && args.ContainsKey("filename")
                         ? args["filename"]?.ToString()

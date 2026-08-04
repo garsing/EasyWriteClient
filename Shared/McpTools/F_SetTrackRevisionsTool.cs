@@ -19,18 +19,10 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序不可用" };
+                        return resolveError;
                     }
-
-                    dynamic wordApp = wordApplication;
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
-                    }
-
-                    DocumentState.BindAndActivate(wordApp.ActiveDocument);
 
                     if (!args.ContainsKey("enabled"))
                     {
@@ -50,9 +42,6 @@ namespace WordAddIn1
                             return new ToolResult { Success = false, Error = "缺少或无效的参数：show_revisions" };
                         }
                     }
-
-                    Word.Document doc = wordApp.ActiveDocument;
-
                     try
                     {
                         bool prevTrack = doc.TrackRevisions;

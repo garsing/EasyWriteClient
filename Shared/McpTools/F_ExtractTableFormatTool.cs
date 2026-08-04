@@ -68,24 +68,15 @@ namespace WordAddIn1
                 {
                     // // System.Diagnostics.Debug.WriteLine("[DEBUG] extract_table_format工具开始执行");
 
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序实例不可用" };
+                        return resolveError;
                     }
-
-                    dynamic wordApp = wordApplication;
-
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
-                    }
-
-                    DocumentState.BindAndActivate(wordApp.ActiveDocument);
 
                     // 首先运行 WordReader.ReadWord 来生成表格编号和顺序序号映射表
                     try
                     {
-                        WordReader.ReadWord(wordApp.ActiveDocument);
+                        WordReader.ReadWord(document);
                     }
                     catch (Exception ex)
                     {
@@ -94,7 +85,7 @@ namespace WordAddIn1
 
                     // 解析表格选择参数
                     var tableSelection = args["table_selection"] as Dictionary<string, object>;
-                    var selection = TableExtractSelectionHelper.Resolve(wordApp.ActiveDocument, tableSelection);
+                    var selection = TableExtractSelectionHelper.Resolve(document, tableSelection);
                     if (!selection.Success)
                     {
                         return new ToolResult { Success = false, Error = selection.Error };
@@ -108,7 +99,7 @@ namespace WordAddIn1
                     TableExtractDto dto;
                     try
                     {
-                        dto = TableFormatExtractCore.Extract(targetTable, wordApp.ActiveDocument);
+                        dto = TableFormatExtractCore.Extract(targetTable, document);
                     }
                     catch (Exception ex)
                     {
@@ -117,7 +108,7 @@ namespace WordAddIn1
                     }
 
                     string filename = TableFormatFileHelper.GenerateFilename(
-                        wordApp.ActiveDocument,
+                        document,
                         tableIndex,
                         "format");
                     var (saved, xmlContent) = await SaveTableFormat(dto, filename);

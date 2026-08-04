@@ -19,11 +19,6 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (wordApplication == null)
-                    {
-                        return Fail("Word 应用程序不可用");
-                    }
-
                     dynamic wordAppDyn = wordApplication;
                     Word.Application app = wordAppDyn as Word.Application;
                     if (app == null)
@@ -31,19 +26,9 @@ namespace WordAddIn1
                         return Fail("无法获取 Word.Application");
                     }
 
-                    Word.Document doc;
-                    try
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
                     {
-                        doc = app.ActiveDocument;
-                    }
-                    catch (Exception ex)
-                    {
-                        return Fail($"无活动文档: {ex.Message}");
-                    }
-
-                    if (doc == null)
-                    {
-                        return Fail("无活动文档");
+                        return Fail(resolveError.Error);
                     }
 
                     bool applyPageSetup = GetBoolArg(args, "apply_page_setup", true);

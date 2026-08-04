@@ -21,19 +21,10 @@ namespace WordAddIn1
                     string logPath = EasyWriteLog.BeginSession("get_format_context");
                     FormatContextHelper.DbgLog($"会话日志: {logPath}");
 
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
                     {
-                        return Task.FromResult(new ToolResult { Success = false, Error = "Word应用程序实例不可用" });
+                        return Task.FromResult(resolveError);
                     }
-
-                    dynamic wordApp = wordApplication;
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return Task.FromResult(new ToolResult { Success = false, Error = "没有活动的Word文档" });
-                    }
-
-                    Word.Document doc = wordApp.ActiveDocument;
-                    DocumentState.BindAndActivate(doc);
 
                     bool hasTargetCodes = args.ContainsKey("target_codes") && args["target_codes"] != null
                         && !string.IsNullOrWhiteSpace(args["target_codes"].ToString());

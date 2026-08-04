@@ -18,20 +18,10 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult channelResolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序不可用" };
+                        return channelResolveError;
                     }
-
-                    dynamic wordApp = wordApplication;
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
-                    }
-
-                    DocumentState.BindAndActivate(wordApp.ActiveDocument);
-                    Word.Document document = wordApp.ActiveDocument;
-
                     string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
                     if (string.IsNullOrWhiteSpace(tableId))
                     {

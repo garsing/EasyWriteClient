@@ -51,6 +51,10 @@ namespace WordAddIn1
                     }
 
                     var processArgs = BuildReplaceProcessArgs(loadResult.content, originalCodes, args["format"]);
+                    if (args.ContainsKey("channel_id"))
+                    {
+                        processArgs["channel_id"] = args["channel_id"];
+                    }
 
                     if (!toolRegistry.TryGetValue("F_process_document_actions", out var processHandler))
                     {

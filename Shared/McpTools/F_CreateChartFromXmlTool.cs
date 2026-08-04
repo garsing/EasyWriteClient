@@ -23,15 +23,9 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[DEBUG] 开始创建图表");
 
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序不可用" };
-                    }
-
-                    dynamic wordApp = wordApplication;
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
+                        return resolveError;
                     }
 
                     string filename = args.ContainsKey("filename") ? args["filename"]?.ToString() : "";
@@ -76,7 +70,7 @@ namespace WordAddIn1
                         }
                     }
 
-                    var createResult = ChartCreateHelper.CreateAtLocation(wordApp.ActiveDocument, parseResult.Config, position);
+                    var createResult = ChartCreateHelper.CreateAtLocation(document, parseResult.Config, position);
                     if (!createResult.Success)
                     {
                         return new ToolResult { Success = false, Error = $"图表创建失败: {createResult.Error}" };
@@ -94,7 +88,6 @@ namespace WordAddIn1
                     try
                     {
                         int chartStart = createResult.ChartStart;
-                        Word.Document document = wordApp.ActiveDocument;
                         WordReader.ReadWord(document);
 
                         List<Word.InlineShape> allCharts = ChartResolveHelper.GetInlineChartsInOrder(document);

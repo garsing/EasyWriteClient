@@ -16,19 +16,10 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
                     {
-                        return Fail("Word应用程序不可用");
+                        return Fail(resolveError.Error);
                     }
-
-                    dynamic wordApp = wordApplication;
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return Fail("没有活动的Word文档");
-                    }
-
-                    Word.Document doc = wordApp.ActiveDocument;
-                    DocumentState.BindAndActivate(doc);
 
                     if (!DataProvenanceJsonParser.TryParseItems(args, out List<ProvenanceItemInput> items, out string parseError))
                     {

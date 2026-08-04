@@ -66,6 +66,11 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = "F_process_document_actions 未注册" };
                     }
 
+                    if (args.ContainsKey("channel_id"))
+                    {
+                        build.args["channel_id"] = args["channel_id"];
+                    }
+
                     ToolResult processResult = await processHandler(build.args);
                     if (!processResult.Success)
                     {

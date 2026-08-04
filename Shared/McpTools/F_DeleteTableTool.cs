@@ -19,27 +19,16 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult channelResolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序不可用" };
+                        return channelResolveError;
                     }
-
-                    dynamic wordApp = wordApplication;
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
-                    }
-
-                    DocumentState.BindAndActivate(wordApp.ActiveDocument);
 
                     string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
                     if (string.IsNullOrWhiteSpace(tableId))
                     {
                         return new ToolResult { Success = false, Error = "未提供表格编号" };
                     }
-
-                    Word.Document document = wordApp.ActiveDocument;
-
                     try
                     {
                         WordReader.ReadWord(document);
@@ -82,7 +71,7 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = $"删表后刷新映射失败：{ex.Message}" };
                     }
 
-                    Word.Application app = wordApp as Word.Application;
+                    Word.Application app = wordApplication as Word.Application;
                     if (app != null)
                     {
                         int docEnd = document.Content.End;

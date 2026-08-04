@@ -79,18 +79,10 @@ namespace WordAddIn1
                     LogPhase("开始");
                     System.Diagnostics.Debug.WriteLine("[DEBUG] 开始创建表格");
 
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序不可用" };
+                        return resolveError;
                     }
-
-                    dynamic wordApp = wordApplication;
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
-                    }
-
-                    DocumentState.BindAndActivate(wordApp.ActiveDocument);
 
                     // 获取文件名
                     string filename = args.ContainsKey("filename") ? args["filename"]?.ToString() : "";
@@ -141,7 +133,7 @@ namespace WordAddIn1
                     }
 
                     // 创建表格
-                    var createResult = CreateTableAtLocation(wordApp.ActiveDocument, parseResult.Config, position);
+                    var createResult = CreateTableAtLocation(document, parseResult.Config, position);
                     LogPhase($"CreateTableAtLocation success={createResult.Success}");
                     if (!createResult.Success)
                     {
@@ -199,7 +191,6 @@ namespace WordAddIn1
                     try
                     {
                         int tableStart = createResult.Table.Range.Start;
-                        Word.Document document = wordApp.ActiveDocument;
                         WordReader.ReadWord(document);
 
                         List<Word.Table> allTables = GetAllTablesInOrder(document);

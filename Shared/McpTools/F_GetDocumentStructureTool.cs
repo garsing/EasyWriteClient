@@ -26,16 +26,9 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[DEBUG] get_document_structure工具开始执行");
 
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序实例不可用" };
-                    }
-
-                    dynamic wordApp = wordApplication;
-
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
+                        return resolveError;
                     }
 
                     bool includeContent = args.ContainsKey("include_content") && Convert.ToBoolean(args["include_content"]);
@@ -43,10 +36,10 @@ namespace WordAddIn1
 
                     var documentStructure = new
                     {
-                        document_name = wordApp.ActiveDocument.Name ?? "未命名文档",
-                        paragraphs = GetParagraphsInfo(wordApp.ActiveDocument, includeContent, maxPreviewLength),
-                        tables = GetTablesInfo(wordApp.ActiveDocument, includeContent, maxPreviewLength),
-                        images = GetImagesInfo(wordApp.ActiveDocument, includeContent, maxPreviewLength)
+                        document_name = document.Name ?? "未命名文档",
+                        paragraphs = GetParagraphsInfo(document, includeContent, maxPreviewLength),
+                        tables = GetTablesInfo(document, includeContent, maxPreviewLength),
+                        images = GetImagesInfo(document, includeContent, maxPreviewLength)
                     };
 
                     await Task.CompletedTask; // 避免异步方法警告

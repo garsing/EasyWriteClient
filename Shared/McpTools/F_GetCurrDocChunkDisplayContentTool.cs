@@ -8,6 +8,8 @@ using Newtonsoft.Json;
 
 using Newtonsoft.Json.Linq;
 
+using Word = Microsoft.Office.Interop.Word;
+
 
 
 namespace WordAddIn1
@@ -46,29 +48,13 @@ namespace WordAddIn1
 
                 {
 
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
 
                     {
 
-                        return new ToolResult { Success = false, Error = "Word应用程序实例不可用" };
+                        return resolveError;
 
                     }
-
-
-
-                    dynamic wordApp = wordApplication;
-
-                    if (wordApp.ActiveDocument == null)
-
-                    {
-
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
-
-                    }
-
-
-
-                    DocumentState.BindAndActivate(wordApp.ActiveDocument);
 
 
 

@@ -25,19 +25,10 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序实例不可用" };
+                        return resolveError;
                     }
-
-                    dynamic wordApp = wordApplication;
-
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
-                    }
-
-                    Word.Document doc = wordApp.ActiveDocument;
 
                     System.Diagnostics.Debug.WriteLine("");
                     System.Diagnostics.Debug.WriteLine("==========================================");

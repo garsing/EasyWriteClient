@@ -28,16 +28,9 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[DEBUG] select_and_analyze_document_content工具开始执行");
 
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序实例不可用" };
-                    }
-
-                    dynamic wordApp = wordApplication;
-
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
+                        return resolveError;
                     }
 
                     string selectionType = args.ContainsKey("selection_type") ? args["selection_type"]?.ToString() : "";
@@ -59,7 +52,7 @@ namespace WordAddIn1
                                 return new ToolResult { Success = false, Error = "选择类型为'paragraph_by_content'时，必须提供paragraph_start参数" };
                             }
 
-                            selectedRange = SelectParagraphByContent(wordApp.ActiveDocument, paraStart, paraEnd);
+                            selectedRange = SelectParagraphByContent(document, paraStart, paraEnd);
                             if (selectedRange == null)
                             {
                                 return new ToolResult { Success = false, Error = $"未能找到包含开头内容'{paraStart}'的段落" };
@@ -69,8 +62,8 @@ namespace WordAddIn1
                             if (!string.IsNullOrEmpty(paraEnd))
                             {
                                 // 检查结尾是否找到并使用了
-                                Word.Range endRange = McpToolsHelpers.FindText(wordApp.ActiveDocument.Content, paraEnd);
-                                if (endRange != null && endRange.Start > McpToolsHelpers.FindText(wordApp.ActiveDocument.Content, paraStart).Start)
+                                Word.Range endRange = McpToolsHelpers.FindText(document.Content, paraEnd);
+                                if (endRange != null && endRange.Start > McpToolsHelpers.FindText(document.Content, paraStart).Start)
                                 {
                                     selectionDescription += $"结尾'{paraEnd}'";
                                 }
@@ -89,7 +82,7 @@ namespace WordAddIn1
                             }
 
                             int tableIdx = Convert.ToInt32(args["table_index"]);
-                            selectedRange = SelectTableByIndex(wordApp.ActiveDocument, tableIdx);
+                            selectedRange = SelectTableByIndex(document, tableIdx);
                             selectionDescription = $"表格 {tableIdx}";
                             break;
 
@@ -103,7 +96,7 @@ namespace WordAddIn1
                                 return new ToolResult { Success = false, Error = "选择类型为'table_by_context'时，必须提供table_context_before参数" };
                             }
 
-                            selectedRange = SelectTableByContext(wordApp.ActiveDocument, tableBefore, tableAfter);
+                            selectedRange = SelectTableByContext(document, tableBefore, tableAfter);
                             selectionDescription = $"表格：上下文'{tableBefore}'" + (string.IsNullOrEmpty(tableAfter) ? "" : $"到'{tableAfter}'");
                             break;
 
@@ -117,7 +110,7 @@ namespace WordAddIn1
                                 return new ToolResult { Success = false, Error = "选择类型为'image_by_context'时，必须提供image_context_before参数" };
                             }
 
-                            selectedRange = SelectImageByContext(wordApp.ActiveDocument, imageBefore, imageAfter);
+                            selectedRange = SelectImageByContext(document, imageBefore, imageAfter);
                             selectionDescription = $"图片：上下文'{imageBefore}'" + (string.IsNullOrEmpty(imageAfter) ? "" : $"到'{imageAfter}'");
                             break;
 
@@ -134,6 +127,7 @@ namespace WordAddIn1
                     bool windowActivated = false;
                     try
                     {
+                        Word.Application wordApp = document.Application;
                         wordApp.Activate();
                         if (wordApp.ActiveWindow != null)
                         {
@@ -173,7 +167,7 @@ namespace WordAddIn1
                         ["end_position"] = selectedRange.End,
                         ["selected_length"] = selectedRange.End - selectedRange.Start,
                         ["preview_text"] = previewText,
-                        ["document_name"] = wordApp.ActiveDocument.Name ?? "未命名文档",
+                        ["document_name"] = document.Name ?? "未命名文档",
                         ["window_activated"] = windowActivated,
                         ["selection_completed"] = true,
                         ["message"] = $"已成功选中{selectionDescription}，Word窗口已激活并显示选中状态。您现在可以进行编辑、复制或其他操作。"
@@ -189,15 +183,15 @@ namespace WordAddIn1
                             if (selectionType == "table_by_index")
                             {
                                 int tableIdx = Convert.ToInt32(args["table_index"]);
-                                if (tableIdx > 0 && tableIdx <= wordApp.ActiveDocument.Tables.Count)
+                                if (tableIdx > 0 && tableIdx <= document.Tables.Count)
                                 {
-                                    selectedTable = wordApp.ActiveDocument.Tables[tableIdx];
+                                    selectedTable = document.Tables[tableIdx];
                                 }
                             }
                             else if (selectionType == "table_by_context")
                             {
                                 // 通过范围找到对应的表格
-                                foreach (Word.Table table in wordApp.ActiveDocument.Tables)
+                                foreach (Word.Table table in document.Tables)
                                 {
                                     if (table.Range.Start >= selectedRange.Start && table.Range.End <= selectedRange.End)
                                     {

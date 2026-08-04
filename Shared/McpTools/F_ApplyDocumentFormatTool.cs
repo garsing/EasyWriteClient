@@ -31,18 +31,10 @@ namespace WordAddIn1
                     string logPath = EasyWriteLog.BeginSession("apply_document_format");
                     FormatContextHelper.DbgLog($"会话日志: {logPath}");
 
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
                     {
-                        return Done(false, "Word应用程序实例不可用");
+                        return Done(false, resolveError.Error);
                     }
-
-                    dynamic wordApp = wordApplication;
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return Done(false, "没有活动的Word文档");
-                    }
-
-                    DocumentState.BindAndActivate(wordApp.ActiveDocument);
 
                     string validationError = ValidateModeArgs(args, out string mode, out string inheritFrom,
                         out Dictionary<string, object> charFormat, out Dictionary<string, object> paraFormat);
@@ -84,8 +76,6 @@ namespace WordAddIn1
                             "F_apply_document_format",
                             ambiguityResult));
                     }
-
-                    Word.Document doc = wordApp.ActiveDocument;
                     Dictionary<string, object> snapshot;
                     string responseMode;
                     List<string> explicitFieldsApplied = null;
@@ -251,7 +241,7 @@ namespace WordAddIn1
                         });
                     }
 
-                    Word.Application app = wordApp as Word.Application;
+                    Word.Application app = wordApplication as Word.Application;
                     if (app != null && !string.IsNullOrEmpty(lastAppliedCode) && lastAppliedTargetIndex >= 0)
                     {
                         int lastDisplayStart = ApplyFormatAmbiguityHelper.GetDisplayStartAt(

@@ -22,6 +22,11 @@ namespace WordAddIn1
                         return Task.FromResult(new ToolResult { Success = false, Error = "Word 应用程序不可用" });
                     }
 
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out _, out ToolResult resolveError))
+                    {
+                        return Task.FromResult(resolveError);
+                    }
+
                     dynamic wordApp = wordApplication;
                     return ParagraphFormatApplyHelper.RunApplyAsync(wordApp, args);
                 }

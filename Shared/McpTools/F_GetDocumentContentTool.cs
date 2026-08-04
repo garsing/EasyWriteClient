@@ -26,16 +26,9 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序实例不可用" };
-                    }
-
-                    dynamic wordApp = wordApplication;
-
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
+                        return resolveError;
                     }
 
                     if (!TryParseCodeLevel(args, out string codeLevel, out string codeLevelError))
@@ -48,7 +41,7 @@ namespace WordAddIn1
                     AgentRunCancellation.ThrowIfCancelled();
 
                     var processingResult = WordDocumentExtractor.ProcessDocument(
-                        wordApp.ActiveDocument,
+                        document,
                         ProcessDocumentOptions.ForGetDocumentContent("get_document_content"));
 
                     string documentContent = BuildDocumentContent(processingResult, isParagraph);
@@ -81,7 +74,7 @@ namespace WordAddIn1
                         System.Diagnostics.Debug.WriteLine("==========================================");
                         System.Diagnostics.Debug.WriteLine("=== F_get_document_content 工具返回 ===");
                         System.Diagnostics.Debug.WriteLine("==========================================");
-                        System.Diagnostics.Debug.WriteLine($"文档名称: {wordApp.ActiveDocument.Name ?? "未命名文档"}");
+                        System.Diagnostics.Debug.WriteLine($"文档名称: {document.Name ?? "未命名文档"}");
                         System.Diagnostics.Debug.WriteLine($"code_level: {codeLevel}");
                         System.Diagnostics.Debug.WriteLine($"处理方式: {resultData["processing_method"]}");
                         System.Diagnostics.Debug.WriteLine($"返回内容长度: {documentContent.Length} 字符");

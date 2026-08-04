@@ -22,20 +22,10 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[ApplyChart] 开始套用图表 XML");
 
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序不可用" };
+                        return resolveError;
                     }
-
-                    dynamic wordApp = wordApplication;
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
-                    }
-
-                    DocumentState.BindAndActivate(wordApp.ActiveDocument);
-                    Word.Document document = wordApp.ActiveDocument;
-
                     string chartId = args.ContainsKey("chart_id") ? args["chart_id"]?.ToString() : "";
                     if (string.IsNullOrEmpty(chartId))
                     {

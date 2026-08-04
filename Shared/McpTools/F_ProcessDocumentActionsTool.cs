@@ -27,24 +27,15 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序实例不可用" };
+                        return resolveError;
                     }
-
-                    dynamic wordApp = wordApplication;
-
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
-                    }
-
-                    DocumentState.BindAndActivate(wordApp.ActiveDocument);
 
                     string logPath = EasyWriteLog.BeginSession("process_document_actions");
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 本次测试日志: {logPath}");
-                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 操作前文档状态: 段落总数={wordApp.ActiveDocument.Paragraphs.Count}");
-                    FormatInheritHelper.DbgLogDocumentFontSample(wordApp.ActiveDocument, "process_actions 入口");
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 操作前文档状态: 段落总数={document.Paragraphs.Count}");
+                    FormatInheritHelper.DbgLogDocumentFontSample(document, "process_actions 入口");
 
                     if (!args.ContainsKey("action"))
                     {
@@ -55,10 +46,10 @@ namespace WordAddIn1
                     // 第一步：更新句子与名称映射表（必须在解析参数之前，确保验证时能找到句子）
                     System.Diagnostics.Debug.WriteLine("[第一步] 更新句子与名称映射表");
                     FormatInheritHelper.DbgLog("第一步映射刷新前");
-                    FormatInheritHelper.DbgLogDocumentFontSample(wordApp.ActiveDocument, "第一步映射前");
+                    FormatInheritHelper.DbgLogDocumentFontSample(document, "第一步映射前");
                     try
                     {
-                        string mappingError = await UpdateSentenceNameMapping(wordApp.ActiveDocument, "process_actions_step1");
+                        string mappingError = await UpdateSentenceNameMapping(document, "process_actions_step1");
                         if (!string.IsNullOrEmpty(mappingError))
                         {
                             System.Diagnostics.Debug.WriteLine($"[ERROR] 更新映射表失败: {mappingError}");
@@ -66,7 +57,7 @@ namespace WordAddIn1
                         }
                         System.Diagnostics.Debug.WriteLine(
                             $"[第一步完成] 映射表总数: {DocumentState.NameToContentMap.Count}");
-                        FormatInheritHelper.DbgLogDocumentFontSample(wordApp.ActiveDocument, "第一步映射后");
+                        FormatInheritHelper.DbgLogDocumentFontSample(document, "第一步映射后");
                     }
                     catch (Exception ex)
                     {
@@ -76,7 +67,7 @@ namespace WordAddIn1
                     }
 
                     System.Diagnostics.Debug.WriteLine("[DEBUG] 开始解析操作参数");
-                    var parseResult = ParseActions(args["action"], wordApp.ActiveDocument);
+                    var parseResult = ParseActions(args["action"], document);
                     bool parseSuccess = parseResult.Item1;
                     string parseError = parseResult.Item2;
                     List<ParagraphAction> actions = parseResult.Item3;
@@ -106,7 +97,7 @@ namespace WordAddIn1
                     if (ambiguityResult.HasBlockingError)
                     {
                         return SentenceCodeAmbiguityHelper.BuildPreStep3FailureResult(
-                            wordApp.ActiveDocument.Name ?? "未命名文档",
+                            document.Name ?? "未命名文档",
                             actions.Count,
                             ambiguityResult);
                     }
@@ -117,7 +108,7 @@ namespace WordAddIn1
                     if (!string.IsNullOrEmpty(continuityError))
                     {
                         return SentenceCodeAmbiguityHelper.BuildPreStep3FailureResult(
-                            wordApp.ActiveDocument.Name ?? "未命名文档",
+                            document.Name ?? "未命名文档",
                             actions.Count,
                             "continuity_error",
                             continuityError);
@@ -125,19 +116,19 @@ namespace WordAddIn1
 
                     // 第三步：直接修改文档（本工具不修改审阅开关）
                     System.Diagnostics.Debug.WriteLine("[第三步] 直接修改文档");
-                    FormatInheritHelper.DbgLogDocumentFontSample(wordApp.ActiveDocument, "第三步 modify 前");
+                    FormatInheritHelper.DbgLogDocumentFontSample(document, "第三步 modify 前");
                     List<ActionResult> modifyResults = await ModifyDocumentDirectly(
-                        wordApp.ActiveDocument,
+                        document,
                         actions,
                         tableScope);
-                    FormatInheritHelper.DbgLogDocumentFontSample(wordApp.ActiveDocument, "第三步 modify 后");
+                    FormatInheritHelper.DbgLogDocumentFontSample(document, "第三步 modify 后");
                     System.Diagnostics.Debug.WriteLine("[第三步完成]");
 
                     // 第四步：刷新映射表，解析 new_codes
                     System.Diagnostics.Debug.WriteLine("[第四步] 修改后刷新句子与名称映射表");
                     try
                     {
-                        string postMappingError = await UpdateSentenceNameMapping(wordApp.ActiveDocument, "process_actions_step4");
+                        string postMappingError = await UpdateSentenceNameMapping(document, "process_actions_step4");
                         if (!string.IsNullOrEmpty(postMappingError))
                         {
                             System.Diagnostics.Debug.WriteLine($"[格式融合] 修改后刷新映射表 warning: {postMappingError}");
@@ -179,7 +170,7 @@ namespace WordAddIn1
                         .ToList();
                     var navigateSettings = ConfigManager.GetDocumentNavigateSettings();
                     Word.Application wordApplicationTyped = (Word.Application)wordApplication;
-                    Word.Document activeDocument = wordApplicationTyped.ActiveDocument;
+                    Word.Document activeDocument = document;
                     var navigateOutcome = DocumentNavigateHelper.BuildAndApply(
                         wordApplicationTyped,
                         activeDocument,
@@ -195,7 +186,7 @@ namespace WordAddIn1
                         Success = allOk,
                         Data = new
                         {
-                            document_name = wordApp.ActiveDocument.Name ?? "未命名文档",
+                            document_name = document.Name ?? "未命名文档",
                             total_actions = actions.Count,
                             executed_actions = modifyResults.Count(r => r.success),
                             failed_actions = modifyResults.Count(r => !r.success),

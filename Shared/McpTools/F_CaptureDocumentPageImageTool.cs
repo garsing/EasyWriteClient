@@ -20,20 +20,10 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[F_capture_document_page_image] 开始执行");
 
-                    if (wordApplication == null)
-                    {
-                        return new ToolResult { Success = false, Error = "Word应用程序未初始化" };
-                    }
-
                     var app = wordApplication as Word.Application;
                     if (app == null)
                     {
                         return new ToolResult { Success = false, Error = "Word应用程序不可用" };
-                    }
-
-                    if (app.Documents == null || app.Documents.Count == 0)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的 Word 文档" };
                     }
 
                     int? requestedPage;
@@ -43,7 +33,10 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = pageErr };
                     }
 
-                    DocumentState.BindAndActivate(app.ActiveDocument);
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
+                    {
+                        return resolveError;
+                    }
 
                     var capture = PageCaptureHelper.CaptureDocumentPage(app, requestedPage);
                     return new ToolResult

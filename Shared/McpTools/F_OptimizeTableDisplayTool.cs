@@ -18,27 +18,16 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult channelResolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序不可用" };
+                        return channelResolveError;
                     }
-
-                    dynamic wordApp = wordApplication;
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
-                    }
-
-                    DocumentState.BindAndActivate(wordApp.ActiveDocument);
 
                     string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
                     if (string.IsNullOrEmpty(tableId))
                     {
                         return new ToolResult { Success = false, Error = "未提供表格编号" };
                     }
-
-                    Word.Document document = wordApp.ActiveDocument;
-
                     try
                     {
                         WordReader.ReadWord(document);
@@ -81,7 +70,7 @@ namespace WordAddIn1
                         message += "（仍存在被迫换行）";
                     }
 
-                    Word.Application app = wordApp as Word.Application;
+                    Word.Application app = wordApplication as Word.Application;
                     if (app != null && targetTable != null)
                     {
                         PostModifyNavigateHelper.NavigateAfterEnd(

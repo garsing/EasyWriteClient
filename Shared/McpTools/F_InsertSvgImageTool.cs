@@ -20,19 +20,10 @@ namespace WordAddIn1
                 string pngPath = null;
                 try
                 {
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
                     {
-                        return Fail("Word应用程序不可用");
+                        return Fail(resolveError.Error);
                     }
-
-                    dynamic wordApp = wordApplication;
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return Fail("没有活动的Word文档");
-                    }
-
-                    Word.Document document = wordApp.ActiveDocument;
-                    DocumentState.BindAndActivate(document);
 
                     string svg = args != null && args.ContainsKey("svg") ? args["svg"]?.ToString() : null;
                     var validation = SvgSecurityValidator.Validate(svg);

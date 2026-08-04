@@ -49,6 +49,11 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = "无法获取 Word.Application" };
                     }
 
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out _, out ToolResult resolveError))
+                    {
+                        return resolveError;
+                    }
+
                     return await KbFormatApplyHelper.RunApplyAsync(
                         app,
                         targetCodes,

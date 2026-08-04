@@ -25,21 +25,15 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[DEBUG] find_position工具开始执行");
 
-                    if (wordApplication == null)
+                    Word.Application app = wordApplication as Word.Application;
+                    if (app == null)
                     {
                         return new ToolResult { Success = false, Error = "Word应用程序未初始化" };
                     }
 
-                    Word.Application app = wordApplication as Word.Application;
-                    if (app == null || app.Documents == null || app.Documents.Count == 0)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "没有打开的Word文档" };
-                    }
-
-                    Word.Document doc = app.ActiveDocument;
-                    if (doc == null)
-                    {
-                        return new ToolResult { Success = false, Error = "无法获取活动文档" };
+                        return resolveError;
                     }
 
                     string mode = args.ContainsKey("mode") ? args["mode"]?.ToString() : "text_search";

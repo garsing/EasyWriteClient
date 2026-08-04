@@ -15,14 +15,12 @@ namespace WordAddIn1
             {
                 try
                 {
-                    var wordApp = wordApplication as Word.Application;
-                    if (wordApp?.ActiveDocument == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
                     {
-                        return Task.FromResult(new ToolResult { Success = false, Error = "没有活动的 Word 文档" });
+                        return Task.FromResult(resolveError);
                     }
 
-                    DocumentState.BindAndActivate(wordApp.ActiveDocument);
-                    DocumentState.EnsureCurrDocUuid(wordApp.ActiveDocument);
+                    DocumentState.EnsureCurrDocUuid(doc);
 
                     string text = DocumentCheckpointService.FormatListTextForCurrentDocument();
                     return Task.FromResult(new ToolResult

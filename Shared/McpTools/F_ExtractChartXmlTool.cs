@@ -20,22 +20,14 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[ExtractChart] 开始提取图表 XML");
 
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序实例不可用" };
+                        return resolveError;
                     }
-
-                    dynamic wordApp = wordApplication;
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
-                    }
-
-                    DocumentState.BindAndActivate(wordApp.ActiveDocument);
 
                     try
                     {
-                        WordReader.ReadWord(wordApp.ActiveDocument);
+                        WordReader.ReadWord(document);
                     }
                     catch (Exception ex)
                     {
@@ -43,7 +35,7 @@ namespace WordAddIn1
                     }
 
                     var chartSelection = args["chart_selection"] as Dictionary<string, object>;
-                    var selection = ChartSelectionHelper.Resolve(wordApp.ActiveDocument, chartSelection);
+                    var selection = ChartSelectionHelper.Resolve(document, chartSelection);
                     if (!selection.Success)
                     {
                         return new ToolResult { Success = false, Error = selection.Error };
@@ -71,7 +63,7 @@ namespace WordAddIn1
                     }
 
                     Word.InlineShape inlineShape = ChartResolveHelper.ResolveInlineShapeByChartId(
-                        wordApp.ActiveDocument,
+                        document,
                         selection.ChartId);
                     if (inlineShape == null)
                     {

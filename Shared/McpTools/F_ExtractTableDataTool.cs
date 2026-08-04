@@ -18,22 +18,14 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (wordApplication == null)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "Word应用程序实例不可用" };
+                        return resolveError;
                     }
-
-                    dynamic wordApp = wordApplication;
-                    if (wordApp.ActiveDocument == null)
-                    {
-                        return new ToolResult { Success = false, Error = "没有活动的Word文档" };
-                    }
-
-                    DocumentState.BindAndActivate(wordApp.ActiveDocument);
 
                     try
                     {
-                        WordReader.ReadWord(wordApp.ActiveDocument);
+                        WordReader.ReadWord(document);
                     }
                     catch (Exception ex)
                     {
@@ -41,7 +33,7 @@ namespace WordAddIn1
                     }
 
                     var tableSelection = args["table_selection"] as Dictionary<string, object>;
-                    var selection = TableExtractSelectionHelper.Resolve(wordApp.ActiveDocument, tableSelection);
+                    var selection = TableExtractSelectionHelper.Resolve(document, tableSelection);
                     if (!selection.Success)
                     {
                         return new ToolResult { Success = false, Error = selection.Error };
@@ -50,7 +42,7 @@ namespace WordAddIn1
                     TableExtractDto dto;
                     try
                     {
-                        dto = TableFormatExtractCore.Extract(selection.Table, wordApp.ActiveDocument);
+                        dto = TableFormatExtractCore.Extract(selection.Table, document);
                     }
                     catch (Exception ex)
                     {
@@ -61,7 +53,7 @@ namespace WordAddIn1
                     string xmlContent = TableFormatXmlBuilder.BuildDataOnly(dto);
                     int emptyCellCount = TableMergeHelper.CountFillableEmptyCells(dto.Data, dto.Merge);
                     string filename = TableFormatFileHelper.GenerateFilename(
-                        wordApp.ActiveDocument,
+                        document,
                         selection.TableIndex,
                         "data");
                     var (saved, savedContent) = await TableFormatFileHelper.SaveXmlAsync(filename, xmlContent);

@@ -20,23 +20,16 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[F_get_document_page_info] 开始执行");
 
-                    if (wordApplication == null)
-                    {
-                        return new ToolResult { Success = false, Error = "Word应用程序未初始化" };
-                    }
-
                     var app = wordApplication as Word.Application;
                     if (app == null)
                     {
                         return new ToolResult { Success = false, Error = "Word应用程序不可用" };
                     }
 
-                    if (app.Documents == null || app.Documents.Count == 0)
+                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "没有活动的 Word 文档" };
+                        return resolveError;
                     }
-
-                    DocumentState.BindAndActivate(app.ActiveDocument);
 
                     var info = PageCaptureHelper.GetDocumentPageInfo(app);
                     return new ToolResult
