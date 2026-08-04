@@ -31,14 +31,9 @@ namespace WordAddIn1
 
                     bool createBlank = ParseBool(args, "create_blank", false);
 
-                    string fullPath;
-                    try
+                    if (!TryResolveOpenPath(path, createBlank, out string fullPath, out string pathError))
                     {
-                        fullPath = Path.GetFullPath(path);
-                    }
-                    catch (Exception ex)
-                    {
-                        return Fail("路径非法: " + ex.Message);
+                        return Fail(pathError);
                     }
 
                     if (!WordApplicationResolver.TryResolve(
@@ -229,6 +224,174 @@ namespace WordAddIn1
             {
                 return path?.Trim() ?? "";
             }
+        }
+
+        /// <summary>
+        /// 解析可打开路径。Windows 文件名禁止 ASCII <c>"</c>，常见备案表却用中文弯引号；
+        /// 模型常把路径里的 <c>“”</c> 写成 <c>"</c> 导致 GetFullPath 报非法。此处尝试弯引号/全角变体。
+        /// </summary>
+        private static bool TryResolveOpenPath(
+            string rawPath,
+            bool createBlank,
+            out string fullPath,
+            out string error)
+        {
+            fullPath = null;
+            error = null;
+
+            string path = StripWrappingAsciiQuotes(rawPath?.Trim() ?? "");
+            if (string.IsNullOrEmpty(path))
+            {
+                error = "必须提供 path 参数";
+                return false;
+            }
+
+            var candidates = new List<string>();
+            void AddCandidate(string p)
+            {
+                if (string.IsNullOrEmpty(p))
+                {
+                    return;
+                }
+
+                foreach (string existing in candidates)
+                {
+                    if (string.Equals(existing, p, StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+                }
+
+                candidates.Add(p);
+            }
+
+            AddCandidate(path);
+            if (path.IndexOf('"') >= 0)
+            {
+                AddCandidate(ReplaceAsciiQuotesWithCurly(path));
+                AddCandidate(path.Replace("\"", "\uFF02")); // 全角 ＂
+            }
+
+            Exception lastIllegal = null;
+            foreach (string candidate in candidates)
+            {
+                string resolved;
+                try
+                {
+                    resolved = Path.GetFullPath(candidate);
+                }
+                catch (Exception ex)
+                {
+                    lastIllegal = ex;
+                    continue;
+                }
+
+                bool exists = File.Exists(resolved);
+                if (createBlank)
+                {
+                    if (!exists)
+                    {
+                        fullPath = resolved;
+                        return true;
+                    }
+
+                    continue;
+                }
+
+                if (exists)
+                {
+                    fullPath = resolved;
+                    if (!string.Equals(candidate, path, StringComparison.Ordinal))
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            "[F_open_word_document] path 已将 ASCII 引号规范为文件系统可用形式: " + resolved);
+                    }
+
+                    return true;
+                }
+            }
+
+            if (createBlank)
+            {
+                // 所有候选都已存在，或全都非法
+                foreach (string candidate in candidates)
+                {
+                    try
+                    {
+                        string resolved = Path.GetFullPath(candidate);
+                        if (File.Exists(resolved))
+                        {
+                            error = "create_blank=true 但路径已存在，拒绝覆盖: " + resolved;
+                            return false;
+                        }
+
+                        fullPath = resolved;
+                        return true;
+                    }
+                    catch (Exception)
+                    {
+                        // try next
+                    }
+                }
+
+                error = lastIllegal != null
+                    ? "路径非法: " + lastIllegal.Message
+                      + "（文件名勿用英文引号 \"，请用中文 “” 或去掉引号）"
+                    : "无法解析新建路径";
+                return false;
+            }
+
+            if (lastIllegal != null && candidates.Count == 1)
+            {
+                error = "路径非法: " + lastIllegal.Message
+                    + "（文件名勿用英文引号 \"，请用中文 “” 或从资源管理器复制真实路径）";
+                return false;
+            }
+
+            error = "文件不存在（create_blank=false）: " + path
+                + (path.IndexOf('"') >= 0
+                    ? "。已尝试将英文引号替换为中文/全角引号仍未找到，请核对真实文件名"
+                    : "");
+            return false;
+        }
+
+        private static string StripWrappingAsciiQuotes(string path)
+        {
+            if (string.IsNullOrEmpty(path) || path.Length < 2)
+            {
+                return path;
+            }
+
+            if (path[0] == '"' && path[path.Length - 1] == '"')
+            {
+                return path.Substring(1, path.Length - 2).Trim();
+            }
+
+            return path;
+        }
+
+        /// <summary>按出现次序将 ASCII " 交替替换为 “ 与 ”。</summary>
+        private static string ReplaceAsciiQuotesWithCurly(string path)
+        {
+            if (string.IsNullOrEmpty(path) || path.IndexOf('"') < 0)
+            {
+                return path;
+            }
+
+            var chars = path.ToCharArray();
+            bool left = true;
+            for (int i = 0; i < chars.Length; i++)
+            {
+                if (chars[i] != '"')
+                {
+                    continue;
+                }
+
+                chars[i] = left ? '\u201C' : '\u201D';
+                left = !left;
+            }
+
+            return new string(chars);
         }
 
         private static bool ParseBool(Dictionary<string, object> args, string key, bool defaultValue)
