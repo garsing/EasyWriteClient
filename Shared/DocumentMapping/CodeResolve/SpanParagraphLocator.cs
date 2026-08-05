@@ -41,6 +41,12 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 return null;
             }
 
+            // 单码序列：Span 即该段，避免范围内 Find 与 scope 重合
+            if (codeList.Count == 1)
+            {
+                return span;
+            }
+
             return LocateParagraph(doc, span, codeList[0], debugTag);
         }
 
@@ -53,6 +59,11 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             if (codeList == null || codeList.Count == 0)
             {
                 return null;
+            }
+
+            if (codeList.Count == 1)
+            {
+                return span;
             }
 
             return LocateParagraph(doc, span, codeList[codeList.Count - 1], debugTag);

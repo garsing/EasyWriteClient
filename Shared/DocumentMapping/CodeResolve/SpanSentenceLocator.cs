@@ -42,6 +42,12 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 return null;
             }
 
+            // 单码序列：Span 即该句，避免范围内 Find 与 scope 重合
+            if (codeList.Count == 1)
+            {
+                return span;
+            }
+
             return LocateSentence(doc, span, codeList[0], debugTag);
         }
 
@@ -54,6 +60,11 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             if (codeList == null || codeList.Count == 0)
             {
                 return null;
+            }
+
+            if (codeList.Count == 1)
+            {
+                return span;
             }
 
             return LocateSentence(doc, span, codeList[codeList.Count - 1], debugTag);

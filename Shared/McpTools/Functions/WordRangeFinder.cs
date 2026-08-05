@@ -485,9 +485,11 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 在指定 scope 内查找第一处完全落在 scope 内的命中（无 occurrenceIndex）。
+        /// 在指定 scope 内查找单次命中（无 occurrenceIndex；First = 单次/首处即停，非旧 nth）。
         /// 短文本：BuildFindTextCandidates + ConfigureFind；窗外命中视为 stale 并跳过。
         /// 长文本：包围搜索，最终命中须 IsFullyInsideScope。
+        /// 若 storedText 与 scope 文本一致（换行归一），直接返回 scope，避免 Word Find
+        /// 「目标不能等于整个搜索范围」的怪癖。
         /// </summary>
         public static Word.Range FindFirstInRange(Word.Range scope, string sentenceText, string debugInfo = "")
         {
@@ -500,6 +502,14 @@ namespace WordAddIn1
             if (doc == null)
             {
                 return null;
+            }
+
+            if (IsNormalizedTextEqualToScope(scope, sentenceText))
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[FindFirstInRange] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}" +
+                    $"文本与 scope 一致，直接返回 scope={scope.Start}-{scope.End}");
+                return scope.Duplicate;
             }
 
             string convertedText = ConvertNewlinesToWordCodes(sentenceText);
@@ -610,6 +620,42 @@ namespace WordAddIn1
         private static bool IsFullyInsideScope(Word.Range hit, Word.Range scope)
         {
             return hit != null && scope != null && hit.Start >= scope.Start && hit.End <= scope.End;
+        }
+
+        /// <summary>
+        /// 换行归一后比较 scope.Text 与 storedText（\r\n / \r / \n → \n）。
+        /// </summary>
+        private static bool IsNormalizedTextEqualToScope(Word.Range scope, string sentenceText)
+        {
+            if (scope == null || string.IsNullOrEmpty(sentenceText))
+            {
+                return false;
+            }
+
+            string scopeText;
+            try
+            {
+                scopeText = scope.Text ?? string.Empty;
+            }
+            catch
+            {
+                return false;
+            }
+
+            return string.Equals(
+                NormalizeNewlinesForCompare(scopeText),
+                NormalizeNewlinesForCompare(sentenceText),
+                StringComparison.Ordinal);
+        }
+
+        private static string NormalizeNewlinesForCompare(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return string.Empty;
+            }
+
+            return text.Replace("\r\n", "\n").Replace("\r", "\n");
         }
 
         private static Word.Range FindSentenceRangeInScope(

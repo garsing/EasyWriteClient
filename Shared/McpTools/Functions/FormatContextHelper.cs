@@ -142,24 +142,43 @@ namespace WordAddIn1
                 return result;
             }
 
-            foreach (string code in targetCodes)
+            // 单码时 Span 即目标段；再 Find 会与 scope 重合触发 Word Find 怪癖
+            if (targetCodes.Count == 1)
             {
-                Word.Range paragraphRange = SpanParagraphLocator.LocateParagraph(
-                    doc,
+                Dictionary<string, object> singleEntry = BuildParagraphEntryFromRange(
+                    targetCodes[0],
                     span,
-                    code,
-                    $"format_context:{code}");
-                Dictionary<string, object> entry = BuildParagraphEntryFromRange(
-                    code,
-                    paragraphRange,
                     isTarget: true);
-                if (entry != null)
+                if (singleEntry != null)
                 {
-                    result.Entries.Add(entry);
+                    result.Entries.Add(singleEntry);
                 }
                 else
                 {
-                    result.Errors.Add($"无法读取段落格式: {code}");
+                    result.Errors.Add($"无法读取段落格式: {targetCodes[0]}");
+                }
+            }
+            else
+            {
+                foreach (string code in targetCodes)
+                {
+                    Word.Range paragraphRange = SpanParagraphLocator.LocateParagraph(
+                        doc,
+                        span,
+                        code,
+                        $"format_context:{code}");
+                    Dictionary<string, object> entry = BuildParagraphEntryFromRange(
+                        code,
+                        paragraphRange,
+                        isTarget: true);
+                    if (entry != null)
+                    {
+                        result.Entries.Add(entry);
+                    }
+                    else
+                    {
+                        result.Errors.Add($"无法读取段落格式: {code}");
+                    }
                 }
             }
 
@@ -245,21 +264,41 @@ namespace WordAddIn1
                 return result;
             }
 
-            foreach (string code in targetCodes)
+            // 单码时 Span 即目标句；再 Find 会与 scope 重合触发 Word Find 怪癖
+            if (targetCodes.Count == 1)
             {
-                Word.Range range = SpanSentenceLocator.LocateSentence(
+                Dictionary<string, object> singleEntry = BuildEntryFromRange(
                     doc,
+                    targetCodes[0],
                     span,
-                    code,
-                    $"format_context:{code}");
-                Dictionary<string, object> entry = BuildEntryFromRange(doc, code, range, isTarget: true);
-                if (entry != null)
+                    isTarget: true);
+                if (singleEntry != null)
                 {
-                    result.Entries.Add(entry);
+                    result.Entries.Add(singleEntry);
                 }
                 else
                 {
-                    result.Errors.Add($"无法读取格式: {code}");
+                    result.Errors.Add($"无法读取格式: {targetCodes[0]}");
+                }
+            }
+            else
+            {
+                foreach (string code in targetCodes)
+                {
+                    Word.Range range = SpanSentenceLocator.LocateSentence(
+                        doc,
+                        span,
+                        code,
+                        $"format_context:{code}");
+                    Dictionary<string, object> entry = BuildEntryFromRange(doc, code, range, isTarget: true);
+                    if (entry != null)
+                    {
+                        result.Entries.Add(entry);
+                    }
+                    else
+                    {
+                        result.Errors.Add($"无法读取格式: {code}");
+                    }
                 }
             }
 
