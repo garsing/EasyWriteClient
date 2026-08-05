@@ -72,15 +72,31 @@ namespace EasyWriteClient.Desktop
                 return;
             }
 
-            // WebView2 在 Size=0 时初始化容易一直白屏；先保证有布局尺寸
+            // WebView2 在 Size=0 时初始化容易一直白屏；先走 Dock 布局拿到「顶栏下方」区域
+            // 切勿把 Height 设成父窗 ClientSize.Height，否则会铺满整窗并被顶栏盖住内容
             if (Width < 32 || Height < 32)
             {
                 var parent = FindForm();
                 if (parent != null)
                 {
                     parent.PerformLayout();
-                    Width = Math.Max(parent.ClientSize.Width, 800);
-                    Height = Math.Max(parent.ClientSize.Height, 600);
+                    if (Width < 32 || Height < 32)
+                    {
+                        int topDock = 0;
+                        foreach (Control c in parent.Controls)
+                        {
+                            if (c != this && c.Dock == DockStyle.Top)
+                            {
+                                topDock += c.Height;
+                            }
+                        }
+
+                        Bounds = new System.Drawing.Rectangle(
+                            0,
+                            topDock,
+                            Math.Max(parent.ClientSize.Width, 800),
+                            Math.Max(parent.ClientSize.Height - topDock, 600));
+                    }
                 }
             }
 
@@ -257,19 +273,38 @@ namespace EasyWriteClient.Desktop
         {
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string local = Path.GetFullPath(Path.Combine(baseDir, "wwwroot"));
-            if (Directory.Exists(local) && File.Exists(Path.Combine(local, "index.html")))
-            {
-                return local;
-            }
-
             // 开发：相对 Desktop 输出目录回退到 Plugin/wwwroot
             string pluginWww = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "Plugin", "wwwroot"));
-            if (Directory.Exists(pluginWww) && File.Exists(Path.Combine(pluginWww, "index.html")))
+
+            bool localOk = Directory.Exists(local) && File.Exists(Path.Combine(local, "index.html"));
+            bool pluginOk = Directory.Exists(pluginWww) && File.Exists(Path.Combine(pluginWww, "index.html"));
+
+            // npm run build 只更新 Plugin/wwwroot；两侧都存在时取较新的一份，避免沿用过期的输出目录拷贝
+            if (localOk && pluginOk)
+            {
+                DateTime localStamp = WwwrootStamp(local);
+                DateTime pluginStamp = WwwrootStamp(pluginWww);
+                return pluginStamp >= localStamp ? pluginWww : local;
+            }
+
+            if (pluginOk)
             {
                 return pluginWww;
             }
 
             return local;
+        }
+
+        private static DateTime WwwrootStamp(string wwwroot)
+        {
+            string mainJs = Path.Combine(wwwroot, "assets", "main.js");
+            if (File.Exists(mainJs))
+            {
+                return File.GetLastWriteTimeUtc(mainJs);
+            }
+
+            string index = Path.Combine(wwwroot, "index.html");
+            return File.Exists(index) ? File.GetLastWriteTimeUtc(index) : DateTime.MinValue;
         }
 
         private void RegisterHandlers()

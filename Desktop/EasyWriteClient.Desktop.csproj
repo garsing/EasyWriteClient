@@ -43,6 +43,7 @@
     <Content Include="..\Plugin\config.json" Link="config.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <EmbeddedResource Include="Assets\yi-write_logo1.png" />
   </ItemGroup>
 
   <Target Name="CopyWwwrootFromPlugin" AfterTargets="Build">

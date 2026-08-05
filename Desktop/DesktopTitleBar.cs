@@ -1,0 +1,394 @@
+using System;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+
+namespace EasyWriteClient.Desktop
+{
+    /// <summary>
+    /// WorkBuddy 风格顶栏：浅灰底、左图标+标题、右细线 Min/Max/Close；无菜单。
+    /// </summary>
+    internal sealed class DesktopTitleBar : Panel
+    {
+        private const int WmNclButtonDown = 0xA1;
+        private const int HtCaption = 0x2;
+
+        private readonly Label _titleLabel;
+        private readonly TitleBarButton _btnMin;
+        private readonly TitleBarButton _btnMax;
+        private readonly TitleBarButton _btnClose;
+        private readonly float _dpiScale;
+        private readonly Image _logo;
+        private MainForm _owner;
+
+        public DesktopTitleBar(float dpiScale)
+        {
+            _dpiScale = dpiScale <= 0 ? 1f : dpiScale;
+            _logo = LoadLogo();
+            // 紧凑顶栏（约 Win11 标题栏观感），避免挡住 WebView 内容
+            int barHeight = Scale(32);
+            int btnW = Scale(36);
+            int btnH = barHeight;
+
+            Dock = DockStyle.Top;
+            Height = barHeight;
+            MinimumSize = new Size(0, barHeight);
+            MaximumSize = new Size(0, barHeight);
+            BackColor = Color.FromArgb(0xF0, 0xF0, 0xF0);
+            Padding = new Padding(Scale(8), 0, 0, 0);
+            DoubleBuffered = true;
+
+            // 仅 logo，不显示「易写」文字；区域用于拖拽
+            int logoW = Scale(28);
+            if (_logo != null)
+            {
+                logoW = Math.Max(logoW, (int)Math.Round(Scale(18) * (_logo.Width / (double)_logo.Height)) + Scale(8));
+            }
+
+            _titleLabel = new Label
+            {
+                AutoSize = false,
+                Text = string.Empty,
+                BackColor = Color.Transparent,
+                Dock = DockStyle.Left,
+                Width = logoW
+            };
+            _titleLabel.Paint += TitleLabel_Paint;
+            _titleLabel.MouseDown += TitleBar_MouseDown;
+            _titleLabel.MouseDoubleClick += TitleBar_MouseDoubleClick;
+
+            _btnClose = new TitleBarButton(TitleBarButtonKind.Close, btnW, btnH, _dpiScale)
+            {
+                Dock = DockStyle.Right
+            };
+            _btnClose.Click += (_, __) => OwnerForm?.Close();
+
+            _btnMax = new TitleBarButton(TitleBarButtonKind.Maximize, btnW, btnH, _dpiScale)
+            {
+                Dock = DockStyle.Right
+            };
+            _btnMax.Click += (_, __) =>
+            {
+                OwnerForm?.ToggleMaximizeRestore();
+                SyncMaxButtonGlyph();
+            };
+
+            _btnMin = new TitleBarButton(TitleBarButtonKind.Minimize, btnW, btnH, _dpiScale)
+            {
+                Dock = DockStyle.Right
+            };
+            _btnMin.Click += (_, __) =>
+            {
+                if (OwnerForm != null)
+                {
+                    OwnerForm.WindowState = FormWindowState.Minimized;
+                }
+            };
+
+            // Dock.Right：后添加的贴最右侧 → 视觉顺序为 最小化 | 最大化 | 关闭
+            Controls.Add(_titleLabel);
+            Controls.Add(_btnMin);
+            Controls.Add(_btnMax);
+            Controls.Add(_btnClose);
+
+            MouseDown += TitleBar_MouseDown;
+            MouseDoubleClick += TitleBar_MouseDoubleClick;
+            Paint += DesktopTitleBar_Paint;
+        }
+
+        private MainForm OwnerForm => _owner ?? (_owner = FindForm() as MainForm);
+
+        protected override void OnParentChanged(EventArgs e)
+        {
+            base.OnParentChanged(e);
+            _owner = FindForm() as MainForm;
+            SyncMaxButtonGlyph();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _logo?.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+
+        public void SyncMaxButtonGlyph()
+        {
+            if (_owner == null)
+            {
+                return;
+            }
+
+            _btnMax.Kind = _owner.IsCustomMaximized
+                ? TitleBarButtonKind.Restore
+                : TitleBarButtonKind.Maximize;
+            _btnMax.Invalidate();
+        }
+
+        private void TitleBar_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left)
+            {
+                return;
+            }
+
+            Form form = OwnerForm;
+            if (form == null)
+            {
+                return;
+            }
+
+            // 自定义最大化时先还原再拖
+            if (OwnerForm.IsCustomMaximized)
+            {
+                OwnerForm.ToggleMaximizeRestore();
+                SyncMaxButtonGlyph();
+            }
+
+            ReleaseCapture();
+            SendMessage(form.Handle, WmNclButtonDown, (IntPtr)HtCaption, IntPtr.Zero);
+        }
+
+        private void TitleBar_MouseDoubleClick(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                OwnerForm?.ToggleMaximizeRestore();
+                SyncMaxButtonGlyph();
+            }
+        }
+
+        private void DesktopTitleBar_Paint(object sender, PaintEventArgs e)
+        {
+            using (var pen = new Pen(Color.FromArgb(0xD0, 0xD0, 0xD0)))
+            {
+                e.Graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
+            }
+        }
+
+        private void TitleLabel_Paint(object sender, PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            g.CompositingMode = CompositingMode.SourceOver;
+
+            int h = Scale(18);
+            int x = Scale(2);
+            int y = Math.Max(0, (_titleLabel.Height - h) / 2);
+
+            if (_logo != null)
+            {
+                int w = Math.Max(1, (int)Math.Round(h * (_logo.Width / (double)_logo.Height)));
+                g.DrawImage(_logo, new Rectangle(x, y, w, h));
+                return;
+            }
+
+            // 资源缺失时的占位
+            using (var brush = new SolidBrush(Color.FromArgb(0x2D, 0x2D, 0x2D)))
+            {
+                g.FillEllipse(brush, x, y, h, h);
+            }
+        }
+
+        private static Image LoadLogo()
+        {
+            try
+            {
+                var asm = typeof(DesktopTitleBar).Assembly;
+                string resName = asm.GetManifestResourceNames()
+                    .FirstOrDefault(n => n.EndsWith("yi-write_logo1.png", StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrEmpty(resName))
+                {
+                    using (Stream stream = asm.GetManifestResourceStream(resName))
+                    {
+                        if (stream != null)
+                        {
+                            using (Image img = Image.FromStream(stream))
+                            {
+                                return MakeWhiteTransparent(new Bitmap(img));
+                            }
+                        }
+                    }
+                }
+
+                string besideExe = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "yi-write_logo1.png");
+                if (File.Exists(besideExe))
+                {
+                    using (Image img = Image.FromFile(besideExe))
+                    {
+                        return MakeWhiteTransparent(new Bitmap(img));
+                    }
+                }
+            }
+            catch
+            {
+                // 忽略，回退到占位绘制
+            }
+
+            return null;
+        }
+
+        /// <summary>将近白背景像素设为透明，避免顶栏上出现白底方块。</summary>
+        private static Bitmap MakeWhiteTransparent(Bitmap src)
+        {
+            for (int y = 0; y < src.Height; y++)
+            {
+                for (int x = 0; x < src.Width; x++)
+                {
+                    Color c = src.GetPixel(x, y);
+                    if (c.A == 0)
+                    {
+                        continue;
+                    }
+
+                    if (c.R >= 240 && c.G >= 240 && c.B >= 240)
+                    {
+                        src.SetPixel(x, y, Color.FromArgb(0, c.R, c.G, c.B));
+                    }
+                }
+            }
+
+            return src;
+        }
+
+        private int Scale(int value)
+        {
+            return Math.Max(1, (int)Math.Round(value * _dpiScale));
+        }
+
+        [DllImport("user32.dll")]
+        private static extern bool ReleaseCapture();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+    }
+
+    internal enum TitleBarButtonKind
+    {
+        Minimize,
+        Maximize,
+        Restore,
+        Close
+    }
+
+    internal sealed class TitleBarButton : Control
+    {
+        private bool _hover;
+        private TitleBarButtonKind _kind;
+        private readonly float _dpiScale;
+
+        public TitleBarButton(TitleBarButtonKind kind, int width, int height, float dpiScale)
+        {
+            _kind = kind;
+            _dpiScale = dpiScale <= 0 ? 1f : dpiScale;
+            Size = new Size(width, height);
+            Cursor = Cursors.Hand;
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint
+                | ControlStyles.UserPaint
+                | ControlStyles.OptimizedDoubleBuffer
+                | ControlStyles.ResizeRedraw,
+                true);
+        }
+
+        public TitleBarButtonKind Kind
+        {
+            get => _kind;
+            set
+            {
+                if (_kind == value)
+                {
+                    return;
+                }
+
+                _kind = value;
+                Invalidate();
+            }
+        }
+
+        protected override void OnMouseEnter(EventArgs e)
+        {
+            _hover = true;
+            Invalidate();
+            base.OnMouseEnter(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            _hover = false;
+            Invalidate();
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            Color bg = Color.FromArgb(0xF0, 0xF0, 0xF0);
+            if (_hover)
+            {
+                bg = _kind == TitleBarButtonKind.Close
+                    ? Color.FromArgb(0xE8, 0x11, 0x23)
+                    : Color.FromArgb(0xE5, 0xE5, 0xE5);
+            }
+
+            using (var brush = new SolidBrush(bg))
+            {
+                g.FillRectangle(brush, ClientRectangle);
+            }
+
+            Color iconColor = _hover && _kind == TitleBarButtonKind.Close
+                ? Color.White
+                : Color.FromArgb(0x1F, 0x1F, 0x1F);
+
+            using (var pen = new Pen(iconColor, Math.Max(1f, _dpiScale))
+            {
+                StartCap = LineCap.Flat,
+                EndCap = LineCap.Flat
+            })
+            {
+                float cx = Width / 2f;
+                float cy = Height / 2f;
+                float s = Math.Min(Width, Height) * 0.14f;
+
+                switch (_kind)
+                {
+                    case TitleBarButtonKind.Minimize:
+                        g.DrawLine(pen, cx - s, cy, cx + s, cy);
+                        break;
+                    case TitleBarButtonKind.Maximize:
+                        g.DrawRectangle(pen, cx - s, cy - s, s * 2f, s * 2f);
+                        break;
+                    case TitleBarButtonKind.Restore:
+                        float o = s * 0.35f;
+                        g.DrawRectangle(pen, cx - s + o, cy - s - o, s * 1.7f, s * 1.7f);
+                        using (var erase = new SolidBrush(bg))
+                        {
+                            g.FillRectangle(
+                                erase,
+                                cx - s - 0.5f,
+                                cy - s + o - 0.5f,
+                                s * 1.7f + 1f,
+                                s * 1.7f + 1f);
+                        }
+
+                        g.DrawRectangle(pen, cx - s, cy - s + o, s * 1.7f, s * 1.7f);
+                        break;
+                    case TitleBarButtonKind.Close:
+                        g.DrawLine(pen, cx - s, cy - s, cx + s, cy + s);
+                        g.DrawLine(pen, cx + s, cy - s, cx - s, cy + s);
+                        break;
+                }
+            }
+        }
+    }
+}
