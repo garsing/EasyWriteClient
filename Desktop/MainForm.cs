@@ -18,8 +18,12 @@ namespace EasyWriteClient.Desktop
         {
             Text = AppDisplayName.Value;
             StartPosition = FormStartPosition.CenterScreen;
-            MinimumSize = new Size(960, 640);
-            Size = new Size(1280, 800);
+            // 尺寸已按系统 DPI 显式放大；勿再 AutoScale，避免双重缩放
+            AutoScaleMode = AutoScaleMode.None;
+            // PerMonitorV2 后不再被系统位图拉伸，按 DPI 放大以接近旧版视觉大小且保持清晰
+            float dpiScale = GetDpiScale();
+            MinimumSize = ScaleSize(960, 640, dpiScale);
+            Size = ScaleSize(1280, 800, dpiScale);
             BackColor = Color.White;
 
             HostCallbacks.NotifyUserLoggedInAllAsync = async () =>
@@ -66,6 +70,21 @@ namespace EasyWriteClient.Desktop
             {
                 UseWaitCursor = false;
             }
+        }
+
+        private static float GetDpiScale()
+        {
+            using (Graphics g = Graphics.FromHwnd(IntPtr.Zero))
+            {
+                return g.DpiX / 96f;
+            }
+        }
+
+        private static Size ScaleSize(int width, int height, float dpiScale)
+        {
+            return new Size(
+                Math.Max(1, (int)Math.Round(width * dpiScale)),
+                Math.Max(1, (int)Math.Round(height * dpiScale)));
         }
     }
 }

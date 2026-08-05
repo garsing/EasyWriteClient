@@ -8,6 +8,7 @@
     <Nullable>disable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon />
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>EasyWriteClient.Desktop.Program</StartupObject>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
