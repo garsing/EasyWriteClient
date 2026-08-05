@@ -49,20 +49,20 @@
     </Content>
   </ItemGroup>
 
-  <Target Name="CopyWwwrootFromPlugin" AfterTargets="Build">
+  <Target Name="CopyWwwrootFromSharedFrontend" AfterTargets="Build">
     <PropertyGroup>
-      <_PluginWwwroot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\Plugin\wwwroot'))</_PluginWwwroot>
+      <_SharedWwwroot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\Shared\Frontend\wwwroot'))</_SharedWwwroot>
       <_DesktopWwwroot>$(OutputPath)wwwroot</_DesktopWwwroot>
     </PropertyGroup>
-    <Message Importance="high" Text="Copy wwwroot: $(_PluginWwwroot) → $(_DesktopWwwroot)" Condition="Exists('$(_PluginWwwroot)\index.html')" />
-    <ItemGroup Condition="Exists('$(_PluginWwwroot)\index.html')">
-      <_WwwFiles Include="$(_PluginWwwroot)\**\*.*" />
+    <Message Importance="high" Text="Copy wwwroot: $(_SharedWwwroot) → $(_DesktopWwwroot)" Condition="Exists('$(_SharedWwwroot)\index.html')" />
+    <ItemGroup Condition="Exists('$(_SharedWwwroot)\index.html')">
+      <_WwwFiles Include="$(_SharedWwwroot)\**\*.*" />
     </ItemGroup>
     <Copy
       SourceFiles="@(_WwwFiles)"
       DestinationFiles="@(_WwwFiles->'$(_DesktopWwwroot)\%(RecursiveDir)%(Filename)%(Extension)')"
       SkipUnchangedFiles="true"
-      Condition="Exists('$(_PluginWwwroot)\index.html')" />
-    <Warning Text="Plugin/wwwroot 不存在或缺少 index.html。请先在 Plugin/frontend 执行 npm run build。" Condition="!Exists('$(_PluginWwwroot)\index.html')" />
+      Condition="Exists('$(_SharedWwwroot)\index.html')" />
+    <Warning Text="Shared/Frontend/wwwroot 不存在或缺少 index.html。请先在 Shared/Frontend 执行 npm run build。" Condition="!Exists('$(_SharedWwwroot)\index.html')" />
   </Target>
 </Project>

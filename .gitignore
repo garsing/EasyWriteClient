@@ -24,6 +24,11 @@ artifacts/
 **/WebView2Data*/
 *.log
 
+# Shared Vue frontend
+Shared/Frontend/node_modules/
+Shared/Frontend/dist/
+Shared/Frontend/.vite/
+
 # OS
 Thumbs.db
 Desktop.ini

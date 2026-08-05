@@ -273,23 +273,24 @@ namespace EasyWriteClient.Desktop
         {
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string local = Path.GetFullPath(Path.Combine(baseDir, "wwwroot"));
-            // 开发：相对 Desktop 输出目录回退到 Plugin/wwwroot
-            string pluginWww = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "Plugin", "wwwroot"));
+            // 开发：相对 Desktop 输出目录回退到 Shared/Frontend/wwwroot
+            string sharedWww = Path.GetFullPath(Path.Combine(
+                baseDir, "..", "..", "..", "..", "Shared", "Frontend", "wwwroot"));
 
             bool localOk = Directory.Exists(local) && File.Exists(Path.Combine(local, "index.html"));
-            bool pluginOk = Directory.Exists(pluginWww) && File.Exists(Path.Combine(pluginWww, "index.html"));
+            bool sharedOk = Directory.Exists(sharedWww) && File.Exists(Path.Combine(sharedWww, "index.html"));
 
-            // npm run build 只更新 Plugin/wwwroot；两侧都存在时取较新的一份，避免沿用过期的输出目录拷贝
-            if (localOk && pluginOk)
+            // npm run build 更新 Shared/Frontend/wwwroot；两侧都存在时取较新的一份
+            if (localOk && sharedOk)
             {
                 DateTime localStamp = WwwrootStamp(local);
-                DateTime pluginStamp = WwwrootStamp(pluginWww);
-                return pluginStamp >= localStamp ? pluginWww : local;
+                DateTime sharedStamp = WwwrootStamp(sharedWww);
+                return sharedStamp >= localStamp ? sharedWww : local;
             }
 
-            if (pluginOk)
+            if (sharedOk)
             {
-                return pluginWww;
+                return sharedWww;
             }
 
             return local;

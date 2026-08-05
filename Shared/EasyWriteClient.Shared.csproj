@@ -18,6 +18,11 @@
     <Compile Remove="McpTools\backup\**" />
     <EmbeddedResource Remove="McpTools\backup\**" />
     <None Remove="McpTools\backup\**" />
+    <!-- Vue 前端：Desktop/Plugin 共用，勿编入 C# 程序集 -->
+    <Compile Remove="Frontend\**" />
+    <Content Remove="Frontend\**" />
+    <None Remove="Frontend\**" />
+    <EmbeddedResource Remove="Frontend\**" />
     <!-- 与 Plugin 工程中已注释下线的工具保持一致 -->
     <Compile Remove="McpTools\F_SelectAndAnalyzeDocumentContentTool.cs" />
     <Compile Remove="McpTools\F_SplitDocumentByParagraphsTool.cs" />

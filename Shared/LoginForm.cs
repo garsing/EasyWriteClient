@@ -265,7 +265,7 @@ namespace WordAddIn1
                     || !File.Exists(jsPath)
                     || !File.Exists(cssPath))
                 {
-                    ShowFallbackHtml("未找到 login 前端文件，请在 Plugin/frontend 执行 npm run build 后重新生成 Desktop。");
+                    ShowFallbackHtml("未找到 login 前端文件，请在 Shared/Frontend 执行 npm run build 后重新生成 Desktop。");
                     return;
                 }
 

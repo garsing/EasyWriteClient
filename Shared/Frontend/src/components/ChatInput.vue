@@ -1,0 +1,424 @@
+<template>
+  <div
+    class="chat-input-container"
+    :class="{ 'chat-input-container--desktop': desktop }"
+    @dragover.capture="onFileDragOverCapture"
+    @drop.capture="onFileDropCapture"
+  >
+    <div v-if="showAttachmentStrip" class="attachment-strip">
+      <div class="attachment-card">
+        <span class="attach-icon" aria-hidden="true">📄</span>
+        <div class="attach-meta">
+          <div class="attach-name" :title="attachment.fileLabel?.name">{{ truncateName(attachment.fileLabel?.name) }}</div>
+          <div v-if="isAttachmentBusy" class="attach-progress">
+            <span class="spin" />
+            <span>{{ progressLabel }}</span>
+          </div>
+          <div v-else-if="attachment.phase === 'ready'" class="attach-ready">就绪</div>
+          <div v-else-if="attachment.phase === 'error'" class="attach-error">{{ attachment.errorMessage || '失败' }}</div>
+        </div>
+        <button
+          v-if="attachment.phase !== 'uploading' && attachment.phase !== 'processing' && attachment.phase !== 'registering'"
+          type="button"
+          class="attach-remove"
+          @click="$emit('clear-attachment')"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+
+    <div class="input-wrapper">
+      <a-textarea
+        v-model:value="inputValue"
+        :placeholder="placeholder"
+        :auto-size="autoSize"
+        :disabled="loading"
+        class="input-textarea"
+        @keydown.enter.exact.prevent="handleEnter"
+        @keydown.shift.enter.exact="handleShiftEnter"
+      />
+      <button
+        v-if="desktop || inputValue.trim().length > 0 || isProcessing"
+        type="button"
+        :disabled="sendDisabled"
+        :title="isProcessing ? '停止' : '发送'"
+        :aria-label="isProcessing ? '停止' : '发送'"
+        @click="handleButtonClick"
+        class="send-button"
+      >
+        <img :src="currentIcon" :alt="isProcessing ? '停止' : '发送'" class="send-icon" />
+      </button>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import submitIcon from '../assets/images/submit.png'
+import stopIcon from '../assets/images/stop.png'
+import { useWebViewBridge } from '../composables/useWebViewBridge'
+
+const { sendMessage } = useWebViewBridge()
+
+const props = defineProps({
+  loading: {
+    type: Boolean,
+    default: false
+  },
+  isProcessing: {
+    type: Boolean,
+    default: false
+  },
+  /** 桌面端加高输入区；插件侧栏保持紧凑 */
+  desktop: {
+    type: Boolean,
+    default: false
+  },
+  /** 来自 App attachmentView：phase, progress, fileLabel, errorMessage, uploadId（ready 时与展示一一对应） */
+  attachment: {
+    type: Object,
+    default: null
+  }
+})
+
+const autoSize = computed(() =>
+  props.desktop ? { minRows: 3, maxRows: 8 } : { minRows: 1, maxRows: 4 }
+)
+
+const emit = defineEmits(['send', 'clear-attachment', 'dropped-file'])
+
+function dataTransferHasFiles (dt) {
+  if (!dt) return false
+  try {
+    if (dt.files && dt.files.length > 0) return true
+    if (dt.items && dt.items.length) {
+      for (let i = 0; i < dt.items.length; i++) {
+        if (dt.items[i].kind === 'file') return true
+      }
+    }
+    if (!dt.types) return false
+    if (typeof dt.types.includes === 'function' && dt.types.includes('Files')) return true
+    for (let j = 0; j < dt.types.length; j++) {
+      const t = String(dt.types[j]).toLowerCase()
+      if (t === 'files' || t.includes('file')) return true
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return false
+}
+
+/** 捕获阶段：在落到 textarea 前拦截「文件」拖放，避免 WebView2 走打开/下载默认行为 */
+function onFileDragOverCapture (e) {
+  if (!dataTransferHasFiles(e.dataTransfer)) return
+  e.preventDefault()
+  try {
+    e.dataTransfer.dropEffect = 'copy'
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+function onFileDropCapture (e) {
+  if (!dataTransferHasFiles(e.dataTransfer)) return
+  e.preventDefault()
+  e.stopPropagation()
+  const file = e.dataTransfer?.files?.[0]
+  if (file) {
+    emit('dropped-file', file)
+  }
+}
+
+const inputValue = ref('')
+const placeholder = ref('输入消息')
+
+/** 上传中/处理中/失败：可显示；就绪：仅当有 upload_id 时显示，与丢弃 upload_id 后必须消失一致 */
+const showAttachmentStrip = computed(() => {
+  const a = props.attachment
+  if (!a || a.phase === 'idle') return false
+  if (a.phase === 'ready') return !!a.uploadId
+  return true
+})
+
+const isAttachmentBusy = computed(() =>
+  props.attachment &&
+  ['uploading', 'processing', 'registering'].includes(props.attachment.phase)
+)
+
+const progressLabel = computed(() => {
+  if (!props.attachment) return ''
+  const p = props.attachment.progress
+  if (typeof p === 'number' && !Number.isNaN(p)) {
+    return `${Math.min(100, Math.round(p))}%`
+  }
+  return '处理中…'
+})
+
+const sendDisabled = computed(() => {
+  if (props.isProcessing) return false
+  if (props.loading && !props.isProcessing) return true
+  const text = inputValue.value.trim()
+  if (!text) return true
+  const a = props.attachment
+  if (!a || a.phase === 'idle' || !showAttachmentStrip.value) {
+    return props.loading
+  }
+  if (isAttachmentBusy.value) return true
+  if (a.phase === 'error') return true
+  if (a.phase === 'ready') {
+    return props.loading
+  }
+  return true
+})
+
+const canSend = computed(() => !sendDisabled.value && inputValue.value.trim().length > 0)
+
+const currentIcon = computed(() => {
+  return props.isProcessing ? stopIcon : submitIcon
+})
+
+function truncateName (name) {
+  if (!name) return ''
+  return name.length > 36 ? name.slice(0, 33) + '…' : name
+}
+
+onMounted(() => {
+  window.addEventListener('restoreInput', (event) => {
+    if (event.detail && event.detail.value) {
+      inputValue.value = event.detail.value
+    }
+  })
+
+  window.addEventListener('clearInput', () => {
+    inputValue.value = ''
+  })
+})
+
+onUnmounted(() => {})
+
+const handleSend = () => {
+  if (!canSend.value) return
+
+  const content = inputValue.value.trim()
+  if (content) {
+    emit('send', content)
+  }
+}
+
+const handleStop = async () => {
+  try {
+    await sendMessage('stopRequest', {})
+  } catch (error) {
+    console.error('停止请求失败:', error)
+  }
+}
+
+const handleButtonClick = () => {
+  if (props.isProcessing) {
+    handleStop()
+  } else {
+    handleSend()
+  }
+}
+
+const handleEnter = () => {
+  if (!props.isProcessing) {
+    handleSend()
+  }
+}
+
+const handleShiftEnter = () => {}
+</script>
+
+<style scoped>
+/* 插件默认：紧凑单行输入 */
+.chat-input-container {
+  padding: 12px 8px 12px 16px;
+  background-color: #f7f7f5;
+  border-top: 1px solid transparent;
+  flex-shrink: 0;
+}
+
+.attachment-strip {
+  margin-bottom: 8px;
+}
+
+.attachment-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  max-width: 100%;
+}
+
+.attach-icon {
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.attach-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.attach-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attach-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+}
+
+.spin {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #ccc;
+  border-top-color: #1890ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.attach-ready {
+  font-size: 12px;
+  color: #52c41a;
+  margin-top: 4px;
+}
+
+.attach-error {
+  font-size: 12px;
+  color: #ff4d4f;
+  margin-top: 4px;
+}
+
+.attach-remove {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: #999;
+  padding: 0 4px;
+}
+
+.attach-remove:hover {
+  color: #333;
+}
+
+.input-wrapper {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.input-textarea {
+  flex: 1;
+  min-width: 0;
+}
+
+.input-textarea :deep(textarea.ant-input),
+.input-textarea :deep(.ant-input) {
+  background-color: #fff;
+  border-color: #e0e0e0;
+}
+
+.send-button {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.send-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.send-icon {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+/* 桌面端：加高 + 底部留白；外层与面板同色，仅内框白色 */
+.chat-input-container--desktop {
+  padding: 12px 20px 32px;
+  background-color: #f7f7f5;
+}
+
+.chat-input-container--desktop .input-wrapper {
+  gap: 8px;
+  align-items: flex-end;
+  min-height: 96px;
+  padding: 14px 12px 12px 16px;
+  box-sizing: border-box;
+  background: #ffffff;
+  border: 1px solid #e6e6e6;
+  border-radius: 16px;
+}
+
+.chat-input-container--desktop .input-textarea {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.chat-input-container--desktop .input-wrapper :deep(.ant-input-textarea),
+.chat-input-container--desktop .input-wrapper :deep(.ant-input),
+.chat-input-container--desktop .input-wrapper :deep(textarea.ant-input),
+.chat-input-container--desktop .input-wrapper :deep(.ant-input-affix-wrapper) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.chat-input-container--desktop .input-textarea :deep(.ant-input),
+.chat-input-container--desktop .input-textarea :deep(textarea.ant-input) {
+  padding: 0 !important;
+  min-height: 60px;
+  resize: none;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.chat-input-container--desktop .input-textarea :deep(.ant-input:hover),
+.chat-input-container--desktop .input-textarea :deep(.ant-input:focus),
+.chat-input-container--desktop .input-textarea :deep(.ant-input-focused),
+.chat-input-container--desktop .input-textarea :deep(.ant-input-affix-wrapper:hover),
+.chat-input-container--desktop .input-textarea :deep(.ant-input-affix-wrapper-focused),
+.chat-input-container--desktop .input-textarea :deep(.ant-input-affix-wrapper:focus) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.chat-input-container--desktop .send-button {
+  padding: 4px;
+  margin-bottom: 2px;
+}
+</style>
