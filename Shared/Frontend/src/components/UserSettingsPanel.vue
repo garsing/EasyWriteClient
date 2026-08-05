@@ -396,6 +396,7 @@ onMounted(() => {
   box-sizing: border-box;
   background: #ececec;
   border: 1px solid #e0e0e0;
+  border-radius: 14px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
   overflow: hidden;
 }

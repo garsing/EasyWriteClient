@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -19,6 +20,7 @@ namespace WordAddIn1
         private WebView2Bridge bridge;
         private bool isDragging;
         private Point dragStartPoint;
+        private readonly int _cornerRadius;
 
         public static bool IsOpen =>
             _activeInstance != null && !_activeInstance.IsDisposed;
@@ -82,16 +84,70 @@ namespace WordAddIn1
 
         public UserSettingsForm()
         {
+            float dpiScale = 1f;
+            try
+            {
+                using (Graphics g = Graphics.FromHwnd(IntPtr.Zero))
+                {
+                    dpiScale = g.DpiX / 96f;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            _cornerRadius = Math.Max(12, (int)Math.Round(14 * dpiScale));
             InitializeComponent();
             _activeInstance = this;
             FormClosed += UserSettingsForm_FormClosed;
             Shown += UserSettingsForm_Shown;
+            SizeChanged += (_, __) => ApplyWindowRegion();
+            ApplyWindowRegion();
         }
 
         private async void UserSettingsForm_Shown(object sender, EventArgs e)
         {
             Shown -= UserSettingsForm_Shown;
+            ApplyWindowRegion();
             await InitializeWebView2Async();
+        }
+
+        /// <summary>
+        /// 无边框窗体用 Region 做圆角，与桌面主窗一致。
+        /// </summary>
+        private void ApplyWindowRegion()
+        {
+            if (Width <= 0 || Height <= 0)
+            {
+                return;
+            }
+
+            Region old = Region;
+            using (GraphicsPath path = CreateRoundedRectPath(new Rectangle(0, 0, Width, Height), _cornerRadius))
+            {
+                Region = new Region(path);
+            }
+
+            old?.Dispose();
+        }
+
+        private static GraphicsPath CreateRoundedRectPath(Rectangle bounds, int radius)
+        {
+            var path = new GraphicsPath();
+            int d = radius * 2;
+            if (radius <= 0 || bounds.Width < d || bounds.Height < d)
+            {
+                path.AddRectangle(bounds);
+                return path;
+            }
+
+            path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
+            path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
+            path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
+            path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
         }
 
         private void UserSettingsForm_FormClosed(object sender, FormClosedEventArgs e)
