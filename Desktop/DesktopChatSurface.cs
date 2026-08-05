@@ -765,77 +765,7 @@ namespace EasyWriteClient.Desktop
 
         private List<object> BuildVueHistoryMessages(List<JObject> messages)
         {
-            var result = new List<object>();
-            long idBase = DateTimeOffset.Now.ToUnixTimeMilliseconds();
-            int seq = 0;
-            foreach (var message in messages)
-            {
-                if (message == null)
-                {
-                    continue;
-                }
-
-                string role = message["role"]?.ToString();
-                if (string.IsNullOrEmpty(role) || role == "system" || role == "tool")
-                {
-                    continue;
-                }
-
-                string text = message["content"]?.Type == JTokenType.String
-                    ? message["content"].ToString()
-                    : message["content"]?.ToString();
-                string reasoning = message["reasoning_content"]?.ToString()
-                    ?? message["reasoning"]?.ToString();
-
-                if (role == "user")
-                {
-                    if (string.IsNullOrEmpty(text))
-                    {
-                        continue;
-                    }
-
-                    result.Add(new
-                    {
-                        id = idBase + seq++,
-                        role = "user",
-                        content = text,
-                        timestamp = idBase + seq,
-                        isStreaming = false
-                    });
-                    continue;
-                }
-
-                if (role == "assistant")
-                {
-                    var segments = new List<object>();
-                    if (!string.IsNullOrEmpty(reasoning))
-                    {
-                        segments.Add(new { type = "thinking", content = reasoning, isComplete = true });
-                    }
-
-                    if (!string.IsNullOrEmpty(text))
-                    {
-                        segments.Add(new { type = "text", content = text });
-                    }
-
-                    if (segments.Count == 0)
-                    {
-                        continue;
-                    }
-
-                    result.Add(new
-                    {
-                        id = idBase + seq++,
-                        role = "system",
-                        content = text ?? "",
-                        segments,
-                        timestamp = idBase + seq,
-                        isStreaming = false
-                    });
-                }
-            }
-
-            return result;
+            return ConversationHistoryMapper.BuildVueHistoryMessages(messages);
         }
 
         private Dictionary<string, string> CreateApiHeaders(string xConversationId)
