@@ -839,10 +839,15 @@ const restoreInputValue = (value) => {
 /* 空状态面板保持原灰底；仅推荐气泡为白（桌面端） */
 .app-shell.host-desktop :deep(.chat-empty-state) {
   background-color: #f7f7f5;
+  /* 与 .chat-input-container--desktop 左右 20px 对齐，推荐气泡与输入框同宽 */
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .app-shell.host-desktop :deep(.chat-empty-state .recommendations) {
   margin-bottom: 4px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .app-shell.host-desktop :deep(.chat-empty-state .rec-item) {

@@ -13,14 +13,14 @@
       </button>
     </div>
 
-    <!-- 上部：仅新建任务；中间留空供后续导航 -->
+    <!-- 上部：仅新建任务；图标与插件 ChatHeader 同一 add.png -->
     <button
       v-if="!collapsed"
       type="button"
       class="new-task-btn"
       @click="$emit('new-task')"
     >
-      <span class="new-task-plus" aria-hidden="true">+</span>
+      <img :src="addIcon" alt="" class="new-task-icon-img" aria-hidden="true" />
       新建任务
     </button>
     <button
@@ -31,7 +31,7 @@
       aria-label="新建任务"
       @click="$emit('new-task')"
     >
-      +
+      <img :src="addIcon" alt="新建任务" class="new-task-icon-img" />
     </button>
 
     <!-- 新建任务与历史任务之间：预留给后续导航/入口 -->
@@ -80,6 +80,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { formatRelativeTime } from '../services/conversationsApi.js'
+import addIcon from '../assets/images/add.png'
 
 const props = defineProps({
   collapsed: { type: Boolean, default: false },
@@ -175,21 +176,24 @@ const taskCountLabel = computed(() => {
   background: rgba(0, 0, 0, 0.04);
 }
 
-.new-task-plus {
-  display: inline-flex;
+.new-task-icon-img {
   width: 18px;
   height: 18px;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  line-height: 1;
-  color: #5c5a55;
+  object-fit: contain;
+  flex-shrink: 0;
+  display: block;
 }
 
 .new-task-icon {
   margin-top: 4px;
-  font-size: 20px;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.new-task-icon .new-task-icon-img {
+  width: 22px;
+  height: 22px;
 }
 
 /* 新建任务 ↔ 历史任务：中间留空，后续可放导航等（展开/折叠时尺寸不变） */
