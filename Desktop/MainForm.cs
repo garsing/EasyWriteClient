@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -27,6 +28,7 @@ namespace EasyWriteClient.Desktop
         private readonly DesktopTitleBar _titleBar;
         private readonly float _dpiScale;
         private readonly int _resizeBorder;
+        private readonly int _cornerRadius;
         private bool _started;
         private bool _customMaximized;
         private Rectangle _restoreBounds;
@@ -40,9 +42,12 @@ namespace EasyWriteClient.Desktop
             DoubleBuffered = true;
             ShowIcon = true;
             Icon = LoadAppIcon();
+            SetStyle(ControlStyles.ResizeRedraw, true);
 
             _dpiScale = GetDpiScale();
             _resizeBorder = Math.Max(6, (int)Math.Round(6 * _dpiScale));
+            // WorkBuddy 风格外窗圆角
+            _cornerRadius = Math.Max(10, (int)Math.Round(12 * _dpiScale));
             MinimumSize = ScaleSize(960, 640, _dpiScale);
             Size = ScaleSize(1280, 800, _dpiScale);
             BackColor = Color.FromArgb(0xF0, 0xF0, 0xF0);
@@ -62,6 +67,7 @@ namespace EasyWriteClient.Desktop
 
             Shown += OnShown;
             FormClosed += (_, __) => WordHost.Shutdown();
+            ApplyWindowRegion();
         }
 
         internal bool IsCustomMaximized => _customMaximized;
@@ -86,7 +92,14 @@ namespace EasyWriteClient.Desktop
             }
 
             _titleBar.SyncMaxButtonGlyph();
+            ApplyWindowRegion();
             Invalidate();
+        }
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            base.OnSizeChanged(e);
+            ApplyWindowRegion();
         }
 
         protected override void WndProc(ref Message m)
@@ -165,13 +178,63 @@ namespace EasyWriteClient.Desktop
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            if (!_customMaximized)
+            if (_customMaximized)
             {
-                using (var pen = new Pen(Color.FromArgb(0xC8, 0xC8, 0xC8)))
-                {
-                    e.Graphics.DrawRectangle(pen, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
-                }
+                return;
             }
+
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var pen = new Pen(Color.FromArgb(0xC8, 0xC8, 0xC8)))
+            using (var path = CreateRoundedRectPath(
+                new Rectangle(0, 0, ClientSize.Width - 1, ClientSize.Height - 1),
+                _cornerRadius))
+            {
+                e.Graphics.DrawPath(pen, path);
+            }
+        }
+
+        /// <summary>
+        /// 普通窗口用圆角 Region；最大化时取消圆角以铺满工作区。
+        /// </summary>
+        private void ApplyWindowRegion()
+        {
+            if (Width <= 0 || Height <= 0)
+            {
+                return;
+            }
+
+            Region old = Region;
+            if (_customMaximized)
+            {
+                Region = null;
+                old?.Dispose();
+                return;
+            }
+
+            using (GraphicsPath path = CreateRoundedRectPath(new Rectangle(0, 0, Width, Height), _cornerRadius))
+            {
+                Region = new Region(path);
+            }
+
+            old?.Dispose();
+        }
+
+        private static GraphicsPath CreateRoundedRectPath(Rectangle bounds, int radius)
+        {
+            var path = new GraphicsPath();
+            int d = radius * 2;
+            if (radius <= 0 || bounds.Width < d || bounds.Height < d)
+            {
+                path.AddRectangle(bounds);
+                return path;
+            }
+
+            path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
+            path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
+            path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
+            path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
         }
 
         private async void OnShown(object sender, EventArgs e)
@@ -188,8 +251,10 @@ namespace EasyWriteClient.Desktop
                 UseWaitCursor = true;
                 // Dock：先布局顶栏，再让 Fill 的 WebView 落在其下方（勿 BringToFront 打乱 z-order）
                 PerformLayout();
+                ApplyWindowRegion();
                 await _chatSurface.InitializeAsync().ConfigureAwait(true);
                 PerformLayout();
+                ApplyWindowRegion();
                 UseWaitCursor = false;
                 await _chatSurface.EnsureLoggedInAsync().ConfigureAwait(true);
             }
