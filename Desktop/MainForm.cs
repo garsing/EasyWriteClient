@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using WordAddIn1;
@@ -37,6 +38,8 @@ namespace EasyWriteClient.Desktop
             AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.None;
             DoubleBuffered = true;
+            ShowIcon = true;
+            Icon = LoadAppIcon();
 
             _dpiScale = GetDpiScale();
             _resizeBorder = Math.Max(6, (int)Math.Round(6 * _dpiScale));
@@ -218,6 +221,31 @@ namespace EasyWriteClient.Desktop
             return new Size(
                 Math.Max(1, (int)Math.Round(width * dpiScale)),
                 Math.Max(1, (int)Math.Round(height * dpiScale)));
+        }
+
+        private static Icon LoadAppIcon()
+        {
+            try
+            {
+                // 与 ApplicationIcon 一致：优先读 exe 内嵌图标（任务栏/Alt-Tab）
+                Icon fromExe = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+                if (fromExe != null)
+                {
+                    return fromExe;
+                }
+
+                string icoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "yi-write.ico");
+                if (File.Exists(icoPath))
+                {
+                    return new Icon(icoPath);
+                }
+            }
+            catch
+            {
+                // 忽略，回退系统默认
+            }
+
+            return SystemIcons.Application;
         }
     }
 }

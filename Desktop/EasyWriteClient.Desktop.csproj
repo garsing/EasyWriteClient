@@ -7,7 +7,7 @@
     <LangVersion>8.0</LangVersion>
     <Nullable>disable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
-    <ApplicationIcon />
+    <ApplicationIcon>Assets\yi-write.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>EasyWriteClient.Desktop.Program</StartupObject>
     <Deterministic>true</Deterministic>
@@ -44,6 +44,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <EmbeddedResource Include="Assets\yi-write_logo1.png" />
+    <Content Include="Assets\yi-write.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <Target Name="CopyWwwrootFromPlugin" AfterTargets="Build">
