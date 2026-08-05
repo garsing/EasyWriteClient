@@ -4,12 +4,18 @@
       <div v-if="!collapsed" class="brand">易写</div>
       <button
         type="button"
-        class="icon-btn"
+        class="icon-btn sidebar-toggle-btn"
         :title="collapsed ? '展开侧栏' : '收起侧栏'"
         :aria-label="collapsed ? '展开侧栏' : '收起侧栏'"
         @click="$emit('toggle')"
       >
-        {{ collapsed ? '»' : '«' }}
+        <img
+          :src="sidebarToggleIcon"
+          alt=""
+          class="sidebar-toggle-icon"
+          :class="{ collapsed: collapsed }"
+          aria-hidden="true"
+        />
       </button>
     </div>
 
@@ -81,6 +87,7 @@
 import { computed, ref } from 'vue'
 import { formatRelativeTime } from '../services/conversationsApi.js'
 import addIcon from '../assets/images/add.png'
+import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
 
 const props = defineProps({
   collapsed: { type: Boolean, default: false },
@@ -154,6 +161,23 @@ const taskCountLabel = computed(() => {
 
 .icon-btn:hover {
   background: rgba(0, 0, 0, 0.06);
+}
+
+.sidebar-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-toggle-icon {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  display: block;
+}
+
+.sidebar-toggle-icon.collapsed {
+  transform: scaleX(-1);
 }
 
 .new-task-btn {
