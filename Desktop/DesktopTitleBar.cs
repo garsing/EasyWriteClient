@@ -37,6 +37,7 @@ namespace EasyWriteClient.Desktop
             Height = barHeight;
             MinimumSize = new Size(0, barHeight);
             MaximumSize = new Size(0, barHeight);
+            // 与侧栏同一 chrome 色，无底部分割线（WorkBuddy 一体框）
             BackColor = Color.FromArgb(0xF0, 0xF0, 0xF0);
             Padding = new Padding(Scale(8), 0, 0, 0);
             DoubleBuffered = true;
@@ -96,7 +97,6 @@ namespace EasyWriteClient.Desktop
 
             MouseDown += TitleBar_MouseDown;
             MouseDoubleClick += TitleBar_MouseDoubleClick;
-            Paint += DesktopTitleBar_Paint;
         }
 
         private MainForm OwnerForm => _owner ?? (_owner = FindForm() as MainForm);
@@ -161,14 +161,6 @@ namespace EasyWriteClient.Desktop
             {
                 OwnerForm?.ToggleMaximizeRestore();
                 SyncMaxButtonGlyph();
-            }
-        }
-
-        private void DesktopTitleBar_Paint(object sender, PaintEventArgs e)
-        {
-            using (var pen = new Pen(Color.FromArgb(0xD0, 0xD0, 0xD0)))
-            {
-                e.Graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
             }
         }
 

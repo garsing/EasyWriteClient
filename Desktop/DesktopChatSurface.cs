@@ -39,7 +39,7 @@ namespace EasyWriteClient.Desktop
             _webView = new WebView2
             {
                 Dock = DockStyle.Fill,
-                DefaultBackgroundColor = System.Drawing.Color.FromArgb(247, 247, 245)
+                DefaultBackgroundColor = System.Drawing.Color.FromArgb(0xF0, 0xF0, 0xF0)
             };
             Controls.Add(_webView);
             UserService.Instance.OnUserLoggedIn += OnUserLoggedIn;
