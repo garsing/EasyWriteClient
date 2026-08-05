@@ -1,5 +1,16 @@
 <template>
   <div class="settings-page">
+    <!-- 关闭放在前端，避免被 WebView2 盖住 WinForms 按钮 -->
+    <button
+      type="button"
+      class="settings-close-btn"
+      title="关闭"
+      aria-label="关闭"
+      @click="handleClose"
+    >
+      ×
+    </button>
+
     <!-- 升级 / 充值子页：整窗，隐藏侧栏 -->
     <UpgradePlansPanel
       v-if="viewMode === 'upgrade'"
@@ -359,9 +370,12 @@ async function handleLogin () {
 }
 
 async function handleClose () {
-  if (!isWebView2) return
   try {
-    await sendMessage('closeSettingsWindow', {})
+    if (isWebView2) {
+      await sendMessage('closeSettingsWindow', {})
+      return
+    }
+    window.close()
   } catch (err) {
     console.error('[UserSettingsPanel] 关闭窗口失败:', err)
   }
@@ -374,6 +388,7 @@ onMounted(() => {
 
 <style scoped>
 .settings-page {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -383,6 +398,32 @@ onMounted(() => {
   border: 1px solid #e0e0e0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
   overflow: hidden;
+}
+
+.settings-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 20;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #666;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-close-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #333;
 }
 
 .settings-title-bar {

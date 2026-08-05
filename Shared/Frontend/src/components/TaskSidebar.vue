@@ -80,14 +80,28 @@
         </div>
       </div>
     </div>
+
+    <!-- 底栏整条可点 → 设置（与插件 ChatHeader 同一入口） -->
+    <button
+      type="button"
+      class="sidebar-footer"
+      :class="{ collapsed: collapsed }"
+      title="设置"
+      aria-label="设置"
+      @click="handleOpenSettings"
+    >
+      <img :src="userIcon" alt="" class="user-avatar-img" />
+    </button>
   </aside>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
 import { formatRelativeTime } from '../services/conversationsApi.js'
+import { useWebViewBridge } from '../composables/useWebViewBridge'
 import addIcon from '../assets/images/add.png'
 import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
+import userIcon from '../assets/images/user.png'
 
 const props = defineProps({
   collapsed: { type: Boolean, default: false },
@@ -99,6 +113,8 @@ const props = defineProps({
 
 defineEmits(['toggle', 'new-task', 'select'])
 
+const { sendMessage } = useWebViewBridge()
+
 /** 历史任务列表是否展开（点「任务 (N)」标题收起/展开） */
 const tasksExpanded = ref(true)
 
@@ -106,6 +122,14 @@ const taskCountLabel = computed(() => {
   const n = Array.isArray(props.tasks) ? props.tasks.length : 0
   return n > 0 ? ` (${n})` : ''
 })
+
+async function handleOpenSettings () {
+  try {
+    await sendMessage('openSettings', {})
+  } catch (e) {
+    console.error('[TaskSidebar] 打开设置失败:', e)
+  }
+}
 </script>
 
 <style scoped>
@@ -232,7 +256,44 @@ const taskCountLabel = computed(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 0 8px 12px;
+  padding: 0 8px 8px;
+}
+
+.sidebar-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  border: none;
+  background: transparent;
+  padding: 10px 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  box-sizing: border-box;
+  border-radius: 8px;
+}
+
+.sidebar-footer:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.sidebar-footer.collapsed {
+  justify-content: center;
+  padding: 10px 0 14px;
+  border-radius: 0;
+}
+
+.user-avatar-img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  display: block;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .section-header {

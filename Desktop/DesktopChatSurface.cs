@@ -348,8 +348,25 @@ namespace EasyWriteClient.Desktop
             });
             _bridge.RegisterHandler("openSettings", async _ =>
             {
-                await Task.CompletedTask;
-                return new { success = true, message = "桌面版设置入口后续接入" };
+                try
+                {
+                    if (!UserService.Instance.IsLoggedIn)
+                    {
+                        await LoginForm.ShowDialogAsync(FindForm() ?? (IWin32Window)this, logoutFirst: false)
+                            .ConfigureAwait(true);
+                        if (!UserService.Instance.CheckLoginStatus())
+                        {
+                            return new { success = false, message = "未登录" };
+                        }
+                    }
+
+                    await UserSettingsForm.ShowAsync(FindForm() ?? (IWin32Window)this).ConfigureAwait(true);
+                    return new { success = true };
+                }
+                catch (Exception ex)
+                {
+                    return new { success = false, message = ex.Message };
+                }
             });
             _bridge.RegisterHandler("openKnowledgeBase", async _ =>
             {

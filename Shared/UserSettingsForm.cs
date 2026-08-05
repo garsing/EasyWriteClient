@@ -1,7 +1,6 @@
 using System;
 using System.Drawing;
 using System.IO;
-using System.Reflection;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.WinForms;
@@ -18,7 +17,6 @@ namespace WordAddIn1
 
         private WebView2 webView2;
         private WebView2Bridge bridge;
-        private Button btnClose;
         private bool isDragging;
         private Point dragStartPoint;
 
@@ -124,63 +122,11 @@ namespace WordAddIn1
             };
             Controls.Add(webView2);
 
-            btnClose = new Button
-            {
-                Size = new Size(32, 32),
-                Anchor = AnchorStyles.Top | AnchorStyles.Right,
-                FlatStyle = FlatStyle.Flat,
-                TabStop = false,
-                Cursor = Cursors.Hand
-            };
-            btnClose.FlatAppearance.BorderSize = 0;
-            btnClose.FlatAppearance.MouseOverBackColor = Color.FromArgb(240, 240, 240);
-            btnClose.Click += (s, e) => Close();
-            LoadCloseIcon();
-            Controls.Add(btnClose);
-            btnClose.BringToFront();
-
             MouseDown += UserSettingsForm_MouseDown;
             MouseMove += UserSettingsForm_MouseMove;
             MouseUp += UserSettingsForm_MouseUp;
-            Layout += UserSettingsForm_Layout;
-
             Name = "UserSettingsForm";
             ResumeLayout(false);
-            UserSettingsForm_Layout(this, null);
-        }
-
-        private void UserSettingsForm_Layout(object sender, LayoutEventArgs e)
-        {
-            if (btnClose != null && ClientSize.Width > 0)
-            {
-                btnClose.Location = new Point(ClientSize.Width - btnClose.Width - 10, 12);
-            }
-        }
-
-        private void LoadCloseIcon()
-        {
-            try
-            {
-                Assembly assembly = Assembly.GetExecutingAssembly();
-                using (Stream closeStream = assembly.GetManifestResourceStream("close.png"))
-                {
-                    if (closeStream != null)
-                    {
-                        btnClose.BackgroundImage = Image.FromStream(closeStream);
-                        btnClose.BackgroundImageLayout = ImageLayout.Zoom;
-                    }
-                    else
-                    {
-                        btnClose.Text = "×";
-                        btnClose.Font = new Font("Segoe UI", 14, FontStyle.Regular);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[UserSettingsForm] 加载关闭图标失败: {ex.Message}");
-                btnClose.Text = "×";
-            }
         }
 
         private void UserSettingsForm_MouseDown(object sender, MouseEventArgs e)
@@ -298,7 +244,6 @@ namespace WordAddIn1
                     string virtualUrl = $"http://appassets.local/{fileName}";
                     System.Diagnostics.Debug.WriteLine($"[UserSettingsForm] 加载 HTML: {virtualUrl}");
                     webView2.CoreWebView2.Navigate(virtualUrl);
-                    btnClose.BringToFront();
                 }
                 else
                 {
