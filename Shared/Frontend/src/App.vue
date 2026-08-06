@@ -802,7 +802,7 @@ const restoreInputValue = (value) => {
   box-sizing: border-box;
 }
 
-/* WorkBuddy：顶栏/侧栏同色一体框，主区白底圆角浮层 */
+/* WorkBuddy：顶栏/侧栏同色一体框；主区圆角浮层与空态同色灰底（有消息后也不变白） */
 .app-shell.host-desktop {
   background: #f0f0f0;
   padding: 0 10px 10px 0;
@@ -831,7 +831,7 @@ const restoreInputValue = (value) => {
   height: auto;
   align-self: stretch;
   min-height: 0;
-  background: #fff;
+  background: #f7f7f5;
   border-radius: 14px;
   overflow: hidden;
 }
@@ -840,7 +840,7 @@ const restoreInputValue = (value) => {
 .app-shell.host-desktop :deep(.chat-header),
 .app-shell.host-desktop :deep(.todo-progress-card),
 .app-shell.host-desktop :deep(.todo-progress-list) {
-  background-color: #fff;
+  background-color: #f7f7f5;
 }
 
 /* 输入区外层与聊天面板同色，仅内层圆角输入框为白 */
@@ -848,7 +848,7 @@ const restoreInputValue = (value) => {
   background-color: #f7f7f5;
 }
 
-/* 空状态面板保持原灰底；仅推荐气泡为白（桌面端） */
+/* 空状态与有消息时同灰底；仅推荐气泡为白（桌面端） */
 .app-shell.host-desktop :deep(.chat-empty-state) {
   background-color: #f7f7f5;
   /* 与 .chat-input-container--desktop 左右 20px 对齐，推荐气泡与输入框同宽 */
