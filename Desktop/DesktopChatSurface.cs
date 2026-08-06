@@ -332,24 +332,7 @@ namespace EasyWriteClient.Desktop
                     success = true,
                     data = new { documentEmpty = true }
                 }));
-            _bridge.RegisterHandler("getToolAlias", async data =>
-            {
-                await Task.CompletedTask;
-                string name = null;
-                try
-                {
-                    if (data != null)
-                    {
-                        var jo = data as JObject ?? JObject.FromObject(data);
-                        name = jo["toolName"]?.ToString() ?? jo["name"]?.ToString();
-                    }
-                }
-                catch
-                {
-                }
-
-                return new { success = true, alias = name ?? "" };
-            });
+            _bridge.RegisterHandler("getToolAlias", HandleGetToolAliasAsync);
             _bridge.RegisterHandler("openSettings", async _ =>
             {
                 try
@@ -987,9 +970,42 @@ namespace EasyWriteClient.Desktop
             return await _wsClient.BindAsync(conversationId).ConfigureAwait(false);
         }
 
+        private async Task<object> HandleGetToolAliasAsync(object data)
+        {
+            try
+            {
+                string toolName = null;
+                if (data is JObject jObj)
+                {
+                    toolName = jObj["toolName"]?.ToString() ?? jObj["name"]?.ToString();
+                }
+                else if (data != null)
+                {
+                    var jo = JObject.FromObject(data);
+                    toolName = jo["toolName"]?.ToString() ?? jo["name"]?.ToString();
+                }
+
+                if (string.IsNullOrEmpty(toolName))
+                {
+                    return new { success = false, message = "工具名称不能为空" };
+                }
+
+                // 与 Plugin 一致：别名来自 Backend Registry
+                await McpToolsInfo.EnsureRegistryAliasesAsync().ConfigureAwait(false);
+                string alias = McpToolsInfo.GetToolAlias(toolName);
+                return new { success = true, alias };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DesktopChatSurface] 获取工具别名失败: {ex.Message}");
+                return new { success = false, message = ex.Message };
+            }
+        }
+
         private void OnUserLoggedIn(object sender, UserEventArgs e)
         {
             _ = EnsureWsReadyAsync();
+            _ = McpToolsInfo.EnsureRegistryAliasesAsync();
         }
 
         private void OnUserLoggedOut(object sender, UserEventArgs e)
