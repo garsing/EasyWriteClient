@@ -391,6 +391,73 @@ namespace EasyWriteClient.Desktop
 
             try
             {
+                if (type == "todo_list_updated")
+                {
+                    var requestId = msg.ContainsKey("request_id") ? msg["request_id"]?.ToString() : null;
+                    var version = msg.ContainsKey("version") ? msg["version"] : null;
+                    var conversationId = msg.ContainsKey("conversation_id")
+                        ? msg["conversation_id"]?.ToString()
+                        : null;
+                    object todos = new object[0];
+                    if (msg.ContainsKey("todos") && msg["todos"] != null)
+                    {
+                        try
+                        {
+                            var todosJson = JsonConvert.SerializeObject(msg["todos"]);
+                            todos = JsonConvert.DeserializeObject(todosJson) ?? new object[0];
+                        }
+                        catch
+                        {
+                            todos = msg["todos"];
+                        }
+                    }
+
+                    void SendTodo()
+                    {
+                        _bridge.SendToJavaScript("todoListUpdated", new
+                        {
+                            requestId,
+                            conversationId,
+                            version,
+                            todos
+                        });
+                    }
+
+                    if (InvokeRequired)
+                    {
+                        BeginInvoke((MethodInvoker)SendTodo);
+                    }
+                    else
+                    {
+                        SendTodo();
+                    }
+
+                    return;
+                }
+
+                if (type == "request_cancel" || type == "invoke_cancel")
+                {
+                    var requestId = msg.ContainsKey("request_id") ? msg["request_id"]?.ToString() : null;
+                    if (!string.IsNullOrEmpty(requestId))
+                    {
+                        void SendRevert()
+                        {
+                            _bridge.SendToJavaScript("todoListRevert", new { requestId });
+                        }
+
+                        if (InvokeRequired)
+                        {
+                            BeginInvoke((MethodInvoker)SendRevert);
+                        }
+                        else
+                        {
+                            SendRevert();
+                        }
+                    }
+
+                    return;
+                }
+
                 if (type == "title_updated")
                 {
                     var conversationId = msg.ContainsKey("conversation_id")
@@ -402,7 +469,7 @@ namespace EasyWriteClient.Desktop
                         return;
                     }
 
-                    void Send()
+                    void SendTitle()
                     {
                         _bridge.SendToJavaScript("conversationTitleUpdated", new
                         {
@@ -413,11 +480,11 @@ namespace EasyWriteClient.Desktop
 
                     if (InvokeRequired)
                     {
-                        BeginInvoke((MethodInvoker)Send);
+                        BeginInvoke((MethodInvoker)SendTitle);
                     }
                     else
                     {
-                        Send();
+                        SendTitle();
                     }
                 }
             }
