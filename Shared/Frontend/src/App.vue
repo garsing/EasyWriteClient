@@ -747,6 +747,18 @@ onMounted(() => {
         activeTaskId.value = payload.conversationId
         if (isDesktopHost) refreshTaskList()
       }
+    } else if (data.type === 'conversationTitleUpdated') {
+      const payload = data.data || data
+      const id = payload?.conversationId ?? payload?.conversation_id
+      const title = payload?.title
+      if (id != null && title) {
+        const item = taskList.value.find((t) => String(t.id) === String(id))
+        if (item) {
+          item.title = title
+        } else if (isDesktopHost) {
+          refreshTaskList()
+        }
+      }
     } else if (data.type === 'hostChatDocumentUploaded') {
       // WebView2 宿主拦截拖放后已 multipart 上传，前端从 process 继续（重复命中则跳过 process，仅 by-document）
       const payload = data.data || data

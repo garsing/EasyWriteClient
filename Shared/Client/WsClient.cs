@@ -464,6 +464,20 @@ namespace WordAddIn1
                 return;
             }
 
+            if (type == "title_updated")
+            {
+                // notify：无需 reply；Desktop 侧栏就地更新标题。
+                try
+                {
+                    ServerUiMessage?.Invoke(type, msg);
+                }
+                catch (Exception ex)
+                {
+                    EasyWriteDiagnostics.Log(DebugCategory.Ws, $"[WsClient] ServerUiMessage title err: {ex.Message}");
+                }
+                return;
+            }
+
             if (type == "invoke")
             {
                 // 勿 await：长耗时工具会阻塞 ReceiveAsync，导致 ping 超时断连。

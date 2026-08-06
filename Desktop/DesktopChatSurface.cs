@@ -49,6 +49,10 @@ namespace EasyWriteClient.Desktop
             {
                 UserService.Instance.OnUserLoggedIn -= OnUserLoggedIn;
                 UserService.Instance.OnUserLoggedOut -= OnUserLoggedOut;
+                if (_wsClient != null)
+                {
+                    _wsClient.ServerUiMessage -= OnWsServerUiMessage;
+                }
                 if (ReferenceEquals(HostCallbacks.WordApplicationResolved, (Action<object>)OnWordApplicationResolved))
                 {
                     HostCallbacks.WordApplicationResolved = null;
@@ -389,9 +393,55 @@ namespace EasyWriteClient.Desktop
             if (_wsClient == null)
             {
                 _wsClient = new WsClient(this);
+                _wsClient.ServerUiMessage += OnWsServerUiMessage;
             }
 
             _wsClient.SetWordApplication(wordApp);
+        }
+
+        private void OnWsServerUiMessage(string type, Dictionary<string, object> msg)
+        {
+            if (_bridge == null || msg == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (type == "title_updated")
+                {
+                    var conversationId = msg.ContainsKey("conversation_id")
+                        ? msg["conversation_id"]?.ToString()
+                        : null;
+                    var title = msg.ContainsKey("title") ? msg["title"]?.ToString() : null;
+                    if (string.IsNullOrEmpty(conversationId) || string.IsNullOrEmpty(title))
+                    {
+                        return;
+                    }
+
+                    void Send()
+                    {
+                        _bridge.SendToJavaScript("conversationTitleUpdated", new
+                        {
+                            conversationId,
+                            title
+                        });
+                    }
+
+                    if (InvokeRequired)
+                    {
+                        BeginInvoke((MethodInvoker)Send);
+                    }
+                    else
+                    {
+                        Send();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DesktopChatSurface] OnWsServerUiMessage: {ex.Message}");
+            }
         }
 
         private void SyncConversationContext()
