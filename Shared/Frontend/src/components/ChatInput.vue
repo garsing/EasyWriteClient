@@ -363,9 +363,9 @@ const handleShiftEnter = () => {}
   object-fit: contain;
 }
 
-/* 桌面端：加高 + 底部留白；外层与面板同色，仅内框白色 */
+/* 桌面端：外层与面板同色，仅内框白色；外层 padding 收紧使内框更贴边 */
 .chat-input-container--desktop {
-  padding: 12px 20px 32px;
+  padding: 6px 10px 10px;
   background-color: #f7f7f5;
 }
 
@@ -373,7 +373,7 @@ const handleShiftEnter = () => {}
   gap: 8px;
   align-items: flex-end;
   min-height: 96px;
-  padding: 14px 12px 12px 16px;
+  padding: 12px 12px 10px 14px;
   box-sizing: border-box;
   background: #ffffff;
   border: 1px solid #e6e6e6;
