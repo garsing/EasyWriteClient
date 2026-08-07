@@ -371,9 +371,10 @@ const handleShiftEnter = () => {}
 
 .chat-input-container--desktop .input-wrapper {
   gap: 8px;
-  align-items: flex-end;
+  /* 顶对齐，保证「输入消息」距上边与左边空隙一致 */
+  align-items: flex-start;
   min-height: 96px;
-  padding: 12px 12px 10px 14px;
+  padding: 12px;
   box-sizing: border-box;
   background: #ffffff;
   border: 1px solid #e6e6e6;
@@ -384,6 +385,8 @@ const handleShiftEnter = () => {}
   border: none !important;
   box-shadow: none !important;
   background: transparent !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 .chat-input-container--desktop .input-wrapper :deep(.ant-input-textarea),
@@ -394,11 +397,14 @@ const handleShiftEnter = () => {}
   border: none !important;
   box-shadow: none !important;
   outline: none !important;
+  margin: 0 !important;
 }
 
 .chat-input-container--desktop .input-textarea :deep(.ant-input),
-.chat-input-container--desktop .input-textarea :deep(textarea.ant-input) {
+.chat-input-container--desktop .input-textarea :deep(textarea.ant-input),
+.chat-input-container--desktop .input-textarea :deep(.ant-input-textarea textarea) {
   padding: 0 !important;
+  text-indent: 0 !important;
   min-height: 60px;
   resize: none;
   font-size: 14px;
@@ -419,6 +425,8 @@ const handleShiftEnter = () => {}
 
 .chat-input-container--desktop .send-button {
   padding: 4px;
-  margin-bottom: 2px;
+  /* 发送钮仍靠右下 */
+  align-self: flex-end;
+  margin-top: auto;
 }
 </style>
