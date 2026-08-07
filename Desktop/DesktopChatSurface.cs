@@ -259,18 +259,32 @@ namespace EasyWriteClient.Desktop
 
         public async Task EnsureLoggedInAsync()
         {
-            if (UserService.Instance.CheckLoginStatus())
+            var owner = FindForm() ?? (IWin32Window)this;
+
+            if (!UserService.Instance.CheckLoginStatus())
             {
-                await EnsureWsReadyAsync().ConfigureAwait(true);
+                await LoginForm.ShowDialogAsync(owner, logoutFirst: false)
+                    .ConfigureAwait(true);
+            }
+
+            if (!UserService.Instance.CheckLoginStatus())
+            {
                 return;
             }
 
-            await LoginForm.ShowDialogAsync(FindForm() ?? (IWin32Window)this, logoutFirst: false)
-                .ConfigureAwait(true);
-            if (UserService.Instance.CheckLoginStatus())
+            // 对齐 Plugin ThisAddIn：已登录也必须拉工作区根，否则 F_* Ensure 报「工作区未初始化」
+            try
             {
-                await EnsureWsReadyAsync().ConfigureAwait(true);
+                await UserService.Instance.InitializeWorkspaceSettingsAsync(owner)
+                    .ConfigureAwait(true);
             }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    "[DesktopChatSurface] InitializeWorkspaceSettingsAsync: " + ex.Message);
+            }
+
+            await EnsureWsReadyAsync().ConfigureAwait(true);
         }
 
         private static string ResolveWwwroot()

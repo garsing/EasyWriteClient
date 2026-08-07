@@ -24,16 +24,7 @@ namespace WordAddIn1
                     return new { success = false, message = result.Message ?? "手机号或密码错误" };
                 }
 
-                await HostCallbacks.RaiseNotifyUserLoggedInAllAsync().ConfigureAwait(false);
-
-                await UserSettingsBridgeHandlers.RunOnUiThreadAsync(loginForm, () =>
-                {
-                    _ = UserService.Instance.InitializeWorkspaceSettingsAsync(loginForm);
-                    if (loginForm != null && !loginForm.IsDisposed)
-                    {
-                        loginForm.Close();
-                    }
-                }).ConfigureAwait(false);
+                await FinishLoginWorkspaceAndCloseAsync(loginForm).ConfigureAwait(false);
 
                 return new { success = true };
             }
@@ -62,16 +53,7 @@ namespace WordAddIn1
                     return new { success = false, message = result.Message ?? "验证码错误或已过期" };
                 }
 
-                await HostCallbacks.RaiseNotifyUserLoggedInAllAsync().ConfigureAwait(false);
-
-                await UserSettingsBridgeHandlers.RunOnUiThreadAsync(loginForm, () =>
-                {
-                    _ = UserService.Instance.InitializeWorkspaceSettingsAsync(loginForm);
-                    if (loginForm != null && !loginForm.IsDisposed)
-                    {
-                        loginForm.Close();
-                    }
-                }).ConfigureAwait(false);
+                await FinishLoginWorkspaceAndCloseAsync(loginForm).ConfigureAwait(false);
 
                 return new { success = true };
             }
@@ -139,16 +121,7 @@ namespace WordAddIn1
                     };
                 }
 
-                await HostCallbacks.RaiseNotifyUserLoggedInAllAsync().ConfigureAwait(false);
-
-                await UserSettingsBridgeHandlers.RunOnUiThreadAsync(loginForm, () =>
-                {
-                    _ = UserService.Instance.InitializeWorkspaceSettingsAsync(loginForm);
-                    if (loginForm != null && !loginForm.IsDisposed)
-                    {
-                        loginForm.Close();
-                    }
-                }).ConfigureAwait(false);
+                await FinishLoginWorkspaceAndCloseAsync(loginForm).ConfigureAwait(false);
 
                 return new { success = true };
             }
@@ -157,6 +130,38 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine($"[LoginBridgeHandlers] 注册失败: {ex.Message}");
                 return new { success = false, message = "注册失败，请稍后重试" };
             }
+        }
+
+        /// <summary>
+        /// 通知登录、await 工作区初始化完成后再关登录窗（避免 fire-and-forget 导致 WorkspaceRootEffective 仍为空）。
+        /// </summary>
+        private static async Task FinishLoginWorkspaceAndCloseAsync(Form loginForm)
+        {
+            await HostCallbacks.RaiseNotifyUserLoggedInAllAsync().ConfigureAwait(false);
+
+            try
+            {
+                await UserService.Instance.InitializeWorkspaceSettingsAsync(loginForm)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[LoginBridgeHandlers] InitializeWorkspaceSettingsAsync 失败: {ex.Message}");
+            }
+
+            await UserSettingsBridgeHandlers.RunOnUiThreadAsync(loginForm, () =>
+            {
+                if (string.IsNullOrWhiteSpace(UserService.Instance.WorkspaceRootEffective))
+                {
+                    UserService.Instance.EnsureEffectiveRootInteractive(loginForm);
+                }
+
+                if (loginForm != null && !loginForm.IsDisposed)
+                {
+                    loginForm.Close();
+                }
+            }).ConfigureAwait(false);
         }
 
         public static Task<object> CloseLoginWindowAsync(Form loginForm)
