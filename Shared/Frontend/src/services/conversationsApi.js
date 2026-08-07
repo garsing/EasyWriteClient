@@ -16,11 +16,25 @@ export async function listConversations () {
 }
 
 /**
+ * 后端会话时间多为 utcnow() 的 naive ISO（无时区后缀）。
+ * 浏览器会把无后缀的 ISO 当成本地时间，中国区会固定偏早 8 小时 → 「刚提问却显示 8 小时前」。
+ * 无时区时按 UTC 解析。
+ */
+function parseApiDateMs (isoOrLocal) {
+  if (!isoOrLocal) return NaN
+  let s = String(isoOrLocal).trim().replace(' ', 'T')
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) {
+    s += 'Z'
+  }
+  return Date.parse(s)
+}
+
+/**
  * 相对时间展示（侧栏副标题）。
  */
 export function formatRelativeTime (isoOrLocal) {
   if (!isoOrLocal) return ''
-  const t = Date.parse(isoOrLocal)
+  const t = parseApiDateMs(isoOrLocal)
   if (Number.isNaN(t)) return String(isoOrLocal)
   const diffMs = Date.now() - t
   const sec = Math.floor(diffMs / 1000)
