@@ -250,9 +250,10 @@ async function handleOpenSettings () {
   min-height: 96px;
 }
 
-/* 任务区占位固定，避免折叠时标题栏上下跳动 */
+/* 任务区约占侧栏一半高度 */
 .tasks-section {
-  flex: 1 1 42%;
+  flex: 0 0 50%;
+  max-height: 50%;
   min-height: 0;
   display: flex;
   flex-direction: column;
