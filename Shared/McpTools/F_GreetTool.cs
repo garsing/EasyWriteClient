@@ -13,50 +13,25 @@ namespace WordAddIn1
             Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
             object wordApplication)
         {
-            toolRegistry["F_greet"] = async (args) =>
+            toolRegistry["F_greet"] = _ =>
             {
-                try
-                {
-                    DateTime now = DateTime.Now;
-                    string greeting = GetGreeting(now.Hour);
+                DateTime now = DateTime.Now;
+                int hour = now.Hour;
+                string greeting = hour < 5 || hour >= 22 ? "夜深了，注意休息。"
+                    : hour < 12 ? "早上好！"
+                    : hour < 18 ? "下午好！"
+                    : "晚上好！";
 
-                    await Task.CompletedTask;
-                    return new ToolResult
+                return Task.FromResult(new ToolResult
+                {
+                    Success = true,
+                    Data = new
                     {
-                        Success = true,
-                        Data = new
-                        {
-                            greeting,
-                            timestamp = now.ToString("yyyy-MM-dd HH:mm:ss"),
-                        },
-                    };
-                }
-                catch (Exception ex)
-                {
-                    return new ToolResult { Success = false, Error = $"问好失败: {ex.Message}" };
-                }
+                        greeting,
+                        timestamp = now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    },
+                });
             };
-        }
-
-        private static string GetGreeting(int hour)
-        {
-            if (hour >= 5 && hour < 12)
-            {
-                return "早上好！";
-            }
-
-            if (hour >= 12 && hour < 18)
-            {
-                EasyWriteDiagnostics.Log(DebugCategory.Tool, "[F_greet] 您好2026年7月25日啊");
-                return "下午好！";
-            }
-
-            if (hour >= 18 && hour < 22)
-            {
-                return "晚上好！";
-            }
-
-            return "夜深了，注意休息。";
         }
     }
 }
