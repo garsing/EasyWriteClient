@@ -123,7 +123,7 @@ namespace WordAddIn1
 
         public class OpenFilesAppEntry
         {
-            /// <summary>应用类型键：首期仅 "word"（小写）。</summary>
+            /// <summary>应用类型键：如 "word"、"wps"（小写）。</summary>
             public string Type { get; set; }
             public string DisplayName { get; set; }
             public List<string> ProcessNames { get; set; }
@@ -219,12 +219,17 @@ namespace WordAddIn1
                 config.App.DebugCategories = new List<string>();
             }
 
-            // I9：OpenFiles / Apps 缺失或空 → 默认仅 Word（不是关闭功能）
-            if (config.OpenFiles == null
-                || config.OpenFiles.Apps == null
-                || config.OpenFiles.Apps.Count == 0)
+            // I12：OpenFiles / Apps 缺失或空 = 谁都不探测（不自动填白名单）
+            if (config.OpenFiles == null)
             {
-                config.OpenFiles = CreateDefaultOpenFilesSettings();
+                config.OpenFiles = new AppConfig.OpenFilesSettings
+                {
+                    Apps = new List<AppConfig.OpenFilesAppEntry>()
+                };
+            }
+            else if (config.OpenFiles.Apps == null)
+            {
+                config.OpenFiles.Apps = new List<AppConfig.OpenFilesAppEntry>();
             }
             else
             {
@@ -248,6 +253,7 @@ namespace WordAddIn1
             }
         }
 
+        /// <summary>首次生成 / 随包推荐配置：预置 word + wps（不是 Normalize 兜底）。</summary>
         internal static AppConfig.OpenFilesSettings CreateDefaultOpenFilesSettings()
         {
             return new AppConfig.OpenFilesSettings
@@ -260,6 +266,13 @@ namespace WordAddIn1
                         DisplayName = "Word",
                         ProcessNames = new List<string> { "WINWORD" },
                         Extensions = new List<string> { ".doc", ".docx", ".docm", ".dotx", ".dotm" }
+                    },
+                    new AppConfig.OpenFilesAppEntry
+                    {
+                        Type = "wps",
+                        DisplayName = "WPS文字",
+                        ProcessNames = new List<string> { "wps" },
+                        Extensions = new List<string> { ".doc", ".docx", ".wps", ".wpt" }
                     }
                 }
             };

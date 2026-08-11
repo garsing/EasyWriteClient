@@ -8,25 +8,33 @@ using Word = Microsoft.Office.Interop.Word;
 namespace WordAddIn1.OpenFiles
 {
     /// <summary>
-    /// Word「打开文件」探测器：只附着已运行 Word，快照 + DocumentOpen/NewDocument/DocumentBeforeClose。
+    /// WPS 文字「打开文件」探测器：晚绑定附着、快照 Documents；可订则订事件，否则由 Monitor 对账。
+    /// 禁止 CreateOrGetWord / 建渠道。
     /// </summary>
-    internal sealed class WordOpenFilesDetector : IOpenFilesAppDetector
+    internal sealed class WpsOpenFilesDetector : IOpenFilesAppDetector
     {
-        public const string TypeKey = "word";
+        public const string TypeKey = "wps";
 
-        private readonly Func<object> _resolveWordApp;
         private readonly object _gate = new object();
-        private Word.Application _app;
+        private object _app;
+        private string _progId;
         private bool _subscribed;
         private bool _disposed;
         private readonly Dictionary<int, string> _rcwToId = new Dictionary<int, string>();
 
-        public WordOpenFilesDetector(Func<object> resolveWordApp)
-        {
-            _resolveWordApp = resolveWordApp ?? throw new ArgumentNullException(nameof(resolveWordApp));
-        }
-
         public string AppType => TypeKey;
+
+        /// <summary>事件 sink 是否挂成功；失败时 Monitor 启用低频对账。</summary>
+        public bool EventsSubscribed
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _subscribed;
+                }
+            }
+        }
 
         public bool IsAttached
         {
@@ -34,7 +42,7 @@ namespace WordAddIn1.OpenFiles
             {
                 lock (_gate)
                 {
-                    return _app != null && _subscribed;
+                    return _app != null && WpsCom.IsAlive(_app);
                 }
             }
         }
@@ -52,73 +60,42 @@ namespace WordAddIn1.OpenFiles
 
             lock (_gate)
             {
-                if (_app != null && _subscribed)
+                if (_app != null && WpsCom.IsAlive(_app))
                 {
-                    if (IsAppAliveUnlocked())
+                    if (!_subscribed)
                     {
-                        return true;
+                        TrySubscribeUnlocked();
                     }
 
-                    TearDownUnlocked(raiseDetached: false);
+                    return true;
                 }
 
-                Word.Application app = null;
-                try
-                {
-                    app = _resolveWordApp?.Invoke() as Word.Application;
-                }
-                catch (Exception ex)
-                {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[WordOpenFilesDetector] resolve failed: " + ex.Message);
-                    app = null;
-                }
+                TearDownUnlocked(raiseDetached: false);
 
+                string progId;
+                object app = WpsCom.TryGetActiveApplication(out progId);
                 if (app == null)
                 {
                     return false;
                 }
 
-                try
-                {
-                    var _ = app.Name;
-                }
-                catch (Exception ex)
-                {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[WordOpenFilesDetector] app not alive: " + ex.Message);
-                    return false;
-                }
-
                 _app = app;
-                try
-                {
-                    var events = (Word.ApplicationEvents4_Event)_app;
-                    events.DocumentOpen += OnDocumentOpen;
-                    events.NewDocument += OnNewDocument;
-                    events.DocumentBeforeClose += OnDocumentBeforeClose;
-                    _subscribed = true;
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[WordOpenFilesDetector] attached and subscribed");
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[WordOpenFilesDetector] subscribe failed: " + ex.Message);
-                    TearDownUnlocked(raiseDetached: false);
-                    return false;
-                }
+                _progId = progId;
+                TrySubscribeUnlocked();
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[WpsOpenFilesDetector] attached progId=" + progId
+                    + " events=" + _subscribed);
+                return true;
             }
         }
 
         public IReadOnlyList<OpenFileItem> Snapshot()
         {
             var result = new List<OpenFileItem>();
-            Word.Application app;
+            object app;
             lock (_gate)
             {
-                if (!_subscribed || _app == null || !IsAppAliveUnlocked())
+                if (_app == null || !WpsCom.IsAlive(_app))
                 {
                     return result;
                 }
@@ -130,7 +107,7 @@ namespace WordAddIn1.OpenFiles
             var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                foreach (Word.Document doc in app.Documents)
+                foreach (object doc in WpsCom.EnumerateDocuments(app))
                 {
                     try
                     {
@@ -140,7 +117,8 @@ namespace WordAddIn1.OpenFiles
                             continue;
                         }
 
-                        EnsureChannel(doc, item);
+                        // 禁止建渠道
+                        item.ChannelId = null;
 
                         int key = RuntimeHelpers.GetHashCode(doc);
                         lock (_gate)
@@ -153,14 +131,14 @@ namespace WordAddIn1.OpenFiles
                     catch (Exception ex)
                     {
                         EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                            "[WordOpenFilesDetector] snapshot item skip: " + ex.Message);
+                            "[WpsOpenFilesDetector] snapshot item skip: " + ex.Message);
                     }
                 }
             }
             catch (Exception ex)
             {
                 EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[WordOpenFilesDetector] snapshot failed: " + ex.Message);
+                    "[WpsOpenFilesDetector] snapshot failed: " + ex.Message);
                 MarkDetached();
             }
 
@@ -178,6 +156,38 @@ namespace WordAddIn1.OpenFiles
             lock (_gate)
             {
                 TearDownUnlocked(raiseDetached: false);
+            }
+        }
+
+        private void TrySubscribeUnlocked()
+        {
+            _subscribed = false;
+            if (_app == null)
+            {
+                return;
+            }
+
+            // 部分 WPS 暴露与 Word 兼容的 ApplicationEvents4；仅用于事件，绝不 CreateOrGetWord
+            try
+            {
+                var events = _app as Word.ApplicationEvents4_Event;
+                if (events == null)
+                {
+                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                        "[WpsOpenFilesDetector] no ApplicationEvents4_Event — reconcile will be used");
+                    return;
+                }
+
+                events.DocumentOpen += OnDocumentOpen;
+                events.NewDocument += OnNewDocument;
+                events.DocumentBeforeClose += OnDocumentBeforeClose;
+                _subscribed = true;
+            }
+            catch (Exception ex)
+            {
+                _subscribed = false;
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[WpsOpenFilesDetector] subscribe failed: " + ex.Message);
             }
         }
 
@@ -214,21 +224,7 @@ namespace WordAddIn1.OpenFiles
                 if (string.IsNullOrEmpty(id))
                 {
                     var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    var item = MapDocument(doc, used);
-                    id = item?.Id;
-                }
-
-                // 幂等：EnsureCloseHandler 也会 RemoveByDocUuid；此处补齐探测路径
-                try
-                {
-                    string uuid = DocumentIdentity.TryResolveUuid(doc);
-                    if (!string.IsNullOrEmpty(uuid))
-                    {
-                        ChannelRegistry.RemoveByDocUuid(uuid);
-                    }
-                }
-                catch (Exception)
-                {
+                    id = MapDocument(doc, used)?.Id;
                 }
 
                 if (!string.IsNullOrEmpty(id))
@@ -239,11 +235,11 @@ namespace WordAddIn1.OpenFiles
             catch (Exception ex)
             {
                 EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[WordOpenFilesDetector] DocumentBeforeClose: " + ex.Message);
+                    "[WpsOpenFilesDetector] DocumentBeforeClose: " + ex.Message);
             }
         }
 
-        private void HandleOpened(Word.Document doc)
+        private void HandleOpened(object doc)
         {
             if (doc == null)
             {
@@ -267,7 +263,7 @@ namespace WordAddIn1.OpenFiles
                     return;
                 }
 
-                EnsureChannel(doc, item);
+                item.ChannelId = null;
 
                 int key = RuntimeHelpers.GetHashCode(doc);
                 lock (_gate)
@@ -280,45 +276,18 @@ namespace WordAddIn1.OpenFiles
             catch (Exception ex)
             {
                 EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[WordOpenFilesDetector] open event: " + ex.Message);
-                if (IsComDead(ex))
-                {
-                    MarkDetached();
-                }
+                    "[WpsOpenFilesDetector] open event: " + ex.Message);
             }
         }
 
-        /// <summary>探测建渠道：不 SetDefault、不 ProcessDocument。</summary>
-        private static void EnsureChannel(Word.Document doc, OpenFileItem item)
-        {
-            if (doc == null || item == null)
-            {
-                return;
-            }
-
-            try
-            {
-                WordChannel channel = ChannelRegistry.CreateOrGetWord(
-                    doc,
-                    item.FullPath,
-                    claimDefaultIfEmpty: false);
-                item.ChannelId = channel?.ChannelId;
-            }
-            catch (Exception ex)
-            {
-                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[WordOpenFilesDetector] EnsureChannel: " + ex.Message);
-            }
-        }
-
-        private static OpenFileItem MapDocument(Word.Document doc, HashSet<string> usedIds)
+        private static OpenFileItem MapDocument(object doc, HashSet<string> usedIds)
         {
             if (doc == null)
             {
                 return null;
             }
 
-            string fullName = WordChannel.TryReadFullName(doc);
+            string fullName = WpsCom.TryReadFullName(doc);
             bool saved = IsSavedPath(fullName);
             string display;
             string id;
@@ -333,31 +302,22 @@ namespace WordAddIn1.OpenFiles
                     display = fullPath;
                 }
 
-                id = "word:" + fullPath;
+                id = "wps:" + fullPath;
             }
             else
             {
-                string name = null;
-                try
-                {
-                    name = doc.Name;
-                }
-                catch (Exception)
-                {
-                    name = null;
-                }
-
+                string name = WpsCom.TryReadName(doc);
                 if (string.IsNullOrWhiteSpace(name))
                 {
                     name = "未命名文档";
                 }
 
                 display = name;
-                id = "word:unsaved:" + name;
+                id = "wps:unsaved:" + name;
                 int n = 2;
                 while (usedIds != null && usedIds.Contains(id))
                 {
-                    id = "word:unsaved:" + name + "#" + n;
+                    id = "wps:unsaved:" + name + "#" + n;
                     n++;
                 }
             }
@@ -370,7 +330,8 @@ namespace WordAddIn1.OpenFiles
                 AppType = TypeKey,
                 DisplayName = display,
                 FullPath = fullPath,
-                IsSaved = saved
+                IsSaved = saved,
+                ChannelId = null
             };
         }
 
@@ -381,7 +342,6 @@ namespace WordAddIn1.OpenFiles
                 return false;
             }
 
-            // 未保存文档 FullName 常仅为「文档1」无目录分隔符
             return fullName.IndexOf(Path.DirectorySeparatorChar) >= 0
                 || fullName.IndexOf(Path.AltDirectorySeparatorChar) >= 0;
         }
@@ -395,24 +355,6 @@ namespace WordAddIn1.OpenFiles
             catch (Exception)
             {
                 return path?.Trim();
-            }
-        }
-
-        private bool IsAppAliveUnlocked()
-        {
-            if (_app == null)
-            {
-                return false;
-            }
-
-            try
-            {
-                var _ = _app.Name;
-                return true;
-            }
-            catch (Exception)
-            {
-                return false;
             }
         }
 
@@ -430,19 +372,22 @@ namespace WordAddIn1.OpenFiles
             {
                 try
                 {
-                    var events = (Word.ApplicationEvents4_Event)_app;
-                    events.DocumentOpen -= OnDocumentOpen;
-                    events.NewDocument -= OnNewDocument;
-                    events.DocumentBeforeClose -= OnDocumentBeforeClose;
+                    var events = _app as Word.ApplicationEvents4_Event;
+                    if (events != null)
+                    {
+                        events.DocumentOpen -= OnDocumentOpen;
+                        events.NewDocument -= OnNewDocument;
+                        events.DocumentBeforeClose -= OnDocumentBeforeClose;
+                    }
                 }
                 catch (Exception)
                 {
-                    // Word 可能已退出
                 }
             }
 
             _subscribed = false;
             _app = null;
+            _progId = null;
             _rcwToId.Clear();
 
             if (raiseDetached)
@@ -455,23 +400,6 @@ namespace WordAddIn1.OpenFiles
                 {
                 }
             }
-        }
-
-        private static bool IsComDead(Exception ex)
-        {
-            if (ex is COMException)
-            {
-                return true;
-            }
-
-            if (ex is InvalidComObjectException)
-            {
-                return true;
-            }
-
-            string msg = ex.Message ?? "";
-            return msg.IndexOf("RPC", StringComparison.OrdinalIgnoreCase) >= 0
-                || msg.IndexOf("COM", StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 }

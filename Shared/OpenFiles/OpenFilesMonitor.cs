@@ -7,12 +7,13 @@ using System.Threading;
 namespace WordAddIn1.OpenFiles
 {
     /// <summary>
-    /// 聚合「打开文件」探测器：内存列表、进程晚启动重附着、Changed 回调。
+    /// 聚合「打开文件」探测器：Word + WPS 并行、进程晚启动重附着、Changed 回调。
     /// </summary>
     internal sealed class OpenFilesMonitor : IDisposable
     {
         private const int MaxOpenChannelsItems = 500;
         private static readonly TimeSpan ProcessPollInterval = TimeSpan.FromSeconds(7);
+        private static readonly TimeSpan WpsReconcileInterval = TimeSpan.FromSeconds(30);
 
         private readonly Func<object> _resolveWordApp;
         private readonly SynchronizationContext _sync;
@@ -21,11 +22,15 @@ namespace WordAddIn1.OpenFiles
             new Dictionary<string, OpenFileItem>(StringComparer.OrdinalIgnoreCase);
 
         private WordOpenFilesDetector _wordDetector;
+        private WpsOpenFilesDetector _wpsDetector;
         private Timer _processTimer;
+        private Timer _wpsReconcileTimer;
         private bool _started;
         private bool _disposed;
         private bool _wordEnabled;
+        private bool _wpsEnabled;
         private string[] _wordProcessNames = { "WINWORD" };
+        private string[] _wpsProcessNames = { "wps" };
 
         public OpenFilesMonitor(Func<object> resolveWordApp, SynchronizationContext syncContext = null)
         {
@@ -56,6 +61,7 @@ namespace WordAddIn1.OpenFiles
 
             TryAttachAndSnapshot();
             StartProcessWatch();
+            UpdateWpsReconcileTimer();
         }
 
         public void Stop()
@@ -80,17 +86,21 @@ namespace WordAddIn1.OpenFiles
             }
 
             TryAttachAndSnapshot();
+            UpdateWpsReconcileTimer();
         }
 
         /// <summary>
-        /// Desktop 聊天请求体 <c>open_channels</c>（snake_case，与后端一致）。
+        /// Desktop 聊天请求体 <c>open_channels</c>：仅 word 项（排除 wps）。
         /// </summary>
         public object BuildOpenChannelsPayload()
         {
             List<OpenFileItem> items;
             lock (_gate)
             {
-                items = OrderedCopyUnlocked();
+                items = OrderedCopyUnlocked()
+                    .Where(i => i != null
+                        && string.Equals(i.AppType, WordOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
             }
 
             bool truncated = items.Count > MaxOpenChannelsItems;
@@ -124,34 +134,46 @@ namespace WordAddIn1.OpenFiles
 
             _disposed = true;
 
-            var timer = Interlocked.Exchange(ref _processTimer, null);
-            timer?.Dispose();
+            Interlocked.Exchange(ref _processTimer, null)?.Dispose();
+            Interlocked.Exchange(ref _wpsReconcileTimer, null)?.Dispose();
 
             WordOpenFilesDetector word;
+            WpsOpenFilesDetector wps;
             lock (_gate)
             {
                 _started = false;
                 word = _wordDetector;
+                wps = _wpsDetector;
                 _wordDetector = null;
+                _wpsDetector = null;
                 _items.Clear();
             }
 
             if (word != null)
             {
-                Unhook(word);
+                UnhookWord(word);
                 word.Dispose();
+            }
+
+            if (wps != null)
+            {
+                UnhookWps(wps);
+                wps.Dispose();
             }
         }
 
         private void ConfigureFromConfigUnlocked()
         {
             _wordEnabled = false;
+            _wpsEnabled = false;
             _wordProcessNames = new[] { "WINWORD" };
+            _wpsProcessNames = new[] { "wps" };
 
-            var settings = ConfigManager.Config?.OpenFiles;
-            var apps = settings?.Apps;
-            if (apps == null)
+            var apps = ConfigManager.Config?.OpenFiles?.Apps;
+            if (apps == null || apps.Count == 0)
             {
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[OpenFilesMonitor] Apps empty — no detectors");
                 return;
             }
 
@@ -163,20 +185,15 @@ namespace WordAddIn1.OpenFiles
                 }
 
                 string type = entry.Type.Trim().ToLowerInvariant();
-                if (type == "word")
+                if (type == WordOpenFilesDetector.TypeKey)
                 {
                     _wordEnabled = true;
-                    if (entry.ProcessNames != null && entry.ProcessNames.Count > 0)
-                    {
-                        _wordProcessNames = entry.ProcessNames
-                            .Where(p => !string.IsNullOrWhiteSpace(p))
-                            .Select(p => p.Trim())
-                            .ToArray();
-                        if (_wordProcessNames.Length == 0)
-                        {
-                            _wordProcessNames = new[] { "WINWORD" };
-                        }
-                    }
+                    _wordProcessNames = ReadProcessNames(entry.ProcessNames, "WINWORD");
+                }
+                else if (type == WpsOpenFilesDetector.TypeKey)
+                {
+                    _wpsEnabled = true;
+                    _wpsProcessNames = ReadProcessNames(entry.ProcessNames, "wps");
                 }
                 else
                 {
@@ -184,6 +201,20 @@ namespace WordAddIn1.OpenFiles
                         "[OpenFilesMonitor] unknown App Type ignored: " + entry.Type);
                 }
             }
+        }
+
+        private static string[] ReadProcessNames(List<string> configured, string fallback)
+        {
+            if (configured == null || configured.Count == 0)
+            {
+                return new[] { fallback };
+            }
+
+            var names = configured
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p.Trim())
+                .ToArray();
+            return names.Length > 0 ? names : new[] { fallback };
         }
 
         private void CreateDetectorsUnlocked()
@@ -195,45 +226,76 @@ namespace WordAddIn1.OpenFiles
                 _wordDetector.DocumentClosed += OnDocumentClosed;
                 _wordDetector.Detached += OnWordDetached;
             }
-            else
+
+            if (_wpsEnabled)
             {
-                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[OpenFilesMonitor] word not in Apps whitelist");
+                _wpsDetector = new WpsOpenFilesDetector();
+                _wpsDetector.DocumentOpened += OnDocumentOpened;
+                _wpsDetector.DocumentClosed += OnDocumentClosed;
+                _wpsDetector.Detached += OnWpsDetached;
             }
         }
 
-        private void Unhook(WordOpenFilesDetector word)
+        private void UnhookWord(WordOpenFilesDetector word)
         {
             word.DocumentOpened -= OnDocumentOpened;
             word.DocumentClosed -= OnDocumentClosed;
             word.Detached -= OnWordDetached;
         }
 
+        private void UnhookWps(WpsOpenFilesDetector wps)
+        {
+            wps.DocumentOpened -= OnDocumentOpened;
+            wps.DocumentClosed -= OnDocumentClosed;
+            wps.Detached -= OnWpsDetached;
+        }
+
         private void TryAttachAndSnapshot()
         {
-            WordOpenFilesDetector word;
-            lock (_gate)
-            {
-                word = _wordDetector;
-            }
-
-            if (word == null)
+            bool any = false;
+            any |= TryAttachOne(WordOpenFilesDetector.TypeKey);
+            any |= TryAttachOne(WpsOpenFilesDetector.TypeKey);
+            if (any || (!_wordEnabled && !_wpsEnabled))
             {
                 RaiseChanged();
-                return;
+            }
+        }
+
+        private bool TryAttachOne(string appType)
+        {
+            IOpenFilesAppDetector detector;
+            lock (_gate)
+            {
+                if (string.Equals(appType, WordOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    detector = _wordDetector;
+                }
+                else if (string.Equals(appType, WpsOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    detector = _wpsDetector;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            if (detector == null)
+            {
+                return false;
             }
 
             try
             {
-                if (!word.TryAttach())
+                if (!detector.TryAttach())
                 {
-                    return;
+                    return false;
                 }
 
-                var snapshot = word.Snapshot();
+                var snapshot = detector.Snapshot();
                 lock (_gate)
                 {
-                    RemoveByAppTypeUnlocked("word");
+                    RemoveByAppTypeUnlocked(appType, removeChannels: true);
                     foreach (var item in snapshot)
                     {
                         if (item != null && !string.IsNullOrEmpty(item.Id))
@@ -243,18 +305,19 @@ namespace WordAddIn1.OpenFiles
                     }
                 }
 
-                RaiseChanged();
+                return true;
             }
             catch (Exception ex)
             {
                 EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[OpenFilesMonitor] TryAttachAndSnapshot: " + ex.Message);
+                    "[OpenFilesMonitor] TryAttach " + appType + ": " + ex.Message);
+                return false;
             }
         }
 
         private void StartProcessWatch()
         {
-            if (!_wordEnabled)
+            if (!_wordEnabled && !_wpsEnabled)
             {
                 return;
             }
@@ -266,6 +329,78 @@ namespace WordAddIn1.OpenFiles
                 ProcessPollInterval);
         }
 
+        private void UpdateWpsReconcileTimer()
+        {
+            WpsOpenFilesDetector wps;
+            lock (_gate)
+            {
+                wps = _wpsDetector;
+            }
+
+            // I6：仅当 WPS 已附着且事件未订成功时才对账
+            bool needReconcile = wps != null && wps.IsAttached && !wps.EventsSubscribed;
+            if (needReconcile)
+            {
+                if (_wpsReconcileTimer == null)
+                {
+                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                        "[OpenFilesMonitor] start WPS reconcile timer 30s");
+                    _wpsReconcileTimer = new Timer(
+                        _ => OnWpsReconcileTick(),
+                        null,
+                        WpsReconcileInterval,
+                        WpsReconcileInterval);
+                }
+            }
+            else
+            {
+                var t = Interlocked.Exchange(ref _wpsReconcileTimer, null);
+                if (t != null)
+                {
+                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                        "[OpenFilesMonitor] stop WPS reconcile timer");
+                    t.Dispose();
+                }
+            }
+        }
+
+        private void OnWpsReconcileTick()
+        {
+            if (_disposed || !_started)
+            {
+                return;
+            }
+
+            try
+            {
+                WpsOpenFilesDetector wps;
+                lock (_gate)
+                {
+                    wps = _wpsDetector;
+                }
+
+                if (wps == null || !wps.IsAttached || wps.EventsSubscribed)
+                {
+                    UpdateWpsReconcileTimer();
+                    return;
+                }
+
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[OpenFilesMonitor] WPS reconcile snapshot");
+                if (TryAttachOne(WpsOpenFilesDetector.TypeKey))
+                {
+                    RaiseChanged();
+                }
+
+                UpdateWpsReconcileTimer();
+            }
+            catch (Exception ex)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[OpenFilesMonitor] WPS reconcile: " + ex.Message);
+            }
+        }
+
         private void OnProcessWatchTick()
         {
             if (_disposed || !_started)
@@ -275,63 +410,124 @@ namespace WordAddIn1.OpenFiles
 
             try
             {
-                bool wordRunning = IsAnyProcessRunning(_wordProcessNames);
-                WordOpenFilesDetector word;
-                bool attached;
-                lock (_gate)
-                {
-                    word = _wordDetector;
-                    attached = word != null && word.IsAttached;
-                }
-
-                if (!wordRunning)
-                {
-                    if (attached || HasAppItems("word"))
+                bool changed = false;
+                changed |= WatchOne(
+                    WordOpenFilesDetector.TypeKey,
+                    _wordEnabled,
+                    _wordProcessNames,
+                    () =>
                     {
-                        EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                            "[OpenFilesMonitor] WINWORD gone — clear word items");
-                        if (word != null)
-                        {
-                            lock (_gate)
-                            {
-                                if (ReferenceEquals(_wordDetector, word))
-                                {
-                                    Unhook(word);
-                                    word.Dispose();
-                                    _wordDetector = new WordOpenFilesDetector(_resolveWordApp);
-                                    _wordDetector.DocumentOpened += OnDocumentOpened;
-                                    _wordDetector.DocumentClosed += OnDocumentClosed;
-                                    _wordDetector.Detached += OnWordDetached;
-                                }
-                            }
-                        }
-
-                        bool removed;
                         lock (_gate)
                         {
-                            removed = RemoveByAppTypeUnlocked("word");
+                            return _wordDetector;
                         }
+                    },
+                    RecreateWordDetector);
 
-                        if (removed)
+                changed |= WatchOne(
+                    WpsOpenFilesDetector.TypeKey,
+                    _wpsEnabled,
+                    _wpsProcessNames,
+                    () =>
+                    {
+                        lock (_gate)
                         {
-                            RaiseChanged();
+                            return _wpsDetector;
                         }
-                    }
+                    },
+                    RecreateWpsDetector);
 
-                    return;
-                }
-
-                if (!attached)
+                if (changed)
                 {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[OpenFilesMonitor] WINWORD present — try attach");
-                    TryAttachAndSnapshot();
+                    RaiseChanged();
                 }
+
+                UpdateWpsReconcileTimer();
             }
             catch (Exception ex)
             {
                 EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
                     "[OpenFilesMonitor] process watch: " + ex.Message);
+            }
+        }
+
+        private bool WatchOne(
+            string appType,
+            bool enabled,
+            string[] processNames,
+            Func<IOpenFilesAppDetector> getDetector,
+            Action recreate)
+        {
+            if (!enabled)
+            {
+                return false;
+            }
+
+            bool running = IsAnyProcessRunning(processNames);
+            var detector = getDetector();
+            bool attached = detector != null && detector.IsAttached;
+
+            if (!running)
+            {
+                if (attached || HasAppItems(appType))
+                {
+                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                        "[OpenFilesMonitor] " + appType + " process gone — clear items");
+                    recreate();
+                    lock (_gate)
+                    {
+                        return RemoveByAppTypeUnlocked(appType, removeChannels: true);
+                    }
+                }
+
+                return false;
+            }
+
+            if (!attached)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[OpenFilesMonitor] " + appType + " process present — try attach");
+                return TryAttachOne(appType);
+            }
+
+            return false;
+        }
+
+        private void RecreateWordDetector()
+        {
+            lock (_gate)
+            {
+                var word = _wordDetector;
+                if (word == null)
+                {
+                    return;
+                }
+
+                UnhookWord(word);
+                word.Dispose();
+                _wordDetector = new WordOpenFilesDetector(_resolveWordApp);
+                _wordDetector.DocumentOpened += OnDocumentOpened;
+                _wordDetector.DocumentClosed += OnDocumentClosed;
+                _wordDetector.Detached += OnWordDetached;
+            }
+        }
+
+        private void RecreateWpsDetector()
+        {
+            lock (_gate)
+            {
+                var wps = _wpsDetector;
+                if (wps == null)
+                {
+                    return;
+                }
+
+                UnhookWps(wps);
+                wps.Dispose();
+                _wpsDetector = new WpsOpenFilesDetector();
+                _wpsDetector.DocumentOpened += OnDocumentOpened;
+                _wpsDetector.DocumentClosed += OnDocumentClosed;
+                _wpsDetector.Detached += OnWpsDetached;
             }
         }
 
@@ -392,6 +588,12 @@ namespace WordAddIn1.OpenFiles
                 return;
             }
 
+            // WPS 永不带渠道
+            if (string.Equals(item.AppType, WpsOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+            {
+                item.ChannelId = null;
+            }
+
             lock (_gate)
             {
                 _items[item.Id] = item;
@@ -435,7 +637,7 @@ namespace WordAddIn1.OpenFiles
             bool removed;
             lock (_gate)
             {
-                removed = RemoveByAppTypeUnlocked("word");
+                removed = RemoveByAppTypeUnlocked(WordOpenFilesDetector.TypeKey, removeChannels: true);
             }
 
             if (removed)
@@ -444,7 +646,23 @@ namespace WordAddIn1.OpenFiles
             }
         }
 
-        private bool RemoveByAppTypeUnlocked(string appType)
+        private void OnWpsDetached()
+        {
+            bool removed;
+            lock (_gate)
+            {
+                removed = RemoveByAppTypeUnlocked(WpsOpenFilesDetector.TypeKey, removeChannels: false);
+            }
+
+            UpdateWpsReconcileTimer();
+
+            if (removed)
+            {
+                RaiseChanged();
+            }
+        }
+
+        private bool RemoveByAppTypeUnlocked(string appType, bool removeChannels)
         {
             var toRemove = _items
                 .Where(kv => kv.Value != null
@@ -453,7 +671,11 @@ namespace WordAddIn1.OpenFiles
 
             foreach (var kv in toRemove)
             {
-                TryRemoveChannel(kv.Value);
+                if (removeChannels)
+                {
+                    TryRemoveChannel(kv.Value);
+                }
+
                 _items.Remove(kv.Key);
             }
 
