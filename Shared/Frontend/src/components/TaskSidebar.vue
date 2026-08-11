@@ -528,8 +528,8 @@ async function handleOpenSettings () {
 }
 
 .user-avatar-img {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   object-fit: contain;
   display: block;
   border-radius: 50%;
