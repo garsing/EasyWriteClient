@@ -123,11 +123,12 @@
       type="button"
       class="sidebar-footer"
       :class="{ collapsed: collapsed }"
-      title="设置"
-      aria-label="设置"
+      :title="footerTitle"
+      :aria-label="footerTitle"
       @click="handleOpenSettings"
     >
       <img :src="userIcon" alt="" class="user-avatar-img" />
+      <span v-if="!collapsed" class="user-name">{{ displayUsername }}</span>
     </button>
 
     <!-- 浮动完整内容提示（避开列表 overflow 裁切；WebView2 下比原生 title 可靠） -->
@@ -189,6 +190,30 @@ const { sendMessage } = useWebViewBridge()
 const tasksExpanded = ref(true)
 /** 打开文件列表是否展开；默认展开，不持久化 */
 const openFilesExpanded = ref(true)
+
+const isLoggedIn = ref(false)
+const username = ref('')
+
+const displayUsername = computed(() => {
+  if (isLoggedIn.value && username.value) return username.value
+  return '未登录'
+})
+
+const footerTitle = computed(() => {
+  const name = displayUsername.value
+  return name && name !== '未登录' ? `${name} · 设置` : '设置'
+})
+
+async function refreshUsername () {
+  try {
+    const res = await sendMessage('getCurrentUser', {})
+    if (!res?.success) return
+    isLoggedIn.value = !!res.isLoggedIn
+    username.value = res.username || ''
+  } catch (e) {
+    console.warn('[TaskSidebar] getCurrentUser failed:', e?.message || e)
+  }
+}
 
 const hoverTip = ref({
   visible: false,
@@ -347,6 +372,7 @@ onMounted(() => {
   window.addEventListener('blur', closeFileContextMenu)
   window.addEventListener('resize', closeFileContextMenu)
   window.addEventListener('scroll', closeFileContextMenu, true)
+  refreshUsername()
 })
 
 onUnmounted(() => {
@@ -360,6 +386,7 @@ onUnmounted(() => {
 async function handleOpenSettings () {
   try {
     await sendMessage('openSettings', {})
+    await refreshUsername()
   } catch (e) {
     console.error('[TaskSidebar] 打开设置失败:', e)
   }
@@ -534,6 +561,18 @@ async function handleOpenSettings () {
   display: block;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+.user-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f1e1c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .section-header {

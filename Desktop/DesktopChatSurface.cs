@@ -410,6 +410,17 @@ namespace EasyWriteClient.Desktop
                 return Task.FromResult<object>(new { items });
             });
             _bridge.RegisterHandler("openContainingFolder", HandleOpenContainingFolderAsync);
+            // 侧栏底栏用户名：轻量查询，不走设置窗体的 getUserSettings（该 handler 只在 UserSettingsForm 注册）
+            _bridge.RegisterHandler("getCurrentUser", _ =>
+            {
+                var user = UserService.Instance;
+                return Task.FromResult<object>(new
+                {
+                    success = true,
+                    isLoggedIn = user.IsLoggedIn,
+                    username = user.UserName ?? string.Empty
+                });
+            });
         }
 
         /// <summary>在资源管理器中打开文件所在文件夹（并尽量选中该文件）。</summary>
