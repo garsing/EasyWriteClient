@@ -20,6 +20,8 @@ namespace WordAddIn1
         public DocumentNavigateSettings DocumentNavigate { get; set; }
         public DocumentActionsAmbiguitySettings DocumentActionsAmbiguity { get; set; }
         public WorkspaceSettings Workspace { get; set; }
+        /// <summary>侧栏「打开文件」可监视应用白名单（无总开关）。</summary>
+        public OpenFilesSettings OpenFiles { get; set; }
 
         public AppConfig()
         {
@@ -107,6 +109,32 @@ namespace WordAddIn1
         {
             public string Mode { get; set; } = "sessions";
         }
+
+        /// <summary>打开文件探测配置；仅 Apps 白名单，无 Enabled 总开关。</summary>
+        public class OpenFilesSettings
+        {
+            public List<OpenFilesAppEntry> Apps { get; set; }
+
+            public OpenFilesSettings()
+            {
+                Apps = new List<OpenFilesAppEntry>();
+            }
+        }
+
+        public class OpenFilesAppEntry
+        {
+            /// <summary>应用类型键：首期仅 "word"（小写）。</summary>
+            public string Type { get; set; }
+            public string DisplayName { get; set; }
+            public List<string> ProcessNames { get; set; }
+            public List<string> Extensions { get; set; }
+
+            public OpenFilesAppEntry()
+            {
+                ProcessNames = new List<string>();
+                Extensions = new List<string>();
+            }
+        }
     }
 
     /// <summary>
@@ -190,6 +218,51 @@ namespace WordAddIn1
             {
                 config.App.DebugCategories = new List<string>();
             }
+
+            // I9：OpenFiles / Apps 缺失或空 → 默认仅 Word（不是关闭功能）
+            if (config.OpenFiles == null
+                || config.OpenFiles.Apps == null
+                || config.OpenFiles.Apps.Count == 0)
+            {
+                config.OpenFiles = CreateDefaultOpenFilesSettings();
+            }
+            else
+            {
+                foreach (var app in config.OpenFiles.Apps)
+                {
+                    if (app == null)
+                    {
+                        continue;
+                    }
+
+                    if (app.ProcessNames == null)
+                    {
+                        app.ProcessNames = new List<string>();
+                    }
+
+                    if (app.Extensions == null)
+                    {
+                        app.Extensions = new List<string>();
+                    }
+                }
+            }
+        }
+
+        internal static AppConfig.OpenFilesSettings CreateDefaultOpenFilesSettings()
+        {
+            return new AppConfig.OpenFilesSettings
+            {
+                Apps = new List<AppConfig.OpenFilesAppEntry>
+                {
+                    new AppConfig.OpenFilesAppEntry
+                    {
+                        Type = "word",
+                        DisplayName = "Word",
+                        ProcessNames = new List<string> { "WINWORD" },
+                        Extensions = new List<string> { ".doc", ".docx", ".docm", ".dotx", ".dotm" }
+                    }
+                }
+            };
         }
 
         /// <summary>
@@ -257,7 +330,8 @@ namespace WordAddIn1
                 Workspace = new AppConfig.WorkspaceSettings
                 {
                     Mode = "sessions"
-                }
+                },
+                OpenFiles = CreateDefaultOpenFilesSettings()
             };
         }
 

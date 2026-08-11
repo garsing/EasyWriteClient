@@ -4,6 +4,7 @@
       v-if="isDesktopHost"
       :collapsed="sidebarCollapsed"
       :tasks="taskList"
+      :open-files="openFiles"
       :active-id="activeTaskId"
       :loading="taskListLoading"
       :error="taskListError"
@@ -79,6 +80,18 @@ const taskList = ref([])
 const taskListLoading = ref(false)
 const taskListError = ref('')
 const activeTaskId = ref(null)
+const openFiles = ref([])
+
+async function refreshOpenFiles () {
+  if (!isDesktopHost) return
+  try {
+    const res = await sendMessage('getOpenFiles', {})
+    const items = res?.items ?? res?.data?.items
+    openFiles.value = Array.isArray(items) ? items : []
+  } catch (e) {
+    console.warn('[App] getOpenFiles failed:', e?.message || e)
+  }
+}
 
 async function refreshTaskList () {
   if (!isDesktopHost) return
@@ -569,6 +582,7 @@ onMounted(() => {
   loadEmptyState()
   if (isDesktopHost) {
     refreshTaskList()
+    refreshOpenFiles()
   }
 
   onMessage((data) => {
@@ -725,6 +739,10 @@ onMounted(() => {
       loadEmptyState()
     } else if (data.type === 'todoListUpdated') {
       handleTodoListUpdated(data.data || data)
+    } else if (data.type === 'openFilesUpdated') {
+      const payload = data.data || data
+      const items = payload?.items
+      openFiles.value = Array.isArray(items) ? items : []
     } else if (data.type === 'todoListRevert') {
       handleTodoListRevert(data.data || data)
     } else if (data.type === 'conversationHistory') {

@@ -25,6 +25,8 @@ namespace WordAddIn1
         public const string Timing = "timing";
         /// <summary>知识库文档格式粗迁（F_format_transfer / FormatTransferHelper）卡点诊断。</summary>
         public const string FormatTransfer = "format_transfer";
+        /// <summary>Desktop「打开文件」探测 / Word COM 事件。</summary>
+        public const string OpenFiles = "open_files";
 
         public static readonly HashSet<string> Known = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -42,7 +44,8 @@ namespace WordAddIn1
             Config,
             Misc,
             Timing,
-            FormatTransfer
+            FormatTransfer,
+            OpenFiles
         };
     }
 }

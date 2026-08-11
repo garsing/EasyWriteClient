@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
@@ -10,6 +11,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Word = Microsoft.Office.Interop.Word;
 using WordAddIn1;
+using WordAddIn1.OpenFiles;
 
 namespace EasyWriteClient.Desktop
 {
@@ -32,10 +34,13 @@ namespace EasyWriteClient.Desktop
         private bool _isProcessing;
         private volatile bool _newSessionResetPending;
         private bool _webReady;
+        private OpenFilesMonitor _openFilesMonitor;
+        private readonly SynchronizationContext _uiSync;
 
         public DesktopChatSurface()
         {
             Dock = DockStyle.Fill;
+            _uiSync = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
             _webView = new WebView2
             {
                 Dock = DockStyle.Fill,
@@ -57,6 +62,16 @@ namespace EasyWriteClient.Desktop
                 {
                     HostCallbacks.WordApplicationResolved = null;
                 }
+
+                try
+                {
+                    _openFilesMonitor?.Dispose();
+                }
+                catch (Exception)
+                {
+                }
+
+                _openFilesMonitor = null;
             };
         }
 
@@ -66,6 +81,16 @@ namespace EasyWriteClient.Desktop
             if (_wsClient != null)
             {
                 _wsClient.SetWordApplication(wordApp);
+            }
+
+            try
+            {
+                _openFilesMonitor?.TryAttachNow();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    "[DesktopChatSurface] OpenFiles TryAttachNow: " + ex.Message);
             }
         }
 
@@ -177,6 +202,7 @@ namespace EasyWriteClient.Desktop
 
             _bridge = new WebView2Bridge(_webView);
             RegisterHandlers();
+            StartOpenFilesMonitor();
 
             // 先加载前端；勿在启动时 new Word
             const string url = "http://appassets.local/index.html?host=desktop";
@@ -375,6 +401,53 @@ namespace EasyWriteClient.Desktop
                 return new { success = true, message = "桌面版知识库入口后续接入" };
             });
             _bridge.RegisterHandler("todoListReply", HandleTodoListReplyAsync);
+            _bridge.RegisterHandler("getOpenFiles", _ =>
+            {
+                var items = _openFilesMonitor != null
+                    ? _openFilesMonitor.GetSnapshot()
+                    : Array.Empty<OpenFileItem>();
+                return Task.FromResult<object>(new { items });
+            });
+        }
+
+        private void StartOpenFilesMonitor()
+        {
+            if (_openFilesMonitor != null)
+            {
+                return;
+            }
+
+            try
+            {
+                _openFilesMonitor = new OpenFilesMonitor(
+                    resolveWordApp: () => WordHost.GetOrAttach(createIfMissing: false),
+                    syncContext: _uiSync);
+
+                _openFilesMonitor.Changed += items =>
+                {
+                    try
+                    {
+                        if (_bridge == null)
+                        {
+                            return;
+                        }
+
+                        _bridge.SendToJavaScript("openFilesUpdated", new { items });
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            "[DesktopChatSurface] openFilesUpdated: " + ex.Message);
+                    }
+                };
+
+                _openFilesMonitor.Start();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    "[DesktopChatSurface] StartOpenFilesMonitor: " + ex.Message);
+            }
         }
 
         /// <param name="createWordIfMissing">仅工具路径为 true；启动/登录为 false。</param>

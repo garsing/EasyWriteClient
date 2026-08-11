@@ -40,8 +40,34 @@
       <img :src="addIcon" alt="新建任务" class="new-task-icon-img" />
     </button>
 
-    <!-- 新建任务与历史任务之间：预留给后续导航/入口 -->
-    <div v-if="!collapsed" class="sidebar-mid" aria-hidden="true" />
+    <!-- 新建任务与历史任务之间：打开文件（只读列表） -->
+    <div v-if="!collapsed" class="open-files-section">
+      <button
+        type="button"
+        class="section-header"
+        :aria-expanded="openFilesExpanded"
+        :title="openFilesExpanded ? '收起打开文件' : '展开打开文件'"
+        @click="openFilesExpanded = !openFilesExpanded"
+      >
+        <span class="section-title">打开文件（{{ openFilesCount }}）</span>
+        <span class="section-chevron" :class="{ open: openFilesExpanded }" aria-hidden="true">›</span>
+      </button>
+
+      <div class="open-files-list-clip" :class="{ open: openFilesExpanded }">
+        <div class="open-files-list-clip-inner">
+          <div class="open-files-list">
+            <div
+              v-for="item in openFiles"
+              :key="item.id || item.displayName"
+              class="open-file-item"
+              :title="item.fullPath || item.displayName || ''"
+            >
+              <span class="open-file-name">{{ item.displayName || '未命名文档' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!--
       任务区整体高度固定；展开/折叠只改内部列表，标题栏纵向位置不变
@@ -106,6 +132,7 @@ import userIcon from '../assets/images/user.png'
 const props = defineProps({
   collapsed: { type: Boolean, default: false },
   tasks: { type: Array, default: () => [] },
+  openFiles: { type: Array, default: () => [] },
   activeId: { type: [String, Number], default: null },
   loading: { type: Boolean, default: false },
   error: { type: String, default: '' }
@@ -117,11 +144,17 @@ const { sendMessage } = useWebViewBridge()
 
 /** 历史任务列表是否展开（点「任务 (N)」标题收起/展开） */
 const tasksExpanded = ref(true)
+/** 打开文件列表是否展开；默认展开，不持久化 */
+const openFilesExpanded = ref(true)
 
 const taskCountLabel = computed(() => {
   const n = Array.isArray(props.tasks) ? props.tasks.length : 0
   return n > 0 ? ` (${n})` : ''
 })
+
+const openFilesCount = computed(() =>
+  Array.isArray(props.openFiles) ? props.openFiles.length : 0
+)
 
 async function handleOpenSettings () {
   try {
@@ -244,10 +277,15 @@ async function handleOpenSettings () {
   height: 22px;
 }
 
-/* 新建任务 ↔ 历史任务：中间留空，后续可放导航等（展开/折叠时尺寸不变） */
-.sidebar-mid {
-  flex: 1 1 auto;
-  min-height: 96px;
+/* 打开文件区约 28%；折叠只藏列表，flex-basis 不塌 */
+.open-files-section {
+  flex: 0 0 28%;
+  max-height: 28%;
+  min-height: 36px;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 8px 0;
+  min-width: 0;
 }
 
 /* 任务区约占侧栏一半高度 */
@@ -344,7 +382,8 @@ async function handleOpenSettings () {
 }
 
 /* 手风琴：在固定任务区内向上收起列表，标题位置不动 */
-.task-list-clip {
+.task-list-clip,
+.open-files-list-clip {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
@@ -352,13 +391,50 @@ async function handleOpenSettings () {
   transition: grid-template-rows 0.22s ease;
 }
 
-.task-list-clip.open {
+.task-list-clip.open,
+.open-files-list-clip.open {
   grid-template-rows: 1fr;
 }
 
-.task-list-clip-inner {
+.task-list-clip-inner,
+.open-files-list-clip-inner {
   overflow: hidden;
   min-height: 0;
+}
+
+.open-files-list {
+  overflow-y: auto;
+  max-height: 100%;
+  min-height: 0;
+  padding-bottom: 8px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.open-files-list::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.open-file-item {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 1px;
+  min-width: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+.open-file-name {
+  display: block;
+  min-width: 0;
+  font-size: 13px;
+  color: #1f1e1c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .task-list {
