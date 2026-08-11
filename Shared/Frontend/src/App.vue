@@ -5,12 +5,14 @@
       :collapsed="sidebarCollapsed"
       :tasks="taskList"
       :open-files="openFiles"
+      :selected-open-file-ids="selectedOpenFileIds"
       :active-id="activeTaskId"
       :loading="taskListLoading"
       :error="taskListError"
       @toggle="sidebarCollapsed = !sidebarCollapsed"
       @new-task="handleDesktopNewTask"
       @select="handleDesktopSelectTask"
+      @select-open-file="handleSelectOpenFile"
     />
     <div
       class="chat-container"
@@ -40,17 +42,19 @@
         @send="handleSend"
         @clear-attachment="clearChatAttachment"
         @dropped-file="onInputAreaFileDrop"
+        @remove-selected-open-file="handleRemoveSelectedOpenFile"
         :loading="isProcessing"
         :isProcessing="isProcessing"
         :desktop="isDesktopHost"
         :attachment="attachmentView"
+        :selected-open-files="selectedOpenFiles"
       />
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import ChatHeader from './components/ChatHeader.vue'
 import ChatMessages from './components/ChatMessages.vue'
 import ChatEmptyState from './components/ChatEmptyState.vue'
@@ -62,6 +66,13 @@ import { useChatFileUpload } from './composables/useChatFileUpload'
 import { ToolCallAccumulator } from './utils/toolCallAccumulator'
 import { fetchChatEmptyState } from './services/chatEmptyStateApi.js'
 import { listConversations } from './services/conversationsApi.js'
+import {
+  MAX_SELECTED_OPEN_FILES,
+  toSelectedOpenFile,
+  appendToUserContent,
+  stripSelectedOpenFilesAppendix,
+  pruneSelectionByOpenFiles
+} from './utils/selectedOpenFiles.js'
 
 const { sendMessage, onMessage } = useWebViewBridge()
 const chatFile = useChatFileUpload()
@@ -81,6 +92,35 @@ const taskListLoading = ref(false)
 const taskListError = ref('')
 const activeTaskId = ref(null)
 const openFiles = ref([])
+/** Desktop：已选打开文件（芯片 / 发送附加段）；不落库 */
+const selectedOpenFiles = ref([])
+const selectedOpenFileIds = computed(() => selectedOpenFiles.value.map((x) => x.id))
+
+watch(openFiles, (list) => {
+  selectedOpenFiles.value = pruneSelectionByOpenFiles(selectedOpenFiles.value, list)
+})
+
+function clearSelectedOpenFiles () {
+  selectedOpenFiles.value = []
+}
+
+function handleSelectOpenFile (item) {
+  if (!isDesktopHost) return
+  const sel = toSelectedOpenFile(item)
+  if (selectedOpenFiles.value.some((x) => x.id === sel.id)) return
+  if (selectedOpenFiles.value.length >= MAX_SELECTED_OPEN_FILES) {
+    panelHint.value = '最多选择 15 个文件'
+    setTimeout(() => {
+      if (panelHint.value === '最多选择 15 个文件') panelHint.value = ''
+    }, 2000)
+    return
+  }
+  selectedOpenFiles.value = [...selectedOpenFiles.value, sel]
+}
+
+function handleRemoveSelectedOpenFile (id) {
+  selectedOpenFiles.value = selectedOpenFiles.value.filter((x) => x.id !== id)
+}
 
 async function refreshOpenFiles () {
   if (!isDesktopHost) return
@@ -111,6 +151,7 @@ async function handleDesktopNewTask () {
   try {
     await sendMessage('addConversation', {})
     activeTaskId.value = null
+    clearSelectedOpenFiles()
     await refreshTaskList()
   } catch (e) {
     console.error('[App] 新建任务失败:', e)
@@ -124,7 +165,9 @@ async function handleDesktopSelectTask (item) {
     const res = await sendMessage('openConversation', { id: item.id })
     if (!res?.success) {
       console.error('[App] 打开任务失败:', res?.message)
+      return
     }
+    clearSelectedOpenFiles()
   } catch (e) {
     console.error('[App] 打开任务失败:', e)
   }
@@ -236,8 +279,10 @@ const handleSend = async (content) => {
     return
   }
 
+  const raw = content.trim()
+
   // 保存输入内容（用于登录失败时恢复）
-  pendingInput.value = content.trim()
+  pendingInput.value = raw
   panelHint.value = ''
 
   // 立即设置处理状态，确保按钮显示停止图标
@@ -254,11 +299,11 @@ const handleSend = async (content) => {
         }
       : null
 
-  // 添加用户消息（先不添加到列表，等待确认）
+  // 气泡仅原文；附加段只进 sendPayload（选中保留，不在发送后清空）
   const userMessage = {
     id: Date.now(),
     role: 'user',
-    content: content.trim(),
+    content: raw,
     timestamp: new Date(),
     attachment: attachmentSnap || undefined
   }
@@ -266,7 +311,10 @@ const handleSend = async (content) => {
   messages.value.push(userMessage)
   console.log('[App] 用户消息已添加，当前消息数量:', messages.value.length)
 
-  const sendPayload = { content: content.trim() }
+  const apiContent = isDesktopHost
+    ? appendToUserContent(raw, selectedOpenFiles.value)
+    : raw
+  const sendPayload = { content: apiContent }
   if (uploadIdSnapshot) {
     sendPayload.uploadId = uploadIdSnapshot
   }
@@ -539,14 +587,23 @@ function normalizeHistoryMessage(m) {
   const id = Number(m.id) || Date.now()
   const timestamp = m.timestamp ? new Date(m.timestamp) : new Date()
   const role = m.role || 'system'
-  const content = m.content || ''
+  let content = m.content || ''
+  if (role === 'user') {
+    content = stripSelectedOpenFilesAppendix(content)
+  }
 
   if (Array.isArray(m.segments) && m.segments.length > 0) {
+    const segments = m.segments.map((seg) => {
+      if (role === 'user' && seg?.type === 'text' && typeof seg.content === 'string') {
+        return { ...seg, content: stripSelectedOpenFilesAppendix(seg.content) }
+      }
+      return seg
+    })
     return {
       id,
       role,
       content,
-      segments: m.segments,
+      segments,
       timestamp,
       isStreaming: false,
       isHint: !!m.isHint

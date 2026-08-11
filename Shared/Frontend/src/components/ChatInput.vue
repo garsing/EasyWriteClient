@@ -28,6 +28,27 @@
       </div>
     </div>
 
+    <!-- Desktop：外框与内框之间 — 已选打开文件芯片 -->
+    <div v-if="showSelectedOpenFiles" class="selected-open-files-strip">
+      <div
+        v-for="f in selectedOpenFiles"
+        :key="f.id"
+        class="selected-open-file-chip"
+        :title="f.displayName"
+      >
+        <img :src="chipAppIcon(f)" alt="" class="chip-app-icon" aria-hidden="true" />
+        <span class="chip-name">{{ truncateName(f.displayName) }}</span>
+        <button
+          type="button"
+          class="chip-remove"
+          :aria-label="'取消选中 ' + (f.displayName || '')"
+          @click="$emit('remove-selected-open-file', f.id)"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+
     <div class="input-wrapper">
       <a-textarea
         v-model:value="inputValue"
@@ -57,6 +78,8 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import submitIcon from '../assets/images/submit.png'
 import stopIcon from '../assets/images/stop.png'
+import wordAppIcon from '../assets/images/word.png'
+import wpsAppIcon from '../assets/images/wps.png'
 import { useWebViewBridge } from '../composables/useWebViewBridge'
 
 const { sendMessage } = useWebViewBridge()
@@ -79,6 +102,11 @@ const props = defineProps({
   attachment: {
     type: Object,
     default: null
+  },
+  /** Desktop 已选打开文件芯片 */
+  selectedOpenFiles: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -86,7 +114,16 @@ const autoSize = computed(() =>
   props.desktop ? { minRows: 3, maxRows: 8 } : { minRows: 1, maxRows: 4 }
 )
 
-const emit = defineEmits(['send', 'clear-attachment', 'dropped-file'])
+const emit = defineEmits(['send', 'clear-attachment', 'dropped-file', 'remove-selected-open-file'])
+
+const showSelectedOpenFiles = computed(
+  () => props.desktop && Array.isArray(props.selectedOpenFiles) && props.selectedOpenFiles.length > 0
+)
+
+function chipAppIcon (f) {
+  const type = String(f?.appType || '').toLowerCase()
+  return type === 'wps' ? wpsAppIcon : wordAppIcon
+}
 
 function dataTransferHasFiles (dt) {
   if (!dt) return false
@@ -242,6 +279,58 @@ const handleShiftEnter = () => {}
 
 .attachment-strip {
   margin-bottom: 8px;
+}
+
+.selected-open-files-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+  max-width: 100%;
+}
+
+.selected-open-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 6px 4px 8px;
+  border-radius: 6px;
+  background: #ebeae6;
+  min-width: 0;
+}
+
+.chip-app-icon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  flex-shrink: 0;
+  display: block;
+}
+
+.chip-name {
+  font-size: 12px;
+  color: #1f1e1c;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.chip-remove {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  color: #8a877f;
+  padding: 0 2px;
+}
+
+.chip-remove:hover {
+  color: #1f1e1c;
 }
 
 .attachment-card {

@@ -60,6 +60,8 @@
               v-for="item in openFiles"
               :key="item.id || item.displayName"
               class="open-file-item"
+              :class="{ selected: isOpenFileSelected(item) }"
+              @click="onOpenFileClick(item)"
               @mouseenter="showHoverTip($event, openFileTooltip(item))"
               @mouseleave="hideHoverTip"
               @contextmenu.prevent="openFileContextMenu($event, item)"
@@ -167,17 +169,19 @@ import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
 import userIcon from '../assets/images/user.png'
 import wordAppIcon from '../assets/images/word.png'
 import wpsAppIcon from '../assets/images/wps.png'
+import { openFileSelectionKey } from '../utils/selectedOpenFiles.js'
 
 const props = defineProps({
   collapsed: { type: Boolean, default: false },
   tasks: { type: Array, default: () => [] },
   openFiles: { type: Array, default: () => [] },
+  selectedOpenFileIds: { type: Array, default: () => [] },
   activeId: { type: [String, Number], default: null },
   loading: { type: Boolean, default: false },
   error: { type: String, default: '' }
 })
 
-defineEmits(['toggle', 'new-task', 'select'])
+const emit = defineEmits(['toggle', 'new-task', 'select', 'select-open-file'])
 
 const { sendMessage } = useWebViewBridge()
 
@@ -215,6 +219,17 @@ function openFileAppIcon (item) {
   const type = String(item?.appType || item?.app_type || '').toLowerCase()
   if (type === 'wps') return wpsAppIcon
   return wordAppIcon
+}
+
+function isOpenFileSelected (item) {
+  const id = openFileSelectionKey(item)
+  return (props.selectedOpenFileIds || []).some((x) => String(x) === String(id))
+}
+
+function onOpenFileClick (item) {
+  hideHoverTip()
+  closeFileContextMenu()
+  emit('select-open-file', item)
 }
 
 /** Hover 仅展示完整文件名（不显示路径） */
@@ -609,7 +624,7 @@ async function handleOpenSettings () {
   border-radius: 8px;
   margin-bottom: 1px;
   min-width: 0;
-  cursor: default;
+  cursor: pointer;
   user-select: none;
   display: flex;
   align-items: center;
@@ -618,6 +633,14 @@ async function handleOpenSettings () {
 
 .open-file-item:hover {
   background: rgba(0, 0, 0, 0.04);
+}
+
+.open-file-item.selected {
+  background: #e4e2dc;
+}
+
+.open-file-item.selected:hover {
+  background: #e4e2dc;
 }
 
 .open-file-app-icon {
