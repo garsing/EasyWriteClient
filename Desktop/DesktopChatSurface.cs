@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -408,6 +409,61 @@ namespace EasyWriteClient.Desktop
                     : Array.Empty<OpenFileItem>();
                 return Task.FromResult<object>(new { items });
             });
+            _bridge.RegisterHandler("openContainingFolder", HandleOpenContainingFolderAsync);
+        }
+
+        /// <summary>在资源管理器中打开文件所在文件夹（并尽量选中该文件）。</summary>
+        private Task<object> HandleOpenContainingFolderAsync(object data)
+        {
+            try
+            {
+                var jo = data as JObject ?? (data != null ? JObject.FromObject(data) : null);
+                string path = (jo?["path"] ?? jo?["fullPath"] ?? jo?["full_path"])?.ToString()?.Trim();
+                if (string.IsNullOrEmpty(path))
+                {
+                    return Task.FromResult<object>(new { success = false, message = "无文件路径（未保存文档无法打开文件夹）" });
+                }
+
+                string fullPath;
+                try
+                {
+                    fullPath = Path.GetFullPath(path);
+                }
+                catch (Exception)
+                {
+                    return Task.FromResult<object>(new { success = false, message = "无效的文件路径" });
+                }
+
+                if (File.Exists(fullPath))
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = "/select,\"" + fullPath + "\"",
+                        UseShellExecute = true
+                    });
+                    return Task.FromResult<object>(new { success = true });
+                }
+
+                string dir = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = dir,
+                        UseShellExecute = true
+                    });
+                    return Task.FromResult<object>(new { success = true });
+                }
+
+                return Task.FromResult<object>(new { success = false, message = "文件或所在文件夹不存在" });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    "[DesktopChatSurface] openContainingFolder: " + ex.Message);
+                return Task.FromResult<object>(new { success = false, message = ex.Message });
+            }
         }
 
         private void StartOpenFilesMonitor()

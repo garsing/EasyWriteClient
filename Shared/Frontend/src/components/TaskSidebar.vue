@@ -62,6 +62,7 @@
               class="open-file-item"
               @mouseenter="showHoverTip($event, openFileTooltip(item))"
               @mouseleave="hideHoverTip"
+              @contextmenu.prevent="openFileContextMenu($event, item)"
             >
               <img
                 :src="openFileAppIcon(item)"
@@ -137,11 +138,28 @@
         maxWidth: hoverTip.maxWidth + 'px'
       }"
     >{{ hoverTip.text }}</div>
+
+    <!-- 打开文件右键菜单（目前仅「打开文件夹」） -->
+    <div
+      v-if="ctxMenu.visible"
+      class="open-file-ctx-menu"
+      :style="{ top: ctxMenu.top + 'px', left: ctxMenu.left + 'px' }"
+      @mousedown.stop
+    >
+      <button
+        type="button"
+        class="open-file-ctx-item"
+        :disabled="!ctxMenu.hasPath"
+        @click="handleOpenContainingFolder"
+      >
+        打开文件夹
+      </button>
+    </div>
   </aside>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { formatRelativeTime } from '../services/conversationsApi.js'
 import { useWebViewBridge } from '../composables/useWebViewBridge'
 import addIcon from '../assets/images/add.png'
@@ -174,6 +192,14 @@ const hoverTip = ref({
   top: 0,
   left: 0,
   maxWidth: 240
+})
+
+const ctxMenu = ref({
+  visible: false,
+  top: 0,
+  left: 0,
+  path: '',
+  hasPath: false
 })
 
 const taskCountLabel = computed(() => {
@@ -241,6 +267,80 @@ function hideHoverTip () {
     text: ''
   }
 }
+
+function closeFileContextMenu () {
+  ctxMenu.value = {
+    ...ctxMenu.value,
+    visible: false,
+    path: '',
+    hasPath: false
+  }
+}
+
+function openFileContextMenu (event, item) {
+  hideHoverTip()
+  const path = (item?.fullPath || item?.full_path || '').trim()
+  const menuW = 140
+  const menuH = 40
+  let left = event.clientX
+  let top = event.clientY
+  if (left + menuW > window.innerWidth - 8) {
+    left = Math.max(8, window.innerWidth - menuW - 8)
+  }
+  if (top + menuH > window.innerHeight - 8) {
+    top = Math.max(8, window.innerHeight - menuH - 8)
+  }
+  ctxMenu.value = {
+    visible: true,
+    top,
+    left,
+    path,
+    hasPath: !!path
+  }
+}
+
+async function handleOpenContainingFolder () {
+  const path = (ctxMenu.value.path || '').trim()
+  closeFileContextMenu()
+  if (!path) {
+    console.warn('[TaskSidebar] 未保存文档无路径，无法打开文件夹')
+    return
+  }
+  try {
+    const res = await sendMessage('openContainingFolder', { path })
+    if (res && res.success === false) {
+      console.warn('[TaskSidebar] 打开文件夹失败:', res.message || res)
+    }
+  } catch (e) {
+    console.error('[TaskSidebar] 打开文件夹失败:', e)
+  }
+}
+
+function onGlobalPointerDown (e) {
+  if (!ctxMenu.value.visible) return
+  const menu = e.target?.closest?.('.open-file-ctx-menu')
+  if (!menu) closeFileContextMenu()
+}
+
+function onGlobalKeyDown (e) {
+  if (e.key === 'Escape') closeFileContextMenu()
+}
+
+onMounted(() => {
+  window.addEventListener('mousedown', onGlobalPointerDown, true)
+  window.addEventListener('keydown', onGlobalKeyDown, true)
+  window.addEventListener('blur', closeFileContextMenu)
+  window.addEventListener('resize', closeFileContextMenu)
+  window.addEventListener('scroll', closeFileContextMenu, true)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('mousedown', onGlobalPointerDown, true)
+  window.removeEventListener('keydown', onGlobalKeyDown, true)
+  window.removeEventListener('blur', closeFileContextMenu)
+  window.removeEventListener('resize', closeFileContextMenu)
+  window.removeEventListener('scroll', closeFileContextMenu, true)
+})
 
 async function handleOpenSettings () {
   try {
@@ -542,6 +642,40 @@ async function handleOpenSettings () {
   word-break: break-all;
   pointer-events: none;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+
+.open-file-ctx-menu {
+  position: fixed;
+  z-index: 1100;
+  min-width: 128px;
+  padding: 4px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.open-file-ctx-item {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  color: #1f1e1c;
+  cursor: pointer;
+}
+
+.open-file-ctx-item:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.open-file-ctx-item:disabled {
+  color: #9a978f;
+  cursor: not-allowed;
 }
 
 .open-file-name {
