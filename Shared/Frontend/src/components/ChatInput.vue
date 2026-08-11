@@ -284,9 +284,24 @@ const handleShiftEnter = () => {}
 .selected-open-files-strip {
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
   gap: 6px;
   margin-bottom: 8px;
   max-width: 100%;
+  /* 约两行芯片（单行高 ~28px + 行间距 6px） */
+  max-height: calc(28px * 2 + 6px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.selected-open-files-strip::-webkit-scrollbar {
+  width: 4px;
+}
+
+.selected-open-files-strip::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 2px;
 }
 
 .selected-open-file-chip {
