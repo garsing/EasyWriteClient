@@ -60,8 +60,15 @@
               v-for="item in openFiles"
               :key="item.id || item.displayName"
               class="open-file-item"
-              :title="item.fullPath || item.displayName || ''"
+              @mouseenter="showHoverTip($event, openFileTooltip(item))"
+              @mouseleave="hideHoverTip"
             >
+              <img
+                :src="openFileAppIcon(item)"
+                alt=""
+                class="open-file-app-icon"
+                aria-hidden="true"
+              />
               <span class="open-file-name">{{ item.displayName || '未命名文档' }}</span>
             </div>
           </div>
@@ -96,7 +103,8 @@
               type="button"
               class="task-item"
               :class="{ active: String(item.id) === String(activeId) }"
-              :title="item.title || '未命名任务'"
+              @mouseenter="showHoverTip($event, taskTooltip(item))"
+              @mouseleave="hideHoverTip"
               @click="$emit('select', item)"
             >
               <span class="task-title">{{ item.title || '未命名任务' }}</span>
@@ -118,6 +126,17 @@
     >
       <img :src="userIcon" alt="" class="user-avatar-img" />
     </button>
+
+    <!-- 浮动完整内容提示（避开列表 overflow 裁切；WebView2 下比原生 title 可靠） -->
+    <div
+      v-if="hoverTip.visible && hoverTip.text"
+      class="sidebar-hover-tip"
+      :style="{
+        top: hoverTip.top + 'px',
+        left: hoverTip.left + 'px',
+        maxWidth: hoverTip.maxWidth + 'px'
+      }"
+    >{{ hoverTip.text }}</div>
   </aside>
 </template>
 
@@ -128,6 +147,8 @@ import { useWebViewBridge } from '../composables/useWebViewBridge'
 import addIcon from '../assets/images/add.png'
 import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
 import userIcon from '../assets/images/user.png'
+import wordAppIcon from '../assets/images/word.png'
+import wpsAppIcon from '../assets/images/wps.png'
 
 const props = defineProps({
   collapsed: { type: Boolean, default: false },
@@ -147,6 +168,14 @@ const tasksExpanded = ref(true)
 /** 打开文件列表是否展开；默认展开，不持久化 */
 const openFilesExpanded = ref(true)
 
+const hoverTip = ref({
+  visible: false,
+  text: '',
+  top: 0,
+  left: 0,
+  maxWidth: 240
+})
+
 const taskCountLabel = computed(() => {
   const n = Array.isArray(props.tasks) ? props.tasks.length : 0
   return n > 0 ? ` (${n})` : ''
@@ -155,6 +184,63 @@ const taskCountLabel = computed(() => {
 const openFilesCount = computed(() =>
   Array.isArray(props.openFiles) ? props.openFiles.length : 0
 )
+
+function openFileAppIcon (item) {
+  const type = String(item?.appType || item?.app_type || '').toLowerCase()
+  if (type === 'wps') return wpsAppIcon
+  return wordAppIcon
+}
+
+/** Hover 仅展示完整文件名（不显示路径） */
+function openFileTooltip (item) {
+  return (item?.displayName || '未命名文档').trim()
+}
+
+function taskTooltip (item) {
+  return (item?.title || '未命名任务').trim()
+}
+
+function showHoverTip (event, text) {
+  const content = (text || '').trim()
+  if (!content) {
+    hideHoverTip()
+    return
+  }
+
+  const el = event.currentTarget
+  if (!el || typeof el.getBoundingClientRect !== 'function') {
+    return
+  }
+
+  const rect = el.getBoundingClientRect()
+  const sidebar = el.closest('.task-sidebar')
+  const sidebarRect = sidebar?.getBoundingClientRect()
+  const left = sidebarRect ? sidebarRect.left + 8 : rect.left
+  const maxWidth = Math.max(160, (sidebarRect?.width || 240) - 16)
+  const gap = 6
+  let top = rect.bottom + gap
+  // 靠近视口底部时改到条目上方
+  const estimatedHeight = Math.min(120, 24 + content.split('\n').length * 16)
+  if (top + estimatedHeight > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - estimatedHeight - gap)
+  }
+
+  hoverTip.value = {
+    visible: true,
+    text: content,
+    top,
+    left,
+    maxWidth
+  }
+}
+
+function hideHoverTip () {
+  hoverTip.value = {
+    ...hoverTip.value,
+    visible: false,
+    text: ''
+  }
+}
 
 async function handleOpenSettings () {
   try {
@@ -423,12 +509,43 @@ async function handleOpenSettings () {
   border-radius: 8px;
   margin-bottom: 1px;
   min-width: 0;
-  pointer-events: none;
+  cursor: default;
   user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.open-file-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.open-file-app-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  flex-shrink: 0;
+  display: block;
+}
+
+.sidebar-hover-tip {
+  position: fixed;
+  z-index: 1000;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #2c2c2c;
+  color: #f5f5f5;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
+  pointer-events: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
 }
 
 .open-file-name {
-  display: block;
+  flex: 1;
   min-width: 0;
   font-size: 13px;
   color: #1f1e1c;
