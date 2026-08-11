@@ -21,5 +21,9 @@ namespace WordAddIn1.OpenFiles
 
         [JsonProperty("isSaved")]
         public bool IsSaved { get; set; }
+
+        /// <summary>建渠道后的 channel_id；侧栏 UI 不展示。</summary>
+        [JsonProperty("channelId")]
+        public string ChannelId { get; set; }
     }
 }

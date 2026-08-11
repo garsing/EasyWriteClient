@@ -138,6 +138,8 @@ namespace WordAddIn1.OpenFiles
                             continue;
                         }
 
+                        EnsureChannel(doc, item);
+
                         int key = RuntimeHelpers.GetHashCode(doc);
                         lock (_gate)
                         {
@@ -214,6 +216,19 @@ namespace WordAddIn1.OpenFiles
                     id = item?.Id;
                 }
 
+                // 幂等：EnsureCloseHandler 也会 RemoveByDocUuid；此处补齐探测路径
+                try
+                {
+                    string uuid = DocumentIdentity.TryResolveUuid(doc);
+                    if (!string.IsNullOrEmpty(uuid))
+                    {
+                        ChannelRegistry.RemoveByDocUuid(uuid);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
                 if (!string.IsNullOrEmpty(id))
                 {
                     DocumentClosed?.Invoke(id);
@@ -250,6 +265,8 @@ namespace WordAddIn1.OpenFiles
                     return;
                 }
 
+                EnsureChannel(doc, item);
+
                 int key = RuntimeHelpers.GetHashCode(doc);
                 lock (_gate)
                 {
@@ -266,6 +283,29 @@ namespace WordAddIn1.OpenFiles
                 {
                     MarkDetached();
                 }
+            }
+        }
+
+        /// <summary>探测建渠道：不 SetDefault、不 ProcessDocument。</summary>
+        private static void EnsureChannel(Word.Document doc, OpenFileItem item)
+        {
+            if (doc == null || item == null)
+            {
+                return;
+            }
+
+            try
+            {
+                WordChannel channel = ChannelRegistry.CreateOrGetWord(
+                    doc,
+                    item.FullPath,
+                    claimDefaultIfEmpty: false);
+                item.ChannelId = channel?.ChannelId;
+            }
+            catch (Exception ex)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[WordOpenFilesDetector] EnsureChannel: " + ex.Message);
             }
         }
 

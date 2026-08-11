@@ -11,6 +11,7 @@ namespace WordAddIn1.OpenFiles
     /// </summary>
     internal sealed class OpenFilesMonitor : IDisposable
     {
+        private const int MaxOpenChannelsItems = 500;
         private static readonly TimeSpan ProcessPollInterval = TimeSpan.FromSeconds(7);
 
         private readonly Func<object> _resolveWordApp;
@@ -79,6 +80,39 @@ namespace WordAddIn1.OpenFiles
             }
 
             TryAttachAndSnapshot();
+        }
+
+        /// <summary>
+        /// Desktop 聊天请求体 <c>open_channels</c>（snake_case，与后端一致）。
+        /// </summary>
+        public object BuildOpenChannelsPayload()
+        {
+            List<OpenFileItem> items;
+            lock (_gate)
+            {
+                items = OrderedCopyUnlocked();
+            }
+
+            bool truncated = items.Count > MaxOpenChannelsItems;
+            if (truncated)
+            {
+                items = items.Take(MaxOpenChannelsItems).ToList();
+            }
+
+            var payloadItems = items.Select(i => new Dictionary<string, object>
+            {
+                ["display_name"] = i.DisplayName ?? "",
+                ["full_path"] = (object)i.FullPath ?? null,
+                ["channel_id"] = i.ChannelId ?? "",
+                ["is_saved"] = i.IsSaved
+            }).ToList();
+
+            return new Dictionary<string, object>
+            {
+                ["default_channel_id"] = (object)ChannelRegistry.DefaultChannelId ?? null,
+                ["items"] = payloadItems,
+                ["truncated"] = truncated
+            };
         }
 
         public void Dispose()
@@ -373,11 +407,22 @@ namespace WordAddIn1.OpenFiles
                 return;
             }
 
+            OpenFileItem removedItem = null;
             bool removed;
             lock (_gate)
             {
-                removed = _items.Remove(id);
+                if (_items.TryGetValue(id, out removedItem))
+                {
+                    _items.Remove(id);
+                    removed = true;
+                }
+                else
+                {
+                    removed = false;
+                }
             }
+
+            TryRemoveChannel(removedItem);
 
             if (removed)
             {
@@ -401,18 +446,36 @@ namespace WordAddIn1.OpenFiles
 
         private bool RemoveByAppTypeUnlocked(string appType)
         {
-            var keys = _items
+            var toRemove = _items
                 .Where(kv => kv.Value != null
                     && string.Equals(kv.Value.AppType, appType, StringComparison.OrdinalIgnoreCase))
-                .Select(kv => kv.Key)
                 .ToList();
 
-            foreach (var key in keys)
+            foreach (var kv in toRemove)
             {
-                _items.Remove(key);
+                TryRemoveChannel(kv.Value);
+                _items.Remove(kv.Key);
             }
 
-            return keys.Count > 0;
+            return toRemove.Count > 0;
+        }
+
+        private static void TryRemoveChannel(OpenFileItem item)
+        {
+            if (item == null || string.IsNullOrEmpty(item.ChannelId))
+            {
+                return;
+            }
+
+            try
+            {
+                ChannelRegistry.Remove(item.ChannelId);
+            }
+            catch (Exception ex)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[OpenFilesMonitor] Remove channel: " + ex.Message);
+            }
         }
 
         private List<OpenFileItem> OrderedCopyUnlocked()

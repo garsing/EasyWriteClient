@@ -30,7 +30,14 @@ namespace WordAddIn1
         /// <summary>
         /// 为 Word 文档查找或创建渠道；channel_id 形如 <c>word:{doc_uuid}</c>。
         /// </summary>
-        public static WordChannel CreateOrGetWord(Word.Document doc, string filePath = null)
+        /// <param name="claimDefaultIfEmpty">
+        /// 默认渠道为空时是否自动占用（默认 true，保持 Plugin / 旧工具行为）。
+        /// 「打开文件」探测路径须传 false，避免抢默认渠道。
+        /// </param>
+        public static WordChannel CreateOrGetWord(
+            Word.Document doc,
+            string filePath = null,
+            bool claimDefaultIfEmpty = true)
         {
             if (doc == null)
             {
@@ -55,7 +62,7 @@ namespace WordAddIn1
                 Channels[channelId] = created;
                 DocUuidToChannelId[uuid] = channelId;
 
-                if (string.IsNullOrEmpty(_defaultChannelId))
+                if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
                 {
                     _defaultChannelId = channelId;
                 }

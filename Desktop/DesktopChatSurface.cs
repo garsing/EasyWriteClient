@@ -662,6 +662,17 @@ namespace EasyWriteClient.Desktop
                 bool isFirstChunk = true;
                 string lastToolFinishReason = null;
 
+                object openChannels = null;
+                try
+                {
+                    openChannels = _openFilesMonitor?.BuildOpenChannelsPayload();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        "[DesktopChatSurface] BuildOpenChannelsPayload: " + ex.Message);
+                }
+
                 var mcpChatResult = await _mcpClient.ChatWithToolsStreamAsync(
                     userInput,
                     null,
@@ -725,7 +736,8 @@ namespace EasyWriteClient.Desktop
                     conversationId: _currentConversationId,
                     buildHeaders: CreateApiHeaders,
                     resetAuthoritativeUploadContext: ResetUploadContext,
-                    onConversationIdKnown: OnConversationIdKnownAsync).ConfigureAwait(true);
+                    onConversationIdKnown: OnConversationIdKnownAsync,
+                    openChannels: openChannels).ConfigureAwait(true);
 
                 if (mcpChatResult != null
                     && !string.IsNullOrEmpty(mcpChatResult.ConversationId)

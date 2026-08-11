@@ -98,7 +98,8 @@ namespace WordAddIn1
             string conversationId = "-1",
             Func<string, Dictionary<string, string>> buildHeaders = null,
             Action resetAuthoritativeUploadContext = null,
-            Func<string, Task> onConversationIdKnown = null)
+            Func<string, Task> onConversationIdKnown = null,
+            object openChannels = null)
         {
             var messages = new List<ChatMessage>
             {
@@ -113,7 +114,8 @@ namespace WordAddIn1
                 onChunk,
                 headers: headers,
                 cancellationToken: token,
-                onConversationIdKnown: onConversationIdKnown);
+                onConversationIdKnown: onConversationIdKnown,
+                openChannels: openChannels);
 
             resetAuthoritativeUploadContext?.Invoke();
 

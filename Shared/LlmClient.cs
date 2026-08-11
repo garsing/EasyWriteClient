@@ -225,7 +225,8 @@ namespace WordAddIn1
             int? maxTokens = null,
             Dictionary<string, string> headers = null,
             CancellationToken cancellationToken = default,
-            Func<string, Task> onConversationIdKnown = null)
+            Func<string, Task> onConversationIdKnown = null,
+            object openChannels = null)
         {
             try
             {
@@ -233,14 +234,22 @@ namespace WordAddIn1
 
                 // 跳过网络诊断以提升性能 - 在生产环境中网络通常是稳定的
 
-                var requestBody = new
+                var requestBody = new Dictionary<string, object>
                 {
-                    model = model,
-                    messages = messages,
-                    temperature = temperature,
-                    max_tokens = maxTokens,
-                    stream = true
+                    ["model"] = model,
+                    ["messages"] = messages,
+                    ["temperature"] = temperature,
+                    ["stream"] = true
                 };
+                if (maxTokens.HasValue)
+                {
+                    requestBody["max_tokens"] = maxTokens.Value;
+                }
+
+                if (openChannels != null)
+                {
+                    requestBody["open_channels"] = openChannels;
+                }
 
                 string jsonRequest = _jsonSerializer.Serialize(requestBody);
                 // EasyWriteDiagnostics.Log(DebugCategory.Llm, $"[STREAM_DEBUG] 请求体长度: {jsonRequest.Length}");
