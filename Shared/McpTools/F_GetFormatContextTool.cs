@@ -22,11 +22,13 @@ namespace WordAddIn1
                     string logPath = EasyWriteLog.BeginSession("get_format_context");
                     FormatContextHelper.DbgLog($"会话日志: {logPath}");
 
+                    // 只读：不 Activate 文档窗口，保持 Desktop 在前台
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
                             out InteropDocumentHandle docHandle,
-                            out ToolResult resolveError))
+                            out ToolResult resolveError,
+                            activateDocument: false))
                     {
                         System.Diagnostics.Debug.WriteLine(
                             $"[F_get_format_context] resolve failed: {resolveError?.Error}; " +

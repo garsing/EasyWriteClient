@@ -12,11 +12,15 @@ namespace WordAddIn1.DocumentHost
         /// <summary>
         /// 解析渠道并构建会话上下文。不在此按宿主写 F_* 业务分支。
         /// </summary>
+        /// <param name="activateDocument">
+        /// 为 false 时不调用 Document.Activate，避免只读工具把 Word/WPS 抢到前台。
+        /// </param>
         public static bool TryResolveContext(
             Dictionary<string, object> args,
             object wordApplication,
             out DocumentSessionContext context,
-            out ToolResult errorResult)
+            out ToolResult errorResult,
+            bool activateDocument = true)
         {
             context = null;
             errorResult = null;
@@ -67,12 +71,15 @@ namespace WordAddIn1.DocumentHost
                 }
 
                 DocumentState.BindAndActivate(document);
-                try
+                if (activateDocument)
                 {
-                    document.Activate();
-                }
-                catch (Exception)
-                {
+                    try
+                    {
+                        document.Activate();
+                    }
+                    catch (Exception)
+                    {
+                    }
                 }
 
                 context = new DocumentSessionContext(
@@ -115,14 +122,23 @@ namespace WordAddIn1.DocumentHost
         /// 解析渠道并得到可跑现网 Word Interop 管线的 Document（Word 原生；WPS 为兼容 RCW）。
         /// 供改字等仍大量依赖 <see cref="Word.Document"/> 的 F_* 渐进迁入；F_* 内勿写宿主分支。
         /// </summary>
+        /// <param name="activateDocument">
+        /// 为 false 时不激活文档窗口（看格式等只读工具应传 false，保持 Desktop 在前台）。
+        /// </param>
         public static bool TryResolveInteropDocument(
             Dictionary<string, object> args,
             object wordApplication,
             out InteropDocumentHandle handle,
-            out ToolResult errorResult)
+            out ToolResult errorResult,
+            bool activateDocument = true)
         {
             handle = null;
-            if (!TryResolveContext(args, wordApplication, out DocumentSessionContext context, out errorResult))
+            if (!TryResolveContext(
+                    args,
+                    wordApplication,
+                    out DocumentSessionContext context,
+                    out errorResult,
+                    activateDocument))
             {
                 return false;
             }
@@ -151,7 +167,8 @@ namespace WordAddIn1.DocumentHost
                 if (!DocumentHostCompat.TryPrepareWpsInteropDocument(
                         context,
                         out Word.Document wordDoc,
-                        out string wpsError))
+                        out string wpsError,
+                        activateDocument))
                 {
                     errorResult = new ToolResult
                     {

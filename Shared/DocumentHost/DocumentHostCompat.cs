@@ -36,10 +36,14 @@ namespace WordAddIn1.DocumentHost
         /// <summary>
         /// 将 WPS 文档对齐为可跑现网 Word Interop 管线的 Document，并同步 uuid/session。
         /// </summary>
+        /// <param name="activateDocument">
+        /// 为 false 时不调用 Document.Activate（只读工具避免把 WPS/Word 抢到前台）。
+        /// </param>
         public static bool TryPrepareWpsInteropDocument(
             DocumentSessionContext context,
             out Word.Document wordDoc,
-            out string error)
+            out string error,
+            bool activateDocument = true)
         {
             wordDoc = null;
             error = null;
@@ -64,12 +68,15 @@ namespace WordAddIn1.DocumentHost
                 DocumentState.ActivateSessionByUuid(wpsUuid);
             }
 
-            try
+            if (activateDocument)
             {
-                wordDoc.Activate();
-            }
-            catch (Exception)
-            {
+                try
+                {
+                    wordDoc.Activate();
+                }
+                catch (Exception)
+                {
+                }
             }
 
             return true;
