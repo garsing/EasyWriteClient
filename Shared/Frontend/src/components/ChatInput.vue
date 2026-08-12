@@ -107,6 +107,11 @@ const props = defineProps({
   selectedOpenFiles: {
     type: Array,
     default: () => []
+  },
+  /** 是否展示打开文件芯片（与 desktop 密度解耦；缩小版仍可显示） */
+  showOpenFileChips: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -117,7 +122,10 @@ const autoSize = computed(() =>
 const emit = defineEmits(['send', 'clear-attachment', 'dropped-file', 'remove-selected-open-file'])
 
 const showSelectedOpenFiles = computed(
-  () => props.desktop && Array.isArray(props.selectedOpenFiles) && props.selectedOpenFiles.length > 0
+  () =>
+    props.showOpenFileChips &&
+    Array.isArray(props.selectedOpenFiles) &&
+    props.selectedOpenFiles.length > 0
 )
 
 function chipAppIcon (f) {

@@ -17,6 +17,7 @@ namespace EasyWriteClient.Desktop
         private const int HtCaption = 0x2;
 
         private readonly Label _titleLabel;
+        private readonly TitleBarButton _btnLayout;
         private readonly TitleBarButton _btnMin;
         private readonly TitleBarButton _btnMax;
         private readonly TitleBarButton _btnClose;
@@ -89,8 +90,19 @@ namespace EasyWriteClient.Desktop
                 }
             };
 
-            // Dock.Right：后添加的贴最右侧 → 视觉顺序为 最小化 | 最大化 | 关闭
+            _btnLayout = new TitleBarButton(TitleBarButtonKind.LayoutToggle, btnW, btnH, _dpiScale)
+            {
+                Dock = DockStyle.Right
+            };
+            _btnLayout.Click += (_, __) =>
+            {
+                OwnerForm?.ToggleLayoutMode();
+                SyncLayoutButton();
+            };
+
+            // Dock.Right：后添加的贴最右侧 → 视觉 [⇄][—][□][×]
             Controls.Add(_titleLabel);
+            Controls.Add(_btnLayout);
             Controls.Add(_btnMin);
             Controls.Add(_btnMax);
             Controls.Add(_btnClose);
@@ -106,6 +118,7 @@ namespace EasyWriteClient.Desktop
             base.OnParentChanged(e);
             _owner = FindForm() as MainForm;
             SyncMaxButtonGlyph();
+            SyncLayoutButton();
         }
 
         protected override void Dispose(bool disposing)
@@ -129,6 +142,18 @@ namespace EasyWriteClient.Desktop
                 ? TitleBarButtonKind.Restore
                 : TitleBarButtonKind.Maximize;
             _btnMax.Invalidate();
+        }
+
+        public void SyncLayoutButton()
+        {
+            if (_btnLayout == null)
+            {
+                return;
+            }
+
+            bool compact = _owner != null && _owner.IsCompactLayout;
+            _btnLayout.ToolTipText = compact ? "展开窗口" : "缩小窗口";
+            _btnLayout.Invalidate();
         }
 
         private void TitleBar_MouseDown(object sender, MouseEventArgs e)
@@ -268,7 +293,8 @@ namespace EasyWriteClient.Desktop
         Minimize,
         Maximize,
         Restore,
-        Close
+        Close,
+        LayoutToggle
     }
 
     internal sealed class TitleBarButton : Control
@@ -276,6 +302,8 @@ namespace EasyWriteClient.Desktop
         private bool _hover;
         private TitleBarButtonKind _kind;
         private readonly float _dpiScale;
+        private string _toolTipText = string.Empty;
+        private ToolTip _toolTip;
 
         public TitleBarButton(TitleBarButtonKind kind, int width, int height, float dpiScale)
         {
@@ -289,6 +317,24 @@ namespace EasyWriteClient.Desktop
                 | ControlStyles.OptimizedDoubleBuffer
                 | ControlStyles.ResizeRedraw,
                 true);
+            if (kind == TitleBarButtonKind.LayoutToggle)
+            {
+                _toolTip = new ToolTip { ShowAlways = true };
+                ToolTipText = "缩小窗口";
+            }
+        }
+
+        public string ToolTipText
+        {
+            get => _toolTipText;
+            set
+            {
+                _toolTipText = value ?? string.Empty;
+                if (_toolTip != null)
+                {
+                    _toolTip.SetToolTip(this, _toolTipText);
+                }
+            }
         }
 
         public TitleBarButtonKind Kind
@@ -379,8 +425,32 @@ namespace EasyWriteClient.Desktop
                         g.DrawLine(pen, cx - s, cy - s, cx + s, cy + s);
                         g.DrawLine(pen, cx + s, cy - s, cx - s, cy + s);
                         break;
+                    case TitleBarButtonKind.LayoutToggle:
+                        // ⇄：左右箭头（避免依赖字体缺字）
+                        float aw = s * 1.6f;
+                        float ah = s * 0.55f;
+                        // 上箭头向右
+                        g.DrawLine(pen, cx - aw, cy - ah, cx + aw * 0.35f, cy - ah);
+                        g.DrawLine(pen, cx + aw * 0.05f, cy - ah - s * 0.45f, cx + aw * 0.35f, cy - ah);
+                        g.DrawLine(pen, cx + aw * 0.05f, cy - ah + s * 0.45f, cx + aw * 0.35f, cy - ah);
+                        // 下箭头向左
+                        g.DrawLine(pen, cx + aw, cy + ah, cx - aw * 0.35f, cy + ah);
+                        g.DrawLine(pen, cx - aw * 0.05f, cy + ah - s * 0.45f, cx - aw * 0.35f, cy + ah);
+                        g.DrawLine(pen, cx - aw * 0.05f, cy + ah + s * 0.45f, cx - aw * 0.35f, cy + ah);
+                        break;
                 }
             }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _toolTip?.Dispose();
+                _toolTip = null;
+            }
+
+            base.Dispose(disposing);
         }
     }
 }

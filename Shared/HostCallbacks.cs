@@ -15,9 +15,17 @@ namespace WordAddIn1
         /// <summary>用户登录成功后通知各任务窗格/桌面 UI 刷新。</summary>
         public static Func<Task> NotifyUserLoggedInAllAsync { get; set; }
 
+        /// <summary>Desktop：请求进入缩小版窗口形态；Plugin 不注册则为 no-op。</summary>
+        public static Action RequestCompact { get; set; }
+
         public static void RaiseWordApplicationResolved(object wordApplication)
         {
             WordApplicationResolved?.Invoke(wordApplication);
+        }
+
+        public static void RaiseRequestCompact()
+        {
+            RequestCompact?.Invoke();
         }
 
         public static Task RaiseNotifyUserLoggedInAllAsync()

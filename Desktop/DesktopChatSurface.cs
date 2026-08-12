@@ -95,6 +95,25 @@ namespace EasyWriteClient.Desktop
             }
         }
 
+        /// <summary>通知前端窗口形态：compact | expanded。</summary>
+        public void NotifyLayoutModeChanged(string mode)
+        {
+            if (string.IsNullOrEmpty(mode) || _bridge == null || !_webReady)
+            {
+                return;
+            }
+
+            try
+            {
+                _bridge.SendToJavaScript("layoutModeChanged", new { mode });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    "[DesktopChatSurface] NotifyLayoutModeChanged: " + ex.Message);
+            }
+        }
+
         public async Task InitializeAsync()
         {
             if (_webReady)
@@ -203,7 +222,7 @@ namespace EasyWriteClient.Desktop
 
             _bridge = new WebView2Bridge(_webView);
             RegisterHandlers();
-            StartOpenFilesMonitor();
+            // OpenFilesMonitor 由 MainForm 在恢复窗口形态后再 Start，避免启动时建渠缩窗被「记忆完整版」覆盖
 
             // 先加载前端；勿在启动时 new Word
             const string url = "http://appassets.local/index.html?host=desktop";
@@ -421,6 +440,32 @@ namespace EasyWriteClient.Desktop
                     username = user.UserName ?? string.Empty
                 });
             });
+            _bridge.RegisterHandler("adjustCompactWidthForSidebar", HandleAdjustCompactWidthForSidebarAsync);
+        }
+
+        private Task<object> HandleAdjustCompactWidthForSidebarAsync(object data)
+        {
+            try
+            {
+                int delta = 0;
+                if (data is JObject jo)
+                {
+                    delta = jo.Value<int?>("delta") ?? 0;
+                }
+                else if (data != null)
+                {
+                    var token = JToken.FromObject(data);
+                    delta = token.Value<int?>("delta") ?? 0;
+                }
+
+                var form = FindForm() as MainForm;
+                form?.AdjustCompactWidthForSidebar(delta);
+                return Task.FromResult<object>(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                return Task.FromResult<object>(new { success = false, message = ex.Message });
+            }
         }
 
         /// <summary>在资源管理器中打开文件所在文件夹（并尽量选中该文件）。</summary>
@@ -475,6 +520,12 @@ namespace EasyWriteClient.Desktop
                     "[DesktopChatSurface] openContainingFolder: " + ex.Message);
                 return Task.FromResult<object>(new { success = false, message = ex.Message });
             }
+        }
+
+        /// <summary>在窗口形态恢复后再调用，使「建渠 → 自动缩小」发生在记忆布局之后。</summary>
+        public void StartOpenFilesMonitorIfNeeded()
+        {
+            StartOpenFilesMonitor();
         }
 
         private void StartOpenFilesMonitor()

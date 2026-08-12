@@ -1,5 +1,11 @@
 <template>
-  <div class="app-shell" :class="{ 'host-desktop': isDesktopHost }">
+  <div
+    class="app-shell"
+    :class="{
+      'host-desktop': isDesktopHost,
+      'layout-compact': isDesktopHost && layoutMode === 'compact'
+    }"
+  >
     <TaskSidebar
       v-if="isDesktopHost"
       :collapsed="sidebarCollapsed"
@@ -9,7 +15,7 @@
       :active-id="activeTaskId"
       :loading="taskListLoading"
       :error="taskListError"
-      @toggle="sidebarCollapsed = !sidebarCollapsed"
+      @toggle="handleSidebarToggle"
       @new-task="handleDesktopNewTask"
       @select="handleDesktopSelectTask"
       @select-open-file="handleSelectOpenFile"
@@ -45,7 +51,8 @@
         @remove-selected-open-file="handleRemoveSelectedOpenFile"
         :loading="isProcessing"
         :isProcessing="isProcessing"
-        :desktop="isDesktopHost"
+        :desktop="isDesktopHost && layoutMode === 'expanded'"
+        :show-open-file-chips="isDesktopHost"
         :attachment="attachmentView"
         :selected-open-files="selectedOpenFiles"
       />
@@ -86,7 +93,38 @@ function detectDesktopHost () {
 }
 
 const isDesktopHost = detectDesktopHost()
+/** Desktop 窗口形态：完整版 expanded / 缩小版 compact（由 C# layoutModeChanged 驱动） */
+const layoutMode = ref('expanded')
 const sidebarCollapsed = ref(false)
+
+/** 与 TaskSidebar.vue 宽度一致：展开 260 / 收起 48 */
+const SIDEBAR_EXPANDED_W = 260
+const SIDEBAR_COLLAPSED_W = 48
+
+function applyLayoutMode (mode) {
+  if (mode !== 'compact' && mode !== 'expanded') return
+  layoutMode.value = mode
+  if (mode === 'compact') {
+    sidebarCollapsed.value = true
+  } else {
+    sidebarCollapsed.value = false
+  }
+}
+
+async function handleSidebarToggle () {
+  const wasCollapsed = sidebarCollapsed.value
+  sidebarCollapsed.value = !wasCollapsed
+  // 缩小版：展开侧栏时窗口向左加宽，收起时减宽，避免挤占聊天区
+  if (!isDesktopHost || layoutMode.value !== 'compact') return
+  const delta = wasCollapsed
+    ? SIDEBAR_EXPANDED_W - SIDEBAR_COLLAPSED_W
+    : SIDEBAR_COLLAPSED_W - SIDEBAR_EXPANDED_W
+  try {
+    await sendMessage('adjustCompactWidthForSidebar', { delta })
+  } catch (e) {
+    console.warn('[App] adjustCompactWidthForSidebar failed:', e?.message || e)
+  }
+}
 const taskList = ref([])
 const taskListLoading = ref(false)
 const taskListError = ref('')
@@ -851,6 +889,10 @@ onMounted(() => {
       chatFile.reset()
       chatFile.phase.value = 'error'
       chatFile.errorMessage.value = msg
+    } else if (data.type === 'layoutModeChanged') {
+      const payload = data.data || data
+      const mode = payload?.mode
+      if (isDesktopHost) applyLayoutMode(mode)
     }
   })
 })
@@ -909,6 +951,15 @@ const restoreInputValue = (value) => {
   background: #f7f7f5;
   border-radius: 14px;
   overflow: hidden;
+}
+
+/* 缩小版：侧栏默认可收起；对话区更贴插件窄窗 */
+.app-shell.host-desktop.layout-compact {
+  padding: 0;
+}
+
+.app-shell.host-desktop.layout-compact .chat-container {
+  border-radius: 0;
 }
 
 .app-shell.host-desktop :deep(.chat-messages),

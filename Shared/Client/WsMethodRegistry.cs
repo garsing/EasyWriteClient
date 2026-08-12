@@ -93,6 +93,12 @@ namespace WordAddIn1
                 return new ToolResult { Success = false, Error = $"handler not registered for method '{method}'" };
             }
 
+            // Desktop 缩小版：白名单工具在执行前触发（Plugin 未注册则为 no-op）
+            if (CompactLayoutTriggers.ShouldCompact(toolName))
+            {
+                HostCallbacks.RaiseRequestCompact();
+            }
+
             try
             {
                 AgentRunCancellation.ThrowIfCancelled();

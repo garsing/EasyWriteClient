@@ -14,6 +14,7 @@ namespace EasyWriteClient.Desktop
     public sealed class MainForm : Form
     {
         private const int WmNcHitTest = 0x84;
+        private const int WmSetCursor = 0x20;
         private const int HtClient = 1;
         private const int HtLeft = 10;
         private const int HtRight = 11;
@@ -32,6 +33,10 @@ namespace EasyWriteClient.Desktop
         private bool _started;
         private bool _customMaximized;
         private Rectangle _restoreBounds;
+        private Rectangle _expandedBounds;
+        private bool _expandedWasCustomMaximized;
+        private WindowLayoutMode _layoutMode = WindowLayoutMode.Expanded;
+        private Action _requestCompactHandler;
 
         public MainForm()
         {
@@ -45,18 +50,39 @@ namespace EasyWriteClient.Desktop
             SetStyle(ControlStyles.ResizeRedraw, true);
 
             _dpiScale = GetDpiScale();
-            _resizeBorder = Math.Max(6, (int)Math.Round(6 * _dpiScale));
+            // 略加宽命中带；并用 Padding 留出不被 WebView 盖住的边缘（否则无双箭头）
+            _resizeBorder = Math.Max(8, (int)Math.Round(8 * _dpiScale));
             // WorkBuddy 风格外窗圆角
             _cornerRadius = Math.Max(10, (int)Math.Round(12 * _dpiScale));
             MinimumSize = ScaleSize(960, 640, _dpiScale);
             Size = ScaleSize(1280, 800, _dpiScale);
             BackColor = Color.FromArgb(0xF0, 0xF0, 0xF0);
+            // Dock.Fill 的 WebView 不会盖住 Padding，边缘命中落在 Form 上 → 系统显示 Size 光标
+            Padding = new Padding(_resizeBorder);
             _restoreBounds = Bounds;
+            _expandedBounds = Bounds;
 
             HostCallbacks.NotifyUserLoggedInAllAsync = async () =>
             {
                 await Task.CompletedTask;
             };
+
+            _requestCompactHandler = () =>
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                if (InvokeRequired)
+                {
+                    BeginInvoke(new Action(RequestCompact));
+                    return;
+                }
+
+                RequestCompact();
+            };
+            HostCallbacks.RequestCompact = _requestCompactHandler;
 
             _titleBar = new DesktopTitleBar(_dpiScale);
             _chatSurface = new DesktopChatSurface();
@@ -66,18 +92,43 @@ namespace EasyWriteClient.Desktop
             Controls.Add(_titleBar);
 
             Shown += OnShown;
-            FormClosed += (_, __) => WordHost.Shutdown();
+            FormClosing += (_, __) => PersistLayoutState();
+            ResizeEnd += (_, __) =>
+            {
+                if (_layoutMode == WindowLayoutMode.Compact)
+                {
+                    PersistLayoutState();
+                }
+            };
+            FormClosed += (_, __) =>
+            {
+                if (ReferenceEquals(HostCallbacks.RequestCompact, _requestCompactHandler))
+                {
+                    HostCallbacks.RequestCompact = null;
+                }
+
+                WordHost.Shutdown();
+            };
             ApplyWindowRegion();
         }
 
         internal bool IsCustomMaximized => _customMaximized;
 
+        internal bool IsCompactLayout => _layoutMode == WindowLayoutMode.Compact;
+
         internal void ToggleMaximizeRestore()
         {
+            if (_layoutMode == WindowLayoutMode.Compact)
+            {
+                // 缩小版不走自定义最大化，避免与贴右窄窗冲突
+                return;
+            }
+
             if (_customMaximized)
             {
                 Bounds = _restoreBounds;
                 _customMaximized = false;
+                Padding = new Padding(_resizeBorder);
             }
             else
             {
@@ -89,11 +140,225 @@ namespace EasyWriteClient.Desktop
                 _restoreBounds = Bounds;
                 Bounds = Screen.FromControl(this).WorkingArea;
                 _customMaximized = true;
+                Padding = Padding.Empty;
             }
 
             _titleBar.SyncMaxButtonGlyph();
             ApplyWindowRegion();
             Invalidate();
+        }
+
+        internal void ToggleLayoutMode()
+        {
+            SetLayoutMode(
+                _layoutMode == WindowLayoutMode.Compact
+                    ? WindowLayoutMode.Expanded
+                    : WindowLayoutMode.Compact);
+        }
+
+        internal void RequestCompact()
+        {
+            SetLayoutMode(WindowLayoutMode.Compact);
+        }
+
+        /// <summary>
+        /// 缩小版内展开/收起侧栏时调整窗宽：向左增减，尽量不挤占聊天区宽度。
+        /// delta&gt;0 展开侧栏（变宽），delta&lt;0 收起侧栏（变窄）。单位：逻辑像素（与前端 CSS 一致，再按 DPI Scale）。
+        /// </summary>
+        internal void AdjustCompactWidthForSidebar(int deltaCssPx)
+        {
+            if (IsDisposed || _layoutMode != WindowLayoutMode.Compact || deltaCssPx == 0)
+            {
+                return;
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => AdjustCompactWidthForSidebar(deltaCssPx)));
+                return;
+            }
+
+            int delta = (int)Math.Round(deltaCssPx * _dpiScale);
+            Rectangle wa = Screen.FromControl(this).WorkingArea;
+            int newW = Math.Max(MinimumSize.Width, Width + delta);
+            int newLeft = Left - delta;
+
+            if (delta > 0)
+            {
+                // 向左长：贴左屏边时改为只加宽（可能略向右伸出，再夹紧）
+                if (newLeft < wa.Left)
+                {
+                    newLeft = wa.Left;
+                    newW = Math.Min(Width + delta, wa.Right - newLeft);
+                }
+                else if (newLeft + newW > wa.Right)
+                {
+                    newW = wa.Right - newLeft;
+                }
+            }
+            else
+            {
+                // 收窄：右缘尽量不动（左缘右移）
+                if (newW < MinimumSize.Width)
+                {
+                    newW = MinimumSize.Width;
+                    newLeft = Left + Width - newW;
+                }
+
+                if (newLeft + newW > wa.Right)
+                {
+                    newLeft = wa.Right - newW;
+                }
+
+                if (newLeft < wa.Left)
+                {
+                    newLeft = wa.Left;
+                }
+            }
+
+            Bounds = new Rectangle(newLeft, Top, newW, Height);
+            PersistLayoutState();
+            ApplyWindowRegion();
+        }
+
+        internal void SetLayoutMode(WindowLayoutMode mode, bool persist = true, bool notifyWeb = true)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            if (WindowState == FormWindowState.Minimized)
+            {
+                WindowState = FormWindowState.Normal;
+            }
+
+            bool already = _layoutMode == mode;
+            if (mode == WindowLayoutMode.Compact)
+            {
+                if (!already)
+                {
+                    _expandedWasCustomMaximized = _customMaximized;
+                    _expandedBounds = _customMaximized ? _restoreBounds : Bounds;
+                    if (_customMaximized)
+                    {
+                        _customMaximized = false;
+                    }
+
+                    // 仅首次进入缩小版套默认/记忆尺寸；已在缩小版时不强制改 Bounds（可自由调节）
+                    ApplyCompactBoundsInitial();
+                }
+                else
+                {
+                    // 已是缩小版：只保证最小尺寸，不重置用户拖过的大小
+                    MinimumSize = ScaleSize(320, 280, _dpiScale);
+                    MaximumSize = Size.Empty;
+                }
+
+                _layoutMode = WindowLayoutMode.Compact;
+            }
+            else
+            {
+                if (_layoutMode == WindowLayoutMode.Compact)
+                {
+                    // 离开缩小版前记下当前尺寸，便于下次回来
+                    WindowLayoutStore.Save(WindowLayoutMode.Expanded, Bounds);
+                }
+
+                ApplyExpandedBounds();
+                _layoutMode = WindowLayoutMode.Expanded;
+            }
+
+            _titleBar.SyncLayoutButton();
+            _titleBar.SyncMaxButtonGlyph();
+            ApplyWindowRegion();
+            Invalidate();
+
+            if (persist)
+            {
+                PersistLayoutState();
+            }
+
+            if (notifyWeb)
+            {
+                _chatSurface.NotifyLayoutModeChanged(
+                    _layoutMode == WindowLayoutMode.Compact ? "compact" : "expanded");
+            }
+        }
+
+        private void PersistLayoutState()
+        {
+            if (_layoutMode == WindowLayoutMode.Compact)
+            {
+                WindowLayoutStore.Save(WindowLayoutMode.Compact, Bounds);
+            }
+            else
+            {
+                WindowLayoutStore.Save(WindowLayoutMode.Expanded);
+            }
+        }
+
+        /// <summary>进入缩小版时的初始 Bounds：优先上次记忆，否则贴右默认 520×720（可再自由拖改）。</summary>
+        private void ApplyCompactBoundsInitial()
+        {
+            MinimumSize = ScaleSize(320, 280, _dpiScale);
+            MaximumSize = Size.Empty;
+            Padding = new Padding(_resizeBorder);
+            Rectangle wa = Screen.FromControl(this).WorkingArea;
+            Rectangle? saved = WindowLayoutStore.LoadCompactBounds();
+            if (saved.HasValue)
+            {
+                Rectangle r = saved.Value;
+                // 夹在当前屏工作区内，避免多屏记忆跑飞
+                int w = Math.Max(MinimumSize.Width, Math.Min(r.Width, wa.Width));
+                int h = Math.Max(MinimumSize.Height, Math.Min(r.Height, wa.Height));
+                int left = Math.Max(wa.Left, Math.Min(r.X, wa.Right - w));
+                int top = Math.Max(wa.Top, Math.Min(r.Y, wa.Bottom - h));
+                Bounds = new Rectangle(left, top, w, h);
+                return;
+            }
+
+            int width = ScaleSize(520, 280, _dpiScale).Width;
+            int preferredH = ScaleSize(520, 720, _dpiScale).Height;
+            int margin = Math.Max(16, (int)Math.Round(24 * _dpiScale));
+            int maxH = Math.Max(MinimumSize.Height, wa.Height - margin * 2);
+            int height = Math.Min(preferredH, maxH);
+            int leftDef = wa.Right - width;
+            int topDef = wa.Top + Math.Max(margin, (wa.Height - height) / 2);
+            Bounds = new Rectangle(leftDef, topDef, width, height);
+        }
+
+        private void ApplyExpandedBounds()
+        {
+            MinimumSize = ScaleSize(960, 640, _dpiScale);
+            Rectangle target = _expandedBounds;
+            if (target.Width < MinimumSize.Width || target.Height < MinimumSize.Height)
+            {
+                Size def = ScaleSize(1280, 800, _dpiScale);
+                Rectangle wa = Screen.FromControl(this).WorkingArea;
+                target = new Rectangle(
+                    wa.Left + Math.Max(0, (wa.Width - def.Width) / 2),
+                    wa.Top + Math.Max(0, (wa.Height - def.Height) / 2),
+                    def.Width,
+                    def.Height);
+            }
+
+            if (_expandedWasCustomMaximized)
+            {
+                _restoreBounds = target;
+                Bounds = Screen.FromControl(this).WorkingArea;
+                _customMaximized = true;
+                Padding = Padding.Empty;
+            }
+            else
+            {
+                Bounds = target;
+                _customMaximized = false;
+                _restoreBounds = Bounds;
+                Padding = new Padding(_resizeBorder);
+            }
+
+            _expandedWasCustomMaximized = false;
         }
 
         protected override void OnSizeChanged(EventArgs e)
@@ -106,73 +371,77 @@ namespace EasyWriteClient.Desktop
         {
             if (m.Msg == WmNcHitTest && !_customMaximized && WindowState == FormWindowState.Normal)
             {
-                base.WndProc(ref m);
-                if (m.Result == (IntPtr)HtClient)
+                // 直接按客户区坐标判边缘（不依赖 base 结果），避免被子控件吃掉后无法改大小
+                int lp = m.LParam.ToInt32();
+                short x = (short)(lp & 0xFFFF);
+                short y = (short)((lp >> 16) & 0xFFFF);
+                Point p = PointToClient(new Point(x, y));
+                int hit = HitTestResize(p);
+                if (hit != HtClient)
                 {
-                    // 处理负坐标（多显示器）
-                    int lp = m.LParam.ToInt32();
-                    short x = (short)(lp & 0xFFFF);
-                    short y = (short)((lp >> 16) & 0xFFFF);
-                    Point p = PointToClient(new Point(x, y));
-                    int b = _resizeBorder;
-                    bool left = p.X <= b;
-                    bool right = p.X >= ClientSize.Width - b;
-                    bool top = p.Y <= b;
-                    bool bottom = p.Y >= ClientSize.Height - b;
-
-                    if (top && left)
-                    {
-                        m.Result = (IntPtr)HtTopLeft;
-                        return;
-                    }
-
-                    if (top && right)
-                    {
-                        m.Result = (IntPtr)HtTopRight;
-                        return;
-                    }
-
-                    if (bottom && left)
-                    {
-                        m.Result = (IntPtr)HtBottomLeft;
-                        return;
-                    }
-
-                    if (bottom && right)
-                    {
-                        m.Result = (IntPtr)HtBottomRight;
-                        return;
-                    }
-
-                    if (left)
-                    {
-                        m.Result = (IntPtr)HtLeft;
-                        return;
-                    }
-
-                    if (right)
-                    {
-                        m.Result = (IntPtr)HtRight;
-                        return;
-                    }
-
-                    if (top)
-                    {
-                        m.Result = (IntPtr)HtTop;
-                        return;
-                    }
-
-                    if (bottom)
-                    {
-                        m.Result = (IntPtr)HtBottom;
-                        return;
-                    }
+                    m.Result = (IntPtr)hit;
+                    return;
                 }
 
+                base.WndProc(ref m);
                 return;
             }
 
+            // 无边框窗：显式设置 Size 光标，避免只返回 HT* 却仍显示箭头
+            if (m.Msg == WmSetCursor && !_customMaximized && WindowState == FormWindowState.Normal)
+            {
+                int hit = (int)((long)m.LParam & 0xFFFF);
+                Cursor c = CursorForHit(hit);
+                if (c != null)
+                {
+                    Cursor.Current = c;
+                    m.Result = (IntPtr)1;
+                    return;
+                }
+            }
+
             base.WndProc(ref m);
+        }
+
+        private int HitTestResize(Point clientPt)
+        {
+            int b = _resizeBorder;
+            // ClientSize 含 Padding 外缘；命中带用窗体客户区绝对坐标
+            bool left = clientPt.X >= 0 && clientPt.X <= b;
+            bool right = clientPt.X >= ClientSize.Width - b && clientPt.X < ClientSize.Width;
+            bool top = clientPt.Y >= 0 && clientPt.Y <= b;
+            bool bottom = clientPt.Y >= ClientSize.Height - b && clientPt.Y < ClientSize.Height;
+
+            if (top && left) return HtTopLeft;
+            if (top && right) return HtTopRight;
+            if (bottom && left) return HtBottomLeft;
+            if (bottom && right) return HtBottomRight;
+            if (left) return HtLeft;
+            if (right) return HtRight;
+            if (top) return HtTop;
+            if (bottom) return HtBottom;
+            return HtClient;
+        }
+
+        private static Cursor CursorForHit(int hit)
+        {
+            switch (hit)
+            {
+                case HtLeft:
+                case HtRight:
+                    return Cursors.SizeWE;
+                case HtTop:
+                case HtBottom:
+                    return Cursors.SizeNS;
+                case HtTopLeft:
+                case HtBottomRight:
+                    return Cursors.SizeNWSE;
+                case HtTopRight:
+                case HtBottomLeft:
+                    return Cursors.SizeNESW;
+                default:
+                    return null;
+            }
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -246,6 +515,7 @@ namespace EasyWriteClient.Desktop
 
             _started = true;
             _restoreBounds = Bounds;
+            _expandedBounds = Bounds;
             try
             {
                 UseWaitCursor = true;
@@ -255,6 +525,22 @@ namespace EasyWriteClient.Desktop
                 await _chatSurface.InitializeAsync().ConfigureAwait(true);
                 PerformLayout();
                 ApplyWindowRegion();
+
+                // 恢复上次形态（WebView 已就绪后再通知前端）
+                WindowLayoutMode saved = WindowLayoutStore.LoadMode(WindowLayoutMode.Expanded);
+                if (saved == WindowLayoutMode.Compact)
+                {
+                    SetLayoutMode(WindowLayoutMode.Compact, persist: false, notifyWeb: true);
+                }
+                else
+                {
+                    _chatSurface.NotifyLayoutModeChanged("expanded");
+                    _titleBar.SyncLayoutButton();
+                }
+
+                // 形态恢复后再挂 Monitor：已开 Word 建渠可再触发自动缩小（I5）
+                _chatSurface.StartOpenFilesMonitorIfNeeded();
+
                 UseWaitCursor = false;
                 await _chatSurface.EnsureLoggedInAsync().ConfigureAwait(true);
             }

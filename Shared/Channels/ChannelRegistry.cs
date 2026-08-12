@@ -47,6 +47,8 @@ namespace WordAddIn1
             string uuid = DocumentIdentity.EnsureUuid(doc);
             DocumentIdentity.EnsureCloseHandler(doc);
 
+            bool createdNew = false;
+            WordChannel result;
             lock (Gate)
             {
                 if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
@@ -54,21 +56,32 @@ namespace WordAddIn1
                     && existing is WordChannel wordChannel)
                 {
                     wordChannel.UpdateDocument(doc, filePath);
-                    return wordChannel;
+                    result = wordChannel;
                 }
-
-                string channelId = "word:" + uuid;
-                var created = new WordChannel(channelId, uuid, doc, filePath);
-                Channels[channelId] = created;
-                DocUuidToChannelId[uuid] = channelId;
-
-                if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
+                else
                 {
-                    _defaultChannelId = channelId;
-                }
+                    string channelId = "word:" + uuid;
+                    var created = new WordChannel(channelId, uuid, doc, filePath);
+                    Channels[channelId] = created;
+                    DocUuidToChannelId[uuid] = channelId;
 
-                return created;
+                    if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
+                    {
+                        _defaultChannelId = channelId;
+                    }
+
+                    createdNew = true;
+                    result = created;
+                }
             }
+
+            // 锁外触发：Desktop 新建渠道 → 自动缩小（幂等）
+            if (createdNew)
+            {
+                HostCallbacks.RaiseRequestCompact();
+            }
+
+            return result;
         }
 
         public static void Register(IOperationChannel channel, bool setAsDefault = false)
