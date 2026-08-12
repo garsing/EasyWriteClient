@@ -47,8 +47,6 @@ namespace WordAddIn1
             string uuid = DocumentIdentity.EnsureUuid(doc);
             DocumentIdentity.EnsureCloseHandler(doc);
 
-            bool createdNew = false;
-            WordChannel result;
             lock (Gate)
             {
                 if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
@@ -56,32 +54,21 @@ namespace WordAddIn1
                     && existing is WordChannel wordChannel)
                 {
                     wordChannel.UpdateDocument(doc, filePath);
-                    result = wordChannel;
+                    return wordChannel;
                 }
-                else
+
+                string channelId = "word:" + uuid;
+                var created = new WordChannel(channelId, uuid, doc, filePath);
+                Channels[channelId] = created;
+                DocUuidToChannelId[uuid] = channelId;
+
+                if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
                 {
-                    string channelId = "word:" + uuid;
-                    var created = new WordChannel(channelId, uuid, doc, filePath);
-                    Channels[channelId] = created;
-                    DocUuidToChannelId[uuid] = channelId;
-
-                    if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
-                    {
-                        _defaultChannelId = channelId;
-                    }
-
-                    createdNew = true;
-                    result = created;
+                    _defaultChannelId = channelId;
                 }
-            }
 
-            // 锁外触发：Desktop 新建渠道 → 自动缩小（幂等）
-            if (createdNew)
-            {
-                HostCallbacks.RaiseRequestCompact();
+                return created;
             }
-
-            return result;
         }
 
         /// <summary>
@@ -103,8 +90,6 @@ namespace WordAddIn1
 
             string uuid = WpsDocumentIdentity.EnsureUuid(wpsDocument);
 
-            bool createdNew = false;
-            WpsChannel result;
             lock (Gate)
             {
                 if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
@@ -112,31 +97,21 @@ namespace WordAddIn1
                     && existing is WpsChannel wpsChannel)
                 {
                     wpsChannel.UpdateDocument(wpsDocument, filePath);
-                    result = wpsChannel;
+                    return wpsChannel;
                 }
-                else
+
+                string channelId = "wps:" + uuid;
+                var created = new WpsChannel(channelId, uuid, wpsDocument, filePath);
+                Channels[channelId] = created;
+                DocUuidToChannelId[uuid] = channelId;
+
+                if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
                 {
-                    string channelId = "wps:" + uuid;
-                    var created = new WpsChannel(channelId, uuid, wpsDocument, filePath);
-                    Channels[channelId] = created;
-                    DocUuidToChannelId[uuid] = channelId;
-
-                    if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
-                    {
-                        _defaultChannelId = channelId;
-                    }
-
-                    createdNew = true;
-                    result = created;
+                    _defaultChannelId = channelId;
                 }
-            }
 
-            if (createdNew)
-            {
-                HostCallbacks.RaiseRequestCompact();
+                return created;
             }
-
-            return result;
         }
 
         public static void Register(IOperationChannel channel, bool setAsDefault = false)
