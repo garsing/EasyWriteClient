@@ -289,10 +289,11 @@ namespace WordAddIn1.OpenFiles
 
             try
             {
+                // 仅当尚无默认渠道时占用（没传 channel_id 可走默认）；不抢已有默认
                 WpsChannel channel = ChannelRegistry.CreateOrGetWps(
                     doc,
                     item.FullPath,
-                    claimDefaultIfEmpty: false);
+                    claimDefaultIfEmpty: true);
                 item.ChannelId = channel?.ChannelId;
             }
             catch (Exception ex)

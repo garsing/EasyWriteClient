@@ -34,6 +34,10 @@ namespace WordAddIn1
                             out InteropDocumentHandle docHandle,
                             out ToolResult resolveError))
                     {
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[F_process_document_actions] resolve failed: {resolveError?.Error}; " +
+                            $"arg.channel_id={ChannelContext.TryGetChannelIdFromParameters(args) ?? "(null)"}; " +
+                            $"default={ChannelRegistry.DefaultChannelId ?? "(null)"}");
                         return resolveError;
                     }
 
@@ -184,7 +188,20 @@ namespace WordAddIn1
                         })
                         .ToList();
                     var navigateSettings = ConfigManager.GetDocumentNavigateSettings();
-                    Word.Application wordApplicationTyped = (Word.Application)wordApplication;
+                    // Desktop 常不注入 Application；从文档取，避免 WPS/空注入时强转失败
+                    Word.Application wordApplicationTyped = wordApplication as Word.Application;
+                    if (wordApplicationTyped == null)
+                    {
+                        try
+                        {
+                            wordApplicationTyped = document.Application;
+                        }
+                        catch (Exception)
+                        {
+                            wordApplicationTyped = null;
+                        }
+                    }
+
                     Word.Document activeDocument = document;
                     var navigateOutcome = DocumentNavigateHelper.BuildAndApply(
                         wordApplicationTyped,

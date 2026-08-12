@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// Phase 2：读取 target 及邻居的格式上下文（只读）。
+    /// Phase 2：读取 target 及邻居的格式上下文（只读）。经 DocumentHost 解析渠道（Word/WPS）。
     /// </summary>
     public static class F_GetFormatContextTool
     {
@@ -21,10 +22,22 @@ namespace WordAddIn1
                     string logPath = EasyWriteLog.BeginSession("get_format_context");
                     FormatContextHelper.DbgLog($"会话日志: {logPath}");
 
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError))
                     {
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[F_get_format_context] resolve failed: {resolveError?.Error}; " +
+                            $"arg.channel_id={ChannelContext.TryGetChannelIdFromParameters(args) ?? "(null)"}; " +
+                            $"default={ChannelRegistry.DefaultChannelId ?? "(null)"}");
                         return Task.FromResult(resolveError);
                     }
+
+                    Word.Document doc = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_get_format_context] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     bool hasTargetCodes = args.ContainsKey("target_codes") && args["target_codes"] != null
                         && !string.IsNullOrWhiteSpace(args["target_codes"].ToString());

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
@@ -22,6 +23,29 @@ namespace WordAddIn1
         public static void SetWordApplication(object wordApplication)
         {
             _wordApplication = wordApplication as Word.Application;
+        }
+
+        /// <summary>
+        /// 从文档 RCW 回填 Application（Desktop + WPS 兼容路径常无宿主注入）。
+        /// </summary>
+        private static void TryCacheApplicationFromDocument(Word.Document document)
+        {
+            if (document == null || _wordApplication != null)
+            {
+                return;
+            }
+
+            try
+            {
+                Word.Application app = document.Application;
+                if (app != null)
+                {
+                    _wordApplication = app;
+                }
+            }
+            catch (Exception)
+            {
+            }
         }
 
         public static string GetCheckpointRootDirectory()
@@ -77,15 +101,45 @@ namespace WordAddIn1
             string toolName,
             IReadOnlyDictionary<string, object> parameters)
         {
-            if (_wordApplication == null)
+            // 优先按 channel_id / 默认渠道解析（Desktop+WPS 无 Word.Application 注入）
+            Word.Document activeDoc = null;
+            string resolveHint = null;
+            Dictionary<string, object> args = ToArgsDictionary(parameters);
+            if (DocumentHostAdapter.TryResolveInteropDocument(
+                    args,
+                    _wordApplication,
+                    out InteropDocumentHandle handle,
+                    out ToolResult resolveError))
             {
-                return Fail("Word 应用程序实例不可用");
+                activeDoc = handle.Document;
+                TryCacheApplicationFromDocument(activeDoc);
+                System.Diagnostics.Debug.WriteLine(
+                    $"[Checkpoint] resolve via DocumentHost host={handle.HostName} channel_id={handle.ChannelId} tool={toolName}");
+            }
+            else
+            {
+                resolveHint = resolveError?.Error;
             }
 
-            Word.Document activeDoc = _wordApplication.ActiveDocument;
+            // 回退：宿主已注入 Word.Application（Plugin / F_open_word 后）
+            if (activeDoc == null && _wordApplication != null)
+            {
+                try
+                {
+                    activeDoc = _wordApplication.ActiveDocument;
+                }
+                catch (Exception ex)
+                {
+                    return Fail("无法读取活动文档: " + ex.Message);
+                }
+            }
+
             if (activeDoc == null)
             {
-                return Fail("没有活动的 Word 文档");
+                string detail = string.IsNullOrEmpty(resolveHint)
+                    ? "无可用文档渠道；请确认 WPS/Word 已打开文档，或传入 channel_id"
+                    : resolveHint;
+                return Fail(detail);
             }
 
             DocumentState.BindAndActivate(activeDoc);
@@ -124,6 +178,27 @@ namespace WordAddIn1
                 Timestamp = timestamp,
                 DocUuid = docUuid
             };
+        }
+
+        private static Dictionary<string, object> ToArgsDictionary(IReadOnlyDictionary<string, object> parameters)
+        {
+            if (parameters == null)
+            {
+                return new Dictionary<string, object>();
+            }
+
+            if (parameters is Dictionary<string, object> dict)
+            {
+                return dict;
+            }
+
+            var copy = new Dictionary<string, object>();
+            foreach (var kv in parameters)
+            {
+                copy[kv.Key] = kv.Value;
+            }
+
+            return copy;
         }
 
         public static void AppendActionLogAfterMutation(
