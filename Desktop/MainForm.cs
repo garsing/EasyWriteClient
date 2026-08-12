@@ -174,7 +174,8 @@ namespace EasyWriteClient.Desktop
 
             if (InvokeRequired)
             {
-                BeginInvoke(new Action(() => AdjustCompactWidthForSidebar(deltaCssPx)));
+                // 必须同步完成，否则前端 Promise 先返回、侧栏已切换，会出现一帧错位闪动
+                Invoke(new Action(() => AdjustCompactWidthForSidebar(deltaCssPx)));
                 return;
             }
 

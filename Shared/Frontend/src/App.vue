@@ -21,6 +21,7 @@
       @select-open-file="handleSelectOpenFile"
     />
     <div
+      ref="chatContainerRef"
       class="chat-container"
       @dragenter.prevent="onChatDragEnter"
       @dragleave.prevent="onChatDragLeave"
@@ -100,6 +101,7 @@ const sidebarCollapsed = ref(false)
 /** 与 TaskSidebar.vue 宽度一致：展开 260 / 收起 48 */
 const SIDEBAR_EXPANDED_W = 260
 const SIDEBAR_COLLAPSED_W = 48
+const chatContainerRef = ref(null)
 
 function applyLayoutMode (mode) {
   if (mode !== 'compact' && mode !== 'expanded') return
@@ -111,18 +113,60 @@ function applyLayoutMode (mode) {
   }
 }
 
+/** 钉住聊天区像素宽（配合 compact 的 flex-end，多余空间只出现在左侧） */
+function pinChatWidth () {
+  const el = chatContainerRef.value
+  if (!el) return () => {}
+  const w = Math.round(el.getBoundingClientRect().width)
+  el.style.flex = `0 0 ${w}px`
+  el.style.width = `${w}px`
+  el.style.minWidth = `${w}px`
+  el.style.maxWidth = `${w}px`
+  return () => {
+    el.style.flex = ''
+    el.style.width = ''
+    el.style.minWidth = ''
+    el.style.maxWidth = ''
+  }
+}
+
+function waitTwoFrames () {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve))
+  })
+}
+
 async function handleSidebarToggle () {
+  // 完整版：仅切换侧栏
+  if (!isDesktopHost || layoutMode.value !== 'compact') {
+    sidebarCollapsed.value = !sidebarCollapsed.value
+    return
+  }
+
   const wasCollapsed = sidebarCollapsed.value
-  sidebarCollapsed.value = !wasCollapsed
-  // 缩小版：展开侧栏时窗口向左加宽，收起时减宽，避免挤占聊天区
-  if (!isDesktopHost || layoutMode.value !== 'compact') return
   const delta = wasCollapsed
     ? SIDEBAR_EXPANDED_W - SIDEBAR_COLLAPSED_W
     : SIDEBAR_COLLAPSED_W - SIDEBAR_EXPANDED_W
+  const unpin = pinChatWidth()
+
   try {
-    await sendMessage('adjustCompactWidthForSidebar', { delta })
+    if (wasCollapsed) {
+      // 先向左加宽（聊天贴右不动，左侧留白）→ 再展开侧栏填白
+      await sendMessage('adjustCompactWidthForSidebar', { delta })
+      sidebarCollapsed.value = false
+    } else {
+      // 先收起侧栏（左侧留白，聊天贴右不动）→ 再减窗宽吃掉留白
+      sidebarCollapsed.value = true
+      await nextTick()
+      await sendMessage('adjustCompactWidthForSidebar', { delta })
+    }
+    await nextTick()
+    await waitTwoFrames()
   } catch (e) {
     console.warn('[App] adjustCompactWidthForSidebar failed:', e?.message || e)
+    sidebarCollapsed.value = wasCollapsed
+  } finally {
+    unpin()
   }
 }
 const taskList = ref([])
@@ -956,10 +1000,18 @@ const restoreInputValue = (value) => {
 /* 缩小版：侧栏默认可收起；对话区更贴插件窄窗 */
 .app-shell.host-desktop.layout-compact {
   padding: 0;
+  /* 内容靠右：窗宽向左增减时聊天区屏幕位置不动，空隙只出现在左侧 */
+  justify-content: flex-end;
 }
 
 .app-shell.host-desktop.layout-compact .chat-container {
   border-radius: 0;
+}
+
+/* 缩小版关掉侧栏宽度/图标动画，避免与窗宽调整叠在一起闪动 */
+.app-shell.host-desktop.layout-compact :deep(.task-sidebar),
+.app-shell.host-desktop.layout-compact :deep(.sidebar-toggle-icon) {
+  transition: none;
 }
 
 .app-shell.host-desktop :deep(.chat-messages),
