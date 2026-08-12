@@ -18,19 +18,15 @@ namespace WordAddIn1.DocumentHost
                 throw new ArgumentException("WPS 文档上下文无效。");
             }
 
-            if (!TryAsWordDocument(context.WpsDocument, out Word.Document wordDoc))
+            if (!DocumentHostCompat.TryPrepareWpsInteropDocument(
+                    context,
+                    out Word.Document wordDoc,
+                    out string prepareError))
             {
                 throw new InvalidOperationException(
-                    "unsupported: 当前 WPS 文档无法接入抽取管线（非 Word 兼容自动化对象）；host=wps");
-            }
-
-            // 与 WpsDocumentIdentity 对齐 uuid，避免 ProcessDocument 再生成 Word 侧 uuid 分叉
-            string wpsUuid = context.DocUuid;
-            if (!string.IsNullOrEmpty(wpsUuid))
-            {
-                DocumentIdentity.Register(wordDoc, wpsUuid);
-                DocumentState.GetOrCreateSession(wpsUuid);
-                DocumentState.ActivateSessionByUuid(wpsUuid);
+                    string.IsNullOrEmpty(prepareError)
+                        ? "unsupported: 当前 WPS 文档无法接入抽取管线；host=wps"
+                        : prepareError);
             }
 
             var options = ProcessDocumentOptions.ForGetDocumentContent("get_document_content");
@@ -70,31 +66,6 @@ namespace WordAddIn1.DocumentHost
                 ProcessingResult = processingResult,
                 DocumentDisplayName = displayName
             };
-        }
-
-        private static bool TryAsWordDocument(object doc, out Word.Document wordDoc)
-        {
-            wordDoc = null;
-            if (doc == null)
-            {
-                return false;
-            }
-
-            wordDoc = doc as Word.Document;
-            if (wordDoc != null)
-            {
-                return true;
-            }
-
-            try
-            {
-                wordDoc = (Word.Document)doc;
-                return wordDoc != null;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
         }
     }
 }

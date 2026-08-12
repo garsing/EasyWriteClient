@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using WordAddIn1.DocumentMapping.CodeResolve;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -11,7 +12,7 @@ namespace WordAddIn1
 {
     /// <summary>
     /// 处理句子操作工具
-    /// 支持通过文本定位对Word文档进行句子级别的替换、删除、插入等操作
+    /// 支持通过文本定位对文档进行句子级别的替换、删除、插入等操作（经 DocumentHost 解析渠道，Word/WPS）
     /// 写字：更新映射表 → 校验 detail.format → 写字并套显式字符格式（本工具不修改审阅开关）
     /// </summary>
     public static class F_ProcessDocumentActionsTool
@@ -27,13 +28,21 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError))
                     {
                         return resolveError;
                     }
 
+                    Word.Document document = docHandle.Document;
+
                     string logPath = EasyWriteLog.BeginSession("process_document_actions");
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 本次测试日志: {logPath}");
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_process_document_actions] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 操作前文档状态: 段落总数={document.Paragraphs.Count}");
                     FormatInheritHelper.DbgLogDocumentFontSample(document, "process_actions 入口");
 
@@ -49,7 +58,10 @@ namespace WordAddIn1
                     FormatInheritHelper.DbgLogDocumentFontSample(document, "第一步映射前");
                     try
                     {
-                        string mappingError = await UpdateSentenceNameMapping(document, "process_actions_step1");
+                        string mappingError = await UpdateSentenceNameMapping(
+                            document,
+                            "process_actions_step1",
+                            docHandle.DisallowBackendApi);
                         if (!string.IsNullOrEmpty(mappingError))
                         {
                             System.Diagnostics.Debug.WriteLine($"[ERROR] 更新映射表失败: {mappingError}");
@@ -128,7 +140,10 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine("[第四步] 修改后刷新句子与名称映射表");
                     try
                     {
-                        string postMappingError = await UpdateSentenceNameMapping(document, "process_actions_step4");
+                        string postMappingError = await UpdateSentenceNameMapping(
+                            document,
+                            "process_actions_step4",
+                            docHandle.DisallowBackendApi);
                         if (!string.IsNullOrEmpty(postMappingError))
                         {
                             System.Diagnostics.Debug.WriteLine($"[格式融合] 修改后刷新映射表 warning: {postMappingError}");
@@ -603,15 +618,18 @@ namespace WordAddIn1
         /// </summary>
         /// <param name="doc">Word文档</param>
         /// <returns>错误信息，如果成功则返回null或空字符串</returns>
-        private static async Task<string> UpdateSentenceNameMapping(Word.Document doc, string snapshotSource)
+        private static async Task<string> UpdateSentenceNameMapping(
+            Word.Document doc,
+            string snapshotSource,
+            bool disallowBackendApi = false)
         {
             try
             {
                 // 调用 WordDocumentExtractor.ProcessDocument 获取文章句子和名字的对应
                 System.Diagnostics.Debug.WriteLine("[更新映射表] 调用 WordDocumentExtractor.ProcessDocument 获取文章句子和名字的对应");
-                var processingResult = WordDocumentExtractor.ProcessDocument(
-                    doc,
-                    ProcessDocumentOptions.ForProcessActions(snapshotSource));
+                var options = ProcessDocumentOptions.ForProcessActions(snapshotSource);
+                options.DisallowBackendApi = disallowBackendApi;
+                var processingResult = WordDocumentExtractor.ProcessDocument(doc, options);
                 System.Diagnostics.Debug.WriteLine(
                     $"[更新映射表] 文档处理完成，共 {processingResult.ChunkInfo.Count} 个chunk；" +
                     $"S_={DocumentState.SentenceNameMapping.Count} P_={DocumentState.ParagraphNameMapping.Count} " +

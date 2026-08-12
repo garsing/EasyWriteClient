@@ -112,6 +112,69 @@ namespace WordAddIn1.DocumentHost
         }
 
         /// <summary>
+        /// 解析渠道并得到可跑现网 Word Interop 管线的 Document（Word 原生；WPS 为兼容 RCW）。
+        /// 供改字等仍大量依赖 <see cref="Word.Document"/> 的 F_* 渐进迁入；F_* 内勿写宿主分支。
+        /// </summary>
+        public static bool TryResolveInteropDocument(
+            Dictionary<string, object> args,
+            object wordApplication,
+            out InteropDocumentHandle handle,
+            out ToolResult errorResult)
+        {
+            handle = null;
+            if (!TryResolveContext(args, wordApplication, out DocumentSessionContext context, out errorResult))
+            {
+                return false;
+            }
+
+            if (context.Kind == ChannelKind.Word)
+            {
+                if (context.WordDocument == null)
+                {
+                    errorResult = new ToolResult
+                    {
+                        Success = false,
+                        Error = "渠道对应的 Word 文档已关闭: " + context.ChannelId
+                    };
+                    return false;
+                }
+
+                handle = new InteropDocumentHandle(
+                    context.WordDocument,
+                    context,
+                    disallowBackendApi: false);
+                return true;
+            }
+
+            if (context.Kind == ChannelKind.Wps)
+            {
+                if (!DocumentHostCompat.TryPrepareWpsInteropDocument(
+                        context,
+                        out Word.Document wordDoc,
+                        out string wpsError))
+                {
+                    errorResult = new ToolResult
+                    {
+                        Success = false,
+                        Error = string.IsNullOrEmpty(wpsError)
+                            ? UnsupportedResult(ChannelKind.Wps, context.ChannelId, "interop_document").Error
+                            : wpsError
+                    };
+                    return false;
+                }
+
+                handle = new InteropDocumentHandle(
+                    wordDoc,
+                    context,
+                    disallowBackendApi: true);
+                return true;
+            }
+
+            errorResult = UnsupportedResult(context.Kind, context.ChannelId, "interop_document");
+            return false;
+        }
+
+        /// <summary>
         /// 试点：F_get_document_content 读文档 display 内容。
         /// </summary>
         public static bool TryGetDocumentContent(
