@@ -124,16 +124,35 @@ namespace WordAddIn1
 
             if (!string.IsNullOrEmpty(uuid))
             {
-                SessionsByUuid.Remove(uuid);
-                ChannelRegistry.RemoveByDocUuid(uuid);
-                if (string.Equals(_activeDocUuid, uuid, StringComparison.Ordinal))
-                {
-                    _activeSession = null;
-                    _activeDocUuid = "";
-                }
-
-                System.Diagnostics.Debug.WriteLine($"[DocumentState] session removed on document close uuid={uuid}");
+                ClearSessionByUuid(uuid);
             }
+        }
+
+        /// <summary>
+        /// 按 uuid 移除分片与渠道（WPS 关文档 / 打开文件列表移除时使用）。
+        /// </summary>
+        public static void ClearSessionByUuid(string uuid)
+        {
+            if (string.IsNullOrEmpty(uuid))
+            {
+                return;
+            }
+
+            SessionsByUuid.Remove(uuid);
+            ChannelRegistry.RemoveByDocUuid(uuid);
+            if (string.Equals(_activeDocUuid, uuid, StringComparison.Ordinal))
+            {
+                _activeSession = null;
+                _activeDocUuid = "";
+            }
+
+            System.Diagnostics.Debug.WriteLine($"[DocumentState] session removed uuid={uuid}");
+        }
+
+        /// <summary>切换活动 DocumentState 分片（宿主无关）。</summary>
+        public static void ActivateSessionByUuid(string uuid)
+        {
+            ActivateSession(uuid);
         }
 
         /// <summary>
@@ -145,6 +164,7 @@ namespace WordAddIn1
             _activeSession = null;
             _activeDocUuid = "";
             DocumentIdentity.ClearAll();
+            WpsDocumentIdentity.ClearAll();
             DocumentCheckpointService.ClearAllOnShutdown();
             ChannelRegistry.ClearAll();
             System.Diagnostics.Debug.WriteLine("[DocumentState] all sessions cleared on shutdown");

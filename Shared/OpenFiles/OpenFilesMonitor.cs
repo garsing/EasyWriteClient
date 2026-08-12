@@ -90,7 +90,7 @@ namespace WordAddIn1.OpenFiles
         }
 
         /// <summary>
-        /// Desktop 聊天请求体 <c>open_channels</c>：仅 word 项（排除 wps）。
+        /// Desktop 聊天请求体 <c>open_channels</c>：含 word / wps（有渠道的打开项）。
         /// </summary>
         public object BuildOpenChannelsPayload()
         {
@@ -99,7 +99,8 @@ namespace WordAddIn1.OpenFiles
             {
                 items = OrderedCopyUnlocked()
                     .Where(i => i != null
-                        && string.Equals(i.AppType, WordOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+                        && (string.Equals(i.AppType, WordOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(i.AppType, WpsOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)))
                     .ToList();
             }
 
@@ -114,6 +115,7 @@ namespace WordAddIn1.OpenFiles
                 ["display_name"] = i.DisplayName ?? "",
                 ["full_path"] = (object)i.FullPath ?? null,
                 ["channel_id"] = i.ChannelId ?? "",
+                ["app_type"] = i.AppType ?? "",
                 ["is_saved"] = i.IsSaved
             }).ToList();
 
@@ -588,12 +590,6 @@ namespace WordAddIn1.OpenFiles
                 return;
             }
 
-            // WPS 永不带渠道
-            if (string.Equals(item.AppType, WpsOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
-            {
-                item.ChannelId = null;
-            }
-
             lock (_gate)
             {
                 _items[item.Id] = item;
@@ -651,7 +647,7 @@ namespace WordAddIn1.OpenFiles
             bool removed;
             lock (_gate)
             {
-                removed = RemoveByAppTypeUnlocked(WpsOpenFilesDetector.TypeKey, removeChannels: false);
+                removed = RemoveByAppTypeUnlocked(WpsOpenFilesDetector.TypeKey, removeChannels: true);
             }
 
             UpdateWpsReconcileTimer();
@@ -691,6 +687,22 @@ namespace WordAddIn1.OpenFiles
 
             try
             {
+                if (ChannelRegistry.TryGet(item.ChannelId, out IOperationChannel ch)
+                    && ch is WpsChannel wps)
+                {
+                    object doc = wps.Document;
+                    if (doc != null)
+                    {
+                        WpsDocumentIdentity.ClearOnDocumentClose(doc);
+                    }
+                    else
+                    {
+                        DocumentState.ClearSessionByUuid(wps.DocUuid);
+                    }
+
+                    return;
+                }
+
                 ChannelRegistry.Remove(item.ChannelId);
             }
             catch (Exception ex)

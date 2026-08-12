@@ -36,8 +36,22 @@ namespace WordAddIn1
             }
 
             Word.Document docRef = document;
-            var docEvents = (Word.DocumentEvents2_Event)docRef;
-            docEvents.Close += () => HandleDocumentClose(docRef, objectId);
+            try
+            {
+                var docEvents = (Word.DocumentEvents2_Event)docRef;
+                docEvents.Close += () => HandleDocumentClose(docRef, objectId);
+            }
+            catch (Exception ex)
+            {
+                // WPS 等兼容 RCW 可能无法 QI 到 DocumentEvents2；关闭清理改走打开文件 Monitor
+                lock (SyncRoot)
+                {
+                    CloseHandlerRegistered.Remove(objectId);
+                }
+
+                System.Diagnostics.Debug.WriteLine(
+                    $"[DocumentIdentity] EnsureCloseHandler skip: {ex.Message}");
+            }
         }
 
         private static void HandleDocumentClose(Word.Document document, int objectId)

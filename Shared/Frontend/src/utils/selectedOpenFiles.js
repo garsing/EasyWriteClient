@@ -25,10 +25,8 @@ export function buildSelectedOpenFilesAppendix (selected) {
   const lines = selected.map((s, i) => {
     const name = s.displayName || '未命名文档'
     const ch = (s.channelId || '').trim()
+    // 有真实 channel_id（含 wps:）则写出；不再因 appType===wps 强制「无渠道」
     if (ch) return `${i + 1}. ${name} | channel_id=${ch}`
-    if (s.appType === 'wps') {
-      return `${i + 1}. ${name} | 无操作渠道（WPS，不可用 Word 渠道工具直接操作）`
-    }
     return `${i + 1}. ${name} | 无操作渠道（渠道未建立）`
   })
   return (

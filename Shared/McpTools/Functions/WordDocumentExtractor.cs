@@ -947,6 +947,13 @@ namespace WordAddIn1
             ProcessingResult result;
             if (readText.Length > BackendProcessTextLengthThreshold)
             {
+                if (options.DisallowBackendApi)
+                {
+                    throw new InvalidOperationException(
+                        "unsupported: 当前宿主禁止后端 API 分块（WPS 大文档能力后续再处理）；"
+                        + $"文本长度 {readText.Length} 超过阈值 {BackendProcessTextLengthThreshold}");
+                }
+
                 ExtractDetailLog(detailLog,
                     $"📊 文档字数 ({readText.Length}) 超过 {BackendProcessTextLengthThreshold}，使用API处理");
                 if (verbose)

@@ -2,13 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using WordAddIn1.DocumentMapping.CodeResolve;
-using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 读取文档 display 内容工具（支持 S_ 句子级与 P_ 段落级）
+    /// 读取文档 display 内容工具（支持 S_ 句子级与 P_ 段落级）。
+    /// 文档触点经 <see cref="DocumentHostAdapter"/>，按 channel_id 分发 Word/WPS。
     /// </summary>
     public static class F_GetDocumentContentTool
     {
@@ -26,11 +27,6 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
-                    {
-                        return resolveError;
-                    }
-
                     if (!TryParseCodeLevel(args, out string codeLevel, out string codeLevelError))
                     {
                         return new ToolResult { Success = false, Error = codeLevelError };
@@ -40,10 +36,17 @@ namespace WordAddIn1
 
                     AgentRunCancellation.ThrowIfCancelled();
 
-                    var processingResult = WordDocumentExtractor.ProcessDocument(
-                        document,
-                        ProcessDocumentOptions.ForGetDocumentContent("get_document_content"));
+                    if (!DocumentHostAdapter.TryGetDocumentContent(
+                            args,
+                            wordApplication,
+                            codeLevel,
+                            out GetDocumentContentHostResult hostResult,
+                            out ToolResult resolveError))
+                    {
+                        return resolveError;
+                    }
 
+                    var processingResult = hostResult.ProcessingResult;
                     string documentContent = BuildDocumentContent(processingResult, isParagraph);
                     string note = BuildNote(processingResult.ProcessingMethod, isParagraph);
                     string duplicateCodeNote = isParagraph
@@ -60,11 +63,14 @@ namespace WordAddIn1
                         { "document_content", documentContent },
                         { "code_level", codeLevel },
                         { "processing_method", processingResult.ProcessingMethod ?? "Unknown" },
-                        { "note", note }
+                        { "note", note },
+                        { "channel_id", hostResult.Context?.ChannelId ?? "" },
+                        { "host", hostResult.Context?.Kind.ToString().ToLowerInvariant() ?? "" }
                     };
 
                     System.Diagnostics.Debug.WriteLine(
-                        $"[F_get_document_content] code_level={codeLevel}, {resultData["processing_method"]}, " +
+                        $"[F_get_document_content] host={resultData["host"]}, channel_id={resultData["channel_id"]}, " +
+                        $"code_level={codeLevel}, {resultData["processing_method"]}, " +
                         $"chunks={processingResult.ChunkInfo?.Count ?? 0}, " +
                         $"displayLen={documentContent.Length}");
 
@@ -74,7 +80,9 @@ namespace WordAddIn1
                         System.Diagnostics.Debug.WriteLine("==========================================");
                         System.Diagnostics.Debug.WriteLine("=== F_get_document_content 工具返回 ===");
                         System.Diagnostics.Debug.WriteLine("==========================================");
-                        System.Diagnostics.Debug.WriteLine($"文档名称: {document.Name ?? "未命名文档"}");
+                        System.Diagnostics.Debug.WriteLine($"文档名称: {hostResult.DocumentDisplayName ?? "未命名文档"}");
+                        System.Diagnostics.Debug.WriteLine($"channel_id: {resultData["channel_id"]}");
+                        System.Diagnostics.Debug.WriteLine($"host: {resultData["host"]}");
                         System.Diagnostics.Debug.WriteLine($"code_level: {codeLevel}");
                         System.Diagnostics.Debug.WriteLine($"处理方式: {resultData["processing_method"]}");
                         System.Diagnostics.Debug.WriteLine($"返回内容长度: {documentContent.Length} 字符");

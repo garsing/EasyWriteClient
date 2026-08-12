@@ -84,6 +84,61 @@ namespace WordAddIn1
             return result;
         }
 
+        /// <summary>
+        /// 为 WPS 文字文档查找或创建渠道；channel_id 形如 <c>wps:{doc_uuid}</c>。
+        /// 禁止把 WPS 登记为 <c>word:</c> 渠道。
+        /// </summary>
+        /// <param name="claimDefaultIfEmpty">
+        /// 默认渠道为空时是否自动占用。「打开文件」探测路径须传 false。
+        /// </param>
+        public static WpsChannel CreateOrGetWps(
+            object wpsDocument,
+            string filePath = null,
+            bool claimDefaultIfEmpty = true)
+        {
+            if (wpsDocument == null)
+            {
+                throw new ArgumentNullException(nameof(wpsDocument));
+            }
+
+            string uuid = WpsDocumentIdentity.EnsureUuid(wpsDocument);
+
+            bool createdNew = false;
+            WpsChannel result;
+            lock (Gate)
+            {
+                if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
+                    && Channels.TryGetValue(existingId, out IOperationChannel existing)
+                    && existing is WpsChannel wpsChannel)
+                {
+                    wpsChannel.UpdateDocument(wpsDocument, filePath);
+                    result = wpsChannel;
+                }
+                else
+                {
+                    string channelId = "wps:" + uuid;
+                    var created = new WpsChannel(channelId, uuid, wpsDocument, filePath);
+                    Channels[channelId] = created;
+                    DocUuidToChannelId[uuid] = channelId;
+
+                    if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
+                    {
+                        _defaultChannelId = channelId;
+                    }
+
+                    createdNew = true;
+                    result = created;
+                }
+            }
+
+            if (createdNew)
+            {
+                HostCallbacks.RaiseRequestCompact();
+            }
+
+            return result;
+        }
+
         public static void Register(IOperationChannel channel, bool setAsDefault = false)
         {
             if (channel == null)
@@ -102,6 +157,10 @@ namespace WordAddIn1
                 if (channel is WordChannel wc && !string.IsNullOrEmpty(wc.DocUuid))
                 {
                     DocUuidToChannelId[wc.DocUuid] = channel.ChannelId;
+                }
+                else if (channel is WpsChannel wps && !string.IsNullOrEmpty(wps.DocUuid))
+                {
+                    DocUuidToChannelId[wps.DocUuid] = channel.ChannelId;
                 }
 
                 if (setAsDefault || string.IsNullOrEmpty(_defaultChannelId))
@@ -137,6 +196,18 @@ namespace WordAddIn1
             return true;
         }
 
+        public static bool TryGetWps(string channelId, out WpsChannel channel)
+        {
+            channel = null;
+            if (!TryGet(channelId, out IOperationChannel ch) || !(ch is WpsChannel wc))
+            {
+                return false;
+            }
+
+            channel = wc;
+            return true;
+        }
+
         public static bool TryGetByDocUuid(string docUuid, out WordChannel channel)
         {
             channel = null;
@@ -160,6 +231,18 @@ namespace WordAddIn1
                 channel = wc;
                 return true;
             }
+        }
+
+        public static bool TryGetDefaultWps(out WpsChannel channel)
+        {
+            channel = null;
+            if (!TryGetDefault(out IOperationChannel ch) || !(ch is WpsChannel wc))
+            {
+                return false;
+            }
+
+            channel = wc;
+            return true;
         }
 
         public static bool SetDefault(string channelId)
@@ -245,6 +328,10 @@ namespace WordAddIn1
                 if (ch is WordChannel wc && !string.IsNullOrEmpty(wc.DocUuid))
                 {
                     DocUuidToChannelId.Remove(wc.DocUuid);
+                }
+                else if (ch is WpsChannel wps && !string.IsNullOrEmpty(wps.DocUuid))
+                {
+                    DocUuidToChannelId.Remove(wps.DocUuid);
                 }
 
                 if (string.Equals(_defaultChannelId, channelId, StringComparison.Ordinal))

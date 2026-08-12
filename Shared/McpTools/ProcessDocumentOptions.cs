@@ -41,6 +41,12 @@ namespace WordAddIn1
         /// <summary>为 true 时跳过快照缓存，强制全量读盘（仅代码/调试，MCP 不暴露）。</summary>
         public bool ForceRefresh { get; set; } = false;
 
+        /// <summary>
+        /// 为 true 时禁止走后端 API 分块（WPS 本期，见文档操作适配层 I6b）。
+        /// 超阈值时 <see cref="WordDocumentExtractor.ProcessDocument"/> 抛 <see cref="System.InvalidOperationException"/>。
+        /// </summary>
+        public bool DisallowBackendApi { get; set; } = false;
+
         public static ProcessDocumentOptions ForProcessActions(string snapshotSource)
         {
             return new ProcessDocumentOptions

@@ -9,7 +9,7 @@ namespace WordAddIn1.OpenFiles
 {
     /// <summary>
     /// WPS 文字「打开文件」探测器：晚绑定附着、快照 Documents；可订则订事件，否则由 Monitor 对账。
-    /// 禁止 CreateOrGetWord / 建渠道。
+    /// 建真实 <c>wps:</c> 渠道（claimDefaultIfEmpty=false）；禁止伪装为 word: 渠道。
     /// </summary>
     internal sealed class WpsOpenFilesDetector : IOpenFilesAppDetector
     {
@@ -117,8 +117,7 @@ namespace WordAddIn1.OpenFiles
                             continue;
                         }
 
-                        // 禁止建渠道
-                        item.ChannelId = null;
+                        EnsureChannel(doc, item);
 
                         int key = RuntimeHelpers.GetHashCode(doc);
                         lock (_gate)
@@ -167,7 +166,7 @@ namespace WordAddIn1.OpenFiles
                 return;
             }
 
-            // 部分 WPS 暴露与 Word 兼容的 ApplicationEvents4；仅用于事件，绝不 CreateOrGetWord
+            // 部分 WPS 暴露与 Word 兼容的 ApplicationEvents4；仅用于事件
             try
             {
                 var events = _app as Word.ApplicationEvents4_Event;
@@ -263,7 +262,7 @@ namespace WordAddIn1.OpenFiles
                     return;
                 }
 
-                item.ChannelId = null;
+                EnsureChannel(doc, item);
 
                 int key = RuntimeHelpers.GetHashCode(doc);
                 lock (_gate)
@@ -277,6 +276,30 @@ namespace WordAddIn1.OpenFiles
             {
                 EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
                     "[WpsOpenFilesDetector] open event: " + ex.Message);
+            }
+        }
+
+        /// <summary>探测建渠道：不 SetDefault。</summary>
+        private static void EnsureChannel(object doc, OpenFileItem item)
+        {
+            if (doc == null || item == null)
+            {
+                return;
+            }
+
+            try
+            {
+                WpsChannel channel = ChannelRegistry.CreateOrGetWps(
+                    doc,
+                    item.FullPath,
+                    claimDefaultIfEmpty: false);
+                item.ChannelId = channel?.ChannelId;
+            }
+            catch (Exception ex)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[WpsOpenFilesDetector] EnsureChannel: " + ex.Message);
+                item.ChannelId = null;
             }
         }
 
