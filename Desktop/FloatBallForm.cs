@@ -30,7 +30,7 @@ namespace EasyWriteClient.Desktop
         private Point _dragFormLocation;
         private bool _dragging;
         private bool _moved;
-        private bool _ignoreNextActivate = true;
+        private DateTime _suppressActivateUntilUtc = DateTime.MinValue;
         private DockSide _dock = DockSide.None;
         private bool _hoverExpanded;
 
@@ -52,7 +52,8 @@ namespace EasyWriteClient.Desktop
 
             AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.None;
-            ShowInTaskbar = true;
+            // 任务栏由主窗（最小化）占用；球在前台时点底栏才能稳定还原
+            ShowInTaskbar = false;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
             BackColor = Color.Magenta;
@@ -79,7 +80,13 @@ namespace EasyWriteClient.Desktop
             Paint += OnPaint;
             Activated += OnActivated;
             FormClosing += OnFormClosing;
+            Resize += OnResize;
         }
+
+        private const int WmSysCommand = 0x0112;
+        private const int ScMinimize = 0xF020;
+        private const int ScRestore = 0xF120;
+        private const int ScMaximize = 0xF030;
 
         public int FormSide => _formSide;
 
@@ -88,7 +95,8 @@ namespace EasyWriteClient.Desktop
 
         public void ShowAt(Point location)
         {
-            _ignoreNextActivate = true;
+            // 展示瞬间会 Activated，短时忽略，避免一收球就立刻展回
+            _suppressActivateUntilUtc = DateTime.UtcNow.AddMilliseconds(400);
             _hoverExpanded = false;
             ForceSquareSize();
             Location = location;
@@ -121,6 +129,23 @@ namespace EasyWriteClient.Desktop
 
             _dock = DockSide.None;
             _hoverExpanded = false;
+            _suppressActivateUntilUtc = DateTime.UtcNow.AddMilliseconds(400);
+        }
+
+        /// <summary>任务栏点击：球已前台时系统会发最小化，改为直接展回缩小版。</summary>
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WmSysCommand)
+            {
+                int cmd = (int)(m.WParam.ToInt64() & 0xFFF0);
+                if (cmd == ScMinimize || cmd == ScRestore || cmd == ScMaximize)
+                {
+                    RequestLeaveFloatBall();
+                    return;
+                }
+            }
+
+            base.WndProc(ref m);
         }
 
         protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
@@ -454,27 +479,38 @@ namespace EasyWriteClient.Desktop
 
         private void OnActivated(object sender, EventArgs e)
         {
-            if (_ignoreNextActivate)
+            if (DateTime.UtcNow < _suppressActivateUntilUtc)
             {
-                _ignoreNextActivate = false;
                 return;
             }
 
-            BeginInvoke(new Action(() =>
+            // 任务栏激活（球尚未前台时）：直接回缩小版
+            BeginInvoke(new Action(RequestLeaveFloatBall));
+        }
+
+        private void OnResize(object sender, EventArgs e)
+        {
+            if (WindowState == FormWindowState.Minimized)
             {
-                if (IsDisposed || !Visible)
-                {
-                    return;
-                }
+                WindowState = FormWindowState.Normal;
+                RequestLeaveFloatBall();
+            }
+        }
 
-                if (_dragging || _moved || MouseButtons == MouseButtons.Left)
-                {
-                    return;
-                }
+        private void RequestLeaveFloatBall()
+        {
+            if (IsDisposed || !Visible)
+            {
+                return;
+            }
 
-                // 任务栏激活：直接回主窗
-                _owner.LeaveFloatBall();
-            }));
+            // 拖拽过程中不因激活抖动展窗
+            if (_dragging || _moved)
+            {
+                return;
+            }
+
+            _owner.LeaveFloatBall();
         }
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)

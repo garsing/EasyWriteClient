@@ -127,6 +127,8 @@ namespace EasyWriteClient.Desktop
             KeyDown += (_, __) => NoteUserActivity();
             _titleBar.MouseDown += (_, __) => NoteUserActivity();
             _chatSurface.MouseDown += (_, __) => NoteUserActivity();
+            // 球态下主窗在任务栏为最小化：点底栏会还原 → 在此展回缩小版
+            Resize += OnResizeWhileFloatBall;
             FormClosed += (_, __) =>
             {
                 _idleTimer.Stop();
@@ -355,10 +357,19 @@ namespace EasyWriteClient.Desktop
             _boundsBeforeFloat = Bounds;
             _isFloatBall = true;
             StopIdleWatch();
-            Hide();
 
             EnsureFloatBall();
             _floatBall.ShowAt(ResolveBallLocation());
+
+            // 主窗最小化留在任务栏（球不占任务栏）。
+            // 这样无论球是否前台，点底栏都是「还原主窗」，必能回到缩小版。
+            ShowInTaskbar = true;
+            if (!Visible)
+            {
+                Show();
+            }
+
+            WindowState = FormWindowState.Minimized;
         }
 
         internal void LeaveFloatBall()
@@ -374,10 +385,24 @@ namespace EasyWriteClient.Desktop
                 return;
             }
 
+            // 先清标志，避免还原 Normal 时 Resize 重入
+            _isFloatBall = false;
+
             if (_floatBall != null && _floatBall.Visible)
             {
                 WindowLayoutStore.SaveBallLocation(_floatBall.Location);
                 _floatBall.HideBall();
+            }
+
+            if (_layoutMode != WindowLayoutMode.Compact)
+            {
+                _layoutMode = WindowLayoutMode.Compact;
+            }
+
+            ShowInTaskbar = true;
+            if (WindowState != FormWindowState.Normal)
+            {
+                WindowState = FormWindowState.Normal;
             }
 
             if (_boundsBeforeFloat.Width >= MinimumSize.Width && _boundsBeforeFloat.Height >= MinimumSize.Height)
@@ -385,17 +410,30 @@ namespace EasyWriteClient.Desktop
                 Bounds = _boundsBeforeFloat;
             }
 
-            _isFloatBall = false;
-            if (_layoutMode != WindowLayoutMode.Compact)
+            if (!Visible)
             {
-                _layoutMode = WindowLayoutMode.Compact;
+                Show();
             }
 
-            Show();
             Activate();
+            BringToFront();
             NoteUserActivity();
             StartIdleWatch();
             ApplyWindowRegion();
+        }
+
+        private void OnResizeWhileFloatBall(object sender, EventArgs e)
+        {
+            if (!_isFloatBall || IsDisposed)
+            {
+                return;
+            }
+
+            // 任务栏点击还原最小化主窗
+            if (WindowState == FormWindowState.Normal)
+            {
+                LeaveFloatBall();
+            }
         }
 
         private FloatBallForm EnsureFloatBall()
