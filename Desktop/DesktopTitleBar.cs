@@ -23,15 +23,24 @@ namespace EasyWriteClient.Desktop
         private readonly TitleBarButton _btnClose;
         private readonly float _dpiScale;
         private readonly Image _logo;
+        private readonly int _barHeightExpanded;
+        private readonly int _barHeightCompact;
+        private readonly int _btnWExpanded;
+        private readonly int _btnWCompact;
+        private readonly int _logoWidth;
         private MainForm _owner;
 
         public DesktopTitleBar(float dpiScale)
         {
             _dpiScale = dpiScale <= 0 ? 1f : dpiScale;
             _logo = LoadLogo();
-            // 紧凑顶栏（约 Win11 标题栏观感），避免挡住 WebView 内容
-            int barHeight = Scale(32);
-            int btnW = Scale(36);
+            // 工作台约 Win11 高度；缩小版收窄
+            _barHeightExpanded = Scale(32);
+            _barHeightCompact = Scale(26);
+            _btnWExpanded = Scale(36);
+            _btnWCompact = Scale(30);
+            int barHeight = _barHeightExpanded;
+            int btnW = _btnWExpanded;
             int btnH = barHeight;
 
             Dock = DockStyle.Top;
@@ -43,11 +52,13 @@ namespace EasyWriteClient.Desktop
             Padding = new Padding(Scale(8), 0, 0, 0);
             DoubleBuffered = true;
 
-            // 仅 logo，不显示「易写」文字；区域用于拖拽
-            int logoW = Scale(28);
+            // 仅 logo，不显示「易写」文字；区域用于拖拽（缩小版会隐藏）
+            _logoWidth = Scale(28);
             if (_logo != null)
             {
-                logoW = Math.Max(logoW, (int)Math.Round(Scale(18) * (_logo.Width / (double)_logo.Height)) + Scale(8));
+                _logoWidth = Math.Max(
+                    _logoWidth,
+                    (int)Math.Round(Scale(18) * (_logo.Width / (double)_logo.Height)) + Scale(8));
             }
 
             _titleLabel = new Label
@@ -56,7 +67,7 @@ namespace EasyWriteClient.Desktop
                 Text = string.Empty,
                 BackColor = Color.Transparent,
                 Dock = DockStyle.Left,
-                Width = logoW
+                Width = _logoWidth
             };
             _titleLabel.Paint += TitleLabel_Paint;
             _titleLabel.MouseDown += TitleBar_MouseDown;
@@ -120,7 +131,9 @@ namespace EasyWriteClient.Desktop
             ApplyChromeForLayout(_owner != null && _owner.IsCompactLayout);
         }
 
-        /// <summary>缩小版隐藏 —/□；工作台恢复显示。</summary>
+        /// <summary>
+        /// 缩小版：隐藏 —/□、隐藏左侧 Yi logo、收窄标题栏；工作台恢复。
+        /// </summary>
         public void ApplyChromeForLayout(bool compact)
         {
             if (_btnMin != null)
@@ -133,9 +146,39 @@ namespace EasyWriteClient.Desktop
                 _btnMax.Visible = !compact;
             }
 
+            if (_titleLabel != null)
+            {
+                // 缩小版去掉原生栏 Yi 图标
+                _titleLabel.Visible = !compact;
+                _titleLabel.Width = compact ? 0 : _logoWidth;
+            }
+
+            int barH = compact ? _barHeightCompact : _barHeightExpanded;
+            int btnW = compact ? _btnWCompact : _btnWExpanded;
+            Height = barH;
+            MinimumSize = new Size(0, barH);
+            MaximumSize = new Size(0, barH);
+            ResizeTitleBarButton(_btnLayout, btnW, barH);
+            ResizeTitleBarButton(_btnMin, btnW, barH);
+            ResizeTitleBarButton(_btnMax, btnW, barH);
+            ResizeTitleBarButton(_btnClose, btnW, barH);
+
             SyncLayoutButton();
             SyncMaxButtonGlyph();
             PerformLayout();
+            Invalidate(true);
+        }
+
+        private static void ResizeTitleBarButton(TitleBarButton btn, int w, int h)
+        {
+            if (btn == null)
+            {
+                return;
+            }
+
+            btn.Width = w;
+            btn.Height = h;
+            btn.Invalidate();
         }
 
         protected override void Dispose(bool disposing)

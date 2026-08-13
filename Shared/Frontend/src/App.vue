@@ -991,13 +991,15 @@ const restoreInputValue = (value) => {
   overflow: hidden;
 }
 
-/* 缩小版：无侧栏，对话区对齐插件窄窗 */
+/* 缩小版：聊天区铺满标题栏下方（无工作台留白与圆角） */
 .app-shell.host-desktop.layout-compact {
   padding: 0;
+  background: #f7f7f5;
 }
 
 .app-shell.host-desktop.layout-compact .chat-container {
   border-radius: 0;
+  background: #f7f7f5;
 }
 
 .compact-chrome {
