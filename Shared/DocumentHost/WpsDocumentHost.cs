@@ -18,10 +18,12 @@ namespace WordAddIn1.DocumentHost
                 throw new ArgumentException("WPS 文档上下文无效。");
             }
 
+            // 只读：不 Activate，避免读内容时把 WPS 抢到前台
             if (!DocumentHostCompat.TryPrepareWpsInteropDocument(
                     context,
                     out Word.Document wordDoc,
-                    out string prepareError))
+                    out string prepareError,
+                    activateDocument: false))
             {
                 throw new InvalidOperationException(
                     string.IsNullOrEmpty(prepareError)

@@ -192,7 +192,7 @@ namespace WordAddIn1.DocumentHost
         }
 
         /// <summary>
-        /// 试点：F_get_document_content 读文档 display 内容。
+        /// 试点：F_get_document_content 读文档 display 内容（只读，不 Activate 文档窗口）。
         /// </summary>
         public static bool TryGetDocumentContent(
             Dictionary<string, object> args,
@@ -202,7 +202,13 @@ namespace WordAddIn1.DocumentHost
             out ToolResult errorResult)
         {
             result = null;
-            if (!TryResolveContext(args, wordApplication, out DocumentSessionContext context, out errorResult))
+            // 只读：保持 Desktop 在前台，勿把 Word/WPS 抢到最前
+            if (!TryResolveContext(
+                    args,
+                    wordApplication,
+                    out DocumentSessionContext context,
+                    out errorResult,
+                    activateDocument: false))
             {
                 return false;
             }
