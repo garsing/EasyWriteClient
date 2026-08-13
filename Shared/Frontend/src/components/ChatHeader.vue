@@ -1,9 +1,28 @@
 <template>
   <div class="chat-header">
     <div class="header-buttons">
-      <button class="header-button" @click="handleKnowledgeBase">
-        <img :src="knowledgeBaseIcon" alt="知识库" class="button-icon" />
+      <!-- 插件：知识库；缩小版：历史对话弹出 -->
+      <button
+        v-if="variant === 'plugin'"
+        class="header-button"
+        type="button"
+        title="知识库"
+        aria-label="知识库"
+        @click="handleKnowledgeBase"
+      >
+        <img :src="knowledgeBaseIcon" alt="" class="button-icon" />
       </button>
+      <button
+        v-else
+        class="header-button"
+        type="button"
+        title="历史对话"
+        aria-label="历史对话"
+        @click="$emit('history')"
+      >
+        <img :src="historyIcon" alt="" class="button-icon" />
+      </button>
+
       <button
         class="header-button"
         type="button"
@@ -11,10 +30,16 @@
         aria-label="新建会话"
         @click="handleAdd"
       >
-        <img :src="addIcon" alt="新建会话" class="button-icon" />
+        <img :src="addIcon" alt="" class="button-icon" />
       </button>
-      <button class="header-button" @click="handleSettings">
-        <img :src="userIcon" alt="设置" class="button-icon" />
+      <button
+        class="header-button"
+        type="button"
+        title="设置"
+        aria-label="设置"
+        @click="handleSettings"
+      >
+        <img :src="userIcon" alt="" class="button-icon" />
       </button>
     </div>
   </div>
@@ -23,12 +48,28 @@
 <script setup>
 import { useWebViewBridge } from '../composables/useWebViewBridge'
 import knowledgeBaseIcon from '../assets/images/knowledge_base.png'
+import historyIcon from '../assets/images/chat-history-line.png'
 import addIcon from '../assets/images/add.png'
 import userIcon from '../assets/images/user.png'
+
+const props = defineProps({
+  /** plugin = 知识库/新建/设置；compact = 历史/新建/设置 */
+  variant: {
+    type: String,
+    default: 'plugin',
+    validator: (v) => v === 'plugin' || v === 'compact'
+  }
+})
+
+const emit = defineEmits(['history', 'add'])
 
 const { sendMessage } = useWebViewBridge()
 
 const handleAdd = async () => {
+  if (props.variant === 'compact') {
+    emit('add')
+    return
+  }
   try {
     await sendMessage('addConversation', {})
   } catch (error) {
@@ -77,6 +118,11 @@ const handleKnowledgeBase = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+  color: #5c5a55;
+}
+
+.header-button:hover {
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .button-icon {

@@ -6,8 +6,9 @@
       'layout-compact': isDesktopHost && layoutMode === 'compact'
     }"
   >
+    <!-- 完整版：任务侧栏；缩小版对齐插件，无侧栏 -->
     <TaskSidebar
-      v-if="isDesktopHost"
+      v-if="isDesktopHost && layoutMode === 'expanded'"
       :collapsed="sidebarCollapsed"
       :tasks="taskList"
       :open-files="openFiles"
@@ -21,7 +22,6 @@
       @select-open-file="handleSelectOpenFile"
     />
     <div
-      ref="chatContainerRef"
       class="chat-container"
       @dragenter.prevent="onChatDragEnter"
       @dragleave.prevent="onChatDragLeave"
@@ -29,7 +29,28 @@
       @drop.prevent="onChatDrop"
     >
       <div v-if="chatDragOver" class="chat-drop-hint">拖放到此处以上传为对话附件</div>
+      <!-- 插件顶栏；缩小版顶栏：历史 / 新建 / 设置 -->
       <ChatHeader v-if="!isDesktopHost" />
+      <div
+        v-else-if="layoutMode === 'compact'"
+        class="compact-chrome"
+        @keydown.esc.stop="historyPopoverOpen = false"
+      >
+        <ChatHeader
+          variant="compact"
+          @history="toggleHistoryPopover"
+          @add="handleDesktopNewTask"
+        />
+        <ConversationHistoryPopover
+          v-if="historyPopoverOpen"
+          :tasks="taskList"
+          :loading="taskListLoading"
+          :error="taskListError"
+          :active-id="activeTaskId"
+          @select="handleCompactSelectTask"
+          @close="historyPopoverOpen = false"
+        />
+      </div>
       <ChatMessages v-if="messages.length > 0" :messages="messages" />
       <ChatEmptyState
         v-else
@@ -69,6 +90,7 @@ import ChatEmptyState from './components/ChatEmptyState.vue'
 import ChatInput from './components/ChatInput.vue'
 import TodoProgressBar from './components/TodoProgressBar.vue'
 import TaskSidebar from './components/TaskSidebar.vue'
+import ConversationHistoryPopover from './components/ConversationHistoryPopover.vue'
 import { useWebViewBridge } from './composables/useWebViewBridge'
 import { useChatFileUpload } from './composables/useChatFileUpload'
 import { ToolCallAccumulator } from './utils/toolCallAccumulator'
@@ -98,76 +120,33 @@ const isDesktopHost = detectDesktopHost()
 const layoutMode = ref('expanded')
 const sidebarCollapsed = ref(false)
 
-/** 与 TaskSidebar.vue 宽度一致：展开 260 / 收起 48 */
-const SIDEBAR_EXPANDED_W = 260
-const SIDEBAR_COLLAPSED_W = 48
-const chatContainerRef = ref(null)
+const historyPopoverOpen = ref(false)
 
 function applyLayoutMode (mode) {
   if (mode !== 'compact' && mode !== 'expanded') return
   layoutMode.value = mode
-  if (mode === 'compact') {
-    sidebarCollapsed.value = true
-  } else {
-    sidebarCollapsed.value = false
-  }
+  historyPopoverOpen.value = false
+  // 缩小版无侧栏；完整版默认展开侧栏
+  sidebarCollapsed.value = mode !== 'expanded'
 }
 
-/** 钉住聊天区像素宽（配合 compact 的 flex-end，多余空间只出现在左侧） */
-function pinChatWidth () {
-  const el = chatContainerRef.value
-  if (!el) return () => {}
-  const w = Math.round(el.getBoundingClientRect().width)
-  el.style.flex = `0 0 ${w}px`
-  el.style.width = `${w}px`
-  el.style.minWidth = `${w}px`
-  el.style.maxWidth = `${w}px`
-  return () => {
-    el.style.flex = ''
-    el.style.width = ''
-    el.style.minWidth = ''
-    el.style.maxWidth = ''
-  }
+function handleSidebarToggle () {
+  if (!isDesktopHost || layoutMode.value !== 'expanded') return
+  sidebarCollapsed.value = !sidebarCollapsed.value
 }
 
-function waitTwoFrames () {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(resolve))
-  })
-}
-
-async function handleSidebarToggle () {
-  // 完整版：仅切换侧栏
-  if (!isDesktopHost || layoutMode.value !== 'compact') {
-    sidebarCollapsed.value = !sidebarCollapsed.value
+async function toggleHistoryPopover () {
+  if (historyPopoverOpen.value) {
+    historyPopoverOpen.value = false
     return
   }
+  historyPopoverOpen.value = true
+  await refreshTaskList()
+}
 
-  const wasCollapsed = sidebarCollapsed.value
-  const delta = wasCollapsed
-    ? SIDEBAR_EXPANDED_W - SIDEBAR_COLLAPSED_W
-    : SIDEBAR_COLLAPSED_W - SIDEBAR_EXPANDED_W
-  const unpin = pinChatWidth()
-
-  try {
-    if (wasCollapsed) {
-      // 先向左加宽（聊天贴右不动，左侧留白）→ 再展开侧栏填白
-      await sendMessage('adjustCompactWidthForSidebar', { delta })
-      sidebarCollapsed.value = false
-    } else {
-      // 先收起侧栏（左侧留白，聊天贴右不动）→ 再减窗宽吃掉留白
-      sidebarCollapsed.value = true
-      await nextTick()
-      await sendMessage('adjustCompactWidthForSidebar', { delta })
-    }
-    await nextTick()
-    await waitTwoFrames()
-  } catch (e) {
-    console.warn('[App] adjustCompactWidthForSidebar failed:', e?.message || e)
-    sidebarCollapsed.value = wasCollapsed
-  } finally {
-    unpin()
-  }
+async function handleCompactSelectTask (item) {
+  await handleDesktopSelectTask(item)
+  historyPopoverOpen.value = false
 }
 const taskList = ref([])
 const taskListLoading = ref(false)
@@ -997,21 +976,18 @@ const restoreInputValue = (value) => {
   overflow: hidden;
 }
 
-/* 缩小版：侧栏默认可收起；对话区更贴插件窄窗 */
+/* 缩小版：无侧栏，对话区对齐插件窄窗 */
 .app-shell.host-desktop.layout-compact {
   padding: 0;
-  /* 内容靠右：窗宽向左增减时聊天区屏幕位置不动，空隙只出现在左侧 */
-  justify-content: flex-end;
 }
 
 .app-shell.host-desktop.layout-compact .chat-container {
   border-radius: 0;
 }
 
-/* 缩小版关掉侧栏宽度/图标动画，避免与窗宽调整叠在一起闪动 */
-.app-shell.host-desktop.layout-compact :deep(.task-sidebar),
-.app-shell.host-desktop.layout-compact :deep(.sidebar-toggle-icon) {
-  transition: none;
+.compact-chrome {
+  position: relative;
+  flex-shrink: 0;
 }
 
 .app-shell.host-desktop :deep(.chat-messages),
