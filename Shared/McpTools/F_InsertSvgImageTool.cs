@@ -2,12 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
     /// SVG → WebView2 PNG → 按 target/光标插入 InlineShape 图片。
+    /// 文档触点经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_InsertSvgImageTool
     {
@@ -20,10 +22,22 @@ namespace WordAddIn1
                 string pngPath = null;
                 try
                 {
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError))
                     {
-                        return Fail(resolveError.Error);
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[F_insert_svg_image] resolve failed: {resolveError?.Error}; " +
+                            $"arg.channel_id={ChannelContext.TryGetChannelIdFromParameters(args) ?? "(null)"}; " +
+                            $"default={ChannelRegistry.DefaultChannelId ?? "(null)"}");
+                        return Fail(resolveError?.Error ?? "无法解析文档渠道");
                     }
+
+                    Word.Document document = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_insert_svg_image] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     string svg = args != null && args.ContainsKey("svg") ? args["svg"]?.ToString() : null;
                     var validation = SvgSecurityValidator.Validate(svg);

@@ -5,7 +5,9 @@ using System.Threading.Tasks;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 从文件替换文档内容（扁平入参：replace_file + original_codes + format）
+    /// 从文件替换文档内容（扁平入参：replace_file + original_codes + format）。
+    /// 本工具不直触 Word/WPS：转发 <c>channel_id</c> 后委托
+    /// <c>F_process_document_actions</c>（已经 DocumentHost），故 WPS 随改字路径可用。
     /// </summary>
     public static class F_ReplaceDocumentFromFileTool
     {
@@ -60,6 +62,10 @@ namespace WordAddIn1
                     {
                         return new ToolResult { Success = false, Error = "F_process_document_actions 未注册" };
                     }
+
+                    System.Diagnostics.Debug.WriteLine(
+                        "[F_replace_document_from_file] delegate → F_process_document_actions; " +
+                        $"channel_id={ChannelContext.TryGetChannelIdFromParameters(processArgs) ?? "(default)"}");
 
                     ToolResult processResult = await processHandler(processArgs);
                     if (!processResult.Success)

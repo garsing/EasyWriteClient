@@ -5,12 +5,14 @@ using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
     /// 工作区图片（Matplotlib PNG 等）→ Ensure → 按 target/光标插入 InlineShape。
+    /// 文档触点经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_InsertWorkspaceImageTool
     {
@@ -34,10 +36,22 @@ namespace WordAddIn1
                 var sw = Stopwatch.StartNew();
                 try
                 {
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError))
                     {
-                        return Fail(resolveError.Error);
+                        Debug.WriteLine(
+                            $"[F_insert_workspace_image] resolve failed: {resolveError?.Error}; " +
+                            $"arg.channel_id={ChannelContext.TryGetChannelIdFromParameters(args) ?? "(null)"}; " +
+                            $"default={ChannelRegistry.DefaultChannelId ?? "(null)"}");
+                        return Fail(resolveError?.Error ?? "无法解析文档渠道");
                     }
+
+                    Word.Document document = docHandle.Document;
+                    Debug.WriteLine(
+                        $"[F_insert_workspace_image] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     string rawName = args != null && args.ContainsKey("filename")
                         ? args["filename"]?.ToString()

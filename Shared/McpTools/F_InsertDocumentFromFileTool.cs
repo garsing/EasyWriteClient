@@ -5,7 +5,9 @@ using System.Threading.Tasks;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 从文件插入文档内容（扁平入参：insert_file + format + 可选定位）
+    /// 从文件插入文档内容（扁平入参：insert_file + format + 可选定位）。
+    /// 本工具不直触 Word/WPS：转发 <c>channel_id</c> 后委托
+    /// <c>F_process_document_actions</c>（已经 DocumentHost），故 WPS 随改字路径可用。
     /// </summary>
     public static class F_InsertDocumentFromFileTool
     {
@@ -70,6 +72,10 @@ namespace WordAddIn1
                     {
                         build.args["channel_id"] = args["channel_id"];
                     }
+
+                    System.Diagnostics.Debug.WriteLine(
+                        "[F_insert_document_from_file] delegate → F_process_document_actions; " +
+                        $"channel_id={ChannelContext.TryGetChannelIdFromParameters(build.args) ?? "(default)"}");
 
                     ToolResult processResult = await processHandler(build.args);
                     if (!processResult.Success)
