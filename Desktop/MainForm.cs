@@ -295,6 +295,12 @@ namespace EasyWriteClient.Desktop
                 return true;
             }
 
+            // 鼠标仍在主窗上：不计闲置（移出后重新累计 5s）
+            if (IsMouseOverMainWindow())
+            {
+                return true;
+            }
+
             foreach (Form f in OwnedForms)
             {
                 if (f != null && !f.IsDisposed && f.Visible)
@@ -304,6 +310,17 @@ namespace EasyWriteClient.Desktop
             }
 
             return false;
+        }
+
+        /// <summary>光标是否落在本窗矩形内（含标题栏；WebView 内亦算）。</summary>
+        private bool IsMouseOverMainWindow()
+        {
+            if (!Visible || WindowState == FormWindowState.Minimized)
+            {
+                return false;
+            }
+
+            return Bounds.Contains(Control.MousePosition);
         }
 
         private void StartIdleWatch()
