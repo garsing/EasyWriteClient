@@ -32,6 +32,16 @@ namespace EasyWriteClient.Desktop
 
             [JsonProperty("compactH")]
             public int? CompactH { get; set; }
+
+            /// <summary>缩小版闲置自动收为悬浮球；缺省 true。本期无设置页 UI。</summary>
+            [JsonProperty("autoFloatEnabled")]
+            public bool? AutoFloatEnabled { get; set; }
+
+            [JsonProperty("ballX")]
+            public int? BallX { get; set; }
+
+            [JsonProperty("ballY")]
+            public int? BallY { get; set; }
         }
 
         public static string FilePath
@@ -88,6 +98,57 @@ namespace EasyWriteClient.Desktop
                 dto.CompactH.Value);
         }
 
+        public static bool GetAutoFloatEnabled()
+        {
+            LayoutDto dto = ReadDto();
+            if (dto?.AutoFloatEnabled == null)
+            {
+                return true;
+            }
+
+            return dto.AutoFloatEnabled.Value;
+        }
+
+        public static void SetAutoFloatEnabled(bool enabled)
+        {
+            try
+            {
+                LayoutDto dto = ReadDto() ?? new LayoutDto();
+                dto.AutoFloatEnabled = enabled;
+                WriteDto(dto);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[WindowLayoutStore] SetAutoFloatEnabled: " + ex.Message);
+            }
+        }
+
+        public static Point? LoadBallLocation()
+        {
+            LayoutDto dto = ReadDto();
+            if (dto?.BallX == null || dto.BallY == null)
+            {
+                return null;
+            }
+
+            return new Point(dto.BallX.Value, dto.BallY.Value);
+        }
+
+        public static void SaveBallLocation(Point location)
+        {
+            try
+            {
+                LayoutDto dto = ReadDto() ?? new LayoutDto();
+                dto.BallX = location.X;
+                dto.BallY = location.Y;
+                WriteDto(dto);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[WindowLayoutStore] SaveBallLocation: " + ex.Message);
+            }
+        }
+
         public static void Save(WindowLayoutMode mode, Rectangle? compactBounds = null)
         {
             try
@@ -103,14 +164,7 @@ namespace EasyWriteClient.Desktop
                     dto.CompactH = r.Height;
                 }
 
-                string path = FilePath;
-                string dir = Path.GetDirectoryName(path);
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                }
-
-                File.WriteAllText(path, JsonConvert.SerializeObject(dto, Formatting.Indented));
+                WriteDto(dto);
             }
             catch (Exception ex)
             {
@@ -122,6 +176,18 @@ namespace EasyWriteClient.Desktop
         public static void Save(WindowLayoutMode mode)
         {
             Save(mode, null);
+        }
+
+        private static void WriteDto(LayoutDto dto)
+        {
+            string path = FilePath;
+            string dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            File.WriteAllText(path, JsonConvert.SerializeObject(dto, Formatting.Indented));
         }
 
         private static LayoutDto ReadDto()

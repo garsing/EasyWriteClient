@@ -37,6 +37,13 @@ namespace EasyWriteClient.Desktop
         private bool _expandedWasCustomMaximized;
         private WindowLayoutMode _layoutMode = WindowLayoutMode.Expanded;
         private Action _requestCompactHandler;
+        private readonly System.Windows.Forms.Timer _idleTimer;
+        private DateTime _lastActivityUtc = DateTime.UtcNow;
+        private bool _isFloatBall;
+        private bool _compactUiBusy;
+        private FloatBallForm _floatBall;
+        private Rectangle _boundsBeforeFloat;
+        private DateTime _lastActivityNoteUtc = DateTime.MinValue;
 
         public MainForm()
         {
@@ -87,21 +94,49 @@ namespace EasyWriteClient.Desktop
             _titleBar = new DesktopTitleBar(_dpiScale);
             _chatSurface = new DesktopChatSurface();
 
+            _idleTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+            _idleTimer.Tick += IdleTimer_Tick;
+
             // 先 Fill 后 Top，保证顶栏占用上方区域
             Controls.Add(_chatSurface);
             Controls.Add(_titleBar);
 
             Shown += OnShown;
-            FormClosing += (_, __) => PersistLayoutState();
+            FormClosing += (_, __) =>
+            {
+                if (_isFloatBall && _floatBall != null && _floatBall.Visible)
+                {
+                    WindowLayoutStore.SaveBallLocation(_floatBall.Location);
+                }
+
+                PersistLayoutState();
+            };
+            ResizeBegin += (_, __) => NoteUserActivity();
             ResizeEnd += (_, __) =>
             {
-                if (_layoutMode == WindowLayoutMode.Compact)
+                NoteUserActivity();
+                if (_layoutMode == WindowLayoutMode.Compact && !_isFloatBall)
                 {
                     PersistLayoutState();
                 }
             };
+            Move += (_, __) => NoteUserActivity();
+            MouseDown += (_, __) => NoteUserActivity();
+            MouseMove += (_, __) => NoteUserActivityThrottled();
+            KeyPreview = true;
+            KeyDown += (_, __) => NoteUserActivity();
+            _titleBar.MouseDown += (_, __) => NoteUserActivity();
+            _chatSurface.MouseDown += (_, __) => NoteUserActivity();
             FormClosed += (_, __) =>
             {
+                _idleTimer.Stop();
+                _idleTimer.Dispose();
+                if (_floatBall != null)
+                {
+                    _floatBall.Dispose();
+                    _floatBall = null;
+                }
+
                 if (ReferenceEquals(HostCallbacks.RequestCompact, _requestCompactHandler))
                 {
                     HostCallbacks.RequestCompact = null;
@@ -115,6 +150,8 @@ namespace EasyWriteClient.Desktop
         internal bool IsCustomMaximized => _customMaximized;
 
         internal bool IsCompactLayout => _layoutMode == WindowLayoutMode.Compact;
+
+        internal bool IsFloatBall => _isFloatBall;
 
         internal void ToggleMaximizeRestore()
         {
@@ -158,7 +195,219 @@ namespace EasyWriteClient.Desktop
 
         internal void RequestCompact()
         {
+            if (_isFloatBall)
+            {
+                LeaveFloatBall();
+            }
+
             SetLayoutMode(WindowLayoutMode.Compact);
+        }
+
+        /// <summary>Agent 流式/请求忙碌：禁止收球；若已是球则弹回缩小版。</summary>
+        internal void NotifyAgentBusy(bool busy)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => NotifyAgentBusy(busy)));
+                return;
+            }
+
+            NoteUserActivity();
+            if (busy && _isFloatBall)
+            {
+                LeaveFloatBall();
+            }
+        }
+
+        /// <summary>缩小版历史弹出等 UI 忙碌（前端 compactUiBusy）。</summary>
+        internal void SetCompactUiBusy(bool busy)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => SetCompactUiBusy(busy)));
+                return;
+            }
+
+            _compactUiBusy = busy;
+            NoteUserActivity();
+        }
+
+        internal void NoteUserActivity()
+        {
+            _lastActivityUtc = DateTime.UtcNow;
+        }
+
+        private void NoteUserActivityThrottled()
+        {
+            DateTime now = DateTime.UtcNow;
+            if ((now - _lastActivityNoteUtc).TotalMilliseconds < 400)
+            {
+                return;
+            }
+
+            _lastActivityNoteUtc = now;
+            _lastActivityUtc = now;
+        }
+
+        private void IdleTimer_Tick(object sender, EventArgs e)
+        {
+            if (_layoutMode != WindowLayoutMode.Compact || _isFloatBall || IsDisposed)
+            {
+                return;
+            }
+
+            if (!WindowLayoutStore.GetAutoFloatEnabled())
+            {
+                return;
+            }
+
+            if (IsIdleBlocked())
+            {
+                NoteUserActivity();
+                return;
+            }
+
+            if ((DateTime.UtcNow - _lastActivityUtc).TotalSeconds >= 15)
+            {
+                EnterFloatBall();
+            }
+        }
+
+        private bool IsIdleBlocked()
+        {
+            if (_compactUiBusy)
+            {
+                return true;
+            }
+
+            if (_chatSurface != null && _chatSurface.IsProcessing)
+            {
+                return true;
+            }
+
+            foreach (Form f in OwnedForms)
+            {
+                if (f != null && !f.IsDisposed && f.Visible)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void StartIdleWatch()
+        {
+            if (_layoutMode != WindowLayoutMode.Compact || _isFloatBall)
+            {
+                _idleTimer.Enabled = false;
+                return;
+            }
+
+            NoteUserActivity();
+            _idleTimer.Enabled = true;
+        }
+
+        private void StopIdleWatch()
+        {
+            _idleTimer.Enabled = false;
+        }
+
+        private void EnterFloatBall()
+        {
+            if (_isFloatBall || _layoutMode != WindowLayoutMode.Compact || IsDisposed)
+            {
+                return;
+            }
+
+            if (IsIdleBlocked())
+            {
+                return;
+            }
+
+            _boundsBeforeFloat = Bounds;
+            _isFloatBall = true;
+            StopIdleWatch();
+            Hide();
+
+            EnsureFloatBall();
+            _floatBall.ShowAt(ResolveBallLocation());
+        }
+
+        internal void LeaveFloatBall()
+        {
+            if (!_isFloatBall || IsDisposed)
+            {
+                return;
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(LeaveFloatBall));
+                return;
+            }
+
+            if (_floatBall != null && _floatBall.Visible)
+            {
+                WindowLayoutStore.SaveBallLocation(_floatBall.Location);
+                _floatBall.HideBall();
+            }
+
+            if (_boundsBeforeFloat.Width >= MinimumSize.Width && _boundsBeforeFloat.Height >= MinimumSize.Height)
+            {
+                Bounds = _boundsBeforeFloat;
+            }
+
+            _isFloatBall = false;
+            if (_layoutMode != WindowLayoutMode.Compact)
+            {
+                _layoutMode = WindowLayoutMode.Compact;
+            }
+
+            Show();
+            Activate();
+            NoteUserActivity();
+            StartIdleWatch();
+            ApplyWindowRegion();
+        }
+
+        private FloatBallForm EnsureFloatBall()
+        {
+            if (_floatBall == null || _floatBall.IsDisposed)
+            {
+                _floatBall = new FloatBallForm(this, _dpiScale);
+            }
+
+            return _floatBall;
+        }
+
+        private Point ResolveBallLocation()
+        {
+            FloatBallForm ball = EnsureFloatBall();
+            int side = ball.FormSide;
+            Rectangle wa = Screen.FromControl(this).WorkingArea;
+            Point? saved = WindowLayoutStore.LoadBallLocation();
+            if (saved.HasValue)
+            {
+                int x = Math.Max(wa.Left, Math.Min(saved.Value.X, wa.Right - side));
+                int y = Math.Max(wa.Top, Math.Min(saved.Value.Y, wa.Bottom - side));
+                return new Point(x, y);
+            }
+
+            int margin = Math.Max(8, (int)Math.Round(12 * _dpiScale));
+            int left = wa.Right - side - margin;
+            int top = wa.Top + Math.Max(0, (wa.Height - side) / 2);
+            return new Point(left, top);
         }
 
         /// <summary>
@@ -229,6 +478,11 @@ namespace EasyWriteClient.Desktop
                 return;
             }
 
+            if (_isFloatBall && mode == WindowLayoutMode.Expanded)
+            {
+                LeaveFloatBall();
+            }
+
             if (WindowState == FormWindowState.Minimized)
             {
                 WindowState = FormWindowState.Normal;
@@ -260,7 +514,9 @@ namespace EasyWriteClient.Desktop
             }
             else
             {
-                if (_layoutMode == WindowLayoutMode.Compact)
+                StopIdleWatch();
+                _compactUiBusy = false;
+                if (_layoutMode == WindowLayoutMode.Compact && !_isFloatBall)
                 {
                     // 离开缩小版前记下当前尺寸，便于下次回来
                     WindowLayoutStore.Save(WindowLayoutMode.Expanded, Bounds);
@@ -270,10 +526,18 @@ namespace EasyWriteClient.Desktop
                 _layoutMode = WindowLayoutMode.Expanded;
             }
 
-            _titleBar.SyncLayoutButton();
-            _titleBar.SyncMaxButtonGlyph();
+            _titleBar.ApplyChromeForLayout(_layoutMode == WindowLayoutMode.Compact);
             ApplyWindowRegion();
             Invalidate();
+
+            if (_layoutMode == WindowLayoutMode.Compact && !_isFloatBall)
+            {
+                StartIdleWatch();
+            }
+            else
+            {
+                StopIdleWatch();
+            }
 
             if (persist)
             {
@@ -536,7 +800,7 @@ namespace EasyWriteClient.Desktop
                 else
                 {
                     _chatSurface.NotifyLayoutModeChanged("expanded");
-                    _titleBar.SyncLayoutButton();
+                    _titleBar.ApplyChromeForLayout(compact: false);
                 }
 
                 // 形态恢复后再挂 Monitor：已开 Word 建渠可再触发自动缩小（I5）

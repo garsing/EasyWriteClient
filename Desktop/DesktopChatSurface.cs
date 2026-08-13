@@ -441,6 +441,34 @@ namespace EasyWriteClient.Desktop
                 });
             });
             _bridge.RegisterHandler("adjustCompactWidthForSidebar", HandleAdjustCompactWidthForSidebarAsync);
+            _bridge.RegisterHandler("compactUiBusy", HandleCompactUiBusyAsync);
+        }
+
+        /// <summary>是否正在处理对话/流式（供主窗闲置收球门闩）。</summary>
+        internal bool IsProcessing => _isProcessing;
+
+        private Task<object> HandleCompactUiBusyAsync(object data)
+        {
+            try
+            {
+                bool busy = false;
+                if (data is JObject jo)
+                {
+                    busy = jo.Value<bool?>("busy") ?? false;
+                }
+                else if (data != null)
+                {
+                    busy = JToken.FromObject(data).Value<bool?>("busy") ?? false;
+                }
+
+                var form = FindForm() as MainForm;
+                form?.SetCompactUiBusy(busy);
+                return Task.FromResult<object>(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                return Task.FromResult<object>(new { success = false, message = ex.Message });
+            }
         }
 
         private Task<object> HandleAdjustCompactWidthForSidebarAsync(object data)
@@ -735,6 +763,7 @@ namespace EasyWriteClient.Desktop
                     AgentRunCancellation.BeginRun(_cts);
                     _isProcessing = true;
                     _bridge.SendToJavaScript("requestStateChanged", new { isProcessing = true });
+                    (FindForm() as MainForm)?.NotifyAgentBusy(true);
                 });
 
                 _conversationHistory.Add(new ChatMessage { role = "user", content = content });
@@ -1195,6 +1224,19 @@ namespace EasyWriteClient.Desktop
             }
 
             _bridge?.SendToJavaScript("requestStateChanged", new { isProcessing = false });
+            void NotifyIdle()
+            {
+                (FindForm() as MainForm)?.NotifyAgentBusy(false);
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke((MethodInvoker)NotifyIdle);
+            }
+            else
+            {
+                NotifyIdle();
+            }
         }
 
         private async Task OnConversationIdKnownAsync(string conversationId)

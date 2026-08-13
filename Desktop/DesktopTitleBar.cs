@@ -117,8 +117,25 @@ namespace EasyWriteClient.Desktop
         {
             base.OnParentChanged(e);
             _owner = FindForm() as MainForm;
-            SyncMaxButtonGlyph();
+            ApplyChromeForLayout(_owner != null && _owner.IsCompactLayout);
+        }
+
+        /// <summary>缩小版隐藏 —/□；工作台恢复显示。</summary>
+        public void ApplyChromeForLayout(bool compact)
+        {
+            if (_btnMin != null)
+            {
+                _btnMin.Visible = !compact;
+            }
+
+            if (_btnMax != null)
+            {
+                _btnMax.Visible = !compact;
+            }
+
             SyncLayoutButton();
+            SyncMaxButtonGlyph();
+            PerformLayout();
         }
 
         protected override void Dispose(bool disposing)
@@ -182,11 +199,19 @@ namespace EasyWriteClient.Desktop
 
         private void TitleBar_MouseDoubleClick(object sender, MouseEventArgs e)
         {
-            if (e.Button == MouseButtons.Left)
+            if (e.Button != MouseButtons.Left)
             {
-                OwnerForm?.ToggleMaximizeRestore();
-                SyncMaxButtonGlyph();
+                return;
             }
+
+            // 缩小版不最大化
+            if (OwnerForm != null && OwnerForm.IsCompactLayout)
+            {
+                return;
+            }
+
+            OwnerForm?.ToggleMaximizeRestore();
+            SyncMaxButtonGlyph();
         }
 
         private void TitleLabel_Paint(object sender, PaintEventArgs e)
@@ -215,7 +240,10 @@ namespace EasyWriteClient.Desktop
             }
         }
 
-        private static Image LoadLogo()
+        private static Image LoadLogo() => LoadYiWriteLogo();
+
+        /// <summary>与标题栏 / 悬浮球同源：yi-write_logo1.png。</summary>
+        internal static Image LoadYiWriteLogo()
         {
             try
             {

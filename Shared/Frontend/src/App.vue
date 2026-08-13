@@ -122,13 +122,27 @@ const sidebarCollapsed = ref(false)
 
 const historyPopoverOpen = ref(false)
 
+function reportCompactUiBusy (busy) {
+  if (!isDesktopHost || layoutMode.value !== 'compact') return
+  sendMessage('compactUiBusy', { busy: !!busy }).catch(() => {})
+}
+
 function applyLayoutMode (mode) {
   if (mode !== 'compact' && mode !== 'expanded') return
+  const wasCompact = layoutMode.value === 'compact'
   layoutMode.value = mode
-  historyPopoverOpen.value = false
+  if (historyPopoverOpen.value) {
+    historyPopoverOpen.value = false
+  } else if (wasCompact && mode !== 'compact') {
+    reportCompactUiBusy(false)
+  }
   // 缩小版无侧栏；完整版默认展开侧栏
   sidebarCollapsed.value = mode !== 'expanded'
 }
+
+watch(historyPopoverOpen, (open) => {
+  reportCompactUiBusy(open)
+})
 
 function handleSidebarToggle () {
   if (!isDesktopHost || layoutMode.value !== 'expanded') return
@@ -142,6 +156,7 @@ async function toggleHistoryPopover () {
   }
   historyPopoverOpen.value = true
   await refreshTaskList()
+  // watch 会 reportCompactUiBusy(true)
 }
 
 async function handleCompactSelectTask (item) {
