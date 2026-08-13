@@ -17,7 +17,10 @@ namespace WordAddIn1
             public int VerticalPercentScrolled { get; set; }
         }
 
-        public static void RestoreActiveDocumentFromCheckpoint(string checkpointPath, Word.Application app)
+        public static void RestoreActiveDocumentFromCheckpoint(
+            string checkpointPath,
+            Word.Application app,
+            Word.Document document = null)
         {
             if (app == null)
             {
@@ -29,10 +32,30 @@ namespace WordAddIn1
                 throw new ArgumentException("checkpointPath is required", nameof(checkpointPath));
             }
 
-            Word.Document target = app.ActiveDocument;
+            Word.Document target = document;
+            if (target == null)
+            {
+                try
+                {
+                    target = app.ActiveDocument;
+                }
+                catch (Exception)
+                {
+                    target = null;
+                }
+            }
+
             if (target == null)
             {
                 throw new InvalidOperationException("没有活动的 Word 文档");
+            }
+
+            try
+            {
+                target.Activate();
+            }
+            catch (Exception)
+            {
             }
 
             DocumentViewState viewState = CaptureViewState(app, target);

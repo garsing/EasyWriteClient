@@ -3,12 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 将 ChartConfig XML 套用到已有图表（scope: all / format / data）。
+    /// 将 ChartConfig XML 套用到已有图表。经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_ApplyChartFromXmlTool
     {
@@ -22,10 +23,27 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[ApplyChart] 开始套用图表 XML");
 
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError))
                     {
                         return resolveError;
                     }
+
+                    Word.Document document = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_apply_chart_from_xml] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
+
+                    if (docHandle.Context != null && docHandle.Context.Kind == ChannelKind.Wps)
+                    {
+                        return DocumentHostAdapter.UnsupportedResult(
+                            ChannelKind.Wps,
+                            docHandle.ChannelId,
+                            "apply_chart (WPS 不支持 Word/Excel 内嵌图表 COM；请用 Word)");
+                    }
+
                     string chartId = args.ContainsKey("chart_id") ? args["chart_id"]?.ToString() : "";
                     if (string.IsNullOrEmpty(chartId))
                     {

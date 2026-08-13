@@ -348,14 +348,53 @@ namespace WordAddIn1
             System.Diagnostics.Debug.WriteLine($"[Checkpoint] rollback failed invoke timestamp={timestamp}");
         }
 
-        public static ToolResult RestoreCheckpoint(string timestamp)
+        public static ToolResult RestoreCheckpoint(string timestamp, Word.Document document = null)
         {
-            if (_wordApplication?.ActiveDocument == null)
+            Word.Document activeDoc = document;
+            Word.Application app = null;
+
+            if (activeDoc != null)
+            {
+                try
+                {
+                    app = activeDoc.Application;
+                }
+                catch (Exception)
+                {
+                    app = null;
+                }
+
+                try
+                {
+                    activeDoc.Activate();
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            if (app == null)
+            {
+                app = _wordApplication;
+            }
+
+            if (activeDoc == null && app != null)
+            {
+                try
+                {
+                    activeDoc = app.ActiveDocument;
+                }
+                catch (Exception)
+                {
+                    activeDoc = null;
+                }
+            }
+
+            if (activeDoc == null || app == null)
             {
                 return new ToolResult { Success = false, Error = "没有活动的 Word 文档" };
             }
 
-            Word.Document activeDoc = _wordApplication.ActiveDocument;
             DocumentState.BindAndActivate(activeDoc);
             string docUuid = DocumentState.CurrDocUuid;
             if (string.IsNullOrEmpty(docUuid))
@@ -385,7 +424,7 @@ namespace WordAddIn1
 
             try
             {
-                DocumentRestoreHelper.RestoreActiveDocumentFromCheckpoint(path, _wordApplication);
+                DocumentRestoreHelper.RestoreActiveDocumentFromCheckpoint(path, app, activeDoc);
             }
             catch (Exception ex)
             {

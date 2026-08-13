@@ -3,12 +3,13 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
 using Excel = Microsoft.Office.Interop.Excel;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 按 chart_id 删除 InlineShape 图表；删后光标落原图后沿，供 F_create_chart_from_xml 重建。
+    /// 按 chart_id 删除 InlineShape 图表。经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_DeleteChartTool
     {
@@ -20,9 +21,25 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError))
                     {
                         return resolveError;
+                    }
+
+                    Word.Document document = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_delete_chart] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
+
+                    if (docHandle.Context != null && docHandle.Context.Kind == ChannelKind.Wps)
+                    {
+                        return DocumentHostAdapter.UnsupportedResult(
+                            ChannelKind.Wps,
+                            docHandle.ChannelId,
+                            "delete_chart (WPS 不支持 Word/Excel 内嵌图表 COM；请用 Word)");
                     }
 
                     string chartId = args.ContainsKey("chart_id") ? args["chart_id"]?.ToString() : "";

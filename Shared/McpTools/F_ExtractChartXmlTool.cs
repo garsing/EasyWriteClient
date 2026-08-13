@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 从 Word 图表提取 ChartConfig XML（scope: all / format / data）。
+    /// 从图表提取 ChartConfig XML（只读）。经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_ExtractChartXmlTool
     {
@@ -20,9 +21,26 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[ExtractChart] 开始提取图表 XML");
 
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError,
+                            activateDocument: false))
                     {
                         return resolveError;
+                    }
+
+                    Word.Document document = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_extract_chart_xml] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
+
+                    if (docHandle.Context != null && docHandle.Context.Kind == ChannelKind.Wps)
+                    {
+                        return DocumentHostAdapter.UnsupportedResult(
+                            ChannelKind.Wps,
+                            docHandle.ChannelId,
+                            "extract_chart (WPS 不支持 Word/Excel 内嵌图表 COM；请用 Word)");
                     }
 
                     try

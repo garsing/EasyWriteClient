@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
+    /// <summary>读取数据溯源（只读）。经 <see cref="DocumentHostAdapter"/>。</summary>
     public static class F_GetDataProvenanceTool
     {
         public static void Register(
@@ -15,10 +17,19 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError,
+                            activateDocument: false))
                     {
                         return resolveError;
                     }
+
+                    Word.Document doc = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_get_data_provenance] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     object data = DataProvenanceReadHelper.ReadAll(doc);
                     await Task.CompletedTask;

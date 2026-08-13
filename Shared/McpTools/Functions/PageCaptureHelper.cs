@@ -39,19 +39,44 @@ namespace WordAddIn1
             public string DocTitle { get; set; }
         }
 
-        public static CaptureResult CaptureDocumentPage(Word.Application wordApp, int? requestedPageNumber = null)
+        public static CaptureResult CaptureDocumentPage(
+            Word.Application wordApp,
+            int? requestedPageNumber = null,
+            Word.Document document = null)
         {
             PdfiumNativeLoader.EnsureLoaded();
+
+            Word.Document doc = document;
+            if (doc == null)
+            {
+                if (wordApp == null)
+                {
+                    throw new InvalidOperationException("Word应用程序不可用");
+                }
+
+                doc = wordApp.ActiveDocument;
+            }
+
+            if (doc == null)
+            {
+                throw new InvalidOperationException("没有活动的 Word 文档");
+            }
+
+            if (wordApp == null)
+            {
+                try
+                {
+                    wordApp = doc.Application;
+                }
+                catch (Exception)
+                {
+                    wordApp = null;
+                }
+            }
 
             if (wordApp == null)
             {
                 throw new InvalidOperationException("Word应用程序不可用");
-            }
-
-            Word.Document doc = wordApp.ActiveDocument;
-            if (doc == null)
-            {
-                throw new InvalidOperationException("没有活动的 Word 文档");
             }
 
             int totalPages = doc.ComputeStatistics(Word.WdStatistic.wdStatisticPages);
@@ -78,7 +103,7 @@ namespace WordAddIn1
             }
             else
             {
-                pageNumber = GetCursorPageNumber(wordApp);
+                pageNumber = GetCursorPageNumber(wordApp, doc);
                 if (pageNumber < 1)
                 {
                     pageNumber = 1;

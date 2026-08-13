@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
+    /// <summary>写入数据溯源。经 <see cref="DocumentHostAdapter"/>。</summary>
     public static class F_ApplyDataProvenanceTool
     {
         public static void Register(
@@ -16,10 +18,18 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError))
                     {
-                        return Fail(resolveError.Error);
+                        return Fail(resolveError?.Error ?? "无法解析文档渠道");
                     }
+
+                    Word.Document doc = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_apply_data_provenance] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     if (!DataProvenanceJsonParser.TryParseItems(args, out List<ProvenanceItemInput> items, out string parseError))
                     {

@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
+    /// <summary>
+    /// 列出当前渠道文档的操作/检查点记录（只读）。经 <see cref="DocumentHostAdapter"/>。
+    /// </summary>
     public static class F_ListDocumentOperationsTool
     {
         public static void Register(
@@ -15,10 +19,19 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError,
+                            activateDocument: false))
                     {
                         return Task.FromResult(resolveError);
                     }
+
+                    Word.Document doc = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_list_document_operations] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     DocumentState.EnsureCurrDocUuid(doc);
 
