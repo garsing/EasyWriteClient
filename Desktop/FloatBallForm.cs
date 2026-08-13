@@ -6,30 +6,48 @@ using System.Windows.Forms;
 namespace EasyWriteClient.Desktop
 {
     /// <summary>
-    /// 缩小版闲置后的圆形悬浮球（独立小窗）；可拖动；点击或任务栏激活 → 展回主窗。
+    /// 缩小版闲置悬浮球：游离为正圆；贴左右边为横向半露胶囊（朝内一头为 Logo 圆）；悬停展开为圆；点击回主窗。
     /// </summary>
     internal sealed class FloatBallForm : Form
     {
+        private enum DockSide
+        {
+            None,
+            Left,
+            Right
+        }
+
         private readonly MainForm _owner;
         private readonly Image _logo;
         private readonly float _dpiScale;
         private readonly int _ballDiameter;
         private readonly int _formSide;
+        /// <summary>横向胶囊完整宽度（贴边时约一半在屏外）。</summary>
+        private readonly int _capsuleWidth;
+        private readonly int _capsuleHeight;
+        private readonly int _snapDistance;
         private Point _dragMouseScreen;
         private Point _dragFormLocation;
         private bool _dragging;
         private bool _moved;
         private bool _ignoreNextActivate = true;
+        private DockSide _dock = DockSide.None;
+        private bool _hoverExpanded;
 
         public FloatBallForm(MainForm owner, float dpiScale)
         {
             _owner = owner ?? throw new ArgumentNullException(nameof(owner));
             _dpiScale = dpiScale <= 0 ? 1f : dpiScale;
-            _ballDiameter = Math.Max(40, (int)Math.Round(52 * _dpiScale));
+            // 悬停/游离球稍大；贴边胶囊保持小（与球解耦）
+            _ballDiameter = Math.Max(44, (int)Math.Round(52 * _dpiScale));
+            _capsuleHeight = Math.Max(18, (int)Math.Round(22 * _dpiScale));
+            // 横胶囊：完整宽约 2×高；贴边中线贴缘 → 屏内约一半 + 圆头
+            _capsuleWidth = Math.Max(_capsuleHeight + 12, (int)Math.Round(_capsuleHeight * 2.1));
+            _snapDistance = Math.Max(24, (int)Math.Round(32 * _dpiScale));
             int minSide = Math.Max(
                 SystemInformation.MinimumWindowSize.Width,
                 SystemInformation.MinimumWindowSize.Height);
-            _formSide = Math.Max(_ballDiameter, minSide);
+            _formSide = Math.Max(Math.Max(_ballDiameter, _capsuleWidth), minSide);
             _logo = DesktopTitleBar.LoadYiWriteLogo();
 
             AutoScaleMode = AutoScaleMode.None;
@@ -51,11 +69,13 @@ namespace EasyWriteClient.Desktop
             MaximumSize = new Size(_formSide, _formSide);
             ClientSize = new Size(_formSide, _formSide);
 
-            ApplyCircleRegion();
+            ApplyHitRegion();
 
             MouseDown += OnMouseDown;
             MouseMove += OnMouseMove;
             MouseUp += OnMouseUp;
+            MouseEnter += OnMouseEnter;
+            MouseLeave += OnMouseLeave;
             Paint += OnPaint;
             Activated += OnActivated;
             FormClosing += OnFormClosing;
@@ -63,11 +83,21 @@ namespace EasyWriteClient.Desktop
 
         public int FormSide => _formSide;
 
+        private bool ShowAsCapsule =>
+            _dock != DockSide.None && !_hoverExpanded && !_dragging;
+
         public void ShowAt(Point location)
         {
             _ignoreNextActivate = true;
+            _hoverExpanded = false;
             ForceSquareSize();
             Location = location;
+            InferDockFromLocation();
+            if (_dock != DockSide.None)
+            {
+                SnapToDockEdge();
+            }
+
             if (!Visible)
             {
                 Show();
@@ -78,7 +108,8 @@ namespace EasyWriteClient.Desktop
             }
 
             ForceSquareSize();
-            ApplyCircleRegion();
+            ApplyHitRegion();
+            Invalidate();
         }
 
         public void HideBall()
@@ -87,6 +118,9 @@ namespace EasyWriteClient.Desktop
             {
                 Hide();
             }
+
+            _dock = DockSide.None;
+            _hoverExpanded = false;
         }
 
         protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
@@ -112,7 +146,7 @@ namespace EasyWriteClient.Desktop
                 ForceSquareSize();
             }
 
-            ApplyCircleRegion();
+            ApplyHitRegion();
         }
 
         private void ForceSquareSize()
@@ -123,6 +157,7 @@ namespace EasyWriteClient.Desktop
             }
         }
 
+        /// <summary>正圆在窗内的矩形（居中）。</summary>
         private Rectangle BallBounds
         {
             get
@@ -133,21 +168,88 @@ namespace EasyWriteClient.Desktop
             }
         }
 
-        private void ApplyCircleRegion()
+        /// <summary>横向胶囊完整矩形（贴边时约一半在屏外）。</summary>
+        private Rectangle CapsuleBounds
+        {
+            get
+            {
+                int y = Math.Max(0, (_formSide - _capsuleHeight) / 2);
+                if (_dock == DockSide.Left)
+                {
+                    // 贴左：胶囊靠窗左，Logo 圆头在右侧（朝向屏内）
+                    return new Rectangle(0, y, _capsuleWidth, _capsuleHeight);
+                }
+
+                // 贴右：胶囊靠窗右，Logo 圆头在左侧（朝向屏内）
+                return new Rectangle(_formSide - _capsuleWidth, y, _capsuleWidth, _capsuleHeight);
+            }
+        }
+
+        /// <summary>胶囊朝内一端的 Logo 圆（直径=胶囊高）。</summary>
+        private Rectangle CapsuleHeadBounds
+        {
+            get
+            {
+                Rectangle cap = CapsuleBounds;
+                if (_dock == DockSide.Left)
+                {
+                    return new Rectangle(cap.Right - _capsuleHeight, cap.Y, _capsuleHeight, _capsuleHeight);
+                }
+
+                return new Rectangle(cap.X, cap.Y, _capsuleHeight, _capsuleHeight);
+            }
+        }
+
+        private Rectangle VisualBounds => ShowAsCapsule ? CapsuleBounds : BallBounds;
+
+        private void ApplyHitRegion()
         {
             if (_formSide <= 0)
             {
                 return;
             }
 
-            Rectangle ball = BallBounds;
             using (var path = new GraphicsPath())
             {
-                path.AddEllipse(ball);
+                if (ShowAsCapsule)
+                {
+                    AddCapsulePath(path, CapsuleBounds);
+                }
+                else
+                {
+                    path.AddEllipse(BallBounds);
+                }
+
                 Region old = Region;
                 Region = new Region(path);
                 old?.Dispose();
             }
+        }
+
+        private static void AddCapsulePath(GraphicsPath path, Rectangle r)
+        {
+            int radius = Math.Max(2, r.Height / 2);
+            AddRoundedRect(path, r, radius);
+        }
+
+        private static void AddRoundedRect(GraphicsPath path, Rectangle r, int radius)
+        {
+            int d = radius * 2;
+            if (d > r.Width)
+            {
+                d = r.Width;
+            }
+
+            if (d > r.Height)
+            {
+                d = r.Height;
+            }
+
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
         }
 
         private void OnPaint(object sender, PaintEventArgs e)
@@ -157,23 +259,73 @@ namespace EasyWriteClient.Desktop
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
             g.Clear(Color.Magenta);
 
-            Rectangle ball = BallBounds;
-            using (var brush = new SolidBrush(Color.FromArgb(0xF0, 0xF0, 0xF0)))
-            {
-                g.FillEllipse(brush, ball);
-            }
+            var fill = Color.FromArgb(0xF0, 0xF0, 0xF0);
+            var stroke = Color.FromArgb(0xC8, 0xC8, 0xC8);
+            var headFill = Color.FromArgb(0xFA, 0xFA, 0xFA);
 
-            using (var pen = new Pen(Color.FromArgb(0xC8, 0xC8, 0xC8)))
+            if (ShowAsCapsule)
             {
-                g.DrawEllipse(pen, ball.X, ball.Y, ball.Width - 1, ball.Height - 1);
-            }
+                Rectangle cap = CapsuleBounds;
+                Rectangle head = CapsuleHeadBounds;
 
-            int pad = Math.Max(6, _ballDiameter / 6);
-            var dest = new Rectangle(
-                ball.X + pad,
-                ball.Y + pad,
-                Math.Max(1, ball.Width - pad * 2),
-                Math.Max(1, ball.Height - pad * 2));
+                using (var path = new GraphicsPath())
+                {
+                    AddCapsulePath(path, cap);
+                    using (var brush = new SolidBrush(fill))
+                    {
+                        g.FillPath(brush, path);
+                    }
+
+                    using (var pen = new Pen(stroke))
+                    {
+                        g.DrawPath(pen, path);
+                    }
+                }
+
+                // 头部圆圈 + Logo
+                using (var brush = new SolidBrush(headFill))
+                {
+                    g.FillEllipse(brush, head);
+                }
+
+                using (var pen = new Pen(stroke))
+                {
+                    g.DrawEllipse(pen, head.X, head.Y, head.Width - 1, head.Height - 1);
+                }
+
+                int pad = Math.Max(3, head.Width / 7);
+                var dest = new Rectangle(
+                    head.X + pad,
+                    head.Y + pad,
+                    Math.Max(1, head.Width - pad * 2),
+                    Math.Max(1, head.Height - pad * 2));
+                DrawLogo(g, dest);
+            }
+            else
+            {
+                Rectangle ball = BallBounds;
+                using (var brush = new SolidBrush(fill))
+                {
+                    g.FillEllipse(brush, ball);
+                }
+
+                using (var pen = new Pen(stroke))
+                {
+                    g.DrawEllipse(pen, ball.X, ball.Y, ball.Width - 1, ball.Height - 1);
+                }
+
+                int pad = Math.Max(6, _ballDiameter / 6);
+                var dest = new Rectangle(
+                    ball.X + pad,
+                    ball.Y + pad,
+                    Math.Max(1, ball.Width - pad * 2),
+                    Math.Max(1, ball.Height - pad * 2));
+                DrawLogo(g, dest);
+            }
+        }
+
+        private void DrawLogo(Graphics g, Rectangle dest)
+        {
             if (_logo != null)
             {
                 g.DrawImage(_logo, dest);
@@ -184,6 +336,44 @@ namespace EasyWriteClient.Desktop
                 {
                     g.FillEllipse(brush, dest);
                 }
+            }
+        }
+
+        private void OnMouseEnter(object sender, EventArgs e)
+        {
+            if (_dock == DockSide.None || _dragging)
+            {
+                return;
+            }
+
+            if (!_hoverExpanded)
+            {
+                _hoverExpanded = true;
+                SnapToDockEdge();
+                ApplyHitRegion();
+                Invalidate();
+            }
+        }
+
+        private void OnMouseLeave(object sender, EventArgs e)
+        {
+            if (_dock == DockSide.None || _dragging)
+            {
+                return;
+            }
+
+            // Capture 拖拽时也会 Leave，忽略
+            if (Capture)
+            {
+                return;
+            }
+
+            if (_hoverExpanded)
+            {
+                _hoverExpanded = false;
+                SnapToDockEdge();
+                ApplyHitRegion();
+                Invalidate();
             }
         }
 
@@ -199,6 +389,14 @@ namespace EasyWriteClient.Desktop
             _dragMouseScreen = Control.MousePosition;
             _dragFormLocation = Location;
             Capture = true;
+
+            // 拖动中始终显示完整球
+            if (ShowAsCapsule || _hoverExpanded)
+            {
+                _hoverExpanded = true;
+                ApplyHitRegion();
+                Invalidate();
+            }
         }
 
         private void OnMouseMove(object sender, MouseEventArgs e)
@@ -214,12 +412,18 @@ namespace EasyWriteClient.Desktop
             if (!_moved && (Math.Abs(dx) > 3 || Math.Abs(dy) > 3))
             {
                 _moved = true;
+                // 开始拖离贴边：先按球态夹紧
+                _dock = DockSide.None;
+                _hoverExpanded = false;
+                ApplyHitRegion();
+                Invalidate();
             }
 
             if (_moved)
             {
                 Location = ClampFormLocation(
-                    new Point(_dragFormLocation.X + dx, _dragFormLocation.Y + dy));
+                    new Point(_dragFormLocation.X + dx, _dragFormLocation.Y + dy),
+                    forceBall: true);
             }
         }
 
@@ -237,8 +441,10 @@ namespace EasyWriteClient.Desktop
             if (wasDrag)
             {
                 _moved = false;
-                Location = ClampFormLocation(Location);
+                TrySnapDockAfterDrag();
                 WindowLayoutStore.SaveBallLocation(Location);
+                ApplyHitRegion();
+                Invalidate();
                 return;
             }
 
@@ -254,7 +460,6 @@ namespace EasyWriteClient.Desktop
                 return;
             }
 
-            // 延迟判定：点球拖动时 Activated 会早于 MouseDown，不能立刻展球
             BeginInvoke(new Action(() =>
             {
                 if (IsDisposed || !Visible)
@@ -267,6 +472,7 @@ namespace EasyWriteClient.Desktop
                     return;
                 }
 
+                // 任务栏激活：直接回主窗
                 _owner.LeaveFloatBall();
             }));
         }
@@ -280,35 +486,157 @@ namespace EasyWriteClient.Desktop
             }
         }
 
+        private void TrySnapDockAfterDrag()
+        {
+            Rectangle wa = Screen.FromPoint(
+                new Point(Left + _formSide / 2, Top + _formSide / 2)).WorkingArea;
+            Rectangle ball = BallBounds;
+            int ballLeft = Left + ball.X;
+            int ballRight = ballLeft + ball.Width;
+            int distLeft = ballLeft - wa.Left;
+            int distRight = wa.Right - ballRight;
+
+            if (distLeft <= _snapDistance && distLeft <= distRight)
+            {
+                _dock = DockSide.Left;
+                _hoverExpanded = false;
+                SnapToDockEdge();
+                return;
+            }
+
+            if (distRight <= _snapDistance)
+            {
+                _dock = DockSide.Right;
+                _hoverExpanded = false;
+                SnapToDockEdge();
+                return;
+            }
+
+            _dock = DockSide.None;
+            _hoverExpanded = false;
+            Location = ClampFormLocation(Location, forceBall: true);
+        }
+
+        private void InferDockFromLocation()
+        {
+            Rectangle wa = Screen.FromPoint(
+                new Point(Left + _formSide / 2, Top + _formSide / 2)).WorkingArea;
+            // 用窗中心相对工作区判断贴边（胶囊半露时球心可能在缘上）
+            int centerX = Left + _formSide / 2;
+            if (centerX - wa.Left <= _snapDistance + _capsuleWidth / 2)
+            {
+                _dock = DockSide.Left;
+            }
+            else if (wa.Right - centerX <= _snapDistance + _capsuleWidth / 2)
+            {
+                _dock = DockSide.Right;
+            }
+            else
+            {
+                Rectangle ball = BallBounds;
+                int ballLeft = Left + ball.X;
+                int ballRight = ballLeft + ball.Width;
+                if (ballLeft - wa.Left <= _snapDistance)
+                {
+                    _dock = DockSide.Left;
+                }
+                else if (wa.Right - ballRight <= _snapDistance)
+                {
+                    _dock = DockSide.Right;
+                }
+                else
+                {
+                    _dock = DockSide.None;
+                }
+            }
+        }
+
         /// <summary>
-        /// 按「可见圆」贴边夹紧（窗体比圆大，若按整窗夹紧则圆到不了屏幕边缘）。
+        /// 贴边：胶囊态时横向胶囊中线贴工作区左右缘（约一半在屏外）；悬停球态则整圆贴缘。
         /// </summary>
+        private void SnapToDockEdge()
+        {
+            if (_dock == DockSide.None)
+            {
+                return;
+            }
+
+            Rectangle wa = Screen.FromPoint(
+                new Point(Left + _formSide / 2, Top + _formSide / 2)).WorkingArea;
+            Rectangle visual = ShowAsCapsule ? CapsuleBounds : BallBounds;
+            int y = Math.Max(
+                wa.Top - visual.Y,
+                Math.Min(Top, wa.Bottom - visual.Y - visual.Height));
+
+            int x;
+            if (ShowAsCapsule)
+            {
+                // 半露出：胶囊水平中线落在屏幕缘上
+                if (_dock == DockSide.Left)
+                {
+                    x = wa.Left - visual.X - visual.Width / 2;
+                }
+                else
+                {
+                    x = wa.Right - visual.X - visual.Width / 2;
+                }
+            }
+            else if (_dock == DockSide.Left)
+            {
+                x = wa.Left - visual.X;
+            }
+            else
+            {
+                x = wa.Right - visual.X - visual.Width;
+            }
+
+            Location = new Point(x, y);
+        }
+
         public Point ClampFormLocation(Point formLocation)
         {
-            Rectangle ball = BallBounds;
+            return ClampFormLocation(formLocation, forceBall: false);
+        }
+
+        private Point ClampFormLocation(Point formLocation, bool forceBall)
+        {
+            bool asCapsule = !forceBall && ShowAsCapsule;
+            Rectangle visual = asCapsule ? CapsuleBounds : BallBounds;
             Rectangle wa = Screen.FromPoint(
                 new Point(formLocation.X + _formSide / 2, formLocation.Y + _formSide / 2)).WorkingArea;
 
-            // 允许窗体超出工作区，只要可见圆仍在工作区内
-            int minLeft = wa.Left - ball.X;
-            int maxLeft = wa.Right - ball.X - ball.Width;
-            int minTop = wa.Top - ball.Y;
-            int maxTop = wa.Bottom - ball.Y - ball.Height;
+            int minLeft;
+            int maxLeft;
+            if (asCapsule)
+            {
+                // 允许半个胶囊出屏（贴边迷你态）
+                minLeft = wa.Left - visual.X - visual.Width / 2;
+                maxLeft = wa.Right - visual.X - visual.Width / 2;
+            }
+            else
+            {
+                minLeft = wa.Left - visual.X;
+                maxLeft = wa.Right - visual.X - visual.Width;
+            }
+
+            int minTop = wa.Top - visual.Y;
+            int maxTop = wa.Bottom - visual.Y - visual.Height;
 
             int x = Math.Max(minLeft, Math.Min(formLocation.X, maxLeft));
             int y = Math.Max(minTop, Math.Min(formLocation.Y, maxTop));
             return new Point(x, y);
         }
 
-        /// <summary>默认：可见圆贴工作区右侧并垂直居中。</summary>
+        /// <summary>默认贴工作区右侧，横向半露胶囊。</summary>
         public Point DefaultLocationOnScreen(Screen screen)
         {
+            _dock = DockSide.Right;
+            _hoverExpanded = false;
             Rectangle wa = (screen ?? Screen.PrimaryScreen).WorkingArea;
-            Rectangle ball = BallBounds;
-            int margin = Math.Max(0, (int)Math.Round(2 * _dpiScale));
-            int formLeft = wa.Right - ball.X - ball.Width - margin;
-            int formTop = wa.Top + Math.Max(0, (wa.Height - ball.Height) / 2) - ball.Y;
-            return ClampFormLocation(new Point(formLeft, formTop));
+            Rectangle visual = CapsuleBounds;
+            int formLeft = wa.Right - visual.X - visual.Width / 2;
+            int formTop = wa.Top + Math.Max(0, (wa.Height - visual.Height) / 2) - visual.Y;
+            return new Point(formLeft, formTop);
         }
     }
 }
