@@ -12,6 +12,7 @@ namespace EasyWriteClient.Desktop
     {
         private readonly MainForm _owner;
         private readonly Image _logo;
+        private readonly float _dpiScale;
         private readonly int _ballDiameter;
         private readonly int _formSide;
         private Point _dragMouseScreen;
@@ -23,8 +24,8 @@ namespace EasyWriteClient.Desktop
         public FloatBallForm(MainForm owner, float dpiScale)
         {
             _owner = owner ?? throw new ArgumentNullException(nameof(owner));
-            float scale = dpiScale <= 0 ? 1f : dpiScale;
-            _ballDiameter = Math.Max(40, (int)Math.Round(52 * scale));
+            _dpiScale = dpiScale <= 0 ? 1f : dpiScale;
+            _ballDiameter = Math.Max(40, (int)Math.Round(52 * _dpiScale));
             int minSide = Math.Max(
                 SystemInformation.MinimumWindowSize.Width,
                 SystemInformation.MinimumWindowSize.Height);
@@ -217,7 +218,8 @@ namespace EasyWriteClient.Desktop
 
             if (_moved)
             {
-                Location = new Point(_dragFormLocation.X + dx, _dragFormLocation.Y + dy);
+                Location = ClampFormLocation(
+                    new Point(_dragFormLocation.X + dx, _dragFormLocation.Y + dy));
             }
         }
 
@@ -235,7 +237,7 @@ namespace EasyWriteClient.Desktop
             if (wasDrag)
             {
                 _moved = false;
-                ClampToWorkingArea();
+                Location = ClampFormLocation(Location);
                 WindowLayoutStore.SaveBallLocation(Location);
                 return;
             }
@@ -278,12 +280,35 @@ namespace EasyWriteClient.Desktop
             }
         }
 
-        private void ClampToWorkingArea()
+        /// <summary>
+        /// 按「可见圆」贴边夹紧（窗体比圆大，若按整窗夹紧则圆到不了屏幕边缘）。
+        /// </summary>
+        public Point ClampFormLocation(Point formLocation)
         {
-            Rectangle wa = Screen.FromControl(this).WorkingArea;
-            int x = Math.Max(wa.Left, Math.Min(Left, wa.Right - Width));
-            int y = Math.Max(wa.Top, Math.Min(Top, wa.Bottom - Height));
-            Location = new Point(x, y);
+            Rectangle ball = BallBounds;
+            Rectangle wa = Screen.FromPoint(
+                new Point(formLocation.X + _formSide / 2, formLocation.Y + _formSide / 2)).WorkingArea;
+
+            // 允许窗体超出工作区，只要可见圆仍在工作区内
+            int minLeft = wa.Left - ball.X;
+            int maxLeft = wa.Right - ball.X - ball.Width;
+            int minTop = wa.Top - ball.Y;
+            int maxTop = wa.Bottom - ball.Y - ball.Height;
+
+            int x = Math.Max(minLeft, Math.Min(formLocation.X, maxLeft));
+            int y = Math.Max(minTop, Math.Min(formLocation.Y, maxTop));
+            return new Point(x, y);
+        }
+
+        /// <summary>默认：可见圆贴工作区右侧并垂直居中。</summary>
+        public Point DefaultLocationOnScreen(Screen screen)
+        {
+            Rectangle wa = (screen ?? Screen.PrimaryScreen).WorkingArea;
+            Rectangle ball = BallBounds;
+            int margin = Math.Max(0, (int)Math.Round(2 * _dpiScale));
+            int formLeft = wa.Right - ball.X - ball.Width - margin;
+            int formTop = wa.Top + Math.Max(0, (wa.Height - ball.Height) / 2) - ball.Y;
+            return ClampFormLocation(new Point(formLeft, formTop));
         }
     }
 }

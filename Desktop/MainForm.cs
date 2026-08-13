@@ -394,20 +394,13 @@ namespace EasyWriteClient.Desktop
         private Point ResolveBallLocation()
         {
             FloatBallForm ball = EnsureFloatBall();
-            int side = ball.FormSide;
-            Rectangle wa = Screen.FromControl(this).WorkingArea;
             Point? saved = WindowLayoutStore.LoadBallLocation();
             if (saved.HasValue)
             {
-                int x = Math.Max(wa.Left, Math.Min(saved.Value.X, wa.Right - side));
-                int y = Math.Max(wa.Top, Math.Min(saved.Value.Y, wa.Bottom - side));
-                return new Point(x, y);
+                return ball.ClampFormLocation(saved.Value);
             }
 
-            int margin = Math.Max(8, (int)Math.Round(12 * _dpiScale));
-            int left = wa.Right - side - margin;
-            int top = wa.Top + Math.Max(0, (wa.Height - side) / 2);
-            return new Point(left, top);
+            return ball.DefaultLocationOnScreen(Screen.FromControl(this));
         }
 
         /// <summary>
