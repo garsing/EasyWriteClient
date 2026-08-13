@@ -210,18 +210,21 @@ namespace EasyWriteClient.Desktop
             }
         }
 
-        /// <summary>胶囊朝内一端的 Logo 圆（直径=胶囊高）。</summary>
+        /// <summary>胶囊朝内一端的 Logo 圆（略小于胶囊高，避免贴边溢出）。</summary>
         private Rectangle CapsuleHeadBounds
         {
             get
             {
                 Rectangle cap = CapsuleBounds;
+                int head = Math.Max(12, (int)Math.Round(_capsuleHeight * 0.68));
+                int y = cap.Y + (_capsuleHeight - head) / 2;
+                int edgePad = Math.Max(2, (_capsuleHeight - head) / 2);
                 if (_dock == DockSide.Left)
                 {
-                    return new Rectangle(cap.Right - _capsuleHeight, cap.Y, _capsuleHeight, _capsuleHeight);
+                    return new Rectangle(cap.Right - head - edgePad, y, head, head);
                 }
 
-                return new Rectangle(cap.X, cap.Y, _capsuleHeight, _capsuleHeight);
+                return new Rectangle(cap.X + edgePad, y, head, head);
             }
         }
 
@@ -318,7 +321,8 @@ namespace EasyWriteClient.Desktop
                     g.DrawEllipse(pen, head.X, head.Y, head.Width - 1, head.Height - 1);
                 }
 
-                int pad = Math.Max(3, head.Width / 7);
+                // Logo 再略缩一圈，避免贴满圆头显得溢出
+                int pad = Math.Max(3, head.Width / 5);
                 var dest = new Rectangle(
                     head.X + pad,
                     head.Y + pad,
