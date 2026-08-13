@@ -21,13 +21,9 @@ namespace WordAddIn1
             string targetDocumentName,
             string targetKnowledgeBaseUuid,
             string targetStorageDocUuid,
-            string tableId = null)
+            string tableId = null,
+            Word.Document document = null)
         {
-            if (wordApp == null)
-            {
-                return new ToolResult { Success = false, Error = "Word 应用程序不可用" };
-            }
-
             string subtype = (kbDetailedSubtype ?? "").Trim();
             if (string.IsNullOrEmpty(subtype))
             {
@@ -64,19 +60,39 @@ namespace WordAddIn1
                 return new ToolResult { Success = false, Error = "用户未登录，无法调用知识库接口" };
             }
 
-            Word.Document doc;
-            try
+            Word.Document doc = document;
+            if (doc == null)
             {
-                doc = wordApp.ActiveDocument;
-            }
-            catch
-            {
-                doc = null;
+                if (wordApp == null)
+                {
+                    return new ToolResult { Success = false, Error = "Word 应用程序不可用" };
+                }
+
+                try
+                {
+                    doc = wordApp.ActiveDocument;
+                }
+                catch
+                {
+                    doc = null;
+                }
             }
 
             if (doc == null)
             {
                 return new ToolResult { Success = false, Error = "没有活动的 Word 文档" };
+            }
+
+            if (wordApp == null)
+            {
+                try
+                {
+                    wordApp = doc.Application;
+                }
+                catch
+                {
+                    wordApp = null;
+                }
             }
 
             DocumentState.BindAndActivate(doc);

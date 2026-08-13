@@ -22,13 +22,9 @@ namespace WordAddIn1
             string targetDocumentName,
             string targetKnowledgeBaseUuid,
             string targetStorageDocUuid,
-            string tableId = null)
+            string tableId = null,
+            Word.Document document = null)
         {
-            if (wordApp == null)
-            {
-                return new ToolResult { Success = false, Error = "Word 应用程序不可用" };
-            }
-
             string cid = (clusterId ?? "").Trim();
             bool hasClusterId = !string.IsNullOrEmpty(cid);
             bool hasExplicitParaFormat = explicitParaFormat != null && explicitParaFormat.Count > 0;
@@ -84,19 +80,39 @@ namespace WordAddIn1
                 return new ToolResult { Success = false, Error = "apply 仅支持 P_ 段落编码，不支持 S_" };
             }
 
-            Word.Document doc;
-            try
+            Word.Document doc = document;
+            if (doc == null)
             {
-                doc = wordApp.ActiveDocument;
-            }
-            catch
-            {
-                doc = null;
+                if (wordApp == null)
+                {
+                    return new ToolResult { Success = false, Error = "Word 应用程序不可用" };
+                }
+
+                try
+                {
+                    doc = wordApp.ActiveDocument;
+                }
+                catch
+                {
+                    doc = null;
+                }
             }
 
             if (doc == null)
             {
                 return new ToolResult { Success = false, Error = "没有活动的 Word 文档" };
+            }
+
+            if (wordApp == null)
+            {
+                try
+                {
+                    wordApp = doc.Application;
+                }
+                catch
+                {
+                    wordApp = null;
+                }
             }
 
             DocumentState.BindAndActivate(doc);

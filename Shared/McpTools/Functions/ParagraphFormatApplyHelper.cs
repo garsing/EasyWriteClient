@@ -11,26 +11,42 @@ namespace WordAddIn1
     {
         public static Task<ToolResult> RunApplyAsync(
             Word.Application wordApp,
-            Dictionary<string, object> args)
+            Dictionary<string, object> args,
+            Word.Document document = null)
         {
-            if (wordApp == null)
+            Word.Document doc = document;
+            if (doc == null)
             {
-                return Task.FromResult(new ToolResult { Success = false, Error = "Word 应用程序不可用" });
-            }
+                if (wordApp == null)
+                {
+                    return Task.FromResult(new ToolResult { Success = false, Error = "Word 应用程序不可用" });
+                }
 
-            Word.Document doc;
-            try
-            {
-                doc = wordApp.ActiveDocument;
-            }
-            catch
-            {
-                doc = null;
+                try
+                {
+                    doc = wordApp.ActiveDocument;
+                }
+                catch
+                {
+                    doc = null;
+                }
             }
 
             if (doc == null)
             {
                 return Task.FromResult(new ToolResult { Success = false, Error = "没有活动的 Word 文档" });
+            }
+
+            if (wordApp == null)
+            {
+                try
+                {
+                    wordApp = doc.Application;
+                }
+                catch
+                {
+                    wordApp = null;
+                }
             }
 
             DocumentState.BindAndActivate(doc);

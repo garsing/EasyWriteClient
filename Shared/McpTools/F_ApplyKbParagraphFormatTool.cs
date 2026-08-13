@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
     /// KB 段落版式套用：cluster_id 或 explicit para_format → P_ 段 apply。
+    /// 文档触点经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_ApplyKbParagraphFormatTool
     {
@@ -18,11 +20,6 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (wordApplication == null)
-                    {
-                        return new ToolResult { Success = false, Error = "Word 应用程序不可用" };
-                    }
-
                     string targetParagraphCodes = args.TryGetValue("target_paragraph_codes", out object codesObj)
                                                    && codesObj != null
                         ? codesObj.ToString()?.Trim() ?? ""
@@ -48,16 +45,27 @@ namespace WordAddIn1
 
                     Dictionary<string, object> explicitParaFormat = ParseNestedObject(args, "para_format");
 
-                    dynamic wordApp = wordApplication;
-                    Word.Application app = wordApp as Word.Application;
-                    if (app == null)
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "无法获取 Word.Application" };
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[F_apply_kb_paragraph_format] resolve failed: {resolveError?.Error}; " +
+                            $"arg.channel_id={ChannelContext.TryGetChannelIdFromParameters(args) ?? "(null)"}; " +
+                            $"default={ChannelRegistry.DefaultChannelId ?? "(null)"}");
+                        return resolveError;
                     }
 
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out _, out ToolResult resolveError))
+                    Word.Document doc = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_apply_kb_paragraph_format] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
+
+                    Word.Application app = ResolveApplication(wordApplication, doc);
+                    if (app == null)
                     {
-                        return resolveError;
+                        return new ToolResult { Success = false, Error = "无法获取文档 Application（Word/WPS）" };
                     }
 
                     return await KbParagraphFormatApplyHelper.RunApplyAsync(
@@ -68,13 +76,31 @@ namespace WordAddIn1
                         targetDocumentName,
                         targetKnowledgeBaseUuid,
                         targetStorageDocUuid,
-                        tableId);
+                        tableId,
+                        doc);
                 }
                 catch (Exception ex)
                 {
                     return new ToolResult { Success = false, Error = $"apply_kb_paragraph_format 失败: {ex.Message}" };
                 }
             };
+        }
+
+        private static Word.Application ResolveApplication(object wordApplication, Word.Document doc)
+        {
+            try
+            {
+                Word.Application fromDoc = doc?.Application;
+                if (fromDoc != null)
+                {
+                    return fromDoc;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return wordApplication as Word.Application;
         }
 
         private static Dictionary<string, object> ParseNestedObject(Dictionary<string, object> args, string key)

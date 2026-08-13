@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 using WordAddIn1.DocumentMapping.CodeResolve;
 
@@ -11,6 +12,7 @@ namespace WordAddIn1
     /// <summary>
     /// Phase 2/3：将格式应用到 target_codes（charFormatOnly，不改文字）。
     /// 支持 inherit_from 与 mode=explicit；不支持 match_role / set_Style。
+    /// 文档触点经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_ApplyDocumentFormatTool
     {
@@ -32,10 +34,22 @@ namespace WordAddIn1
                     string logPath = EasyWriteLog.BeginSession("apply_document_format");
                     FormatContextHelper.DbgLog($"会话日志: {logPath}");
 
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError))
                     {
-                        return Done(false, resolveError.Error);
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[F_apply_document_format] resolve failed: {resolveError?.Error}; " +
+                            $"arg.channel_id={ChannelContext.TryGetChannelIdFromParameters(args) ?? "(null)"}; " +
+                            $"default={ChannelRegistry.DefaultChannelId ?? "(null)"}");
+                        return Done(false, resolveError?.Error ?? "无法解析文档渠道");
                     }
+
+                    Word.Document doc = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_apply_document_format] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     string validationError = ValidateModeArgs(args, out string mode, out string inheritFrom,
                         out Dictionary<string, object> charFormat, out Dictionary<string, object> paraFormat);
