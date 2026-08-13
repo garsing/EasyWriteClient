@@ -81,19 +81,14 @@ namespace WordAddIn1
             string targetKnowledgeBaseUuid = null,
             string targetStorageDocUuid = null,
             string pageLayoutContentMode = "auto",
-            bool applyPageSetup = true)
+            bool applyPageSetup = true,
+            Word.Document document = null)
         {
             var totalSw = FtDebugEnabled ? Stopwatch.StartNew() : null;
             FtLog(
                 $"BEGIN RunFormatTransferAsync storage={targetStorageDocUuid ?? ""} " +
                 $"doc={targetDocumentName ?? ""} kb={targetKnowledgeBaseUuid ?? ""} " +
                 $"page_layout_content_mode={pageLayoutContentMode ?? "auto"} apply_page_setup={applyPageSetup}");
-
-            if (wordApp == null)
-            {
-                FtLog("ABORT wordApp=null");
-                return new ToolResult { Success = false, Error = "Word 应用程序不可用" };
-            }
 
             var storageUuid = (targetStorageDocUuid ?? "").Trim();
             var docName = (targetDocumentName ?? "").Trim();
@@ -118,19 +113,28 @@ namespace WordAddIn1
                 return new ToolResult { Success = false, Error = "用户未登录，无法调用知识库接口" };
             }
 
-            Word.Document doc = null;
+            Word.Document doc = document;
             try
             {
-                using (new FtStep("ActiveDocument"))
+                if (doc == null)
                 {
-                    try
+                    if (wordApp == null)
                     {
-                        doc = wordApp.ActiveDocument;
+                        FtLog("ABORT wordApp=null");
+                        return new ToolResult { Success = false, Error = "Word 应用程序不可用" };
                     }
-                    catch (Exception ex)
+
+                    using (new FtStep("ActiveDocument"))
                     {
-                        FtLog($"ActiveDocument exception: {ex.Message}");
-                        doc = null;
+                        try
+                        {
+                            doc = wordApp.ActiveDocument;
+                        }
+                        catch (Exception ex)
+                        {
+                            FtLog($"ActiveDocument exception: {ex.Message}");
+                            doc = null;
+                        }
                     }
                 }
 
@@ -138,6 +142,19 @@ namespace WordAddIn1
                 {
                     FtLog("ABORT no active document");
                     return new ToolResult { Success = false, Error = "无活动文档" };
+                }
+
+                if (wordApp == null)
+                {
+                    try
+                    {
+                        wordApp = doc.Application;
+                    }
+                    catch (Exception ex)
+                    {
+                        FtLog($"doc.Application exception: {ex.Message}");
+                        wordApp = null;
+                    }
                 }
 
                 string docNameForLog = "";

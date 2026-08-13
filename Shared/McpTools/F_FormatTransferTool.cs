@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
     /// 格式转移工具：粗迁页布局 + body（含表内文字）+ 标题 1～4；表 standard 粗迁默认关闭。
+    /// 文档触点经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_FormatTransferTool
     {
@@ -18,11 +20,6 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (wordApplication == null)
-                    {
-                        return new ToolResult { Success = false, Error = "Word 应用程序不可用" };
-                    }
-
                     string targetStorageDocUuid = args.TryGetValue("target_storage_doc_uuid", out object sidObj) && sidObj != null
                         ? sidObj.ToString()?.Trim() ?? ""
                         : "";
@@ -42,21 +39,32 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = "缺少 target_storage_doc_uuid 或 target_document_name" };
                     }
 
-                    dynamic wordApp = wordApplication;
-                    Word.Application app = wordApp as Word.Application;
-                    if (app == null)
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError))
                     {
-                        return new ToolResult { Success = false, Error = "无法获取 Word.Application" };
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[F_format_transfer] resolve failed: {resolveError?.Error}; " +
+                            $"arg.channel_id={ChannelContext.TryGetChannelIdFromParameters(args) ?? "(null)"}; " +
+                            $"default={ChannelRegistry.DefaultChannelId ?? "(null)"}");
+                        return resolveError;
                     }
 
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out _, out ToolResult resolveError))
+                    Word.Document doc = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_format_transfer] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
+
+                    Word.Application app = ResolveApplication(wordApplication, doc);
+                    if (app == null)
                     {
-                        return resolveError;
+                        return new ToolResult { Success = false, Error = "无法获取文档 Application（Word/WPS）" };
                     }
 
                     EasyWriteDiagnostics.Log(
                         DebugCategory.FormatTransfer,
-                        $"[F_format_transfer] invoke storage={targetStorageDocUuid} doc={targetDocumentName} " +
+                        $"[F_format_transfer] invoke host={docHandle.HostName} storage={targetStorageDocUuid} doc={targetDocumentName} " +
                         $"kb={targetKnowledgeBaseUuid} page_layout_content_mode={pageLayoutContentMode} " +
                         $"apply_page_setup={applyPageSetup}");
 
@@ -66,7 +74,8 @@ namespace WordAddIn1
                         targetKnowledgeBaseUuid,
                         targetStorageDocUuid,
                         pageLayoutContentMode,
-                        applyPageSetup).ConfigureAwait(false);
+                        applyPageSetup,
+                        doc).ConfigureAwait(false);
 
                     EasyWriteDiagnostics.Log(
                         DebugCategory.FormatTransfer,
@@ -82,6 +91,23 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = $"格式转移工具异常: {ex.Message}" };
                 }
             };
+        }
+
+        private static Word.Application ResolveApplication(object wordApplication, Word.Document doc)
+        {
+            try
+            {
+                Word.Application fromDoc = doc?.Application;
+                if (fromDoc != null)
+                {
+                    return fromDoc;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return wordApplication as Word.Application;
         }
 
         private static bool GetBoolArg(Dictionary<string, object> args, string key, bool defaultValue)

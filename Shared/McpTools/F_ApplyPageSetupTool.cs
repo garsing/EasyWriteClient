@@ -2,12 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 应用页面设置：page_setup（边距/纸张）与/或页眉页脚（KB mode）。仅活动文档。
+    /// 应用页面设置：page_setup（边距/纸张）与/或页眉页脚（KB mode）。
+    /// 文档触点经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_ApplyPageSetupTool
     {
@@ -19,17 +21,22 @@ namespace WordAddIn1
             {
                 try
                 {
-                    dynamic wordAppDyn = wordApplication;
-                    Word.Application app = wordAppDyn as Word.Application;
-                    if (app == null)
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError))
                     {
-                        return Fail("无法获取 Word.Application");
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[F_apply_page_setup] resolve failed: {resolveError?.Error}; " +
+                            $"arg.channel_id={ChannelContext.TryGetChannelIdFromParameters(args) ?? "(null)"}; " +
+                            $"default={ChannelRegistry.DefaultChannelId ?? "(null)"}");
+                        return Fail(resolveError?.Error ?? "无法解析文档渠道");
                     }
 
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
-                    {
-                        return Fail(resolveError.Error);
-                    }
+                    Word.Document doc = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_apply_page_setup] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     bool applyPageSetup = GetBoolArg(args, "apply_page_setup", true);
                     bool applyHeadersFooters = GetBoolArg(args, "apply_headers_footers", true);
