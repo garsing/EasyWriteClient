@@ -3,13 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
     /// 获取Word文档结构信息工具（已下线，不再 Register；请用 F_get_document_content）
-    /// 获取Word文档的结构信息，包括段落、表格、图片的位置
+    /// 代码已按 DocumentHost 迁入，便于日后重新启用；只读不抢前台。
     /// </summary>
     public static class F_GetDocumentStructureTool
     {
@@ -26,10 +27,19 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[DEBUG] get_document_structure工具开始执行");
 
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError,
+                            activateDocument: false))
                     {
                         return resolveError;
                     }
+
+                    Word.Document document = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_get_document_structure] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     bool includeContent = args.ContainsKey("include_content") && Convert.ToBoolean(args["include_content"]);
                     int maxPreviewLength = args.ContainsKey("max_preview_length") ? Convert.ToInt32(args["max_preview_length"]) : 50;

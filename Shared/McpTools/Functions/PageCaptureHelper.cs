@@ -139,17 +139,36 @@ namespace WordAddIn1
             public string DocTitle { get; set; }
         }
 
-        public static DocumentPageInfo GetDocumentPageInfo(Word.Application wordApp)
+        public static DocumentPageInfo GetDocumentPageInfo(
+            Word.Application wordApp,
+            Word.Document document = null)
         {
-            if (wordApp == null)
+            Word.Document doc = document;
+            if (doc == null)
             {
-                throw new InvalidOperationException("Word应用程序不可用");
+                if (wordApp == null)
+                {
+                    throw new InvalidOperationException("Word应用程序不可用");
+                }
+
+                doc = wordApp.ActiveDocument;
             }
 
-            Word.Document doc = wordApp.ActiveDocument;
             if (doc == null)
             {
                 throw new InvalidOperationException("没有活动的 Word 文档");
+            }
+
+            if (wordApp == null)
+            {
+                try
+                {
+                    wordApp = doc.Application;
+                }
+                catch (Exception)
+                {
+                    wordApp = null;
+                }
             }
 
             int totalPages = doc.ComputeStatistics(Word.WdStatistic.wdStatisticPages);
@@ -158,7 +177,7 @@ namespace WordAddIn1
                 totalPages = 1;
             }
 
-            int cursorPage = GetCursorPageNumber(wordApp);
+            int cursorPage = GetCursorPageNumber(wordApp, doc);
             if (cursorPage < 1)
             {
                 cursorPage = 1;
@@ -177,15 +196,40 @@ namespace WordAddIn1
             };
         }
 
-        private static int GetCursorPageNumber(Word.Application wordApp)
+        private static int GetCursorPageNumber(Word.Application wordApp, Word.Document doc = null)
         {
-            object pageObj = wordApp.Selection?.Information[Word.WdInformation.wdActiveEndPageNumber];
-            if (pageObj == null)
+            try
             {
-                return 1;
+                if (wordApp?.Selection != null)
+                {
+                    object pageObj = wordApp.Selection.Information[Word.WdInformation.wdActiveEndPageNumber];
+                    if (pageObj != null)
+                    {
+                        return Convert.ToInt32(pageObj);
+                    }
+                }
+            }
+            catch (Exception)
+            {
             }
 
-            return Convert.ToInt32(pageObj);
+            // 无选区时回退文档起始页，避免只读路径强依赖 ActiveDocument
+            try
+            {
+                if (doc?.Content != null)
+                {
+                    object pageObj = doc.Content.Information[Word.WdInformation.wdActiveEndPageNumber];
+                    if (pageObj != null)
+                    {
+                        return Convert.ToInt32(pageObj);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return 1;
         }
 
         private static int ExportPageToPdf(Word.Application wordApp, Word.Document doc, string pdfPath, int pageNumber)

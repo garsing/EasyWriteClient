@@ -8,7 +8,7 @@ using Newtonsoft.Json;
 
 using Newtonsoft.Json.Linq;
 
-using Word = Microsoft.Office.Interop.Word;
+using WordAddIn1.DocumentHost;
 
 
 
@@ -21,6 +21,8 @@ namespace WordAddIn1
     /// 获取当前文档指定分块的 display_content 工具
 
     /// 根据 chunk_idx 从 API 获取当前文档（DocumentState）对应分块的 display_content
+
+    /// 渠道解析经 <see cref="DocumentHostAdapter"/>（Word/WPS）；只读不抢前台。
 
     /// </summary>
 
@@ -48,13 +50,22 @@ namespace WordAddIn1
 
                 {
 
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
+                    // 只读：绑定渠道会话即可，勿 Activate 文档窗口
+                    if (!DocumentHostAdapter.TryResolveContext(
+                            args,
+                            wordApplication,
+                            out DocumentSessionContext context,
+                            out ToolResult resolveError,
+                            activateDocument: false))
 
                     {
 
                         return resolveError;
 
                     }
+
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_get_curr_doc_chunk_display_content] host={context.Kind.ToString().ToLowerInvariant()}, channel_id={context.ChannelId}");
 
 
 

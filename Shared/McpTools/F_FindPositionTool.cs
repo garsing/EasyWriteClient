@@ -2,13 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 位置查找工具
-    /// 提供两种方式查找位置：文本搜索（返回文本结尾处的位置）和光标位置
+    /// 位置查找工具（当前未 Register；Agent 暂不可用）。
+    /// 经 DocumentHost；只读不抢前台。
     /// </summary>
     public static class F_FindPositionTool
     {
@@ -25,15 +26,32 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[DEBUG] find_position工具开始执行");
 
-                    Word.Application app = wordApplication as Word.Application;
-                    if (app == null)
-                    {
-                        return new ToolResult { Success = false, Error = "Word应用程序未初始化" };
-                    }
-
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document doc, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError,
+                            activateDocument: false))
                     {
                         return resolveError;
+                    }
+
+                    Word.Document doc = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_find_position] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
+
+                    Word.Application app = null;
+                    try
+                    {
+                        app = doc.Application;
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    if (app == null)
+                    {
+                        app = wordApplication as Word.Application;
                     }
 
                     string mode = args.ContainsKey("mode") ? args["mode"]?.ToString() : "text_search";
@@ -41,15 +59,15 @@ namespace WordAddIn1
                     if (mode == "cursor")
                     {
                         // 获取光标位置
-                        int cursorPosition = app.Selection?.Start ?? doc.Content.Start;
+                        int cursorPosition = app?.Selection?.Start ?? doc.Content.Start;
                         
                         var result = new
                         {
                             mode = "cursor",
                             position = cursorPosition,
-                            selection_start = app.Selection?.Start ?? cursorPosition,
-                            selection_end = app.Selection?.End ?? cursorPosition,
-                            has_selection = app.Selection != null && app.Selection.Start != app.Selection.End
+                            selection_start = app?.Selection?.Start ?? cursorPosition,
+                            selection_end = app?.Selection?.End ?? cursorPosition,
+                            has_selection = app?.Selection != null && app.Selection.Start != app.Selection.End
                         };
 
                         System.Diagnostics.Debug.WriteLine($"[DEBUG] 光标位置: {cursorPosition}");
