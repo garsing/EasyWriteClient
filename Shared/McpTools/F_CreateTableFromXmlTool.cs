@@ -6,12 +6,13 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 从XML配置文件创建Word表格的工具
+    /// 从XML配置文件创建Word表格的工具。经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_CreateTableFromXmlTool
     {
@@ -79,10 +80,18 @@ namespace WordAddIn1
                     LogPhase("开始");
                     System.Diagnostics.Debug.WriteLine("[DEBUG] 开始创建表格");
 
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError))
                     {
                         return resolveError;
                     }
+
+                    Word.Document document = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_create_table_from_xml] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     // 获取文件名
                     string filename = args.ContainsKey("filename") ? args["filename"]?.ToString() : "";

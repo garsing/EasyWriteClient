@@ -13,12 +13,12 @@ using YamlDotNet.Core.Events;
 using YamlDotNet.Serialization.TypeInspectors;
 using YamlDotNet.Serialization.TypeResolvers;
 using Newtonsoft.Json;
+using WordAddIn1.DocumentHost;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 表格格式提取工具
-    /// 从Word文档中提取表格格式并保存为YAML配置文件
+    /// 表格格式提取工具（只读）。经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_ExtractTableFormatTool
     {
@@ -68,10 +68,19 @@ namespace WordAddIn1
                 {
                     // // System.Diagnostics.Debug.WriteLine("[DEBUG] extract_table_format工具开始执行");
 
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError,
+                            activateDocument: false))
                     {
                         return resolveError;
                     }
+
+                    Word.Document document = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_extract_table_format] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     // 首先运行 WordReader.ReadWord 来生成表格编号和顺序序号映射表
                     try

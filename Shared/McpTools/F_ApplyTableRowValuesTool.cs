@@ -2,12 +2,13 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 按行槽位写入表格数据：整行 { row, values } 或 anchor 后覆盖 { row, anchor?, index?, values }。
+    /// 按行槽位写入表格数据。经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_ApplyTableRowValuesTool
     {
@@ -19,10 +20,19 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult channelResolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult channelResolveError))
                     {
                         return channelResolveError;
                     }
+
+                    Word.Document document = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_apply_table_row_values] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
+
                     string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
                     if (string.IsNullOrWhiteSpace(tableId))
                     {

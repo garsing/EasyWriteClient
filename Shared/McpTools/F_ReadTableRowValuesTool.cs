@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 读取表格整表行值：每行 { row, values }，槽位与 merge 规则见 TableRowValuesHelper。
+    /// 读取表格整表行值（只读）。经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_ReadTableRowValuesTool
     {
@@ -18,10 +19,20 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult channelResolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult channelResolveError,
+                            activateDocument: false))
                     {
                         return channelResolveError;
                     }
+
+                    Word.Document document = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_read_table_row_values] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
+
                     string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
                     if (string.IsNullOrWhiteSpace(tableId))
                     {

@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 对 Word 文档中指定表格做展示优化（列宽 + 全表字号）。
+    /// 对指定表格做展示优化（列宽 + 全表字号）。经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_OptimizeTableDisplayTool
     {
@@ -18,10 +19,18 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult channelResolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult channelResolveError))
                     {
                         return channelResolveError;
                     }
+
+                    Word.Document document = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_optimize_table_display] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
                     if (string.IsNullOrEmpty(tableId))

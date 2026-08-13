@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 从 Word 文档提取表格 Data（Properties + Data），不含 General。
+    /// 从文档提取表格 Data（Properties + Data），不含 General（当前未 Register）。
+    /// 经 <see cref="DocumentHostAdapter"/>；只读不抢前台。
     /// </summary>
     public static class F_ExtractTableDataTool
     {
@@ -18,10 +20,19 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult resolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult resolveError,
+                            activateDocument: false))
                     {
                         return resolveError;
                     }
+
+                    Word.Document document = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_extract_table_data] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     try
                     {

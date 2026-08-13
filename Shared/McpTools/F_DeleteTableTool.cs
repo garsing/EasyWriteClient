@@ -2,12 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 按 table_id 删除整张 Word 表格；删后光标落原表后沿，供 F_create_table_from_xml 重建。
+    /// 按 table_id 删除整张表格；删后光标落原表后沿，供 F_create_table_from_xml 重建。
+    /// 经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_DeleteTableTool
     {
@@ -19,10 +21,18 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!ChannelDocument.TryResolve(args, wordApplication, out Word.Document document, out ToolResult channelResolveError))
+                    if (!DocumentHostAdapter.TryResolveInteropDocument(
+                            args,
+                            wordApplication,
+                            out InteropDocumentHandle docHandle,
+                            out ToolResult channelResolveError))
                     {
                         return channelResolveError;
                     }
+
+                    Word.Document document = docHandle.Document;
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[F_delete_table] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
                     if (string.IsNullOrWhiteSpace(tableId))
