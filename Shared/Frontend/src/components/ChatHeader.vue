@@ -1,5 +1,5 @@
 <template>
-  <div class="chat-header">
+  <div class="chat-header" :class="{ 'chat-header--compact': variant === 'compact' }">
     <div class="header-buttons">
       <!-- 插件：知识库；缩小版：历史对话弹出 -->
       <button
@@ -129,5 +129,19 @@ const handleKnowledgeBase = async () => {
   width: 24px;
   height: 24px;
   object-fit: contain;
+}
+
+/* 缩小版顶栏：略矮；图标约等于正文（~14–16px）的视觉大小 */
+.chat-header--compact {
+  padding: 4px 12px;
+}
+
+.chat-header--compact .header-button {
+  padding: 1px;
+}
+
+.chat-header--compact .button-icon {
+  width: 20px;
+  height: 20px;
 }
 </style>
