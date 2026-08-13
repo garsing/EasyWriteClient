@@ -6,17 +6,16 @@ using System.Windows.Forms;
 namespace EasyWriteClient.Desktop
 {
     /// <summary>
-    /// 缩小版闲置后的圆形悬浮球（独立小窗）；点击或任务栏激活 → 展回主窗。
+    /// 缩小版闲置后的圆形悬浮球（独立小窗）；可拖动；点击或任务栏激活 → 展回主窗。
     /// </summary>
     internal sealed class FloatBallForm : Form
     {
         private readonly MainForm _owner;
         private readonly Image _logo;
-        /// <summary>可见圆直径（逻辑 52×DPI）。</summary>
         private readonly int _ballDiameter;
-        /// <summary>窗体边长（至少达到系统最小窗宽，且保持正方形，避免被拉成扁椭圆）。</summary>
         private readonly int _formSide;
-        private Point _dragStart;
+        private Point _dragMouseScreen;
+        private Point _dragFormLocation;
         private bool _dragging;
         private bool _moved;
         private bool _ignoreNextActivate = true;
@@ -26,7 +25,6 @@ namespace EasyWriteClient.Desktop
             _owner = owner ?? throw new ArgumentNullException(nameof(owner));
             float scale = dpiScale <= 0 ? 1f : dpiScale;
             _ballDiameter = Math.Max(40, (int)Math.Round(52 * scale));
-            // ShowInTaskbar 的顶层窗有系统最小宽度，若宽>高再按窗裁圆会变成扁椭圆
             int minSide = Math.Max(
                 SystemInformation.MinimumWindowSize.Width,
                 SystemInformation.MinimumWindowSize.Height);
@@ -38,7 +36,6 @@ namespace EasyWriteClient.Desktop
             ShowInTaskbar = true;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
-            // 透明键：圆外区域不显示（Region 负责命中；底色避开 logo 近黑）
             BackColor = Color.Magenta;
             TransparencyKey = Color.Magenta;
             DoubleBuffered = true;
@@ -63,7 +60,6 @@ namespace EasyWriteClient.Desktop
             FormClosing += OnFormClosing;
         }
 
-        /// <summary>用于贴边计算的外接方边长。</summary>
         public int FormSide => _formSide;
 
         public void ShowAt(Point location)
@@ -71,7 +67,6 @@ namespace EasyWriteClient.Desktop
             _ignoreNextActivate = true;
             ForceSquareSize();
             Location = location;
-            // 主窗已 Hide，勿 Show(owner)，避免从属窗随主窗隐藏
             if (!Visible)
             {
                 Show();
@@ -95,7 +90,6 @@ namespace EasyWriteClient.Desktop
 
         protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
         {
-            // 阻止系统把宽度拉大、高度不变
             base.SetBoundsCore(x, y, _formSide, _formSide, specified);
         }
 
@@ -160,8 +154,6 @@ namespace EasyWriteClient.Desktop
             Graphics g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-
-            // 整窗先铺透明色，再画圆（圆外靠 TransparencyKey 隐去）
             g.Clear(Color.Magenta);
 
             Rectangle ball = BallBounds;
@@ -203,7 +195,9 @@ namespace EasyWriteClient.Desktop
 
             _dragging = true;
             _moved = false;
-            _dragStart = e.Location;
+            _dragMouseScreen = Control.MousePosition;
+            _dragFormLocation = Location;
+            Capture = true;
         }
 
         private void OnMouseMove(object sender, MouseEventArgs e)
@@ -213,8 +207,9 @@ namespace EasyWriteClient.Desktop
                 return;
             }
 
-            int dx = e.X - _dragStart.X;
-            int dy = e.Y - _dragStart.Y;
+            Point now = Control.MousePosition;
+            int dx = now.X - _dragMouseScreen.X;
+            int dy = now.Y - _dragMouseScreen.Y;
             if (!_moved && (Math.Abs(dx) > 3 || Math.Abs(dy) > 3))
             {
                 _moved = true;
@@ -222,7 +217,7 @@ namespace EasyWriteClient.Desktop
 
             if (_moved)
             {
-                Location = new Point(Left + dx, Top + dy);
+                Location = new Point(_dragFormLocation.X + dx, _dragFormLocation.Y + dy);
             }
         }
 
@@ -235,15 +230,17 @@ namespace EasyWriteClient.Desktop
 
             bool wasDrag = _moved;
             _dragging = false;
-            _moved = false;
+            Capture = false;
 
             if (wasDrag)
             {
+                _moved = false;
                 ClampToWorkingArea();
                 WindowLayoutStore.SaveBallLocation(Location);
                 return;
             }
 
+            _moved = false;
             _owner.LeaveFloatBall();
         }
 
@@ -255,11 +252,21 @@ namespace EasyWriteClient.Desktop
                 return;
             }
 
-            // 任务栏点击激活球窗 → 展球
-            if (!_dragging)
+            // 延迟判定：点球拖动时 Activated 会早于 MouseDown，不能立刻展球
+            BeginInvoke(new Action(() =>
             {
+                if (IsDisposed || !Visible)
+                {
+                    return;
+                }
+
+                if (_dragging || _moved || MouseButtons == MouseButtons.Left)
+                {
+                    return;
+                }
+
                 _owner.LeaveFloatBall();
-            }
+            }));
         }
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)

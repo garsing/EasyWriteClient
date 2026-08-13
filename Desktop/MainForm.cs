@@ -277,7 +277,7 @@ namespace EasyWriteClient.Desktop
                 return;
             }
 
-            if ((DateTime.UtcNow - _lastActivityUtc).TotalSeconds >= 15)
+            if ((DateTime.UtcNow - _lastActivityUtc).TotalSeconds >= 5)
             {
                 EnterFloatBall();
             }
