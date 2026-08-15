@@ -29,6 +29,7 @@ namespace WordAddIn1
                 { "workbook.getContent", "F_get_workbook_content" },
                 { "workbook.readRange", "F_read_excel_range" },
                 { "workbook.writeRange", "F_write_excel_range" },
+                { "workbook.manageSheet", "F_manage_excel_sheet" },
                 { "channel.setDefault", "F_switch_default_channel" },
                 { "document.processActions", "F_process_document_actions" },
                 // document.setTrackRevisions / F_set_track_revisions 已下线（2026-08）

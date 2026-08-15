@@ -908,6 +908,320 @@ namespace WordAddIn1.SpreadsheetHost
             return true;
         }
 
+        public static bool TryManageSheet(
+            ExcelChannel channel,
+            SpreadsheetManageSheetRequest request,
+            out SpreadsheetManageSheetResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLiveWorkbook(out Excel.Workbook book))
+            {
+                error = "渠道对应的工作簿已关闭";
+                return false;
+            }
+
+            if (request == null || string.IsNullOrWhiteSpace(request.Action))
+            {
+                error = "须提供 action（add|rename|delete）";
+                return false;
+            }
+
+            string action = request.Action.Trim().ToLowerInvariant();
+            if (action != "add" && action != "rename" && action != "delete")
+            {
+                error = "action 须为 add|rename|delete";
+                return false;
+            }
+
+            try
+            {
+                if (action == "add")
+                {
+                    if (!SpreadsheetSheetNames.TryValidateName(request.Name, out error))
+                    {
+                        return false;
+                    }
+
+                    string newName = request.Name.Trim();
+                    if (SheetNameExists(book, newName))
+                    {
+                        error = "工作表已存在: " + newName;
+                        return false;
+                    }
+
+                    Excel.Worksheet beforeWs = null;
+                    if (!string.IsNullOrWhiteSpace(request.Before))
+                    {
+                        if (!TryFindSheetAny(book, request.Before.Trim(), out object beforeObj, out error))
+                        {
+                            return false;
+                        }
+
+                        beforeWs = beforeObj as Excel.Worksheet;
+                        if (beforeWs == null)
+                        {
+                            // 图表 sheet 作 Before：用 Sheets 集合索引 Add
+                            error = "before 须为普通工作表名（不能是图表 sheet）";
+                            return false;
+                        }
+                    }
+
+                    Excel.Worksheet created;
+                    if (beforeWs != null)
+                    {
+                        created = book.Worksheets.Add(Before: beforeWs) as Excel.Worksheet;
+                    }
+                    else
+                    {
+                        object last = book.Sheets[book.Sheets.Count];
+                        created = book.Worksheets.Add(After: last) as Excel.Worksheet;
+                    }
+
+                    if (created == null)
+                    {
+                        error = "新建工作表失败";
+                        return false;
+                    }
+
+                    created.Name = newName;
+                    result = BuildManageResult(channel, action, newName, book);
+                    return true;
+                }
+
+                if (action == "rename")
+                {
+                    if (string.IsNullOrWhiteSpace(request.Sheet))
+                    {
+                        error = "rename 须提供 sheet";
+                        return false;
+                    }
+
+                    if (!SpreadsheetSheetNames.TryValidateName(request.Name, out error))
+                    {
+                        return false;
+                    }
+
+                    string oldName = request.Sheet.Trim();
+                    string newName = request.Name.Trim();
+                    if (string.Equals(oldName, newName, StringComparison.Ordinal))
+                    {
+                        error = "新旧表名相同";
+                        return false;
+                    }
+
+                    if (!TryFindSheetAny(book, oldName, out object target, out error))
+                    {
+                        return false;
+                    }
+
+                    if (SheetNameExists(book, newName))
+                    {
+                        error = "工作表已存在: " + newName;
+                        return false;
+                    }
+
+                    SetSheetName(target, newName);
+                    result = BuildManageResult(channel, action, newName, book);
+                    return true;
+                }
+
+                // delete
+                if (string.IsNullOrWhiteSpace(request.Sheet))
+                {
+                    error = "delete 须提供 sheet";
+                    return false;
+                }
+
+                if (!request.Confirm)
+                {
+                    error = "删除须 confirm=true";
+                    return false;
+                }
+
+                if (book.Sheets.Count <= 1)
+                {
+                    error = "不能删除工作簿中唯一的工作表";
+                    return false;
+                }
+
+                string delName = request.Sheet.Trim();
+                if (!TryFindSheetAny(book, delName, out object delTarget, out error))
+                {
+                    return false;
+                }
+
+                Excel.Application app = book.Application;
+                bool prevAlerts = true;
+                try
+                {
+                    prevAlerts = app.DisplayAlerts;
+                    app.DisplayAlerts = false;
+                    DeleteSheet(delTarget);
+                }
+                finally
+                {
+                    try
+                    {
+                        app.DisplayAlerts = prevAlerts;
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                result = BuildManageResult(channel, action, delName, book);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "管理工作表失败: " + ex.Message;
+                return false;
+            }
+        }
+
+        private static SpreadsheetManageSheetResult BuildManageResult(
+            ExcelChannel channel,
+            string action,
+            string sheet,
+            Excel.Workbook book)
+        {
+            return new SpreadsheetManageSheetResult
+            {
+                ChannelId = channel.ChannelId,
+                Kind = "excel",
+                Action = action,
+                Sheet = sheet ?? "",
+                Sheets = ListSheetNames(book)
+            };
+        }
+
+        private static List<string> ListSheetNames(Excel.Workbook book)
+        {
+            var list = new List<string>();
+            try
+            {
+                foreach (object raw in book.Sheets)
+                {
+                    string name = TryReadAnySheetName(raw);
+                    if (!string.IsNullOrEmpty(name))
+                    {
+                        list.Add(name);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return list;
+        }
+
+        private static bool SheetNameExists(Excel.Workbook book, string name)
+        {
+            foreach (string n in ListSheetNames(book))
+            {
+                if (string.Equals(n, name, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryFindSheetAny(
+            Excel.Workbook book,
+            string sheetName,
+            out object sheet,
+            out string error)
+        {
+            sheet = null;
+            error = null;
+            try
+            {
+                foreach (object raw in book.Sheets)
+                {
+                    string name = TryReadAnySheetName(raw);
+                    if (string.Equals(name, sheetName, StringComparison.Ordinal))
+                    {
+                        sheet = raw;
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "COM 不可用: " + ex.Message;
+                return false;
+            }
+
+            error = "工作表不存在: " + sheetName;
+            return false;
+        }
+
+        private static string TryReadAnySheetName(object raw)
+        {
+            try
+            {
+                var ws = raw as Excel.Worksheet;
+                if (ws != null)
+                {
+                    return ws.Name;
+                }
+
+                var chart = raw as Excel.Chart;
+                if (chart != null)
+                {
+                    return chart.Name;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return "";
+        }
+
+        private static void SetSheetName(object sheet, string newName)
+        {
+            var ws = sheet as Excel.Worksheet;
+            if (ws != null)
+            {
+                ws.Name = newName;
+                return;
+            }
+
+            var chart = sheet as Excel.Chart;
+            if (chart != null)
+            {
+                chart.Name = newName;
+                return;
+            }
+
+            throw new InvalidOperationException("无法识别的工作表类型");
+        }
+
+        private static void DeleteSheet(object sheet)
+        {
+            var ws = sheet as Excel.Worksheet;
+            if (ws != null)
+            {
+                ws.Delete();
+                return;
+            }
+
+            var chart = sheet as Excel.Chart;
+            if (chart != null)
+            {
+                chart.Delete();
+                return;
+            }
+
+            throw new InvalidOperationException("无法识别的工作表类型");
+        }
+
         /// <summary>
         /// 写入矩形内：若格属于合并区且非左上角，CSV 必须为空。
         /// </summary>

@@ -847,6 +847,283 @@ namespace WordAddIn1.SpreadsheetHost
             return true;
         }
 
+        public static bool TryManageSheet(
+            EtChannel channel,
+            SpreadsheetManageSheetRequest request,
+            out SpreadsheetManageSheetResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLiveWorkbook(out object book))
+            {
+                error = "渠道对应的工作簿已关闭";
+                return false;
+            }
+
+            if (request == null || string.IsNullOrWhiteSpace(request.Action))
+            {
+                error = "须提供 action（add|rename|delete）";
+                return false;
+            }
+
+            string action = request.Action.Trim().ToLowerInvariant();
+            if (action != "add" && action != "rename" && action != "delete")
+            {
+                error = "action 须为 add|rename|delete";
+                return false;
+            }
+
+            try
+            {
+                if (action == "add")
+                {
+                    if (!SpreadsheetSheetNames.TryValidateName(request.Name, out error))
+                    {
+                        return false;
+                    }
+
+                    string newName = request.Name.Trim();
+                    if (SheetNameExists(book, newName))
+                    {
+                        error = "工作表已存在: " + newName;
+                        return false;
+                    }
+
+                    object created;
+                    object worksheets = EtCom.GetProperty(book, "Worksheets");
+                    if (worksheets == null)
+                    {
+                        error = "无法访问 Worksheets";
+                        return false;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(request.Before))
+                    {
+                        if (!TryFindSheetAny(book, request.Before.Trim(), out object beforeObj, out error))
+                        {
+                            return false;
+                        }
+
+                        try
+                        {
+                            object type = EtCom.GetProperty(beforeObj, "Type");
+                            if (type != null && Convert.ToInt32(type) == XlChart)
+                            {
+                                error = "before 须为普通工作表名（不能是图表 sheet）";
+                                return false;
+                            }
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        created = EtCom.Invoke(worksheets, "Add", beforeObj);
+                    }
+                    else
+                    {
+                        object sheets = EtCom.GetProperty(book, "Sheets");
+                        int count = Convert.ToInt32(EtCom.GetProperty(sheets, "Count"));
+                        object last = EtCom.GetIndexed(sheets, count);
+                        // Add(Before, After) — 晚绑定常用 After
+                        created = worksheets.GetType().InvokeMember(
+                            "Add",
+                            System.Reflection.BindingFlags.InvokeMethod,
+                            null,
+                            worksheets,
+                            new object[] { Type.Missing, last });
+                    }
+
+                    if (created == null)
+                    {
+                        error = "新建工作表失败";
+                        return false;
+                    }
+
+                    EtCom.TrySetProperty(created, "Name", newName);
+                    result = BuildManageResult(channel, action, newName, book);
+                    return true;
+                }
+
+                if (action == "rename")
+                {
+                    if (string.IsNullOrWhiteSpace(request.Sheet))
+                    {
+                        error = "rename 须提供 sheet";
+                        return false;
+                    }
+
+                    if (!SpreadsheetSheetNames.TryValidateName(request.Name, out error))
+                    {
+                        return false;
+                    }
+
+                    string oldName = request.Sheet.Trim();
+                    string newName = request.Name.Trim();
+                    if (string.Equals(oldName, newName, StringComparison.Ordinal))
+                    {
+                        error = "新旧表名相同";
+                        return false;
+                    }
+
+                    if (!TryFindSheetAny(book, oldName, out object target, out error))
+                    {
+                        return false;
+                    }
+
+                    if (SheetNameExists(book, newName))
+                    {
+                        error = "工作表已存在: " + newName;
+                        return false;
+                    }
+
+                    EtCom.TrySetProperty(target, "Name", newName);
+                    result = BuildManageResult(channel, action, newName, book);
+                    return true;
+                }
+
+                if (string.IsNullOrWhiteSpace(request.Sheet))
+                {
+                    error = "delete 须提供 sheet";
+                    return false;
+                }
+
+                if (!request.Confirm)
+                {
+                    error = "删除须 confirm=true";
+                    return false;
+                }
+
+                object sheetsAll = EtCom.GetProperty(book, "Sheets");
+                int sheetCount = Convert.ToInt32(EtCom.GetProperty(sheetsAll, "Count"));
+                if (sheetCount <= 1)
+                {
+                    error = "不能删除工作簿中唯一的工作表";
+                    return false;
+                }
+
+                string delName = request.Sheet.Trim();
+                if (!TryFindSheetAny(book, delName, out object delTarget, out error))
+                {
+                    return false;
+                }
+
+                object app = EtCom.GetProperty(book, "Application");
+                object prevAlerts = null;
+                try
+                {
+                    if (app != null)
+                    {
+                        prevAlerts = EtCom.GetProperty(app, "DisplayAlerts");
+                        EtCom.TrySetProperty(app, "DisplayAlerts", false);
+                    }
+
+                    EtCom.Invoke(delTarget, "Delete");
+                }
+                finally
+                {
+                    if (app != null && prevAlerts != null)
+                    {
+                        try
+                        {
+                            EtCom.TrySetProperty(app, "DisplayAlerts", prevAlerts);
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+                }
+
+                result = BuildManageResult(channel, action, delName, book);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "管理工作表失败: " + ex.Message;
+                return false;
+            }
+        }
+
+        private static SpreadsheetManageSheetResult BuildManageResult(
+            EtChannel channel,
+            string action,
+            string sheet,
+            object book)
+        {
+            return new SpreadsheetManageSheetResult
+            {
+                ChannelId = channel.ChannelId,
+                Kind = "et",
+                Action = action,
+                Sheet = sheet ?? "",
+                Sheets = ListSheetNames(book)
+            };
+        }
+
+        private static List<string> ListSheetNames(object book)
+        {
+            var list = new List<string>();
+            try
+            {
+                foreach (object candidate in EtCom.EnumerateSheets(book))
+                {
+                    string name = EtCom.TryReadName(candidate) ?? "";
+                    if (!string.IsNullOrEmpty(name))
+                    {
+                        list.Add(name);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return list;
+        }
+
+        private static bool SheetNameExists(object book, string name)
+        {
+            foreach (string n in ListSheetNames(book))
+            {
+                if (string.Equals(n, name, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryFindSheetAny(
+            object book,
+            string sheetName,
+            out object sheet,
+            out string error)
+        {
+            sheet = null;
+            error = null;
+            try
+            {
+                foreach (object candidate in EtCom.EnumerateSheets(book))
+                {
+                    string name = EtCom.TryReadName(candidate) ?? "";
+                    if (string.Equals(name, sheetName, StringComparison.Ordinal))
+                    {
+                        sheet = candidate;
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "COM 不可用: " + ex.Message;
+                return false;
+            }
+
+            error = "工作表不存在: " + sheetName;
+            return false;
+        }
+
         private static bool TryValidateCsvAgainstMerges(
             object sheet,
             int firstRow,

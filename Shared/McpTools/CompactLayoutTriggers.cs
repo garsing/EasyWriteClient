@@ -33,6 +33,7 @@ namespace WordAddIn1
             "F_apply_data_provenance",
             "F_restore_document_checkpoint",
             "F_write_excel_range",
+            "F_manage_excel_sheet",
         };
 
         public static bool ShouldCompact(string toolName)
