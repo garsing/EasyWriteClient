@@ -36,6 +36,7 @@ namespace WordAddIn1
             "F_manage_excel_sheet",
             "F_apply_excel_format",
             "F_apply_excel_conditional_format",
+            "F_apply_excel_structure",
             "F_excel_pivot",
             "F_excel_chart",
         };

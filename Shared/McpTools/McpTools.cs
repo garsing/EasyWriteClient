@@ -52,6 +52,7 @@ namespace WordAddIn1
             F_ApplyExcelFormatTool.Register(toolRegistry, wordApplication);
             F_GetExcelFormatTool.Register(toolRegistry, wordApplication);
             F_ApplyExcelConditionalFormatTool.Register(toolRegistry, wordApplication);
+            F_ApplyExcelStructureTool.Register(toolRegistry, wordApplication);
             F_ExcelPivotTool.Register(toolRegistry, wordApplication);
             F_ExcelChartTool.Register(toolRegistry, wordApplication);
             F_OpenDocumentTool.Register(toolRegistry, wordApplication);

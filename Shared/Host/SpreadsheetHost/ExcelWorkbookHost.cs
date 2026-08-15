@@ -1713,5 +1713,40 @@ namespace WordAddIn1.SpreadsheetHost
             result.Kind = "excel";
             return true;
         }
+
+        public static bool TryApplyStructure(
+            ExcelChannel channel,
+            SpreadsheetStructureRequest request,
+            out SpreadsheetStructureResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLiveWorkbook(out Excel.Workbook book))
+            {
+                error = "渠道对应的工作簿已关闭";
+                return false;
+            }
+
+            if (request == null || string.IsNullOrWhiteSpace(request.Action))
+            {
+                error = "必须提供 action";
+                return false;
+            }
+
+            if (!SpreadsheetStructureCom.TryExecuteOnExcelWorkbook(
+                    book,
+                    request,
+                    out SpreadsheetStructureResult partial,
+                    out error))
+            {
+                return false;
+            }
+
+            result = partial;
+            result.ChannelId = channel.ChannelId;
+            result.Kind = "excel";
+            return true;
+        }
     }
 }

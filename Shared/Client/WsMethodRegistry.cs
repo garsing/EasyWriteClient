@@ -33,6 +33,7 @@ namespace WordAddIn1
                 { "workbook.applyFormat", "F_apply_excel_format" },
                 { "workbook.getFormat", "F_get_excel_format" },
                 { "workbook.applyConditionalFormat", "F_apply_excel_conditional_format" },
+                { "workbook.applyStructure", "F_apply_excel_structure" },
                 { "workbook.pivot", "F_excel_pivot" },
                 { "workbook.chart", "F_excel_chart" },
                 { "channel.setDefault", "F_switch_default_channel" },
