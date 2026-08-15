@@ -268,5 +268,59 @@ namespace WordAddIn1.SpreadsheetHost
 
             return true;
         }
+
+        internal static bool TryApplyFormat(
+            IOperationChannel channel,
+            SpreadsheetFormatRequest request,
+            out SpreadsheetFormatResult result,
+            out ToolResult errorResult)
+        {
+            result = null;
+            errorResult = null;
+            if (channel == null)
+            {
+                errorResult = new ToolResult { Success = false, Error = "未知 channel_id" };
+                return false;
+            }
+
+            if (channel.Kind == ChannelKind.Word || channel.Kind == ChannelKind.Wps)
+            {
+                string host = channel.Kind.ToString().ToLowerInvariant();
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "unsupported: 当前渠道是 " + host + "，请用 F_apply_document_format"
+                };
+                return false;
+            }
+
+            bool ok;
+            string error;
+            if (channel is ExcelChannel excel)
+            {
+                ok = ExcelWorkbookHost.TryApplyFormat(excel, request, out result, out error);
+            }
+            else if (channel is EtChannel et)
+            {
+                ok = EtWorkbookHost.TryApplyFormat(et, request, out result, out error);
+            }
+            else
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "unsupported: 当前渠道不是 excel/et"
+                };
+                return false;
+            }
+
+            if (!ok)
+            {
+                errorResult = new ToolResult { Success = false, Error = error };
+                return false;
+            }
+
+            return true;
+        }
     }
 }

@@ -114,12 +114,18 @@ namespace WordAddIn1.SpreadsheetHost
 
         public static bool TryCheckLimits(int rowCount, int colCount, out string error)
         {
+            return TryCheckLimits(rowCount, colCount, "写入", out error);
+        }
+
+        public static bool TryCheckLimits(int rowCount, int colCount, string actionLabel, out string error)
+        {
             error = null;
             if (rowCount > SpreadsheetRangeLimits.MaxRows
                 || colCount > SpreadsheetRangeLimits.MaxCols
                 || (long)rowCount * colCount > SpreadsheetRangeLimits.MaxCells)
             {
-                error = "写入区域过大（最多 "
+                string label = string.IsNullOrEmpty(actionLabel) ? "操作" : actionLabel;
+                error = label + "区域过大（最多 "
                     + SpreadsheetRangeLimits.MaxRows + "×"
                     + SpreadsheetRangeLimits.MaxCols + " / "
                     + SpreadsheetRangeLimits.MaxCells + " 格）";
