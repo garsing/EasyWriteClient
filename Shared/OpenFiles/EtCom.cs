@@ -150,7 +150,7 @@ namespace WordAddIn1.OpenFiles
                 yield break;
             }
 
-            object books;
+            object books = null;
             int count;
             try
             {
@@ -159,24 +159,32 @@ namespace WordAddIn1.OpenFiles
             }
             catch (Exception)
             {
+                ComRelease.Safe(books);
                 yield break;
             }
 
-            for (int i = 1; i <= count; i++)
+            try
             {
-                object book = null;
-                try
+                for (int i = 1; i <= count; i++)
                 {
-                    book = GetIndexed(books, i);
-                }
-                catch (Exception)
-                {
-                }
+                    object book = null;
+                    try
+                    {
+                        book = GetIndexed(books, i);
+                    }
+                    catch (Exception)
+                    {
+                    }
 
-                if (book != null)
-                {
-                    yield return book;
+                    if (book != null)
+                    {
+                        yield return book;
+                    }
                 }
+            }
+            finally
+            {
+                ComRelease.Safe(books);
             }
         }
 

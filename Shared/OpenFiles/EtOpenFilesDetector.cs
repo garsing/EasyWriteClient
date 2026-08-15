@@ -105,6 +105,8 @@ namespace WordAddIn1.OpenFiles
                         var item = MapWorkbook(book, usedIds);
                         if (item == null)
                         {
+                            // 跳过的簿仍会占住 RCW，必须释放
+                            ComRelease.Safe(book);
                             continue;
                         }
 
@@ -119,6 +121,7 @@ namespace WordAddIn1.OpenFiles
                     }
                     catch (Exception ex)
                     {
+                        ComRelease.Safe(book);
                         EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
                             "[EtOpenFilesDetector] snapshot item skip: " + ex.Message);
                     }
@@ -128,6 +131,15 @@ namespace WordAddIn1.OpenFiles
             {
                 EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
                     "[EtOpenFilesDetector] snapshot failed: " + ex.Message);
+                MarkDetached();
+                return result;
+            }
+
+            // 无打开簿时释放 Application，否则 GetActiveObject 持有会阻止用户关闭 et
+            if (result.Count == 0)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[EtOpenFilesDetector] no workbooks — release Application RCW");
                 MarkDetached();
             }
 
@@ -212,6 +224,18 @@ namespace WordAddIn1.OpenFiles
                 if (string.IsNullOrEmpty(id))
                 {
                     id = MapWorkbook(book, new HashSet<string>(StringComparer.OrdinalIgnoreCase))?.Id;
+                }
+
+                try
+                {
+                    string uuid = EtWorkbookIdentity.TryResolveUuid(book);
+                    if (!string.IsNullOrEmpty(uuid))
+                    {
+                        ChannelRegistry.RemoveByDocUuid(uuid);
+                    }
+                }
+                catch (Exception)
+                {
                 }
 
                 if (!string.IsNullOrEmpty(id))
@@ -388,8 +412,16 @@ namespace WordAddIn1.OpenFiles
             }
 
             _subscribed = false;
+            object app = _app;
             _app = null;
             _rcwToId.Clear();
+
+            ComRelease.Safe(app);
+            if (app != null)
+            {
+                ComRelease.CollectPending();
+            }
+
             if (raiseDetached)
             {
                 try

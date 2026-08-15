@@ -369,9 +369,10 @@ namespace WordAddIn1
                 return false;
             }
 
+            IOperationChannel ch;
             lock (Gate)
             {
-                if (!Channels.TryGetValue(channelId, out IOperationChannel ch))
+                if (!Channels.TryGetValue(channelId, out ch))
                 {
                     return false;
                 }
@@ -398,9 +399,15 @@ namespace WordAddIn1
                 {
                     _defaultChannelId = null;
                 }
-
-                return true;
             }
+
+            // 锁外释放 COM，避免 FinalRelease 回调再进 Registry
+            if (ch is EtChannel etRelease)
+            {
+                etRelease.ReleaseCom();
+            }
+
+            return true;
         }
 
         public static bool RemoveByDocUuid(string docUuid)

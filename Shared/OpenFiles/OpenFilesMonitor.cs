@@ -623,9 +623,10 @@ namespace WordAddIn1.OpenFiles
                 return InvokeDetectorOnSync(() => TryAttachOne(appType));
             }
 
-            // Excel AppEvents（GetActiveObject）对手动打开经常不回调；Word 事件可靠故不轮询。
-            // 已附着时定期重扫 Workbooks，对齐「工具打开能检出 / 手动打开也要检出」。
-            if (string.Equals(appType, ExcelOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+            // Excel/et：AppEvents（GetActiveObject）对手动打开经常不回调；已附着时定期重扫 Workbooks。
+            // et 无簿时 Snapshot 会释放 Application，否则会拖住进程无法退出。
+            if (string.Equals(appType, ExcelOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(appType, EtOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
             {
                 return InvokeDetectorOnSync(() => TryResnapshotOne(appType));
             }
@@ -682,6 +683,10 @@ namespace WordAddIn1.OpenFiles
                 if (string.Equals(appType, ExcelOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
                 {
                     detector = _excelDetector;
+                }
+                else if (string.Equals(appType, EtOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    detector = _etDetector;
                 }
                 else
                 {

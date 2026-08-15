@@ -5,6 +5,7 @@ namespace WordAddIn1
 {
     public sealed class EtChannel : IOperationChannel
     {
+        private readonly object _gate = new object();
         private object _workbook;
         private string _filePath;
 
@@ -39,26 +40,74 @@ namespace WordAddIn1
 
         public void UpdateWorkbook(object workbook, string filePath = null)
         {
-            _workbook = workbook ?? throw new ArgumentNullException(nameof(workbook));
-            string next = WordChannel.NormalizePath(filePath) ?? EtCom.TryReadFullName(workbook);
-            if (!string.IsNullOrEmpty(next))
+            if (workbook == null)
             {
-                _filePath = next;
+                throw new ArgumentNullException(nameof(workbook));
+            }
+
+            object old = null;
+            lock (_gate)
+            {
+                if (!ReferenceEquals(_workbook, workbook))
+                {
+                    old = _workbook;
+                    _workbook = workbook;
+                }
+
+                string next = WordChannel.NormalizePath(filePath) ?? EtCom.TryReadFullName(workbook);
+                if (!string.IsNullOrEmpty(next))
+                {
+                    _filePath = next;
+                }
+            }
+
+            ComRelease.Safe(old);
+        }
+
+        /// <summary>
+        /// 渠道移除时释放 Workbook RCW，避免拖住 et 进程。
+        /// </summary>
+        public void ReleaseCom()
+        {
+            object wb;
+            lock (_gate)
+            {
+                wb = _workbook;
+                _workbook = null;
+            }
+
+            if (wb != null)
+            {
+                try
+                {
+                    EtWorkbookIdentity.Unregister(wb);
+                }
+                catch (Exception)
+                {
+                }
+
+                ComRelease.Safe(wb);
             }
         }
 
         public bool TryGetLiveWorkbook(out object workbook)
         {
             workbook = null;
-            if (_workbook == null)
+            object wb;
+            lock (_gate)
+            {
+                wb = _workbook;
+            }
+
+            if (wb == null)
             {
                 return false;
             }
 
             try
             {
-                var _ = EtCom.GetProperty(_workbook, "Name");
-                workbook = _workbook;
+                var _ = EtCom.GetProperty(wb, "Name");
+                workbook = wb;
                 return true;
             }
             catch (Exception)
