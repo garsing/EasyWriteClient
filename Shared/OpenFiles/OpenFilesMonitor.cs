@@ -620,10 +620,160 @@ namespace WordAddIn1.OpenFiles
             {
                 EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
                     "[OpenFilesMonitor] " + appType + " process present — try attach");
-                return TryAttachOne(appType);
+                return InvokeDetectorOnSync(() => TryAttachOne(appType));
+            }
+
+            // Excel AppEvents（GetActiveObject）对手动打开经常不回调；Word 事件可靠故不轮询。
+            // 已附着时定期重扫 Workbooks，对齐「工具打开能检出 / 手动打开也要检出」。
+            if (string.Equals(appType, ExcelOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+            {
+                return InvokeDetectorOnSync(() => TryResnapshotOne(appType));
             }
 
             return false;
+        }
+
+        private bool InvokeDetectorOnSync(Func<bool> action)
+        {
+            if (action == null)
+            {
+                return false;
+            }
+
+            if (_sync == null)
+            {
+                return action();
+            }
+
+            bool result = false;
+            Exception error = null;
+            _sync.Send(
+                _ =>
+                {
+                    try
+                    {
+                        result = action();
+                    }
+                    catch (Exception ex)
+                    {
+                        error = ex;
+                    }
+                },
+                null);
+
+            if (error != null)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[OpenFilesMonitor] sync invoke: " + error.Message);
+                return false;
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// 已附着时重扫；仅当条目增减/变化时返回 true。关闭的簿才 RemoveChannel。
+        /// </summary>
+        private bool TryResnapshotOne(string appType)
+        {
+            IOpenFilesAppDetector detector;
+            lock (_gate)
+            {
+                if (string.Equals(appType, ExcelOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    detector = _excelDetector;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            if (detector == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (!detector.TryAttach())
+                {
+                    return false;
+                }
+
+                var snapshot = detector.Snapshot() ?? Array.Empty<OpenFileItem>();
+                var newById = new Dictionary<string, OpenFileItem>(StringComparer.OrdinalIgnoreCase);
+                foreach (var item in snapshot)
+                {
+                    if (item != null && !string.IsNullOrEmpty(item.Id))
+                    {
+                        newById[item.Id] = item;
+                    }
+                }
+
+                lock (_gate)
+                {
+                    var oldItems = _items
+                        .Where(kv => kv.Value != null
+                            && string.Equals(kv.Value.AppType, appType, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    bool changed = false;
+                    foreach (var kv in oldItems)
+                    {
+                        if (!newById.ContainsKey(kv.Key))
+                        {
+                            TryRemoveChannel(kv.Value);
+                            _items.Remove(kv.Key);
+                            changed = true;
+                        }
+                    }
+
+                    foreach (var kv in newById)
+                    {
+                        if (!_items.TryGetValue(kv.Key, out OpenFileItem existing)
+                            || existing == null
+                            || !OpenFileItemEquals(existing, kv.Value))
+                        {
+                            _items[kv.Key] = kv.Value;
+                            changed = true;
+                        }
+                        else if (string.IsNullOrEmpty(existing.ChannelId)
+                                 && !string.IsNullOrEmpty(kv.Value.ChannelId))
+                        {
+                            existing.ChannelId = kv.Value.ChannelId;
+                            changed = true;
+                        }
+                    }
+
+                    return changed;
+                }
+            }
+            catch (Exception ex)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[OpenFilesMonitor] resnapshot " + appType + ": " + ex.Message);
+                return false;
+            }
+        }
+
+        private static bool OpenFileItemEquals(OpenFileItem a, OpenFileItem b)
+        {
+            if (ReferenceEquals(a, b))
+            {
+                return true;
+            }
+
+            if (a == null || b == null)
+            {
+                return false;
+            }
+
+            return string.Equals(a.Id, b.Id, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(a.DisplayName, b.DisplayName, StringComparison.Ordinal)
+                && string.Equals(a.FullPath, b.FullPath, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(a.ChannelId, b.ChannelId, StringComparison.OrdinalIgnoreCase)
+                && a.IsSaved == b.IsSaved;
         }
 
         private void RecreateWordDetector()
