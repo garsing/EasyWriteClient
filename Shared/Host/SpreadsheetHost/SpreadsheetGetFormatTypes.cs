@@ -46,6 +46,30 @@ namespace WordAddIn1.SpreadsheetHost
     {
         public const int MaxCellsForCellsMode = 40;
 
+        /// <summary>读格式 COM 慢；实机 1500 格已不可接受 → 硬上限 1000 格（与读写/apply 的 4000 分开）。</summary>
+        public const int MaxCells = 1000;
+
+        public const int MaxRows = 100;
+
+        public const int MaxCols = 40;
+
+        public static bool TryCheckHardLimits(int rowCount, int colCount, out string error)
+        {
+            error = null;
+            if (rowCount > MaxRows
+                || colCount > MaxCols
+                || (long)rowCount * colCount > MaxCells)
+            {
+                error = "格式读取区域过大（最多 "
+                    + MaxRows + "×"
+                    + MaxCols + " / "
+                    + MaxCells + " 格）";
+                return false;
+            }
+
+            return true;
+        }
+
         public static string ResolveMode(int rowCount, int colCount)
         {
             long cells = (long)rowCount * colCount;

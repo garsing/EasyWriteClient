@@ -1484,7 +1484,7 @@ namespace WordAddIn1.SpreadsheetHost
 
             int rowCount = lastRow - firstRow + 1;
             int colCount = lastCol - firstCol + 1;
-            if (!SpreadsheetWritePlanner.TryCheckLimits(rowCount, colCount, "格式读取", out error))
+            if (!SpreadsheetGetFormatLimits.TryCheckHardLimits(rowCount, colCount, out error))
             {
                 return false;
             }
