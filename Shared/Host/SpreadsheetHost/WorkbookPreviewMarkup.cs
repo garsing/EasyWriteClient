@@ -74,6 +74,13 @@ namespace WordAddIn1.SpreadsheetHost
                                 sb.Append("\"");
                             }
 
+                            if (!string.IsNullOrEmpty(cell.Formula))
+                            {
+                                sb.Append(" formula=\"");
+                                sb.Append(EscapeAttr(cell.Formula));
+                                sb.Append("\"");
+                            }
+
                             sb.Append(">");
                             sb.Append(EscapeText(cell.Text ?? ""));
                             sb.Append("</cell>");
@@ -184,5 +191,8 @@ namespace WordAddIn1.SpreadsheetHost
         public int RowSpan { get; set; }
 
         public string Text { get; set; }
+
+        /// <summary>有公式且请求 include_formulas 时填写，如 =SUM(A1:A3)。</summary>
+        public string Formula { get; set; }
     }
 }
