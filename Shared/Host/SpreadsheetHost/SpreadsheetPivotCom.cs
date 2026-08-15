@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using Excel = Microsoft.Office.Interop.Excel;
 using WordAddIn1.OpenFiles;
 
@@ -7,6 +9,32 @@ namespace WordAddIn1.SpreadsheetHost
 {
     internal static class SpreadsheetPivotCom
     {
+        private static string FormatPivotError(Exception ex)
+        {
+            Exception cur = ex;
+            while (cur is TargetInvocationException tie && tie.InnerException != null)
+            {
+                cur = tie.InnerException;
+            }
+
+            if (cur is AggregateException ae && ae.InnerExceptions != null && ae.InnerExceptions.Count > 0)
+            {
+                cur = ae.InnerExceptions[0];
+                while (cur is TargetInvocationException tie2 && tie2.InnerException != null)
+                {
+                    cur = tie2.InnerException;
+                }
+            }
+
+            string msg = cur?.Message ?? "未知错误";
+            if (cur is COMException com)
+            {
+                msg += " (HRESULT=0x" + unchecked((uint)com.ErrorCode).ToString("X8") + ")";
+            }
+
+            return msg;
+        }
+
         public static bool TryExecuteOnExcelWorkbook(
             Excel.Workbook book,
             SpreadsheetPivotRequest request,
@@ -47,7 +75,7 @@ namespace WordAddIn1.SpreadsheetHost
             }
             catch (Exception ex)
             {
-                error = "透视表操作失败: " + ex.Message;
+                error = "透视表操作失败: " + FormatPivotError(ex);
                 return false;
             }
         }
@@ -92,7 +120,7 @@ namespace WordAddIn1.SpreadsheetHost
             }
             catch (Exception ex)
             {
-                error = "透视表操作失败: " + ex.Message;
+                error = "透视表操作失败: " + FormatPivotError(ex);
                 return false;
             }
         }
@@ -338,40 +366,233 @@ namespace WordAddIn1.SpreadsheetHost
 
             Excel.PivotCache cache = book.PivotCaches().Create(
                 Excel.XlPivotTableSourceType.xlDatabase,
-                sourceRange);
+                sourceRange,
+                Excel.XlPivotTableVersionList.xlPivotTableVersion15);
             object tableNameArg = string.IsNullOrEmpty(request.Name)
                 ? Type.Missing
                 : (object)request.Name;
-            Excel.PivotTable table = cache.CreatePivotTable(destRange, tableNameArg);
+            Excel.PivotTable table = cache.CreatePivotTable(
+                destRange,
+                tableNameArg,
+                Type.Missing,
+                Excel.XlPivotTableVersionList.xlPivotTableVersion15);
 
-            foreach (string rowField in request.Rows)
+            try
             {
-                Excel.PivotField pf = table.PivotFields(rowField);
-                pf.Orientation = Excel.XlPivotFieldOrientation.xlRowField;
-            }
-
-            foreach (string colField in request.Columns)
-            {
-                Excel.PivotField pf = table.PivotFields(colField);
-                pf.Orientation = Excel.XlPivotFieldOrientation.xlColumnField;
-            }
-
-            foreach (SpreadsheetPivotValueField value in request.Values)
-            {
-                if (!SpreadsheetPivotParse.TryMapAgg(value.Agg, out int xlFn, out error))
+                try
                 {
-                    return false;
+                    table.ManualUpdate = true;
+                }
+                catch (Exception)
+                {
                 }
 
-                table.AddDataField(
-                    table.PivotFields(value.Field),
-                    Type.Missing,
-                    (Excel.XlConsolidationFunction)xlFn);
+                foreach (string rowField in request.Rows)
+                {
+                    if (!TryResolveExcelPivotField(table, rowField, out Excel.PivotField pf, out error))
+                    {
+                        TryClearExcelPivotOrphan(table);
+                        return false;
+                    }
+
+                    pf.Orientation = Excel.XlPivotFieldOrientation.xlRowField;
+                }
+
+                foreach (string colField in request.Columns)
+                {
+                    if (!TryResolveExcelPivotField(table, colField, out Excel.PivotField pf, out error))
+                    {
+                        TryClearExcelPivotOrphan(table);
+                        return false;
+                    }
+
+                    pf.Orientation = Excel.XlPivotFieldOrientation.xlColumnField;
+                }
+
+                foreach (SpreadsheetPivotValueField value in request.Values)
+                {
+                    if (!SpreadsheetPivotParse.TryMapAgg(value.Agg, out int xlFn, out error))
+                    {
+                        TryClearExcelPivotOrphan(table);
+                        return false;
+                    }
+
+                    if (!TryResolveExcelPivotField(table, value.Field, out Excel.PivotField pf, out error))
+                    {
+                        TryClearExcelPivotOrphan(table);
+                        return false;
+                    }
+
+                    table.AddDataField(
+                        pf,
+                        Type.Missing,
+                        (Excel.XlConsolidationFunction)xlFn);
+                }
+
+                try
+                {
+                    table.ManualUpdate = false;
+                }
+                catch (Exception)
+                {
+                }
+            }
+            catch (Exception ex)
+            {
+                TryClearExcelPivotOrphan(table);
+                error = "配置透视字段失败: " + ex.Message;
+                return false;
             }
 
             SpreadsheetPivotInfo info = ReadExcelPivotInfo(destSheet.Name, table);
             FillResultFromInfo(partial, info, request.SourceSheet, actualSource);
             return true;
+        }
+
+        private static bool TryResolveExcelPivotField(
+            Excel.PivotTable table,
+            string requestedName,
+            out Excel.PivotField field,
+            out string error)
+        {
+            field = null;
+            error = null;
+            string want = (requestedName ?? "").Trim();
+            if (string.IsNullOrEmpty(want))
+            {
+                error = "字段名不能为空";
+                return false;
+            }
+
+            try
+            {
+                field = table.PivotFields(want) as Excel.PivotField;
+                if (field != null)
+                {
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            var available = new List<string>();
+            try
+            {
+                Excel.PivotFields all = table.PivotFields(Type.Missing) as Excel.PivotFields;
+                if (all != null)
+                {
+                    for (int i = 1; i <= all.Count; i++)
+                    {
+                        Excel.PivotField candidate;
+                        try
+                        {
+                            candidate = all.Item(i) as Excel.PivotField;
+                        }
+                        catch (Exception)
+                        {
+                            continue;
+                        }
+
+                        if (candidate == null)
+                        {
+                            continue;
+                        }
+
+                        string name = SafePivotName(candidate);
+                        string caption = "";
+                        string sourceName = "";
+                        try
+                        {
+                            caption = (candidate.Caption ?? "").Trim();
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        try
+                        {
+                            sourceName = Convert.ToString(candidate.SourceName)?.Trim() ?? "";
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        if (!string.IsNullOrEmpty(name))
+                        {
+                            available.Add(name);
+                        }
+
+                        if (NamesMatch(want, name)
+                            || NamesMatch(want, caption)
+                            || NamesMatch(want, sourceName))
+                        {
+                            field = candidate;
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            error = "无法匹配透视字段: " + want;
+            if (available.Count > 0)
+            {
+                error += "（可用: " + string.Join(", ", available) + "）";
+            }
+            else
+            {
+                error += "（PivotFields 方法无效，请确认源表头与字段名一致）";
+            }
+
+            return false;
+        }
+
+        private static bool NamesMatch(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b))
+            {
+                return false;
+            }
+
+            return string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string SafePivotName(Excel.PivotField field)
+        {
+            try
+            {
+                return (field.Name ?? "").Trim();
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+        }
+
+        private static void TryClearExcelPivotOrphan(Excel.PivotTable table)
+        {
+            if (table == null)
+            {
+                return;
+            }
+
+            try
+            {
+                table.TableRange2.Clear();
+            }
+            catch (Exception)
+            {
+                try
+                {
+                    table.TableRange1.Clear();
+                }
+                catch (Exception)
+                {
+                }
+            }
         }
 
         private static bool TryValidateSourceExcel(
@@ -395,9 +616,14 @@ namespace WordAddIn1.SpreadsheetHost
                         return false;
                     }
                 }
-                else
+                else if (merge != null && !(merge is DBNull))
                 {
-                    // DBNull 等：部分合并
+                    // 非 bool 且非空：按部分合并处理；DBNull 也视为部分合并
+                    error = "源区域含合并格，首期不支持";
+                    return false;
+                }
+                else if (merge is DBNull)
+                {
                     error = "源区域含合并格，首期不支持";
                     return false;
                 }
@@ -406,22 +632,29 @@ namespace WordAddIn1.SpreadsheetHost
             {
             }
 
-            var headers = new HashSet<string>(StringComparer.Ordinal);
+            // Excel 透视字段名通常跟 Value2 一致；同时收 Text 作别名，避免显示文本与底层值不一致
+            var headers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             for (int c = firstCol; c <= lastCol; c++)
             {
                 Excel.Range cell = sourceRange.Worksheet.Cells[firstRow, c];
-                string header = ReadCellText(cell);
-                if (string.IsNullOrWhiteSpace(header))
+                string valueName = ReadCellPivotFieldName(cell);
+                if (string.IsNullOrWhiteSpace(valueName))
                 {
                     error = "源第一行须为非空字段名（列 " + A1Address.ColumnLetter(c) + "）";
                     return false;
                 }
 
-                header = header.Trim();
-                if (!headers.Add(header))
+                valueName = valueName.Trim();
+                if (!headers.Add(valueName))
                 {
-                    error = "源表头字段名重复: " + header;
+                    error = "源表头字段名重复: " + valueName;
                     return false;
+                }
+
+                string textName = ReadCellText(cell);
+                if (!string.IsNullOrWhiteSpace(textName))
+                {
+                    headers.Add(textName.Trim());
                 }
             }
 
@@ -459,6 +692,27 @@ namespace WordAddIn1.SpreadsheetHost
             }
 
             return true;
+        }
+
+        private static string ReadCellPivotFieldName(Excel.Range cell)
+        {
+            try
+            {
+                object v = cell.Value2;
+                if (v != null && !(v is DBNull))
+                {
+                    string s = Convert.ToString(v);
+                    if (!string.IsNullOrWhiteSpace(s))
+                    {
+                        return s;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return ReadCellText(cell);
         }
 
         private static string ReadCellText(Excel.Range cell)
@@ -868,6 +1122,37 @@ namespace WordAddIn1.SpreadsheetHost
             SpreadsheetPivotResult partial,
             out string error)
         {
+            try
+            {
+                return TryCreateEtCore(book, request, partial, out error);
+            }
+            catch (Exception ex)
+            {
+                error = "et 创建透视未捕获异常: " + FormatPivotError(ex);
+                try
+                {
+                    string path = System.IO.Path.Combine(
+                        EasyWriteLog.LogDirectory,
+                        "pivot_et_error.txt");
+                    System.IO.File.AppendAllText(
+                        path,
+                        DateTime.Now.ToString("HH:mm:ss.fff") + " " + error + Environment.NewLine + ex + Environment.NewLine);
+                }
+                catch (Exception)
+                {
+                }
+
+                System.Diagnostics.Debug.WriteLine("[F_excel_pivot] " + error);
+                return false;
+            }
+        }
+
+        private static bool TryCreateEtCore(
+            object book,
+            SpreadsheetPivotRequest request,
+            SpreadsheetPivotResult partial,
+            out string error)
+        {
             if (!TryGetEtWorksheet(book, request.SourceSheet, out object sourceSheet, out error))
             {
                 return false;
@@ -904,7 +1189,7 @@ namespace WordAddIn1.SpreadsheetHost
             }
 
             string actualSource = A1Address.Range(firstRow, firstCol, lastRow, lastCol);
-            object sourceRange = EtCom.Invoke(sourceSheet, "Range", actualSource);
+            object sourceRange = EtGetSheetRange(sourceSheet, actualSource);
             if (sourceRange == null)
             {
                 error = "无法解析源区域";
@@ -923,7 +1208,7 @@ namespace WordAddIn1.SpreadsheetHost
             }
 
             string destCell = A1Address.Cell(destRow, destCol);
-            object destRange = EtCom.Invoke(destSheet, "Range", destCell);
+            object destRange = EtGetSheetRange(destSheet, destCell);
             if (destRange == null)
             {
                 error = "无法解析 dest.cell";
@@ -954,89 +1239,982 @@ namespace WordAddIn1.SpreadsheetHost
                 return false;
             }
 
-            object caches = EtCom.GetProperty(book, "PivotCaches");
+            object caches = TryGetEtPivotCaches(book);
+            string sourceSheetName = EtCom.TryReadName(sourceSheet) ?? request.SourceSheet;
+            string destSheetNameForAddr = EtCom.TryReadName(destSheet) ?? request.DestSheet;
+            string sourceAddrA1 = QuoteSheetForAddress(sourceSheetName) + "!" + actualSource;
+            string sourceAddrR1C1 = QuoteSheetForAddress(sourceSheetName) + "!"
+                + "R" + firstRow + "C" + firstCol + ":R" + lastRow + "C" + lastCol;
+            string destAddrA1 = QuoteSheetForAddress(destSheetNameForAddr) + "!" + destCell;
+            string cacheProbe = ProbeEtPivotCaches(caches);
+            string flexError = null;
+
+            // 优先 dynamic/IDispatch（WPS 对 Type.InvokeMember 常报 0x80020003）
+            if (TryCreateEtPivotDynamic(
+                    book,
+                    destSheet,
+                    sourceRange,
+                    destRange,
+                    sourceAddrA1,
+                    sourceAddrR1C1,
+                    destAddrA1,
+                    destCell,
+                    request.Name,
+                    out object dynTable,
+                    out string dynError))
+            {
+                return TryConfigureEtPivotFields(
+                    dynTable,
+                    destSheet,
+                    request,
+                    actualSource,
+                    partial,
+                    out error);
+            }
+
+            // InvokeFlex 再试 Create/Add
+            if (caches != null
+                && TryCreateEtPivotCacheFlex(
+                    caches,
+                    sourceRange,
+                    sourceAddrA1,
+                    sourceAddrR1C1,
+                    out object flexCache,
+                    out flexError)
+                && TryCreateEtPivotTableFlex(
+                    flexCache,
+                    destRange,
+                    destAddrA1,
+                    request.Name,
+                    out object flexTable,
+                    out string flexTableError))
+            {
+                return TryConfigureEtPivotFields(
+                    flexTable,
+                    destSheet,
+                    request,
+                    actualSource,
+                    partial,
+                    out error);
+            }
+
+            if (!string.IsNullOrEmpty(flexError))
+            {
+                // keep
+            }
+
+            const int xlPivotTableVersion12 = 3;
+            const int xlPivotTableVersion15 = 5;
+            string reflectError = null;
+
+            if (caches != null
+                && TryCreateEtPivotCache(
+                    caches,
+                    sourceRange,
+                    sourceAddrA1,
+                    sourceAddrR1C1,
+                    xlPivotTableVersion12,
+                    xlPivotTableVersion15,
+                    out object cache,
+                    out reflectError))
+            {
+                if (TryCreateEtPivotTable(
+                        cache,
+                        destRange,
+                        destAddrA1,
+                        request.Name,
+                        out object table,
+                        out reflectError))
+                {
+                    return TryConfigureEtPivotFields(
+                        table,
+                        destSheet,
+                        request,
+                        actualSource,
+                        partial,
+                        out error);
+                }
+            }
+
+            if (TryCreateEtPivotViaWizard(
+                    destSheet,
+                    sourceAddrR1C1,
+                    sourceAddrA1,
+                    destRange,
+                    destAddrA1,
+                    destCell,
+                    request.Name,
+                    out object wizardTable,
+                    out string wizardError))
+            {
+                return TryConfigureEtPivotFields(
+                    wizardTable,
+                    destSheet,
+                    request,
+                    actualSource,
+                    partial,
+                    out error);
+            }
+
+            error = "et 创建透视失败。probe=[" + cacheProbe + "]"
+                + " dynamic=[" + (dynError ?? "") + "]"
+                + " flex=[" + (flexError ?? "") + "]"
+                + " reflect=[" + (reflectError ?? (caches == null ? "PivotCaches=null" : "")) + "]"
+                + " wizard=[" + (wizardError ?? "") + "]";
+            try
+            {
+                string path = System.IO.Path.Combine(EasyWriteLog.LogDirectory, "pivot_et_error.txt");
+                System.IO.File.AppendAllText(
+                    path,
+                    DateTime.Now.ToString("HH:mm:ss.fff") + " " + error + Environment.NewLine);
+            }
+            catch (Exception)
+            {
+            }
+
+            System.Diagnostics.Debug.WriteLine("[F_excel_pivot] " + error);
+            return false;
+        }
+
+        private static string ProbeEtPivotCaches(object caches)
+        {
             if (caches == null)
             {
-                error = "当前 et 不支持 PivotCaches";
-                return false;
+                return "null";
             }
 
-            object cache;
+            var parts = new List<string>();
             try
             {
-                cache = EtCom.Invoke(caches, "Create", SpreadsheetPivotParse.XlDatabase, sourceRange);
+                parts.Add("type=" + caches.GetType().FullName);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                error = "创建 PivotCache 失败: " + ex.Message;
-                return false;
             }
 
-            if (cache == null)
+            foreach (string name in new[] { "Count", "Create", "Add", "Item", "_Default", "Parent" })
             {
-                error = "创建 PivotCache 失败";
-                return false;
-            }
-
-            object table;
-            try
-            {
-                if (string.IsNullOrEmpty(request.Name))
+                try
                 {
-                    table = EtCom.Invoke(cache, "CreatePivotTable", destRange);
+                    object v = EtCom.GetProperty(caches, name);
+                    parts.Add(name + ".get=" + (v == null ? "null" : v.GetType().Name));
+                }
+                catch (Exception ex)
+                {
+                    parts.Add(name + ".get!" + FormatPivotError(ex));
+                }
+
+                try
+                {
+                    object v = EtCom.InvokeFlex(caches, name);
+                    parts.Add(name + ".call0=" + (v == null ? "null" : v.GetType().Name));
+                }
+                catch (Exception ex)
+                {
+                    parts.Add(name + ".call0!" + FormatPivotError(ex));
+                }
+            }
+
+            return string.Join("; ", parts);
+        }
+
+        private static bool TryCreateEtPivotCacheFlex(
+            object caches,
+            object sourceRange,
+            string sourceAddrA1,
+            string sourceAddrR1C1,
+            out object cache,
+            out string error)
+        {
+            cache = null;
+            error = null;
+            var attempts = new List<(string label, Func<object> run)>
+            {
+                ("Flex.Create(Range)", () => EtCom.InvokeFlex(caches, "Create", SpreadsheetPivotParse.XlDatabase, sourceRange)),
+                ("Flex.Create(R1C1)", () => EtCom.InvokeFlex(caches, "Create", SpreadsheetPivotParse.XlDatabase, sourceAddrR1C1)),
+                ("Flex.Create(A1)", () => EtCom.InvokeFlex(caches, "Create", SpreadsheetPivotParse.XlDatabase, sourceAddrA1)),
+                ("Flex.Add(R1C1)", () => EtCom.InvokeFlex(caches, "Add", SpreadsheetPivotParse.XlDatabase, sourceAddrR1C1)),
+                ("Flex.Add(Range)", () => EtCom.InvokeFlex(caches, "Add", SpreadsheetPivotParse.XlDatabase, sourceRange)),
+            };
+            var errors = new List<string>();
+            foreach (var attempt in attempts)
+            {
+                try
+                {
+                    object result = attempt.run();
+                    if (result != null)
+                    {
+                        cache = result;
+                        return true;
+                    }
+
+                    errors.Add(attempt.label + "=null");
+                }
+                catch (Exception ex)
+                {
+                    errors.Add(attempt.label + ": " + FormatPivotError(ex));
+                }
+            }
+
+            error = string.Join(" | ", errors);
+            return false;
+        }
+
+        private static bool TryCreateEtPivotTableFlex(
+            object cache,
+            object destRange,
+            string destAddrA1,
+            string name,
+            out object table,
+            out string error)
+        {
+            table = null;
+            error = null;
+            var attempts = new List<(string label, Func<object> run)>();
+            if (string.IsNullOrEmpty(name))
+            {
+                attempts.Add(("Flex.CreatePivotTable(Range)", () => EtCom.InvokeFlex(cache, "CreatePivotTable", destRange)));
+                attempts.Add(("Flex.CreatePivotTable(A1)", () => EtCom.InvokeFlex(cache, "CreatePivotTable", destAddrA1)));
+            }
+            else
+            {
+                attempts.Add(("Flex.CreatePivotTable(Range,name)", () => EtCom.InvokeFlex(cache, "CreatePivotTable", destRange, name)));
+                attempts.Add(("Flex.CreatePivotTable(A1,name)", () => EtCom.InvokeFlex(cache, "CreatePivotTable", destAddrA1, name)));
+            }
+
+            var errors = new List<string>();
+            foreach (var attempt in attempts)
+            {
+                try
+                {
+                    object result = attempt.run();
+                    if (result != null)
+                    {
+                        table = result;
+                        return true;
+                    }
+
+                    errors.Add(attempt.label + "=null");
+                }
+                catch (Exception ex)
+                {
+                    errors.Add(attempt.label + ": " + FormatPivotError(ex));
+                }
+            }
+
+            error = string.Join(" | ", errors);
+            return false;
+        }
+
+        private static bool TryCreateEtPivotDynamic(
+            object book,
+            object destSheet,
+            object sourceRange,
+            object destRange,
+            string sourceAddrA1,
+            string sourceAddrR1C1,
+            string destAddrA1,
+            string destCell,
+            string name,
+            out object table,
+            out string error)
+        {
+            table = null;
+            error = null;
+            var errors = new List<string>();
+            object created = null;
+
+            void TryOne(string label, Func<object> run)
+            {
+                if (created != null)
+                {
+                    return;
+                }
+
+                try
+                {
+                    object result = run();
+                    if (result != null)
+                    {
+                        created = result;
+                        return;
+                    }
+
+                    if (A1Address.TryParseCell(destCell, out int row, out int col)
+                        && TryFindEtPivotCoveringCell(destSheet, row, col, out object found, out _))
+                    {
+                        created = found;
+                        return;
+                    }
+
+                    errors.Add(label + "=null");
+                }
+                catch (Exception ex)
+                {
+                    if (A1Address.TryParseCell(destCell, out int row, out int col)
+                        && TryFindEtPivotCoveringCell(destSheet, row, col, out object found, out _))
+                    {
+                        created = found;
+                        return;
+                    }
+
+                    errors.Add(label + ": " + FormatPivotError(ex));
+                }
+            }
+
+            // PivotCaches() 方法 + Create(Range)
+            TryOne("Caches().Create(Range)", () =>
+            {
+                dynamic dBook = book;
+                dynamic caches = dBook.PivotCaches();
+                dynamic cache = caches.Create(SpreadsheetPivotParse.XlDatabase, sourceRange);
+                if (string.IsNullOrEmpty(name))
+                {
+                    return cache.CreatePivotTable(destRange);
+                }
+
+                return cache.CreatePivotTable(destRange, name);
+            });
+
+            TryOne("Caches().Create(R1C1)", () =>
+            {
+                dynamic dBook = book;
+                dynamic caches = dBook.PivotCaches();
+                dynamic cache = caches.Create(SpreadsheetPivotParse.XlDatabase, sourceAddrR1C1);
+                if (string.IsNullOrEmpty(name))
+                {
+                    return cache.CreatePivotTable(destRange);
+                }
+
+                return cache.CreatePivotTable(destRange, name);
+            });
+
+            TryOne("Caches().Create(A1)", () =>
+            {
+                dynamic dBook = book;
+                dynamic caches = dBook.PivotCaches();
+                dynamic cache = caches.Create(SpreadsheetPivotParse.XlDatabase, sourceAddrA1);
+                if (string.IsNullOrEmpty(name))
+                {
+                    return cache.CreatePivotTable(destRange);
+                }
+
+                return cache.CreatePivotTable(destRange, name);
+            });
+
+            TryOne("Caches().Create(Range,v12)", () =>
+            {
+                dynamic dBook = book;
+                dynamic caches = dBook.PivotCaches();
+                dynamic cache = caches.Create(SpreadsheetPivotParse.XlDatabase, sourceRange, 3);
+                if (string.IsNullOrEmpty(name))
+                {
+                    return cache.CreatePivotTable(destRange);
+                }
+
+                return cache.CreatePivotTable(destRange, name);
+            });
+
+            TryOne("Caches.Create(Range)", () =>
+            {
+                dynamic dBook = book;
+                dynamic caches = dBook.PivotCaches;
+                dynamic cache = caches.Create(SpreadsheetPivotParse.XlDatabase, sourceRange);
+                if (string.IsNullOrEmpty(name))
+                {
+                    return cache.CreatePivotTable(destRange);
+                }
+
+                return cache.CreatePivotTable(destRange, name);
+            });
+
+            TryOne("Caches().Add(R1C1)", () =>
+            {
+                dynamic dBook = book;
+                dynamic caches = dBook.PivotCaches();
+                dynamic cache = caches.Add(SpreadsheetPivotParse.XlDatabase, sourceAddrR1C1);
+                if (string.IsNullOrEmpty(name))
+                {
+                    return cache.CreatePivotTable(destRange);
+                }
+
+                return cache.CreatePivotTable(destRange, name);
+            });
+
+            TryOne("Wizard(R1C1)", () =>
+            {
+                dynamic dSheet = destSheet;
+                if (string.IsNullOrEmpty(name))
+                {
+                    dSheet.PivotTableWizard(
+                        SpreadsheetPivotParse.XlDatabase,
+                        sourceAddrR1C1,
+                        destRange);
                 }
                 else
                 {
-                    table = EtCom.Invoke(cache, "CreatePivotTable", destRange, request.Name);
+                    dSheet.PivotTableWizard(
+                        SpreadsheetPivotParse.XlDatabase,
+                        sourceAddrR1C1,
+                        destRange,
+                        name);
                 }
-            }
-            catch (Exception ex)
+
+                return null; // 由 dest 回查
+            });
+
+            TryOne("Wizard(A1)", () =>
             {
-                error = "创建透视表失败: " + ex.Message;
-                return false;
+                dynamic dSheet = destSheet;
+                if (string.IsNullOrEmpty(name))
+                {
+                    dSheet.PivotTableWizard(
+                        SpreadsheetPivotParse.XlDatabase,
+                        sourceAddrA1,
+                        destRange);
+                }
+                else
+                {
+                    dSheet.PivotTableWizard(
+                        SpreadsheetPivotParse.XlDatabase,
+                        sourceAddrA1,
+                        destRange,
+                        name);
+                }
+
+                return null;
+            });
+
+            if (created != null)
+            {
+                table = created;
+                return true;
             }
 
+            error = string.Join(" | ", errors);
+            return false;
+        }
+
+        private static object EtGetSheetRange(object sheet, string a1)
+        {
+            if (sheet == null || string.IsNullOrWhiteSpace(a1))
+            {
+                return null;
+            }
+
+            try
+            {
+                return sheet.GetType().InvokeMember(
+                    "Range",
+                    System.Reflection.BindingFlags.GetProperty
+                        | System.Reflection.BindingFlags.InvokeMethod
+                        | System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.Public,
+                    null,
+                    sheet,
+                    new object[] { a1 });
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                return EtCom.InvokeFlex(sheet, "Range", a1);
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                dynamic dSheet = sheet;
+                return dSheet.Range[a1];
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                dynamic dSheet = sheet;
+                return dSheet.Range(a1);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static object TryGetEtPivotCaches(object book)
+        {
+            // WPS/Excel：PivotCaches() 多为无参方法，不能只用 GetProperty
+            try
+            {
+                dynamic dBook = book;
+                object caches = dBook.PivotCaches();
+                if (caches != null)
+                {
+                    return caches;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                object caches = EtCom.Invoke(book, "PivotCaches");
+                if (caches != null)
+                {
+                    return caches;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                return EtCom.GetProperty(book, "PivotCaches");
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static bool TryConfigureEtPivotFields(
+            object table,
+            object destSheet,
+            SpreadsheetPivotRequest request,
+            string actualSource,
+            SpreadsheetPivotResult partial,
+            out string error)
+        {
+            error = null;
             if (table == null)
             {
                 error = "创建透视表失败";
                 return false;
             }
 
-            foreach (string rowField in request.Rows)
+            try
             {
-                object pf = EtCom.Invoke(table, "PivotFields", rowField);
-                EtCom.TrySetProperty(pf, "Orientation", SpreadsheetPivotParse.XlRowField);
+                EtCom.TrySetProperty(table, "ManualUpdate", true);
+
+                foreach (string rowField in request.Rows)
+                {
+                    if (!TryResolveEtPivotField(table, rowField, out object pf, out error))
+                    {
+                        TryClearEtPivotOrphan(table);
+                        return false;
+                    }
+
+                    EtCom.TrySetProperty(pf, "Orientation", SpreadsheetPivotParse.XlRowField);
+                }
+
+                foreach (string colField in request.Columns)
+                {
+                    if (!TryResolveEtPivotField(table, colField, out object pf, out error))
+                    {
+                        TryClearEtPivotOrphan(table);
+                        return false;
+                    }
+
+                    EtCom.TrySetProperty(pf, "Orientation", SpreadsheetPivotParse.XlColumnField);
+                }
+
+                foreach (SpreadsheetPivotValueField value in request.Values)
+                {
+                    if (!SpreadsheetPivotParse.TryMapAgg(value.Agg, out int xlFn, out error))
+                    {
+                        TryClearEtPivotOrphan(table);
+                        return false;
+                    }
+
+                    if (!TryResolveEtPivotField(table, value.Field, out object pf, out error))
+                    {
+                        TryClearEtPivotOrphan(table);
+                        return false;
+                    }
+
+                    try
+                    {
+                        EtCom.Invoke(table, "AddDataField", pf, Type.Missing, xlFn);
+                    }
+                    catch (Exception)
+                    {
+                        try
+                        {
+                            EtCom.Invoke(table, "AddDataField", pf);
+                            EtCom.TrySetProperty(pf, "Function", xlFn);
+                        }
+                        catch (Exception)
+                        {
+                            EtCom.TrySetProperty(pf, "Orientation", SpreadsheetPivotParse.XlDataField);
+                            EtCom.TrySetProperty(pf, "Function", xlFn);
+                        }
+                    }
+                }
+
+                EtCom.TrySetProperty(table, "ManualUpdate", false);
             }
-
-            foreach (string colField in request.Columns)
+            catch (Exception ex)
             {
-                object pf = EtCom.Invoke(table, "PivotFields", colField);
-                EtCom.TrySetProperty(pf, "Orientation", SpreadsheetPivotParse.XlColumnField);
-            }
-
-            foreach (SpreadsheetPivotValueField value in request.Values)
-            {
-                if (!SpreadsheetPivotParse.TryMapAgg(value.Agg, out int xlFn, out error))
-                {
-                    return false;
-                }
-
-                object pf = EtCom.Invoke(table, "PivotFields", value.Field);
-                try
-                {
-                    EtCom.Invoke(table, "AddDataField", pf, Type.Missing, xlFn);
-                }
-                catch (Exception)
-                {
-                    EtCom.TrySetProperty(pf, "Orientation", SpreadsheetPivotParse.XlDataField);
-                    EtCom.TrySetProperty(pf, "Function", xlFn);
-                }
+                TryClearEtPivotOrphan(table);
+                error = "配置透视字段失败: " + FormatPivotError(ex);
+                return false;
             }
 
             string destSheetName = EtCom.TryReadName(destSheet) ?? request.DestSheet;
             SpreadsheetPivotInfo info = ReadEtPivotInfo(destSheetName, table);
             FillResultFromInfo(partial, info, request.SourceSheet, actualSource);
             return true;
+        }
+
+        private static bool TryCreateEtPivotViaWizard(
+            object destSheet,
+            string sourceAddrR1C1,
+            string sourceAddrA1,
+            object destRange,
+            string destAddrA1,
+            string destCell,
+            string name,
+            out object table,
+            out string error)
+        {
+            table = null;
+            error = null;
+            object nameArg = string.IsNullOrEmpty(name) ? Type.Missing : (object)name;
+            var attempts = new List<(string label, Func<object> run)>
+            {
+                ("Wizard(R1C1,Range)", () => EtCom.Invoke(
+                    destSheet, "PivotTableWizard",
+                    SpreadsheetPivotParse.XlDatabase, sourceAddrR1C1, destRange, nameArg)),
+                ("Wizard(A1,Range)", () => EtCom.Invoke(
+                    destSheet, "PivotTableWizard",
+                    SpreadsheetPivotParse.XlDatabase, sourceAddrA1, destRange, nameArg)),
+                ("Wizard(R1C1,A1)", () => EtCom.Invoke(
+                    destSheet, "PivotTableWizard",
+                    SpreadsheetPivotParse.XlDatabase, sourceAddrR1C1, destAddrA1, nameArg)),
+            };
+
+            // PivotTables.Add(Cache/Source, Destination, Name) — 部分版本
+            try
+            {
+                object pivots = EtCom.Invoke(destSheet, "PivotTables");
+                if (pivots == null)
+                {
+                    pivots = EtCom.GetProperty(destSheet, "PivotTables");
+                }
+
+                if (pivots != null)
+                {
+                    object pivotsRef = pivots;
+                    attempts.Add(("PivotTables.Add(R1C1)", () => EtCom.Invoke(
+                        pivotsRef, "Add", sourceAddrR1C1, destRange, nameArg)));
+                    attempts.Add(("PivotTables.Add(A1)", () => EtCom.Invoke(
+                        pivotsRef, "Add", sourceAddrA1, destRange, nameArg)));
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            var errors = new List<string>();
+            foreach (var attempt in attempts)
+            {
+                try
+                {
+                    object result = attempt.run();
+                    // Wizard 可能返回 null 但仍创建了表：按 dest 单元格查找
+                    if (result != null)
+                    {
+                        table = result;
+                        return true;
+                    }
+
+                    if (A1Address.TryParseCell(destCell, out int row, out int col)
+                        && TryFindEtPivotCoveringCell(destSheet, row, col, out object found, out _))
+                    {
+                        table = found;
+                        return true;
+                    }
+
+                    errors.Add(attempt.label + "=null");
+                }
+                catch (Exception ex)
+                {
+                    // Wizard 有时抛错但仍建表
+                    if (A1Address.TryParseCell(destCell, out int row, out int col)
+                        && TryFindEtPivotCoveringCell(destSheet, row, col, out object found, out _))
+                    {
+                        table = found;
+                        return true;
+                    }
+
+                    errors.Add(attempt.label + ": " + FormatPivotError(ex));
+                }
+            }
+
+            error = string.Join(" | ", errors);
+            return false;
+        }
+
+        private static string QuoteSheetForAddress(string sheetName)
+        {
+            string name = sheetName ?? "";
+            if (name.IndexOfAny(new[] { ' ', '\'', '!', ':', '（', '）', '(', ')' }) >= 0
+                || !IsSimpleSheetName(name))
+            {
+                return "'" + name.Replace("'", "''") + "'";
+            }
+
+            return name;
+        }
+
+        private static bool IsSimpleSheetName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            foreach (char ch in name)
+            {
+                if (!(char.IsLetterOrDigit(ch) || ch == '_' || ch > 127))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TryCreateEtPivotCache(
+            object caches,
+            object sourceRange,
+            string sourceAddrA1,
+            string sourceAddrR1C1,
+            int version12,
+            int version15,
+            out object cache,
+            out string error)
+        {
+            cache = null;
+            error = null;
+            var attempts = new List<(string label, Func<object> run)>
+            {
+                ("Create(Range)", () => EtCom.Invoke(caches, "Create", SpreadsheetPivotParse.XlDatabase, sourceRange)),
+                ("Create(Range,v12)", () => EtCom.Invoke(caches, "Create", SpreadsheetPivotParse.XlDatabase, sourceRange, version12)),
+                ("Create(Range,v15)", () => EtCom.Invoke(caches, "Create", SpreadsheetPivotParse.XlDatabase, sourceRange, version15)),
+                ("Create(A1)", () => EtCom.Invoke(caches, "Create", SpreadsheetPivotParse.XlDatabase, sourceAddrA1)),
+                ("Create(A1,v12)", () => EtCom.Invoke(caches, "Create", SpreadsheetPivotParse.XlDatabase, sourceAddrA1, version12)),
+                ("Create(R1C1)", () => EtCom.Invoke(caches, "Create", SpreadsheetPivotParse.XlDatabase, sourceAddrR1C1)),
+                ("Create(R1C1,v12)", () => EtCom.Invoke(caches, "Create", SpreadsheetPivotParse.XlDatabase, sourceAddrR1C1, version12)),
+                ("Add(Range)", () => EtCom.Invoke(caches, "Add", SpreadsheetPivotParse.XlDatabase, sourceRange)),
+                ("Add(A1)", () => EtCom.Invoke(caches, "Add", SpreadsheetPivotParse.XlDatabase, sourceAddrA1)),
+                ("Add(R1C1)", () => EtCom.Invoke(caches, "Add", SpreadsheetPivotParse.XlDatabase, sourceAddrR1C1)),
+            };
+
+            var errors = new List<string>();
+            foreach (var attempt in attempts)
+            {
+                try
+                {
+                    object result = attempt.run();
+                    if (result != null)
+                    {
+                        cache = result;
+                        return true;
+                    }
+
+                    errors.Add(attempt.label + "=null");
+                }
+                catch (Exception ex)
+                {
+                    errors.Add(attempt.label + ": " + FormatPivotError(ex));
+                }
+            }
+
+            error = "创建 PivotCache 失败（et）。" + string.Join(" | ", errors);
+            return false;
+        }
+
+        private static bool TryCreateEtPivotTable(
+            object cache,
+            object destRange,
+            string destAddrA1,
+            string name,
+            out object table,
+            out string error)
+        {
+            table = null;
+            error = null;
+            var attempts = new List<(string label, Func<object> run)>();
+
+            if (string.IsNullOrEmpty(name))
+            {
+                attempts.Add(("CreatePivotTable(Range)", () => EtCom.Invoke(cache, "CreatePivotTable", destRange)));
+                attempts.Add(("CreatePivotTable(A1)", () => EtCom.Invoke(cache, "CreatePivotTable", destAddrA1)));
+            }
+            else
+            {
+                attempts.Add(("CreatePivotTable(Range,name)", () => EtCom.Invoke(cache, "CreatePivotTable", destRange, name)));
+                attempts.Add(("CreatePivotTable(A1,name)", () => EtCom.Invoke(cache, "CreatePivotTable", destAddrA1, name)));
+                attempts.Add(("CreatePivotTable(Range)", () => EtCom.Invoke(cache, "CreatePivotTable", destRange)));
+            }
+
+            var errors = new List<string>();
+            foreach (var attempt in attempts)
+            {
+                try
+                {
+                    object result = attempt.run();
+                    if (result != null)
+                    {
+                        table = result;
+                        return true;
+                    }
+
+                    errors.Add(attempt.label + "=null");
+                }
+                catch (Exception ex)
+                {
+                    errors.Add(attempt.label + ": " + FormatPivotError(ex));
+                }
+            }
+
+            error = "创建透视表失败（et）。" + string.Join(" | ", errors);
+            return false;
+        }
+
+        private static bool TryResolveEtPivotField(
+            object table,
+            string requestedName,
+            out object field,
+            out string error)
+        {
+            field = null;
+            error = null;
+            string want = (requestedName ?? "").Trim();
+            if (string.IsNullOrEmpty(want))
+            {
+                error = "字段名不能为空";
+                return false;
+            }
+
+            try
+            {
+                field = EtCom.Invoke(table, "PivotFields", want);
+                if (field != null)
+                {
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            var available = new List<string>();
+            try
+            {
+                object all = null;
+                try
+                {
+                    all = EtCom.Invoke(table, "PivotFields", Type.Missing);
+                }
+                catch (Exception)
+                {
+                    all = EtCom.GetProperty(table, "PivotFields");
+                }
+
+                if (all != null)
+                {
+                    int count = Convert.ToInt32(EtCom.GetProperty(all, "Count"));
+                    for (int i = 1; i <= count; i++)
+                    {
+                        object candidate = TryGetPivotItem(all, i);
+                        if (candidate == null)
+                        {
+                            continue;
+                        }
+
+                        string name = "";
+                        string caption = "";
+                        string sourceName = "";
+                        try
+                        {
+                            name = Convert.ToString(EtCom.GetProperty(candidate, "Name"))?.Trim() ?? "";
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        try
+                        {
+                            caption = Convert.ToString(EtCom.GetProperty(candidate, "Caption"))?.Trim() ?? "";
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        try
+                        {
+                            sourceName = Convert.ToString(EtCom.GetProperty(candidate, "SourceName"))?.Trim() ?? "";
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        if (!string.IsNullOrEmpty(name))
+                        {
+                            available.Add(name);
+                        }
+
+                        if (NamesMatch(want, name)
+                            || NamesMatch(want, caption)
+                            || NamesMatch(want, sourceName))
+                        {
+                            field = candidate;
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            error = "无法匹配透视字段: " + want;
+            if (available.Count > 0)
+            {
+                error += "（可用: " + string.Join(", ", available) + "）";
+            }
+
+            return false;
+        }
+
+        private static void TryClearEtPivotOrphan(object table)
+        {
+            if (table == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object tr = EtCom.GetProperty(table, "TableRange2")
+                    ?? EtCom.GetProperty(table, "TableRange1");
+                if (tr != null)
+                {
+                    EtCom.Invoke(tr, "Clear");
+                }
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private static bool TryValidateSourceEt(

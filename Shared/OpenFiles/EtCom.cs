@@ -302,12 +302,19 @@ namespace WordAddIn1.OpenFiles
             {
             }
 
-            return collection.GetType().InvokeMember(
-                "get_Item",
-                BindingFlags.InvokeMethod | BindingFlags.Instance | BindingFlags.Public,
-                null,
-                collection,
-                new object[] { row, col });
+            try
+            {
+                return collection.GetType().InvokeMember(
+                    "get_Item",
+                    BindingFlags.InvokeMethod | BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    collection,
+                    new object[] { row, col });
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         public static object GetIndexed(object collection, int index)
@@ -325,12 +332,42 @@ namespace WordAddIn1.OpenFiles
             {
             }
 
-            return collection.GetType().InvokeMember(
-                "get_Item",
-                BindingFlags.InvokeMethod | BindingFlags.Instance | BindingFlags.Public,
+            try
+            {
+                return collection.GetType().InvokeMember(
+                    "get_Item",
+                    BindingFlags.InvokeMethod | BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    collection,
+                    new object[] { index });
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>InvokeMethod | GetProperty | OptionalParamBinding，适配 WPS IDispatch。</summary>
+        public static object InvokeFlex(object target, string name, params object[] args)
+        {
+            if (target == null || string.IsNullOrEmpty(name))
+            {
+                return null;
+            }
+
+            return target.GetType().InvokeMember(
+                name,
+                BindingFlags.InvokeMethod
+                    | BindingFlags.GetProperty
+                    | BindingFlags.OptionalParamBinding
+                    | BindingFlags.Instance
+                    | BindingFlags.Public,
                 null,
-                collection,
-                new object[] { index });
+                target,
+                args ?? new object[0],
+                null,
+                null,
+                null);
         }
 
         private static bool TryReadHwnd(object target, out int hwnd)
