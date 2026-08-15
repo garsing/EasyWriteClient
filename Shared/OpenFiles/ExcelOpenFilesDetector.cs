@@ -69,8 +69,6 @@ namespace WordAddIn1.OpenFiles
                         // 粘在空壳实例上时强制重绑（多实例：GetActiveObject 常返回无簿的那个）
                         if (existingCount == 0)
                         {
-                            EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                                "[ExcelOpenFilesDetector] attached but workbooks=0 — rebind");
                             TearDownUnlocked(raiseDetached: false);
                         }
                         else
@@ -85,23 +83,13 @@ namespace WordAddIn1.OpenFiles
                 }
 
                 Excel.Application app = null;
-                object raw = null;
                 try
                 {
-                    raw = _resolveExcelApp?.Invoke();
+                    object raw = _resolveExcelApp?.Invoke();
                     app = raw as Excel.Application;
                     if (app == null && raw != null)
                     {
-                        try
-                        {
-                            app = (Excel.Application)raw;
-                        }
-                        catch (Exception castEx)
-                        {
-                            EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                                "[ExcelOpenFilesDetector] resolve cast failed type="
-                                + raw.GetType().FullName + " err=" + castEx.Message);
-                        }
+                        app = (Excel.Application)raw;
                     }
                 }
                 catch (Exception ex)
@@ -113,9 +101,6 @@ namespace WordAddIn1.OpenFiles
 
                 if (app == null)
                 {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[ExcelOpenFilesDetector] resolve returned null"
-                        + (raw == null ? "" : " (raw type=" + raw.GetType().FullName + ")"));
                     return false;
                 }
 
@@ -130,15 +115,6 @@ namespace WordAddIn1.OpenFiles
                     return false;
                 }
 
-                int wbCount = -1;
-                try
-                {
-                    wbCount = app.Workbooks.Count;
-                }
-                catch (Exception)
-                {
-                }
-
                 _app = app;
                 try
                 {
@@ -148,15 +124,13 @@ namespace WordAddIn1.OpenFiles
                     events.WorkbookBeforeClose += OnWorkbookBeforeClose;
                     _subscribed = true;
                     EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[ExcelOpenFilesDetector] attached and subscribed name="
-                        + (app.Name ?? "") + " workbooks=" + wbCount);
+                        "[ExcelOpenFilesDetector] attached and subscribed");
                     return true;
                 }
                 catch (Exception ex)
                 {
                     EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[ExcelOpenFilesDetector] subscribe failed (will not attach): "
-                        + ex.Message + " workbooks=" + wbCount);
+                        "[ExcelOpenFilesDetector] subscribe failed: " + ex.Message);
                     TearDownUnlocked(raiseDetached: false);
                     return false;
                 }
@@ -171,9 +145,6 @@ namespace WordAddIn1.OpenFiles
             {
                 if (!_subscribed || _app == null || !IsAppAliveUnlocked())
                 {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[ExcelOpenFilesDetector] Snapshot skip subscribed="
-                        + _subscribed + " appNull=" + (_app == null));
                     return result;
                 }
 
@@ -182,31 +153,15 @@ namespace WordAddIn1.OpenFiles
             }
 
             var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            int rawCount = 0;
-            int mapped = 0;
-            int skipped = 0;
             try
             {
                 foreach (Excel.Workbook book in app.Workbooks)
                 {
-                    rawCount++;
                     try
                     {
                         var item = MapWorkbook(book, usedIds);
                         if (item == null)
                         {
-                            skipped++;
-                            string skipName = null;
-                            try
-                            {
-                                skipName = book.Name;
-                            }
-                            catch (Exception)
-                            {
-                            }
-
-                            EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                                "[ExcelOpenFilesDetector] Snapshot skip book=" + (skipName ?? "?"));
                             continue;
                         }
 
@@ -218,11 +173,9 @@ namespace WordAddIn1.OpenFiles
                         }
 
                         result.Add(item);
-                        mapped++;
                     }
                     catch (Exception ex)
                     {
-                        skipped++;
                         EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
                             "[ExcelOpenFilesDetector] snapshot item skip: " + ex.Message);
                     }
@@ -235,10 +188,6 @@ namespace WordAddIn1.OpenFiles
                 MarkDetached();
             }
 
-            EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                "[ExcelOpenFilesDetector] Snapshot raw=" + rawCount
-                + " mapped=" + mapped + " skipped=" + skipped
-                + " ids=[" + string.Join(",", result.ConvertAll(i => i.Id)) + "]");
             return result;
         }
 
@@ -324,18 +273,6 @@ namespace WordAddIn1.OpenFiles
 
             try
             {
-                string openName = null;
-                try
-                {
-                    openName = book.Name;
-                }
-                catch (Exception)
-                {
-                }
-
-                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[ExcelOpenFilesDetector] open event book=" + (openName ?? "?"));
-
                 var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 lock (_gate)
                 {
@@ -348,8 +285,6 @@ namespace WordAddIn1.OpenFiles
                 var item = MapWorkbook(book, used);
                 if (item == null)
                 {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[ExcelOpenFilesDetector] open event mapped null book=" + (openName ?? "?"));
                     return;
                 }
 

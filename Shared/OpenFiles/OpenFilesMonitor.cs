@@ -248,9 +248,6 @@ namespace WordAddIn1.OpenFiles
                 {
                     _excelEnabled = true;
                     _excelProcessNames = ReadProcessNames(entry.ProcessNames, "EXCEL");
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[OpenFilesMonitor] excel enabled processes="
-                        + string.Join(",", _excelProcessNames));
                 }
                 else if (type == EtOpenFilesDetector.TypeKey)
                 {
@@ -391,8 +388,6 @@ namespace WordAddIn1.OpenFiles
             {
                 if (!detector.TryAttach())
                 {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[OpenFilesMonitor] TryAttachOne " + appType + " => false");
                     return false;
                 }
 
@@ -409,9 +404,6 @@ namespace WordAddIn1.OpenFiles
                     }
                 }
 
-                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[OpenFilesMonitor] TryAttachOne " + appType
-                    + " => true count=" + (snapshot?.Count ?? 0));
                 return true;
             }
             catch (Exception ex)
@@ -608,15 +600,6 @@ namespace WordAddIn1.OpenFiles
             var detector = getDetector();
             bool attached = detector != null && detector.IsAttached;
 
-            if (string.Equals(appType, ExcelOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
-            {
-                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[OpenFilesMonitor] WatchOne excel running=" + running
-                    + " attached=" + attached
-                    + " detectorNull=" + (detector == null)
-                    + " processes=" + string.Join(",", processNames ?? Array.Empty<string>()));
-            }
-
             if (!running)
             {
                 if (attached || HasAppItems(appType))
@@ -637,24 +620,14 @@ namespace WordAddIn1.OpenFiles
             {
                 EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
                     "[OpenFilesMonitor] " + appType + " process present — try attach");
-                bool attachedNow = InvokeDetectorOnSync(() => TryAttachOne(appType));
-                if (string.Equals(appType, ExcelOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
-                {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[OpenFilesMonitor] excel TryAttachOne => " + attachedNow);
-                }
-
-                return attachedNow;
+                return InvokeDetectorOnSync(() => TryAttachOne(appType));
             }
 
             // Excel AppEvents（GetActiveObject）对手动打开经常不回调；Word 事件可靠故不轮询。
             // 已附着时定期重扫 Workbooks，对齐「工具打开能检出 / 手动打开也要检出」。
             if (string.Equals(appType, ExcelOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
             {
-                bool changed = InvokeDetectorOnSync(() => TryResnapshotOne(appType));
-                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[OpenFilesMonitor] excel resnapshot changed=" + changed);
-                return changed;
+                return InvokeDetectorOnSync(() => TryResnapshotOne(appType));
             }
 
             return false;
@@ -725,8 +698,6 @@ namespace WordAddIn1.OpenFiles
             {
                 if (!detector.TryAttach())
                 {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[OpenFilesMonitor] resnapshot excel TryAttach=false");
                     return false;
                 }
 
@@ -746,11 +717,6 @@ namespace WordAddIn1.OpenFiles
                         .Where(kv => kv.Value != null
                             && string.Equals(kv.Value.AppType, appType, StringComparison.OrdinalIgnoreCase))
                         .ToList();
-
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[OpenFilesMonitor] resnapshot excel old=" + oldItems.Count
-                        + " new=" + newById.Count
-                        + " newIds=[" + string.Join(",", newById.Keys) + "]");
 
                     bool changed = false;
                     foreach (var kv in oldItems)

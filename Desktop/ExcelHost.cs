@@ -22,21 +22,15 @@ namespace EasyWriteClient.Desktop
             {
                 if (ExcelApplicationResolver.TryResolve(
                         out object app,
-                        out string error,
+                        out _,
                         createIfMissing: createIfMissing,
                         makeVisible: false)
                     && app != null)
                 {
                     _app = app;
-                    System.Diagnostics.Debug.WriteLine(
-                        "[debug:open_files] [ExcelHost] GetOrAttach ok createIfMissing="
-                        + createIfMissing);
                     return _app;
                 }
 
-                System.Diagnostics.Debug.WriteLine(
-                    "[debug:open_files] [ExcelHost] GetOrAttach miss createIfMissing="
-                    + createIfMissing + " err=" + (error ?? ""));
                 _app = null;
                 return null;
             }
@@ -54,9 +48,6 @@ namespace EasyWriteClient.Desktop
             {
                 ExcelApplicationResolver.Attach(excelApplication);
                 _app = excelApplication;
-                System.Diagnostics.Debug.WriteLine(
-                    "[debug:open_files] [ExcelHost] Attach type="
-                    + excelApplication.GetType().FullName);
             }
         }
 

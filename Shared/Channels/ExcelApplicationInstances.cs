@@ -58,11 +58,6 @@ namespace WordAddIn1
                 }
 
                 int count = SafeWorkbookCount(candidate);
-                string name = SafeName(candidate);
-                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[ExcelApplicationInstances] candidate name=" + name
-                    + " workbooks=" + count);
-
                 if (count > bestCount)
                 {
                     bestWithBooks = candidate;
@@ -82,9 +77,6 @@ namespace WordAddIn1
                 if (active != null)
                 {
                     int count = SafeWorkbookCount(active);
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[ExcelApplicationInstances] GetActiveObject name="
-                        + SafeName(active) + " workbooks=" + count);
                     if (count > bestCount)
                     {
                         bestWithBooks = active;
@@ -101,10 +93,8 @@ namespace WordAddIn1
             catch (COMException)
             {
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[ExcelApplicationInstances] GetActiveObject: " + ex.Message);
             }
 
             if (bestWithBooks != null)
@@ -133,10 +123,8 @@ namespace WordAddIn1
             {
                 procs = Process.GetProcessesByName("EXCEL");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[ExcelApplicationInstances] GetProcessesByName: " + ex.Message);
                 yield break;
             }
 
@@ -161,8 +149,6 @@ namespace WordAddIn1
                 int excel7 = FindExcel7Child((int)main);
                 if (excel7 == 0)
                 {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[ExcelApplicationInstances] no EXCEL7 pid=" + p.Id);
                     continue;
                 }
 
@@ -211,37 +197,28 @@ namespace WordAddIn1
                 int hr = AccessibleObjectFromWindow(excel7Hwnd, ObjIdNativeOm, ref iid, out object obj);
                 if (hr < 0 || obj == null)
                 {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[ExcelApplicationInstances] AccessibleObjectFromWindow hr=" + hr);
                     return null;
                 }
 
-                // Excel.Window → Application
                 var window = obj as Excel.Window;
                 if (window != null)
                 {
                     return window.Application;
                 }
 
-                // 部分环境返回的是 Worksheet / Workbook
                 try
                 {
                     dynamic dyn = obj;
                     object appObj = dyn.Application;
                     return appObj as Excel.Application ?? (Excel.Application)appObj;
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[ExcelApplicationInstances] dynamic Application: " + ex.Message
-                        + " type=" + obj.GetType().FullName);
                     return null;
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[ExcelApplicationInstances] from hwnd: " + ex.Message);
                 return null;
             }
         }
@@ -255,18 +232,6 @@ namespace WordAddIn1
             catch (Exception)
             {
                 return com?.GetHashCode() ?? 0;
-            }
-        }
-
-        private static string SafeName(Excel.Application app)
-        {
-            try
-            {
-                return app?.Name ?? "";
-            }
-            catch (Exception)
-            {
-                return "?";
             }
         }
 

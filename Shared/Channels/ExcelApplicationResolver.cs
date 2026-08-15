@@ -22,8 +22,6 @@ namespace WordAddIn1
                 if (application == null)
                 {
                     _hosted = null;
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[ExcelApplicationResolver] Attach(null)");
                     return;
                 }
 
@@ -34,27 +32,13 @@ namespace WordAddIn1
                     {
                         typed = (Excel.Application)application;
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
-                        EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                            "[ExcelApplicationResolver] Attach cast failed type="
-                            + application.GetType().FullName + " err=" + ex.Message);
                         return;
                     }
                 }
 
                 _hosted = typed;
-                try
-                {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[ExcelApplicationResolver] Attach ok name=" + (_hosted.Name ?? "")
-                        + " workbooks=" + _hosted.Workbooks.Count);
-                }
-                catch (Exception ex)
-                {
-                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[ExcelApplicationResolver] Attach ok but read failed: " + ex.Message);
-                }
             }
         }
 
@@ -110,19 +94,11 @@ namespace WordAddIn1
                                 EnsureVisibleCore(application);
                             }
 
-                            EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                                "[ExcelApplicationResolver] resolve=hosted name=" + (_hosted.Name ?? "")
-                                + " workbooks=" + hostedCount);
                             return true;
                         }
-
-                        EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                            "[ExcelApplicationResolver] hosted workbooks=0 — try better instance");
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
-                        EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                            "[ExcelApplicationResolver] hosted dead, clear: " + ex.Message);
                         _hosted = null;
                     }
                 }
@@ -130,8 +106,8 @@ namespace WordAddIn1
 
             if (ExcelApplicationInstances.TryFindBest(
                     out Excel.Application found,
-                    out string source,
-                    out int workbookCount)
+                    out _,
+                    out _)
                 && found != null)
             {
                 application = found;
@@ -141,26 +117,18 @@ namespace WordAddIn1
                     EnsureVisibleCore(application);
                 }
 
-                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[ExcelApplicationResolver] resolve=" + source
-                    + " workbooks=" + workbookCount
-                    + " name=" + SafeName(application));
                 return true;
             }
 
             if (!createIfMissing)
             {
                 error = "Excel 应用程序不可用；请先启动 Excel。";
-                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[ExcelApplicationResolver] resolve miss createIfMissing=false");
                 return false;
             }
 
             try
             {
                 application = new Excel.Application();
-                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[ExcelApplicationResolver] resolve=new Application");
                 Attach(application);
                 if (makeVisible)
                 {
@@ -174,18 +142,6 @@ namespace WordAddIn1
                 error = "无法创建 Excel.Application（是否未安装 Excel？）: " + ex.Message;
                 application = null;
                 return false;
-            }
-        }
-
-        private static string SafeName(Excel.Application app)
-        {
-            try
-            {
-                return app?.Name ?? "";
-            }
-            catch (Exception)
-            {
-                return "?";
             }
         }
 
