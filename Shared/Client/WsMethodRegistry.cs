@@ -32,6 +32,7 @@ namespace WordAddIn1
                 { "workbook.manageSheet", "F_manage_excel_sheet" },
                 { "workbook.applyFormat", "F_apply_excel_format" },
                 { "workbook.getFormat", "F_get_excel_format" },
+                { "workbook.applyConditionalFormat", "F_apply_excel_conditional_format" },
                 { "channel.setDefault", "F_switch_default_channel" },
                 { "document.processActions", "F_process_document_actions" },
                 // document.setTrackRevisions / F_set_track_revisions 已下线（2026-08）

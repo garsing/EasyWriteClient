@@ -35,6 +35,7 @@ namespace WordAddIn1
             "F_write_excel_range",
             "F_manage_excel_sheet",
             "F_apply_excel_format",
+            "F_apply_excel_conditional_format",
         };
 
         public static bool ShouldCompact(string toolName)

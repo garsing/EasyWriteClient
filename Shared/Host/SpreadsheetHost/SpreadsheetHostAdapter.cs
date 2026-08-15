@@ -376,5 +376,59 @@ namespace WordAddIn1.SpreadsheetHost
 
             return true;
         }
+
+        internal static bool TryApplyConditionalFormat(
+            IOperationChannel channel,
+            SpreadsheetConditionalFormatRequest request,
+            out SpreadsheetConditionalFormatResult result,
+            out ToolResult errorResult)
+        {
+            result = null;
+            errorResult = null;
+            if (channel == null)
+            {
+                errorResult = new ToolResult { Success = false, Error = "未知 channel_id" };
+                return false;
+            }
+
+            if (channel.Kind == ChannelKind.Word || channel.Kind == ChannelKind.Wps)
+            {
+                string host = channel.Kind.ToString().ToLowerInvariant();
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "unsupported: 当前渠道是 " + host + "，条件格式仅支持 excel/et"
+                };
+                return false;
+            }
+
+            bool ok;
+            string error;
+            if (channel is ExcelChannel excel)
+            {
+                ok = ExcelWorkbookHost.TryApplyConditionalFormat(excel, request, out result, out error);
+            }
+            else if (channel is EtChannel et)
+            {
+                ok = EtWorkbookHost.TryApplyConditionalFormat(et, request, out result, out error);
+            }
+            else
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "unsupported: 当前渠道不是 excel/et"
+                };
+                return false;
+            }
+
+            if (!ok)
+            {
+                errorResult = new ToolResult { Success = false, Error = error };
+                return false;
+            }
+
+            return true;
+        }
     }
 }

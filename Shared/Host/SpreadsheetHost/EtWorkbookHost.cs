@@ -1300,7 +1300,7 @@ namespace WordAddIn1.SpreadsheetHost
 
             int rowCount = lastRow - firstRow + 1;
             int colCount = lastCol - firstCol + 1;
-            if (!SpreadsheetWritePlanner.TryCheckLimits(rowCount, colCount, "格式", out error))
+            if (!SpreadsheetFormatMutationLimits.TryCheckHardLimits(rowCount, colCount, "格式", out error))
             {
                 return false;
             }
@@ -1464,6 +1464,85 @@ namespace WordAddIn1.SpreadsheetHost
                 Mode = mode,
                 Items = items
             };
+            return true;
+        }
+
+        public static bool TryApplyConditionalFormat(
+            EtChannel channel,
+            SpreadsheetConditionalFormatRequest request,
+            out SpreadsheetConditionalFormatResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLiveWorkbook(out object book))
+            {
+                error = "渠道对应的工作簿已关闭";
+                return false;
+            }
+
+            if (request == null || string.IsNullOrWhiteSpace(request.SheetName))
+            {
+                error = "必须提供 sheet";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(request.RangeA1))
+            {
+                error = "必须提供 range";
+                return false;
+            }
+
+            string requested = request.RangeA1.Trim();
+            if (requested.IndexOf('!') >= 0)
+            {
+                error = "range 须为纯 A1（如 A1:G40），表名请用 sheet 参数";
+                return false;
+            }
+
+            if (!TryFindWorksheet(book, request.SheetName.Trim(), out object sheet, out error))
+            {
+                return false;
+            }
+
+            if (!A1Address.TryParseRange(
+                    requested,
+                    out int firstRow,
+                    out int firstCol,
+                    out int lastRow,
+                    out int lastCol,
+                    out error))
+            {
+                return false;
+            }
+
+            int rowCount = lastRow - firstRow + 1;
+            int colCount = lastCol - firstCol + 1;
+            if (!SpreadsheetFormatMutationLimits.TryCheckHardLimits(
+                    rowCount, colCount, "条件格式", out error))
+            {
+                return false;
+            }
+
+            string actualRange = A1Address.Range(firstRow, firstCol, lastRow, lastCol);
+            if (!SpreadsheetConditionalFormatCom.TryExecuteOnEtSheet(
+                    sheet,
+                    request,
+                    actualRange,
+                    firstRow,
+                    firstCol,
+                    lastRow,
+                    lastCol,
+                    out SpreadsheetConditionalFormatResult partial,
+                    out error))
+            {
+                return false;
+            }
+
+            result = partial;
+            result.ChannelId = channel.ChannelId;
+            result.Kind = "et";
+            result.Sheet = EtCom.TryReadName(sheet) ?? request.SheetName.Trim();
             return true;
         }
     }
