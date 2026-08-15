@@ -50,6 +50,7 @@ namespace WordAddIn1
             F_WriteExcelRangeTool.Register(toolRegistry, wordApplication);
             F_ManageExcelSheetTool.Register(toolRegistry, wordApplication);
             F_ApplyExcelFormatTool.Register(toolRegistry, wordApplication);
+            F_GetExcelFormatTool.Register(toolRegistry, wordApplication);
             F_OpenDocumentTool.Register(toolRegistry, wordApplication);
             F_SwitchDefaultChannelTool.Register(toolRegistry, wordApplication);
             F_GetCurrDocChunkDisplayContentTool.Register(toolRegistry, wordApplication);

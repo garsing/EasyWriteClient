@@ -1432,5 +1432,137 @@ namespace WordAddIn1.SpreadsheetHost
             };
             return true;
         }
+
+        public static bool TryGetFormat(
+            ExcelChannel channel,
+            SpreadsheetGetFormatRequest request,
+            out SpreadsheetGetFormatResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLiveWorkbook(out Excel.Workbook book))
+            {
+                error = "渠道对应的工作簿已关闭";
+                return false;
+            }
+
+            if (request == null || string.IsNullOrWhiteSpace(request.SheetName))
+            {
+                error = "必须提供 sheet";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(request.RangeA1))
+            {
+                error = "必须提供 range";
+                return false;
+            }
+
+            string requested = request.RangeA1.Trim();
+            if (requested.IndexOf('!') >= 0)
+            {
+                error = "range 须为纯 A1（如 A1:G40），表名请用 sheet 参数";
+                return false;
+            }
+
+            if (!TryFindWorksheet(book, request.SheetName.Trim(), out Excel.Worksheet sheet, out error))
+            {
+                return false;
+            }
+
+            if (!A1Address.TryParseRange(
+                    requested,
+                    out int firstRow,
+                    out int firstCol,
+                    out int lastRow,
+                    out int lastCol,
+                    out error))
+            {
+                return false;
+            }
+
+            int rowCount = lastRow - firstRow + 1;
+            int colCount = lastCol - firstCol + 1;
+            if (!SpreadsheetWritePlanner.TryCheckLimits(rowCount, colCount, "格式读取", out error))
+            {
+                return false;
+            }
+
+            string actualRange = A1Address.Range(firstRow, firstCol, lastRow, lastCol);
+            string mode = SpreadsheetGetFormatLimits.ResolveMode(rowCount, colCount);
+            var items = new List<SpreadsheetFormatItem>();
+
+            try
+            {
+                Excel.Range target = sheet.Range[actualRange];
+                if (mode == "cells")
+                {
+                    for (int r = 0; r < rowCount; r++)
+                    {
+                        for (int c = 0; c < colCount; c++)
+                        {
+                            Excel.Range cell = target.Cells[r + 1, c + 1] as Excel.Range;
+                            items.Add(new SpreadsheetFormatItem
+                            {
+                                Addr = A1Address.Cell(firstRow + r, firstCol + c),
+                                Format = SpreadsheetFormatRead.ReadFromExcelCell(cell, includeRowHeight: true)
+                            });
+                        }
+                    }
+                }
+                else
+                {
+                    for (int c = 0; c < colCount; c++)
+                    {
+                        int sheetCol = firstCol + c;
+                        Excel.Range firstCell = target.Cells[1, c + 1] as Excel.Range;
+                        SpreadsheetFormatPatch sample = SpreadsheetFormatRead.StripRowHeight(
+                            SpreadsheetFormatRead.ReadFromExcelCell(firstCell, includeRowHeight: false));
+                        var mixedFields = new List<string>();
+                        for (int r = 1; r < rowCount; r++)
+                        {
+                            Excel.Range cell = target.Cells[r + 1, c + 1] as Excel.Range;
+                            SpreadsheetFormatPatch other = SpreadsheetFormatRead.StripRowHeight(
+                                SpreadsheetFormatRead.ReadFromExcelCell(cell, includeRowHeight: false));
+                            foreach (string field in SpreadsheetFormatRead.DiffFields(
+                                         sample, other, compareRowHeight: false))
+                            {
+                                if (!mixedFields.Contains(field))
+                                {
+                                    mixedFields.Add(field);
+                                }
+                            }
+                        }
+
+                        items.Add(new SpreadsheetFormatItem
+                        {
+                            Col = A1Address.ColumnLetter(sheetCol),
+                            RangeA1 = A1Address.Range(firstRow, sheetCol, lastRow, sheetCol),
+                            Mixed = mixedFields.Count > 0,
+                            MixedFields = mixedFields,
+                            Format = sample
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "读取格式失败: " + ex.Message;
+                return false;
+            }
+
+            result = new SpreadsheetGetFormatResult
+            {
+                ChannelId = channel.ChannelId,
+                Kind = "excel",
+                Sheet = sheet.Name,
+                RequestedRange = requested,
+                ActualRange = actualRange,
+                Mode = mode,
+                Items = items
+            };
+            return true;
+        }
     }
 }
