@@ -51,6 +51,7 @@ namespace EasyWriteClient.Desktop
             UserService.Instance.OnUserLoggedIn += OnUserLoggedIn;
             UserService.Instance.OnUserLoggedOut += OnUserLoggedOut;
             HostCallbacks.WordApplicationResolved = OnWordApplicationResolved;
+            HostCallbacks.ExcelApplicationResolved = OnExcelApplicationResolved;
             HostCallbacks.OpenFilesRefresh = OnOpenFilesRefresh;
             Disposed += (_, __) =>
             {
@@ -63,6 +64,11 @@ namespace EasyWriteClient.Desktop
                 if (ReferenceEquals(HostCallbacks.WordApplicationResolved, (Action<object>)OnWordApplicationResolved))
                 {
                     HostCallbacks.WordApplicationResolved = null;
+                }
+
+                if (ReferenceEquals(HostCallbacks.ExcelApplicationResolved, (Action<object>)OnExcelApplicationResolved))
+                {
+                    HostCallbacks.ExcelApplicationResolved = null;
                 }
 
                 if (ReferenceEquals(HostCallbacks.OpenFilesRefresh, (Action)OnOpenFilesRefresh))
@@ -111,6 +117,20 @@ namespace EasyWriteClient.Desktop
             {
                 System.Diagnostics.Debug.WriteLine(
                     "[DesktopChatSurface] OpenFiles TryAttachNow: " + ex.Message);
+            }
+        }
+
+        private void OnExcelApplicationResolved(object excelApp)
+        {
+            ExcelHost.Attach(excelApp);
+            try
+            {
+                _openFilesMonitor?.TryAttachNow();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    "[DesktopChatSurface] Excel OpenFiles TryAttachNow: " + ex.Message);
             }
         }
 
@@ -586,6 +606,7 @@ namespace EasyWriteClient.Desktop
             {
                 _openFilesMonitor = new OpenFilesMonitor(
                     resolveWordApp: () => WordHost.GetOrAttach(createIfMissing: false),
+                    resolveExcelApp: () => ExcelHost.GetOrAttach(createIfMissing: false),
                     syncContext: _uiSync);
 
                 _openFilesMonitor.Changed += items =>

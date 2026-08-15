@@ -16,6 +16,7 @@ namespace WordAddIn1.OpenFiles
         private static readonly TimeSpan LateBindReconcileInterval = TimeSpan.FromSeconds(30);
 
         private readonly Func<object> _resolveWordApp;
+        private readonly Func<object> _resolveExcelApp;
         private readonly SynchronizationContext _sync;
         private readonly object _gate = new object();
         private readonly Dictionary<string, OpenFileItem> _items =
@@ -38,9 +39,26 @@ namespace WordAddIn1.OpenFiles
         private string[] _excelProcessNames = { "EXCEL" };
         private string[] _etProcessNames = { "et" };
 
-        public OpenFilesMonitor(Func<object> resolveWordApp, SynchronizationContext syncContext = null)
+        public OpenFilesMonitor(
+            Func<object> resolveWordApp,
+            Func<object> resolveExcelApp = null,
+            SynchronizationContext syncContext = null)
         {
             _resolveWordApp = resolveWordApp ?? throw new ArgumentNullException(nameof(resolveWordApp));
+            _resolveExcelApp = resolveExcelApp
+                ?? (() =>
+                {
+                    if (ExcelApplicationResolver.TryResolve(
+                            out object app,
+                            out _,
+                            createIfMissing: false,
+                            makeVisible: false))
+                    {
+                        return app;
+                    }
+
+                    return null;
+                });
             _sync = syncContext ?? SynchronizationContext.Current;
         }
 
@@ -278,7 +296,7 @@ namespace WordAddIn1.OpenFiles
 
             if (_excelEnabled)
             {
-                _excelDetector = new ExcelOpenFilesDetector();
+                _excelDetector = new ExcelOpenFilesDetector(_resolveExcelApp);
                 _excelDetector.DocumentOpened += OnDocumentOpened;
                 _excelDetector.DocumentClosed += OnDocumentClosed;
                 _excelDetector.Detached += OnExcelDetached;
@@ -658,7 +676,7 @@ namespace WordAddIn1.OpenFiles
 
                 UnhookExcel(excel);
                 excel.Dispose();
-                _excelDetector = new ExcelOpenFilesDetector();
+                _excelDetector = new ExcelOpenFilesDetector(_resolveExcelApp);
                 _excelDetector.DocumentOpened += OnDocumentOpened;
                 _excelDetector.DocumentClosed += OnDocumentClosed;
                 _excelDetector.Detached += OnExcelDetached;

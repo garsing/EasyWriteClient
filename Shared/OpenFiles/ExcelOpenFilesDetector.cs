@@ -8,15 +8,24 @@ using Excel = Microsoft.Office.Interop.Excel;
 
 namespace WordAddIn1.OpenFiles
 {
+    /// <summary>
+    /// Excel「打开文件」探测器：对齐 Word——宿主注入 Application + 快照 + WorkbookOpen/New/BeforeClose。
+    /// </summary>
     internal sealed class ExcelOpenFilesDetector : IOpenFilesAppDetector
     {
         public const string TypeKey = "excel";
 
+        private readonly Func<object> _resolveExcelApp;
         private readonly object _gate = new object();
         private Excel.Application _app;
         private bool _subscribed;
         private bool _disposed;
         private readonly Dictionary<int, string> _rcwToId = new Dictionary<int, string>();
+
+        public ExcelOpenFilesDetector(Func<object> resolveExcelApp)
+        {
+            _resolveExcelApp = resolveExcelApp ?? throw new ArgumentNullException(nameof(resolveExcelApp));
+        }
 
         public string AppType => TypeKey;
 
@@ -54,13 +63,31 @@ namespace WordAddIn1.OpenFiles
                     TearDownUnlocked(raiseDetached: false);
                 }
 
-                if (!ExcelApplicationResolver.TryResolve(
-                        out Excel.Application app,
-                        out _,
-                        createIfMissing: false,
-                        makeVisible: false)
-                    || app == null)
+                Excel.Application app = null;
+                try
                 {
+                    app = _resolveExcelApp?.Invoke() as Excel.Application;
+                }
+                catch (Exception ex)
+                {
+                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                        "[ExcelOpenFilesDetector] resolve failed: " + ex.Message);
+                    app = null;
+                }
+
+                if (app == null)
+                {
+                    return false;
+                }
+
+                try
+                {
+                    var _ = app.Name;
+                }
+                catch (Exception ex)
+                {
+                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                        "[ExcelOpenFilesDetector] app not alive: " + ex.Message);
                     return false;
                 }
 

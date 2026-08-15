@@ -145,6 +145,7 @@ namespace EasyWriteClient.Desktop
                 }
 
                 WordHost.Shutdown();
+                ExcelHost.Shutdown();
             };
             ApplyWindowRegion();
         }

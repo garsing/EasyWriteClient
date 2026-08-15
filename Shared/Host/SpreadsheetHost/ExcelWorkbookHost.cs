@@ -21,7 +21,7 @@ namespace WordAddIn1.SpreadsheetHost
         {
             result = null;
             error = null;
-            if (!ExcelApplicationResolver.TryResolve(out Excel.Application app, out error, createIfMissing: true))
+            if (!ExcelApplicationResolver.TryResolveTyped(out Excel.Application app, out error, createIfMissing: true))
             {
                 return false;
             }
@@ -77,6 +77,8 @@ namespace WordAddIn1.SpreadsheetHost
             }
 
             ExcelApplicationResolver.EnsureVisible(app);
+            ExcelApplicationResolver.Attach(app);
+            HostCallbacks.RaiseExcelApplicationResolved(app);
             ExcelChannel channel = ChannelRegistry.CreateOrGetExcel(book, fullPath);
             ChannelRegistry.SetDefault(channel.ChannelId);
             HostCallbacks.RaiseOpenFilesRefresh();

@@ -12,6 +12,9 @@ namespace WordAddIn1
         /// <summary>Desktop：F_open_document 创建/附着 Word 后刷新 WsClient Registry。</summary>
         public static Action<object> WordApplicationResolved { get; set; }
 
+        /// <summary>Desktop：F_open_document 创建/附着 Excel 后写回宿主缓存并刷新打开文件。</summary>
+        public static Action<object> ExcelApplicationResolved { get; set; }
+
         /// <summary>打开成功后刷新侧栏「打开文件」探测器。</summary>
         public static Action OpenFilesRefresh { get; set; }
 
@@ -24,6 +27,11 @@ namespace WordAddIn1
         public static void RaiseWordApplicationResolved(object wordApplication)
         {
             WordApplicationResolved?.Invoke(wordApplication);
+        }
+
+        public static void RaiseExcelApplicationResolved(object excelApplication)
+        {
+            ExcelApplicationResolved?.Invoke(excelApplication);
         }
 
         public static void RaiseRequestCompact()
