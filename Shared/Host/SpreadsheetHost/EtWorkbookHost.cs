@@ -1580,5 +1580,40 @@ namespace WordAddIn1.SpreadsheetHost
             result.Kind = "et";
             return true;
         }
+
+        public static bool TryChart(
+            EtChannel channel,
+            SpreadsheetChartRequest request,
+            out SpreadsheetChartResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLiveWorkbook(out object book))
+            {
+                error = "渠道对应的工作簿已关闭";
+                return false;
+            }
+
+            if (request == null || string.IsNullOrWhiteSpace(request.Action))
+            {
+                error = "必须提供 action";
+                return false;
+            }
+
+            if (!SpreadsheetChartCom.TryExecuteOnEtWorkbook(
+                    book,
+                    request,
+                    out SpreadsheetChartResult partial,
+                    out error))
+            {
+                return false;
+            }
+
+            result = partial;
+            result.ChannelId = channel.ChannelId;
+            result.Kind = "et";
+            return true;
+        }
     }
 }

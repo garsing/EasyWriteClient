@@ -34,6 +34,7 @@ namespace WordAddIn1
                 { "workbook.getFormat", "F_get_excel_format" },
                 { "workbook.applyConditionalFormat", "F_apply_excel_conditional_format" },
                 { "workbook.pivot", "F_excel_pivot" },
+                { "workbook.chart", "F_excel_chart" },
                 { "channel.setDefault", "F_switch_default_channel" },
                 { "document.processActions", "F_process_document_actions" },
                 // document.setTrackRevisions / F_set_track_revisions 已下线（2026-08）

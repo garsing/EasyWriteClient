@@ -37,6 +37,7 @@ namespace WordAddIn1
             "F_apply_excel_format",
             "F_apply_excel_conditional_format",
             "F_excel_pivot",
+            "F_excel_chart",
         };
 
         public static bool ShouldCompact(string toolName)
