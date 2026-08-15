@@ -151,7 +151,7 @@ namespace WordAddIn1.SpreadsheetHost
             EtChannel channel,
             string sheetName,
             string rangeA1OrEmpty,
-            bool includeFormulas,
+            SpreadsheetContentMode contentMode,
             out SpreadsheetRangeResult result,
             out string error)
         {
@@ -196,7 +196,7 @@ namespace WordAddIn1.SpreadsheetHost
 
                 if (firstRow <= 0 || firstCol <= 0 || lastRow < firstRow || lastCol < firstCol)
                 {
-                    result = EmptyResult(channel, EtCom.TryReadName(sheet) ?? sheetName, requested, includeFormulas);
+                    result = EmptyResult(channel, EtCom.TryReadName(sheet) ?? sheetName, requested, contentMode);
                     return true;
                 }
             }
@@ -223,7 +223,7 @@ namespace WordAddIn1.SpreadsheetHost
 
             if (actualLastRow < firstRow || actualLastCol < firstCol)
             {
-                result = EmptyResult(channel, EtCom.TryReadName(sheet) ?? sheetName, requested, includeFormulas);
+                result = EmptyResult(channel, EtCom.TryReadName(sheet) ?? sheetName, requested, contentMode);
                 return true;
             }
 
@@ -279,7 +279,7 @@ namespace WordAddIn1.SpreadsheetHost
                             cell,
                             sheetRow,
                             sheetCol,
-                            includeFormulas,
+                            contentMode,
                             out PreviewCell merged))
                     {
                         if (merged != null)
@@ -290,7 +290,7 @@ namespace WordAddIn1.SpreadsheetHost
                         continue;
                     }
 
-                    row.Cells.Add(BuildCell(cell, sheetRow, sheetCol, includeFormulas));
+                    row.Cells.Add(BuildCell(cell, sheetRow, sheetCol, contentMode));
                 }
 
                 rows.Add(row);
@@ -305,7 +305,7 @@ namespace WordAddIn1.SpreadsheetHost
                 ActualRange = actualRange,
                 Truncated = truncated,
                 TruncatedReason = truncatedReason ?? "",
-                IncludeFormulas = includeFormulas,
+                ContentMode = SpreadsheetContentModeUtil.ToWire(contentMode),
                 Rows = rows
             };
             return true;
@@ -315,7 +315,7 @@ namespace WordAddIn1.SpreadsheetHost
             EtChannel channel,
             string sheetName,
             string requested,
-            bool includeFormulas)
+            SpreadsheetContentMode contentMode)
         {
             return new SpreadsheetRangeResult
             {
@@ -326,7 +326,7 @@ namespace WordAddIn1.SpreadsheetHost
                 ActualRange = "",
                 Truncated = false,
                 TruncatedReason = "",
-                IncludeFormulas = includeFormulas,
+                ContentMode = SpreadsheetContentModeUtil.ToWire(contentMode),
                 Rows = new List<PreviewRow>()
             };
         }
@@ -541,7 +541,7 @@ namespace WordAddIn1.SpreadsheetHost
                         continue;
                     }
 
-                    if (TrySkipMergedContinuation(cell, sheetRow, sheetCol, false, out PreviewCell merged))
+                    if (TrySkipMergedContinuation(cell, sheetRow, sheetCol, SpreadsheetContentMode.Value, out PreviewCell merged))
                     {
                         if (merged != null)
                         {
@@ -551,7 +551,7 @@ namespace WordAddIn1.SpreadsheetHost
                         continue;
                     }
 
-                    row.Cells.Add(BuildCell(cell, sheetRow, sheetCol, false));
+                    row.Cells.Add(BuildCell(cell, sheetRow, sheetCol, SpreadsheetContentMode.Value));
                 }
 
                 preview.Add(row);
@@ -581,16 +581,18 @@ namespace WordAddIn1.SpreadsheetHost
             }
         }
 
-        private static PreviewCell BuildCell(object cell, int sheetRow, int sheetCol, bool includeFormulas)
+        private static PreviewCell BuildCell(object cell, int sheetRow, int sheetCol, SpreadsheetContentMode contentMode)
         {
+            string display = ReadDisplayText(cell);
+            string formula = ReadFormula(cell);
             return new PreviewCell
             {
                 Addr = A1Address.Cell(sheetRow, sheetCol),
                 Area = A1Address.Cell(sheetRow, sheetCol),
                 ColSpan = 1,
                 RowSpan = 1,
-                Text = ReadDisplayText(cell),
-                Formula = includeFormulas ? ReadFormula(cell) : null
+                Text = SpreadsheetContentModeUtil.ResolveText(display, formula, contentMode),
+                Formula = null
             };
         }
 
@@ -598,7 +600,7 @@ namespace WordAddIn1.SpreadsheetHost
             object cell,
             int sheetRow,
             int sheetCol,
-            bool includeFormulas,
+            SpreadsheetContentMode contentMode,
             out PreviewCell startCell)
         {
             startCell = null;
@@ -625,14 +627,16 @@ namespace WordAddIn1.SpreadsheetHost
                     return true;
                 }
 
+                string display = ReadDisplayText(cell);
+                string formula = ReadFormula(cell);
                 startCell = new PreviewCell
                 {
                     Addr = A1Address.Cell(sheetRow, sheetCol),
                     Area = A1Address.Range(areaRow, areaCol, areaRow + rows - 1, areaCol + cols - 1),
                     ColSpan = cols,
                     RowSpan = rows,
-                    Text = ReadDisplayText(cell),
-                    Formula = includeFormulas ? ReadFormula(cell) : null
+                    Text = SpreadsheetContentModeUtil.ResolveText(display, formula, contentMode),
+                    Formula = null
                 };
                 return true;
             }
@@ -683,6 +687,159 @@ namespace WordAddIn1.SpreadsheetHost
             {
                 return "";
             }
+        }
+
+        public static bool TryWriteRange(
+            EtChannel channel,
+            SpreadsheetWriteRequest request,
+            out SpreadsheetWriteResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLiveWorkbook(out object book))
+            {
+                error = "渠道对应的工作簿已关闭";
+                return false;
+            }
+
+            if (request == null || string.IsNullOrWhiteSpace(request.SheetName))
+            {
+                error = "必须提供 sheet";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(request.RangeA1))
+            {
+                error = "必须提供 range";
+                return false;
+            }
+
+            if (!TryFindWorksheet(book, request.SheetName.Trim(), out object sheet, out error))
+            {
+                return false;
+            }
+
+            string sheetName = EtCom.TryReadName(sheet) ?? request.SheetName.Trim();
+
+            if (request.Mode == SpreadsheetWriteMode.Clear)
+            {
+                if (!A1Address.TryParseRange(
+                        request.RangeA1.Trim(),
+                        out int cFirstRow,
+                        out int cFirstCol,
+                        out int cLastRow,
+                        out int cLastCol,
+                        out error))
+                {
+                    return false;
+                }
+
+                int clearRows = cLastRow - cFirstRow + 1;
+                int clearCols = cLastCol - cFirstCol + 1;
+                if (!SpreadsheetWritePlanner.TryCheckLimits(clearRows, clearCols, out error))
+                {
+                    return false;
+                }
+
+                string clearRange = A1Address.Range(cFirstRow, cFirstCol, cLastRow, cLastCol);
+                try
+                {
+                    object target = GetSheetRange(sheet, clearRange);
+                    EtCom.Invoke(target, "ClearContents");
+                }
+                catch (Exception ex)
+                {
+                    error = "清空失败: " + ex.Message;
+                    return false;
+                }
+
+                result = new SpreadsheetWriteResult
+                {
+                    ChannelId = channel.ChannelId,
+                    Kind = "et",
+                    Sheet = sheetName,
+                    Mode = "clear",
+                    WrittenCount = clearRows * clearCols,
+                    ActualRange = clearRange
+                };
+                return true;
+            }
+
+            if (!SpreadsheetWritePlanner.TryNormalizeGrid(
+                    request.CsvGrid,
+                    out List<List<string>> grid,
+                    out int csvRows,
+                    out int csvCols,
+                    out error))
+            {
+                return false;
+            }
+
+            if (!SpreadsheetWritePlanner.TryResolveWriteRect(
+                    request.RangeA1.Trim(),
+                    csvRows,
+                    csvCols,
+                    out int firstRow,
+                    out int firstCol,
+                    out int lastRow,
+                    out int lastCol,
+                    out string actualRange,
+                    out error))
+            {
+                return false;
+            }
+
+            try
+            {
+                object target = GetSheetRange(sheet, actualRange);
+                object cells = EtCom.GetProperty(target, "Cells");
+                for (int r = 0; r < csvRows; r++)
+                {
+                    for (int c = 0; c < csvCols; c++)
+                    {
+                        object cell = EtCom.GetIndexed2(cells, r + 1, c + 1);
+                        if (cell == null)
+                        {
+                            continue;
+                        }
+
+                        SpreadsheetWritePlanner.ClassifyCell(
+                            grid[r][c],
+                            out bool clearOnly,
+                            out bool isFormula,
+                            out object value);
+                        if (clearOnly)
+                        {
+                            EtCom.Invoke(cell, "ClearContents");
+                        }
+                        else if (isFormula)
+                        {
+                            EtCom.TrySetProperty(cell, "Formula", Convert.ToString(value));
+                        }
+                        else
+                        {
+                            EtCom.TrySetProperty(cell, "Value", value);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "写入失败: " + ex.Message;
+                return false;
+            }
+
+            result = new SpreadsheetWriteResult
+            {
+                ChannelId = channel.ChannelId,
+                Kind = "et",
+                Sheet = sheetName,
+                Mode = "csv",
+                WrittenCount = csvRows * csvCols,
+                ActualRange = actualRange
+            };
+            return true;
         }
 
         private static object FindOpenWorkbook(object app, string fullPath)

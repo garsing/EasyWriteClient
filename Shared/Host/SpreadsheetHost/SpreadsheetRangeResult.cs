@@ -18,7 +18,8 @@ namespace WordAddIn1.SpreadsheetHost
 
         public string TruncatedReason { get; set; }
 
-        public bool IncludeFormulas { get; set; }
+        /// <summary>wire: value | formula</summary>
+        public string ContentMode { get; set; }
 
         public List<PreviewRow> Rows { get; set; }
     }

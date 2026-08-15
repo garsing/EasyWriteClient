@@ -76,6 +76,7 @@ namespace WordAddIn1.SpreadsheetHost
 
                             if (!string.IsNullOrEmpty(cell.Formula))
                             {
+                                // 兼容旧 PreviewCell；读区域 I14 后 Formula 恒为 null
                                 sb.Append(" formula=\"");
                                 sb.Append(EscapeAttr(cell.Formula));
                                 sb.Append("\"");

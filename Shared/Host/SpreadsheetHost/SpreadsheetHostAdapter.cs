@@ -97,7 +97,7 @@ namespace WordAddIn1.SpreadsheetHost
             IOperationChannel channel,
             string sheetName,
             string rangeA1OrEmpty,
-            bool includeFormulas,
+            SpreadsheetContentMode contentMode,
             out SpreadsheetRangeResult result,
             out ToolResult errorResult)
         {
@@ -128,7 +128,7 @@ namespace WordAddIn1.SpreadsheetHost
                     excel,
                     sheetName,
                     rangeA1OrEmpty,
-                    includeFormulas,
+                    contentMode,
                     out result,
                     out error);
             }
@@ -138,9 +138,63 @@ namespace WordAddIn1.SpreadsheetHost
                     et,
                     sheetName,
                     rangeA1OrEmpty,
-                    includeFormulas,
+                    contentMode,
                     out result,
                     out error);
+            }
+            else
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "unsupported: 当前渠道不是 excel/et"
+                };
+                return false;
+            }
+
+            if (!ok)
+            {
+                errorResult = new ToolResult { Success = false, Error = error };
+                return false;
+            }
+
+            return true;
+        }
+
+        internal static bool TryWriteRange(
+            IOperationChannel channel,
+            SpreadsheetWriteRequest request,
+            out SpreadsheetWriteResult result,
+            out ToolResult errorResult)
+        {
+            result = null;
+            errorResult = null;
+            if (channel == null)
+            {
+                errorResult = new ToolResult { Success = false, Error = "未知 channel_id" };
+                return false;
+            }
+
+            if (channel.Kind == ChannelKind.Word || channel.Kind == ChannelKind.Wps)
+            {
+                string host = channel.Kind.ToString().ToLowerInvariant();
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "unsupported: 当前渠道是 " + host + "，请用文字改写工具"
+                };
+                return false;
+            }
+
+            bool ok;
+            string error;
+            if (channel is ExcelChannel excel)
+            {
+                ok = ExcelWorkbookHost.TryWriteRange(excel, request, out result, out error);
+            }
+            else if (channel is EtChannel et)
+            {
+                ok = EtWorkbookHost.TryWriteRange(et, request, out result, out error);
             }
             else
             {

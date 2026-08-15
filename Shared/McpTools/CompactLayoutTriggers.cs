@@ -32,6 +32,7 @@ namespace WordAddIn1
             "F_insert_workspace_image",
             "F_apply_data_provenance",
             "F_restore_document_checkpoint",
+            "F_write_excel_range",
         };
 
         public static bool ShouldCompact(string toolName)
