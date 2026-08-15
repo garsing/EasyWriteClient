@@ -1545,5 +1545,40 @@ namespace WordAddIn1.SpreadsheetHost
             result.Sheet = EtCom.TryReadName(sheet) ?? request.SheetName.Trim();
             return true;
         }
+
+        public static bool TryPivot(
+            EtChannel channel,
+            SpreadsheetPivotRequest request,
+            out SpreadsheetPivotResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLiveWorkbook(out object book))
+            {
+                error = "渠道对应的工作簿已关闭";
+                return false;
+            }
+
+            if (request == null || string.IsNullOrWhiteSpace(request.Action))
+            {
+                error = "必须提供 action";
+                return false;
+            }
+
+            if (!SpreadsheetPivotCom.TryExecuteOnEtWorkbook(
+                    book,
+                    request,
+                    out SpreadsheetPivotResult partial,
+                    out error))
+            {
+                return false;
+            }
+
+            result = partial;
+            result.ChannelId = channel.ChannelId;
+            result.Kind = "et";
+            return true;
+        }
     }
 }
