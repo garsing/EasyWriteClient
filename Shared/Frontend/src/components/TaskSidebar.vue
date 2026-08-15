@@ -170,6 +170,7 @@ import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
 import userIcon from '../assets/images/avatar.png'
 import wordAppIcon from '../assets/images/word.png'
 import wpsAppIcon from '../assets/images/wps.png'
+import excelAppIcon from '../assets/images/excel.png'
 import { openFileSelectionKey } from '../utils/selectedOpenFiles.js'
 
 const props = defineProps({
@@ -242,7 +243,8 @@ const openFilesCount = computed(() =>
 
 function openFileAppIcon (item) {
   const type = String(item?.appType || item?.app_type || '').toLowerCase()
-  if (type === 'wps') return wpsAppIcon
+  if (type === 'excel') return excelAppIcon
+  if (type === 'wps' || type === 'et') return wpsAppIcon
   return wordAppIcon
 }
 

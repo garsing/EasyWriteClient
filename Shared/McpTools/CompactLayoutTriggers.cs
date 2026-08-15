@@ -10,7 +10,6 @@ namespace WordAddIn1
     {
         private static readonly HashSet<string> ToolNames = new HashSet<string>(StringComparer.Ordinal)
         {
-            "F_open_word_document",
             "F_process_document_actions",
             "F_insert_document_from_file",
             "F_replace_document_from_file",

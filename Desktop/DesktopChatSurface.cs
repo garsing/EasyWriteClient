@@ -51,6 +51,7 @@ namespace EasyWriteClient.Desktop
             UserService.Instance.OnUserLoggedIn += OnUserLoggedIn;
             UserService.Instance.OnUserLoggedOut += OnUserLoggedOut;
             HostCallbacks.WordApplicationResolved = OnWordApplicationResolved;
+            HostCallbacks.OpenFilesRefresh = OnOpenFilesRefresh;
             Disposed += (_, __) =>
             {
                 UserService.Instance.OnUserLoggedIn -= OnUserLoggedIn;
@@ -64,6 +65,11 @@ namespace EasyWriteClient.Desktop
                     HostCallbacks.WordApplicationResolved = null;
                 }
 
+                if (ReferenceEquals(HostCallbacks.OpenFilesRefresh, (Action)OnOpenFilesRefresh))
+                {
+                    HostCallbacks.OpenFilesRefresh = null;
+                }
+
                 try
                 {
                     _openFilesMonitor?.Dispose();
@@ -74,6 +80,19 @@ namespace EasyWriteClient.Desktop
 
                 _openFilesMonitor = null;
             };
+        }
+
+        private void OnOpenFilesRefresh()
+        {
+            try
+            {
+                _openFilesMonitor?.TryAttachNow();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    "[DesktopChatSurface] OpenFilesRefresh: " + ex.Message);
+            }
         }
 
         private void OnWordApplicationResolved(object wordApp)

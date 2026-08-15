@@ -7,13 +7,13 @@ using System.Threading;
 namespace WordAddIn1.OpenFiles
 {
     /// <summary>
-    /// 聚合「打开文件」探测器：Word + WPS 并行、进程晚启动重附着、Changed 回调。
+    /// 聚合「打开文件」探测器：Word / WPS / Excel / et 并行、进程晚启动重附着、Changed 回调。
     /// </summary>
     internal sealed class OpenFilesMonitor : IDisposable
     {
         private const int MaxOpenChannelsItems = 500;
         private static readonly TimeSpan ProcessPollInterval = TimeSpan.FromSeconds(7);
-        private static readonly TimeSpan WpsReconcileInterval = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan LateBindReconcileInterval = TimeSpan.FromSeconds(30);
 
         private readonly Func<object> _resolveWordApp;
         private readonly SynchronizationContext _sync;
@@ -23,14 +23,20 @@ namespace WordAddIn1.OpenFiles
 
         private WordOpenFilesDetector _wordDetector;
         private WpsOpenFilesDetector _wpsDetector;
+        private ExcelOpenFilesDetector _excelDetector;
+        private EtOpenFilesDetector _etDetector;
         private Timer _processTimer;
-        private Timer _wpsReconcileTimer;
+        private Timer _lateBindReconcileTimer;
         private bool _started;
         private bool _disposed;
         private bool _wordEnabled;
         private bool _wpsEnabled;
+        private bool _excelEnabled;
+        private bool _etEnabled;
         private string[] _wordProcessNames = { "WINWORD" };
         private string[] _wpsProcessNames = { "wps" };
+        private string[] _excelProcessNames = { "EXCEL" };
+        private string[] _etProcessNames = { "et" };
 
         public OpenFilesMonitor(Func<object> resolveWordApp, SynchronizationContext syncContext = null)
         {
@@ -61,7 +67,7 @@ namespace WordAddIn1.OpenFiles
 
             TryAttachAndSnapshot();
             StartProcessWatch();
-            UpdateWpsReconcileTimer();
+            UpdateLateBindReconcileTimer();
         }
 
         public void Stop()
@@ -77,7 +83,6 @@ namespace WordAddIn1.OpenFiles
             }
         }
 
-        /// <summary>Word 已由其它路径附着时尽快同步（非列表轮询）。</summary>
         public void TryAttachNow()
         {
             if (_disposed || !_started)
@@ -86,21 +91,16 @@ namespace WordAddIn1.OpenFiles
             }
 
             TryAttachAndSnapshot();
-            UpdateWpsReconcileTimer();
+            UpdateLateBindReconcileTimer();
         }
 
-        /// <summary>
-        /// Desktop 聊天请求体 <c>open_channels</c>：含 word / wps（有渠道的打开项）。
-        /// </summary>
         public object BuildOpenChannelsPayload()
         {
             List<OpenFileItem> items;
             lock (_gate)
             {
                 items = OrderedCopyUnlocked()
-                    .Where(i => i != null
-                        && (string.Equals(i.AppType, WordOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(i.AppType, WpsOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)))
+                    .Where(i => i != null && IsKnownAppType(i.AppType))
                     .ToList();
             }
 
@@ -135,19 +135,24 @@ namespace WordAddIn1.OpenFiles
             }
 
             _disposed = true;
-
             Interlocked.Exchange(ref _processTimer, null)?.Dispose();
-            Interlocked.Exchange(ref _wpsReconcileTimer, null)?.Dispose();
+            Interlocked.Exchange(ref _lateBindReconcileTimer, null)?.Dispose();
 
             WordOpenFilesDetector word;
             WpsOpenFilesDetector wps;
+            ExcelOpenFilesDetector excel;
+            EtOpenFilesDetector et;
             lock (_gate)
             {
                 _started = false;
                 word = _wordDetector;
                 wps = _wpsDetector;
+                excel = _excelDetector;
+                et = _etDetector;
                 _wordDetector = null;
                 _wpsDetector = null;
+                _excelDetector = null;
+                _etDetector = null;
                 _items.Clear();
             }
 
@@ -162,14 +167,38 @@ namespace WordAddIn1.OpenFiles
                 UnhookWps(wps);
                 wps.Dispose();
             }
+
+            if (excel != null)
+            {
+                UnhookExcel(excel);
+                excel.Dispose();
+            }
+
+            if (et != null)
+            {
+                UnhookEt(et);
+                et.Dispose();
+            }
+        }
+
+        private static bool IsKnownAppType(string appType)
+        {
+            return string.Equals(appType, WordOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(appType, WpsOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(appType, ExcelOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(appType, EtOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase);
         }
 
         private void ConfigureFromConfigUnlocked()
         {
             _wordEnabled = false;
             _wpsEnabled = false;
+            _excelEnabled = false;
+            _etEnabled = false;
             _wordProcessNames = new[] { "WINWORD" };
             _wpsProcessNames = new[] { "wps" };
+            _excelProcessNames = new[] { "EXCEL" };
+            _etProcessNames = new[] { "et" };
 
             var apps = ConfigManager.Config?.OpenFiles?.Apps;
             if (apps == null || apps.Count == 0)
@@ -196,6 +225,16 @@ namespace WordAddIn1.OpenFiles
                 {
                     _wpsEnabled = true;
                     _wpsProcessNames = ReadProcessNames(entry.ProcessNames, "wps");
+                }
+                else if (type == ExcelOpenFilesDetector.TypeKey)
+                {
+                    _excelEnabled = true;
+                    _excelProcessNames = ReadProcessNames(entry.ProcessNames, "EXCEL");
+                }
+                else if (type == EtOpenFilesDetector.TypeKey)
+                {
+                    _etEnabled = true;
+                    _etProcessNames = ReadProcessNames(entry.ProcessNames, "et");
                 }
                 else
                 {
@@ -236,6 +275,22 @@ namespace WordAddIn1.OpenFiles
                 _wpsDetector.DocumentClosed += OnDocumentClosed;
                 _wpsDetector.Detached += OnWpsDetached;
             }
+
+            if (_excelEnabled)
+            {
+                _excelDetector = new ExcelOpenFilesDetector();
+                _excelDetector.DocumentOpened += OnDocumentOpened;
+                _excelDetector.DocumentClosed += OnDocumentClosed;
+                _excelDetector.Detached += OnExcelDetached;
+            }
+
+            if (_etEnabled)
+            {
+                _etDetector = new EtOpenFilesDetector();
+                _etDetector.DocumentOpened += OnDocumentOpened;
+                _etDetector.DocumentClosed += OnDocumentClosed;
+                _etDetector.Detached += OnEtDetached;
+            }
         }
 
         private void UnhookWord(WordOpenFilesDetector word)
@@ -252,12 +307,28 @@ namespace WordAddIn1.OpenFiles
             wps.Detached -= OnWpsDetached;
         }
 
+        private void UnhookExcel(ExcelOpenFilesDetector excel)
+        {
+            excel.DocumentOpened -= OnDocumentOpened;
+            excel.DocumentClosed -= OnDocumentClosed;
+            excel.Detached -= OnExcelDetached;
+        }
+
+        private void UnhookEt(EtOpenFilesDetector et)
+        {
+            et.DocumentOpened -= OnDocumentOpened;
+            et.DocumentClosed -= OnDocumentClosed;
+            et.Detached -= OnEtDetached;
+        }
+
         private void TryAttachAndSnapshot()
         {
             bool any = false;
             any |= TryAttachOne(WordOpenFilesDetector.TypeKey);
             any |= TryAttachOne(WpsOpenFilesDetector.TypeKey);
-            if (any || (!_wordEnabled && !_wpsEnabled))
+            any |= TryAttachOne(ExcelOpenFilesDetector.TypeKey);
+            any |= TryAttachOne(EtOpenFilesDetector.TypeKey);
+            if (any || (!_wordEnabled && !_wpsEnabled && !_excelEnabled && !_etEnabled))
             {
                 RaiseChanged();
             }
@@ -275,6 +346,14 @@ namespace WordAddIn1.OpenFiles
                 else if (string.Equals(appType, WpsOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
                 {
                     detector = _wpsDetector;
+                }
+                else if (string.Equals(appType, ExcelOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    detector = _excelDetector;
+                }
+                else if (string.Equals(appType, EtOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    detector = _etDetector;
                 }
                 else
                 {
@@ -319,7 +398,7 @@ namespace WordAddIn1.OpenFiles
 
         private void StartProcessWatch()
         {
-            if (!_wordEnabled && !_wpsEnabled)
+            if (!_wordEnabled && !_wpsEnabled && !_excelEnabled && !_etEnabled)
             {
                 return;
             }
@@ -331,42 +410,45 @@ namespace WordAddIn1.OpenFiles
                 ProcessPollInterval);
         }
 
-        private void UpdateWpsReconcileTimer()
+        private void UpdateLateBindReconcileTimer()
         {
             WpsOpenFilesDetector wps;
+            EtOpenFilesDetector et;
             lock (_gate)
             {
                 wps = _wpsDetector;
+                et = _etDetector;
             }
 
-            // I6：仅当 WPS 已附着且事件未订成功时才对账
-            bool needReconcile = wps != null && wps.IsAttached && !wps.EventsSubscribed;
+            bool needReconcile =
+                (wps != null && wps.IsAttached && !wps.EventsSubscribed)
+                || (et != null && et.IsAttached && !et.EventsSubscribed);
             if (needReconcile)
             {
-                if (_wpsReconcileTimer == null)
+                if (_lateBindReconcileTimer == null)
                 {
                     EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[OpenFilesMonitor] start WPS reconcile timer 30s");
-                    _wpsReconcileTimer = new Timer(
-                        _ => OnWpsReconcileTick(),
+                        "[OpenFilesMonitor] start late-bind reconcile timer 30s");
+                    _lateBindReconcileTimer = new Timer(
+                        _ => OnLateBindReconcileTick(),
                         null,
-                        WpsReconcileInterval,
-                        WpsReconcileInterval);
+                        LateBindReconcileInterval,
+                        LateBindReconcileInterval);
                 }
             }
             else
             {
-                var t = Interlocked.Exchange(ref _wpsReconcileTimer, null);
+                var t = Interlocked.Exchange(ref _lateBindReconcileTimer, null);
                 if (t != null)
                 {
                     EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                        "[OpenFilesMonitor] stop WPS reconcile timer");
+                        "[OpenFilesMonitor] stop late-bind reconcile timer");
                     t.Dispose();
                 }
             }
         }
 
-        private void OnWpsReconcileTick()
+        private void OnLateBindReconcileTick()
         {
             if (_disposed || !_started)
             {
@@ -375,31 +457,36 @@ namespace WordAddIn1.OpenFiles
 
             try
             {
+                bool changed = false;
                 WpsOpenFilesDetector wps;
+                EtOpenFilesDetector et;
                 lock (_gate)
                 {
                     wps = _wpsDetector;
+                    et = _etDetector;
                 }
 
-                if (wps == null || !wps.IsAttached || wps.EventsSubscribed)
+                if (wps != null && wps.IsAttached && !wps.EventsSubscribed)
                 {
-                    UpdateWpsReconcileTimer();
-                    return;
+                    changed |= TryAttachOne(WpsOpenFilesDetector.TypeKey);
                 }
 
-                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[OpenFilesMonitor] WPS reconcile snapshot");
-                if (TryAttachOne(WpsOpenFilesDetector.TypeKey))
+                if (et != null && et.IsAttached && !et.EventsSubscribed)
+                {
+                    changed |= TryAttachOne(EtOpenFilesDetector.TypeKey);
+                }
+
+                if (changed)
                 {
                     RaiseChanged();
                 }
 
-                UpdateWpsReconcileTimer();
+                UpdateLateBindReconcileTimer();
             }
             catch (Exception ex)
             {
                 EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[OpenFilesMonitor] WPS reconcile: " + ex.Message);
+                    "[OpenFilesMonitor] late-bind reconcile: " + ex.Message);
             }
         }
 
@@ -439,12 +526,38 @@ namespace WordAddIn1.OpenFiles
                     },
                     RecreateWpsDetector);
 
+                changed |= WatchOne(
+                    ExcelOpenFilesDetector.TypeKey,
+                    _excelEnabled,
+                    _excelProcessNames,
+                    () =>
+                    {
+                        lock (_gate)
+                        {
+                            return _excelDetector;
+                        }
+                    },
+                    RecreateExcelDetector);
+
+                changed |= WatchOne(
+                    EtOpenFilesDetector.TypeKey,
+                    _etEnabled,
+                    _etProcessNames,
+                    () =>
+                    {
+                        lock (_gate)
+                        {
+                            return _etDetector;
+                        }
+                    },
+                    RecreateEtDetector);
+
                 if (changed)
                 {
                     RaiseChanged();
                 }
 
-                UpdateWpsReconcileTimer();
+                UpdateLateBindReconcileTimer();
             }
             catch (Exception ex)
             {
@@ -530,6 +643,44 @@ namespace WordAddIn1.OpenFiles
                 _wpsDetector.DocumentOpened += OnDocumentOpened;
                 _wpsDetector.DocumentClosed += OnDocumentClosed;
                 _wpsDetector.Detached += OnWpsDetached;
+            }
+        }
+
+        private void RecreateExcelDetector()
+        {
+            lock (_gate)
+            {
+                var excel = _excelDetector;
+                if (excel == null)
+                {
+                    return;
+                }
+
+                UnhookExcel(excel);
+                excel.Dispose();
+                _excelDetector = new ExcelOpenFilesDetector();
+                _excelDetector.DocumentOpened += OnDocumentOpened;
+                _excelDetector.DocumentClosed += OnDocumentClosed;
+                _excelDetector.Detached += OnExcelDetached;
+            }
+        }
+
+        private void RecreateEtDetector()
+        {
+            lock (_gate)
+            {
+                var et = _etDetector;
+                if (et == null)
+                {
+                    return;
+                }
+
+                UnhookEt(et);
+                et.Dispose();
+                _etDetector = new EtOpenFilesDetector();
+                _etDetector.DocumentOpened += OnDocumentOpened;
+                _etDetector.DocumentClosed += OnDocumentClosed;
+                _etDetector.Detached += OnEtDetached;
             }
         }
 
@@ -621,7 +772,6 @@ namespace WordAddIn1.OpenFiles
             }
 
             TryRemoveChannel(removedItem);
-
             if (removed)
             {
                 RaiseChanged();
@@ -630,27 +780,33 @@ namespace WordAddIn1.OpenFiles
 
         private void OnWordDetached()
         {
-            bool removed;
-            lock (_gate)
-            {
-                removed = RemoveByAppTypeUnlocked(WordOpenFilesDetector.TypeKey, removeChannels: true);
-            }
-
-            if (removed)
-            {
-                RaiseChanged();
-            }
+            RaiseDetached(WordOpenFilesDetector.TypeKey);
         }
 
         private void OnWpsDetached()
         {
+            RaiseDetached(WpsOpenFilesDetector.TypeKey);
+            UpdateLateBindReconcileTimer();
+        }
+
+        private void OnExcelDetached()
+        {
+            RaiseDetached(ExcelOpenFilesDetector.TypeKey);
+        }
+
+        private void OnEtDetached()
+        {
+            RaiseDetached(EtOpenFilesDetector.TypeKey);
+            UpdateLateBindReconcileTimer();
+        }
+
+        private void RaiseDetached(string appType)
+        {
             bool removed;
             lock (_gate)
             {
-                removed = RemoveByAppTypeUnlocked(WpsOpenFilesDetector.TypeKey, removeChannels: true);
+                removed = RemoveByAppTypeUnlocked(appType, removeChannels: true);
             }
-
-            UpdateWpsReconcileTimer();
 
             if (removed)
             {

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Word = Microsoft.Office.Interop.Word;
+using Excel = Microsoft.Office.Interop.Excel;
 
 namespace WordAddIn1
 {
@@ -114,6 +115,74 @@ namespace WordAddIn1
             }
         }
 
+        public static ExcelChannel CreateOrGetExcel(
+            Excel.Workbook workbook,
+            string filePath = null,
+            bool claimDefaultIfEmpty = true)
+        {
+            if (workbook == null)
+            {
+                throw new ArgumentNullException(nameof(workbook));
+            }
+
+            string uuid = ExcelWorkbookIdentity.EnsureUuid(workbook);
+            lock (Gate)
+            {
+                if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
+                    && Channels.TryGetValue(existingId, out IOperationChannel existing)
+                    && existing is ExcelChannel excelChannel)
+                {
+                    excelChannel.UpdateWorkbook(workbook, filePath);
+                    return excelChannel;
+                }
+
+                string channelId = "excel:" + uuid;
+                var created = new ExcelChannel(channelId, uuid, workbook, filePath);
+                Channels[channelId] = created;
+                DocUuidToChannelId[uuid] = channelId;
+                if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
+                {
+                    _defaultChannelId = channelId;
+                }
+
+                return created;
+            }
+        }
+
+        public static EtChannel CreateOrGetEt(
+            object workbook,
+            string filePath = null,
+            bool claimDefaultIfEmpty = true)
+        {
+            if (workbook == null)
+            {
+                throw new ArgumentNullException(nameof(workbook));
+            }
+
+            string uuid = EtWorkbookIdentity.EnsureUuid(workbook);
+            lock (Gate)
+            {
+                if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
+                    && Channels.TryGetValue(existingId, out IOperationChannel existing)
+                    && existing is EtChannel etChannel)
+                {
+                    etChannel.UpdateWorkbook(workbook, filePath);
+                    return etChannel;
+                }
+
+                string channelId = "et:" + uuid;
+                var created = new EtChannel(channelId, uuid, workbook, filePath);
+                Channels[channelId] = created;
+                DocUuidToChannelId[uuid] = channelId;
+                if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
+                {
+                    _defaultChannelId = channelId;
+                }
+
+                return created;
+            }
+        }
+
         public static void Register(IOperationChannel channel, bool setAsDefault = false)
         {
             if (channel == null)
@@ -136,6 +205,14 @@ namespace WordAddIn1
                 else if (channel is WpsChannel wps && !string.IsNullOrEmpty(wps.DocUuid))
                 {
                     DocUuidToChannelId[wps.DocUuid] = channel.ChannelId;
+                }
+                else if (channel is ExcelChannel excel && !string.IsNullOrEmpty(excel.DocUuid))
+                {
+                    DocUuidToChannelId[excel.DocUuid] = channel.ChannelId;
+                }
+                else if (channel is EtChannel et && !string.IsNullOrEmpty(et.DocUuid))
+                {
+                    DocUuidToChannelId[et.DocUuid] = channel.ChannelId;
                 }
 
                 if (setAsDefault || string.IsNullOrEmpty(_defaultChannelId))
@@ -307,6 +384,14 @@ namespace WordAddIn1
                 else if (ch is WpsChannel wps && !string.IsNullOrEmpty(wps.DocUuid))
                 {
                     DocUuidToChannelId.Remove(wps.DocUuid);
+                }
+                else if (ch is ExcelChannel excel && !string.IsNullOrEmpty(excel.DocUuid))
+                {
+                    DocUuidToChannelId.Remove(excel.DocUuid);
+                }
+                else if (ch is EtChannel et && !string.IsNullOrEmpty(et.DocUuid))
+                {
+                    DocUuidToChannelId.Remove(et.DocUuid);
                 }
 
                 if (string.Equals(_defaultChannelId, channelId, StringComparison.Ordinal))

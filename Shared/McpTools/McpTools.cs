@@ -45,7 +45,8 @@ namespace WordAddIn1
             F_ModifyYamlFileTool.Register(toolRegistry, wordApplication);
             F_CsvToXmlTool.Register(toolRegistry, wordApplication);
             F_GetDocumentContentTool.Register(toolRegistry, wordApplication);
-            F_OpenWordDocumentTool.Register(toolRegistry, wordApplication);
+            F_GetWorkbookContentTool.Register(toolRegistry, wordApplication);
+            F_OpenDocumentTool.Register(toolRegistry, wordApplication);
             F_SwitchDefaultChannelTool.Register(toolRegistry, wordApplication);
             F_GetCurrDocChunkDisplayContentTool.Register(toolRegistry, wordApplication);
             F_GetCurrDocChunkParagraphDisplayContentTool.Register(toolRegistry, wordApplication);

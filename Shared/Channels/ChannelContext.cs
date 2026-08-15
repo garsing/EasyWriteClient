@@ -52,7 +52,7 @@ namespace WordAddIn1
 
             if (!ChannelRegistry.TryGetDefault(out channel) || channel == null)
             {
-                error = "无默认操作渠道；请先打开或新建文档（F_open_word_document）。";
+                error = "无默认操作渠道；请先打开或新建文档（F_open_document）。";
                 return false;
             }
 
@@ -113,7 +113,7 @@ namespace WordAddIn1
             }
 
             error = ChannelHost.Kind == ChannelHostKind.Desktop
-                ? "无默认操作渠道；请先打开或新建文档（F_open_word_document）。"
+                ? "无默认操作渠道；请先打开或新建文档（F_open_document）。"
                 : "无可用 Word 文档；请先打开文档或指定 channel_id。";
             return false;
         }

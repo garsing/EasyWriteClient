@@ -839,17 +839,9 @@ namespace EasyWriteClient.Desktop
                 PerformLayout();
                 ApplyWindowRegion();
 
-                // 恢复上次形态（WebView 已就绪后再通知前端）
-                WindowLayoutMode saved = WindowLayoutStore.LoadMode(WindowLayoutMode.Expanded);
-                if (saved == WindowLayoutMode.Compact)
-                {
-                    SetLayoutMode(WindowLayoutMode.Compact, persist: false, notifyWeb: true);
-                }
-                else
-                {
-                    _chatSurface.NotifyLayoutModeChanged("expanded");
-                    _titleBar.ApplyChromeForLayout(compact: false);
-                }
+                // 每次启动都是 expanded，不恢复上次缩小版
+                _chatSurface.NotifyLayoutModeChanged("expanded");
+                _titleBar.ApplyChromeForLayout(compact: false);
 
                 // 形态恢复后再挂 Monitor：已开 Word 建渠可再触发自动缩小（I5）
                 _chatSurface.StartOpenFilesMonitorIfNeeded();

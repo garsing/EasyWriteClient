@@ -80,6 +80,7 @@ import submitIcon from '../assets/images/submit.png'
 import stopIcon from '../assets/images/stop.png'
 import wordAppIcon from '../assets/images/word.png'
 import wpsAppIcon from '../assets/images/wps.png'
+import excelAppIcon from '../assets/images/excel.png'
 import { useWebViewBridge } from '../composables/useWebViewBridge'
 
 const { sendMessage } = useWebViewBridge()
@@ -130,7 +131,9 @@ const showSelectedOpenFiles = computed(
 
 function chipAppIcon (f) {
   const type = String(f?.appType || '').toLowerCase()
-  return type === 'wps' ? wpsAppIcon : wordAppIcon
+  if (type === 'excel') return excelAppIcon
+  if (type === 'wps' || type === 'et') return wpsAppIcon
+  return wordAppIcon
 }
 
 function dataTransferHasFiles (dt) {

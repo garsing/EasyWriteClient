@@ -60,7 +60,7 @@ namespace WordAddIn1
 
         /// <summary>
         /// 注入 Word.Application。Desktop 启动时可为 null：仍须建立 Registry，
-        /// 以便 document.open（F_open_word_document）按需 new Word；否则会误报 not ready。
+        /// 以便 document.open（F_open_document）按需 new Word；否则会误报 not ready。
         /// </summary>
         public void SetWordApplication(object wordApplication)
         {

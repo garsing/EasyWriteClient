@@ -253,7 +253,7 @@ namespace WordAddIn1
             }
         }
 
-        /// <summary>首次生成 / 随包推荐配置：预置 word + wps（不是 Normalize 兜底）。</summary>
+        /// <summary>首次生成 / 随包推荐配置：预置 word + wps + excel + et（不是 Normalize 兜底）。</summary>
         internal static AppConfig.OpenFilesSettings CreateDefaultOpenFilesSettings()
         {
             return new AppConfig.OpenFilesSettings
@@ -273,6 +273,20 @@ namespace WordAddIn1
                         DisplayName = "WPS文字",
                         ProcessNames = new List<string> { "wps" },
                         Extensions = new List<string> { ".doc", ".docx", ".wps", ".wpt" }
+                    },
+                    new AppConfig.OpenFilesAppEntry
+                    {
+                        Type = "excel",
+                        DisplayName = "Excel",
+                        ProcessNames = new List<string> { "EXCEL" },
+                        Extensions = new List<string> { ".xls", ".xlsx", ".xlsm" }
+                    },
+                    new AppConfig.OpenFilesAppEntry
+                    {
+                        Type = "et",
+                        DisplayName = "WPS表格",
+                        ProcessNames = new List<string> { "et" },
+                        Extensions = new List<string> { ".xls", ".xlsx", ".xlsm", ".et" }
                     }
                 }
             };

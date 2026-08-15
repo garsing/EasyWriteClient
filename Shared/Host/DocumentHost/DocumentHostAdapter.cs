@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using WordAddIn1.HostPlatform;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1.DocumentHost
@@ -250,6 +251,42 @@ namespace WordAddIn1.DocumentHost
             }
         }
 
+        public static bool TryOpen(
+            string fullPath,
+            string app,
+            bool createBlank,
+            object wordApplication,
+            out OpenDocumentResult result,
+            out ToolResult errorResult)
+        {
+            result = null;
+            errorResult = null;
+            if (!OfficeOrWpsResolver.TryResolve(fullPath, app, out OfficeOrWps vendor, out string resolveError))
+            {
+                errorResult = new ToolResult { Success = false, Error = resolveError };
+                return false;
+            }
+
+            bool ok;
+            string error;
+            if (vendor == OfficeOrWps.Office)
+            {
+                ok = WordDocumentHost.TryOpen(fullPath, createBlank, wordApplication, out result, out error);
+            }
+            else
+            {
+                ok = WpsDocumentHost.TryOpen(fullPath, createBlank, out result, out error);
+            }
+
+            if (!ok)
+            {
+                errorResult = new ToolResult { Success = false, Error = error };
+                return false;
+            }
+
+            return true;
+        }
+
         public static ToolResult UnsupportedResult(ChannelKind kind, string channelId, string operation)
         {
             string host = kind.ToString().ToLowerInvariant();
@@ -257,8 +294,11 @@ namespace WordAddIn1.DocumentHost
             {
                 Success = false,
                 Error =
-                    $"unsupported: 当前渠道宿主为 {host}，操作 {operation} 尚未接入文档适配层"
-                    + (string.IsNullOrEmpty(channelId) ? "" : "（channel_id=" + channelId + "）")
+                    (kind == ChannelKind.Excel || kind == ChannelKind.Et)
+                        ? $"unsupported: 当前渠道是 {host}，读/改字工具尚未提供"
+                          + (string.IsNullOrEmpty(channelId) ? "" : "（channel_id=" + channelId + "）")
+                        : $"unsupported: 当前渠道宿主为 {host}，操作 {operation} 尚未接入文档适配层"
+                          + (string.IsNullOrEmpty(channelId) ? "" : "（channel_id=" + channelId + "）")
             };
         }
     }

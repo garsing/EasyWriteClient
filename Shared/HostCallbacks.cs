@@ -9,8 +9,11 @@ namespace WordAddIn1
     /// </summary>
     public static class HostCallbacks
     {
-        /// <summary>Desktop：F_open_word_document 创建/附着 Word 后刷新 WsClient Registry。</summary>
+        /// <summary>Desktop：F_open_document 创建/附着 Word 后刷新 WsClient Registry。</summary>
         public static Action<object> WordApplicationResolved { get; set; }
+
+        /// <summary>打开成功后刷新侧栏「打开文件」探测器。</summary>
+        public static Action OpenFilesRefresh { get; set; }
 
         /// <summary>用户登录成功后通知各任务窗格/桌面 UI 刷新。</summary>
         public static Func<Task> NotifyUserLoggedInAllAsync { get; set; }
@@ -26,6 +29,11 @@ namespace WordAddIn1
         public static void RaiseRequestCompact()
         {
             RequestCompact?.Invoke();
+        }
+
+        public static void RaiseOpenFilesRefresh()
+        {
+            OpenFilesRefresh?.Invoke();
         }
 
         public static Task RaiseNotifyUserLoggedInAllAsync()

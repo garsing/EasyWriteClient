@@ -180,6 +180,37 @@ namespace WordAddIn1.OpenFiles
                 null);
         }
 
+        public static object Invoke(object target, string name, params object[] args)
+        {
+            return target.GetType().InvokeMember(
+                name,
+                BindingFlags.InvokeMethod | BindingFlags.Instance | BindingFlags.Public,
+                null,
+                target,
+                args);
+        }
+
+        public static void TrySetProperty(object target, string name, object value)
+        {
+            if (target == null || string.IsNullOrEmpty(name))
+            {
+                return;
+            }
+
+            try
+            {
+                target.GetType().InvokeMember(
+                    name,
+                    BindingFlags.SetProperty | BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    target,
+                    new object[] { value });
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         private static object GetIndexed(object collection, int index)
         {
             // 优先 Item 属性/方法
