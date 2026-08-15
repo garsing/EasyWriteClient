@@ -19,7 +19,42 @@ namespace WordAddIn1
         {
             lock (Gate)
             {
-                _hosted = application as Excel.Application;
+                if (application == null)
+                {
+                    _hosted = null;
+                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                        "[ExcelApplicationResolver] Attach(null)");
+                    return;
+                }
+
+                Excel.Application typed = application as Excel.Application;
+                if (typed == null)
+                {
+                    try
+                    {
+                        typed = (Excel.Application)application;
+                    }
+                    catch (Exception ex)
+                    {
+                        EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                            "[ExcelApplicationResolver] Attach cast failed type="
+                            + application.GetType().FullName + " err=" + ex.Message);
+                        return;
+                    }
+                }
+
+                _hosted = typed;
+                try
+                {
+                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                        "[ExcelApplicationResolver] Attach ok name=" + (_hosted.Name ?? "")
+                        + " workbooks=" + _hosted.Workbooks.Count);
+                }
+                catch (Exception ex)
+                {
+                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                        "[ExcelApplicationResolver] Attach ok but read failed: " + ex.Message);
+                }
             }
         }
 
@@ -66,53 +101,66 @@ namespace WordAddIn1
                     try
                     {
                         var _ = _hosted.Name;
-                        application = _hosted;
-                        if (makeVisible)
+                        int hostedCount = SafeWorkbookCount(_hosted);
+                        if (hostedCount > 0)
                         {
-                            EnsureVisibleCore(application);
+                            application = _hosted;
+                            if (makeVisible)
+                            {
+                                EnsureVisibleCore(application);
+                            }
+
+                            EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                                "[ExcelApplicationResolver] resolve=hosted name=" + (_hosted.Name ?? "")
+                                + " workbooks=" + hostedCount);
+                            return true;
                         }
 
-                        return true;
+                        EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                            "[ExcelApplicationResolver] hosted workbooks=0 — try better instance");
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
+                        EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                            "[ExcelApplicationResolver] hosted dead, clear: " + ex.Message);
                         _hosted = null;
                     }
                 }
             }
 
-            try
+            if (ExcelApplicationInstances.TryFindBest(
+                    out Excel.Application found,
+                    out string source,
+                    out int workbookCount)
+                && found != null)
             {
-                application = (Excel.Application)Marshal.GetActiveObject("Excel.Application");
-                if (application != null)
+                application = found;
+                Attach(application);
+                if (makeVisible)
                 {
-                    Attach(application);
-                    if (makeVisible)
-                    {
-                        EnsureVisibleCore(application);
-                    }
-
-                    return true;
+                    EnsureVisibleCore(application);
                 }
-            }
-            catch (COMException)
-            {
-            }
-            catch (Exception ex)
-            {
-                error = "附着已有 Excel 失败: " + ex.Message;
-                return false;
+
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[ExcelApplicationResolver] resolve=" + source
+                    + " workbooks=" + workbookCount
+                    + " name=" + SafeName(application));
+                return true;
             }
 
             if (!createIfMissing)
             {
                 error = "Excel 应用程序不可用；请先启动 Excel。";
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[ExcelApplicationResolver] resolve miss createIfMissing=false");
                 return false;
             }
 
             try
             {
                 application = new Excel.Application();
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[ExcelApplicationResolver] resolve=new Application");
                 Attach(application);
                 if (makeVisible)
                 {
@@ -126,6 +174,30 @@ namespace WordAddIn1
                 error = "无法创建 Excel.Application（是否未安装 Excel？）: " + ex.Message;
                 application = null;
                 return false;
+            }
+        }
+
+        private static string SafeName(Excel.Application app)
+        {
+            try
+            {
+                return app?.Name ?? "";
+            }
+            catch (Exception)
+            {
+                return "?";
+            }
+        }
+
+        private static int SafeWorkbookCount(Excel.Application app)
+        {
+            try
+            {
+                return app?.Workbooks?.Count ?? -1;
+            }
+            catch (Exception)
+            {
+                return -1;
             }
         }
 
