@@ -790,6 +790,11 @@ namespace WordAddIn1.SpreadsheetHost
                 return false;
             }
 
+            if (!TryValidateCsvAgainstMerges(sheet, firstRow, firstCol, grid, out error))
+            {
+                return false;
+            }
+
             try
             {
                 object target = GetSheetRange(sheet, actualRange);
@@ -839,6 +844,106 @@ namespace WordAddIn1.SpreadsheetHost
                 WrittenCount = csvRows * csvCols,
                 ActualRange = actualRange
             };
+            return true;
+        }
+
+        private static bool TryValidateCsvAgainstMerges(
+            object sheet,
+            int firstRow,
+            int firstCol,
+            List<List<string>> grid,
+            out string error)
+        {
+            error = null;
+            if (sheet == null || grid == null)
+            {
+                return true;
+            }
+
+            object sheetCells = null;
+            try
+            {
+                sheetCells = EtCom.GetProperty(sheet, "Cells");
+            }
+            catch (Exception)
+            {
+            }
+
+            if (sheetCells == null)
+            {
+                return true;
+            }
+
+            int rowCount = grid.Count;
+            for (int r = 0; r < rowCount; r++)
+            {
+                List<string> line = grid[r];
+                int colCount = line == null ? 0 : line.Count;
+                for (int c = 0; c < colCount; c++)
+                {
+                    if (SpreadsheetWritePlanner.IsEmptyForMergeCheck(line[c]))
+                    {
+                        continue;
+                    }
+
+                    int sheetRow = firstRow + r;
+                    int sheetCol = firstCol + c;
+                    object cell = null;
+                    try
+                    {
+                        cell = EtCom.GetIndexed2(sheetCells, sheetRow, sheetCol);
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    if (cell == null)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        object mergeCells = EtCom.GetProperty(cell, "MergeCells");
+                        if (mergeCells == null || !Convert.ToBoolean(mergeCells))
+                        {
+                            continue;
+                        }
+
+                        object area = EtCom.GetProperty(cell, "MergeArea");
+                        if (area == null)
+                        {
+                            continue;
+                        }
+
+                        int areaRow = Convert.ToInt32(EtCom.GetProperty(area, "Row"));
+                        int areaCol = Convert.ToInt32(EtCom.GetProperty(area, "Column"));
+                        if (sheetRow == areaRow && sheetCol == areaCol)
+                        {
+                            continue;
+                        }
+
+                        int areaRows = Convert.ToInt32(
+                            EtCom.GetProperty(EtCom.GetProperty(area, "Rows"), "Count"));
+                        int areaCols = Convert.ToInt32(
+                            EtCom.GetProperty(EtCom.GetProperty(area, "Columns"), "Count"));
+                        string cellAddr = A1Address.Cell(sheetRow, sheetCol);
+                        string mergeArea = A1Address.Range(
+                            areaRow,
+                            areaCol,
+                            areaRow + areaRows - 1,
+                            areaCol + areaCols - 1);
+                        error = SpreadsheetWritePlanner.FormatMergeCsvConflictError(cellAddr, mergeArea);
+                        return false;
+                    }
+                    catch (Exception ex)
+                    {
+                        error = "检查合并结构失败: " + ex.Message;
+                        return false;
+                    }
+                }
+            }
+
             return true;
         }
 

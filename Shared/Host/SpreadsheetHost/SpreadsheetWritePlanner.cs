@@ -183,5 +183,22 @@ namespace WordAddIn1.SpreadsheetHost
 
             value = raw;
         }
+
+        /// <summary>
+        /// 合并区非左上角：CSV 必须为空（空白视为空）。
+        /// </summary>
+        public static bool IsEmptyForMergeCheck(string raw)
+        {
+            return string.IsNullOrWhiteSpace(raw);
+        }
+
+        public static string FormatMergeCsvConflictError(string cellAddr, string mergeAreaA1)
+        {
+            return "CSV 与合并结构不符："
+                + (cellAddr ?? "")
+                + " 属于合并区 "
+                + (mergeAreaA1 ?? "")
+                + "，仅左上角可有值，其余格须为空（请改 CSV 或先取消合并）";
+        }
     }
 }

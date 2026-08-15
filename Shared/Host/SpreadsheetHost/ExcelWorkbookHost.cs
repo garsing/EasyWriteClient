@@ -813,6 +813,11 @@ namespace WordAddIn1.SpreadsheetHost
                 return false;
             }
 
+            if (!TryValidateCsvAgainstMerges(sheet, firstRow, firstCol, grid, out error))
+            {
+                return false;
+            }
+
             bool anyFormula = false;
             for (int r = 0; r < csvRows && !anyFormula; r++)
             {
@@ -900,6 +905,85 @@ namespace WordAddIn1.SpreadsheetHost
                 WrittenCount = csvRows * csvCols,
                 ActualRange = actualRange
             };
+            return true;
+        }
+
+        /// <summary>
+        /// 写入矩形内：若格属于合并区且非左上角，CSV 必须为空。
+        /// </summary>
+        private static bool TryValidateCsvAgainstMerges(
+            Excel.Worksheet sheet,
+            int firstRow,
+            int firstCol,
+            List<List<string>> grid,
+            out string error)
+        {
+            error = null;
+            if (sheet == null || grid == null)
+            {
+                return true;
+            }
+
+            int rowCount = grid.Count;
+            for (int r = 0; r < rowCount; r++)
+            {
+                List<string> line = grid[r];
+                int colCount = line == null ? 0 : line.Count;
+                for (int c = 0; c < colCount; c++)
+                {
+                    if (SpreadsheetWritePlanner.IsEmptyForMergeCheck(line[c]))
+                    {
+                        continue;
+                    }
+
+                    int sheetRow = firstRow + r;
+                    int sheetCol = firstCol + c;
+                    Excel.Range cell = null;
+                    try
+                    {
+                        cell = sheet.Cells[sheetRow, sheetCol] as Excel.Range;
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    if (cell == null)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        if (!cell.MergeCells)
+                        {
+                            continue;
+                        }
+
+                        Excel.Range area = cell.MergeArea;
+                        int areaRow = area.Row;
+                        int areaCol = area.Column;
+                        if (sheetRow == areaRow && sheetCol == areaCol)
+                        {
+                            continue;
+                        }
+
+                        string cellAddr = A1Address.Cell(sheetRow, sheetCol);
+                        string mergeArea = A1Address.Range(
+                            areaRow,
+                            areaCol,
+                            areaRow + area.Rows.Count - 1,
+                            areaCol + area.Columns.Count - 1);
+                        error = SpreadsheetWritePlanner.FormatMergeCsvConflictError(cellAddr, mergeArea);
+                        return false;
+                    }
+                    catch (Exception ex)
+                    {
+                        error = "检查合并结构失败: " + ex.Message;
+                        return false;
+                    }
+                }
+            }
+
             return true;
         }
 
