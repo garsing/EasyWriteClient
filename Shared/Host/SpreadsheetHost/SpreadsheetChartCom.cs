@@ -694,13 +694,6 @@ namespace WordAddIn1.SpreadsheetHost
 
             try
             {
-                if (IsPivotChart(chart))
-                {
-                    co.Delete();
-                    error = "不支持 PivotChart";
-                    return false;
-                }
-
                 chart.ChartType = xlType;
                 if (!TryBindDataExcel(book, chart, request.DataBind, out error))
                 {
@@ -712,6 +705,22 @@ namespace WordAddIn1.SpreadsheetHost
                     {
                     }
 
+                    return false;
+                }
+
+                // SetSourceData 若指向透视表结果区，Excel 会自动变成 PivotChart
+                if (IsPivotChart(chart))
+                {
+                    try
+                    {
+                        co.Delete();
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    error = "源区域绑定成了透视图（PivotChart）。本期不支持；"
+                        + "请改用普通数据区作 Source（可用 write 把透视结果抄成静态表再绑）";
                     return false;
                 }
 
@@ -1202,12 +1211,27 @@ namespace WordAddIn1.SpreadsheetHost
             }
         }
 
+        /// <summary>
+        /// 仅当确有 PivotTable 时才视为透视图。
+        /// 注意：空图/普通图上 PivotLayout 属性常非 null，不能只判 != null。
+        /// </summary>
         private static bool IsPivotChart(Excel.Chart chart)
         {
+            if (chart == null)
+            {
+                return false;
+            }
+
             try
             {
-                object pl = chart.PivotLayout;
-                return pl != null;
+                Excel.PivotLayout layout = chart.PivotLayout;
+                if (layout == null)
+                {
+                    return false;
+                }
+
+                Excel.PivotTable pt = layout.PivotTable;
+                return pt != null;
             }
             catch (Exception)
             {
@@ -1381,6 +1405,24 @@ namespace WordAddIn1.SpreadsheetHost
             SpreadsheetChartResult partial,
             out string error)
         {
+            try
+            {
+                return TryCreateEtCore(book, request, partial, out error);
+            }
+            catch (Exception ex)
+            {
+                error = "et 创建图表未捕获异常: " + FormatError(ex);
+                LogChartEtError(error, ex);
+                return false;
+            }
+        }
+
+        private static bool TryCreateEtCore(
+            object book,
+            SpreadsheetChartRequest request,
+            SpreadsheetChartResult partial,
+            out string error)
+        {
             if (!TryGetEtWorksheet(book, request.DestSheet, out object destSheet, out error))
             {
                 return false;
@@ -1420,51 +1462,110 @@ namespace WordAddIn1.SpreadsheetHost
                 return false;
             }
 
-            object destRange = EtGetSheetRange(destSheet, A1Address.Range(fr, fc, lr, lc));
-            double left = Convert.ToDouble(EtCom.GetProperty(destRange, "Left"));
-            double top = Convert.ToDouble(EtCom.GetProperty(destRange, "Top"));
-            double width = Convert.ToDouble(EtCom.GetProperty(destRange, "Width"));
-            double height = Convert.ToDouble(EtCom.GetProperty(destRange, "Height"));
-
-            object cos = TryGetChartObjects(destSheet);
-            if (cos == null)
+            if (!TryGetEtDestGeometry(
+                    destSheet,
+                    fr,
+                    fc,
+                    lr,
+                    lc,
+                    out double left,
+                    out double top,
+                    out double width,
+                    out double height,
+                    out error))
             {
-                error = "无法访问 ChartObjects";
                 return false;
             }
 
-            object co = EtCom.Invoke(cos, "Add", left, top, width, height);
-            if (co == null)
+            var createErrors = new List<string>();
+            object co = TryAddEtChartObject(destSheet, left, top, width, height, createErrors);
+            object chartHost = co;
+            object chart = null;
+
+            if (co != null)
             {
-                error = "ChartObjects.Add 失败";
+                chart = EtCom.GetProperty(co, "Chart") ?? EtCom.InvokeFlex(co, "Chart");
+            }
+
+            // 回退：Shapes.AddChart（部分 WPS 版本 ChartObjects.Add 不稳定）
+            if (chart == null)
+            {
+                try
+                {
+                    object shapes = EtCom.GetProperty(destSheet, "Shapes")
+                        ?? EtCom.InvokeFlex(destSheet, "Shapes");
+                    if (shapes != null)
+                    {
+                        object shape = null;
+                        try
+                        {
+                            shape = EtCom.InvokeFlex(
+                                shapes,
+                                "AddChart",
+                                (int)xlType,
+                                left,
+                                top,
+                                width,
+                                height);
+                        }
+                        catch (Exception ex1)
+                        {
+                            createErrors.Add("Shapes.AddChart: " + FormatError(ex1));
+                            try
+                            {
+                                shape = EtCom.InvokeFlex(shapes, "AddChart2", -1, (int)xlType, left, top, width, height);
+                            }
+                            catch (Exception ex2)
+                            {
+                                createErrors.Add("Shapes.AddChart2: " + FormatError(ex2));
+                            }
+                        }
+
+                        if (shape != null)
+                        {
+                            chartHost = shape;
+                            chart = EtCom.GetProperty(shape, "Chart") ?? EtCom.InvokeFlex(shape, "Chart");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    createErrors.Add("Shapes 路径: " + FormatError(ex));
+                }
+            }
+
+            if (chart == null)
+            {
+                error = "无法创建图表（ChartObjects/Shapes 均失败）"
+                    + (createErrors.Count > 0 ? ": " + string.Join(" | ", createErrors) : "");
+                LogChartEtError(error, null);
                 return false;
             }
 
             try
             {
-                object chart = EtCom.GetProperty(co, "Chart");
-                EtCom.TrySetProperty(chart, "ChartType", (int)xlType);
+                try
+                {
+                    EtCom.TrySetProperty(chart, "ChartType", (int)xlType);
+                }
+                catch (Exception ex)
+                {
+                    partial.Warnings.Add("ChartType: " + FormatError(ex));
+                }
+
                 if (!TryBindDataEt(book, chart, request.DataBind, out error))
                 {
-                    try
-                    {
-                        EtCom.Invoke(co, "Delete");
-                    }
-                    catch (Exception)
-                    {
-                    }
-
+                    TryDeleteEtChartHost(chartHost);
                     return false;
                 }
 
-                // et：尽量套常用格式；失败进 warnings
                 TryApplyFormatEt(chart, request.Format, partial.Warnings);
 
                 if (!string.IsNullOrEmpty(request.ChartName))
                 {
                     try
                     {
-                        EtCom.TrySetProperty(co, "Name", request.ChartName);
+                        EtCom.TrySetProperty(chartHost, "Name", request.ChartName);
                     }
                     catch (Exception ex)
                     {
@@ -1472,22 +1573,177 @@ namespace WordAddIn1.SpreadsheetHost
                     }
                 }
 
-                FillResultFromEt(partial, EtCom.TryReadName(destSheet), co);
+                FillResultFromEt(partial, EtCom.TryReadName(destSheet), chartHost);
                 return true;
             }
             catch (Exception ex)
             {
+                TryDeleteEtChartHost(chartHost);
+                error = "create 失败: " + FormatError(ex);
+                LogChartEtError(error, ex);
+                return false;
+            }
+        }
+
+        private static object TryAddEtChartObject(
+            object destSheet,
+            double left,
+            double top,
+            double width,
+            double height,
+            List<string> errors)
+        {
+            object cos = TryGetChartObjects(destSheet);
+            if (cos == null)
+            {
+                errors.Add("ChartObjects 不可用");
+                return null;
+            }
+
+            Exception last = null;
+            object[][] argSets =
+            {
+                new object[] { left, top, width, height },
+                new object[] { (float)left, (float)top, (float)width, (float)height },
+                new object[] { (int)left, (int)top, (int)width, (int)height }
+            };
+
+            foreach (object[] args in argSets)
+            {
                 try
                 {
-                    EtCom.Invoke(co, "Delete");
+                    object co = EtCom.InvokeFlex(cos, "Add", args);
+                    if (co != null)
+                    {
+                        return co;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                }
+
+                try
+                {
+                    object co = EtCom.Invoke(cos, "Add", args);
+                    if (co != null)
+                    {
+                        return co;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                }
+            }
+
+            if (last != null)
+            {
+                errors.Add("ChartObjects.Add: " + FormatError(last));
+            }
+
+            return null;
+        }
+
+        private static bool TryGetEtDestGeometry(
+            object destSheet,
+            int fr,
+            int fc,
+            int lr,
+            int lc,
+            out double left,
+            out double top,
+            out double width,
+            out double height,
+            out string error)
+        {
+            left = 100;
+            top = 100;
+            width = 400;
+            height = 250;
+            error = null;
+
+            string a1 = A1Address.Range(fr, fc, lr, lc);
+            object destRange = EtGetSheetRange(destSheet, a1);
+            if (destRange != null)
+            {
+                try
+                {
+                    left = Convert.ToDouble(EtCom.GetProperty(destRange, "Left"));
+                    top = Convert.ToDouble(EtCom.GetProperty(destRange, "Top"));
+                    width = Convert.ToDouble(EtCom.GetProperty(destRange, "Width"));
+                    height = Convert.ToDouble(EtCom.GetProperty(destRange, "Height"));
+                    if (width > 10 && height > 10)
+                    {
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogChartEtError("dest Range 几何失败，改用估算: " + FormatError(ex), ex);
+                }
+            }
+
+            // 回退：按列宽/行高粗估（点）
+            try
+            {
+                object cell = EtGetSheetRange(destSheet, A1Address.Cell(fr, fc));
+                left = Convert.ToDouble(EtCom.GetProperty(cell, "Left"));
+                top = Convert.ToDouble(EtCom.GetProperty(cell, "Top"));
+                width = Math.Max(120, (lc - fc + 1) * 64);
+                height = Math.Max(120, (lr - fr + 1) * 18);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "无法计算 dest 位置: " + FormatError(ex);
+                LogChartEtError(error, ex);
+                return false;
+            }
+        }
+
+        private static void TryDeleteEtChartHost(object host)
+        {
+            if (host == null)
+            {
+                return;
+            }
+
+            try
+            {
+                EtCom.Invoke(host, "Delete");
+            }
+            catch (Exception)
+            {
+                try
+                {
+                    EtCom.InvokeFlex(host, "Delete");
                 }
                 catch (Exception)
                 {
                 }
-
-                error = "create 失败: " + FormatError(ex);
-                return false;
             }
+        }
+
+        private static void LogChartEtError(string message, Exception ex)
+        {
+            try
+            {
+                string path = System.IO.Path.Combine(EasyWriteLog.LogDirectory, "chart_et_error.txt");
+                System.IO.File.AppendAllText(
+                    path,
+                    DateTime.Now.ToString("HH:mm:ss.fff")
+                    + " "
+                    + message
+                    + Environment.NewLine
+                    + (ex != null ? ex.ToString() + Environment.NewLine : "")
+                    + Environment.NewLine);
+            }
+            catch (Exception)
+            {
+            }
+
+            System.Diagnostics.Debug.WriteLine("[F_excel_chart] " + message);
         }
 
         private static bool TryBindDataEt(
@@ -1511,15 +1767,65 @@ namespace WordAddIn1.SpreadsheetHost
                 }
 
                 object src = EtGetSheetRange(srcSheet, bind.SourceRangeA1);
+                if (src == null)
+                {
+                    error = "无法解析源区域 Range: " + bind.SourceSheet + "!" + bind.SourceRangeA1;
+                    return false;
+                }
+
                 int plotBy = string.Equals(bind.PlotBy, "rows", StringComparison.OrdinalIgnoreCase)
                     ? SpreadsheetChartParse.XlRows
                     : SpreadsheetChartParse.XlColumns;
-                EtCom.Invoke(chart, "SetSourceData", src, plotBy);
-                return true;
+
+                Exception last = null;
+                try
+                {
+                    EtCom.InvokeFlex(chart, "SetSourceData", src, plotBy);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                }
+
+                try
+                {
+                    EtCom.Invoke(chart, "SetSourceData", src, plotBy);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                }
+
+                // 部分 et 只接受单参数
+                try
+                {
+                    EtCom.InvokeFlex(chart, "SetSourceData", src);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                }
+
+                try
+                {
+                    EtCom.Invoke(chart, "SetSourceData", src);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                }
+
+                error = "SetSourceData 失败: " + FormatError(last);
+                LogChartEtError(error, last);
+                return false;
             }
 
-            object seriesColl = EtCom.GetProperty(chart, "SeriesCollection");
-            // clear existing
+            object seriesColl = EtCom.GetProperty(chart, "SeriesCollection")
+                ?? EtCom.InvokeFlex(chart, "SeriesCollection");
             try
             {
                 while (Convert.ToInt32(EtCom.GetProperty(seriesColl, "Count")) > 0)
@@ -1554,7 +1860,14 @@ namespace WordAddIn1.SpreadsheetHost
                     return false;
                 }
 
-                object series = EtCom.Invoke(seriesColl, "NewSeries");
+                object series = EtCom.InvokeFlex(seriesColl, "NewSeries")
+                    ?? EtCom.Invoke(seriesColl, "NewSeries");
+                if (series == null)
+                {
+                    error = "SeriesCollection.NewSeries 失败";
+                    return false;
+                }
+
                 EtCom.TrySetProperty(series, "Values", EtGetSheetRange(vs, col.RangeA1));
                 if (!string.IsNullOrEmpty(col.Name))
                 {
@@ -1937,6 +2250,18 @@ namespace WordAddIn1.SpreadsheetHost
 
         private static object TryGetChartObjects(object sheet)
         {
+            try
+            {
+                object cos = EtCom.InvokeFlex(sheet, "ChartObjects");
+                if (cos != null)
+                {
+                    return cos;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
             try
             {
                 return EtCom.Invoke(sheet, "ChartObjects");
