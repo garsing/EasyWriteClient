@@ -226,6 +226,87 @@ namespace WordAddIn1
             }
         }
 
+        /// <summary>工作区文件元数据（<c>GET /files/stat</c>）。</summary>
+        public sealed class WorkspaceFileStat
+        {
+            public long Size { get; set; }
+            public DateTime MtimeUtc { get; set; }
+            public string RelativePath { get; set; }
+        }
+
+        /// <summary>
+        /// GET <c>/files/stat/{relativePath}</c>。
+        /// 返回 true 且 <paramref name="stat"/> 非空表示云端存在；404 → false + null；网络/其它错误 → false + null（调用方应保留本地）。
+        /// </summary>
+        public static async Task<(bool exists, WorkspaceFileStat stat)> TryGetWorkspaceFileStatAsync(string relativePath)
+        {
+            try
+            {
+                var userService = UserService.Instance;
+                if (!userService.CheckLoginStatus() || string.IsNullOrWhiteSpace(relativePath))
+                {
+                    return (false, null);
+                }
+
+                string baseUrl = ConfigManager.Config.Api.BaseUrl;
+                string encodedPath = EncodeRelativePathForUrl(relativePath);
+                string statUrl = $"{baseUrl}/files/stat/{encodedPath}";
+
+                for (int attempt = 0; attempt < 2; attempt++)
+                {
+                    using (var client = CreateClient())
+                    {
+                        ApplyAuthHeaders(client, userService);
+
+                        var response = await client.GetAsync(statUrl).ConfigureAwait(false);
+                        var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                        if (response.IsSuccessStatusCode)
+                        {
+                            var dto = JsonConvert.DeserializeObject<StatResponseDto>(body);
+                            if (dto?.success == true && dto.data != null
+                                && TryParseUtc(dto.data.mtime_utc, out DateTime mtimeUtc))
+                            {
+                                return (true, new WorkspaceFileStat
+                                {
+                                    Size = dto.data.size,
+                                    MtimeUtc = mtimeUtc,
+                                    RelativePath = dto.data.relative_path ?? relativePath
+                                });
+                            }
+
+                            return (false, null);
+                        }
+
+                        if (response.StatusCode == HttpStatusCode.NotFound)
+                        {
+                            return (false, null);
+                        }
+
+                        if (attempt == 0 && response.StatusCode == HttpStatusCode.Unauthorized)
+                        {
+                            var newToken = await Auth.Instance.HandleApiResponse(response, body).ConfigureAwait(false);
+                            if (!string.IsNullOrEmpty(newToken))
+                            {
+                                continue;
+                            }
+                        }
+
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[BackendApiClient] stat 文件HTTP错误: {response.StatusCode} - {body}");
+                        return (false, null);
+                    }
+                }
+
+                return (false, null);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[BackendApiClient] stat 文件异常: {ex.Message}");
+                return (false, null);
+            }
+        }
+
         /// <summary>GET <c>/files/download/{relativePath}</c> 并写入本地；404 返回 false。</summary>
         public static async Task<bool> DownloadFileFromUserDirectoryAsync(string relativePath, string localPath)
         {
@@ -358,6 +439,8 @@ namespace WordAddIn1
                                 var uploadResponse = JsonConvert.DeserializeObject<UploadResponseDto>(responseContent);
                                 if (uploadResponse != null && uploadResponse.success)
                                 {
+                                    // 对齐本地 mtime，避免刚上传后 Ensure 因后端略新而误拉同内容
+                                    TryAlignLocalMtimeAfterUpload(filePath, uploadResponse.data?.mtime_utc);
                                     System.Diagnostics.Debug.WriteLine(
                                         $"[BackendApiClient] 文件上传成功: {uploadResponse.data?.filename ?? uploadFilename}");
                                     return true;
@@ -458,6 +541,49 @@ namespace WordAddIn1
             return string.Join("/", segments.Select(Uri.EscapeDataString));
         }
 
+        private static bool TryParseUtc(string iso, out DateTime utc)
+        {
+            utc = default(DateTime);
+            if (string.IsNullOrWhiteSpace(iso))
+            {
+                return false;
+            }
+
+            if (DateTime.TryParse(
+                    iso,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                    out utc))
+            {
+                if (utc.Kind == DateTimeKind.Unspecified)
+                {
+                    utc = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+        private static void TryAlignLocalMtimeAfterUpload(string localPath, string remoteMtimeUtc)
+        {
+            try
+            {
+                DateTime targetUtc;
+                if (!TryParseUtc(remoteMtimeUtc, out targetUtc))
+                {
+                    targetUtc = DateTime.UtcNow;
+                }
+
+                File.SetLastWriteTimeUtc(localPath, targetUtc);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[BackendApiClient] 对齐本地 mtime 失败: {ex.Message}");
+            }
+        }
+
         private sealed class UploadResponseDto
         {
             public bool success { get; set; }
@@ -468,6 +594,21 @@ namespace WordAddIn1
         private sealed class UploadDataDto
         {
             public string filename { get; set; }
+            public string mtime_utc { get; set; }
+        }
+
+        private sealed class StatResponseDto
+        {
+            public bool success { get; set; }
+            public StatDataDto data { get; set; }
+        }
+
+        private sealed class StatDataDto
+        {
+            public string filename { get; set; }
+            public string relative_path { get; set; }
+            public long size { get; set; }
+            public string mtime_utc { get; set; }
         }
     }
 }

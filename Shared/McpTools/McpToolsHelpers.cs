@@ -309,7 +309,7 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 从用户工作区读取文件（本地优先，缺失则从云端 sessions/{id}/ 下载）。
+        /// 从用户工作区读取文件（本地优先；云端同名且更新则覆盖后再读）。
         /// </summary>
         public static async Task<(bool success, string content, string error)> LoadUserFormatFileAsync(string filename)
         {
@@ -341,12 +341,15 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 确保工作区文件存在于本地（ResolveReadPath → 云端下载至当前会话目录）。
+        /// 确保工作区文件存在于本地（ResolveReadPath → 若云端同名且更新则覆盖下载 → 否则本地缺失时下载）。
         /// </summary>
         public static async Task<(bool success, string localPath, string error)> EnsureWorkspaceFileAsync(
             string filename,
             string conversationId = null)
         {
+            // 后端略新于本地时才覆盖；吸收上传往返与文件系统时间精度抖动
+            const double NewerSkewSeconds = 1.0;
+
             try
             {
                 if (string.IsNullOrWhiteSpace(filename))
@@ -364,17 +367,56 @@ namespace WordAddIn1
                     return (false, null, "工作区未初始化，请先在设置页配置工作目录");
                 }
 
+                string relativePath = WorkspacePathResolver.BuildRelativePath(
+                    conversationId ?? ConversationContext.CurrentId,
+                    filename);
+
                 string localPath = WorkspacePathResolver.ResolveReadPath(filename, conversationId);
-                if (!string.IsNullOrEmpty(localPath) && File.Exists(localPath))
+                bool localExists = !string.IsNullOrEmpty(localPath) && File.Exists(localPath);
+
+                if (localExists)
                 {
+                    try
+                    {
+                        var (remoteExists, remoteStat) = await BackendApiClient
+                            .TryGetWorkspaceFileStatAsync(relativePath)
+                            .ConfigureAwait(false);
+
+                        if (remoteExists && remoteStat != null)
+                        {
+                            DateTime localUtc = File.GetLastWriteTimeUtc(localPath);
+                            if (remoteStat.MtimeUtc > localUtc.AddSeconds(NewerSkewSeconds))
+                            {
+                                System.Diagnostics.Debug.WriteLine(
+                                    $"[McpToolsHelpers] 云端更新，覆盖本地: {filename} remote={remoteStat.MtimeUtc:o} local={localUtc:o}");
+
+                                bool refreshed = await FileDownloader
+                                    .DownloadFileFromUserDirectory(relativePath, localPath)
+                                    .ConfigureAwait(false);
+
+                                if (refreshed && File.Exists(localPath))
+                                {
+                                    TryAlignLocalMtime(localPath, remoteStat.MtimeUtc);
+                                    TryHideWorkspaceFormatFile(localPath);
+                                    return (true, localPath, null);
+                                }
+
+                                System.Diagnostics.Debug.WriteLine(
+                                    $"[McpToolsHelpers] 云端更新但下载失败，沿用本地: {filename}");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[McpToolsHelpers] 比对云端 mtime 失败，沿用本地: {ex.Message}");
+                    }
+
                     TryHideWorkspaceFormatFile(localPath);
                     return (true, localPath, null);
                 }
 
                 localPath = WorkspacePathResolver.ResolveWritePath(filename, conversationId);
-                string relativePath = WorkspacePathResolver.BuildRelativePath(
-                    conversationId ?? ConversationContext.CurrentId,
-                    filename);
 
                 bool downloaded = await FileDownloader.DownloadFileFromUserDirectory(relativePath, localPath)
                     .ConfigureAwait(false);
@@ -390,6 +432,21 @@ namespace WordAddIn1
             catch (Exception ex)
             {
                 return (false, null, $"获取工作区文件失败: {ex.Message}");
+            }
+        }
+
+        private static void TryAlignLocalMtime(string localPath, DateTime remoteMtimeUtc)
+        {
+            try
+            {
+                DateTime utc = remoteMtimeUtc.Kind == DateTimeKind.Utc
+                    ? remoteMtimeUtc
+                    : remoteMtimeUtc.ToUniversalTime();
+                File.SetLastWriteTimeUtc(localPath, utc);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[McpToolsHelpers] 对齐本地 mtime 失败: {ex.Message}");
             }
         }
 
