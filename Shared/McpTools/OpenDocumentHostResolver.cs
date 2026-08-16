@@ -6,7 +6,8 @@ namespace WordAddIn1
     internal enum OpenDocumentFamily
     {
         Document = 0,
-        Spreadsheet = 1
+        Spreadsheet = 1,
+        Presentation = 2
     }
 
     internal static class OpenDocumentHostResolver
@@ -32,11 +33,12 @@ namespace WordAddIn1
                     return true;
                 case ".ppt":
                 case ".pptx":
-                    error = "unsupported: 尚未支持演示文稿";
-                    return false;
+                case ".pptm":
+                    family = OpenDocumentFamily.Presentation;
+                    return true;
                 default:
                     error = string.IsNullOrEmpty(ext)
-                        ? "路径必须带可识别后缀（.docx / .xlsx / .et 等）"
+                        ? "路径必须带可识别后缀（.docx / .xlsx / .pptx / .et 等）"
                         : "不支持的后缀: " + ext;
                     return false;
             }
@@ -53,21 +55,34 @@ namespace WordAddIn1
             string app = appRaw.Trim().ToLowerInvariant();
             bool documentApp = app == "word" || app == "wps";
             bool spreadsheetApp = app == "excel" || app == "et";
-            if (!documentApp && !spreadsheetApp)
+            bool presentationApp = app == "powerpoint" || app == "wpp";
+            if (!documentApp && !spreadsheetApp && !presentationApp)
             {
-                error = "app 须为 word / wps / excel / et";
+                error = "app 须为 word / wps / excel / et / powerpoint / wpp";
                 return false;
             }
 
-            if (family == OpenDocumentFamily.Document && spreadsheetApp)
+            if (family == OpenDocumentFamily.Document && !documentApp)
             {
                 error = "文件是文字文档，不能用 app=" + app + " 打开";
                 return false;
             }
 
-            if (family == OpenDocumentFamily.Spreadsheet && documentApp)
+            if (family == OpenDocumentFamily.Spreadsheet && !spreadsheetApp)
             {
                 error = "文件是表格，不能用 app=" + app + " 打开";
+                return false;
+            }
+
+            if (family == OpenDocumentFamily.Presentation && !presentationApp)
+            {
+                if (app == "wps")
+                {
+                    error = "文件是演示文稿，请用 app=wpp（WPS 演示），不能用 app=wps（WPS 文字）";
+                    return false;
+                }
+
+                error = "文件是演示文稿，不能用 app=" + app + " 打开";
                 return false;
             }
 

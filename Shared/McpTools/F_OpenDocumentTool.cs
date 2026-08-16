@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using WordAddIn1.DocumentHost;
 using WordAddIn1.HostPlatform;
+using WordAddIn1.PresentationHost;
 using WordAddIn1.SpreadsheetHost;
 
 namespace WordAddIn1
@@ -45,9 +46,23 @@ namespace WordAddIn1
 
                     OpenDocumentResult result;
                     ToolResult errorResult;
-                    bool ok = family == OpenDocumentFamily.Document
-                        ? DocumentHostAdapter.TryOpen(fullPath, app, createBlank, wordApplication, out result, out errorResult)
-                        : SpreadsheetHostAdapter.TryOpen(fullPath, app, createBlank, out result, out errorResult);
+                    bool ok;
+                    if (family == OpenDocumentFamily.Document)
+                    {
+                        ok = DocumentHostAdapter.TryOpen(
+                            fullPath, app, createBlank, wordApplication, out result, out errorResult);
+                    }
+                    else if (family == OpenDocumentFamily.Spreadsheet)
+                    {
+                        ok = SpreadsheetHostAdapter.TryOpen(
+                            fullPath, app, createBlank, out result, out errorResult);
+                    }
+                    else
+                    {
+                        ok = PresentationHostAdapter.TryOpen(
+                            fullPath, app, createBlank, out result, out errorResult);
+                    }
+
                     if (!ok)
                     {
                         return errorResult ?? Fail("打开文档失败");

@@ -7,7 +7,7 @@ using System.Threading;
 namespace WordAddIn1.OpenFiles
 {
     /// <summary>
-    /// 聚合「打开文件」探测器：Word / WPS / Excel / et 并行、进程晚启动重附着、Changed 回调。
+    /// 聚合「打开文件」探测器：Word / WPS / Excel / et / ppt / wpp 并行、进程晚启动重附着、Changed 回调。
     /// </summary>
     internal sealed class OpenFilesMonitor : IDisposable
     {
@@ -26,6 +26,8 @@ namespace WordAddIn1.OpenFiles
         private WpsOpenFilesDetector _wpsDetector;
         private ExcelOpenFilesDetector _excelDetector;
         private EtOpenFilesDetector _etDetector;
+        private PptOpenFilesDetector _pptDetector;
+        private WppOpenFilesDetector _wppDetector;
         private Timer _processTimer;
         private Timer _lateBindReconcileTimer;
         private bool _started;
@@ -34,10 +36,14 @@ namespace WordAddIn1.OpenFiles
         private bool _wpsEnabled;
         private bool _excelEnabled;
         private bool _etEnabled;
+        private bool _pptEnabled;
+        private bool _wppEnabled;
         private string[] _wordProcessNames = { "WINWORD" };
         private string[] _wpsProcessNames = { "wps" };
         private string[] _excelProcessNames = { "EXCEL" };
         private string[] _etProcessNames = { "et" };
+        private string[] _pptProcessNames = { "POWERPNT" };
+        private string[] _wppProcessNames = { "wpp" };
 
         public OpenFilesMonitor(
             Func<object> resolveWordApp,
@@ -160,6 +166,8 @@ namespace WordAddIn1.OpenFiles
             WpsOpenFilesDetector wps;
             ExcelOpenFilesDetector excel;
             EtOpenFilesDetector et;
+            PptOpenFilesDetector ppt;
+            WppOpenFilesDetector wpp;
             lock (_gate)
             {
                 _started = false;
@@ -167,10 +175,14 @@ namespace WordAddIn1.OpenFiles
                 wps = _wpsDetector;
                 excel = _excelDetector;
                 et = _etDetector;
+                ppt = _pptDetector;
+                wpp = _wppDetector;
                 _wordDetector = null;
                 _wpsDetector = null;
                 _excelDetector = null;
                 _etDetector = null;
+                _pptDetector = null;
+                _wppDetector = null;
                 _items.Clear();
             }
 
@@ -197,6 +209,18 @@ namespace WordAddIn1.OpenFiles
                 UnhookEt(et);
                 et.Dispose();
             }
+
+            if (ppt != null)
+            {
+                UnhookPpt(ppt);
+                ppt.Dispose();
+            }
+
+            if (wpp != null)
+            {
+                UnhookWpp(wpp);
+                wpp.Dispose();
+            }
         }
 
         private static bool IsKnownAppType(string appType)
@@ -204,7 +228,9 @@ namespace WordAddIn1.OpenFiles
             return string.Equals(appType, WordOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(appType, WpsOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(appType, ExcelOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(appType, EtOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase);
+                || string.Equals(appType, EtOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(appType, PptOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(appType, WppOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase);
         }
 
         private void ConfigureFromConfigUnlocked()
@@ -213,10 +239,14 @@ namespace WordAddIn1.OpenFiles
             _wpsEnabled = false;
             _excelEnabled = false;
             _etEnabled = false;
+            _pptEnabled = false;
+            _wppEnabled = false;
             _wordProcessNames = new[] { "WINWORD" };
             _wpsProcessNames = new[] { "wps" };
             _excelProcessNames = new[] { "EXCEL" };
             _etProcessNames = new[] { "et" };
+            _pptProcessNames = new[] { "POWERPNT" };
+            _wppProcessNames = new[] { "wpp" };
 
             var apps = ConfigManager.Config?.OpenFiles?.Apps;
             if (apps == null || apps.Count == 0)
@@ -253,6 +283,16 @@ namespace WordAddIn1.OpenFiles
                 {
                     _etEnabled = true;
                     _etProcessNames = ReadProcessNames(entry.ProcessNames, "et");
+                }
+                else if (type == PptOpenFilesDetector.TypeKey)
+                {
+                    _pptEnabled = true;
+                    _pptProcessNames = ReadProcessNames(entry.ProcessNames, "POWERPNT");
+                }
+                else if (type == WppOpenFilesDetector.TypeKey)
+                {
+                    _wppEnabled = true;
+                    _wppProcessNames = ReadProcessNames(entry.ProcessNames, "wpp");
                 }
                 else
                 {
@@ -309,6 +349,22 @@ namespace WordAddIn1.OpenFiles
                 _etDetector.DocumentClosed += OnDocumentClosed;
                 _etDetector.Detached += OnEtDetached;
             }
+
+            if (_pptEnabled)
+            {
+                _pptDetector = new PptOpenFilesDetector();
+                _pptDetector.DocumentOpened += OnDocumentOpened;
+                _pptDetector.DocumentClosed += OnDocumentClosed;
+                _pptDetector.Detached += OnPptDetached;
+            }
+
+            if (_wppEnabled)
+            {
+                _wppDetector = new WppOpenFilesDetector();
+                _wppDetector.DocumentOpened += OnDocumentOpened;
+                _wppDetector.DocumentClosed += OnDocumentClosed;
+                _wppDetector.Detached += OnWppDetached;
+            }
         }
 
         private void UnhookWord(WordOpenFilesDetector word)
@@ -339,6 +395,20 @@ namespace WordAddIn1.OpenFiles
             et.Detached -= OnEtDetached;
         }
 
+        private void UnhookPpt(PptOpenFilesDetector ppt)
+        {
+            ppt.DocumentOpened -= OnDocumentOpened;
+            ppt.DocumentClosed -= OnDocumentClosed;
+            ppt.Detached -= OnPptDetached;
+        }
+
+        private void UnhookWpp(WppOpenFilesDetector wpp)
+        {
+            wpp.DocumentOpened -= OnDocumentOpened;
+            wpp.DocumentClosed -= OnDocumentClosed;
+            wpp.Detached -= OnWppDetached;
+        }
+
         private void TryAttachAndSnapshot()
         {
             bool any = false;
@@ -346,7 +416,9 @@ namespace WordAddIn1.OpenFiles
             any |= TryAttachOne(WpsOpenFilesDetector.TypeKey);
             any |= TryAttachOne(ExcelOpenFilesDetector.TypeKey);
             any |= TryAttachOne(EtOpenFilesDetector.TypeKey);
-            if (any || (!_wordEnabled && !_wpsEnabled && !_excelEnabled && !_etEnabled))
+            any |= TryAttachOne(PptOpenFilesDetector.TypeKey);
+            any |= TryAttachOne(WppOpenFilesDetector.TypeKey);
+            if (any || (!_wordEnabled && !_wpsEnabled && !_excelEnabled && !_etEnabled && !_pptEnabled && !_wppEnabled))
             {
                 RaiseChanged();
             }
@@ -372,6 +444,14 @@ namespace WordAddIn1.OpenFiles
                 else if (string.Equals(appType, EtOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
                 {
                     detector = _etDetector;
+                }
+                else if (string.Equals(appType, PptOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    detector = _pptDetector;
+                }
+                else if (string.Equals(appType, WppOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    detector = _wppDetector;
                 }
                 else
                 {
@@ -416,7 +496,7 @@ namespace WordAddIn1.OpenFiles
 
         private void StartProcessWatch()
         {
-            if (!_wordEnabled && !_wpsEnabled && !_excelEnabled && !_etEnabled)
+            if (!_wordEnabled && !_wpsEnabled && !_excelEnabled && !_etEnabled && !_pptEnabled && !_wppEnabled)
             {
                 return;
             }
@@ -432,15 +512,21 @@ namespace WordAddIn1.OpenFiles
         {
             WpsOpenFilesDetector wps;
             EtOpenFilesDetector et;
+            PptOpenFilesDetector ppt;
+            WppOpenFilesDetector wpp;
             lock (_gate)
             {
                 wps = _wpsDetector;
                 et = _etDetector;
+                ppt = _pptDetector;
+                wpp = _wppDetector;
             }
 
             bool needReconcile =
                 (wps != null && wps.IsAttached && !wps.EventsSubscribed)
-                || (et != null && et.IsAttached && !et.EventsSubscribed);
+                || (et != null && et.IsAttached && !et.EventsSubscribed)
+                || (ppt != null && ppt.IsAttached && !ppt.EventsSubscribed)
+                || (wpp != null && wpp.IsAttached && !wpp.EventsSubscribed);
             if (needReconcile)
             {
                 if (_lateBindReconcileTimer == null)
@@ -478,10 +564,14 @@ namespace WordAddIn1.OpenFiles
                 bool changed = false;
                 WpsOpenFilesDetector wps;
                 EtOpenFilesDetector et;
+                PptOpenFilesDetector ppt;
+                WppOpenFilesDetector wpp;
                 lock (_gate)
                 {
                     wps = _wpsDetector;
                     et = _etDetector;
+                    ppt = _pptDetector;
+                    wpp = _wppDetector;
                 }
 
                 if (wps != null && wps.IsAttached && !wps.EventsSubscribed)
@@ -492,6 +582,16 @@ namespace WordAddIn1.OpenFiles
                 if (et != null && et.IsAttached && !et.EventsSubscribed)
                 {
                     changed |= TryAttachOne(EtOpenFilesDetector.TypeKey);
+                }
+
+                if (ppt != null && ppt.IsAttached && !ppt.EventsSubscribed)
+                {
+                    changed |= TryAttachOne(PptOpenFilesDetector.TypeKey);
+                }
+
+                if (wpp != null && wpp.IsAttached && !wpp.EventsSubscribed)
+                {
+                    changed |= TryAttachOne(WppOpenFilesDetector.TypeKey);
                 }
 
                 if (changed)
@@ -570,6 +670,32 @@ namespace WordAddIn1.OpenFiles
                     },
                     RecreateEtDetector);
 
+                changed |= WatchOne(
+                    PptOpenFilesDetector.TypeKey,
+                    _pptEnabled,
+                    _pptProcessNames,
+                    () =>
+                    {
+                        lock (_gate)
+                        {
+                            return _pptDetector;
+                        }
+                    },
+                    RecreatePptDetector);
+
+                changed |= WatchOne(
+                    WppOpenFilesDetector.TypeKey,
+                    _wppEnabled,
+                    _wppProcessNames,
+                    () =>
+                    {
+                        lock (_gate)
+                        {
+                            return _wppDetector;
+                        }
+                    },
+                    RecreateWppDetector);
+
                 if (changed)
                 {
                     RaiseChanged();
@@ -623,10 +749,11 @@ namespace WordAddIn1.OpenFiles
                 return InvokeDetectorOnSync(() => TryAttachOne(appType));
             }
 
-            // Excel/et：AppEvents（GetActiveObject）对手动打开经常不回调；已附着时定期重扫 Workbooks。
-            // et 无簿时 Snapshot 会释放 Application，否则会拖住进程无法退出。
+            // Excel/et/ppt/wpp：事件不可靠时定期重扫；无文稿时 Snapshot 会释放 Application。
             if (string.Equals(appType, ExcelOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(appType, EtOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+                || string.Equals(appType, EtOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(appType, PptOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(appType, WppOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
             {
                 return InvokeDetectorOnSync(() => TryResnapshotOne(appType));
             }
@@ -687,6 +814,14 @@ namespace WordAddIn1.OpenFiles
                 else if (string.Equals(appType, EtOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
                 {
                     detector = _etDetector;
+                }
+                else if (string.Equals(appType, PptOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    detector = _pptDetector;
+                }
+                else if (string.Equals(appType, WppOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    detector = _wppDetector;
                 }
                 else
                 {
@@ -857,6 +992,44 @@ namespace WordAddIn1.OpenFiles
             }
         }
 
+        private void RecreatePptDetector()
+        {
+            lock (_gate)
+            {
+                var ppt = _pptDetector;
+                if (ppt == null)
+                {
+                    return;
+                }
+
+                UnhookPpt(ppt);
+                ppt.Dispose();
+                _pptDetector = new PptOpenFilesDetector();
+                _pptDetector.DocumentOpened += OnDocumentOpened;
+                _pptDetector.DocumentClosed += OnDocumentClosed;
+                _pptDetector.Detached += OnPptDetached;
+            }
+        }
+
+        private void RecreateWppDetector()
+        {
+            lock (_gate)
+            {
+                var wpp = _wppDetector;
+                if (wpp == null)
+                {
+                    return;
+                }
+
+                UnhookWpp(wpp);
+                wpp.Dispose();
+                _wppDetector = new WppOpenFilesDetector();
+                _wppDetector.DocumentOpened += OnDocumentOpened;
+                _wppDetector.DocumentClosed += OnDocumentClosed;
+                _wppDetector.Detached += OnWppDetached;
+            }
+        }
+
         private bool HasAppItems(string appType)
         {
             lock (_gate)
@@ -970,6 +1143,18 @@ namespace WordAddIn1.OpenFiles
         private void OnEtDetached()
         {
             RaiseDetached(EtOpenFilesDetector.TypeKey);
+            UpdateLateBindReconcileTimer();
+        }
+
+        private void OnPptDetached()
+        {
+            RaiseDetached(PptOpenFilesDetector.TypeKey);
+            UpdateLateBindReconcileTimer();
+        }
+
+        private void OnWppDetached()
+        {
+            RaiseDetached(WppOpenFilesDetector.TypeKey);
             UpdateLateBindReconcileTimer();
         }
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Word = Microsoft.Office.Interop.Word;
 using Excel = Microsoft.Office.Interop.Excel;
+using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 
 namespace WordAddIn1
 {
@@ -183,6 +184,74 @@ namespace WordAddIn1
             }
         }
 
+        public static PptChannel CreateOrGetPpt(
+            PowerPoint.Presentation presentation,
+            string filePath = null,
+            bool claimDefaultIfEmpty = true)
+        {
+            if (presentation == null)
+            {
+                throw new ArgumentNullException(nameof(presentation));
+            }
+
+            string uuid = PptPresentationIdentity.EnsureUuid(presentation);
+            lock (Gate)
+            {
+                if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
+                    && Channels.TryGetValue(existingId, out IOperationChannel existing)
+                    && existing is PptChannel pptChannel)
+                {
+                    pptChannel.UpdatePresentation(presentation, filePath);
+                    return pptChannel;
+                }
+
+                string channelId = "ppt:" + uuid;
+                var created = new PptChannel(channelId, uuid, presentation, filePath);
+                Channels[channelId] = created;
+                DocUuidToChannelId[uuid] = channelId;
+                if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
+                {
+                    _defaultChannelId = channelId;
+                }
+
+                return created;
+            }
+        }
+
+        public static WppChannel CreateOrGetWpp(
+            object presentation,
+            string filePath = null,
+            bool claimDefaultIfEmpty = true)
+        {
+            if (presentation == null)
+            {
+                throw new ArgumentNullException(nameof(presentation));
+            }
+
+            string uuid = WppPresentationIdentity.EnsureUuid(presentation);
+            lock (Gate)
+            {
+                if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
+                    && Channels.TryGetValue(existingId, out IOperationChannel existing)
+                    && existing is WppChannel wppChannel)
+                {
+                    wppChannel.UpdatePresentation(presentation, filePath);
+                    return wppChannel;
+                }
+
+                string channelId = "wpp:" + uuid;
+                var created = new WppChannel(channelId, uuid, presentation, filePath);
+                Channels[channelId] = created;
+                DocUuidToChannelId[uuid] = channelId;
+                if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
+                {
+                    _defaultChannelId = channelId;
+                }
+
+                return created;
+            }
+        }
+
         public static void Register(IOperationChannel channel, bool setAsDefault = false)
         {
             if (channel == null)
@@ -213,6 +282,14 @@ namespace WordAddIn1
                 else if (channel is EtChannel et && !string.IsNullOrEmpty(et.DocUuid))
                 {
                     DocUuidToChannelId[et.DocUuid] = channel.ChannelId;
+                }
+                else if (channel is PptChannel ppt && !string.IsNullOrEmpty(ppt.DocUuid))
+                {
+                    DocUuidToChannelId[ppt.DocUuid] = channel.ChannelId;
+                }
+                else if (channel is WppChannel wpp && !string.IsNullOrEmpty(wpp.DocUuid))
+                {
+                    DocUuidToChannelId[wpp.DocUuid] = channel.ChannelId;
                 }
 
                 if (setAsDefault || string.IsNullOrEmpty(_defaultChannelId))
@@ -394,6 +471,14 @@ namespace WordAddIn1
                 {
                     DocUuidToChannelId.Remove(et.DocUuid);
                 }
+                else if (ch is PptChannel ppt && !string.IsNullOrEmpty(ppt.DocUuid))
+                {
+                    DocUuidToChannelId.Remove(ppt.DocUuid);
+                }
+                else if (ch is WppChannel wpp && !string.IsNullOrEmpty(wpp.DocUuid))
+                {
+                    DocUuidToChannelId.Remove(wpp.DocUuid);
+                }
 
                 if (string.Equals(_defaultChannelId, channelId, StringComparison.Ordinal))
                 {
@@ -405,6 +490,10 @@ namespace WordAddIn1
             if (ch is EtChannel etRelease)
             {
                 etRelease.ReleaseCom();
+            }
+            else if (ch is WppChannel wppRelease)
+            {
+                wppRelease.ReleaseCom();
             }
 
             return true;

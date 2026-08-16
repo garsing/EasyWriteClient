@@ -52,6 +52,7 @@ namespace EasyWriteClient.Desktop
             UserService.Instance.OnUserLoggedOut += OnUserLoggedOut;
             HostCallbacks.WordApplicationResolved = OnWordApplicationResolved;
             HostCallbacks.ExcelApplicationResolved = OnExcelApplicationResolved;
+            HostCallbacks.PowerPointApplicationResolved = OnPowerPointApplicationResolved;
             HostCallbacks.OpenFilesRefresh = OnOpenFilesRefresh;
             Disposed += (_, __) =>
             {
@@ -69,6 +70,11 @@ namespace EasyWriteClient.Desktop
                 if (ReferenceEquals(HostCallbacks.ExcelApplicationResolved, (Action<object>)OnExcelApplicationResolved))
                 {
                     HostCallbacks.ExcelApplicationResolved = null;
+                }
+
+                if (ReferenceEquals(HostCallbacks.PowerPointApplicationResolved, (Action<object>)OnPowerPointApplicationResolved))
+                {
+                    HostCallbacks.PowerPointApplicationResolved = null;
                 }
 
                 if (ReferenceEquals(HostCallbacks.OpenFilesRefresh, (Action)OnOpenFilesRefresh))
@@ -131,6 +137,20 @@ namespace EasyWriteClient.Desktop
             {
                 System.Diagnostics.Debug.WriteLine(
                     "[DesktopChatSurface] Excel OpenFiles TryAttachNow: " + ex.Message);
+            }
+        }
+
+        private void OnPowerPointApplicationResolved(object powerPointApp)
+        {
+            PowerPointApplicationResolver.Attach(powerPointApp);
+            try
+            {
+                _openFilesMonitor?.TryAttachNow();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    "[DesktopChatSurface] PowerPoint OpenFiles TryAttachNow: " + ex.Message);
             }
         }
 

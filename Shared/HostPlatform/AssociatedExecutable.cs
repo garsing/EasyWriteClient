@@ -6,7 +6,7 @@ using System.Text;
 namespace WordAddIn1.HostPlatform
 {
     /// <summary>
-    /// 查后缀的系统默认可执行文件，再映射到 word/wps/excel/et。禁止裸 ShellExecute。
+    /// 查后缀的系统默认可执行文件，再映射到 word/wps/excel/et/powerpoint/wpp。禁止裸 ShellExecute。
     /// </summary>
     internal static class AssociatedExecutable
     {
@@ -29,7 +29,7 @@ namespace WordAddIn1.HostPlatform
             string exe = TryQuery(fullPath);
             if (string.IsNullOrEmpty(exe))
             {
-                error = "无法解析该后缀的系统默认程序，请显式指定 app=word|wps|excel|et";
+                error = "无法解析该后缀的系统默认程序，请显式指定 app=word|wps|excel|et|powerpoint|wpp";
                 return false;
             }
 
@@ -46,9 +46,23 @@ namespace WordAddIn1.HostPlatform
                 return true;
             }
 
+            if (name.Equals("POWERPNT.EXE", StringComparison.OrdinalIgnoreCase))
+            {
+                app = "powerpoint";
+                return true;
+            }
+
             if (name.Equals("et.exe", StringComparison.OrdinalIgnoreCase))
             {
                 app = "et";
+                return true;
+            }
+
+            // wpp 须先于宽泛 wps 匹配，避免演示误建成文字渠道
+            if (name.Equals("wpp.exe", StringComparison.OrdinalIgnoreCase)
+                || name.IndexOf("wpp", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                app = "wpp";
                 return true;
             }
 
@@ -59,7 +73,7 @@ namespace WordAddIn1.HostPlatform
                 return true;
             }
 
-            error = "系统默认程序不是 Word/WPS/Excel/et（查到: " + exe + "），请显式指定 app";
+            error = "系统默认程序不是 Word/WPS/Excel/et/PowerPoint/wpp（查到: " + exe + "），请显式指定 app";
             return false;
         }
 
