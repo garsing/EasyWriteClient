@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
+using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 
 namespace WordAddIn1.OpenFiles
 {
     /// <summary>
-    /// WPS 演示「打开文件」探测器：只附着已运行实例；建渠不抢默认。
+    /// WPS 演示「打开文件」探测器：对齐 et——尝试订 PowerPoint 风格事件，失败则靠 Monitor 轮询重扫。
+    /// 只附着已运行实例；建渠不抢默认。
     /// </summary>
     internal sealed class WppOpenFilesDetector : IOpenFilesAppDetector
     {
@@ -14,12 +16,22 @@ namespace WordAddIn1.OpenFiles
 
         private readonly object _gate = new object();
         private object _app;
+        private bool _subscribed;
         private bool _disposed;
         private readonly Dictionary<int, string> _rcwToId = new Dictionary<int, string>();
 
         public string AppType => TypeKey;
 
-        public bool EventsSubscribed => false;
+        public bool EventsSubscribed
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _subscribed;
+                }
+            }
+        }
 
         public bool IsAttached
         {
@@ -36,23 +48,6 @@ namespace WordAddIn1.OpenFiles
         public event Action<string> DocumentClosed;
         public event Action Detached;
 
-        // 本期靠 Monitor 定时 Snapshot 合并条目；事件留给后续 ProgId 事件订阅。
-        private void RaiseOpenedForReconcile(OpenFileItem item)
-        {
-            if (item != null)
-            {
-                DocumentOpened?.Invoke(item);
-            }
-        }
-
-        private void RaiseClosedForReconcile(string id)
-        {
-            if (!string.IsNullOrEmpty(id))
-            {
-                DocumentClosed?.Invoke(id);
-            }
-        }
-
         public bool TryAttach()
         {
             if (_disposed)
@@ -64,6 +59,11 @@ namespace WordAddIn1.OpenFiles
             {
                 if (_app != null && WppCom.IsAlive(_app))
                 {
+                    if (!_subscribed)
+                    {
+                        TrySubscribeUnlocked();
+                    }
+
                     return true;
                 }
 
@@ -75,8 +75,10 @@ namespace WordAddIn1.OpenFiles
                 }
 
                 _app = app;
+                TrySubscribeUnlocked();
                 EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
-                    "[WppOpenFilesDetector] attached progId=" + progId);
+                    "[WppOpenFilesDetector] attached progId=" + progId
+                    + " events=" + _subscribed);
                 return true;
             }
         }
@@ -106,7 +108,6 @@ namespace WordAddIn1.OpenFiles
                         var item = MapPresentation(presentation, usedIds);
                         if (item == null)
                         {
-                            // 跳过项勿 FinalRelease：与打开路径/渠道可能共享同一 COM
                             continue;
                         }
 
@@ -155,6 +156,142 @@ namespace WordAddIn1.OpenFiles
             lock (_gate)
             {
                 TearDownUnlocked(raiseDetached: false);
+            }
+        }
+
+        /// <summary>
+        /// 对齐 et 订 Excel.AppEvents：尝试把 WPS 演示 Application 当作 PowerPoint.EApplication_Event。
+        /// 订不上则 EventsSubscribed=false，由 Monitor 轮询兜底。
+        /// </summary>
+        private void TrySubscribeUnlocked()
+        {
+            _subscribed = false;
+            if (_app == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var events = _app as PowerPoint.EApplication_Event;
+                if (events == null)
+                {
+                    EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                        "[WppOpenFilesDetector] no EApplication_Event — reconcile will be used");
+                    return;
+                }
+
+                events.PresentationOpen += OnPresentationOpen;
+                events.NewPresentation += OnNewPresentation;
+                events.PresentationClose += OnPresentationClose;
+                _subscribed = true;
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[WppOpenFilesDetector] subscribed EApplication_Event");
+            }
+            catch (Exception ex)
+            {
+                _subscribed = false;
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[WppOpenFilesDetector] subscribe failed: " + ex.Message);
+            }
+        }
+
+        private void OnPresentationOpen(PowerPoint.Presentation presentation)
+        {
+            HandleOpened(presentation);
+        }
+
+        private void OnNewPresentation(PowerPoint.Presentation presentation)
+        {
+            HandleOpened(presentation);
+        }
+
+        private void OnPresentationClose(PowerPoint.Presentation presentation)
+        {
+            if (presentation == null)
+            {
+                return;
+            }
+
+            try
+            {
+                string id = null;
+                int key = RuntimeHelpers.GetHashCode(presentation);
+                lock (_gate)
+                {
+                    if (_rcwToId.TryGetValue(key, out var mapped))
+                    {
+                        id = mapped;
+                        _rcwToId.Remove(key);
+                    }
+                }
+
+                if (string.IsNullOrEmpty(id))
+                {
+                    id = MapPresentation(presentation, new HashSet<string>(StringComparer.OrdinalIgnoreCase))?.Id;
+                }
+
+                try
+                {
+                    string uuid = WppPresentationIdentity.TryResolveUuid(presentation);
+                    if (!string.IsNullOrEmpty(uuid))
+                    {
+                        ChannelRegistry.RemoveByDocUuid(uuid);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                if (!string.IsNullOrEmpty(id))
+                {
+                    DocumentClosed?.Invoke(id);
+                }
+            }
+            catch (Exception ex)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[WppOpenFilesDetector] PresentationClose: " + ex.Message);
+            }
+        }
+
+        private void HandleOpened(object presentation)
+        {
+            if (presentation == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                lock (_gate)
+                {
+                    foreach (var existing in _rcwToId.Values)
+                    {
+                        used.Add(existing);
+                    }
+                }
+
+                var item = MapPresentation(presentation, used);
+                if (item == null)
+                {
+                    return;
+                }
+
+                EnsureChannel(presentation, item);
+                int key = RuntimeHelpers.GetHashCode(presentation);
+                lock (_gate)
+                {
+                    _rcwToId[key] = item.Id;
+                }
+
+                DocumentOpened?.Invoke(item);
+            }
+            catch (Exception ex)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[WppOpenFilesDetector] open event: " + ex.Message);
             }
         }
 
@@ -273,9 +410,28 @@ namespace WordAddIn1.OpenFiles
 
         private void TearDownUnlocked(bool raiseDetached)
         {
+            if (_app != null && _subscribed)
+            {
+                try
+                {
+                    var events = _app as PowerPoint.EApplication_Event;
+                    if (events != null)
+                    {
+                        events.PresentationOpen -= OnPresentationOpen;
+                        events.NewPresentation -= OnNewPresentation;
+                        events.PresentationClose -= OnPresentationClose;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            _subscribed = false;
             object app = _app;
             _app = null;
             _rcwToId.Clear();
+
             ComRelease.Safe(app);
             if (app != null)
             {
