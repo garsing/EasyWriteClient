@@ -32,6 +32,7 @@ namespace WordAddIn1
                 { "presentation.applyHtml", "F_apply_ppt_html" },
                 { "presentation.manageSlide", "F_manage_ppt_slide" },
                 { "presentation.animation", "F_ppt_animation" },
+                { "presentation.transition", "F_ppt_transition" },
                 { "workbook.readRange", "F_read_excel_range" },
                 { "workbook.writeRange", "F_write_excel_range" },
                 { "workbook.manageSheet", "F_manage_excel_sheet" },

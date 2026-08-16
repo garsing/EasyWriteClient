@@ -43,6 +43,7 @@ namespace WordAddIn1
             "F_apply_ppt_html",
             "F_manage_ppt_slide",
             "F_ppt_animation",
+            "F_ppt_transition",
         };
 
         /// <summary>只读 action：不触发缩小版（即使用具名在白名单内）。</summary>

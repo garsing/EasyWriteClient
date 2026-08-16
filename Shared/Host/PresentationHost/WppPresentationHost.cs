@@ -271,6 +271,28 @@ namespace WordAddIn1.PresentationHost
                 out error);
         }
 
+        public static bool TryPptTransition(
+            WppChannel channel,
+            PresentationTransitionRequest request,
+            out PresentationTransitionResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLivePresentation(out object presentation))
+            {
+                error = "渠道对应的演示文稿已关闭";
+                return false;
+            }
+
+            return PptTransitionWppManager.TryTransition(
+                presentation,
+                channel.ChannelId,
+                request,
+                out result,
+                out error);
+        }
+
         private static PresentationSlideInfo ReadSlide(object slide, int fallbackIndex)
         {
             var info = new PresentationSlideInfo
