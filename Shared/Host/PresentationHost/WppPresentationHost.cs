@@ -182,6 +182,29 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
+        public static bool TryReadPptHtml(
+            WppChannel channel,
+            string slideId,
+            out PptHtmlReadResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLivePresentation(out object presentation))
+            {
+                error = "渠道对应的演示文稿已关闭";
+                return false;
+            }
+
+            return PptHtmlWppReader.TryRead(
+                presentation,
+                slideId,
+                channel.ChannelId,
+                "wpp",
+                out result,
+                out error);
+        }
+
         private static PresentationSlideInfo ReadSlide(object slide, int fallbackIndex)
         {
             var info = new PresentationSlideInfo

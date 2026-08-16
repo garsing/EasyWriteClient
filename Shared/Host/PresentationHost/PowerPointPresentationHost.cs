@@ -177,6 +177,29 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
+        public static bool TryReadPptHtml(
+            PptChannel channel,
+            string slideId,
+            out PptHtmlReadResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLivePresentation(out PowerPoint.Presentation presentation))
+            {
+                error = "渠道对应的演示文稿已关闭";
+                return false;
+            }
+
+            return PptHtmlPowerPointReader.TryRead(
+                presentation,
+                slideId,
+                channel.ChannelId,
+                "ppt",
+                out result,
+                out error);
+        }
+
         private static PresentationSlideInfo ReadSlide(PowerPoint.Slide slide, int fallbackIndex)
         {
             var info = new PresentationSlideInfo
