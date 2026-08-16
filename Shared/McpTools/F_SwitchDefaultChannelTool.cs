@@ -42,7 +42,8 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = "设置默认渠道失败: " + channelId };
                     }
 
-                    TryActivate(channel);
+                    // 只绑定内部会话/默认指向；禁止 COM Activate，避免把 Word/Excel/PPT 抢到 Desktop 前面
+                    TryBindSessionWithoutForeground(channel);
 
                     await Task.CompletedTask;
 
@@ -179,7 +180,11 @@ namespace WordAddIn1
             return false;
         }
 
-        private static void TryActivate(IOperationChannel channel)
+        /// <summary>
+        /// 切换默认后仅同步内部状态（如 Word DocumentState 分片）。
+        /// 不调用 Document/Workbook/Presentation/Application.Activate，不抢前台。
+        /// </summary>
+        private static void TryBindSessionWithoutForeground(IOperationChannel channel)
         {
             try
             {
@@ -187,78 +192,17 @@ namespace WordAddIn1
                 {
                     if (word.TryGetLiveDocument(out Word.Document doc))
                     {
-                        try
-                        {
-                            doc.Activate();
-                        }
-                        catch (Exception)
-                        {
-                        }
-
                         DocumentState.BindAndActivate(doc);
                     }
-
-                    return;
                 }
-
-                if (channel is WpsChannel wps)
+                else if (channel is WpsChannel wps)
                 {
-                    if (wps.TryGetLiveDocument(out object doc))
+                    if (!string.IsNullOrEmpty(wps.DocUuid))
                     {
-                        try
-                        {
-                            OpenFiles.WpsCom.Invoke(doc, "Activate");
-                        }
-                        catch (Exception)
-                        {
-                        }
+                        DocumentState.ActivateSessionByUuid(wps.DocUuid);
                     }
-
-                    return;
                 }
-
-                if (channel is ExcelChannel excel)
-                {
-                    if (excel.TryGetLiveWorkbook(out Excel.Workbook book))
-                    {
-                        try
-                        {
-                            book.Activate();
-                        }
-                        catch (Exception)
-                        {
-                        }
-                    }
-
-                    return;
-                }
-
-                if (channel is EtChannel et)
-                {
-                    if (et.TryGetLiveWorkbook(out object book))
-                    {
-                        try
-                        {
-                            OpenFiles.EtCom.Invoke(book, "Activate");
-                        }
-                        catch (Exception)
-                        {
-                        }
-                    }
-
-                    return;
-                }
-
-                if (channel is PptChannel ppt)
-                {
-                    ppt.TryActivate();
-                    return;
-                }
-
-                if (channel is WppChannel wpp)
-                {
-                    wpp.TryActivate();
-                }
+                // excel/et/ppt/wpp：无 DocumentState 分片；SetDefault 已足够，勿 Activate
             }
             catch (Exception)
             {
