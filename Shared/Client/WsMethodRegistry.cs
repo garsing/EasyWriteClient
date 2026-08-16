@@ -108,8 +108,10 @@ namespace WordAddIn1
                 return new ToolResult { Success = false, Error = $"handler not registered for method '{method}'" };
             }
 
-            // Desktop 缩小版：白名单工具在执行前触发（Plugin 未注册则为 no-op）
-            if (CompactLayoutTriggers.ShouldCompact(toolName))
+            var args = parameters ?? new Dictionary<string, object>();
+
+            // Desktop 缩小版：白名单写工具在执行前触发；list/get/extract 等只读 action 不缩
+            if (CompactLayoutTriggers.ShouldCompact(toolName, args))
             {
                 HostCallbacks.RaiseRequestCompact();
             }
@@ -122,8 +124,6 @@ namespace WordAddIn1
             {
                 return new ToolResult { Success = false, Error = "cancelled by user" };
             }
-
-            var args = parameters ?? new Dictionary<string, object>();
 
             if (toolName == "F_list_document_operations" || toolName == "F_restore_document_checkpoint")
             {
