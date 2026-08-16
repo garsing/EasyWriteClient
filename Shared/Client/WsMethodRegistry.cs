@@ -27,6 +27,7 @@ namespace WordAddIn1
                 { "document.getContent", "F_get_document_content" },
                 { "document.open", "F_open_document" },
                 { "workbook.getContent", "F_get_workbook_content" },
+                { "presentation.getContent", "F_get_presentation_content" },
                 { "workbook.readRange", "F_read_excel_range" },
                 { "workbook.writeRange", "F_write_excel_range" },
                 { "workbook.manageSheet", "F_manage_excel_sheet" },

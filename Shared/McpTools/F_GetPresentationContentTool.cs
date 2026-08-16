@@ -1,0 +1,96 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using WordAddIn1.PresentationHost;
+
+namespace WordAddIn1
+{
+    public static class F_GetPresentationContentTool
+    {
+        public static void Register(
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
+            object wordApplication)
+        {
+            toolRegistry["F_get_presentation_content"] = async (args) =>
+            {
+                try
+                {
+                    AgentRunCancellation.ThrowIfCancelled();
+                    if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string resolveError))
+                    {
+                        return new ToolResult { Success = false, Error = resolveError };
+                    }
+
+                    if (!PresentationHostAdapter.TryGetPresentationContent(
+                            channel,
+                            out PresentationContentResult hostResult,
+                            out ToolResult errorResult))
+                    {
+                        return errorResult;
+                    }
+
+                    var slides = new List<Dictionary<string, object>>();
+                    if (hostResult.Slides != null)
+                    {
+                        foreach (PresentationSlideInfo slide in hostResult.Slides)
+                        {
+                            if (slide == null)
+                            {
+                                continue;
+                            }
+
+                            var item = new Dictionary<string, object>
+                            {
+                                ["index"] = slide.Index,
+                                ["slide_id"] = slide.SlideId ?? "",
+                                ["title"] = slide.Title ?? "",
+                                ["layout"] = slide.Layout ?? "",
+                                ["hidden"] = slide.Hidden
+                            };
+                            if (slide.HasNotes.HasValue)
+                            {
+                                item["has_notes"] = slide.HasNotes.Value;
+                            }
+
+                            slides.Add(item);
+                        }
+                    }
+
+                    var data = new Dictionary<string, object>
+                    {
+                        ["channel_id"] = hostResult.ChannelId ?? "",
+                        ["kind"] = hostResult.Kind ?? "",
+                        ["name"] = hostResult.Name ?? "",
+                        ["path"] = hostResult.Path ?? "",
+                        ["slide_count"] = hostResult.SlideCount,
+                        ["display_contents"] = PresentationContentMarkup.BuildDisplayContents(hostResult),
+                        ["slides"] = slides
+                    };
+                    if (hostResult.Truncated)
+                    {
+                        data["truncated"] = true;
+                        if (!string.IsNullOrEmpty(hostResult.TruncatedReason))
+                        {
+                            data["truncated_reason"] = hostResult.TruncatedReason;
+                        }
+                    }
+
+                    await Task.CompletedTask;
+                    return new ToolResult
+                    {
+                        Success = true,
+                        Data = data
+                    };
+                }
+                catch (OperationCanceledException)
+                {
+                    return new ToolResult { Success = false, Error = "cancelled by user" };
+                }
+                catch (Exception ex)
+                {
+                    return new ToolResult { Success = false, Error = "读取演示文稿概览失败: " + ex.Message };
+                }
+            };
+        }
+    }
+}

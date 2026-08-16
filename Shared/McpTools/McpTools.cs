@@ -46,6 +46,7 @@ namespace WordAddIn1
             F_CsvToXmlTool.Register(toolRegistry, wordApplication);
             F_GetDocumentContentTool.Register(toolRegistry, wordApplication);
             F_GetWorkbookContentTool.Register(toolRegistry, wordApplication);
+            F_GetPresentationContentTool.Register(toolRegistry, wordApplication);
             F_ReadExcelRangeTool.Register(toolRegistry, wordApplication);
             F_WriteExcelRangeTool.Register(toolRegistry, wordApplication);
             F_ManageExcelSheetTool.Register(toolRegistry, wordApplication);
