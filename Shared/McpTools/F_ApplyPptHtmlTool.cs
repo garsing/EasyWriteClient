@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 using WordAddIn1.PresentationHost;
 
@@ -28,15 +29,69 @@ namespace WordAddIn1
                         };
                     }
 
+                    if (args != null && args.ContainsKey("html"))
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "不支持入参 html 字符串（易有引号转义问题）；请把约定 HTML 写入工作区文件后传 html_filename"
+                        };
+                    }
+
                     if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string resolveError))
                     {
                         return new ToolResult { Success = false, Error = resolveError };
                     }
 
-                    string html = GetStringArg(args, "html");
+                    string htmlFilename = GetStringArg(args, "html_filename");
+                    if (string.IsNullOrWhiteSpace(htmlFilename))
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "必须提供 html_filename（工作区裸文件名；可由 F_read_ppt_html 的 export_html 得到）"
+                        };
+                    }
+
+                    htmlFilename = Path.GetFileName(htmlFilename.Trim());
+                    if (string.IsNullOrEmpty(htmlFilename)
+                        || htmlFilename.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "html_filename 须为合法裸文件名"
+                        };
+                    }
+
+                    var ensure = await McpToolsHelpers.EnsureWorkspaceFileAsync(htmlFilename)
+                        .ConfigureAwait(false);
+                    if (!ensure.success)
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = ensure.error ?? ("工作区文件不可用: " + htmlFilename)
+                        };
+                    }
+
+                    string html;
+                    try
+                    {
+                        html = File.ReadAllText(ensure.localPath, Encoding.UTF8);
+                    }
+                    catch (Exception ex)
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "读取 html_filename 失败: " + ex.Message
+                        };
+                    }
+
                     if (string.IsNullOrWhiteSpace(html))
                     {
-                        return new ToolResult { Success = false, Error = "必须提供 html" };
+                        return new ToolResult { Success = false, Error = "html 文件内容为空" };
                     }
 
                     if (!PptHtmlApplyParser.TryParse(html, out PptHtmlApplyPlan plan, out string parseError))
@@ -66,12 +121,14 @@ namespace WordAddIn1
                         ["slide_id"] = hostResult.SlideId ?? "",
                         ["index"] = hostResult.Index,
                         ["applied"] = true,
+                        ["html_filename"] = htmlFilename,
                         ["updated_count"] = hostResult.UpdatedCount,
                         ["created_count"] = hostResult.CreatedCount,
                         ["created_shapes"] = hostResult.CreatedShapes
                             ?? new List<Dictionary<string, object>>(),
                         ["warnings"] = hostResult.Warnings ?? new List<string>(),
                         ["display_contents"] = "applied=true slide_id=" + (hostResult.SlideId ?? "")
+                            + " html_filename=" + htmlFilename
                             + " updated=" + hostResult.UpdatedCount
                             + " created=" + hostResult.CreatedCount
                     };

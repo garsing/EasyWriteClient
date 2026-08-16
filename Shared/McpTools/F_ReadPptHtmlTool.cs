@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 using WordAddIn1.PresentationHost;
 
@@ -40,6 +42,21 @@ namespace WordAddIn1
                         };
                     }
 
+                    string exportHtml = GetStringArg(args, "export_html");
+                    if (!string.IsNullOrEmpty(exportHtml))
+                    {
+                        exportHtml = Path.GetFileName(exportHtml.Trim());
+                        if (string.IsNullOrEmpty(exportHtml)
+                            || exportHtml.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                        {
+                            return new ToolResult
+                            {
+                                Success = false,
+                                Error = "export_html 须为合法裸文件名（如 slide_256.html）"
+                            };
+                        }
+                    }
+
                     if (!PresentationHostAdapter.TryReadPptHtml(
                             channel,
                             slideId.Trim(),
@@ -49,6 +66,7 @@ namespace WordAddIn1
                         return errorResult;
                     }
 
+                    string display = PptConventionHtml.BuildDisplayContents(hostResult);
                     var data = new Dictionary<string, object>
                     {
                         ["channel_id"] = hostResult.ChannelId ?? "",
@@ -58,7 +76,7 @@ namespace WordAddIn1
                         ["layout"] = hostResult.Layout ?? "",
                         ["hidden"] = hostResult.Hidden,
                         ["shape_count"] = hostResult.ShapeCount,
-                        ["display_contents"] = PptConventionHtml.BuildDisplayContents(hostResult)
+                        ["display_contents"] = display
                     };
                     if (hostResult.HasNotes.HasValue)
                     {
@@ -74,7 +92,37 @@ namespace WordAddIn1
                         }
                     }
 
-                    await Task.CompletedTask;
+                    if (!string.IsNullOrEmpty(exportHtml))
+                    {
+                        // 导出文件内容：与 apply 解析一致，含抬头亦可（apply 只取第一个 section）
+                        string localPath = WorkspacePathResolver.ResolveWritePath(exportHtml);
+                        try
+                        {
+                            File.WriteAllText(localPath, display ?? "", new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+                        }
+                        catch (Exception ex)
+                        {
+                            return new ToolResult
+                            {
+                                Success = false,
+                                Error = "导出 HTML 失败: " + ex.Message
+                            };
+                        }
+
+                        bool uploaded = await McpToolsHelpers.UploadWorkspaceFileAsync(localPath, exportHtml)
+                            .ConfigureAwait(false);
+                        if (!uploaded)
+                        {
+                            return new ToolResult
+                            {
+                                Success = false,
+                                Error = "导出 HTML 已写本地但上传工作区失败: " + exportHtml
+                            };
+                        }
+
+                        data["html_filename"] = exportHtml;
+                    }
+
                     return new ToolResult
                     {
                         Success = true,
@@ -99,7 +147,6 @@ namespace WordAddIn1
                 return false;
             }
 
-            // 若误把页码当主键传入，明确失败（即使同时也传了 slide_id）
             if (args.ContainsKey("index") || args.ContainsKey("slide") || args.ContainsKey("page"))
             {
                 return true;
