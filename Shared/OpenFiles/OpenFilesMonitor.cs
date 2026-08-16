@@ -14,6 +14,8 @@ namespace WordAddIn1.OpenFiles
         private const int MaxOpenChannelsItems = 500;
         private static readonly TimeSpan ProcessPollInterval = TimeSpan.FromSeconds(7);
         private static readonly TimeSpan LateBindReconcileInterval = TimeSpan.FromSeconds(30);
+        /// <summary>演示文稿无可靠关闭事件，加快重扫（对齐用户对 wpp 关闭滞后的反馈）。</summary>
+        private static readonly TimeSpan PresentationPollInterval = TimeSpan.FromSeconds(2);
 
         private readonly Func<object> _resolveWordApp;
         private readonly Func<object> _resolveExcelApp;
@@ -30,6 +32,7 @@ namespace WordAddIn1.OpenFiles
         private WppOpenFilesDetector _wppDetector;
         private Timer _processTimer;
         private Timer _lateBindReconcileTimer;
+        private Timer _presentationPollTimer;
         private bool _started;
         private bool _disposed;
         private bool _wordEnabled;
@@ -91,6 +94,7 @@ namespace WordAddIn1.OpenFiles
 
             TryAttachAndSnapshot();
             StartProcessWatch();
+            StartPresentationWatch();
             UpdateLateBindReconcileTimer();
         }
 
@@ -161,6 +165,7 @@ namespace WordAddIn1.OpenFiles
             _disposed = true;
             Interlocked.Exchange(ref _processTimer, null)?.Dispose();
             Interlocked.Exchange(ref _lateBindReconcileTimer, null)?.Dispose();
+            Interlocked.Exchange(ref _presentationPollTimer, null)?.Dispose();
 
             WordOpenFilesDetector word;
             WpsOpenFilesDetector wps;
@@ -506,6 +511,91 @@ namespace WordAddIn1.OpenFiles
                 null,
                 ProcessPollInterval,
                 ProcessPollInterval);
+        }
+
+        /// <summary>ppt/wpp：进程仍在但演示文稿已关时，2s 重扫侧栏，避免干等到 7s 进程轮询。</summary>
+        private void StartPresentationWatch()
+        {
+            if (!_pptEnabled && !_wppEnabled)
+            {
+                return;
+            }
+
+            _presentationPollTimer = new Timer(
+                _ => OnPresentationWatchTick(),
+                null,
+                PresentationPollInterval,
+                PresentationPollInterval);
+        }
+
+        private void OnPresentationWatchTick()
+        {
+            if (_disposed || !_started)
+            {
+                return;
+            }
+
+            try
+            {
+                bool changed = false;
+                if (_pptEnabled)
+                {
+                    changed |= InvokeDetectorOnSync(() =>
+                    {
+                        PptOpenFilesDetector ppt;
+                        lock (_gate)
+                        {
+                            ppt = _pptDetector;
+                        }
+
+                        if (ppt == null)
+                        {
+                            return false;
+                        }
+
+                        if (!ppt.IsAttached)
+                        {
+                            return TryAttachOne(PptOpenFilesDetector.TypeKey);
+                        }
+
+                        return TryResnapshotOne(PptOpenFilesDetector.TypeKey);
+                    });
+                }
+
+                if (_wppEnabled)
+                {
+                    changed |= InvokeDetectorOnSync(() =>
+                    {
+                        WppOpenFilesDetector wpp;
+                        lock (_gate)
+                        {
+                            wpp = _wppDetector;
+                        }
+
+                        if (wpp == null)
+                        {
+                            return false;
+                        }
+
+                        if (!wpp.IsAttached)
+                        {
+                            return TryAttachOne(WppOpenFilesDetector.TypeKey);
+                        }
+
+                        return TryResnapshotOne(WppOpenFilesDetector.TypeKey);
+                    });
+                }
+
+                if (changed)
+                {
+                    RaiseChanged();
+                }
+            }
+            catch (Exception ex)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
+                    "[OpenFilesMonitor] presentation watch: " + ex.Message);
+            }
         }
 
         private void UpdateLateBindReconcileTimer()

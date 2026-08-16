@@ -118,11 +118,55 @@ namespace WordAddIn1.OpenFiles
                 return;
             }
 
+            // 对齐 EtCom：COM 新建的 WPS 窗口常是还原态小窗，须最大化再按标题找主窗
             TrySetProperty(app, "Visible", true);
+            TrySetProperty(app, "UserControl", true);
+            const int xlMaximized = -4137;
+            const int ppWindowMaximized = 3;
+            TrySetProperty(app, "WindowState", xlMaximized);
+            TrySetProperty(app, "WindowState", ppWindowMaximized);
+
             var hwnds = new List<int>();
             if (TryReadHwnd(app, out int appHwnd))
             {
                 hwnds.Add(appHwnd);
+            }
+
+            try
+            {
+                object active = GetProperty(app, "ActiveWindow");
+                if (active != null)
+                {
+                    TrySetProperty(active, "Visible", true);
+                    TrySetProperty(active, "WindowState", xlMaximized);
+                    TrySetProperty(active, "WindowState", ppWindowMaximized);
+                    if (TryReadHwnd(active, out int activeHwnd))
+                    {
+                        hwnds.Add(activeHwnd);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                object presentation = GetProperty(app, "ActivePresentation");
+                object windows = GetProperty(presentation, "Windows");
+                object window = GetIndexed(windows, 1);
+                if (window != null)
+                {
+                    TrySetProperty(window, "WindowState", xlMaximized);
+                    TrySetProperty(window, "WindowState", ppWindowMaximized);
+                    if (TryReadHwnd(window, out int winHwnd))
+                    {
+                        hwnds.Add(winHwnd);
+                    }
+                }
+            }
+            catch (Exception)
+            {
             }
 
             HostPlatform.NativeWindowActivate.EnsureUsable(hwnds, titleHint, new[] { "wpp", "wps" });
