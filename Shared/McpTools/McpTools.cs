@@ -49,6 +49,7 @@ namespace WordAddIn1
             F_GetPresentationContentTool.Register(toolRegistry, wordApplication);
             F_ReadPptHtmlTool.Register(toolRegistry, wordApplication);
             F_ApplyPptHtmlTool.Register(toolRegistry, wordApplication);
+            F_ManagePptSlideTool.Register(toolRegistry, wordApplication);
             F_ReadExcelRangeTool.Register(toolRegistry, wordApplication);
             F_WriteExcelRangeTool.Register(toolRegistry, wordApplication);
             F_ManageExcelSheetTool.Register(toolRegistry, wordApplication);
