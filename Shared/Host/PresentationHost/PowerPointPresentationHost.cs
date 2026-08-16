@@ -200,6 +200,28 @@ namespace WordAddIn1.PresentationHost
                 out error);
         }
 
+        public static bool TryApplyPptHtml(
+            PptChannel channel,
+            PptHtmlApplyPlan plan,
+            out PptHtmlApplyResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLivePresentation(out PowerPoint.Presentation presentation))
+            {
+                error = "渠道对应的演示文稿已关闭";
+                return false;
+            }
+
+            return PptHtmlPowerPointApplier.TryApply(
+                presentation,
+                plan,
+                channel.ChannelId,
+                out result,
+                out error);
+        }
+
         private static PresentationSlideInfo ReadSlide(PowerPoint.Slide slide, int fallbackIndex)
         {
             var info = new PresentationSlideInfo

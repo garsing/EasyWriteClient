@@ -123,6 +123,66 @@ namespace WordAddIn1.PresentationHost
                 || shapeType == "media";
         }
 
+        public static bool TryGetAutoShapeType(string shapeType, out int autoShapeType)
+        {
+            autoShapeType = 0;
+            if (string.IsNullOrEmpty(shapeType))
+            {
+                return false;
+            }
+
+            EnsureReverseMap();
+            return NameToAutoShape.TryGetValue(shapeType, out autoShapeType);
+        }
+
+        public static bool IsCreatable(string shapeType)
+        {
+            if (string.IsNullOrEmpty(shapeType))
+            {
+                return false;
+            }
+
+            if (shapeType.StartsWith("placeholder_", StringComparison.Ordinal)
+                || shapeType == "smartart"
+                || shapeType == "group"
+                || shapeType == "unknown"
+                || shapeType == "freeform")
+            {
+                return false;
+            }
+
+            if (shapeType == "textbox"
+                || shapeType == "table"
+                || shapeType == "picture"
+                || shapeType == "chart"
+                || shapeType == "media"
+                || shapeType == "line")
+            {
+                return true;
+            }
+
+            return TryGetAutoShapeType(shapeType, out _);
+        }
+
+        private static Dictionary<string, int> NameToAutoShape;
+
+        private static void EnsureReverseMap()
+        {
+            if (NameToAutoShape != null)
+            {
+                return;
+            }
+
+            NameToAutoShape = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (KeyValuePair<int, string> kv in AutoShapeNames)
+            {
+                if (!NameToAutoShape.ContainsKey(kv.Value))
+                {
+                    NameToAutoShape[kv.Value] = kv.Key;
+                }
+            }
+        }
+
         private static string FromPlaceholder(int? placeholderType)
         {
             if (!placeholderType.HasValue)

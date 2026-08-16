@@ -1,0 +1,460 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Reflection;
+using WordAddIn1.OpenFiles;
+
+namespace WordAddIn1.PresentationHost
+{
+    /// <summary>WPP 晚绑定 apply；能力弱于 PowerPoint，失败明确报错。</summary>
+    internal static class PptHtmlWppApplier
+    {
+        public static bool TryApply(
+            object presentation,
+            PptHtmlApplyPlan plan,
+            string channelId,
+            out PptHtmlApplyResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (presentation == null)
+            {
+                error = "渠道对应的演示文稿已关闭";
+                return false;
+            }
+
+            if (plan == null || string.IsNullOrEmpty(plan.SlideId))
+            {
+                error = "无效 apply 规划";
+                return false;
+            }
+
+            if (!int.TryParse(plan.SlideId, NumberStyles.Integer, CultureInfo.InvariantCulture, out int slideIdInt))
+            {
+                error = "非法 slide_id";
+                return false;
+            }
+
+            object slides = WppCom.GetProperty(presentation, "Slides");
+            object slide = FindSlideById(slides, slideIdInt);
+            if (slide == null)
+            {
+                error = "幻灯片不存在: slide_id=" + plan.SlideId;
+                return false;
+            }
+
+            double slideWidth;
+            double slideHeight;
+            try
+            {
+                object pageSetup = WppCom.GetProperty(presentation, "PageSetup");
+                slideWidth = Convert.ToDouble(WppCom.GetProperty(pageSetup, "SlideWidth"));
+                slideHeight = Convert.ToDouble(WppCom.GetProperty(pageSetup, "SlideHeight"));
+            }
+            catch (Exception ex)
+            {
+                error = "COM 不可用: " + ex.Message;
+                return false;
+            }
+
+            if (slideWidth <= 0 || slideHeight <= 0)
+            {
+                slideWidth = 720;
+                slideHeight = 540;
+            }
+
+            var warnings = new List<string>();
+            if (plan.Warnings != null)
+            {
+                warnings.AddRange(plan.Warnings);
+            }
+
+            int updated = 0;
+            int created = 0;
+            var createdShapes = new List<Dictionary<string, object>>();
+            object shapes = WppCom.GetProperty(slide, "Shapes");
+
+            try
+            {
+                foreach (PptHtmlApplyNode node in plan.Nodes)
+                {
+                    if (node == null)
+                    {
+                        continue;
+                    }
+
+                    if (node.IsCreate)
+                    {
+                        if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, out string newId, out string createError))
+                        {
+                            error = createError;
+                            return false;
+                        }
+
+                        created++;
+                        createdShapes.Add(new Dictionary<string, object>
+                        {
+                            ["shape_type"] = node.ShapeType ?? "",
+                            ["shape_id"] = newId
+                        });
+                    }
+                    else
+                    {
+                        if (!TryUpdate(shapes, node, slideWidth, slideHeight, warnings, out string updateError))
+                        {
+                            error = updateError;
+                            return false;
+                        }
+
+                        updated++;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "应用 HTML 失败: " + ex.Message;
+                return false;
+            }
+
+            int index = 0;
+            try
+            {
+                index = Convert.ToInt32(WppCom.GetProperty(slide, "SlideIndex"));
+            }
+            catch (Exception)
+            {
+            }
+
+            result = new PptHtmlApplyResult
+            {
+                ChannelId = channelId,
+                Kind = "wpp",
+                SlideId = plan.SlideId,
+                Index = index,
+                UpdatedCount = updated,
+                CreatedCount = created,
+                CreatedShapes = createdShapes,
+                Warnings = warnings
+            };
+            return true;
+        }
+
+        private static bool TryUpdate(
+            object shapes,
+            PptHtmlApplyNode node,
+            double slideWidth,
+            double slideHeight,
+            List<string> warnings,
+            out string error)
+        {
+            error = null;
+            if (!node.ShapeComId.HasValue)
+            {
+                error = "更新节点缺少 ShapeId";
+                return false;
+            }
+
+            object shape = FindShapeById(shapes, node.ShapeComId.Value);
+            if (shape == null)
+            {
+                error = "ShapeId 找不到: " + (node.ShapeId ?? "");
+                return false;
+            }
+
+            if (node.TableCells != null)
+            {
+                if (!TryWriteTable(shape, node.TableCells, out error))
+                {
+                    return false;
+                }
+            }
+            else if (node.HasText)
+            {
+                string type = node.ShapeType ?? "";
+                if (type == "chart" || type == "smartart")
+                {
+                    warnings.Add("忽略对 " + type + " 的文本修改: " + node.ShapeId);
+                }
+                else if (type != "picture" && type != "media")
+                {
+                    if (!TryWriteText(shape, node.Text ?? "", out error))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            if (node.HasGeometry)
+            {
+                TrySet(shape, "Left", node.LeftPct.GetValueOrDefault() / 100.0 * slideWidth);
+                TrySet(shape, "Top", node.TopPct.GetValueOrDefault() / 100.0 * slideHeight);
+                TrySet(shape, "Width", node.WidthPct.GetValueOrDefault() / 100.0 * slideWidth);
+                TrySet(shape, "Height", node.HeightPct.GetValueOrDefault() / 100.0 * slideHeight);
+            }
+
+            if (node.Rotation.HasValue)
+            {
+                TrySet(shape, "Rotation", node.Rotation.Value);
+            }
+
+            return true;
+        }
+
+        private static bool TryCreate(
+            object shapes,
+            object slide,
+            PptHtmlApplyNode node,
+            double slideWidth,
+            double slideHeight,
+            out string newShapeId,
+            out string error)
+        {
+            newShapeId = null;
+            error = null;
+            double left = node.LeftPct.GetValueOrDefault() / 100.0 * slideWidth;
+            double top = node.TopPct.GetValueOrDefault() / 100.0 * slideHeight;
+            double width = node.WidthPct.GetValueOrDefault() / 100.0 * slideWidth;
+            double height = node.HeightPct.GetValueOrDefault() / 100.0 * slideHeight;
+            if (width <= 0)
+            {
+                width = 100;
+            }
+
+            if (height <= 0)
+            {
+                height = 50;
+            }
+
+            object shape = null;
+            string type = node.ShapeType ?? "";
+            try
+            {
+                if (type == "textbox")
+                {
+                    shape = Invoke(shapes, "AddTextbox", 1, left, top, width, height);
+                    if (node.HasText)
+                    {
+                        TryWriteText(shape, node.Text ?? "", out _);
+                    }
+                }
+                else if (type == "table")
+                {
+                    int rows = Math.Max(1, node.TableCells == null ? 1 : node.TableCells.Count);
+                    int cols = node.TableCells == null || node.TableCells.Count == 0
+                        ? 1
+                        : Math.Max(1, node.TableCells[0].Count);
+                    if (rows > 20 || cols > 20)
+                    {
+                        error = "新建表格不得超过 20×20";
+                        return false;
+                    }
+
+                    shape = Invoke(shapes, "AddTable", rows, cols, left, top, width, height);
+                    if (node.TableCells != null)
+                    {
+                        TryWriteTable(shape, node.TableCells, out _);
+                    }
+                }
+                else if (type == "picture")
+                {
+                    if (string.IsNullOrEmpty(node.ResolvedLocalPath) || !File.Exists(node.ResolvedLocalPath))
+                    {
+                        error = "图片文件不存在: " + (node.DataSrc ?? "");
+                        return false;
+                    }
+
+                    shape = Invoke(
+                        shapes,
+                        "AddPicture",
+                        node.ResolvedLocalPath,
+                        false,
+                        true,
+                        left,
+                        top,
+                        width,
+                        height);
+                }
+                else if (type == "chart" || type == "media")
+                {
+                    error = "当前 WPS 演示宿主暂无法稳定创建 " + type + "，请用 powerpoint 渠道或仅更新已有形状";
+                    return false;
+                }
+                else if (PptShapeTypeMap.TryGetAutoShapeType(type, out int autoType))
+                {
+                    shape = Invoke(shapes, "AddShape", autoType, left, top, width, height);
+                    if (node.HasText && !string.IsNullOrEmpty(node.Text))
+                    {
+                        TryWriteText(shape, node.Text, out _);
+                    }
+                }
+                else
+                {
+                    error = "无法创建 data-shape-type=" + type;
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "创建形状失败 (" + type + "): " + ex.Message;
+                return false;
+            }
+
+            if (shape == null)
+            {
+                error = "创建形状返回空";
+                return false;
+            }
+
+            try
+            {
+                string sid = Convert.ToString(WppCom.GetProperty(slide, "SlideID")) ?? "";
+                string id = Convert.ToString(WppCom.GetProperty(shape, "Id")) ?? "";
+                newShapeId = "sid" + sid + "-s" + id;
+            }
+            catch (Exception)
+            {
+                newShapeId = "";
+            }
+
+            return true;
+        }
+
+        private static bool TryWriteText(object shape, string text, out string error)
+        {
+            error = null;
+            try
+            {
+                object has = WppCom.GetProperty(shape, "HasTextFrame");
+                if (has != null && Convert.ToInt32(has) != -1 && Convert.ToInt32(has) != 1)
+                {
+                    return true;
+                }
+
+                object tf = WppCom.GetProperty(shape, "TextFrame");
+                object tr = WppCom.GetProperty(tf, "TextRange");
+                TrySet(tr, "Text", text ?? "");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "写文本失败: " + ex.Message;
+                return false;
+            }
+        }
+
+        private static bool TryWriteTable(object shape, List<List<string>> cells, out string error)
+        {
+            error = null;
+            try
+            {
+                object table = WppCom.GetProperty(shape, "Table");
+                int rows = Convert.ToInt32(WppCom.GetProperty(WppCom.GetProperty(table, "Rows"), "Count"));
+                int cols = Convert.ToInt32(WppCom.GetProperty(WppCom.GetProperty(table, "Columns"), "Count"));
+                if (cells.Count > rows || (cells.Count > 0 && cells[0].Count > cols))
+                {
+                    error = "表格行列多于现有表（首期不自动扩表）";
+                    return false;
+                }
+
+                for (int r = 0; r < cells.Count; r++)
+                {
+                    for (int c = 0; c < cells[r].Count && c < cols; c++)
+                    {
+                        object cell = Invoke(table, "Cell", r + 1, c + 1);
+                        object cellShape = WppCom.GetProperty(cell, "Shape");
+                        TryWriteText(cellShape, cells[r][c] ?? "", out _);
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "写表格失败: " + ex.Message;
+                return false;
+            }
+        }
+
+        private static object FindSlideById(object slides, int slideId)
+        {
+            try
+            {
+                object found = Invoke(slides, "FindBySlideID", slideId);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            int count = Convert.ToInt32(WppCom.GetProperty(slides, "Count"));
+            for (int i = 1; i <= count; i++)
+            {
+                object slide = WppCom.GetIndexed(slides, i);
+                try
+                {
+                    if (Convert.ToInt32(WppCom.GetProperty(slide, "SlideID")) == slideId)
+                    {
+                        return slide;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return null;
+        }
+
+        private static object FindShapeById(object shapes, int id)
+        {
+            int count = Convert.ToInt32(WppCom.GetProperty(shapes, "Count"));
+            for (int i = 1; i <= count; i++)
+            {
+                object shape = WppCom.GetIndexed(shapes, i);
+                try
+                {
+                    if (Convert.ToInt32(WppCom.GetProperty(shape, "Id")) == id)
+                    {
+                        return shape;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return null;
+        }
+
+        private static object Invoke(object target, string method, params object[] args)
+        {
+            return target.GetType().InvokeMember(
+                method,
+                BindingFlags.InvokeMethod,
+                null,
+                target,
+                args);
+        }
+
+        private static void TrySet(object target, string name, object value)
+        {
+            try
+            {
+                target.GetType().InvokeMember(
+                    name,
+                    BindingFlags.SetProperty,
+                    null,
+                    target,
+                    new[] { value });
+            }
+            catch (Exception)
+            {
+            }
+        }
+    }
+}

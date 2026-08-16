@@ -163,5 +163,69 @@ namespace WordAddIn1.PresentationHost
 
             return true;
         }
+
+        public static bool TryApplyPptHtml(
+            IOperationChannel channel,
+            PptHtmlApplyPlan plan,
+            out PptHtmlApplyResult result,
+            out ToolResult errorResult)
+        {
+            result = null;
+            errorResult = null;
+            if (channel == null)
+            {
+                errorResult = new ToolResult { Success = false, Error = "未知 channel_id" };
+                return false;
+            }
+
+            if (channel.Kind == ChannelKind.Word
+                || channel.Kind == ChannelKind.Wps
+                || channel.Kind == ChannelKind.Excel
+                || channel.Kind == ChannelKind.Et)
+            {
+                string host = channel.Kind.ToString().ToLowerInvariant();
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "unsupported: 当前渠道是 " + host
+                        + "，请先打开/切换到演示文稿渠道（ppt: / wpp:），再用 F_apply_ppt_html"
+                };
+                return false;
+            }
+
+            if (plan == null)
+            {
+                errorResult = new ToolResult { Success = false, Error = "无效 html 规划" };
+                return false;
+            }
+
+            bool ok;
+            string error;
+            if (channel is PptChannel ppt)
+            {
+                ok = PowerPointPresentationHost.TryApplyPptHtml(ppt, plan, out result, out error);
+            }
+            else if (channel is WppChannel wpp)
+            {
+                ok = WppPresentationHost.TryApplyPptHtml(wpp, plan, out result, out error);
+            }
+            else
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "unsupported: 当前渠道不是 ppt/wpp"
+                };
+                return false;
+            }
+
+            if (!ok)
+            {
+                errorResult = new ToolResult { Success = false, Error = error };
+                return false;
+            }
+
+            return true;
+        }
     }
 }

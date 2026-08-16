@@ -39,6 +39,7 @@ namespace WordAddIn1
             "F_apply_excel_structure",
             "F_excel_pivot",
             "F_excel_chart",
+            "F_apply_ppt_html",
         };
 
         public static bool ShouldCompact(string toolName)

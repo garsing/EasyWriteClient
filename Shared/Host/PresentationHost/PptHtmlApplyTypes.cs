@@ -1,0 +1,461 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
+
+namespace WordAddIn1.PresentationHost
+{
+    public sealed class PptHtmlApplyNode
+    {
+        public bool IsCreate { get; set; }
+
+        public string ShapeId { get; set; }
+
+        public int? ShapeComId { get; set; }
+
+        public string ShapeType { get; set; }
+
+        public string Text { get; set; }
+
+        public bool HasText { get; set; }
+
+        public string DataSrc { get; set; }
+
+        public string ResolvedLocalPath { get; set; }
+
+        public string ChartType { get; set; }
+
+        public double? LeftPct { get; set; }
+
+        public double? TopPct { get; set; }
+
+        public double? WidthPct { get; set; }
+
+        public double? HeightPct { get; set; }
+
+        public double? Rotation { get; set; }
+
+        public bool HasGeometry { get; set; }
+
+        public List<List<string>> TableCells { get; set; }
+    }
+
+    public sealed class PptHtmlApplyPlan
+    {
+        public string SlideId { get; set; }
+
+        public List<PptHtmlApplyNode> Nodes { get; set; }
+
+        public List<string> Warnings { get; set; }
+    }
+
+    public sealed class PptHtmlApplyResult
+    {
+        public string ChannelId { get; set; }
+
+        public string Kind { get; set; }
+
+        public string SlideId { get; set; }
+
+        public int Index { get; set; }
+
+        public int UpdatedCount { get; set; }
+
+        public int CreatedCount { get; set; }
+
+        public List<Dictionary<string, object>> CreatedShapes { get; set; }
+
+        public List<string> Warnings { get; set; }
+    }
+
+    internal static class PptHtmlApplyParser
+    {
+        private static readonly HashSet<string> AllowedTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "h1", "div", "p", "table", "img", "ul", "li"
+        };
+
+        public static bool TryParse(string html, out PptHtmlApplyPlan plan, out string error)
+        {
+            plan = null;
+            error = null;
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                error = "必须提供 html";
+                return false;
+            }
+
+            int sectionOpens = Regex.Matches(html, @"<section\b", RegexOptions.IgnoreCase).Count;
+            if (sectionOpens == 0)
+            {
+                error = "html 中未找到 <section>";
+                return false;
+            }
+
+            if (sectionOpens > 1)
+            {
+                error = "html 中只能有一个 <section>";
+                return false;
+            }
+
+            Match m = Regex.Match(
+                html,
+                @"<section\b[^>]*>.*?</section>",
+                RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            if (!m.Success)
+            {
+                error = "无法解析 <section>…</section>";
+                return false;
+            }
+
+            XElement section;
+            try
+            {
+                section = XElement.Parse(m.Value, LoadOptions.PreserveWhitespace);
+            }
+            catch (Exception ex)
+            {
+                error = "section HTML 无法解析为 XML: " + ex.Message;
+                return false;
+            }
+
+            if (!string.Equals(section.Name.LocalName, "section", StringComparison.OrdinalIgnoreCase))
+            {
+                error = "根节点必须是 section";
+                return false;
+            }
+
+            string sectionShapeId = GetAttr(section, "ShapeId");
+            if (string.IsNullOrEmpty(sectionShapeId)
+                || !TryParseSectionShapeId(sectionShapeId, out string slideId))
+            {
+                error = "section 须有合法 ShapeId=\"sid{SlideID}\"";
+                return false;
+            }
+
+            var nodes = new List<PptHtmlApplyNode>();
+            var warnings = new List<string>();
+            foreach (XElement child in section.Elements())
+            {
+                string tag = child.Name.LocalName;
+                if (!AllowedTags.Contains(tag))
+                {
+                    error = "不支持的标签: " + tag;
+                    return false;
+                }
+
+                if (!TryParseNode(child, slideId, out PptHtmlApplyNode node, out string nodeError))
+                {
+                    error = nodeError;
+                    return false;
+                }
+
+                if (node != null)
+                {
+                    nodes.Add(node);
+                }
+            }
+
+            if (nodes.Count > PptHtmlReadResult.MaxShapes)
+            {
+                error = "单页可定位节点超过 " + PptHtmlReadResult.MaxShapes;
+                return false;
+            }
+
+            plan = new PptHtmlApplyPlan
+            {
+                SlideId = slideId,
+                Nodes = nodes,
+                Warnings = warnings
+            };
+            return true;
+        }
+
+        private static bool TryParseNode(
+            XElement el,
+            string slideId,
+            out PptHtmlApplyNode node,
+            out string error)
+        {
+            node = null;
+            error = null;
+            string shapeId = GetAttr(el, "ShapeId");
+            string dataNew = GetAttr(el, "data-new");
+            string shapeType = GetAttr(el, "data-shape-type");
+            bool flagNew = string.Equals(dataNew, "true", StringComparison.OrdinalIgnoreCase);
+            bool hasFormalId = TryParseShapeShapeId(shapeId, out string sid, out int comId)
+                && string.Equals(sid, slideId, StringComparison.Ordinal);
+
+            if (flagNew && hasFormalId)
+            {
+                error = "节点不能同时有合法 ShapeId 与 data-new";
+                return false;
+            }
+
+            bool isCreate = flagNew || !hasFormalId;
+            if (isCreate)
+            {
+                if (string.IsNullOrEmpty(shapeType))
+                {
+                    error = "新建节点必须提供 data-shape-type";
+                    return false;
+                }
+
+                if (!PptShapeTypeMap.IsCreatable(shapeType))
+                {
+                    error = "不允许新建 data-shape-type=" + shapeType;
+                    return false;
+                }
+            }
+
+            var item = new PptHtmlApplyNode
+            {
+                IsCreate = isCreate,
+                ShapeId = hasFormalId ? shapeId : null,
+                ShapeComId = hasFormalId ? comId : (int?)null,
+                ShapeType = shapeType ?? "",
+                DataSrc = GetAttr(el, "data-src"),
+                ChartType = GetAttr(el, "data-chart-type")
+            };
+
+            if (TryParseStyle(GetAttr(el, "style"), out double l, out double t, out double w, out double h))
+            {
+                item.HasGeometry = true;
+                item.LeftPct = l;
+                item.TopPct = t;
+                item.WidthPct = w;
+                item.HeightPct = h;
+            }
+
+            string rot = GetAttr(el, "data-rotation");
+            if (!string.IsNullOrEmpty(rot)
+                && double.TryParse(rot, NumberStyles.Float, CultureInfo.InvariantCulture, out double rv))
+            {
+                item.Rotation = rv;
+            }
+
+            if (string.Equals(el.Name.LocalName, "table", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(shapeType, "table", StringComparison.OrdinalIgnoreCase))
+            {
+                item.TableCells = ParseTableCells(el);
+                item.ShapeType = string.IsNullOrEmpty(item.ShapeType) ? "table" : item.ShapeType;
+            }
+            else if (string.Equals(el.Name.LocalName, "img", StringComparison.OrdinalIgnoreCase))
+            {
+                item.ShapeType = string.IsNullOrEmpty(item.ShapeType) ? "picture" : item.ShapeType;
+            }
+            else
+            {
+                string text = GetElementText(el);
+                item.Text = text;
+                item.HasText = true;
+                if (text != null && text.Length > PptHtmlReadResult.MaxTextChars)
+                {
+                    error = "单形状文本超过 " + PptHtmlReadResult.MaxTextChars + " 字符";
+                    return false;
+                }
+            }
+
+            if (item.TableCells != null)
+            {
+                foreach (List<string> row in item.TableCells)
+                {
+                    foreach (string cell in row)
+                    {
+                        if (cell != null && cell.Length > PptHtmlReadResult.MaxTextChars)
+                        {
+                            error = "表格单元格文本超过 " + PptHtmlReadResult.MaxTextChars + " 字符";
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            if (isCreate && !item.HasGeometry)
+            {
+                error = "新建节点必须提供 style 几何（left/top/width/height %）";
+                return false;
+            }
+
+            if (isCreate
+                && (item.ShapeType == "picture" || item.ShapeType == "media")
+                && string.IsNullOrWhiteSpace(item.DataSrc))
+            {
+                error = "新建 " + item.ShapeType + " 必须提供 data-src";
+                return false;
+            }
+
+            node = item;
+            return true;
+        }
+
+        private static List<List<string>> ParseTableCells(XElement table)
+        {
+            var rows = new List<List<string>>();
+            foreach (XElement tr in table.Elements().Where(e =>
+                string.Equals(e.Name.LocalName, "tr", StringComparison.OrdinalIgnoreCase)))
+            {
+                var row = new List<string>();
+                foreach (XElement td in tr.Elements().Where(e =>
+                    string.Equals(e.Name.LocalName, "td", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(e.Name.LocalName, "th", StringComparison.OrdinalIgnoreCase)))
+                {
+                    row.Add(GetElementText(td) ?? "");
+                }
+
+                rows.Add(row);
+            }
+
+            return rows;
+        }
+
+        private static string GetElementText(XElement el)
+        {
+            if (el == null)
+            {
+                return "";
+            }
+
+            return string.Concat(el.DescendantNodes().OfType<XText>().Select(t => t.Value)).TrimEnd();
+        }
+
+        private static bool TryParseStyle(
+            string style,
+            out double left,
+            out double top,
+            out double width,
+            out double height)
+        {
+            left = top = width = height = 0;
+            if (string.IsNullOrWhiteSpace(style))
+            {
+                return false;
+            }
+
+            bool okL = TryPct(style, "left", out left);
+            bool okT = TryPct(style, "top", out top);
+            bool okW = TryPct(style, "width", out width);
+            bool okH = TryPct(style, "height", out height);
+            return okL && okT && okW && okH;
+        }
+
+        private static bool TryPct(string style, string name, out double value)
+        {
+            value = 0;
+            Match m = Regex.Match(
+                style,
+                name + @"\s*:\s*([0-9.]+)\s*%",
+                RegexOptions.IgnoreCase);
+            if (!m.Success)
+            {
+                return false;
+            }
+
+            return double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        }
+
+        private static bool TryParseSectionShapeId(string shapeId, out string slideId)
+        {
+            slideId = null;
+            Match m = Regex.Match(shapeId ?? "", @"^sid(\d+)$", RegexOptions.IgnoreCase);
+            if (!m.Success)
+            {
+                return false;
+            }
+
+            slideId = m.Groups[1].Value;
+            return true;
+        }
+
+        private static bool TryParseShapeShapeId(string shapeId, out string slideId, out int comId)
+        {
+            slideId = null;
+            comId = 0;
+            Match m = Regex.Match(shapeId ?? "", @"^sid(\d+)-s(\d+)$", RegexOptions.IgnoreCase);
+            if (!m.Success)
+            {
+                return false;
+            }
+
+            slideId = m.Groups[1].Value;
+            return int.TryParse(m.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out comId);
+        }
+
+        private static string GetAttr(XElement el, string name)
+        {
+            if (el == null)
+            {
+                return "";
+            }
+
+            XAttribute a = el.Attribute(name)
+                ?? el.Attributes().FirstOrDefault(x =>
+                    string.Equals(x.Name.LocalName, name, StringComparison.OrdinalIgnoreCase));
+            return a == null ? "" : (a.Value ?? "").Trim();
+        }
+    }
+
+    internal static class PptHtmlFileSource
+    {
+        public static bool TryClassify(
+            string dataSrc,
+            out bool isAbsolute,
+            out bool isWorkspace,
+            out string workspaceFileName,
+            out string error)
+        {
+            isAbsolute = false;
+            isWorkspace = false;
+            workspaceFileName = null;
+            error = null;
+            if (string.IsNullOrWhiteSpace(dataSrc))
+            {
+                error = "data-src 为空";
+                return false;
+            }
+
+            string s = dataSrc.Trim();
+            if (s.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                || s.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                || s.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                error = "data-src 禁止 http/https/data/base64";
+                return false;
+            }
+
+            if (s.StartsWith("workspace:", StringComparison.OrdinalIgnoreCase))
+            {
+                isWorkspace = true;
+                workspaceFileName = Path.GetFileName(s.Substring("workspace:".Length).Trim());
+                if (string.IsNullOrEmpty(workspaceFileName))
+                {
+                    error = "workspace: 后须为裸文件名";
+                    return false;
+                }
+
+                return true;
+            }
+
+            if (Path.IsPathRooted(s))
+            {
+                isAbsolute = true;
+                return true;
+            }
+
+            // 裸文件名 → 工作区
+            isWorkspace = true;
+            workspaceFileName = Path.GetFileName(s);
+            if (string.IsNullOrEmpty(workspaceFileName)
+                || workspaceFileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                error = "非法 data-src 文件名";
+                return false;
+            }
+
+            return true;
+        }
+    }
+}
