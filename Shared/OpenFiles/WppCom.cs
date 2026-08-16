@@ -12,7 +12,9 @@ namespace WordAddIn1.OpenFiles
         {
             "Kwpp.Application",
             "kwpp.Application",
-            "wpp.Application"
+            "KWpp.Application",
+            "wpp.Application",
+            "WPP.Application"
         };
 
         public static object TryGetActiveApplication(out string progId)
@@ -167,7 +169,8 @@ namespace WordAddIn1.OpenFiles
             }
             finally
             {
-                ComRelease.Safe(presentations);
+                // 集合 RCW 只减一次，避免 FinalRelease 影响同进程其它 Presentations 包装
+                ComRelease.ReleaseOnce(presentations);
             }
         }
 

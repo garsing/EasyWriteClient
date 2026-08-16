@@ -24,6 +24,23 @@ namespace WordAddIn1.OpenFiles
             }
         }
 
+        /// <summary>仅 Release 一次；用于渠道替换 RCW，避免 FinalRelease 拆死仍在使用的 COM。</summary>
+        public static void ReleaseOnce(object com)
+        {
+            if (com == null || !Marshal.IsComObject(com))
+            {
+                return;
+            }
+
+            try
+            {
+                Marshal.ReleaseComObject(com);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         public static void CollectPending()
         {
             try

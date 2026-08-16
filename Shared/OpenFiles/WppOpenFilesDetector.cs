@@ -106,7 +106,7 @@ namespace WordAddIn1.OpenFiles
                         var item = MapPresentation(presentation, usedIds);
                         if (item == null)
                         {
-                            ComRelease.Safe(presentation);
+                            // 跳过项勿 FinalRelease：与打开路径/渠道可能共享同一 COM
                             continue;
                         }
 
@@ -121,7 +121,6 @@ namespace WordAddIn1.OpenFiles
                     }
                     catch (Exception ex)
                     {
-                        ComRelease.Safe(presentation);
                         EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
                             "[WppOpenFilesDetector] snapshot item skip: " + ex.Message);
                     }

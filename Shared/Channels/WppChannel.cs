@@ -61,7 +61,8 @@ namespace WordAddIn1
                 }
             }
 
-            ComRelease.Safe(old);
+            // 探测器换 RCW 时只减一次引用；FinalRelease 容易拆掉仍被打开路径持有的同 COM
+            ComRelease.ReleaseOnce(old);
         }
 
         public void ReleaseCom()
