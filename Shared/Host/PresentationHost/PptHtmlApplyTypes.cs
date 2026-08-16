@@ -359,29 +359,12 @@ namespace WordAddIn1.PresentationHost
 
         private static bool TryParseSectionShapeId(string shapeId, out string slideId)
         {
-            slideId = null;
-            Match m = Regex.Match(shapeId ?? "", @"^sid(\d+)$", RegexOptions.IgnoreCase);
-            if (!m.Success)
-            {
-                return false;
-            }
-
-            slideId = m.Groups[1].Value;
-            return true;
+            return PptShapeId.TryParseSection(shapeId, out slideId);
         }
 
         private static bool TryParseShapeShapeId(string shapeId, out string slideId, out int comId)
         {
-            slideId = null;
-            comId = 0;
-            Match m = Regex.Match(shapeId ?? "", @"^sid(\d+)-s(\d+)$", RegexOptions.IgnoreCase);
-            if (!m.Success)
-            {
-                return false;
-            }
-
-            slideId = m.Groups[1].Value;
-            return int.TryParse(m.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out comId);
+            return PptShapeId.TryParseShape(shapeId, out slideId, out comId);
         }
 
         private static string GetAttr(XElement el, string name)
