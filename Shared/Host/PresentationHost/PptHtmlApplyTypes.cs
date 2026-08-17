@@ -28,6 +28,12 @@ namespace WordAddIn1.PresentationHost
 
         public string ChartType { get; set; }
 
+        /// <summary>B1：null=不改；none=无填充；#RRGGBB=实色</summary>
+        public string Fill { get; set; }
+
+        /// <summary>B1：null=不改；#RRGGBB</summary>
+        public string FontColor { get; set; }
+
         public double? LeftPct { get; set; }
 
         public double? TopPct { get; set; }
@@ -222,13 +228,44 @@ namespace WordAddIn1.PresentationHost
                 ChartType = GetAttr(el, "data-chart-type")
             };
 
-            if (TryParseStyle(GetAttr(el, "style"), out double l, out double t, out double w, out double h))
+            string styleAttr = GetAttr(el, "style");
+            if (TryParseStyle(styleAttr, out double l, out double t, out double w, out double h))
             {
                 item.HasGeometry = true;
                 item.LeftPct = l;
                 item.TopPct = t;
                 item.WidthPct = w;
                 item.HeightPct = h;
+            }
+
+            string fillRaw = GetAttr(el, "data-fill");
+            if (!string.IsNullOrEmpty(fillRaw))
+            {
+                if (!PptHtmlStyleIo.TryNormalizeFillOrColor(fillRaw, allowNone: true, out string fillNorm, out string fillErr))
+                {
+                    error = fillErr;
+                    return false;
+                }
+
+                item.Fill = fillNorm;
+            }
+
+            // data-font-color 优先；缺省再用 style 的 color
+            string fontRaw = GetAttr(el, "data-font-color");
+            if (string.IsNullOrEmpty(fontRaw))
+            {
+                fontRaw = PptHtmlStyleIo.TryExtractStyleColor(styleAttr);
+            }
+
+            if (!string.IsNullOrEmpty(fontRaw))
+            {
+                if (!PptHtmlStyleIo.TryNormalizeFillOrColor(fontRaw, allowNone: false, out string fontNorm, out string fontErr))
+                {
+                    error = fontErr;
+                    return false;
+                }
+
+                item.FontColor = fontNorm;
             }
 
             string rot = GetAttr(el, "data-rotation");

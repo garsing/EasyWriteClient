@@ -23,6 +23,12 @@ namespace WordAddIn1.PresentationHost
         /// <summary>图片等文件源，如 workspace:ppt_images/a1b2c3d4.png（内容 hash 前 8 位）</summary>
         public string DataSrc { get; set; }
 
+        /// <summary>B1：#RRGGBB 或 none；null=未读到/不输出</summary>
+        public string Fill { get; set; }
+
+        /// <summary>B1：#RRGGBB；null=未读到/不输出</summary>
+        public string FontColor { get; set; }
+
         public string Name { get; set; }
 
         public double? Rotation { get; set; }

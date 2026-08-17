@@ -171,6 +171,16 @@ namespace WordAddIn1.PresentationHost
                 sb.Append(" data-src=\"").Append(EscapeAttr(node.DataSrc)).Append("\"");
             }
 
+            if (!string.IsNullOrEmpty(node.Fill))
+            {
+                sb.Append(" data-fill=\"").Append(EscapeAttr(node.Fill)).Append("\"");
+            }
+
+            if (!string.IsNullOrEmpty(node.FontColor))
+            {
+                sb.Append(" data-font-color=\"").Append(EscapeAttr(node.FontColor)).Append("\"");
+            }
+
             if (!string.IsNullOrEmpty(node.Style))
             {
                 sb.Append(" style=\"").Append(EscapeAttr(node.Style)).Append("\"");

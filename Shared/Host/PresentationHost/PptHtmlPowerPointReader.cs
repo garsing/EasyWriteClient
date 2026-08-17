@@ -387,6 +387,16 @@ namespace WordAddIn1.PresentationHost
 
             bool editable = !PptShapeTypeMap.IsNonEditable(typeName);
             string tag = PptShapeTypeMap.PreferTag(typeName, !string.IsNullOrEmpty(text));
+            string fill = null;
+            string fontColor = null;
+            if (typeName != "picture" && typeName != "media")
+            {
+                fill = TryReadFill(shape);
+                if (typeName != "table")
+                {
+                    fontColor = TryReadFontColor(shape);
+                }
+            }
 
             output.Add(new PptHtmlShapeNode
             {
@@ -397,10 +407,48 @@ namespace WordAddIn1.PresentationHost
                 Text = text,
                 InnerHtml = innerHtml,
                 Editable = editable,
+                Fill = fill,
+                FontColor = fontColor,
                 Name = typeName == "picture" ? name : null,
                 Rotation = rotation,
                 TextTruncated = textTruncated
             });
+        }
+
+        private static string TryReadFill(PowerPoint.Shape shape)
+        {
+            try
+            {
+                if (shape.Fill.Visible == Office.MsoTriState.msoFalse)
+                {
+                    return "none";
+                }
+
+                int rgb = shape.Fill.ForeColor.RGB;
+                return PptHtmlStyleIo.FormatOfficeRgb(rgb);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static string TryReadFontColor(PowerPoint.Shape shape)
+        {
+            try
+            {
+                if (shape.HasTextFrame != Office.MsoTriState.msoTrue)
+                {
+                    return null;
+                }
+
+                int rgb = shape.TextFrame.TextRange.Font.Color.RGB;
+                return PptHtmlStyleIo.FormatOfficeRgb(rgb);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         private static string TryBuildStyle(PowerPoint.Shape shape, float slideWidth, float slideHeight)

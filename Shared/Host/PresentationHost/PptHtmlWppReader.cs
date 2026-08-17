@@ -380,6 +380,16 @@ namespace WordAddIn1.PresentationHost
 
             bool editable = !PptShapeTypeMap.IsNonEditable(typeName);
             string tag = PptShapeTypeMap.PreferTag(typeName, !string.IsNullOrEmpty(text));
+            string fill = null;
+            string fontColor = null;
+            if (typeName != "picture" && typeName != "media")
+            {
+                fill = TryReadFill(shape);
+                if (typeName != "table")
+                {
+                    fontColor = TryReadFontColor(shape);
+                }
+            }
 
             output.Add(new PptHtmlShapeNode
             {
@@ -390,10 +400,70 @@ namespace WordAddIn1.PresentationHost
                 Text = text,
                 InnerHtml = innerHtml,
                 Editable = editable,
+                Fill = fill,
+                FontColor = fontColor,
                 Name = typeName == "picture" ? name : null,
                 Rotation = rotation,
                 TextTruncated = textTruncated
             });
+        }
+
+        private static string TryReadFill(object shape)
+        {
+            try
+            {
+                object fill = WppCom.GetProperty(shape, "Fill");
+                if (fill == null)
+                {
+                    return null;
+                }
+
+                object visible = WppCom.GetProperty(fill, "Visible");
+                if (visible != null && !IsTruthy(visible))
+                {
+                    return "none";
+                }
+
+                object fore = WppCom.GetProperty(fill, "ForeColor");
+                object rgbObj = fore == null ? null : WppCom.GetProperty(fore, "RGB");
+                if (rgbObj == null)
+                {
+                    return null;
+                }
+
+                return PptHtmlStyleIo.FormatOfficeRgb(Convert.ToInt32(rgbObj));
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static string TryReadFontColor(object shape)
+        {
+            try
+            {
+                if (!IsTruthy(WppCom.GetProperty(shape, "HasTextFrame")))
+                {
+                    return null;
+                }
+
+                object tf = WppCom.GetProperty(shape, "TextFrame");
+                object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                object color = font == null ? null : WppCom.GetProperty(font, "Color");
+                object rgbObj = color == null ? null : WppCom.GetProperty(color, "RGB");
+                if (rgbObj == null)
+                {
+                    return null;
+                }
+
+                return PptHtmlStyleIo.FormatOfficeRgb(Convert.ToInt32(rgbObj));
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         private static string TryBuildStyle(object shape, double slideWidth, double slideHeight)

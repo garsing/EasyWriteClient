@@ -315,6 +315,11 @@ namespace WordAddIn1.PresentationHost
                 TrySet(shape, "Rotation", node.Rotation.Value);
             }
 
+            if (!TryApplyColors(shape, node, node.ShapeType ?? "", out error))
+            {
+                return false;
+            }
+
             return true;
         }
 
@@ -433,6 +438,11 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (!TryApplyColors(shape, node, type, out error))
+            {
+                return false;
+            }
+
             try
             {
                 string sid = Convert.ToString(WppCom.GetProperty(slide, "SlideID")) ?? "";
@@ -442,6 +452,85 @@ namespace WordAddIn1.PresentationHost
             catch (Exception)
             {
                 newShapeId = "";
+            }
+
+            return true;
+        }
+
+        private static bool TryApplyColors(object shape, PptHtmlApplyNode node, string shapeType, out string error)
+        {
+            error = null;
+            if (shape == null || node == null)
+            {
+                return true;
+            }
+
+            if (shapeType == "picture" || shapeType == "media")
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(node.Fill))
+            {
+                try
+                {
+                    object fill = WppCom.GetProperty(shape, "Fill");
+                    if (fill == null)
+                    {
+                        return true;
+                    }
+
+                    if (string.Equals(node.Fill, "none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        TrySet(fill, "Visible", 0);
+                    }
+                    else
+                    {
+                        if (!PptHtmlStyleIo.TryParseHexToOfficeRgb(node.Fill, out int rgb, out error))
+                        {
+                            return false;
+                        }
+
+                        TrySet(fill, "Visible", -1);
+                        try
+                        {
+                            WppCom.Invoke(fill, "Solid");
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        object fore = WppCom.GetProperty(fill, "ForeColor");
+                        TrySet(fore, "RGB", rgb);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    error = "写填充色失败: " + ex.Message;
+                    return false;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(node.FontColor) && shapeType != "table")
+            {
+                try
+                {
+                    if (!PptHtmlStyleIo.TryParseHexToOfficeRgb(node.FontColor, out int rgb, out error))
+                    {
+                        return false;
+                    }
+
+                    object tf = WppCom.GetProperty(shape, "TextFrame");
+                    object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                    object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                    object color = font == null ? null : WppCom.GetProperty(font, "Color");
+                    TrySet(color, "RGB", rgb);
+                }
+                catch (Exception ex)
+                {
+                    error = "写字体颜色失败: " + ex.Message;
+                    return false;
+                }
             }
 
             return true;

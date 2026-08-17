@@ -363,6 +363,11 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
+            if (!TryApplyColors(shape, node, existingType, out error))
+            {
+                return false;
+            }
+
             if (!string.IsNullOrWhiteSpace(node.DataSrc)
                 && (existingType == "picture" || existingType == "media"))
             {
@@ -556,6 +561,11 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
+            if (!TryApplyColors(shape, node, type, out error))
+            {
+                return false;
+            }
+
             try
             {
                 int id = shape.Id;
@@ -564,6 +574,81 @@ namespace WordAddIn1.PresentationHost
             catch (Exception)
             {
                 newShapeId = "";
+            }
+
+            return true;
+        }
+
+        private static bool TryApplyColors(
+            PowerPoint.Shape shape,
+            PptHtmlApplyNode node,
+            string shapeType,
+            out string error)
+        {
+            error = null;
+            if (shape == null || node == null)
+            {
+                return true;
+            }
+
+            if (shapeType == "picture" || shapeType == "media")
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(node.Fill))
+            {
+                try
+                {
+                    if (string.Equals(node.Fill, "none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        shape.Fill.Visible = Office.MsoTriState.msoFalse;
+                    }
+                    else
+                    {
+                        if (!PptHtmlStyleIo.TryParseHexToOfficeRgb(node.Fill, out int rgb, out error))
+                        {
+                            return false;
+                        }
+
+                        shape.Fill.Visible = Office.MsoTriState.msoTrue;
+                        try
+                        {
+                            shape.Fill.Solid();
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        shape.Fill.ForeColor.RGB = rgb;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    error = "写填充色失败: " + ex.Message;
+                    return false;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(node.FontColor) && shapeType != "table")
+            {
+                try
+                {
+                    if (!PptHtmlStyleIo.TryParseHexToOfficeRgb(node.FontColor, out int rgb, out error))
+                    {
+                        return false;
+                    }
+
+                    if (shape.HasTextFrame == Office.MsoTriState.msoTrue)
+                    {
+                        shape.TextFrame.TextRange.Font.Color.RGB = rgb;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    error = "写字体颜色失败: " + ex.Message;
+                    return false;
+                }
             }
 
             return true;
