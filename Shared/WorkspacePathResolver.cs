@@ -186,7 +186,7 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 工作区内相对路径：裸文件名，或少量子目录（如 slide256.assets/sid256-s5.png）。
+        /// 工作区内相对路径：裸文件名，或少量子目录（如 ppt_images/sid256-s5.png）。
         /// 禁止 ..、盘符、绝对路径。
         /// </summary>
         public static string SanitizeWorkspaceRelativePath(string relativePath)

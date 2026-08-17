@@ -94,17 +94,8 @@ namespace WordAddIn1
 
                     if (!string.IsNullOrEmpty(exportHtml))
                     {
-                        string stem = Path.GetFileNameWithoutExtension(exportHtml);
-                        if (string.IsNullOrWhiteSpace(stem))
-                        {
-                            return new ToolResult
-                            {
-                                Success = false,
-                                Error = "export_html 主名无效"
-                            };
-                        }
-
-                        string assetsFolder = stem + ".assets";
+                        // 扁平公共图库，便于跨页引用同一文件
+                        const string assetsFolder = "ppt_images";
                         string assetsLocalDir = Path.Combine(
                             WorkspacePathResolver.GetSessionDirectory(),
                             assetsFolder);
