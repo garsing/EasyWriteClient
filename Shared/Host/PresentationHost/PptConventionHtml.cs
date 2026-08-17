@@ -188,6 +188,39 @@ namespace WordAddIn1.PresentationHost
                 sb.Append(" data-font-color=\"").Append(EscapeAttr(node.FontColor)).Append("\"");
             }
 
+            if (node.FontSizePt.HasValue)
+            {
+                sb.Append(" data-font-size=\"")
+                    .Append(PptHtmlStyleIo.FormatPt(node.FontSizePt.Value))
+                    .Append("\"");
+            }
+
+            if (node.FontBold.HasValue)
+            {
+                sb.Append(" data-font-bold=\"")
+                    .Append(node.FontBold.Value ? "true" : "false")
+                    .Append("\"");
+            }
+
+            if (node.Z.HasValue)
+            {
+                sb.Append(" data-z=\"")
+                    .Append(node.Z.Value.ToString(CultureInfo.InvariantCulture))
+                    .Append("\"");
+            }
+
+            if (!string.IsNullOrEmpty(node.LineColor))
+            {
+                sb.Append(" data-line-color=\"").Append(EscapeAttr(node.LineColor)).Append("\"");
+            }
+
+            if (node.LineWidthPt.HasValue)
+            {
+                sb.Append(" data-line-width=\"")
+                    .Append(PptHtmlStyleIo.FormatPt(node.LineWidthPt.Value))
+                    .Append("\"");
+            }
+
             if (!string.IsNullOrEmpty(node.Style))
             {
                 sb.Append(" style=\"").Append(EscapeAttr(node.Style)).Append("\"");

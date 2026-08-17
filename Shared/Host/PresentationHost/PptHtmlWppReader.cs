@@ -316,14 +316,25 @@ namespace WordAddIn1.PresentationHost
             string tag = PptShapeTypeMap.PreferTag(typeName, !string.IsNullOrEmpty(text));
             string fill = null;
             string fontColor = null;
+            double? fontSize = null;
+            bool? fontBold = null;
+            string lineColor = null;
+            double? lineWidth = null;
             if (typeName != "picture" && typeName != "media")
             {
                 fill = TryReadFill(shape);
                 if (typeName != "table")
                 {
                     fontColor = TryReadFontColor(shape);
+                    fontSize = TryReadFontSize(shape);
+                    fontBold = TryReadFontBold(shape);
                 }
+
+                lineColor = TryReadLineColor(shape);
+                lineWidth = TryReadLineWidth(shape);
             }
+
+            int? z = TryReadZ(shape);
 
             output.Add(new PptHtmlShapeNode
             {
@@ -336,11 +347,147 @@ namespace WordAddIn1.PresentationHost
                 Editable = editable,
                 Fill = fill,
                 FontColor = fontColor,
+                FontSizePt = fontSize,
+                FontBold = fontBold,
+                Z = z,
+                LineColor = lineColor,
+                LineWidthPt = lineWidth,
                 RasterizedFrom = rasterizedFrom,
                 Name = typeName == "picture" ? name : null,
                 Rotation = rotation,
                 TextTruncated = textTruncated
             });
+        }
+
+        private static double? TryReadFontSize(object shape)
+        {
+            try
+            {
+                object tf = WppCom.GetProperty(shape, "TextFrame");
+                object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                object size = font == null ? null : WppCom.GetProperty(font, "Size");
+                if (size == null)
+                {
+                    return null;
+                }
+
+                double v = Convert.ToDouble(size);
+                return v > 0 ? v : (double?)null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static bool? TryReadFontBold(object shape)
+        {
+            try
+            {
+                object tf = WppCom.GetProperty(shape, "TextFrame");
+                object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                object bold = font == null ? null : WppCom.GetProperty(font, "Bold");
+                if (bold == null)
+                {
+                    return null;
+                }
+
+                int v = Convert.ToInt32(bold);
+                if (v == -2)
+                {
+                    // msoTriStateMixed
+                    return null;
+                }
+
+                return IsTruthy(bold);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static int? TryReadZ(object shape)
+        {
+            try
+            {
+                object z = WppCom.GetProperty(shape, "ZOrderPosition");
+                if (z == null)
+                {
+                    return null;
+                }
+
+                int v = Convert.ToInt32(z);
+                return v < 0 ? (int?)null : v;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static string TryReadLineColor(object shape)
+        {
+            try
+            {
+                object line = WppCom.GetProperty(shape, "Line");
+                if (line == null)
+                {
+                    return null;
+                }
+
+                object visible = WppCom.GetProperty(line, "Visible");
+                if (visible != null && !IsTruthy(visible))
+                {
+                    return "none";
+                }
+
+                object fore = WppCom.GetProperty(line, "ForeColor");
+                object rgbObj = fore == null ? null : WppCom.GetProperty(fore, "RGB");
+                if (rgbObj == null)
+                {
+                    return null;
+                }
+
+                return PptHtmlStyleIo.FormatOfficeRgb(Convert.ToInt32(rgbObj));
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static double? TryReadLineWidth(object shape)
+        {
+            try
+            {
+                object line = WppCom.GetProperty(shape, "Line");
+                if (line == null)
+                {
+                    return null;
+                }
+
+                object visible = WppCom.GetProperty(line, "Visible");
+                if (visible != null && !IsTruthy(visible))
+                {
+                    return null;
+                }
+
+                object w = WppCom.GetProperty(line, "Weight");
+                if (w == null)
+                {
+                    return null;
+                }
+
+                double v = Convert.ToDouble(w);
+                return v < 0 ? (double?)null : v;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         private static string TryReadFill(object shape)

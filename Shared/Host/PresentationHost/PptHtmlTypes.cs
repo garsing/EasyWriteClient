@@ -32,6 +32,21 @@ namespace WordAddIn1.PresentationHost
         /// <summary>B1：#RRGGBB；null=未读到/不输出</summary>
         public string FontColor { get; set; }
 
+        /// <summary>B3：字号 pt；null=未读到</summary>
+        public double? FontSizePt { get; set; }
+
+        /// <summary>B3：加粗；null=未读到</summary>
+        public bool? FontBold { get; set; }
+
+        /// <summary>B3：叠放；数值越大越靠上（≈ ZOrderPosition）</summary>
+        public int? Z { get; set; }
+
+        /// <summary>B3b：#RRGGBB 或 none</summary>
+        public string LineColor { get; set; }
+
+        /// <summary>B3b：线宽 pt</summary>
+        public double? LineWidthPt { get; set; }
+
         public string Name { get; set; }
 
         public double? Rotation { get; set; }

@@ -313,14 +313,25 @@ namespace WordAddIn1.PresentationHost
             string tag = PptShapeTypeMap.PreferTag(typeName, !string.IsNullOrEmpty(text));
             string fill = null;
             string fontColor = null;
+            double? fontSize = null;
+            bool? fontBold = null;
+            string lineColor = null;
+            double? lineWidth = null;
             if (typeName != "picture" && typeName != "media")
             {
                 fill = TryReadFill(shape);
                 if (typeName != "table")
                 {
                     fontColor = TryReadFontColor(shape);
+                    fontSize = TryReadFontSize(shape);
+                    fontBold = TryReadFontBold(shape);
                 }
+
+                lineColor = TryReadLineColor(shape);
+                lineWidth = TryReadLineWidth(shape);
             }
+
+            int? z = TryReadZ(shape);
 
             output.Add(new PptHtmlShapeNode
             {
@@ -333,11 +344,121 @@ namespace WordAddIn1.PresentationHost
                 Editable = editable,
                 Fill = fill,
                 FontColor = fontColor,
+                FontSizePt = fontSize,
+                FontBold = fontBold,
+                Z = z,
+                LineColor = lineColor,
+                LineWidthPt = lineWidth,
                 RasterizedFrom = rasterizedFrom,
                 Name = typeName == "picture" ? name : null,
                 Rotation = rotation,
                 TextTruncated = textTruncated
             });
+        }
+
+        private static double? TryReadFontSize(PowerPoint.Shape shape)
+        {
+            try
+            {
+                if (shape.HasTextFrame != Office.MsoTriState.msoTrue)
+                {
+                    return null;
+                }
+
+                float size = shape.TextFrame.TextRange.Font.Size;
+                if (size <= 0)
+                {
+                    return null;
+                }
+
+                return size;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static bool? TryReadFontBold(PowerPoint.Shape shape)
+        {
+            try
+            {
+                if (shape.HasTextFrame != Office.MsoTriState.msoTrue)
+                {
+                    return null;
+                }
+
+                Office.MsoTriState bold = shape.TextFrame.TextRange.Font.Bold;
+                if (bold == Office.MsoTriState.msoTriStateMixed)
+                {
+                    return null;
+                }
+
+                return bold == Office.MsoTriState.msoTrue;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static int? TryReadZ(PowerPoint.Shape shape)
+        {
+            try
+            {
+                int z = shape.ZOrderPosition;
+                if (z < 0)
+                {
+                    return null;
+                }
+
+                return z;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static string TryReadLineColor(PowerPoint.Shape shape)
+        {
+            try
+            {
+                if (shape.Line.Visible == Office.MsoTriState.msoFalse)
+                {
+                    return "none";
+                }
+
+                int rgb = shape.Line.ForeColor.RGB;
+                return PptHtmlStyleIo.FormatOfficeRgb(rgb);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static double? TryReadLineWidth(PowerPoint.Shape shape)
+        {
+            try
+            {
+                if (shape.Line.Visible == Office.MsoTriState.msoFalse)
+                {
+                    return null;
+                }
+
+                float w = shape.Line.Weight;
+                if (w < 0)
+                {
+                    return null;
+                }
+
+                return w;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         private static string TryReadFill(PowerPoint.Shape shape)

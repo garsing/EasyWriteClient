@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace WordAddIn1.PresentationHost
 {
-    /// <summary>B1：约定 HTML 颜色读写（data-fill / data-font-color）。</summary>
+    /// <summary>约定 HTML 样式读写（B1 色 / B3 字号粗体 z / B3b 线）。</summary>
     internal static class PptHtmlStyleIo
     {
         private static readonly Regex HexColor = new Regex(
@@ -96,6 +96,118 @@ namespace WordAddIn1.PresentationHost
             int b = int.Parse(n.Substring(5, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
             officeRgb = r + (g << 8) + (b << 16);
             return true;
+        }
+
+        public static bool TryParseFontSizePt(string raw, out double pt, out string error)
+        {
+            pt = 0;
+            error = null;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                error = "data-font-size 为空";
+                return false;
+            }
+
+            string s = raw.Trim();
+            if (s.EndsWith("pt", StringComparison.OrdinalIgnoreCase))
+            {
+                s = s.Substring(0, s.Length - 2).Trim();
+            }
+
+            if (!double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out pt)
+                || double.IsNaN(pt)
+                || double.IsInfinity(pt)
+                || pt <= 0
+                || pt > 400)
+            {
+                error = "非法 data-font-size（须为 0–400 的 pt 数值）: " + raw;
+                return false;
+            }
+
+            return true;
+        }
+
+        public static bool TryParseFontBold(string raw, out bool bold, out string error)
+        {
+            bold = false;
+            error = null;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                error = "data-font-bold 为空";
+                return false;
+            }
+
+            string s = raw.Trim();
+            if (string.Equals(s, "true", StringComparison.OrdinalIgnoreCase)
+                || s == "1")
+            {
+                bold = true;
+                return true;
+            }
+
+            if (string.Equals(s, "false", StringComparison.OrdinalIgnoreCase)
+                || s == "0")
+            {
+                bold = false;
+                return true;
+            }
+
+            error = "非法 data-font-bold（须为 true/false）: " + raw;
+            return false;
+        }
+
+        public static bool TryParseZ(string raw, out int z, out string error)
+        {
+            z = 0;
+            error = null;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                error = "data-z 为空";
+                return false;
+            }
+
+            if (!int.TryParse(raw.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out z)
+                || z < 0)
+            {
+                error = "非法 data-z（须为非负整数）: " + raw;
+                return false;
+            }
+
+            return true;
+        }
+
+        public static bool TryParseLineWidthPt(string raw, out double pt, out string error)
+        {
+            pt = 0;
+            error = null;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                error = "data-line-width 为空";
+                return false;
+            }
+
+            string s = raw.Trim();
+            if (s.EndsWith("pt", StringComparison.OrdinalIgnoreCase))
+            {
+                s = s.Substring(0, s.Length - 2).Trim();
+            }
+
+            if (!double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out pt)
+                || double.IsNaN(pt)
+                || double.IsInfinity(pt)
+                || pt < 0
+                || pt > 100)
+            {
+                error = "非法 data-line-width（须为 0–100 的 pt 数值）: " + raw;
+                return false;
+            }
+
+            return true;
+        }
+
+        public static string FormatPt(double pt)
+        {
+            return pt.ToString("0.##", CultureInfo.InvariantCulture);
         }
     }
 }

@@ -88,6 +88,7 @@ namespace WordAddIn1.PresentationHost
             int created = 0;
             int skipped = 0;
             var createdShapes = new List<Dictionary<string, object>>();
+            var zTargets = new List<KeyValuePair<PowerPoint.Shape, int>>();
 
             try
             {
@@ -119,6 +120,8 @@ namespace WordAddIn1.PresentationHost
                             return false;
                         }
 
+                        RememberCreatedComId(node, newId);
+                        TryCollectZ(slide, node, zTargets);
                         created++;
                         createdShapes.Add(new Dictionary<string, object>
                         {
@@ -158,6 +161,8 @@ namespace WordAddIn1.PresentationHost
                                 return false;
                             }
 
+                            RememberCreatedComId(node, newId);
+                            TryCollectZ(slide, node, zTargets);
                             created++;
                             createdShapes.Add(new Dictionary<string, object>
                             {
@@ -178,10 +183,13 @@ namespace WordAddIn1.PresentationHost
                         }
                         else
                         {
+                            TryCollectZ(slide, node, zTargets);
                             updated++;
                         }
                     }
                 }
+
+                ApplyZOrder(zTargets);
             }
             catch (Exception ex)
             {
@@ -368,6 +376,16 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (!TryApplyFont(shape, node, existingType, out error))
+            {
+                return false;
+            }
+
+            if (!TryApplyLine(shape, node, existingType, out error))
+            {
+                return false;
+            }
+
             // 换图，或 B2：页上仍是 freeform/smartart/group/unknown 时删旧 + AddPicture
             if (!string.IsNullOrWhiteSpace(node.DataSrc)
                 && (existingType == "picture"
@@ -398,11 +416,12 @@ namespace WordAddIn1.PresentationHost
                 node.WidthPct = width / slideWidth * 100;
                 node.HeightPct = height / slideHeight * 100;
                 node.ShapeType = existingType == "media" ? "media" : "picture";
-                if (!TryCreate(slide, node, slideWidth, slideHeight, out _, out error))
+                if (!TryCreate(slide, node, slideWidth, slideHeight, out string newId, out error))
                 {
                     return false;
                 }
 
+                RememberCreatedComId(node, newId);
                 if (PptShapeTypeMap.ShouldRasterizeAsPicture(existingType))
                 {
                     warnings?.Add(
@@ -574,6 +593,16 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (!TryApplyFont(shape, node, type, out error))
+            {
+                return false;
+            }
+
+            if (!TryApplyLine(shape, node, type, out error))
+            {
+                return false;
+            }
+
             try
             {
                 int id = shape.Id;
@@ -585,6 +614,173 @@ namespace WordAddIn1.PresentationHost
             }
 
             return true;
+        }
+
+        private static bool TryApplyFont(
+            PowerPoint.Shape shape,
+            PptHtmlApplyNode node,
+            string shapeType,
+            out string error)
+        {
+            error = null;
+            if (shape == null || node == null)
+            {
+                return true;
+            }
+
+            if (shapeType == "picture" || shapeType == "media" || shapeType == "table")
+            {
+                return true;
+            }
+
+            if (!node.FontSizePt.HasValue && !node.FontBold.HasValue)
+            {
+                return true;
+            }
+
+            try
+            {
+                if (shape.HasTextFrame != Office.MsoTriState.msoTrue)
+                {
+                    return true;
+                }
+
+                PowerPoint.Font font = shape.TextFrame.TextRange.Font;
+                if (node.FontSizePt.HasValue)
+                {
+                    font.Size = (float)node.FontSizePt.Value;
+                }
+
+                if (node.FontBold.HasValue)
+                {
+                    font.Bold = node.FontBold.Value
+                        ? Office.MsoTriState.msoTrue
+                        : Office.MsoTriState.msoFalse;
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "写字体样式失败: " + ex.Message;
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryApplyLine(
+            PowerPoint.Shape shape,
+            PptHtmlApplyNode node,
+            string shapeType,
+            out string error)
+        {
+            error = null;
+            if (shape == null || node == null)
+            {
+                return true;
+            }
+
+            if (shapeType == "picture" || shapeType == "media")
+            {
+                return true;
+            }
+
+            if (string.IsNullOrEmpty(node.LineColor) && !node.LineWidthPt.HasValue)
+            {
+                return true;
+            }
+
+            try
+            {
+                if (!string.IsNullOrEmpty(node.LineColor))
+                {
+                    if (string.Equals(node.LineColor, "none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        shape.Line.Visible = Office.MsoTriState.msoFalse;
+                    }
+                    else
+                    {
+                        if (!PptHtmlStyleIo.TryParseHexToOfficeRgb(node.LineColor, out int rgb, out error))
+                        {
+                            return false;
+                        }
+
+                        shape.Line.Visible = Office.MsoTriState.msoTrue;
+                        shape.Line.ForeColor.RGB = rgb;
+                    }
+                }
+
+                if (node.LineWidthPt.HasValue)
+                {
+                    shape.Line.Visible = Office.MsoTriState.msoTrue;
+                    shape.Line.Weight = (float)node.LineWidthPt.Value;
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "写线条样式失败: " + ex.Message;
+                return false;
+            }
+
+            return true;
+        }
+
+        private static void RememberCreatedComId(PptHtmlApplyNode node, string newShapeId)
+        {
+            if (node == null || string.IsNullOrEmpty(newShapeId))
+            {
+                return;
+            }
+
+            if (PptShapeId.TryParseShape(newShapeId, out _, out int comId))
+            {
+                node.ShapeComId = comId;
+                node.ShapeId = newShapeId;
+            }
+        }
+
+        private static void TryCollectZ(
+            PowerPoint.Slide slide,
+            PptHtmlApplyNode node,
+            List<KeyValuePair<PowerPoint.Shape, int>> targets)
+        {
+            if (slide == null || node == null || !node.Z.HasValue || targets == null)
+            {
+                return;
+            }
+
+            if (!node.ShapeComId.HasValue)
+            {
+                return;
+            }
+
+            PowerPoint.Shape shape = FindShapeById(slide.Shapes, node.ShapeComId.Value);
+            if (shape == null)
+            {
+                return;
+            }
+
+            targets.Add(new KeyValuePair<PowerPoint.Shape, int>(shape, node.Z.Value));
+        }
+
+        /// <summary>数值越大越靠上：按 z 升序依次 BringToFront。</summary>
+        private static void ApplyZOrder(List<KeyValuePair<PowerPoint.Shape, int>> targets)
+        {
+            if (targets == null || targets.Count == 0)
+            {
+                return;
+            }
+
+            targets.Sort((a, b) => a.Value.CompareTo(b.Value));
+            foreach (KeyValuePair<PowerPoint.Shape, int> item in targets)
+            {
+                try
+                {
+                    item.Key.ZOrder(Office.MsoZOrderCmd.msoBringToFront);
+                }
+                catch (Exception)
+                {
+                }
+            }
         }
 
         private static bool TryApplyColors(

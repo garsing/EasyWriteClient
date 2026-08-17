@@ -34,6 +34,21 @@ namespace WordAddIn1.PresentationHost
         /// <summary>B1：null=不改；#RRGGBB</summary>
         public string FontColor { get; set; }
 
+        /// <summary>B3：null=不改</summary>
+        public double? FontSizePt { get; set; }
+
+        /// <summary>B3：null=不改</summary>
+        public bool? FontBold { get; set; }
+
+        /// <summary>B3：null=不改；越大越靠上</summary>
+        public int? Z { get; set; }
+
+        /// <summary>B3b：null=不改；none=无线；#RRGGBB</summary>
+        public string LineColor { get; set; }
+
+        /// <summary>B3b：null=不改</summary>
+        public double? LineWidthPt { get; set; }
+
         public double? LeftPct { get; set; }
 
         public double? TopPct { get; set; }
@@ -266,6 +281,66 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 item.FontColor = fontNorm;
+            }
+
+            string fontSizeRaw = GetAttr(el, "data-font-size");
+            if (!string.IsNullOrEmpty(fontSizeRaw))
+            {
+                if (!PptHtmlStyleIo.TryParseFontSizePt(fontSizeRaw, out double fs, out string fsErr))
+                {
+                    error = fsErr;
+                    return false;
+                }
+
+                item.FontSizePt = fs;
+            }
+
+            string fontBoldRaw = GetAttr(el, "data-font-bold");
+            if (!string.IsNullOrEmpty(fontBoldRaw))
+            {
+                if (!PptHtmlStyleIo.TryParseFontBold(fontBoldRaw, out bool fb, out string fbErr))
+                {
+                    error = fbErr;
+                    return false;
+                }
+
+                item.FontBold = fb;
+            }
+
+            string zRaw = GetAttr(el, "data-z");
+            if (!string.IsNullOrEmpty(zRaw))
+            {
+                if (!PptHtmlStyleIo.TryParseZ(zRaw, out int z, out string zErr))
+                {
+                    error = zErr;
+                    return false;
+                }
+
+                item.Z = z;
+            }
+
+            string lineColorRaw = GetAttr(el, "data-line-color");
+            if (!string.IsNullOrEmpty(lineColorRaw))
+            {
+                if (!PptHtmlStyleIo.TryNormalizeFillOrColor(lineColorRaw, allowNone: true, out string lc, out string lcErr))
+                {
+                    error = lcErr;
+                    return false;
+                }
+
+                item.LineColor = lc;
+            }
+
+            string lineWidthRaw = GetAttr(el, "data-line-width");
+            if (!string.IsNullOrEmpty(lineWidthRaw))
+            {
+                if (!PptHtmlStyleIo.TryParseLineWidthPt(lineWidthRaw, out double lw, out string lwErr))
+                {
+                    error = lwErr;
+                    return false;
+                }
+
+                item.LineWidthPt = lw;
             }
 
             string rot = GetAttr(el, "data-rotation");

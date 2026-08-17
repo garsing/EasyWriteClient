@@ -75,6 +75,7 @@ namespace WordAddIn1.PresentationHost
             int created = 0;
             int skipped = 0;
             var createdShapes = new List<Dictionary<string, object>>();
+            var zTargets = new List<KeyValuePair<object, int>>();
             object shapes = WppCom.GetProperty(slide, "Shapes");
 
             try
@@ -106,6 +107,8 @@ namespace WordAddIn1.PresentationHost
                             return false;
                         }
 
+                        RememberCreatedComId(node, newId);
+                        TryCollectZ(shapes, node, zTargets);
                         created++;
                         createdShapes.Add(new Dictionary<string, object>
                         {
@@ -145,6 +148,8 @@ namespace WordAddIn1.PresentationHost
                                 return false;
                             }
 
+                            RememberCreatedComId(node, newId);
+                            TryCollectZ(shapes, node, zTargets);
                             created++;
                             createdShapes.Add(new Dictionary<string, object>
                             {
@@ -166,10 +171,13 @@ namespace WordAddIn1.PresentationHost
                         }
                         else
                         {
+                            TryCollectZ(shapes, node, zTargets);
                             updated++;
                         }
                     }
                 }
+
+                ApplyZOrder(zTargets);
             }
             catch (Exception ex)
             {
@@ -329,6 +337,16 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (!TryApplyFont(shape, node, existingType, out error))
+            {
+                return false;
+            }
+
+            if (!TryApplyLine(shape, node, existingType, out error))
+            {
+                return false;
+            }
+
             if (!string.IsNullOrWhiteSpace(node.DataSrc)
                 && (existingType == "picture"
                     || existingType == "media"
@@ -361,11 +379,12 @@ namespace WordAddIn1.PresentationHost
                 node.WidthPct = width / slideWidth * 100;
                 node.HeightPct = height / slideHeight * 100;
                 node.ShapeType = existingType == "media" ? "media" : "picture";
-                if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, out _, out error))
+                if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, out string newId, out error))
                 {
                     return false;
                 }
 
+                RememberCreatedComId(node, newId);
                 if (PptShapeTypeMap.ShouldRasterizeAsPicture(existingType))
                 {
                     warnings?.Add(
@@ -535,6 +554,16 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (!TryApplyFont(shape, node, type, out error))
+            {
+                return false;
+            }
+
+            if (!TryApplyLine(shape, node, type, out error))
+            {
+                return false;
+            }
+
             try
             {
                 string sid = Convert.ToString(WppCom.GetProperty(slide, "SlideID")) ?? "";
@@ -547,6 +576,172 @@ namespace WordAddIn1.PresentationHost
             }
 
             return true;
+        }
+
+        private static bool TryApplyFont(object shape, PptHtmlApplyNode node, string shapeType, out string error)
+        {
+            error = null;
+            if (shape == null || node == null)
+            {
+                return true;
+            }
+
+            if (shapeType == "picture" || shapeType == "media" || shapeType == "table")
+            {
+                return true;
+            }
+
+            if (!node.FontSizePt.HasValue && !node.FontBold.HasValue)
+            {
+                return true;
+            }
+
+            try
+            {
+                object tf = WppCom.GetProperty(shape, "TextFrame");
+                object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                if (font == null)
+                {
+                    return true;
+                }
+
+                if (node.FontSizePt.HasValue)
+                {
+                    TrySet(font, "Size", node.FontSizePt.Value);
+                }
+
+                if (node.FontBold.HasValue)
+                {
+                    TrySet(font, "Bold", node.FontBold.Value ? -1 : 0);
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "写字体样式失败: " + ex.Message;
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryApplyLine(object shape, PptHtmlApplyNode node, string shapeType, out string error)
+        {
+            error = null;
+            if (shape == null || node == null)
+            {
+                return true;
+            }
+
+            if (shapeType == "picture" || shapeType == "media")
+            {
+                return true;
+            }
+
+            if (string.IsNullOrEmpty(node.LineColor) && !node.LineWidthPt.HasValue)
+            {
+                return true;
+            }
+
+            try
+            {
+                object line = WppCom.GetProperty(shape, "Line");
+                if (line == null)
+                {
+                    return true;
+                }
+
+                if (!string.IsNullOrEmpty(node.LineColor))
+                {
+                    if (string.Equals(node.LineColor, "none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        TrySet(line, "Visible", 0);
+                    }
+                    else
+                    {
+                        if (!PptHtmlStyleIo.TryParseHexToOfficeRgb(node.LineColor, out int rgb, out error))
+                        {
+                            return false;
+                        }
+
+                        TrySet(line, "Visible", -1);
+                        object fore = WppCom.GetProperty(line, "ForeColor");
+                        TrySet(fore, "RGB", rgb);
+                    }
+                }
+
+                if (node.LineWidthPt.HasValue)
+                {
+                    TrySet(line, "Visible", -1);
+                    TrySet(line, "Weight", node.LineWidthPt.Value);
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "写线条样式失败: " + ex.Message;
+                return false;
+            }
+
+            return true;
+        }
+
+        private static void RememberCreatedComId(PptHtmlApplyNode node, string newShapeId)
+        {
+            if (node == null || string.IsNullOrEmpty(newShapeId))
+            {
+                return;
+            }
+
+            if (PptShapeId.TryParseShape(newShapeId, out _, out int comId))
+            {
+                node.ShapeComId = comId;
+                node.ShapeId = newShapeId;
+            }
+        }
+
+        private static void TryCollectZ(
+            object shapes,
+            PptHtmlApplyNode node,
+            List<KeyValuePair<object, int>> targets)
+        {
+            if (shapes == null || node == null || !node.Z.HasValue || targets == null)
+            {
+                return;
+            }
+
+            if (!node.ShapeComId.HasValue)
+            {
+                return;
+            }
+
+            object shape = FindShapeById(shapes, node.ShapeComId.Value);
+            if (shape == null)
+            {
+                return;
+            }
+
+            targets.Add(new KeyValuePair<object, int>(shape, node.Z.Value));
+        }
+
+        private static void ApplyZOrder(List<KeyValuePair<object, int>> targets)
+        {
+            if (targets == null || targets.Count == 0)
+            {
+                return;
+            }
+
+            // msoBringToFront = 0
+            targets.Sort((a, b) => a.Value.CompareTo(b.Value));
+            foreach (KeyValuePair<object, int> item in targets)
+            {
+                try
+                {
+                    WppCom.Invoke(item.Key, "ZOrder", 0);
+                }
+                catch (Exception)
+                {
+                }
+            }
         }
 
         private static bool TryApplyColors(object shape, PptHtmlApplyNode node, string shapeType, out string error)
