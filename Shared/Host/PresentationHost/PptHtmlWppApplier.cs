@@ -73,11 +73,17 @@ namespace WordAddIn1.PresentationHost
 
             int updated = 0;
             int created = 0;
+            int skipped = 0;
             var createdShapes = new List<Dictionary<string, object>>();
             object shapes = WppCom.GetProperty(slide, "Shapes");
 
             try
             {
+                if (!TryPreflight(shapes, plan.Nodes, out error))
+                {
+                    return false;
+                }
+
                 foreach (PptHtmlApplyNode node in plan.Nodes)
                 {
                     if (node == null)
@@ -87,6 +93,13 @@ namespace WordAddIn1.PresentationHost
 
                     if (node.IsCreate)
                     {
+                        if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                        {
+                            PptHtmlApplyUpsert.AddSkipWarning(node, node.ShapeType, warnings);
+                            skipped++;
+                            continue;
+                        }
+
                         if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, out string newId, out string createError))
                         {
                             error = createError;
@@ -102,13 +115,52 @@ namespace WordAddIn1.PresentationHost
                     }
                     else
                     {
-                        if (!TryUpdate(shapes, node, slideWidth, slideHeight, warnings, out string updateError))
+                        object existing = null;
+                        if (node.ShapeComId.HasValue)
+                        {
+                            existing = FindShapeById(shapes, node.ShapeComId.Value);
+                        }
+
+                        if (existing == null)
+                        {
+                            PptHtmlMissingShapeAction action = PptHtmlApplyUpsert.PlanMissingShape(
+                                node, out string plannedType, out string planError);
+                            if (action == PptHtmlMissingShapeAction.Fail)
+                            {
+                                error = planError;
+                                return false;
+                            }
+
+                            if (action == PptHtmlMissingShapeAction.Skip)
+                            {
+                                PptHtmlApplyUpsert.AddSkipWarning(node, plannedType, warnings);
+                                skipped++;
+                                continue;
+                            }
+
+                            PptHtmlApplyUpsert.MutateNodeForCreate(node, plannedType, warnings);
+                            if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, out string newId, out string createError))
+                            {
+                                error = createError;
+                                return false;
+                            }
+
+                            created++;
+                            createdShapes.Add(new Dictionary<string, object>
+                            {
+                                ["shape_type"] = node.ShapeType ?? "",
+                                ["shape_id"] = newId
+                            });
+                        }
+                        else if (!TryUpdate(shapes, node, slideWidth, slideHeight, warnings, out string updateError))
                         {
                             error = updateError;
                             return false;
                         }
-
-                        updated++;
+                        else
+                        {
+                            updated++;
+                        }
                     }
                 }
             }
@@ -138,7 +190,71 @@ namespace WordAddIn1.PresentationHost
                 CreatedShapes = createdShapes,
                 Warnings = warnings
             };
+            if (skipped > 0)
+            {
+                warnings.Add("skipped_uncreatable=" + skipped);
+            }
+
             return true;
+        }
+
+        private static bool TryPreflight(object shapes, List<PptHtmlApplyNode> nodes, out string error)
+        {
+            error = null;
+            if (nodes == null)
+            {
+                return true;
+            }
+
+            var hard = new List<string>();
+            foreach (PptHtmlApplyNode node in nodes)
+            {
+                if (node == null)
+                {
+                    continue;
+                }
+
+                if (node.IsCreate)
+                {
+                    if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                    {
+                        continue;
+                    }
+
+                    if (!PptHtmlApplyUpsert.TryValidateExplicitCreate(node, out string ve))
+                    {
+                        hard.Add(ve);
+                    }
+
+                    continue;
+                }
+
+                object existing = null;
+                if (node.ShapeComId.HasValue)
+                {
+                    existing = FindShapeById(shapes, node.ShapeComId.Value);
+                }
+
+                if (existing != null)
+                {
+                    continue;
+                }
+
+                PptHtmlMissingShapeAction action = PptHtmlApplyUpsert.PlanMissingShape(
+                    node, out _, out string planError);
+                if (action == PptHtmlMissingShapeAction.Fail)
+                {
+                    hard.Add(planError);
+                }
+            }
+
+            if (hard.Count == 0)
+            {
+                return true;
+            }
+
+            error = "应用前预检失败（未写入任何形状）：" + string.Join("；", hard);
+            return false;
         }
 
         private static bool TryUpdate(
