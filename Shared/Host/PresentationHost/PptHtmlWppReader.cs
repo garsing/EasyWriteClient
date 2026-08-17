@@ -419,14 +419,36 @@ namespace WordAddIn1.PresentationHost
                 object tf = WppCom.GetProperty(shape, "TextFrame");
                 object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
                 object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
-                object name = font == null ? null : WppCom.GetProperty(font, "Name");
-                if (name == null)
+                if (font == null)
                 {
                     return null;
                 }
 
-                string s = Convert.ToString(name);
-                return string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+                string name = TryGetFontNameProp(font, "NameFarEast");
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    name = TryGetFontNameProp(font, "Name");
+                }
+
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    name = TryGetFontNameProp(font, "NameAscii");
+                }
+
+                return string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static string TryGetFontNameProp(object font, string prop)
+        {
+            try
+            {
+                object v = WppCom.GetProperty(font, prop);
+                return v == null ? null : Convert.ToString(v);
             }
             catch (Exception)
             {

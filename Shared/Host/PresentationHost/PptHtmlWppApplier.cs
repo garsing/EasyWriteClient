@@ -653,6 +653,8 @@ namespace WordAddIn1.PresentationHost
 
                 if (!string.IsNullOrEmpty(node.FontName))
                 {
+                    TrySet(font, "NameFarEast", node.FontName);
+                    TrySet(font, "NameAscii", node.FontName);
                     TrySet(font, "Name", node.FontName);
                 }
             }

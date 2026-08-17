@@ -414,13 +414,40 @@ namespace WordAddIn1.PresentationHost
                     return null;
                 }
 
-                string name = shape.TextFrame.TextRange.Font.Name;
-                if (string.IsNullOrWhiteSpace(name))
+                PowerPoint.Font font = shape.TextFrame.TextRange.Font;
+                // 中文正文看 NameFarEast；仅设 Name 时常仍显示「等线」
+                string name = null;
+                try
                 {
-                    return null;
+                    name = font.NameFarEast;
+                }
+                catch (Exception)
+                {
                 }
 
-                return name.Trim();
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    try
+                    {
+                        name = font.Name;
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    try
+                    {
+                        name = font.NameAscii;
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                return string.IsNullOrWhiteSpace(name) ? null : name.Trim();
             }
             catch (Exception)
             {

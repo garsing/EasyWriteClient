@@ -1060,6 +1060,23 @@ namespace WordAddIn1.PresentationHost
 
                 if (!string.IsNullOrEmpty(node.FontName))
                 {
+                    // 中文必须写 NameFarEast；仅 Name 时东亚字形仍可能是等线
+                    try
+                    {
+                        font.NameFarEast = node.FontName;
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    try
+                    {
+                        font.NameAscii = node.FontName;
+                    }
+                    catch (Exception)
+                    {
+                    }
+
                     font.Name = node.FontName;
                 }
             }
