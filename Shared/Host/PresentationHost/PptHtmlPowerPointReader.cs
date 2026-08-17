@@ -9,7 +9,6 @@ namespace WordAddIn1.PresentationHost
 {
     internal static class PptHtmlPowerPointReader
     {
-        private const int MsoGroup = 6;
         private const int MsoPlaceholder = 14;
         private const int PpPlaceholderBody = 2;
         private const int PpPlaceholderVerticalBody = 17;
@@ -193,90 +192,8 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
-                int shapeType = 0;
-                try
-                {
-                    shapeType = (int)shape.Type;
-                }
-                catch (Exception)
-                {
-                }
-
-                if (shapeType == MsoGroup)
-                {
-                    try
-                    {
-                        CollectGroupItems(
-                            shape,
-                            slideId,
-                            slideWidth,
-                            slideHeight,
-                            output,
-                            ref truncated,
-                            ref truncatedReason);
-                    }
-                    catch (Exception)
-                    {
-                        AppendNode(shape, slideId, slideWidth, slideHeight, output, ref truncated);
-                    }
-
-                    if (truncated && output.Count >= PptHtmlReadResult.MaxShapes)
-                    {
-                        return;
-                    }
-
-                    continue;
-                }
-
+                // B2：整组栅格为一张 picture，不再展开子项
                 AppendNode(shape, slideId, slideWidth, slideHeight, output, ref truncated);
-            }
-        }
-
-        private static void CollectGroupItems(
-            PowerPoint.Shape group,
-            string slideId,
-            float slideWidth,
-            float slideHeight,
-            List<PptHtmlShapeNode> output,
-            ref bool truncated,
-            ref string truncatedReason)
-        {
-            PowerPoint.GroupShapes items = group.GroupItems;
-            int count = items.Count;
-            for (int i = 1; i <= count; i++)
-            {
-                if (output.Count >= PptHtmlReadResult.MaxShapes)
-                {
-                    truncated = true;
-                    truncatedReason = "单页形状超过 " + PptHtmlReadResult.MaxShapes + "，已截断";
-                    return;
-                }
-
-                PowerPoint.Shape child = items[i];
-                int childType = 0;
-                try
-                {
-                    childType = (int)child.Type;
-                }
-                catch (Exception)
-                {
-                }
-
-                if (childType == MsoGroup)
-                {
-                    CollectGroupItems(
-                        child,
-                        slideId,
-                        slideWidth,
-                        slideHeight,
-                        output,
-                        ref truncated,
-                        ref truncatedReason);
-                }
-                else
-                {
-                    AppendNode(child, slideId, slideWidth, slideHeight, output, ref truncated);
-                }
             }
         }
 
@@ -348,6 +265,13 @@ namespace WordAddIn1.PresentationHost
                 typeName = "table";
             }
 
+            string rasterizedFrom = null;
+            if (PptShapeTypeMap.ShouldRasterizeAsPicture(typeName))
+            {
+                rasterizedFrom = typeName;
+                typeName = "picture";
+            }
+
             string text = "";
             bool textTruncated = false;
             string innerHtml = null;
@@ -409,6 +333,7 @@ namespace WordAddIn1.PresentationHost
                 Editable = editable,
                 Fill = fill,
                 FontColor = fontColor,
+                RasterizedFrom = rasterizedFrom,
                 Name = typeName == "picture" ? name : null,
                 Rotation = rotation,
                 TextTruncated = textTruncated

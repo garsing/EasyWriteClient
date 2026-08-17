@@ -152,7 +152,14 @@ namespace WordAddIn1.PresentationHost
                                 ["shape_id"] = newId
                             });
                         }
-                        else if (!TryUpdate(shapes, node, slideWidth, slideHeight, warnings, out string updateError))
+                        else if (!TryUpdate(
+                            shapes,
+                            slide,
+                            node,
+                            slideWidth,
+                            slideHeight,
+                            warnings,
+                            out string updateError))
                         {
                             error = updateError;
                             return false;
@@ -259,6 +266,7 @@ namespace WordAddIn1.PresentationHost
 
         private static bool TryUpdate(
             object shapes,
+            object slide,
             PptHtmlApplyNode node,
             double slideWidth,
             double slideHeight,
@@ -279,6 +287,8 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            string existingType = ResolveExistingType(shape);
+
             if (node.TableCells != null)
             {
                 if (!TryWriteTable(shape, node.TableCells, out error))
@@ -288,12 +298,11 @@ namespace WordAddIn1.PresentationHost
             }
             else if (node.HasText)
             {
-                string type = node.ShapeType ?? "";
-                if (type == "chart" || type == "smartart")
+                if (existingType == "chart" || existingType == "smartart")
                 {
-                    warnings.Add("忽略对 " + type + " 的文本修改: " + node.ShapeId);
+                    warnings.Add("忽略对 " + existingType + " 的文本修改: " + node.ShapeId);
                 }
-                else if (type != "picture" && type != "media")
+                else if (existingType != "picture" && existingType != "media")
                 {
                     if (!TryWriteText(shape, node.Text ?? "", out error))
                     {
@@ -315,12 +324,95 @@ namespace WordAddIn1.PresentationHost
                 TrySet(shape, "Rotation", node.Rotation.Value);
             }
 
-            if (!TryApplyColors(shape, node, node.ShapeType ?? "", out error))
+            if (!TryApplyColors(shape, node, existingType, out error))
             {
                 return false;
             }
 
+            if (!string.IsNullOrWhiteSpace(node.DataSrc)
+                && (existingType == "picture"
+                    || existingType == "media"
+                    || PptShapeTypeMap.ShouldRasterizeAsPicture(existingType)))
+            {
+                if (string.IsNullOrEmpty(node.ResolvedLocalPath) || !File.Exists(node.ResolvedLocalPath))
+                {
+                    error = "替换文件不存在: " + (node.DataSrc ?? "");
+                    return false;
+                }
+
+                double left = Convert.ToDouble(WppCom.GetProperty(shape, "Left") ?? 0.0);
+                double top = Convert.ToDouble(WppCom.GetProperty(shape, "Top") ?? 0.0);
+                double width = Convert.ToDouble(WppCom.GetProperty(shape, "Width") ?? 0.0);
+                double height = Convert.ToDouble(WppCom.GetProperty(shape, "Height") ?? 0.0);
+                try
+                {
+                    WppCom.Invoke(shape, "Delete");
+                }
+                catch (Exception ex)
+                {
+                    error = "删除旧形状失败: " + ex.Message;
+                    return false;
+                }
+
+                node.IsCreate = true;
+                node.HasGeometry = true;
+                node.LeftPct = left / slideWidth * 100;
+                node.TopPct = top / slideHeight * 100;
+                node.WidthPct = width / slideWidth * 100;
+                node.HeightPct = height / slideHeight * 100;
+                node.ShapeType = existingType == "media" ? "media" : "picture";
+                if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, out _, out error))
+                {
+                    return false;
+                }
+
+                if (PptShapeTypeMap.ShouldRasterizeAsPicture(existingType))
+                {
+                    warnings?.Add(
+                        "已将 " + existingType + " 替换为 picture: " + (node.ShapeId ?? ""));
+                }
+            }
+
             return true;
+        }
+
+        private static string ResolveExistingType(object shape)
+        {
+            try
+            {
+                int st = Convert.ToInt32(WppCom.GetProperty(shape, "Type") ?? 0);
+                int? auto = null;
+                try
+                {
+                    object a = WppCom.GetProperty(shape, "AutoShapeType");
+                    if (a != null)
+                    {
+                        auto = Convert.ToInt32(a);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                int? ph = null;
+                try
+                {
+                    if (st == 14)
+                    {
+                        object pf = WppCom.GetProperty(shape, "PlaceholderFormat");
+                        ph = Convert.ToInt32(WppCom.GetProperty(pf, "Type"));
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                return PptShapeTypeMap.FromShapeType(st, auto, ph);
+            }
+            catch (Exception)
+            {
+                return "";
+            }
         }
 
         private static bool TryCreate(

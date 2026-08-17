@@ -23,6 +23,9 @@ namespace WordAddIn1.PresentationHost
         /// <summary>图片等文件源，如 workspace:ppt_images/a1b2c3d4.png（内容 hash 前 8 位）</summary>
         public string DataSrc { get; set; }
 
+        /// <summary>B2：由 freeform/smartart/group/unknown 栅格而来时记原 type</summary>
+        public string RasterizedFrom { get; set; }
+
         /// <summary>B1：#RRGGBB 或 none；null=未读到/不输出</summary>
         public string Fill { get; set; }
 

@@ -12,7 +12,8 @@ namespace WordAddIn1.PresentationHost
 
     /// <summary>
     /// 导出 HTML 应用到空白/其它页：目标页找不到原 ShapeId 时的 upsert 规划。
-    /// freeform / smartart / group / unknown 等不可建类型 → Skip（警告），不中断整批、避免半写入后硬失败。
+    /// 旧 HTML 仍带 freeform/smartart/group/unknown → Skip（警告）；
+    /// B2 起 read 已栅格为 picture，可走 Create。
     /// </summary>
     internal static class PptHtmlApplyUpsert
     {

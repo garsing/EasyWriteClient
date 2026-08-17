@@ -171,6 +171,13 @@ namespace WordAddIn1.PresentationHost
                 sb.Append(" data-src=\"").Append(EscapeAttr(node.DataSrc)).Append("\"");
             }
 
+            if (!string.IsNullOrEmpty(node.RasterizedFrom))
+            {
+                sb.Append(" data-rasterized-from=\"")
+                    .Append(EscapeAttr(node.RasterizedFrom))
+                    .Append("\"");
+            }
+
             if (!string.IsNullOrEmpty(node.Fill))
             {
                 sb.Append(" data-fill=\"").Append(EscapeAttr(node.Fill)).Append("\"");

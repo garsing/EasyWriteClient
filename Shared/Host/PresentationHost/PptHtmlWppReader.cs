@@ -8,7 +8,6 @@ namespace WordAddIn1.PresentationHost
 {
     internal static class PptHtmlWppReader
     {
-        private const int MsoGroup = 6;
         private const int MsoPlaceholder = 14;
         private const int PpPlaceholderBody = 2;
         private const int PpPlaceholderVerticalBody = 17;
@@ -215,80 +214,8 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
-                int shapeType = TryGetInt(shape, "Type");
-                if (shapeType == MsoGroup)
-                {
-                    try
-                    {
-                        object groupItems = WppCom.GetProperty(shape, "GroupItems");
-                        CollectGroupItems(
-                            groupItems,
-                            slideId,
-                            slideWidth,
-                            slideHeight,
-                            output,
-                            ref truncated,
-                            ref truncatedReason);
-                    }
-                    catch (Exception)
-                    {
-                        AppendNode(shape, slideId, slideWidth, slideHeight, output, ref truncated);
-                    }
-
-                    continue;
-                }
-
+                // B2：整组栅格为一张 picture，不再展开子项
                 AppendNode(shape, slideId, slideWidth, slideHeight, output, ref truncated);
-            }
-        }
-
-        private static void CollectGroupItems(
-            object groupItems,
-            string slideId,
-            double slideWidth,
-            double slideHeight,
-            List<PptHtmlShapeNode> output,
-            ref bool truncated,
-            ref string truncatedReason)
-        {
-            if (groupItems == null)
-            {
-                return;
-            }
-
-            int count = Convert.ToInt32(WppCom.GetProperty(groupItems, "Count"));
-            for (int i = 1; i <= count; i++)
-            {
-                if (output.Count >= PptHtmlReadResult.MaxShapes)
-                {
-                    truncated = true;
-                    truncatedReason = "单页形状超过 " + PptHtmlReadResult.MaxShapes + "，已截断";
-                    return;
-                }
-
-                object child = WppCom.GetIndexed(groupItems, i);
-                if (child == null)
-                {
-                    continue;
-                }
-
-                int childType = TryGetInt(child, "Type");
-                if (childType == MsoGroup)
-                {
-                    object nested = WppCom.GetProperty(child, "GroupItems");
-                    CollectGroupItems(
-                        nested,
-                        slideId,
-                        slideWidth,
-                        slideHeight,
-                        output,
-                        ref truncated,
-                        ref truncatedReason);
-                }
-                else
-                {
-                    AppendNode(child, slideId, slideWidth, slideHeight, output, ref truncated);
-                }
             }
         }
 
@@ -334,6 +261,13 @@ namespace WordAddIn1.PresentationHost
             if (IsTruthy(WppCom.GetProperty(shape, "HasTable")))
             {
                 typeName = "table";
+            }
+
+            string rasterizedFrom = null;
+            if (PptShapeTypeMap.ShouldRasterizeAsPicture(typeName))
+            {
+                rasterizedFrom = typeName;
+                typeName = "picture";
             }
 
             string text = "";
@@ -402,6 +336,7 @@ namespace WordAddIn1.PresentationHost
                 Editable = editable,
                 Fill = fill,
                 FontColor = fontColor,
+                RasterizedFrom = rasterizedFrom,
                 Name = typeName == "picture" ? name : null,
                 Rotation = rotation,
                 TextTruncated = textTruncated

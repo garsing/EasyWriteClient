@@ -368,8 +368,11 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            // 换图，或 B2：页上仍是 freeform/smartart/group/unknown 时删旧 + AddPicture
             if (!string.IsNullOrWhiteSpace(node.DataSrc)
-                && (existingType == "picture" || existingType == "media"))
+                && (existingType == "picture"
+                    || existingType == "media"
+                    || PptShapeTypeMap.ShouldRasterizeAsPicture(existingType)))
             {
                 if (string.IsNullOrEmpty(node.ResolvedLocalPath) || !File.Exists(node.ResolvedLocalPath))
                 {
@@ -377,7 +380,6 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                // 简化：删旧再建（保留近似几何）
                 float left = shape.Left, top = shape.Top, width = shape.Width, height = shape.Height;
                 try
                 {
@@ -385,7 +387,7 @@ namespace WordAddIn1.PresentationHost
                 }
                 catch (Exception ex)
                 {
-                    error = "删除旧媒体失败: " + ex.Message;
+                    error = "删除旧形状失败: " + ex.Message;
                     return false;
                 }
 
@@ -395,10 +397,16 @@ namespace WordAddIn1.PresentationHost
                 node.TopPct = top / slideHeight * 100;
                 node.WidthPct = width / slideWidth * 100;
                 node.HeightPct = height / slideHeight * 100;
-                node.ShapeType = existingType;
+                node.ShapeType = existingType == "media" ? "media" : "picture";
                 if (!TryCreate(slide, node, slideWidth, slideHeight, out _, out error))
                 {
                     return false;
+                }
+
+                if (PptShapeTypeMap.ShouldRasterizeAsPicture(existingType))
+                {
+                    warnings?.Add(
+                        "已将 " + existingType + " 替换为 picture: " + (node.ShapeId ?? ""));
                 }
             }
 

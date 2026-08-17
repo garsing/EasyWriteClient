@@ -118,9 +118,21 @@ namespace WordAddIn1.PresentationHost
         public static bool IsNonEditable(string shapeType)
         {
             // picture 与标题/正文/普通形状同级：默认可编辑（可换 data-src）
+            // smartart/group 在 B2 读侧会栅格成 picture，此处仅覆盖未栅格残留
             return shapeType == "chart"
                 || shapeType == "smartart"
                 || shapeType == "media";
+        }
+
+        /// <summary>
+        /// B2：COM 无法稳定新建的装饰类 → read 栅格为 picture（保留原 ShapeId）。
+        /// </summary>
+        public static bool ShouldRasterizeAsPicture(string shapeType)
+        {
+            return shapeType == "freeform"
+                || shapeType == "smartart"
+                || shapeType == "group"
+                || shapeType == "unknown";
         }
 
         public static bool TryGetAutoShapeType(string shapeType, out int autoShapeType)
