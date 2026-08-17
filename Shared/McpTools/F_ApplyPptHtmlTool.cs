@@ -181,7 +181,7 @@ namespace WordAddIn1
 
                 if (isAbsolute)
                 {
-                    string path = node.DataSrc.Trim();
+                    string path = Path.GetFullPath(node.DataSrc.Trim());
                     if (!File.Exists(path))
                     {
                         return "文件不存在: " + path;
@@ -193,18 +193,75 @@ namespace WordAddIn1
 
                 if (isWorkspace)
                 {
-                    var ensure = await McpToolsHelpers.EnsureWorkspaceFileAsync(workspaceName)
-                        .ConfigureAwait(false);
-                    if (!ensure.success)
+                    // 本地会话目录优先（导出 ppt_images 刚写入时不必等云端）
+                    if (TryResolveLocalWorkspaceFile(workspaceName, out string localFull))
                     {
-                        return ensure.error ?? ("工作区文件不可用: " + workspaceName);
+                        node.ResolvedLocalPath = localFull;
+                        continue;
                     }
 
-                    node.ResolvedLocalPath = ensure.localPath;
+                    var ensure = await McpToolsHelpers.EnsureWorkspaceFileAsync(workspaceName)
+                        .ConfigureAwait(false);
+                    if (!ensure.success || string.IsNullOrEmpty(ensure.localPath) || !File.Exists(ensure.localPath))
+                    {
+                        string sessionHint = "";
+                        try
+                        {
+                            sessionHint = "；当前会话目录=" + WorkspacePathResolver.GetSessionDirectory();
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        return "工作区图片不可用: " + workspaceName
+                            + "（" + (ensure.error ?? "本地与云端均未找到") + "）"
+                            + sessionHint
+                            + "。请确认同会话已 F_read_ppt_html(export_html=…) 导出并生成 ppt_images/ 下文件。";
+                    }
+
+                    node.ResolvedLocalPath = Path.GetFullPath(ensure.localPath);
                 }
             }
 
             return null;
+        }
+
+        /// <summary>会话工作区相对路径 → 本地绝对路径（仅当文件已存在）。</summary>
+        private static bool TryResolveLocalWorkspaceFile(string workspaceRelative, out string fullPath)
+        {
+            fullPath = null;
+            if (string.IsNullOrWhiteSpace(workspaceRelative))
+            {
+                return false;
+            }
+
+            try
+            {
+                string writePath = WorkspacePathResolver.ResolveWritePath(workspaceRelative);
+                if (!string.IsNullOrEmpty(writePath) && File.Exists(writePath))
+                {
+                    fullPath = Path.GetFullPath(writePath);
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                string readPath = WorkspacePathResolver.ResolveReadPath(workspaceRelative);
+                if (!string.IsNullOrEmpty(readPath) && File.Exists(readPath))
+                {
+                    fullPath = Path.GetFullPath(readPath);
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return false;
         }
 
         private static string GetStringArg(Dictionary<string, object> args, string key)

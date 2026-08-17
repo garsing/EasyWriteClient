@@ -150,6 +150,16 @@ namespace WordAddIn1
                                 }
 
                                 string picLocal = WorkspacePathResolver.ResolveWritePath(rel);
+                                if (!File.Exists(picLocal))
+                                {
+                                    return new ToolResult
+                                    {
+                                        Success = false,
+                                        Error = "导出图片本地文件缺失: " + picLocal
+                                            + "（相对路径 " + rel + "）"
+                                    };
+                                }
+
                                 bool picOk = await McpToolsHelpers.UploadWorkspaceFileAsync(picLocal, rel)
                                     .ConfigureAwait(false);
                                 if (!picOk)
@@ -158,12 +168,14 @@ namespace WordAddIn1
                                     {
                                         Success = false,
                                         Error = "导出图片已写本地但上传工作区失败: " + rel
+                                            + " local=" + picLocal
                                     };
                                 }
                             }
 
                             data["exported_images"] = exportedRels;
                             data["assets_folder"] = assetsFolder;
+                            data["assets_local_dir"] = assetsLocalDir;
                         }
 
                         data["html_filename"] = exportHtml;

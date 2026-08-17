@@ -466,18 +466,28 @@ namespace WordAddIn1.PresentationHost
                 {
                     if (string.IsNullOrEmpty(node.ResolvedLocalPath) || !File.Exists(node.ResolvedLocalPath))
                     {
-                        error = "图片文件不存在: " + (node.DataSrc ?? "");
+                        error = "图片文件不存在: " + (node.DataSrc ?? "")
+                            + " local=" + (node.ResolvedLocalPath ?? "");
                         return false;
                     }
 
-                    shape = slide.Shapes.AddPicture(
-                        node.ResolvedLocalPath,
-                        Office.MsoTriState.msoFalse,
-                        Office.MsoTriState.msoTrue,
-                        left,
-                        top,
-                        width,
-                        height);
+                    string picPath = Path.GetFullPath(node.ResolvedLocalPath);
+                    try
+                    {
+                        shape = slide.Shapes.AddPicture(
+                            picPath,
+                            Office.MsoTriState.msoFalse,
+                            Office.MsoTriState.msoTrue,
+                            left,
+                            top,
+                            width,
+                            height);
+                    }
+                    catch (Exception ex)
+                    {
+                        error = "插入图片失败: " + ex.Message + "；path=" + picPath;
+                        return false;
+                    }
                 }
                 else if (type == "chart")
                 {
