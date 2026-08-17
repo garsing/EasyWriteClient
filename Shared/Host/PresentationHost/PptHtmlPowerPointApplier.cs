@@ -89,32 +89,40 @@ namespace WordAddIn1.PresentationHost
             int skipped = 0;
             var createdShapes = new List<Dictionary<string, object>>();
             var zTargets = new List<KeyValuePair<PowerPoint.Shape, int>>();
-            var dbg = new PptHtmlApplyDebug();
-            dbg.Line(
-                "begin slide_id=" + plan.SlideId
-                + " slideSize=" + slideWidth.ToString("0.#", CultureInfo.InvariantCulture)
-                + "x" + slideHeight.ToString("0.#", CultureInfo.InvariantCulture)
-                + " nodes=" + (plan.Nodes == null ? 0 : plan.Nodes.Count)
-                + " shapesOnSlideBefore=" + CountShapes(slide));
+            bool debugOn = EasyWriteDiagnostics.IsEnabled(DebugCategory.PptHtml);
+            PptHtmlApplyDebug dbg = debugOn ? new PptHtmlApplyDebug() : null;
+            if (dbg != null)
+            {
+                dbg.Line(
+                    "begin slide_id=" + plan.SlideId
+                    + " slideSize=" + slideWidth.ToString("0.#", CultureInfo.InvariantCulture)
+                    + "x" + slideHeight.ToString("0.#", CultureInfo.InvariantCulture)
+                    + " nodes=" + (plan.Nodes == null ? 0 : plan.Nodes.Count)
+                    + " shapesOnSlideBefore=" + CountShapes(slide));
+            }
 
             try
             {
                 // 先预检：避免写到一半因 freeform 等失败留下半成品
                 if (!TryPreflight(slide, plan.Nodes, warnings, out error))
                 {
-                    dbg.Line("preflight FAIL: " + error);
-                    result = new PptHtmlApplyResult
+                    if (dbg != null)
                     {
-                        ChannelId = channelId,
-                        Kind = "ppt",
-                        SlideId = plan.SlideId,
-                        Warnings = warnings
-                    };
-                    AttachDebug(result, dbg, plan.SlideId);
+                        dbg.Line("preflight FAIL: " + error);
+                        result = new PptHtmlApplyResult
+                        {
+                            ChannelId = channelId,
+                            Kind = "ppt",
+                            SlideId = plan.SlideId,
+                            Warnings = warnings
+                        };
+                        AttachDebug(result, dbg, plan.SlideId);
+                    }
+
                     return false;
                 }
 
-                dbg.Line("preflight ok");
+                dbg?.Line("preflight ok");
 
                 foreach (PptHtmlApplyNode node in plan.Nodes)
                 {
@@ -128,7 +136,7 @@ namespace WordAddIn1.PresentationHost
                         if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
                         {
                             PptHtmlApplyUpsert.AddSkipWarning(node, node.ShapeType, warnings);
-                            dbg.Step("SKIP_CREATE", node);
+                            dbg?.Step("SKIP_CREATE", node);
                             skipped++;
                             continue;
                         }
@@ -136,15 +144,20 @@ namespace WordAddIn1.PresentationHost
                         if (!TryCreate(slide, node, slideWidth, slideHeight, out string newId, out string createError))
                         {
                             error = createError;
-                            dbg.Step("CREATE_FAIL", node, createError);
-                            result = FailResult(channelId, plan, warnings);
-                            AttachDebug(result, dbg, plan.SlideId);
+                            if (dbg != null)
+                            {
+                                dbg.Step("CREATE_FAIL", node, createError);
+                                result = FailResult(channelId, plan, warnings);
+                                AttachDebug(result, dbg, plan.SlideId);
+                            }
+
                             return false;
                         }
 
                         RememberCreatedComId(node, newId);
                         TryCollectZ(slide, node, zTargets);
-                        dbg.Step("CREATE", node, "newId=" + newId + " " + DescribeShape(slide, node, slideWidth, slideHeight));
+                        dbg?.Step("CREATE", node, "newId=" + newId
+                            + (dbg != null ? " " + DescribeShape(slide, node, slideWidth, slideHeight) : ""));
                         created++;
                         createdShapes.Add(new Dictionary<string, object>
                         {
@@ -167,16 +180,20 @@ namespace WordAddIn1.PresentationHost
                             if (action == PptHtmlMissingShapeAction.Fail)
                             {
                                 error = planError;
-                                dbg.Step("UPSERT_FAIL", node, planError);
-                                result = FailResult(channelId, plan, warnings);
-                                AttachDebug(result, dbg, plan.SlideId);
+                                if (dbg != null)
+                                {
+                                    dbg.Step("UPSERT_FAIL", node, planError);
+                                    result = FailResult(channelId, plan, warnings);
+                                    AttachDebug(result, dbg, plan.SlideId);
+                                }
+
                                 return false;
                             }
 
                             if (action == PptHtmlMissingShapeAction.Skip)
                             {
                                 PptHtmlApplyUpsert.AddSkipWarning(node, plannedType, warnings);
-                                dbg.Step("UPSERT_SKIP", node, "planned=" + plannedType);
+                                dbg?.Step("UPSERT_SKIP", node, "planned=" + plannedType);
                                 skipped++;
                                 continue;
                             }
@@ -185,15 +202,23 @@ namespace WordAddIn1.PresentationHost
                             if (!TryCreate(slide, node, slideWidth, slideHeight, out string newId, out string createError))
                             {
                                 error = createError;
-                                dbg.Step("UPSERT_CREATE_FAIL", node, createError);
-                                result = FailResult(channelId, plan, warnings);
-                                AttachDebug(result, dbg, plan.SlideId);
+                                if (dbg != null)
+                                {
+                                    dbg.Step("UPSERT_CREATE_FAIL", node, createError);
+                                    result = FailResult(channelId, plan, warnings);
+                                    AttachDebug(result, dbg, plan.SlideId);
+                                }
+
                                 return false;
                             }
 
                             RememberCreatedComId(node, newId);
                             TryCollectZ(slide, node, zTargets);
-                            dbg.Step("UPSERT_CREATE", node, "newId=" + newId + " " + DescribeShape(slide, node, slideWidth, slideHeight));
+                            dbg?.Step(
+                                "UPSERT_CREATE",
+                                node,
+                                "newId=" + newId
+                                + (dbg != null ? " " + DescribeShape(slide, node, slideWidth, slideHeight) : ""));
                             created++;
                             createdShapes.Add(new Dictionary<string, object>
                             {
@@ -210,43 +235,61 @@ namespace WordAddIn1.PresentationHost
                                 out string updateError))
                         {
                             error = updateError;
-                            dbg.Step("UPDATE_FAIL", node, updateError);
-                            result = FailResult(channelId, plan, warnings);
-                            AttachDebug(result, dbg, plan.SlideId);
+                            if (dbg != null)
+                            {
+                                dbg.Step("UPDATE_FAIL", node, updateError);
+                                result = FailResult(channelId, plan, warnings);
+                                AttachDebug(result, dbg, plan.SlideId);
+                            }
+
                             return false;
                         }
                         else
                         {
                             TryCollectZ(slide, node, zTargets);
-                            dbg.Step("UPDATE", node, DescribeShape(slide, node, slideWidth, slideHeight));
+                            dbg?.Step(
+                                "UPDATE",
+                                node,
+                                dbg != null ? DescribeShape(slide, node, slideWidth, slideHeight) : null);
                             updated++;
                         }
                     }
                 }
 
-                dbg.Line("before_zorder zTargets=" + zTargets.Count + " shapesOnSlide=" + CountShapes(slide));
+                if (dbg != null)
+                {
+                    dbg.Line("before_zorder zTargets=" + zTargets.Count + " shapesOnSlide=" + CountShapes(slide));
+                }
+
                 ApplyZOrder(zTargets);
-                dbg.Line("after_zorder");
+                dbg?.Line("after_zorder");
 
                 // ZOrder 后再次钉死几何，防止个别 AutoShape 在叠放调整后位置漂移
                 RelockAllGeometries(slide, plan.Nodes, slideWidth, slideHeight);
-                dbg.Line("after_relock");
+                dbg?.Line("after_relock");
 
-                SnapshotSlide(slide, slideWidth, slideHeight, dbg);
-                VerifyNodesStillPresent(slide, plan.Nodes, slideWidth, slideHeight, dbg);
+                if (dbg != null)
+                {
+                    SnapshotSlide(slide, slideWidth, slideHeight, dbg);
+                    VerifyNodesStillPresent(slide, plan.Nodes, slideWidth, slideHeight, dbg);
+                }
             }
             catch (Exception ex)
             {
                 error = "应用 HTML 失败: " + ex.Message;
-                dbg.Line("EXCEPTION: " + ex);
-                result = new PptHtmlApplyResult
+                if (dbg != null)
                 {
-                    ChannelId = channelId,
-                    Kind = "ppt",
-                    SlideId = plan.SlideId,
-                    Warnings = warnings
-                };
-                AttachDebug(result, dbg, plan.SlideId);
+                    dbg.Line("EXCEPTION: " + ex);
+                    result = new PptHtmlApplyResult
+                    {
+                        ChannelId = channelId,
+                        Kind = "ppt",
+                        SlideId = plan.SlideId,
+                        Warnings = warnings
+                    };
+                    AttachDebug(result, dbg, plan.SlideId);
+                }
+
                 return false;
             }
 
@@ -299,6 +342,12 @@ namespace WordAddIn1.PresentationHost
             else
             {
                 dbg.Line("debug_file=" + (file ?? ""));
+            }
+
+            // 镜像到统一诊断通道（config.json DebugCategories 含 ppt_html / all 时可见）
+            foreach (string line in dbg.Lines)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.PptHtml, line);
             }
 
             if (result != null)

@@ -23,6 +23,8 @@ namespace WordAddIn1
         public const string Misc = "misc";
         /// <summary>步骤耗时测评（Time / LogTiming）。</summary>
         public const string Timing = "timing";
+        /// <summary>约定 HTML read/apply 诊断（形状撞号、几何漂移等）。</summary>
+        public const string PptHtml = "ppt_html";
         /// <summary>知识库文档格式粗迁（F_format_transfer / FormatTransferHelper）卡点诊断。</summary>
         public const string FormatTransfer = "format_transfer";
         /// <summary>Desktop「打开文件」探测 / Word COM 事件。</summary>
@@ -44,6 +46,7 @@ namespace WordAddIn1
             Config,
             Misc,
             Timing,
+            PptHtml,
             FormatTransfer,
             OpenFiles
         };
