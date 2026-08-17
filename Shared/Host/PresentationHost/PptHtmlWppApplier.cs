@@ -178,6 +178,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 ApplyZOrder(zTargets);
+                RelockAllGeometries(shapes, plan.Nodes, slideWidth, slideHeight);
             }
             catch (Exception ex)
             {
@@ -346,6 +347,8 @@ namespace WordAddIn1.PresentationHost
             {
                 return false;
             }
+
+            LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
 
             if (!string.IsNullOrWhiteSpace(node.DataSrc)
                 && (existingType == "picture"
@@ -564,6 +567,8 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
+
             try
             {
                 string sid = Convert.ToString(WppCom.GetProperty(slide, "SlideID")) ?? "";
@@ -576,6 +581,36 @@ namespace WordAddIn1.PresentationHost
             }
 
             return true;
+        }
+
+        private static void LockTextFrameAndGeometry(
+            object shape,
+            PptHtmlApplyNode node,
+            double slideWidth,
+            double slideHeight)
+        {
+            if (shape == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object tf = WppCom.GetProperty(shape, "TextFrame");
+                // PpAutoSizeNone = 0
+                TrySet(tf, "AutoSize", 0);
+            }
+            catch (Exception)
+            {
+            }
+
+            if (node != null && node.HasGeometry)
+            {
+                TrySet(shape, "Left", node.LeftPct.GetValueOrDefault() / 100.0 * slideWidth);
+                TrySet(shape, "Top", node.TopPct.GetValueOrDefault() / 100.0 * slideHeight);
+                TrySet(shape, "Width", node.WidthPct.GetValueOrDefault() / 100.0 * slideWidth);
+                TrySet(shape, "Height", node.HeightPct.GetValueOrDefault() / 100.0 * slideHeight);
+            }
         }
 
         private static bool TryApplyFont(object shape, PptHtmlApplyNode node, string shapeType, out string error)
@@ -741,6 +776,34 @@ namespace WordAddIn1.PresentationHost
                 catch (Exception)
                 {
                 }
+            }
+        }
+
+        private static void RelockAllGeometries(
+            object shapes,
+            List<PptHtmlApplyNode> nodes,
+            double slideWidth,
+            double slideHeight)
+        {
+            if (shapes == null || nodes == null)
+            {
+                return;
+            }
+
+            foreach (PptHtmlApplyNode node in nodes)
+            {
+                if (node == null || !node.HasGeometry || !node.ShapeComId.HasValue)
+                {
+                    continue;
+                }
+
+                object shape = FindShapeById(shapes, node.ShapeComId.Value);
+                if (shape == null)
+                {
+                    continue;
+                }
+
+                LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
             }
         }
 

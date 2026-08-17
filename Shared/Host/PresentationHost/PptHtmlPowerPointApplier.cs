@@ -190,6 +190,9 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 ApplyZOrder(zTargets);
+
+                // ZOrder 后再次钉死几何，防止个别 AutoShape 在叠放调整后位置漂移
+                RelockAllGeometries(slide, plan.Nodes, slideWidth, slideHeight);
             }
             catch (Exception ex)
             {
@@ -385,6 +388,9 @@ namespace WordAddIn1.PresentationHost
             {
                 return false;
             }
+
+            // 字号/AutoSize 可能撑破形状：写完样式后重锁几何
+            LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
 
             // 换图，或 B2：页上仍是 freeform/smartart/group/unknown 时删旧 + AddPicture
             if (!string.IsNullOrWhiteSpace(node.DataSrc)
@@ -603,6 +609,8 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
+
             try
             {
                 int id = shape.Id;
@@ -614,6 +622,37 @@ namespace WordAddIn1.PresentationHost
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// 关闭「形状随文字自动变大」，并按 HTML 百分比重锁几何，避免导航条等被撑开/盖住。
+        /// </summary>
+        private static void LockTextFrameAndGeometry(
+            PowerPoint.Shape shape,
+            PptHtmlApplyNode node,
+            float slideWidth,
+            float slideHeight)
+        {
+            if (shape == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (shape.HasTextFrame == Office.MsoTriState.msoTrue)
+                {
+                    shape.TextFrame.AutoSize = PowerPoint.PpAutoSize.ppAutoSizeNone;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            if (node != null && node.HasGeometry)
+            {
+                ApplyGeometry(shape, node, slideWidth, slideHeight);
+            }
         }
 
         private static bool TryApplyFont(
@@ -780,6 +819,34 @@ namespace WordAddIn1.PresentationHost
                 catch (Exception)
                 {
                 }
+            }
+        }
+
+        private static void RelockAllGeometries(
+            PowerPoint.Slide slide,
+            List<PptHtmlApplyNode> nodes,
+            float slideWidth,
+            float slideHeight)
+        {
+            if (slide == null || nodes == null)
+            {
+                return;
+            }
+
+            foreach (PptHtmlApplyNode node in nodes)
+            {
+                if (node == null || !node.HasGeometry || !node.ShapeComId.HasValue)
+                {
+                    continue;
+                }
+
+                PowerPoint.Shape shape = FindShapeById(slide.Shapes, node.ShapeComId.Value);
+                if (shape == null)
+                {
+                    continue;
+                }
+
+                LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
             }
         }
 
