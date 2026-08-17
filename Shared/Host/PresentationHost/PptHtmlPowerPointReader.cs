@@ -536,12 +536,39 @@ namespace WordAddIn1.PresentationHost
         {
             try
             {
+                // TextFrame2 对主题色/方案色解析更稳；TextFrame.Font.Color.RGB 常把浅蓝误读成 #000000。
+                try
+                {
+                    var fore = shape.TextFrame2.TextRange.Font.Fill.ForeColor;
+                    int rgb2 = fore.RGB;
+                    // 主题/方案色时 RGB 偶发为 0：若 Type 不是纯 RGB，则勿写成 #000000（避免把浅蓝打成黑）
+                    int type2 = (int)fore.Type;
+                    if (rgb2 == 0 && type2 != 1 /* msoColorTypeRGB */)
+                    {
+                        // 继续尝试旧 TextFrame；仍不可靠则返回 null（省略属性，不强行写黑）
+                    }
+                    else
+                    {
+                        return PptHtmlStyleIo.FormatOfficeRgb(rgb2);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
                 if (shape.HasTextFrame != Office.MsoTriState.msoTrue)
                 {
                     return null;
                 }
 
-                int rgb = shape.TextFrame.TextRange.Font.Color.RGB;
+                var color = shape.TextFrame.TextRange.Font.Color;
+                int rgb = color.RGB;
+                int type = (int)color.Type;
+                if (rgb == 0 && type != 1)
+                {
+                    return null;
+                }
+
                 return PptHtmlStyleIo.FormatOfficeRgb(rgb);
             }
             catch (Exception)

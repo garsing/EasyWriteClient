@@ -735,17 +735,18 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
-            if (!TryApplyColors(shape, node, existingType, out error))
-            {
-                return false;
-            }
-
+            // 先字体后颜色：写 NameFarEast 常会把主题字色重置为黑，字色必须最后落盘。
             if (!TryApplyFont(shape, node, existingType, out error))
             {
                 return false;
             }
 
             if (!TryApplyLine(shape, node, existingType, out error))
+            {
+                return false;
+            }
+
+            if (!TryApplyColors(shape, node, existingType, out error))
             {
                 return false;
             }
@@ -955,17 +956,18 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
-            if (!TryApplyColors(shape, node, type, out error))
-            {
-                return false;
-            }
-
+            // 先字体后颜色：写 NameFarEast 常会把主题字色重置为黑，字色必须最后落盘。
             if (!TryApplyFont(shape, node, type, out error))
             {
                 return false;
             }
 
             if (!TryApplyLine(shape, node, type, out error))
+            {
+                return false;
+            }
+
+            if (!TryApplyColors(shape, node, type, out error))
             {
                 return false;
             }
@@ -1293,7 +1295,17 @@ namespace WordAddIn1.PresentationHost
                         return false;
                     }
 
-                    if (shape.HasTextFrame == Office.MsoTriState.msoTrue)
+                    bool wrote = false;
+                    try
+                    {
+                        shape.TextFrame2.TextRange.Font.Fill.ForeColor.RGB = rgb;
+                        wrote = true;
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    if (!wrote && shape.HasTextFrame == Office.MsoTriState.msoTrue)
                     {
                         shape.TextFrame.TextRange.Font.Color.RGB = rgb;
                     }

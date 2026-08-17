@@ -572,6 +572,30 @@ namespace WordAddIn1.PresentationHost
         {
             try
             {
+                // TextFrame2 对主题色更稳；旧 TextFrame.RGB 常把浅蓝误读成 #000000。
+                try
+                {
+                    object tf2 = WppCom.GetProperty(shape, "TextFrame2");
+                    object tr2 = tf2 == null ? null : WppCom.GetProperty(tf2, "TextRange");
+                    object font2 = tr2 == null ? null : WppCom.GetProperty(tr2, "Font");
+                    object fill2 = font2 == null ? null : WppCom.GetProperty(font2, "Fill");
+                    object fore2 = fill2 == null ? null : WppCom.GetProperty(fill2, "ForeColor");
+                    object rgb2 = fore2 == null ? null : WppCom.GetProperty(fore2, "RGB");
+                    object type2Obj = fore2 == null ? null : WppCom.GetProperty(fore2, "Type");
+                    if (rgb2 != null)
+                    {
+                        int rgbVal = Convert.ToInt32(rgb2);
+                        int typeVal = type2Obj == null ? 1 : Convert.ToInt32(type2Obj);
+                        if (!(rgbVal == 0 && typeVal != 1))
+                        {
+                            return PptHtmlStyleIo.FormatOfficeRgb(rgbVal);
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
                 if (!IsTruthy(WppCom.GetProperty(shape, "HasTextFrame")))
                 {
                     return null;
@@ -582,12 +606,20 @@ namespace WordAddIn1.PresentationHost
                 object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
                 object color = font == null ? null : WppCom.GetProperty(font, "Color");
                 object rgbObj = color == null ? null : WppCom.GetProperty(color, "RGB");
+                object typeObj = color == null ? null : WppCom.GetProperty(color, "Type");
                 if (rgbObj == null)
                 {
                     return null;
                 }
 
-                return PptHtmlStyleIo.FormatOfficeRgb(Convert.ToInt32(rgbObj));
+                int rgb = Convert.ToInt32(rgbObj);
+                int type = typeObj == null ? 1 : Convert.ToInt32(typeObj);
+                if (rgb == 0 && type != 1)
+                {
+                    return null;
+                }
+
+                return PptHtmlStyleIo.FormatOfficeRgb(rgb);
             }
             catch (Exception)
             {

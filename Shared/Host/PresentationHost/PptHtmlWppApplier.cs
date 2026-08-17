@@ -333,17 +333,18 @@ namespace WordAddIn1.PresentationHost
                 TrySet(shape, "Rotation", node.Rotation.Value);
             }
 
-            if (!TryApplyColors(shape, node, existingType, out error))
-            {
-                return false;
-            }
-
+            // 先字体后颜色：写 NameFarEast 常会把主题字色重置为黑，字色必须最后落盘。
             if (!TryApplyFont(shape, node, existingType, out error))
             {
                 return false;
             }
 
             if (!TryApplyLine(shape, node, existingType, out error))
+            {
+                return false;
+            }
+
+            if (!TryApplyColors(shape, node, existingType, out error))
             {
                 return false;
             }
@@ -552,17 +553,18 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            if (!TryApplyColors(shape, node, type, out error))
-            {
-                return false;
-            }
-
+            // 先字体后颜色：写 NameFarEast 常会把主题字色重置为黑，字色必须最后落盘。
             if (!TryApplyFont(shape, node, type, out error))
             {
                 return false;
             }
 
             if (!TryApplyLine(shape, node, type, out error))
+            {
+                return false;
+            }
+
+            if (!TryApplyColors(shape, node, type, out error))
             {
                 return false;
             }
@@ -877,11 +879,32 @@ namespace WordAddIn1.PresentationHost
                         return false;
                     }
 
-                    object tf = WppCom.GetProperty(shape, "TextFrame");
-                    object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
-                    object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
-                    object color = font == null ? null : WppCom.GetProperty(font, "Color");
-                    TrySet(color, "RGB", rgb);
+                    bool wrote = false;
+                    try
+                    {
+                        object tf2 = WppCom.GetProperty(shape, "TextFrame2");
+                        object tr2 = tf2 == null ? null : WppCom.GetProperty(tf2, "TextRange");
+                        object font2 = tr2 == null ? null : WppCom.GetProperty(tr2, "Font");
+                        object fill2 = font2 == null ? null : WppCom.GetProperty(font2, "Fill");
+                        object fore2 = fill2 == null ? null : WppCom.GetProperty(fill2, "ForeColor");
+                        if (fore2 != null)
+                        {
+                            TrySet(fore2, "RGB", rgb);
+                            wrote = true;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    if (!wrote)
+                    {
+                        object tf = WppCom.GetProperty(shape, "TextFrame");
+                        object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                        object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                        object color = font == null ? null : WppCom.GetProperty(font, "Color");
+                        TrySet(color, "RGB", rgb);
+                    }
                 }
                 catch (Exception ex)
                 {
