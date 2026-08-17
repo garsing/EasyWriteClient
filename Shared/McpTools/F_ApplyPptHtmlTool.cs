@@ -142,6 +142,59 @@ namespace WordAddIn1
                             + " created=" + hostResult.CreatedCount
                     };
 
+                    if (!string.IsNullOrEmpty(hostResult.DebugFilename))
+                    {
+                        data["debug_filename"] = hostResult.DebugFilename;
+                        data["display_contents"] = data["display_contents"]
+                            + " debug_file=" + hostResult.DebugFilename;
+                    }
+
+                    if (hostResult.DebugTrace != null && hostResult.DebugTrace.Count > 0)
+                    {
+                        data["debug_trace"] = hostResult.DebugTrace;
+                        // 摘要：导航带 / MISSING / GEO_DRIFT 方便一眼看
+                        var navHints = new List<string>();
+                        foreach (string line in hostResult.DebugTrace)
+                        {
+                            if (line == null)
+                            {
+                                continue;
+                            }
+
+                            if (line.IndexOf("NAV_BAND", StringComparison.Ordinal) >= 0
+                                || line.IndexOf("MISSING", StringComparison.Ordinal) >= 0
+                                || line.IndexOf("GEO_DRIFT", StringComparison.Ordinal) >= 0
+                                || line.IndexOf("home_plate", StringComparison.Ordinal) >= 0
+                                || line.IndexOf("选题背景", StringComparison.Ordinal) >= 0)
+                            {
+                                navHints.Add(line);
+                            }
+                        }
+
+                        if (navHints.Count > 0)
+                        {
+                            data["debug_nav_hints"] = navHints;
+                        }
+                    }
+
+                    // 尽量上传 debug 文件到工作区，便于对话里直接读
+                    if (!string.IsNullOrEmpty(hostResult.DebugFilename))
+                    {
+                        try
+                        {
+                            string localDebug = WorkspacePathResolver.ResolveWritePath(hostResult.DebugFilename);
+                            if (File.Exists(localDebug))
+                            {
+                                await McpToolsHelpers.UploadWorkspaceFileAsync(
+                                        localDebug, hostResult.DebugFilename)
+                                    .ConfigureAwait(false);
+                            }
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+
                     return new ToolResult { Success = true, Data = data };
                 }
                 catch (OperationCanceledException)

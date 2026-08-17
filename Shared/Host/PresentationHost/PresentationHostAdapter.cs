@@ -272,7 +272,26 @@ namespace WordAddIn1.PresentationHost
 
             if (!ok)
             {
-                errorResult = new ToolResult { Success = false, Error = error };
+                var failData = new Dictionary<string, object>();
+                if (result != null)
+                {
+                    if (!string.IsNullOrEmpty(result.DebugFilename))
+                    {
+                        failData["debug_filename"] = result.DebugFilename;
+                    }
+
+                    if (result.DebugTrace != null && result.DebugTrace.Count > 0)
+                    {
+                        failData["debug_trace"] = result.DebugTrace;
+                    }
+                }
+
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = error,
+                    Data = failData.Count > 0 ? failData : null
+                };
                 return false;
             }
 

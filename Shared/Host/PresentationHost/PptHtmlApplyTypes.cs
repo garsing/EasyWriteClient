@@ -90,6 +90,11 @@ namespace WordAddIn1.PresentationHost
         public List<Dictionary<string, object>> CreatedShapes { get; set; }
 
         public List<string> Warnings { get; set; }
+
+        /// <summary>诊断轨迹行（也写入会话 apply_debug_slide_*.txt）</summary>
+        public List<string> DebugTrace { get; set; }
+
+        public string DebugFilename { get; set; }
     }
 
     internal static class PptHtmlApplyParser

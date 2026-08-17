@@ -89,14 +89,32 @@ namespace WordAddIn1.PresentationHost
             int skipped = 0;
             var createdShapes = new List<Dictionary<string, object>>();
             var zTargets = new List<KeyValuePair<PowerPoint.Shape, int>>();
+            var dbg = new PptHtmlApplyDebug();
+            dbg.Line(
+                "begin slide_id=" + plan.SlideId
+                + " slideSize=" + slideWidth.ToString("0.#", CultureInfo.InvariantCulture)
+                + "x" + slideHeight.ToString("0.#", CultureInfo.InvariantCulture)
+                + " nodes=" + (plan.Nodes == null ? 0 : plan.Nodes.Count)
+                + " shapesOnSlideBefore=" + CountShapes(slide));
 
             try
             {
                 // 先预检：避免写到一半因 freeform 等失败留下半成品
                 if (!TryPreflight(slide, plan.Nodes, warnings, out error))
                 {
+                    dbg.Line("preflight FAIL: " + error);
+                    result = new PptHtmlApplyResult
+                    {
+                        ChannelId = channelId,
+                        Kind = "ppt",
+                        SlideId = plan.SlideId,
+                        Warnings = warnings
+                    };
+                    AttachDebug(result, dbg, plan.SlideId);
                     return false;
                 }
+
+                dbg.Line("preflight ok");
 
                 foreach (PptHtmlApplyNode node in plan.Nodes)
                 {
@@ -110,6 +128,7 @@ namespace WordAddIn1.PresentationHost
                         if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
                         {
                             PptHtmlApplyUpsert.AddSkipWarning(node, node.ShapeType, warnings);
+                            dbg.Step("SKIP_CREATE", node);
                             skipped++;
                             continue;
                         }
@@ -117,11 +136,15 @@ namespace WordAddIn1.PresentationHost
                         if (!TryCreate(slide, node, slideWidth, slideHeight, out string newId, out string createError))
                         {
                             error = createError;
+                            dbg.Step("CREATE_FAIL", node, createError);
+                            result = FailResult(channelId, plan, warnings);
+                            AttachDebug(result, dbg, plan.SlideId);
                             return false;
                         }
 
                         RememberCreatedComId(node, newId);
                         TryCollectZ(slide, node, zTargets);
+                        dbg.Step("CREATE", node, "newId=" + newId + " " + DescribeShape(slide, node, slideWidth, slideHeight));
                         created++;
                         createdShapes.Add(new Dictionary<string, object>
                         {
@@ -144,12 +167,16 @@ namespace WordAddIn1.PresentationHost
                             if (action == PptHtmlMissingShapeAction.Fail)
                             {
                                 error = planError;
+                                dbg.Step("UPSERT_FAIL", node, planError);
+                                result = FailResult(channelId, plan, warnings);
+                                AttachDebug(result, dbg, plan.SlideId);
                                 return false;
                             }
 
                             if (action == PptHtmlMissingShapeAction.Skip)
                             {
                                 PptHtmlApplyUpsert.AddSkipWarning(node, plannedType, warnings);
+                                dbg.Step("UPSERT_SKIP", node, "planned=" + plannedType);
                                 skipped++;
                                 continue;
                             }
@@ -158,11 +185,15 @@ namespace WordAddIn1.PresentationHost
                             if (!TryCreate(slide, node, slideWidth, slideHeight, out string newId, out string createError))
                             {
                                 error = createError;
+                                dbg.Step("UPSERT_CREATE_FAIL", node, createError);
+                                result = FailResult(channelId, plan, warnings);
+                                AttachDebug(result, dbg, plan.SlideId);
                                 return false;
                             }
 
                             RememberCreatedComId(node, newId);
                             TryCollectZ(slide, node, zTargets);
+                            dbg.Step("UPSERT_CREATE", node, "newId=" + newId + " " + DescribeShape(slide, node, slideWidth, slideHeight));
                             created++;
                             createdShapes.Add(new Dictionary<string, object>
                             {
@@ -179,24 +210,43 @@ namespace WordAddIn1.PresentationHost
                                 out string updateError))
                         {
                             error = updateError;
+                            dbg.Step("UPDATE_FAIL", node, updateError);
+                            result = FailResult(channelId, plan, warnings);
+                            AttachDebug(result, dbg, plan.SlideId);
                             return false;
                         }
                         else
                         {
                             TryCollectZ(slide, node, zTargets);
+                            dbg.Step("UPDATE", node, DescribeShape(slide, node, slideWidth, slideHeight));
                             updated++;
                         }
                     }
                 }
 
+                dbg.Line("before_zorder zTargets=" + zTargets.Count + " shapesOnSlide=" + CountShapes(slide));
                 ApplyZOrder(zTargets);
+                dbg.Line("after_zorder");
 
                 // ZOrder 后再次钉死几何，防止个别 AutoShape 在叠放调整后位置漂移
                 RelockAllGeometries(slide, plan.Nodes, slideWidth, slideHeight);
+                dbg.Line("after_relock");
+
+                SnapshotSlide(slide, slideWidth, slideHeight, dbg);
+                VerifyNodesStillPresent(slide, plan.Nodes, slideWidth, slideHeight, dbg);
             }
             catch (Exception ex)
             {
                 error = "应用 HTML 失败: " + ex.Message;
+                dbg.Line("EXCEPTION: " + ex);
+                result = new PptHtmlApplyResult
+                {
+                    ChannelId = channelId,
+                    Kind = "ppt",
+                    SlideId = plan.SlideId,
+                    Warnings = warnings
+                };
+                AttachDebug(result, dbg, plan.SlideId);
                 return false;
             }
 
@@ -216,7 +266,269 @@ namespace WordAddIn1.PresentationHost
                 warnings.Add("skipped_uncreatable=" + skipped);
             }
 
+            AttachDebug(result, dbg, plan.SlideId);
             return true;
+        }
+
+        private static PptHtmlApplyResult FailResult(
+            string channelId,
+            PptHtmlApplyPlan plan,
+            List<string> warnings)
+        {
+            return new PptHtmlApplyResult
+            {
+                ChannelId = channelId,
+                Kind = "ppt",
+                SlideId = plan?.SlideId,
+                Warnings = warnings
+            };
+        }
+
+        private static void AttachDebug(PptHtmlApplyResult result, PptHtmlApplyDebug dbg, string slideId)
+        {
+            if (dbg == null)
+            {
+                return;
+            }
+
+            string file = dbg.TryWriteToSession(slideId, out string writeErr);
+            if (!string.IsNullOrEmpty(writeErr))
+            {
+                dbg.Line("write_debug_file_fail: " + writeErr);
+            }
+            else
+            {
+                dbg.Line("debug_file=" + (file ?? ""));
+            }
+
+            if (result != null)
+            {
+                result.DebugTrace = new List<string>(dbg.Lines);
+                result.DebugFilename = file;
+            }
+        }
+
+        private static int CountShapes(PowerPoint.Slide slide)
+        {
+            try
+            {
+                return slide.Shapes.Count;
+            }
+            catch (Exception)
+            {
+                return -1;
+            }
+        }
+
+        private static string DescribeShape(
+            PowerPoint.Slide slide,
+            PptHtmlApplyNode node,
+            float slideWidth,
+            float slideHeight)
+        {
+            if (slide == null || node == null || !node.ShapeComId.HasValue)
+            {
+                return "shape=?";
+            }
+
+            PowerPoint.Shape shape = FindShapeById(slide.Shapes, node.ShapeComId.Value);
+            if (shape == null)
+            {
+                return "shape=MISSING_AFTER_WRITE";
+            }
+
+            return DescribeShapeGeom(shape, slideWidth, slideHeight);
+        }
+
+        private static string DescribeShapeGeom(PowerPoint.Shape shape, float slideWidth, float slideHeight)
+        {
+            if (shape == null)
+            {
+                return "shape=null";
+            }
+
+            try
+            {
+                string fill = "?";
+                try
+                {
+                    fill = shape.Fill.Visible == Office.MsoTriState.msoFalse
+                        ? "none"
+                        : "vis";
+                }
+                catch (Exception)
+                {
+                }
+
+                int z = -1;
+                try
+                {
+                    z = shape.ZOrderPosition;
+                }
+                catch (Exception)
+                {
+                }
+
+                return "live=["
+                    + Pct(shape.Left, slideWidth) + ","
+                    + Pct(shape.Top, slideHeight) + ","
+                    + Pct(shape.Width, slideWidth) + ","
+                    + Pct(shape.Height, slideHeight)
+                    + "] z=" + z.ToString(CultureInfo.InvariantCulture)
+                    + " fill=" + fill
+                    + " name=" + (shape.Name ?? "");
+            }
+            catch (Exception ex)
+            {
+                return "live=err:" + ex.Message;
+            }
+        }
+
+        private static string Pct(float value, float total)
+        {
+            if (total <= 0)
+            {
+                return "?";
+            }
+
+            return (value / total * 100.0).ToString("0.##", CultureInfo.InvariantCulture);
+        }
+
+        private static void SnapshotSlide(
+            PowerPoint.Slide slide,
+            float slideWidth,
+            float slideHeight,
+            PptHtmlApplyDebug dbg)
+        {
+            if (slide == null || dbg == null)
+            {
+                return;
+            }
+
+            dbg.Line("--- SNAPSHOT all shapes on slide ---");
+            try
+            {
+                int count = slide.Shapes.Count;
+                dbg.Line("shapeCount=" + count.ToString(CultureInfo.InvariantCulture));
+                for (int i = 1; i <= count; i++)
+                {
+                    PowerPoint.Shape shape;
+                    try
+                    {
+                        shape = slide.Shapes[i];
+                    }
+                    catch (Exception ex)
+                    {
+                        dbg.Line("  [" + i + "] read_fail: " + ex.Message);
+                        continue;
+                    }
+
+                    int id = -1;
+                    string typeName = "?";
+                    try
+                    {
+                        id = shape.Id;
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    try
+                    {
+                        int st = (int)shape.Type;
+                        int? auto = null;
+                        try
+                        {
+                            auto = Convert.ToInt32(shape.AutoShapeType);
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        typeName = PptShapeTypeMap.FromShapeType(st, auto, null);
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    string band = "";
+                    try
+                    {
+                        double topPct = shape.Top / slideHeight * 100.0;
+                        if (topPct < 15)
+                        {
+                            band = " NAV_BAND";
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    dbg.Line(
+                        "  #" + i.ToString(CultureInfo.InvariantCulture)
+                        + " comId=" + id.ToString(CultureInfo.InvariantCulture)
+                        + " type=" + typeName
+                        + " " + DescribeShapeGeom(shape, slideWidth, slideHeight)
+                        + band);
+                }
+            }
+            catch (Exception ex)
+            {
+                dbg.Line("snapshot_fail: " + ex.Message);
+            }
+        }
+
+        private static void VerifyNodesStillPresent(
+            PowerPoint.Slide slide,
+            List<PptHtmlApplyNode> nodes,
+            float slideWidth,
+            float slideHeight,
+            PptHtmlApplyDebug dbg)
+        {
+            if (slide == null || nodes == null || dbg == null)
+            {
+                return;
+            }
+
+            dbg.Line("--- VERIFY html nodes still on slide ---");
+            foreach (PptHtmlApplyNode node in nodes)
+            {
+                if (node == null || !node.ShapeComId.HasValue)
+                {
+                    continue;
+                }
+
+                PowerPoint.Shape shape = FindShapeById(slide.Shapes, node.ShapeComId.Value);
+                if (shape == null)
+                {
+                    dbg.Step("MISSING", node, "comId not found after apply");
+                    continue;
+                }
+
+                string note = DescribeShapeGeom(shape, slideWidth, slideHeight);
+                if (node.HasGeometry)
+                {
+                    try
+                    {
+                        double topPct = shape.Top / slideHeight * 100.0;
+                        double leftPct = shape.Left / slideWidth * 100.0;
+                        double dTop = Math.Abs(topPct - node.TopPct.GetValueOrDefault());
+                        double dLeft = Math.Abs(leftPct - node.LeftPct.GetValueOrDefault());
+                        if (dTop > 3 || dLeft > 3)
+                        {
+                            note += " GEO_DRIFT html_top="
+                                + node.TopPct.GetValueOrDefault().ToString("0.##", CultureInfo.InvariantCulture)
+                                + " html_left="
+                                + node.LeftPct.GetValueOrDefault().ToString("0.##", CultureInfo.InvariantCulture);
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                dbg.Step("OK", node, note);
+            }
         }
 
         private static bool TryPreflight(
