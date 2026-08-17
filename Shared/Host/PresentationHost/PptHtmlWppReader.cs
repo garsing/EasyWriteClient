@@ -338,6 +338,13 @@ namespace WordAddIn1.PresentationHost
             string fontName = null;
             string lineColor = null;
             double? lineWidth = null;
+            string align = null;
+            string lineSpacing = null;
+            double? spaceBefore = null;
+            double? spaceAfter = null;
+            double? indentLeft = null;
+            double? indentFirst = null;
+            string bullet = null;
             if (typeName != "picture" && typeName != "media")
             {
                 fill = TryReadFill(shape);
@@ -347,6 +354,17 @@ namespace WordAddIn1.PresentationHost
                     fontSize = TryReadFontSize(shape);
                     fontBold = TryReadFontBold(shape);
                     fontName = TryReadFontName(shape);
+                    PptHtmlParagraphIo.Snapshot para = PptHtmlParagraphIo.TryReadFromWppShape(shape);
+                    if (para != null)
+                    {
+                        align = para.Align;
+                        lineSpacing = para.LineSpacing;
+                        spaceBefore = para.SpaceBeforePt;
+                        spaceAfter = para.SpaceAfterPt;
+                        indentLeft = para.IndentLeftPt;
+                        indentFirst = para.IndentFirstPt;
+                        bullet = para.Bullet;
+                    }
                 }
 
                 lineColor = TryReadLineColor(shape);
@@ -372,6 +390,13 @@ namespace WordAddIn1.PresentationHost
                 Z = z,
                 LineColor = lineColor,
                 LineWidthPt = lineWidth,
+                Align = align,
+                LineSpacing = lineSpacing,
+                SpaceBeforePt = spaceBefore,
+                SpaceAfterPt = spaceAfter,
+                IndentLeftPt = indentLeft,
+                IndentFirstPt = indentFirst,
+                Bullet = bullet,
                 RasterizedFrom = rasterizedFrom,
                 Name = typeName == "picture" ? name : null,
                 Rotation = rotation,

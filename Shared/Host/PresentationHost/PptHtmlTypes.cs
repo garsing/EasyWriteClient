@@ -50,6 +50,27 @@ namespace WordAddIn1.PresentationHost
         /// <summary>B3b：线宽 pt</summary>
         public double? LineWidthPt { get; set; }
 
+        /// <summary>B4：left/center/right/justify</summary>
+        public string Align { get; set; }
+
+        /// <summary>B4：行距倍数或 exact:N（pt）</summary>
+        public string LineSpacing { get; set; }
+
+        /// <summary>B4：段前 pt</summary>
+        public double? SpaceBeforePt { get; set; }
+
+        /// <summary>B4：段后 pt</summary>
+        public double? SpaceAfterPt { get; set; }
+
+        /// <summary>B4：左缩进 pt</summary>
+        public double? IndentLeftPt { get; set; }
+
+        /// <summary>B4：首行缩进 pt（负=悬挂）</summary>
+        public double? IndentFirstPt { get; set; }
+
+        /// <summary>B4：none / bullet / number</summary>
+        public string Bullet { get; set; }
+
         public string Name { get; set; }
 
         public double? Rotation { get; set; }

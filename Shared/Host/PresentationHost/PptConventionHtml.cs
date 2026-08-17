@@ -226,6 +226,49 @@ namespace WordAddIn1.PresentationHost
                     .Append("\"");
             }
 
+            if (!string.IsNullOrEmpty(node.Align))
+            {
+                sb.Append(" data-align=\"").Append(EscapeAttr(node.Align)).Append("\"");
+            }
+
+            if (!string.IsNullOrEmpty(node.LineSpacing))
+            {
+                sb.Append(" data-line-spacing=\"").Append(EscapeAttr(node.LineSpacing)).Append("\"");
+            }
+
+            if (node.SpaceBeforePt.HasValue)
+            {
+                sb.Append(" data-space-before=\"")
+                    .Append(PptHtmlParagraphIo.FormatPt(node.SpaceBeforePt.Value))
+                    .Append("\"");
+            }
+
+            if (node.SpaceAfterPt.HasValue)
+            {
+                sb.Append(" data-space-after=\"")
+                    .Append(PptHtmlParagraphIo.FormatPt(node.SpaceAfterPt.Value))
+                    .Append("\"");
+            }
+
+            if (node.IndentLeftPt.HasValue)
+            {
+                sb.Append(" data-indent-left=\"")
+                    .Append(PptHtmlParagraphIo.FormatPt(node.IndentLeftPt.Value))
+                    .Append("\"");
+            }
+
+            if (node.IndentFirstPt.HasValue)
+            {
+                sb.Append(" data-indent-first=\"")
+                    .Append(PptHtmlParagraphIo.FormatPt(node.IndentFirstPt.Value))
+                    .Append("\"");
+            }
+
+            if (!string.IsNullOrEmpty(node.Bullet))
+            {
+                sb.Append(" data-bullet=\"").Append(EscapeAttr(node.Bullet)).Append("\"");
+            }
+
             if (!string.IsNullOrEmpty(node.Style))
             {
                 sb.Append(" style=\"").Append(EscapeAttr(node.Style)).Append("\"");

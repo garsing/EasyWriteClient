@@ -339,6 +339,11 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (!TryApplyParagraph(shape, node, existingType, out error))
+            {
+                return false;
+            }
+
             if (!TryApplyLine(shape, node, existingType, out error))
             {
                 return false;
@@ -559,6 +564,11 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (!TryApplyParagraph(shape, node, type, out error))
+            {
+                return false;
+            }
+
             if (!TryApplyLine(shape, node, type, out error))
             {
                 return false;
@@ -613,6 +623,31 @@ namespace WordAddIn1.PresentationHost
                 TrySet(shape, "Width", node.WidthPct.GetValueOrDefault() / 100.0 * slideWidth);
                 TrySet(shape, "Height", node.HeightPct.GetValueOrDefault() / 100.0 * slideHeight);
             }
+        }
+
+        private static bool TryApplyParagraph(object shape, PptHtmlApplyNode node, string shapeType, out string error)
+        {
+            error = null;
+            if (shape == null || node == null)
+            {
+                return true;
+            }
+
+            if (shapeType == "picture" || shapeType == "media" || shapeType == "table")
+            {
+                return true;
+            }
+
+            return PptHtmlParagraphIo.TryApplyToWppShape(
+                shape,
+                node.Align,
+                node.LineSpacing,
+                node.SpaceBeforePt,
+                node.SpaceAfterPt,
+                node.IndentLeftPt,
+                node.IndentFirstPt,
+                node.Bullet,
+                out error);
         }
 
         private static bool TryApplyFont(object shape, PptHtmlApplyNode node, string shapeType, out string error)

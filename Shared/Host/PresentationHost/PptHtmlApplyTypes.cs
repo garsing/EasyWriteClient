@@ -52,6 +52,23 @@ namespace WordAddIn1.PresentationHost
         /// <summary>B3b：null=不改</summary>
         public double? LineWidthPt { get; set; }
 
+        /// <summary>B4：null=不改</summary>
+        public string Align { get; set; }
+
+        /// <summary>B4：null=不改；倍数或 exact:N</summary>
+        public string LineSpacing { get; set; }
+
+        public double? SpaceBeforePt { get; set; }
+
+        public double? SpaceAfterPt { get; set; }
+
+        public double? IndentLeftPt { get; set; }
+
+        public double? IndentFirstPt { get; set; }
+
+        /// <summary>B4：null=不改；none/bullet/number</summary>
+        public string Bullet { get; set; }
+
         public double? LeftPct { get; set; }
 
         public double? TopPct { get; set; }
@@ -361,6 +378,90 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 item.LineWidthPt = lw;
+            }
+
+            string alignRaw = GetAttr(el, "data-align");
+            if (!string.IsNullOrEmpty(alignRaw))
+            {
+                if (!PptHtmlParagraphIo.TryParseAlign(alignRaw, out string al, out string alErr))
+                {
+                    error = alErr;
+                    return false;
+                }
+
+                item.Align = al;
+            }
+
+            string lineSpRaw = GetAttr(el, "data-line-spacing");
+            if (!string.IsNullOrEmpty(lineSpRaw))
+            {
+                if (!PptHtmlParagraphIo.TryParseLineSpacing(lineSpRaw, out string ls, out string lsErr))
+                {
+                    error = lsErr;
+                    return false;
+                }
+
+                item.LineSpacing = ls;
+            }
+
+            string spBeforeRaw = GetAttr(el, "data-space-before");
+            if (!string.IsNullOrEmpty(spBeforeRaw))
+            {
+                if (!PptHtmlParagraphIo.TryParseIndentOrSpacePt(spBeforeRaw, "data-space-before", out double sb, out string sbErr))
+                {
+                    error = sbErr;
+                    return false;
+                }
+
+                item.SpaceBeforePt = sb;
+            }
+
+            string spAfterRaw = GetAttr(el, "data-space-after");
+            if (!string.IsNullOrEmpty(spAfterRaw))
+            {
+                if (!PptHtmlParagraphIo.TryParseIndentOrSpacePt(spAfterRaw, "data-space-after", out double sa, out string saErr))
+                {
+                    error = saErr;
+                    return false;
+                }
+
+                item.SpaceAfterPt = sa;
+            }
+
+            string indLeftRaw = GetAttr(el, "data-indent-left");
+            if (!string.IsNullOrEmpty(indLeftRaw))
+            {
+                if (!PptHtmlParagraphIo.TryParseIndentOrSpacePt(indLeftRaw, "data-indent-left", out double il, out string ilErr))
+                {
+                    error = ilErr;
+                    return false;
+                }
+
+                item.IndentLeftPt = il;
+            }
+
+            string indFirstRaw = GetAttr(el, "data-indent-first");
+            if (!string.IsNullOrEmpty(indFirstRaw))
+            {
+                if (!PptHtmlParagraphIo.TryParseIndentOrSpacePt(indFirstRaw, "data-indent-first", out double ifr, out string ifrErr))
+                {
+                    error = ifrErr;
+                    return false;
+                }
+
+                item.IndentFirstPt = ifr;
+            }
+
+            string bulletRaw = GetAttr(el, "data-bullet");
+            if (!string.IsNullOrEmpty(bulletRaw))
+            {
+                if (!PptHtmlParagraphIo.TryParseBullet(bulletRaw, out string bu, out string buErr))
+                {
+                    error = buErr;
+                    return false;
+                }
+
+                item.Bullet = bu;
             }
 
             string rot = GetAttr(el, "data-rotation");

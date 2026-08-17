@@ -772,6 +772,11 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (!TryApplyParagraph(shape, node, existingType, out error))
+            {
+                return false;
+            }
+
             if (!TryApplyLine(shape, node, existingType, out error))
             {
                 return false;
@@ -993,6 +998,11 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (!TryApplyParagraph(shape, node, type, out error))
+            {
+                return false;
+            }
+
             if (!TryApplyLine(shape, node, type, out error))
             {
                 return false;
@@ -1047,6 +1057,35 @@ namespace WordAddIn1.PresentationHost
             {
                 ApplyGeometry(shape, node, slideWidth, slideHeight);
             }
+        }
+
+        private static bool TryApplyParagraph(
+            PowerPoint.Shape shape,
+            PptHtmlApplyNode node,
+            string shapeType,
+            out string error)
+        {
+            error = null;
+            if (shape == null || node == null)
+            {
+                return true;
+            }
+
+            if (shapeType == "picture" || shapeType == "media" || shapeType == "table")
+            {
+                return true;
+            }
+
+            return PptHtmlParagraphIo.TryApplyToShape(
+                shape,
+                node.Align,
+                node.LineSpacing,
+                node.SpaceBeforePt,
+                node.SpaceAfterPt,
+                node.IndentLeftPt,
+                node.IndentFirstPt,
+                node.Bullet,
+                out error);
         }
 
         private static bool TryApplyFont(
