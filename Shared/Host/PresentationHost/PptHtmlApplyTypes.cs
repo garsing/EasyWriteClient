@@ -78,13 +78,26 @@ namespace WordAddIn1.PresentationHost
             "h1", "div", "p", "table", "img", "ul", "li"
         };
 
-        public static bool TryParse(string html, out PptHtmlApplyPlan plan, out string error)
+        public static bool TryParse(string html, string targetSlideId, out PptHtmlApplyPlan plan, out string error)
         {
             plan = null;
             error = null;
             if (string.IsNullOrWhiteSpace(html))
             {
                 error = "必须提供 html";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(targetSlideId))
+            {
+                error = "必须提供 slide_id（应用到哪一页）";
+                return false;
+            }
+
+            string slideId = targetSlideId.Trim();
+            if (!Regex.IsMatch(slideId, @"^\d+$"))
+            {
+                error = "slide_id 须为 SlideID 数字字符串";
                 return false;
             }
 
@@ -128,14 +141,7 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            string sectionShapeId = GetAttr(section, "ShapeId");
-            if (string.IsNullOrEmpty(sectionShapeId)
-                || !TryParseSectionShapeId(sectionShapeId, out string slideId))
-            {
-                error = "section 须有合法 ShapeId=\"sid{SlideID}\"";
-                return false;
-            }
-
+            // section 上若仍带旧版 ShapeId=\"sid…\"，忽略，不参与定页
             var nodes = new List<PptHtmlApplyNode>();
             var warnings = new List<string>();
             foreach (XElement child in section.Elements())
@@ -176,31 +182,24 @@ namespace WordAddIn1.PresentationHost
 
         private static bool TryParseNode(
             XElement el,
-            string slideId,
+            string targetSlideId,
             out PptHtmlApplyNode node,
             out string error)
         {
             node = null;
             error = null;
             string shapeId = GetAttr(el, "ShapeId");
-            string dataNew = GetAttr(el, "data-new");
             string shapeType = GetAttr(el, "data-shape-type");
-            bool flagNew = string.Equals(dataNew, "true", StringComparison.OrdinalIgnoreCase);
-            bool hasFormalId = TryParseShapeShapeId(shapeId, out string sid, out int comId)
-                && string.Equals(sid, slideId, StringComparison.Ordinal);
+            // 有可解析的页内 Shape.Id → 更新（不要求 ShapeId 内 SlideID 等于目标页）
+            // 无 → 新建
+            bool hasFormalId = PptShapeId.TryParseShapeComId(shapeId, out int comId);
 
-            if (flagNew && hasFormalId)
-            {
-                error = "节点不能同时有合法 ShapeId 与 data-new";
-                return false;
-            }
-
-            bool isCreate = flagNew || !hasFormalId;
+            bool isCreate = !hasFormalId;
             if (isCreate)
             {
                 if (string.IsNullOrEmpty(shapeType))
                 {
-                    error = "新建节点必须提供 data-shape-type";
+                    error = "新建节点必须提供 data-shape-type（无 ShapeId 时视为新建）";
                     return false;
                 }
 
@@ -214,7 +213,9 @@ namespace WordAddIn1.PresentationHost
             var item = new PptHtmlApplyNode
             {
                 IsCreate = isCreate,
-                ShapeId = hasFormalId ? shapeId : null,
+                ShapeId = hasFormalId
+                    ? PptShapeId.FormatShape(targetSlideId, comId)
+                    : null,
                 ShapeComId = hasFormalId ? comId : (int?)null,
                 ShapeType = shapeType ?? "",
                 DataSrc = GetAttr(el, "data-src"),
@@ -355,16 +356,6 @@ namespace WordAddIn1.PresentationHost
             }
 
             return double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
-        }
-
-        private static bool TryParseSectionShapeId(string shapeId, out string slideId)
-        {
-            return PptShapeId.TryParseSection(shapeId, out slideId);
-        }
-
-        private static bool TryParseShapeShapeId(string shapeId, out string slideId, out int comId)
-        {
-            return PptShapeId.TryParseShape(shapeId, out slideId, out comId);
         }
 
         private static string GetAttr(XElement el, string name)

@@ -19,13 +19,12 @@ namespace WordAddIn1
                 {
                     AgentRunCancellation.ThrowIfCancelled();
                     if (args != null
-                        && (args.ContainsKey("index") || args.ContainsKey("slide") || args.ContainsKey("page")
-                            || args.ContainsKey("slide_id")))
+                        && (args.ContainsKey("index") || args.ContainsKey("slide") || args.ContainsKey("page")))
                     {
                         return new ToolResult
                         {
                             Success = false,
-                            Error = "请勿传 slide_id/index/页码；页定位只用 section 的 ShapeId=\"sid…\""
+                            Error = "请用 slide_id（SlideID），不要用第 N 页 / index / slide 页码"
                         };
                     }
 
@@ -41,6 +40,16 @@ namespace WordAddIn1
                     if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string resolveError))
                     {
                         return new ToolResult { Success = false, Error = resolveError };
+                    }
+
+                    string slideId = GetStringArg(args, "slide_id")?.Trim() ?? "";
+                    if (string.IsNullOrWhiteSpace(slideId))
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "必须提供 slide_id（应用到哪一页；先 F_get_presentation_content）"
+                        };
                     }
 
                     string htmlFilename = GetStringArg(args, "html_filename");
@@ -94,7 +103,7 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = "html 文件内容为空" };
                     }
 
-                    if (!PptHtmlApplyParser.TryParse(html, out PptHtmlApplyPlan plan, out string parseError))
+                    if (!PptHtmlApplyParser.TryParse(html, slideId, out PptHtmlApplyPlan plan, out string parseError))
                     {
                         return new ToolResult { Success = false, Error = parseError };
                     }

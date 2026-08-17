@@ -51,9 +51,8 @@ namespace WordAddIn1.PresentationHost
             }
 
             var sb = new StringBuilder();
-            sb.Append("<section ShapeId=\"sid")
-                .Append(EscapeAttr(result.SlideId))
-                .Append("\"");
+            // section 不绑某一页 SlideID；apply 由工具参数 slide_id 指定目标页
+            sb.Append("<section");
             sb.Append(" data-slide-index=\"").Append(result.Index).Append("\"");
             if (!string.IsNullOrEmpty(result.Layout))
             {
