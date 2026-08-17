@@ -74,13 +74,60 @@ namespace WordAddIn1.PresentationHost
 
         public static string FormatOfficeRgb(int officeRgb)
         {
-            int r = officeRgb & 0xFF;
-            int g = (officeRgb >> 8) & 0xFF;
-            int b = (officeRgb >> 16) & 0xFF;
+            // 主题色偶发负 Long：只取低 24 位
+            int v = officeRgb & 0x00FFFFFF;
+            int r = v & 0xFF;
+            int g = (v >> 8) & 0xFF;
+            int b = (v >> 16) & 0xFF;
             return "#"
                 + r.ToString("X2", CultureInfo.InvariantCulture)
                 + g.ToString("X2", CultureInfo.InvariantCulture)
                 + b.ToString("X2", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// MsoThemeColorIndex → MsoThemeColorSchemeIndex（int）。
+        /// Text1/Background1 等不可与 scheme 下标直接强转。
+        /// </summary>
+        public static bool TryMapThemeColorIndexToSchemeIndex(int themeColorIndex, out int schemeIndex)
+        {
+            // 与 Office.MsoThemeColorIndex / MsoThemeColorSchemeIndex 对齐
+            switch (themeColorIndex)
+            {
+                case 1: // Dark1
+                case 13: // Text1
+                    schemeIndex = 1; // Dark1
+                    return true;
+                case 2: // Light1
+                case 14: // Background1
+                    schemeIndex = 2; // Light1
+                    return true;
+                case 3: // Dark2
+                case 15: // Text2
+                    schemeIndex = 3; // Dark2
+                    return true;
+                case 4: // Light2
+                case 16: // Background2
+                    schemeIndex = 4; // Light2
+                    return true;
+                case 5: // Accent1
+                case 6:
+                case 7:
+                case 8:
+                case 9:
+                case 10: // Accent6
+                    schemeIndex = themeColorIndex; // Accent1..6 = 5..10
+                    return true;
+                case 11: // Hyperlink
+                    schemeIndex = 11;
+                    return true;
+                case 12: // FollowedHyperlink
+                    schemeIndex = 12;
+                    return true;
+                default:
+                    schemeIndex = 0;
+                    return false;
+            }
         }
 
         public static bool TryParseHexToOfficeRgb(string hex, out int officeRgb, out string error)

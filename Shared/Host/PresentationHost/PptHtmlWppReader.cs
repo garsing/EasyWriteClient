@@ -572,7 +572,7 @@ namespace WordAddIn1.PresentationHost
         {
             try
             {
-                // TextFrame2 对主题色更稳；旧 TextFrame.RGB 常把浅蓝误读成 #000000。
+                // TextFrame2 + 主题色表；RGB=0 时按 ObjectThemeColor 还原，避免误导出黑。
                 try
                 {
                     object tf2 = WppCom.GetProperty(shape, "TextFrame2");
@@ -580,15 +580,45 @@ namespace WordAddIn1.PresentationHost
                     object font2 = tr2 == null ? null : WppCom.GetProperty(tr2, "Font");
                     object fill2 = font2 == null ? null : WppCom.GetProperty(font2, "Fill");
                     object fore2 = fill2 == null ? null : WppCom.GetProperty(fill2, "ForeColor");
-                    object rgb2 = fore2 == null ? null : WppCom.GetProperty(fore2, "RGB");
-                    object type2Obj = fore2 == null ? null : WppCom.GetProperty(fore2, "Type");
-                    if (rgb2 != null)
+                    if (fore2 != null)
                     {
-                        int rgbVal = Convert.ToInt32(rgb2);
+                        object rgb2 = WppCom.GetProperty(fore2, "RGB");
+                        object type2Obj = WppCom.GetProperty(fore2, "Type");
+                        object themeObj = WppCom.GetProperty(fore2, "ObjectThemeColor");
+                        object brightObj = WppCom.GetProperty(fore2, "Brightness");
+                        int rgbVal = rgb2 == null ? 0 : Convert.ToInt32(rgb2);
+                        int rgbNorm = rgbVal & 0x00FFFFFF;
                         int typeVal = type2Obj == null ? 1 : Convert.ToInt32(type2Obj);
-                        if (!(rgbVal == 0 && typeVal != 1))
+                        int themeIdx = themeObj == null ? 0 : Convert.ToInt32(themeObj);
+                        float brightness = brightObj == null ? 0f : Convert.ToSingle(brightObj);
+
+                        if (rgbNorm != 0 && themeIdx == 0)
                         {
-                            return PptHtmlStyleIo.FormatOfficeRgb(rgbVal);
+                            return PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
+                        }
+
+                        if (themeIdx != 0 || rgbNorm == 0)
+                        {
+                            if (TryResolveWppThemeFontRgb(shape, fore2, themeIdx, brightness, out int themeRgb)
+                                && (themeRgb & 0x00FFFFFF) != 0)
+                            {
+                                return PptHtmlStyleIo.FormatOfficeRgb(themeRgb);
+                            }
+                        }
+
+                        if (rgbNorm != 0)
+                        {
+                            return PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
+                        }
+
+                        if (themeIdx != 0)
+                        {
+                            return null;
+                        }
+
+                        if (typeVal == 1)
+                        {
+                            return PptHtmlStyleIo.FormatOfficeRgb(0);
                         }
                     }
                 }
@@ -612,7 +642,7 @@ namespace WordAddIn1.PresentationHost
                     return null;
                 }
 
-                int rgb = Convert.ToInt32(rgbObj);
+                int rgb = Convert.ToInt32(rgbObj) & 0x00FFFFFF;
                 int type = typeObj == null ? 1 : Convert.ToInt32(typeObj);
                 if (rgb == 0 && type != 1)
                 {
@@ -620,6 +650,99 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 return PptHtmlStyleIo.FormatOfficeRgb(rgb);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static bool TryResolveWppThemeFontRgb(
+            object shape,
+            object fore,
+            int themeIdx,
+            float brightness,
+            out int rgb)
+        {
+            rgb = 0;
+            try
+            {
+                if (themeIdx == 0)
+                {
+                    themeIdx = Convert.ToInt32(WppCom.GetProperty(fore, "ObjectThemeColor") ?? 0);
+                }
+
+                if (themeIdx == 0
+                    || !PptHtmlStyleIo.TryMapThemeColorIndexToSchemeIndex(themeIdx, out int schemeIdx))
+                {
+                    return false;
+                }
+
+                object scheme = TryGetWppThemeColorScheme(shape);
+                if (scheme == null)
+                {
+                    return false;
+                }
+
+                object themeColor = WppCom.Invoke(scheme, "Colors", schemeIdx);
+                object rgbObj = themeColor == null ? null : WppCom.GetProperty(themeColor, "RGB");
+                if (rgbObj == null)
+                {
+                    return false;
+                }
+
+                rgb = Convert.ToInt32(rgbObj) & 0x00FFFFFF;
+                if (Math.Abs(brightness) > 0.0001f)
+                {
+                    int r = rgb & 0xFF;
+                    int g = (rgb >> 8) & 0xFF;
+                    int b = (rgb >> 16) & 0xFF;
+                    if (brightness > 0f)
+                    {
+                        r = (int)(r + (255 - r) * brightness);
+                        g = (int)(g + (255 - g) * brightness);
+                        b = (int)(b + (255 - b) * brightness);
+                    }
+                    else
+                    {
+                        float f = 1f + brightness;
+                        r = (int)(r * f);
+                        g = (int)(g * f);
+                        b = (int)(b * f);
+                    }
+
+                    r = Math.Max(0, Math.Min(255, r));
+                    g = Math.Max(0, Math.Min(255, g));
+                    b = Math.Max(0, Math.Min(255, b));
+                    rgb = r | (g << 8) | (b << 16);
+                }
+
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static object TryGetWppThemeColorScheme(object shape)
+        {
+            try
+            {
+                object parent = WppCom.GetProperty(shape, "Parent");
+                object design = parent == null ? null : WppCom.GetProperty(parent, "Design");
+                object master = design == null ? null : WppCom.GetProperty(design, "SlideMaster");
+                object theme = master == null ? null : WppCom.GetProperty(master, "Theme");
+                object scheme = theme == null ? null : WppCom.GetProperty(theme, "ThemeColorScheme");
+                if (scheme != null)
+                {
+                    return scheme;
+                }
+
+                object pres = parent == null ? null : WppCom.GetProperty(parent, "Parent");
+                object sm = pres == null ? null : WppCom.GetProperty(pres, "SlideMaster");
+                object th = sm == null ? null : WppCom.GetProperty(sm, "Theme");
+                return th == null ? null : WppCom.GetProperty(th, "ThemeColorScheme");
             }
             catch (Exception)
             {

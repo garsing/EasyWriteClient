@@ -433,6 +433,31 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private static string TryReadbackFontColor(PowerPoint.Shape shape)
+        {
+            try
+            {
+                int rgb = shape.TextFrame2.TextRange.Font.Fill.ForeColor.RGB;
+                return PptHtmlStyleIo.FormatOfficeRgb(rgb);
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                if (shape.HasTextFrame == Office.MsoTriState.msoTrue)
+                {
+                    return PptHtmlStyleIo.FormatOfficeRgb(shape.TextFrame.TextRange.Font.Color.RGB);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return null;
+        }
+
         private static string Pct(float value, float total)
         {
             if (total <= 0)
@@ -555,6 +580,12 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 string note = DescribeShapeGeom(shape, slideWidth, slideHeight);
+                if (!string.IsNullOrEmpty(node.FontColor))
+                {
+                    note += " html_font=" + node.FontColor
+                        + " slide_font=" + (TryReadbackFontColor(shape) ?? "?");
+                }
+
                 if (node.HasGeometry)
                 {
                     try

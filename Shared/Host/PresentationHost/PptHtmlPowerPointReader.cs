@@ -536,24 +536,91 @@ namespace WordAddIn1.PresentationHost
         {
             try
             {
-                // TextFrame2 对主题色/方案色解析更稳；TextFrame.Font.Color.RGB 常把浅蓝误读成 #000000。
+                // TextFrame2 优先；主题色 RGB 常为 0/负值，须按 ObjectThemeColor 查色表。
                 try
                 {
                     var fore = shape.TextFrame2.TextRange.Font.Fill.ForeColor;
-                    int rgb2 = fore.RGB;
-                    // 主题/方案色时 RGB 偶发为 0：若 Type 不是纯 RGB，则勿写成 #000000（避免把浅蓝打成黑）
                     int type2 = (int)fore.Type;
-                    if (rgb2 == 0 && type2 != 1 /* msoColorTypeRGB */)
+                    int rgb2 = fore.RGB;
+                    int rgbNorm = rgb2 & 0x00FFFFFF;
+                    Office.MsoThemeColorIndex themeIdx = Office.MsoThemeColorIndex.msoNotThemeColor;
+                    float brightness = 0f;
+                    try
                     {
-                        // 继续尝试旧 TextFrame；仍不可靠则返回 null（省略属性，不强行写黑）
+                        themeIdx = fore.ObjectThemeColor;
                     }
-                    else
+                    catch (Exception)
                     {
-                        return PptHtmlStyleIo.FormatOfficeRgb(rgb2);
                     }
+
+                    try
+                    {
+                        brightness = fore.Brightness;
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    LogFontColorRead(
+                        shape,
+                        "tf2-raw",
+                        type2,
+                        rgb2,
+                        rgbNorm != 0 ? PptHtmlStyleIo.FormatOfficeRgb(rgbNorm) : null,
+                        themeIdx,
+                        brightness);
+
+                    // 有明确非零 RGB（含负 Long 的低 24 位）且未挂主题 → 直接用
+                    if (rgbNorm != 0 && themeIdx == Office.MsoThemeColorIndex.msoNotThemeColor)
+                    {
+                        string hex = PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
+                        LogFontColorRead(shape, "tf2", type2, rgbNorm, hex, themeIdx, brightness);
+                        return hex;
+                    }
+
+                    // 主题色（或 RGB=0/可疑）：从 ThemeColorScheme 还原
+                    if (themeIdx != Office.MsoThemeColorIndex.msoNotThemeColor
+                        || rgbNorm == 0)
+                    {
+                        if (TryResolveThemeFontRgb(shape, fore, out int themeRgb))
+                        {
+                            int tNorm = themeRgb & 0x00FFFFFF;
+                            if (tNorm != 0)
+                            {
+                                string hex = PptHtmlStyleIo.FormatOfficeRgb(tNorm);
+                                LogFontColorRead(shape, "theme", type2, tNorm, hex, themeIdx, brightness);
+                                return hex;
+                            }
+                        }
+                    }
+
+                    if (rgbNorm != 0)
+                    {
+                        string hex = PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
+                        LogFontColorRead(shape, "tf2-fallback", type2, rgbNorm, hex, themeIdx, brightness);
+                        return hex;
+                    }
+
+                    // 挂了主题却解不出：宁可不写 data-font-color，也不要误导出 #000000
+                    if (themeIdx != Office.MsoThemeColorIndex.msoNotThemeColor)
+                    {
+                        LogFontColorRead(shape, "theme-omit", type2, 0, null, themeIdx, brightness);
+                        return null;
+                    }
+
+                    // 纯 RGB 且为 0 → 真黑
+                    if (type2 == 1 /* msoColorTypeRGB */)
+                    {
+                        string hex = PptHtmlStyleIo.FormatOfficeRgb(0);
+                        LogFontColorRead(shape, "tf2-black", type2, 0, hex, themeIdx, brightness);
+                        return hex;
+                    }
+
+                    LogFontColorRead(shape, "tf2-skip0", type2, rgb2, null, themeIdx, brightness);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    EasyWriteDiagnostics.Log(DebugCategory.PptHtml, "font_color tf2 err: " + ex.Message);
                 }
 
                 if (shape.HasTextFrame != Office.MsoTriState.msoTrue)
@@ -564,17 +631,187 @@ namespace WordAddIn1.PresentationHost
                 var color = shape.TextFrame.TextRange.Font.Color;
                 int rgb = color.RGB;
                 int type = (int)color.Type;
-                if (rgb == 0 && type != 1)
+                int norm = rgb & 0x00FFFFFF;
+                if (norm == 0 && type != 1)
                 {
+                    LogFontColorRead(shape, "tf1-skip0", type, rgb, null);
                     return null;
                 }
 
-                return PptHtmlStyleIo.FormatOfficeRgb(rgb);
+                string hex1 = PptHtmlStyleIo.FormatOfficeRgb(norm);
+                LogFontColorRead(shape, "tf1", type, norm, hex1);
+                return hex1;
             }
             catch (Exception)
             {
                 return null;
             }
+        }
+
+        private static void LogFontColorRead(
+            PowerPoint.Shape shape,
+            string via,
+            int type,
+            int rgb,
+            string hex,
+            Office.MsoThemeColorIndex themeIdx = Office.MsoThemeColorIndex.msoNotThemeColor,
+            float brightness = 0f)
+        {
+            if (!EasyWriteDiagnostics.IsEnabled(DebugCategory.PptHtml))
+            {
+                return;
+            }
+
+            string name = "";
+            string text = "";
+            try
+            {
+                name = shape.Name ?? "";
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                if (shape.HasTextFrame == Office.MsoTriState.msoTrue)
+                {
+                    text = shape.TextFrame.TextRange.Text ?? "";
+                    if (text.Length > 24)
+                    {
+                        text = text.Substring(0, 24);
+                    }
+
+                    text = text.Replace("\r", " ").Replace("\n", " ").Trim();
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            EasyWriteDiagnostics.Log(
+                DebugCategory.PptHtml,
+                "font_color via=" + via
+                + " type=" + type.ToString(CultureInfo.InvariantCulture)
+                + " rgb=" + rgb.ToString(CultureInfo.InvariantCulture)
+                + " hex=" + (hex ?? "null")
+                + " theme=" + ((int)themeIdx).ToString(CultureInfo.InvariantCulture)
+                + " bright=" + brightness.ToString("0.###", CultureInfo.InvariantCulture)
+                + " name=" + name
+                + " text=" + text);
+        }
+
+        /// <summary>主题色 RGB 常为 0：从 SlideMaster.ThemeColorScheme + Brightness 还原。</summary>
+        private static bool TryResolveThemeFontRgb(
+            PowerPoint.Shape shape,
+            Office.ColorFormat fore,
+            out int rgb)
+        {
+            rgb = 0;
+            try
+            {
+                Office.MsoThemeColorIndex themeIdx = fore.ObjectThemeColor;
+                if (themeIdx == Office.MsoThemeColorIndex.msoNotThemeColor)
+                {
+                    return false;
+                }
+
+                if (!PptHtmlStyleIo.TryMapThemeColorIndexToSchemeIndex((int)themeIdx, out int schemeInt))
+                {
+                    EasyWriteDiagnostics.Log(
+                        DebugCategory.PptHtml,
+                        "font_color theme map fail idx=" + ((int)themeIdx).ToString(CultureInfo.InvariantCulture));
+                    return false;
+                }
+
+                Office.MsoThemeColorSchemeIndex schemeIdx =
+                    (Office.MsoThemeColorSchemeIndex)schemeInt;
+
+                Office.ThemeColorScheme scheme = TryGetThemeColorScheme(shape);
+                if (scheme == null)
+                {
+                    return false;
+                }
+
+                Office.ThemeColor themeColor = scheme.Colors(schemeIdx);
+                rgb = themeColor.RGB & 0x00FFFFFF;
+
+                float brightness = 0f;
+                try
+                {
+                    brightness = fore.Brightness;
+                }
+                catch (Exception)
+                {
+                }
+
+                if (Math.Abs(brightness) > 0.0001f)
+                {
+                    rgb = ApplyThemeBrightness(rgb, brightness);
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.PptHtml, "font_color theme resolve err: " + ex.Message);
+                return false;
+            }
+        }
+
+        private static Office.ThemeColorScheme TryGetThemeColorScheme(PowerPoint.Shape shape)
+        {
+            try
+            {
+                PowerPoint.Slide slide = shape.Parent as PowerPoint.Slide;
+                if (slide != null)
+                {
+                    try
+                    {
+                        return slide.Design.SlideMaster.Theme.ThemeColorScheme;
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    PowerPoint.Presentation pres = slide.Parent as PowerPoint.Presentation;
+                    if (pres != null)
+                    {
+                        return pres.SlideMaster.Theme.ThemeColorScheme;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return null;
+        }
+
+        private static int ApplyThemeBrightness(int officeRgb, float brightness)
+        {
+            int v = officeRgb & 0x00FFFFFF;
+            int r = v & 0xFF;
+            int g = (v >> 8) & 0xFF;
+            int b = (v >> 16) & 0xFF;
+            if (brightness > 0f)
+            {
+                r = (int)(r + (255 - r) * brightness);
+                g = (int)(g + (255 - g) * brightness);
+                b = (int)(b + (255 - b) * brightness);
+            }
+            else
+            {
+                float f = 1f + brightness;
+                r = (int)(r * f);
+                g = (int)(g * f);
+                b = (int)(b * f);
+            }
+
+            r = Math.Max(0, Math.Min(255, r));
+            g = Math.Max(0, Math.Min(255, g));
+            b = Math.Max(0, Math.Min(255, b));
+            return r | (g << 8) | (b << 16);
         }
 
         private static string TryBuildStyle(PowerPoint.Shape shape, float slideWidth, float slideHeight)

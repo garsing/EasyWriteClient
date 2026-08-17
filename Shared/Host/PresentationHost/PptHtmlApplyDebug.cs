@@ -57,6 +57,11 @@ namespace WordAddIn1.PresentationHost
                 sb.Append(" fill=").Append(node.Fill);
             }
 
+            if (!string.IsNullOrEmpty(node.FontColor))
+            {
+                sb.Append(" font=").Append(node.FontColor);
+            }
+
             if (!string.IsNullOrEmpty(detail))
             {
                 sb.Append(" | ").Append(detail);
