@@ -345,6 +345,10 @@ namespace WordAddIn1.PresentationHost
             double? indentLeft = null;
             double? indentFirst = null;
             string bullet = null;
+            double? marginLeft = null;
+            double? marginRight = null;
+            double? marginTop = null;
+            double? marginBottom = null;
             if (typeName != "picture" && typeName != "media")
             {
                 fill = TryReadFill(shape);
@@ -365,6 +369,13 @@ namespace WordAddIn1.PresentationHost
                         indentFirst = para.IndentFirstPt;
                         bullet = para.Bullet;
                     }
+
+                    TryReadTextMargins(
+                        shape,
+                        out marginLeft,
+                        out marginRight,
+                        out marginTop,
+                        out marginBottom);
                 }
 
                 lineColor = TryReadLineColor(shape);
@@ -397,11 +408,66 @@ namespace WordAddIn1.PresentationHost
                 IndentLeftPt = indentLeft,
                 IndentFirstPt = indentFirst,
                 Bullet = bullet,
+                MarginLeftPt = marginLeft,
+                MarginRightPt = marginRight,
+                MarginTopPt = marginTop,
+                MarginBottomPt = marginBottom,
                 RasterizedFrom = rasterizedFrom,
                 Name = typeName == "picture" ? name : null,
                 Rotation = rotation,
                 TextTruncated = textTruncated
             });
+        }
+
+        private static void TryReadTextMargins(
+            object shape,
+            out double? left,
+            out double? right,
+            out double? top,
+            out double? bottom)
+        {
+            left = right = top = bottom = null;
+            try
+            {
+                if (!IsTruthy(WppCom.GetProperty(shape, "HasTextFrame")))
+                {
+                    return;
+                }
+
+                object tf = WppCom.GetProperty(shape, "TextFrame");
+                if (tf == null)
+                {
+                    return;
+                }
+
+                object v;
+                v = WppCom.GetProperty(tf, "MarginLeft");
+                if (v != null)
+                {
+                    left = Convert.ToDouble(v);
+                }
+
+                v = WppCom.GetProperty(tf, "MarginRight");
+                if (v != null)
+                {
+                    right = Convert.ToDouble(v);
+                }
+
+                v = WppCom.GetProperty(tf, "MarginTop");
+                if (v != null)
+                {
+                    top = Convert.ToDouble(v);
+                }
+
+                v = WppCom.GetProperty(tf, "MarginBottom");
+                if (v != null)
+                {
+                    bottom = Convert.ToDouble(v);
+                }
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private static double? TryReadFontSize(object shape)

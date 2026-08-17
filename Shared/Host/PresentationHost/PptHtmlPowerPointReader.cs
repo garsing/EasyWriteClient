@@ -346,6 +346,10 @@ namespace WordAddIn1.PresentationHost
             double? indentLeft = null;
             double? indentFirst = null;
             string bullet = null;
+            double? marginLeft = null;
+            double? marginRight = null;
+            double? marginTop = null;
+            double? marginBottom = null;
             if (typeName != "picture" && typeName != "media")
             {
                 fill = TryReadFill(shape);
@@ -366,6 +370,13 @@ namespace WordAddIn1.PresentationHost
                         indentFirst = para.IndentFirstPt;
                         bullet = para.Bullet;
                     }
+
+                    TryReadTextMargins(
+                        shape,
+                        out marginLeft,
+                        out marginRight,
+                        out marginTop,
+                        out marginBottom);
                 }
 
                 lineColor = TryReadLineColor(shape);
@@ -398,11 +409,41 @@ namespace WordAddIn1.PresentationHost
                 IndentLeftPt = indentLeft,
                 IndentFirstPt = indentFirst,
                 Bullet = bullet,
+                MarginLeftPt = marginLeft,
+                MarginRightPt = marginRight,
+                MarginTopPt = marginTop,
+                MarginBottomPt = marginBottom,
                 RasterizedFrom = rasterizedFrom,
                 Name = typeName == "picture" ? name : null,
                 Rotation = rotation,
                 TextTruncated = textTruncated
             });
+        }
+
+        private static void TryReadTextMargins(
+            PowerPoint.Shape shape,
+            out double? left,
+            out double? right,
+            out double? top,
+            out double? bottom)
+        {
+            left = right = top = bottom = null;
+            try
+            {
+                if (shape.HasTextFrame != Office.MsoTriState.msoTrue)
+                {
+                    return;
+                }
+
+                PowerPoint.TextFrame tf = shape.TextFrame;
+                left = tf.MarginLeft;
+                right = tf.MarginRight;
+                top = tf.MarginTop;
+                bottom = tf.MarginBottom;
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private static double? TryReadFontSize(PowerPoint.Shape shape)

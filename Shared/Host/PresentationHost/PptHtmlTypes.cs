@@ -71,6 +71,15 @@ namespace WordAddIn1.PresentationHost
         /// <summary>B4：none / bullet / number</summary>
         public string Bullet { get; set; }
 
+        /// <summary>文本框内边距 pt（缺省不输出）</summary>
+        public double? MarginLeftPt { get; set; }
+
+        public double? MarginRightPt { get; set; }
+
+        public double? MarginTopPt { get; set; }
+
+        public double? MarginBottomPt { get; set; }
+
         public string Name { get; set; }
 
         public double? Rotation { get; set; }

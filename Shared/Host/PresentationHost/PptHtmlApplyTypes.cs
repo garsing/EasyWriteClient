@@ -69,6 +69,15 @@ namespace WordAddIn1.PresentationHost
         /// <summary>B4：null=不改；none/bullet/number</summary>
         public string Bullet { get; set; }
 
+        /// <summary>文本框内边距 pt；null=不改（新建时若全缺省则置 0，避免 AddTextbox 默认边距挤窄正文）</summary>
+        public double? MarginLeftPt { get; set; }
+
+        public double? MarginRightPt { get; set; }
+
+        public double? MarginTopPt { get; set; }
+
+        public double? MarginBottomPt { get; set; }
+
         public double? LeftPct { get; set; }
 
         public double? TopPct { get; set; }
@@ -464,6 +473,31 @@ namespace WordAddIn1.PresentationHost
                 item.Bullet = bu;
             }
 
+            if (!TryParseMarginAttr(el, "data-margin-left", out double? mL, out error))
+            {
+                return false;
+            }
+
+            item.MarginLeftPt = mL;
+            if (!TryParseMarginAttr(el, "data-margin-right", out double? mR, out error))
+            {
+                return false;
+            }
+
+            item.MarginRightPt = mR;
+            if (!TryParseMarginAttr(el, "data-margin-top", out double? mT, out error))
+            {
+                return false;
+            }
+
+            item.MarginTopPt = mT;
+            if (!TryParseMarginAttr(el, "data-margin-bottom", out double? mB, out error))
+            {
+                return false;
+            }
+
+            item.MarginBottomPt = mB;
+
             string rot = GetAttr(el, "data-rotation");
             if (!string.IsNullOrEmpty(rot)
                 && double.TryParse(rot, NumberStyles.Float, CultureInfo.InvariantCulture, out double rv))
@@ -523,6 +557,29 @@ namespace WordAddIn1.PresentationHost
             }
 
             node = item;
+            return true;
+        }
+
+        private static bool TryParseMarginAttr(
+            XElement el,
+            string attrName,
+            out double? value,
+            out string error)
+        {
+            value = null;
+            error = null;
+            string raw = GetAttr(el, attrName);
+            if (string.IsNullOrEmpty(raw))
+            {
+                return true;
+            }
+
+            if (!PptHtmlParagraphIo.TryParseIndentOrSpacePt(raw, attrName, out double pt, out error))
+            {
+                return false;
+            }
+
+            value = pt;
             return true;
         }
 

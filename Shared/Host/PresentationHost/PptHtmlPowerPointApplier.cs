@@ -1013,7 +1013,8 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
+            // 新建 AddTextbox 默认左右内边距约 7.2pt，会挤窄正文；无 data-margin-* 时置 0
+            LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight, zeroMarginsIfAbsent: true);
 
             try
             {
@@ -1029,13 +1030,23 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
-        /// 关闭「形状随文字自动变大」，并按 HTML 百分比重锁几何，避免导航条等被撑开/盖住。
+        /// 关闭「形状随文字自动变大」，写文本框内边距，并按 HTML 百分比重锁几何，避免导航条等被撑开/盖住。
         /// </summary>
         private static void LockTextFrameAndGeometry(
             PowerPoint.Shape shape,
             PptHtmlApplyNode node,
             float slideWidth,
             float slideHeight)
+        {
+            LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight, zeroMarginsIfAbsent: false);
+        }
+
+        private static void LockTextFrameAndGeometry(
+            PowerPoint.Shape shape,
+            PptHtmlApplyNode node,
+            float slideWidth,
+            float slideHeight,
+            bool zeroMarginsIfAbsent)
         {
             if (shape == null)
             {
@@ -1047,6 +1058,7 @@ namespace WordAddIn1.PresentationHost
                 if (shape.HasTextFrame == Office.MsoTriState.msoTrue)
                 {
                     shape.TextFrame.AutoSize = PowerPoint.PpAutoSize.ppAutoSizeNone;
+                    ApplyTextMargins(shape.TextFrame, node, zeroMarginsIfAbsent);
                 }
             }
             catch (Exception)
@@ -1056,6 +1068,74 @@ namespace WordAddIn1.PresentationHost
             if (node != null && node.HasGeometry)
             {
                 ApplyGeometry(shape, node, slideWidth, slideHeight);
+            }
+        }
+
+        private static void ApplyTextMargins(
+            PowerPoint.TextFrame tf,
+            PptHtmlApplyNode node,
+            bool zeroIfAbsent)
+        {
+            if (tf == null || node == null)
+            {
+                return;
+            }
+
+            string type = node.ShapeType ?? "";
+            if (type == "picture" || type == "media" || type == "table")
+            {
+                return;
+            }
+
+            bool any = node.MarginLeftPt.HasValue
+                || node.MarginRightPt.HasValue
+                || node.MarginTopPt.HasValue
+                || node.MarginBottomPt.HasValue;
+            if (!any && !zeroIfAbsent)
+            {
+                return;
+            }
+
+            try
+            {
+                if (node.MarginLeftPt.HasValue)
+                {
+                    tf.MarginLeft = (float)node.MarginLeftPt.Value;
+                }
+                else if (zeroIfAbsent)
+                {
+                    tf.MarginLeft = 0;
+                }
+
+                if (node.MarginRightPt.HasValue)
+                {
+                    tf.MarginRight = (float)node.MarginRightPt.Value;
+                }
+                else if (zeroIfAbsent)
+                {
+                    tf.MarginRight = 0;
+                }
+
+                if (node.MarginTopPt.HasValue)
+                {
+                    tf.MarginTop = (float)node.MarginTopPt.Value;
+                }
+                else if (zeroIfAbsent)
+                {
+                    tf.MarginTop = 0;
+                }
+
+                if (node.MarginBottomPt.HasValue)
+                {
+                    tf.MarginBottom = (float)node.MarginBottomPt.Value;
+                }
+                else if (zeroIfAbsent)
+                {
+                    tf.MarginBottom = 0;
+                }
+            }
+            catch (Exception)
+            {
             }
         }
 

@@ -269,6 +269,34 @@ namespace WordAddIn1.PresentationHost
                 sb.Append(" data-bullet=\"").Append(EscapeAttr(node.Bullet)).Append("\"");
             }
 
+            if (node.MarginLeftPt.HasValue)
+            {
+                sb.Append(" data-margin-left=\"")
+                    .Append(PptHtmlStyleIo.FormatPt(node.MarginLeftPt.Value))
+                    .Append("\"");
+            }
+
+            if (node.MarginRightPt.HasValue)
+            {
+                sb.Append(" data-margin-right=\"")
+                    .Append(PptHtmlStyleIo.FormatPt(node.MarginRightPt.Value))
+                    .Append("\"");
+            }
+
+            if (node.MarginTopPt.HasValue)
+            {
+                sb.Append(" data-margin-top=\"")
+                    .Append(PptHtmlStyleIo.FormatPt(node.MarginTopPt.Value))
+                    .Append("\"");
+            }
+
+            if (node.MarginBottomPt.HasValue)
+            {
+                sb.Append(" data-margin-bottom=\"")
+                    .Append(PptHtmlStyleIo.FormatPt(node.MarginBottomPt.Value))
+                    .Append("\"");
+            }
+
             if (!string.IsNullOrEmpty(node.Style))
             {
                 sb.Append(" style=\"").Append(EscapeAttr(node.Style)).Append("\"");
@@ -304,7 +332,7 @@ namespace WordAddIn1.PresentationHost
                 value = 0;
             }
 
-            return value.ToString("0.##", CultureInfo.InvariantCulture);
+            return value.ToString("0.####", CultureInfo.InvariantCulture);
         }
 
         private static string EscapeAttr(string text)

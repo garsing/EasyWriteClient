@@ -579,7 +579,8 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
+            // 新建 AddTextbox 默认内边距会挤窄正文；无 data-margin-* 时置 0
+            LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight, zeroMarginsIfAbsent: true);
 
             try
             {
@@ -601,6 +602,16 @@ namespace WordAddIn1.PresentationHost
             double slideWidth,
             double slideHeight)
         {
+            LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight, zeroMarginsIfAbsent: false);
+        }
+
+        private static void LockTextFrameAndGeometry(
+            object shape,
+            PptHtmlApplyNode node,
+            double slideWidth,
+            double slideHeight,
+            bool zeroMarginsIfAbsent)
+        {
             if (shape == null)
             {
                 return;
@@ -611,6 +622,7 @@ namespace WordAddIn1.PresentationHost
                 object tf = WppCom.GetProperty(shape, "TextFrame");
                 // PpAutoSizeNone = 0
                 TrySet(tf, "AutoSize", 0);
+                ApplyTextMargins(tf, node, zeroMarginsIfAbsent);
             }
             catch (Exception)
             {
@@ -622,6 +634,65 @@ namespace WordAddIn1.PresentationHost
                 TrySet(shape, "Top", node.TopPct.GetValueOrDefault() / 100.0 * slideHeight);
                 TrySet(shape, "Width", node.WidthPct.GetValueOrDefault() / 100.0 * slideWidth);
                 TrySet(shape, "Height", node.HeightPct.GetValueOrDefault() / 100.0 * slideHeight);
+            }
+        }
+
+        private static void ApplyTextMargins(object tf, PptHtmlApplyNode node, bool zeroIfAbsent)
+        {
+            if (tf == null || node == null)
+            {
+                return;
+            }
+
+            string type = node.ShapeType ?? "";
+            if (type == "picture" || type == "media" || type == "table")
+            {
+                return;
+            }
+
+            bool any = node.MarginLeftPt.HasValue
+                || node.MarginRightPt.HasValue
+                || node.MarginTopPt.HasValue
+                || node.MarginBottomPt.HasValue;
+            if (!any && !zeroIfAbsent)
+            {
+                return;
+            }
+
+            if (node.MarginLeftPt.HasValue)
+            {
+                TrySet(tf, "MarginLeft", node.MarginLeftPt.Value);
+            }
+            else if (zeroIfAbsent)
+            {
+                TrySet(tf, "MarginLeft", 0);
+            }
+
+            if (node.MarginRightPt.HasValue)
+            {
+                TrySet(tf, "MarginRight", node.MarginRightPt.Value);
+            }
+            else if (zeroIfAbsent)
+            {
+                TrySet(tf, "MarginRight", 0);
+            }
+
+            if (node.MarginTopPt.HasValue)
+            {
+                TrySet(tf, "MarginTop", node.MarginTopPt.Value);
+            }
+            else if (zeroIfAbsent)
+            {
+                TrySet(tf, "MarginTop", 0);
+            }
+
+            if (node.MarginBottomPt.HasValue)
+            {
+                TrySet(tf, "MarginBottom", node.MarginBottomPt.Value);
+            }
+            else if (zeroIfAbsent)
+            {
+                TrySet(tf, "MarginBottom", 0);
             }
         }
 
