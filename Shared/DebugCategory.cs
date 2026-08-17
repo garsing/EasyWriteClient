@@ -25,6 +25,8 @@ namespace WordAddIn1
         public const string Timing = "timing";
         /// <summary>约定 HTML read/apply 诊断（形状撞号、几何漂移等）。</summary>
         public const string PptHtml = "ppt_html";
+        /// <summary>WPS et 图表/透视 COM 排障旁路（chart_et_error.txt / pivot_et_error.txt）。</summary>
+        public const string ExcelEt = "excel_et";
         /// <summary>知识库文档格式粗迁（F_format_transfer / FormatTransferHelper）卡点诊断。</summary>
         public const string FormatTransfer = "format_transfer";
         /// <summary>Desktop「打开文件」探测 / Word COM 事件。</summary>
@@ -47,6 +49,7 @@ namespace WordAddIn1
             Misc,
             Timing,
             PptHtml,
+            ExcelEt,
             FormatTransfer,
             OpenFiles
         };

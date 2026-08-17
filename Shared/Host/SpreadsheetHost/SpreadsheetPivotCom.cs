@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Excel = Microsoft.Office.Interop.Excel;
@@ -1129,20 +1130,7 @@ namespace WordAddIn1.SpreadsheetHost
             catch (Exception ex)
             {
                 error = "et 创建透视未捕获异常: " + FormatPivotError(ex);
-                try
-                {
-                    string path = System.IO.Path.Combine(
-                        EasyWriteLog.LogDirectory,
-                        "pivot_et_error.txt");
-                    System.IO.File.AppendAllText(
-                        path,
-                        DateTime.Now.ToString("HH:mm:ss.fff") + " " + error + Environment.NewLine + ex + Environment.NewLine);
-                }
-                catch (Exception)
-                {
-                }
-
-                System.Diagnostics.Debug.WriteLine("[F_excel_pivot] " + error);
+                LogPivotEtError(error, ex);
                 return false;
             }
         }
@@ -1361,19 +1349,35 @@ namespace WordAddIn1.SpreadsheetHost
                 + " flex=[" + (flexError ?? "") + "]"
                 + " reflect=[" + (reflectError ?? (caches == null ? "PivotCaches=null" : "")) + "]"
                 + " wizard=[" + (wizardError ?? "") + "]";
+            LogPivotEtError(error, null);
+            return false;
+        }
+
+        private static void LogPivotEtError(string message, Exception ex)
+        {
+            if (!EasyWriteDiagnostics.IsEnabled(DebugCategory.ExcelEt))
+            {
+                return;
+            }
+
+            EasyWriteDiagnostics.Log(DebugCategory.ExcelEt, "[F_excel_pivot] " + message);
+
             try
             {
-                string path = System.IO.Path.Combine(EasyWriteLog.LogDirectory, "pivot_et_error.txt");
-                System.IO.File.AppendAllText(
+                Directory.CreateDirectory(EasyWriteLog.LogDirectory);
+                string path = Path.Combine(EasyWriteLog.LogDirectory, "pivot_et_error.txt");
+                File.AppendAllText(
                     path,
-                    DateTime.Now.ToString("HH:mm:ss.fff") + " " + error + Environment.NewLine);
+                    DateTime.Now.ToString("HH:mm:ss.fff")
+                    + " "
+                    + message
+                    + Environment.NewLine
+                    + (ex != null ? ex + Environment.NewLine : "")
+                    + Environment.NewLine);
             }
             catch (Exception)
             {
             }
-
-            System.Diagnostics.Debug.WriteLine("[F_excel_pivot] " + error);
-            return false;
         }
 
         private static string ProbeEtPivotCaches(object caches)

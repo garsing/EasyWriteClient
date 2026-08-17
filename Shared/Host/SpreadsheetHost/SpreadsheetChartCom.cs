@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
@@ -1727,23 +1728,30 @@ namespace WordAddIn1.SpreadsheetHost
 
         private static void LogChartEtError(string message, Exception ex)
         {
+            if (!EasyWriteDiagnostics.IsEnabled(DebugCategory.ExcelEt))
+            {
+                return;
+            }
+
+            string line = message
+                + (ex != null ? Environment.NewLine + ex : "");
+            EasyWriteDiagnostics.Log(DebugCategory.ExcelEt, "[F_excel_chart] " + message);
+
             try
             {
-                string path = System.IO.Path.Combine(EasyWriteLog.LogDirectory, "chart_et_error.txt");
-                System.IO.File.AppendAllText(
+                Directory.CreateDirectory(EasyWriteLog.LogDirectory);
+                string path = Path.Combine(EasyWriteLog.LogDirectory, "chart_et_error.txt");
+                File.AppendAllText(
                     path,
                     DateTime.Now.ToString("HH:mm:ss.fff")
                     + " "
-                    + message
+                    + line
                     + Environment.NewLine
-                    + (ex != null ? ex.ToString() + Environment.NewLine : "")
                     + Environment.NewLine);
             }
             catch (Exception)
             {
             }
-
-            System.Diagnostics.Debug.WriteLine("[F_excel_chart] " + message);
         }
 
         private static bool TryBindDataEt(
