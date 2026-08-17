@@ -156,6 +156,38 @@ namespace WordAddIn1.PresentationHost
             return false;
         }
 
+        public static bool TryParseFontName(string raw, out string name, out string error)
+        {
+            name = null;
+            error = null;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                error = "data-font-name 为空";
+                return false;
+            }
+
+            string s = raw.Trim();
+            if (s.Length > 64)
+            {
+                error = "非法 data-font-name（过长）: " + raw;
+                return false;
+            }
+
+            // 禁止控制字符 / 引号破属性
+            for (int i = 0; i < s.Length; i++)
+            {
+                char c = s[i];
+                if (c < 0x20 || c == '"' || c == '<' || c == '>')
+                {
+                    error = "非法 data-font-name（含非法字符）: " + raw;
+                    return false;
+                }
+            }
+
+            name = s;
+            return true;
+        }
+
         public static bool TryParseZ(string raw, out int z, out string error)
         {
             z = 0;

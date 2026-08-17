@@ -318,6 +318,7 @@ namespace WordAddIn1.PresentationHost
             string fontColor = null;
             double? fontSize = null;
             bool? fontBold = null;
+            string fontName = null;
             string lineColor = null;
             double? lineWidth = null;
             if (typeName != "picture" && typeName != "media")
@@ -328,6 +329,7 @@ namespace WordAddIn1.PresentationHost
                     fontColor = TryReadFontColor(shape);
                     fontSize = TryReadFontSize(shape);
                     fontBold = TryReadFontBold(shape);
+                    fontName = TryReadFontName(shape);
                 }
 
                 lineColor = TryReadLineColor(shape);
@@ -349,6 +351,7 @@ namespace WordAddIn1.PresentationHost
                 FontColor = fontColor,
                 FontSizePt = fontSize,
                 FontBold = fontBold,
+                FontName = fontName,
                 Z = z,
                 LineColor = lineColor,
                 LineWidthPt = lineWidth,
@@ -402,6 +405,28 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 return IsTruthy(bold);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static string TryReadFontName(object shape)
+        {
+            try
+            {
+                object tf = WppCom.GetProperty(shape, "TextFrame");
+                object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                object name = font == null ? null : WppCom.GetProperty(font, "Name");
+                if (name == null)
+                {
+                    return null;
+                }
+
+                string s = Convert.ToString(name);
+                return string.IsNullOrWhiteSpace(s) ? null : s.Trim();
             }
             catch (Exception)
             {

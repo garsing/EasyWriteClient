@@ -40,6 +40,9 @@ namespace WordAddIn1.PresentationHost
         /// <summary>B3：null=不改</summary>
         public bool? FontBold { get; set; }
 
+        /// <summary>B3c：null=不改；字体名</summary>
+        public string FontName { get; set; }
+
         /// <summary>B3：null=不改；越大越靠上</summary>
         public int? Z { get; set; }
 
@@ -310,6 +313,18 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 item.FontBold = fb;
+            }
+
+            string fontNameRaw = GetAttr(el, "data-font-name");
+            if (!string.IsNullOrEmpty(fontNameRaw))
+            {
+                if (!PptHtmlStyleIo.TryParseFontName(fontNameRaw, out string fn, out string fnErr))
+                {
+                    error = fnErr;
+                    return false;
+                }
+
+                item.FontName = fn;
             }
 
             string zRaw = GetAttr(el, "data-z");

@@ -202,6 +202,11 @@ namespace WordAddIn1.PresentationHost
                     .Append("\"");
             }
 
+            if (!string.IsNullOrEmpty(node.FontName))
+            {
+                sb.Append(" data-font-name=\"").Append(EscapeAttr(node.FontName)).Append("\"");
+            }
+
             if (node.Z.HasValue)
             {
                 sb.Append(" data-z=\"")

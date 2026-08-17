@@ -315,6 +315,7 @@ namespace WordAddIn1.PresentationHost
             string fontColor = null;
             double? fontSize = null;
             bool? fontBold = null;
+            string fontName = null;
             string lineColor = null;
             double? lineWidth = null;
             if (typeName != "picture" && typeName != "media")
@@ -325,6 +326,7 @@ namespace WordAddIn1.PresentationHost
                     fontColor = TryReadFontColor(shape);
                     fontSize = TryReadFontSize(shape);
                     fontBold = TryReadFontBold(shape);
+                    fontName = TryReadFontName(shape);
                 }
 
                 lineColor = TryReadLineColor(shape);
@@ -346,6 +348,7 @@ namespace WordAddIn1.PresentationHost
                 FontColor = fontColor,
                 FontSizePt = fontSize,
                 FontBold = fontBold,
+                FontName = fontName,
                 Z = z,
                 LineColor = lineColor,
                 LineWidthPt = lineWidth,
@@ -395,6 +398,29 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 return bold == Office.MsoTriState.msoTrue;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static string TryReadFontName(PowerPoint.Shape shape)
+        {
+            try
+            {
+                if (shape.HasTextFrame != Office.MsoTriState.msoTrue)
+                {
+                    return null;
+                }
+
+                string name = shape.TextFrame.TextRange.Font.Name;
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    return null;
+                }
+
+                return name.Trim();
             }
             catch (Exception)
             {

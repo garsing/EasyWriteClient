@@ -1033,7 +1033,7 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
-            if (!node.FontSizePt.HasValue && !node.FontBold.HasValue)
+            if (!node.FontSizePt.HasValue && !node.FontBold.HasValue && string.IsNullOrEmpty(node.FontName))
             {
                 return true;
             }
@@ -1056,6 +1056,11 @@ namespace WordAddIn1.PresentationHost
                     font.Bold = node.FontBold.Value
                         ? Office.MsoTriState.msoTrue
                         : Office.MsoTriState.msoFalse;
+                }
+
+                if (!string.IsNullOrEmpty(node.FontName))
+                {
+                    font.Name = node.FontName;
                 }
             }
             catch (Exception ex)

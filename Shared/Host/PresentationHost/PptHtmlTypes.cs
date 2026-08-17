@@ -38,6 +38,9 @@ namespace WordAddIn1.PresentationHost
         /// <summary>B3：加粗；null=未读到</summary>
         public bool? FontBold { get; set; }
 
+        /// <summary>B3c：字体名（如 微软雅黑）；null=未读到</summary>
+        public string FontName { get; set; }
+
         /// <summary>B3：叠放；数值越大越靠上（≈ ZOrderPosition）</summary>
         public int? Z { get; set; }
 

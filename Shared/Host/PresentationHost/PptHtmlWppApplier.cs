@@ -626,7 +626,7 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
-            if (!node.FontSizePt.HasValue && !node.FontBold.HasValue)
+            if (!node.FontSizePt.HasValue && !node.FontBold.HasValue && string.IsNullOrEmpty(node.FontName))
             {
                 return true;
             }
@@ -649,6 +649,11 @@ namespace WordAddIn1.PresentationHost
                 if (node.FontBold.HasValue)
                 {
                     TrySet(font, "Bold", node.FontBold.Value ? -1 : 0);
+                }
+
+                if (!string.IsNullOrEmpty(node.FontName))
+                {
+                    TrySet(font, "Name", node.FontName);
                 }
             }
             catch (Exception ex)
