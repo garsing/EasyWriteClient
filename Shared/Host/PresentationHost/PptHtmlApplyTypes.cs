@@ -407,7 +407,7 @@ namespace WordAddIn1.PresentationHost
                 workspaceFileName = WorkspacePathResolver.SanitizeWorkspaceRelativePath(rest);
                 if (string.IsNullOrEmpty(workspaceFileName))
                 {
-                    error = "workspace: 后须为工作区内相对路径（如 ppt_images/sid256-s5.png）";
+                    error = "workspace: 后须为工作区内相对路径（如 ppt_images/a1b2c3d4.png）";
                     return false;
                 }
 

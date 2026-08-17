@@ -71,49 +71,59 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
-                string fileName = node.ShapeId + ".png";
-                string safeFile = WorkspacePathResolver.SanitizeFilename(fileName);
-                if (safeFile == null)
-                {
-                    safeFile = "s" + comId.ToString(CultureInfo.InvariantCulture) + ".png";
-                }
-
-                string localPath = Path.Combine(assetsLocalDir, safeFile);
+                string tempPath = Path.Combine(
+                    assetsLocalDir,
+                    "_tmp_" + Guid.NewGuid().ToString("N") + ".png");
                 try
                 {
-                    if (File.Exists(localPath))
-                    {
-                        File.Delete(localPath);
-                    }
-
-                    WppCom.Invoke(shape, "Export", localPath, PpShapeFormatPng);
+                    WppCom.Invoke(shape, "Export", tempPath, PpShapeFormatPng);
                 }
                 catch (Exception ex)
                 {
+                    TryDeleteQuiet(tempPath);
                     error = "导出图片失败 (" + node.ShapeId + "): " + ex.Message;
                     return false;
                 }
 
-                if (!File.Exists(localPath))
+                if (!File.Exists(tempPath))
                 {
                     error = "导出图片未生成文件: " + node.ShapeId;
                     return false;
                 }
 
-                string relative = assetsFolderName.Trim().TrimEnd('/', '\\') + "/" + safeFile;
-                relative = WorkspacePathResolver.SanitizeWorkspaceRelativePath(relative);
-                if (relative == null)
+                if (!PptHtmlImageFileNaming.TryFinalizeExportedPng(
+                        tempPath,
+                        assetsFolderName,
+                        assetsLocalDir,
+                        out string relative,
+                        out error))
                 {
-                    error = "非法 assets 相对路径: " + assetsFolderName + "/" + safeFile;
                     return false;
                 }
 
                 node.DataSrc = "workspace:" + relative;
                 node.Editable = true;
-                exportedRelativePaths.Add(relative);
+                if (!exportedRelativePaths.Contains(relative))
+                {
+                    exportedRelativePaths.Add(relative);
+                }
             }
 
             return true;
+        }
+
+        private static void TryDeleteQuiet(string path)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private static bool TryFindSlide(object presentation, string slideIdText, out object slide, out string error)
