@@ -86,5 +86,10 @@ namespace WordAddIn1.PresentationHost
         public string TruncatedReason { get; set; }
 
         public int ShapeCount { get; set; }
+
+        /// <summary>字色诊断文件（会话目录相对名，如 read_font_color_slide_439.txt）</summary>
+        public string DebugFilename { get; set; }
+
+        public List<string> DebugTrace { get; set; }
     }
 }

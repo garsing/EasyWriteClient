@@ -83,6 +83,12 @@ namespace WordAddIn1.PresentationHost
             var shapes = new List<PptHtmlShapeNode>();
             bool truncated = false;
             string truncatedReason = null;
+            // 字色诊断：始终写会话文件，便于定位主题色误读/省略
+            var fontDbg = new PptHtmlReadDebug();
+            fontDbg.Line(
+                "begin slide_id=" + trimmed
+                + " slideSize=" + slideWidth.ToString("0.#", CultureInfo.InvariantCulture)
+                + "x" + slideHeight.ToString("0.#", CultureInfo.InvariantCulture));
             try
             {
                 CollectShapes(
@@ -92,7 +98,8 @@ namespace WordAddIn1.PresentationHost
                     slideHeight,
                     shapes,
                     ref truncated,
-                    ref truncatedReason);
+                    ref truncatedReason,
+                    fontDbg);
                 if (truncated && string.IsNullOrEmpty(truncatedReason))
                 {
                     truncatedReason = "部分形状文本超过 " + PptHtmlReadResult.MaxTextChars + " 字符，已截断";
@@ -102,6 +109,16 @@ namespace WordAddIn1.PresentationHost
             {
                 error = "读取形状失败: " + ex.Message;
                 return false;
+            }
+
+            string debugFile = fontDbg.TryWriteToSession(trimmed, out string debugWriteErr);
+            if (!string.IsNullOrEmpty(debugWriteErr))
+            {
+                fontDbg.Line("write_debug_file_fail: " + debugWriteErr);
+            }
+            else
+            {
+                fontDbg.Line("debug_file=" + (debugFile ?? ""));
             }
 
             result = new PptHtmlReadResult
@@ -117,7 +134,9 @@ namespace WordAddIn1.PresentationHost
                 Shapes = shapes,
                 Truncated = truncated,
                 TruncatedReason = truncatedReason,
-                ShapeCount = shapes.Count
+                ShapeCount = shapes.Count,
+                DebugFilename = debugFile,
+                DebugTrace = new List<string>(fontDbg.Lines)
             };
             return true;
         }
@@ -156,7 +175,8 @@ namespace WordAddIn1.PresentationHost
             float slideHeight,
             List<PptHtmlShapeNode> output,
             ref bool truncated,
-            ref string truncatedReason)
+            ref string truncatedReason,
+            PptHtmlReadDebug fontDbg)
         {
             if (shapes == null)
             {
@@ -193,7 +213,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 // B2：整组栅格为一张 picture，不再展开子项
-                AppendNode(shape, slideId, slideWidth, slideHeight, output, ref truncated);
+                AppendNode(shape, slideId, slideWidth, slideHeight, output, ref truncated, fontDbg);
             }
         }
 
@@ -203,7 +223,8 @@ namespace WordAddIn1.PresentationHost
             float slideWidth,
             float slideHeight,
             List<PptHtmlShapeNode> output,
-            ref bool pageTextTruncated)
+            ref bool pageTextTruncated,
+            PptHtmlReadDebug fontDbg)
         {
             if (output.Count >= PptHtmlReadResult.MaxShapes)
             {
@@ -323,7 +344,7 @@ namespace WordAddIn1.PresentationHost
                 fill = TryReadFill(shape);
                 if (typeName != "table")
                 {
-                    fontColor = TryReadFontColor(shape);
+                    fontColor = TryReadFontColor(shape, fontDbg);
                     fontSize = TryReadFontSize(shape);
                     fontBold = TryReadFontBold(shape);
                     fontName = TryReadFontName(shape);
@@ -532,11 +553,11 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static string TryReadFontColor(PowerPoint.Shape shape)
+        private static string TryReadFontColor(PowerPoint.Shape shape, PptHtmlReadDebug dbg)
         {
+            string tag = ShapeProbeTag(shape);
             try
             {
-                // TextFrame2 优先；主题色 RGB 常为 0/负值，须按 ObjectThemeColor 查色表。
                 try
                 {
                     var fore = shape.TextFrame2.TextRange.Font.Fill.ForeColor;
@@ -549,82 +570,116 @@ namespace WordAddIn1.PresentationHost
                     {
                         themeIdx = fore.ObjectThemeColor;
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
+                        dbg?.Probe(tag + " tf2 ObjectThemeColor err=" + ex.Message);
                     }
 
                     try
                     {
                         brightness = fore.Brightness;
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
+                        dbg?.Probe(tag + " tf2 Brightness err=" + ex.Message);
                     }
 
-                    LogFontColorRead(
-                        shape,
-                        "tf2-raw",
-                        type2,
-                        rgb2,
-                        rgbNorm != 0 ? PptHtmlStyleIo.FormatOfficeRgb(rgbNorm) : null,
-                        themeIdx,
-                        brightness);
+                    dbg?.Probe(
+                        tag
+                        + " tf2-raw type=" + type2.ToString(CultureInfo.InvariantCulture)
+                        + " rgbRaw=" + rgb2.ToString(CultureInfo.InvariantCulture)
+                        + " rgbNorm=" + rgbNorm.ToString(CultureInfo.InvariantCulture)
+                        + " hexNorm=" + (rgbNorm != 0 ? PptHtmlStyleIo.FormatOfficeRgb(rgbNorm) : "0")
+                        + " theme=" + ((int)themeIdx).ToString(CultureInfo.InvariantCulture)
+                        + " bright=" + brightness.ToString("0.###", CultureInfo.InvariantCulture));
 
-                    // 有明确非零 RGB（含负 Long 的低 24 位）且未挂主题 → 直接用
-                    if (rgbNorm != 0 && themeIdx == Office.MsoThemeColorIndex.msoNotThemeColor)
+                    // Mixed：整段无统一色，改读首字符
+                    if (IsMixedFontColorSignal(type2, (int)themeIdx, rgb2))
+                    {
+                        string mixedHex = TryReadFontColorFromFirstCharacter(shape, dbg, tag);
+                        if (!string.IsNullOrEmpty(mixedHex))
+                        {
+                            return mixedHex;
+                        }
+
+                        dbg?.Probe(tag + " mixed-char miss -> continue");
+                    }
+
+                    bool hasTheme = IsResolvableThemeIndex(themeIdx);
+
+                    if (rgbNorm != 0 && !hasTheme)
                     {
                         string hex = PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
-                        LogFontColorRead(shape, "tf2", type2, rgbNorm, hex, themeIdx, brightness);
+                        dbg?.Probe(tag + " RESULT via=tf2 hex=" + hex);
                         return hex;
                     }
 
-                    // 主题色（或 RGB=0/可疑）：从 ThemeColorScheme 还原
-                    if (themeIdx != Office.MsoThemeColorIndex.msoNotThemeColor
-                        || rgbNorm == 0)
+                    if (hasTheme || rgbNorm == 0)
                     {
-                        if (TryResolveThemeFontRgb(shape, fore, out int themeRgb))
+                        if (hasTheme
+                            && TryResolveThemeFontRgb(shape, fore, dbg, tag, out int themeRgb, out string resolveNote))
                         {
                             int tNorm = themeRgb & 0x00FFFFFF;
+                            dbg?.Probe(
+                                tag
+                                + " theme-resolve ok note=" + (resolveNote ?? "")
+                                + " rgb=" + tNorm.ToString(CultureInfo.InvariantCulture)
+                                + " hex=" + (tNorm != 0 ? PptHtmlStyleIo.FormatOfficeRgb(tNorm) : "#000000"));
                             if (tNorm != 0)
                             {
                                 string hex = PptHtmlStyleIo.FormatOfficeRgb(tNorm);
-                                LogFontColorRead(shape, "theme", type2, tNorm, hex, themeIdx, brightness);
+                                dbg?.Probe(tag + " RESULT via=theme hex=" + hex);
                                 return hex;
                             }
+
+                            dbg?.Probe(tag + " theme-resolve rgb=0 -> continue");
+                        }
+                        else if (hasTheme)
+                        {
+                            dbg?.Probe(tag + " theme-resolve FAIL");
                         }
                     }
 
                     if (rgbNorm != 0)
                     {
                         string hex = PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
-                        LogFontColorRead(shape, "tf2-fallback", type2, rgbNorm, hex, themeIdx, brightness);
+                        dbg?.Probe(tag + " RESULT via=tf2-fallback hex=" + hex);
                         return hex;
                     }
 
-                    // 挂了主题却解不出：宁可不写 data-font-color，也不要误导出 #000000
-                    if (themeIdx != Office.MsoThemeColorIndex.msoNotThemeColor)
+                    if (hasTheme)
                     {
-                        LogFontColorRead(shape, "theme-omit", type2, 0, null, themeIdx, brightness);
+                        dbg?.Probe(tag + " RESULT via=theme-omit hex=null");
                         return null;
                     }
 
-                    // 纯 RGB 且为 0 → 真黑
-                    if (type2 == 1 /* msoColorTypeRGB */)
+                    if (type2 == 1)
                     {
                         string hex = PptHtmlStyleIo.FormatOfficeRgb(0);
-                        LogFontColorRead(shape, "tf2-black", type2, 0, hex, themeIdx, brightness);
+                        dbg?.Probe(tag + " RESULT via=tf2-black hex=" + hex);
                         return hex;
                     }
 
-                    LogFontColorRead(shape, "tf2-skip0", type2, rgb2, null, themeIdx, brightness);
+                    dbg?.Probe(tag + " tf2-skip0 -> try TextFrame / first-char");
+                    string charHex = TryReadFontColorFromFirstCharacter(shape, dbg, tag);
+                    if (!string.IsNullOrEmpty(charHex))
+                    {
+                        return charHex;
+                    }
                 }
                 catch (Exception ex)
                 {
-                    EasyWriteDiagnostics.Log(DebugCategory.PptHtml, "font_color tf2 err: " + ex.Message);
+                    dbg?.Probe(tag + " tf2 err=" + ex.Message);
+                    string charHex = TryReadFontColorFromFirstCharacter(shape, dbg, tag);
+                    if (!string.IsNullOrEmpty(charHex))
+                    {
+                        return charHex;
+                    }
                 }
 
                 if (shape.HasTextFrame != Office.MsoTriState.msoTrue)
                 {
+                    dbg?.Probe(tag + " RESULT via=no-textframe hex=null");
                     return null;
                 }
 
@@ -632,135 +687,303 @@ namespace WordAddIn1.PresentationHost
                 int rgb = color.RGB;
                 int type = (int)color.Type;
                 int norm = rgb & 0x00FFFFFF;
+                int scheme = -1;
+                int theme1 = 0;
+                float bright1 = 0f;
+                try { scheme = (int)color.SchemeColor; } catch (Exception) { }
+                try { theme1 = (int)color.ObjectThemeColor; } catch (Exception) { }
+                try { bright1 = color.Brightness; } catch (Exception) { }
+
+                dbg?.Probe(
+                    tag
+                    + " tf1-raw type=" + type.ToString(CultureInfo.InvariantCulture)
+                    + " rgbRaw=" + rgb.ToString(CultureInfo.InvariantCulture)
+                    + " rgbNorm=" + norm.ToString(CultureInfo.InvariantCulture)
+                    + " scheme=" + scheme.ToString(CultureInfo.InvariantCulture)
+                    + " theme=" + theme1.ToString(CultureInfo.InvariantCulture)
+                    + " bright=" + bright1.ToString("0.###", CultureInfo.InvariantCulture));
+
+                if (IsMixedFontColorSignal(type, theme1, rgb))
+                {
+                    string mixedHex = TryReadFontColorFromFirstCharacter(shape, dbg, tag);
+                    if (!string.IsNullOrEmpty(mixedHex))
+                    {
+                        return mixedHex;
+                    }
+                }
+
                 if (norm == 0 && type != 1)
                 {
-                    LogFontColorRead(shape, "tf1-skip0", type, rgb, null);
+                    dbg?.Probe(tag + " RESULT via=tf1-skip0 hex=null");
                     return null;
                 }
 
                 string hex1 = PptHtmlStyleIo.FormatOfficeRgb(norm);
-                LogFontColorRead(shape, "tf1", type, norm, hex1);
+                dbg?.Probe(tag + " RESULT via=tf1 hex=" + hex1);
                 return hex1;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                dbg?.Probe(tag + " RESULT via=exception hex=null err=" + ex.Message);
                 return null;
             }
         }
 
-        private static void LogFontColorRead(
-            PowerPoint.Shape shape,
-            string via,
-            int type,
-            int rgb,
-            string hex,
-            Office.MsoThemeColorIndex themeIdx = Office.MsoThemeColorIndex.msoNotThemeColor,
-            float brightness = 0f)
+        /// <summary>msoColorTypeMixed / msoThemeColorMixed = -2；RGB 哨兵为 int.MinValue。</summary>
+        private static bool IsMixedFontColorSignal(int type, int themeIdx, int rgbRaw)
         {
-            if (!EasyWriteDiagnostics.IsEnabled(DebugCategory.PptHtml))
-            {
-                return;
-            }
+            return type == -2 || themeIdx == -2 || rgbRaw == int.MinValue;
+        }
 
-            string name = "";
-            string text = "";
+        private static bool IsResolvableThemeIndex(Office.MsoThemeColorIndex idx)
+        {
+            return (int)idx > 0;
+        }
+
+        /// <summary>Mixed 时整段无统一色：读首字符 ForeColor。</summary>
+        private static string TryReadFontColorFromFirstCharacter(
+            PowerPoint.Shape shape,
+            PptHtmlReadDebug dbg,
+            string tag)
+        {
             try
             {
-                name = shape.Name ?? "";
+                Office.TextRange2 tr2 = shape.TextFrame2.TextRange;
+                if (tr2 != null && tr2.Length >= 1)
+                {
+                    Office.TextRange2 ch = tr2.Characters[1, 1];
+                    var fore = ch.Font.Fill.ForeColor;
+                    int type = (int)fore.Type;
+                    int rgbRaw = fore.RGB;
+                    int rgbNorm = rgbRaw & 0x00FFFFFF;
+                    Office.MsoThemeColorIndex themeIdx = Office.MsoThemeColorIndex.msoNotThemeColor;
+                    float brightness = 0f;
+                    try { themeIdx = fore.ObjectThemeColor; } catch (Exception) { }
+                    try { brightness = fore.Brightness; } catch (Exception) { }
+
+                    dbg?.Probe(
+                        tag
+                        + " char1-tf2 type=" + type.ToString(CultureInfo.InvariantCulture)
+                        + " rgbRaw=" + rgbRaw.ToString(CultureInfo.InvariantCulture)
+                        + " rgbNorm=" + rgbNorm.ToString(CultureInfo.InvariantCulture)
+                        + " theme=" + ((int)themeIdx).ToString(CultureInfo.InvariantCulture)
+                        + " bright=" + brightness.ToString("0.###", CultureInfo.InvariantCulture));
+
+                    if (!IsMixedFontColorSignal(type, (int)themeIdx, rgbRaw))
+                    {
+                        if (rgbNorm != 0 && !IsResolvableThemeIndex(themeIdx))
+                        {
+                            string hex = PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
+                            dbg?.Probe(tag + " RESULT via=char1-tf2 hex=" + hex);
+                            return hex;
+                        }
+
+                        if (IsResolvableThemeIndex(themeIdx)
+                            && TryResolveThemeFontRgb(shape, fore, dbg, tag + "/char1", out int themeRgb, out string note))
+                        {
+                            int tNorm = themeRgb & 0x00FFFFFF;
+                            dbg?.Probe(tag + " char1-theme note=" + (note ?? ""));
+                            if (tNorm != 0)
+                            {
+                                string hex = PptHtmlStyleIo.FormatOfficeRgb(tNorm);
+                                dbg?.Probe(tag + " RESULT via=char1-theme hex=" + hex);
+                                return hex;
+                            }
+                        }
+
+                        if (rgbNorm != 0)
+                        {
+                            string hex = PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
+                            dbg?.Probe(tag + " RESULT via=char1-tf2-fallback hex=" + hex);
+                            return hex;
+                        }
+
+                        if (type == 1)
+                        {
+                            string hex = PptHtmlStyleIo.FormatOfficeRgb(0);
+                            dbg?.Probe(tag + " RESULT via=char1-tf2-black hex=" + hex);
+                            return hex;
+                        }
+                    }
+                }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                dbg?.Probe(tag + " char1-tf2 err=" + ex.Message);
             }
 
             try
             {
                 if (shape.HasTextFrame == Office.MsoTriState.msoTrue)
                 {
-                    text = shape.TextFrame.TextRange.Text ?? "";
-                    if (text.Length > 24)
+                    PowerPoint.TextRange tr = shape.TextFrame.TextRange;
+                    if (tr != null && tr.Length >= 1)
                     {
-                        text = text.Substring(0, 24);
-                    }
+                        PowerPoint.TextRange ch = tr.Characters(1, 1);
+                        var color = ch.Font.Color;
+                        int type = (int)color.Type;
+                        int rgbRaw = color.RGB;
+                        int rgbNorm = rgbRaw & 0x00FFFFFF;
+                        int theme1 = 0;
+                        float bright1 = 0f;
+                        try { theme1 = (int)color.ObjectThemeColor; } catch (Exception) { }
+                        try { bright1 = color.Brightness; } catch (Exception) { }
 
-                    text = text.Replace("\r", " ").Replace("\n", " ").Trim();
+                        dbg?.Probe(
+                            tag
+                            + " char1-tf1 type=" + type.ToString(CultureInfo.InvariantCulture)
+                            + " rgbRaw=" + rgbRaw.ToString(CultureInfo.InvariantCulture)
+                            + " rgbNorm=" + rgbNorm.ToString(CultureInfo.InvariantCulture)
+                            + " theme=" + theme1.ToString(CultureInfo.InvariantCulture)
+                            + " bright=" + bright1.ToString("0.###", CultureInfo.InvariantCulture));
+
+                        if (!IsMixedFontColorSignal(type, theme1, rgbRaw))
+                        {
+                            if (rgbNorm != 0 && theme1 <= 0)
+                            {
+                                string hex = PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
+                                dbg?.Probe(tag + " RESULT via=char1-tf1 hex=" + hex);
+                                return hex;
+                            }
+
+                            if (theme1 > 0
+                                && PptHtmlStyleIo.TryMapThemeColorIndexToSchemeIndex(theme1, out int schemeInt))
+                            {
+                                try
+                                {
+                                    Office.ThemeColorScheme scheme = TryGetThemeColorScheme(shape, out _);
+                                    if (scheme != null)
+                                    {
+                                        int themeRgb = scheme.Colors((Office.MsoThemeColorSchemeIndex)schemeInt).RGB
+                                            & 0x00FFFFFF;
+                                        if (Math.Abs(bright1) > 0.0001f)
+                                        {
+                                            themeRgb = ApplyThemeBrightness(themeRgb, bright1);
+                                        }
+
+                                        if (themeRgb != 0)
+                                        {
+                                            string hex = PptHtmlStyleIo.FormatOfficeRgb(themeRgb);
+                                            dbg?.Probe(tag + " RESULT via=char1-tf1-theme hex=" + hex);
+                                            return hex;
+                                        }
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    dbg?.Probe(tag + " char1-tf1-theme err=" + ex.Message);
+                                }
+                            }
+
+                            if (rgbNorm != 0)
+                            {
+                                string hex = PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
+                                dbg?.Probe(tag + " RESULT via=char1-tf1-fallback hex=" + hex);
+                                return hex;
+                            }
+
+                            if (type == 1)
+                            {
+                                string hex = PptHtmlStyleIo.FormatOfficeRgb(0);
+                                dbg?.Probe(tag + " RESULT via=char1-tf1-black hex=" + hex);
+                                return hex;
+                            }
+                        }
+                    }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                dbg?.Probe(tag + " char1-tf1 err=" + ex.Message);
             }
 
-            EasyWriteDiagnostics.Log(
-                DebugCategory.PptHtml,
-                "font_color via=" + via
-                + " type=" + type.ToString(CultureInfo.InvariantCulture)
-                + " rgb=" + rgb.ToString(CultureInfo.InvariantCulture)
-                + " hex=" + (hex ?? "null")
-                + " theme=" + ((int)themeIdx).ToString(CultureInfo.InvariantCulture)
-                + " bright=" + brightness.ToString("0.###", CultureInfo.InvariantCulture)
-                + " name=" + name
-                + " text=" + text);
+            return null;
         }
 
-        /// <summary>主题色 RGB 常为 0：从 SlideMaster.ThemeColorScheme + Brightness 还原。</summary>
+        private static string ShapeProbeTag(PowerPoint.Shape shape)
+        {
+            string id = "?";
+            string name = "";
+            string text = "";
+            try { id = shape.Id.ToString(CultureInfo.InvariantCulture); } catch (Exception) { }
+            try { name = shape.Name ?? ""; } catch (Exception) { }
+            try
+            {
+                if (shape.HasTextFrame == Office.MsoTriState.msoTrue)
+                {
+                    text = shape.TextFrame.TextRange.Text ?? "";
+                    text = text.Replace("\r", " ").Replace("\n", " ").Trim();
+                    if (text.Length > 20) text = text.Substring(0, 20);
+                }
+            }
+            catch (Exception) { }
+            return "font id=" + id + " name=" + name + " text=[" + text + "]";
+        }
+
         private static bool TryResolveThemeFontRgb(
             PowerPoint.Shape shape,
             Office.ColorFormat fore,
-            out int rgb)
+            PptHtmlReadDebug dbg,
+            string tag,
+            out int rgb,
+            out string note)
         {
             rgb = 0;
+            note = null;
             try
             {
                 Office.MsoThemeColorIndex themeIdx = fore.ObjectThemeColor;
                 if (themeIdx == Office.MsoThemeColorIndex.msoNotThemeColor)
                 {
+                    note = "themeIdx=0(notTheme)";
                     return false;
                 }
 
                 if (!PptHtmlStyleIo.TryMapThemeColorIndexToSchemeIndex((int)themeIdx, out int schemeInt))
                 {
-                    EasyWriteDiagnostics.Log(
-                        DebugCategory.PptHtml,
-                        "font_color theme map fail idx=" + ((int)themeIdx).ToString(CultureInfo.InvariantCulture));
+                    note = "mapFail themeIdx=" + ((int)themeIdx).ToString(CultureInfo.InvariantCulture);
                     return false;
                 }
 
-                Office.MsoThemeColorSchemeIndex schemeIdx =
-                    (Office.MsoThemeColorSchemeIndex)schemeInt;
-
-                Office.ThemeColorScheme scheme = TryGetThemeColorScheme(shape);
+                Office.MsoThemeColorSchemeIndex schemeIdx = (Office.MsoThemeColorSchemeIndex)schemeInt;
+                Office.ThemeColorScheme scheme = TryGetThemeColorScheme(shape, out string schemeSrc);
                 if (scheme == null)
                 {
+                    note = "noThemeColorScheme src=" + (schemeSrc ?? "");
                     return false;
                 }
 
                 Office.ThemeColor themeColor = scheme.Colors(schemeIdx);
-                rgb = themeColor.RGB & 0x00FFFFFF;
-
+                int baseRgb = themeColor.RGB;
+                rgb = baseRgb & 0x00FFFFFF;
                 float brightness = 0f;
-                try
-                {
-                    brightness = fore.Brightness;
-                }
-                catch (Exception)
-                {
-                }
-
+                try { brightness = fore.Brightness; } catch (Exception) { }
+                int beforeBright = rgb;
                 if (Math.Abs(brightness) > 0.0001f)
                 {
                     rgb = ApplyThemeBrightness(rgb, brightness);
                 }
 
+                note = "src=" + (schemeSrc ?? "?")
+                    + " themeIdx=" + ((int)themeIdx).ToString(CultureInfo.InvariantCulture)
+                    + " schemeIdx=" + schemeInt.ToString(CultureInfo.InvariantCulture)
+                    + " baseRgb=" + (baseRgb & 0x00FFFFFF).ToString(CultureInfo.InvariantCulture)
+                    + " baseHex=" + PptHtmlStyleIo.FormatOfficeRgb(beforeBright)
+                    + " bright=" + brightness.ToString("0.###", CultureInfo.InvariantCulture)
+                    + " afterHex=" + PptHtmlStyleIo.FormatOfficeRgb(rgb);
                 return true;
             }
             catch (Exception ex)
             {
-                EasyWriteDiagnostics.Log(DebugCategory.PptHtml, "font_color theme resolve err: " + ex.Message);
+                note = "ex=" + ex.Message;
+                dbg?.Probe((tag ?? "") + " theme resolve err: " + ex.Message);
                 return false;
             }
         }
 
-        private static Office.ThemeColorScheme TryGetThemeColorScheme(PowerPoint.Shape shape)
+        private static Office.ThemeColorScheme TryGetThemeColorScheme(PowerPoint.Shape shape, out string source)
         {
+            source = null;
             try
             {
                 PowerPoint.Slide slide = shape.Parent as PowerPoint.Slide;
@@ -768,23 +991,27 @@ namespace WordAddIn1.PresentationHost
                 {
                     try
                     {
-                        return slide.Design.SlideMaster.Theme.ThemeColorScheme;
+                        Office.ThemeColorScheme s = slide.Design.SlideMaster.Theme.ThemeColorScheme;
+                        source = "slide.Design.SlideMaster";
+                        return s;
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
+                        source = "designFail:" + ex.Message;
                     }
 
                     PowerPoint.Presentation pres = slide.Parent as PowerPoint.Presentation;
                     if (pres != null)
                     {
+                        source = "pres.SlideMaster";
                         return pres.SlideMaster.Theme.ThemeColorScheme;
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                source = "ex:" + ex.Message;
             }
-
             return null;
         }
 
@@ -807,7 +1034,6 @@ namespace WordAddIn1.PresentationHost
                 g = (int)(g * f);
                 b = (int)(b * f);
             }
-
             r = Math.Max(0, Math.Min(255, r));
             g = Math.Max(0, Math.Min(255, g));
             b = Math.Max(0, Math.Min(255, b));

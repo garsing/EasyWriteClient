@@ -85,6 +85,8 @@ namespace WordAddIn1.PresentationHost
             var shapes = new List<PptHtmlShapeNode>();
             bool truncated = false;
             string truncatedReason = null;
+            var fontDbg = new PptHtmlReadDebug();
+            fontDbg.Line("begin slide_id=" + trimmed + " host=wpp");
             try
             {
                 object shapesObj = WppCom.GetProperty(slide, "Shapes");
@@ -95,7 +97,8 @@ namespace WordAddIn1.PresentationHost
                     slideHeight,
                     shapes,
                     ref truncated,
-                    ref truncatedReason);
+                    ref truncatedReason,
+                    fontDbg);
                 if (truncated && string.IsNullOrEmpty(truncatedReason))
                 {
                     truncatedReason = "部分形状文本超过 " + PptHtmlReadResult.MaxTextChars + " 字符，已截断";
@@ -105,6 +108,16 @@ namespace WordAddIn1.PresentationHost
             {
                 error = "读取形状失败: " + ex.Message;
                 return false;
+            }
+
+            string debugFile = fontDbg.TryWriteToSession(trimmed, out string debugWriteErr);
+            if (!string.IsNullOrEmpty(debugWriteErr))
+            {
+                fontDbg.Line("write_debug_file_fail: " + debugWriteErr);
+            }
+            else
+            {
+                fontDbg.Line("debug_file=" + (debugFile ?? ""));
             }
 
             result = new PptHtmlReadResult
@@ -120,7 +133,9 @@ namespace WordAddIn1.PresentationHost
                 Shapes = shapes,
                 Truncated = truncated,
                 TruncatedReason = truncatedReason,
-                ShapeCount = shapes.Count
+                ShapeCount = shapes.Count,
+                DebugFilename = debugFile,
+                DebugTrace = new List<string>(fontDbg.Lines)
             };
             return true;
         }
@@ -182,7 +197,8 @@ namespace WordAddIn1.PresentationHost
             double slideHeight,
             List<PptHtmlShapeNode> output,
             ref bool truncated,
-            ref string truncatedReason)
+            ref string truncatedReason,
+            PptHtmlReadDebug fontDbg)
         {
             if (shapes == null)
             {
@@ -215,7 +231,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 // B2：整组栅格为一张 picture，不再展开子项
-                AppendNode(shape, slideId, slideWidth, slideHeight, output, ref truncated);
+                AppendNode(shape, slideId, slideWidth, slideHeight, output, ref truncated, fontDbg);
             }
         }
 
@@ -225,7 +241,8 @@ namespace WordAddIn1.PresentationHost
             double slideWidth,
             double slideHeight,
             List<PptHtmlShapeNode> output,
-            ref bool pageTextTruncated)
+            ref bool pageTextTruncated,
+            PptHtmlReadDebug fontDbg)
         {
             if (output.Count >= PptHtmlReadResult.MaxShapes)
             {
@@ -326,7 +343,7 @@ namespace WordAddIn1.PresentationHost
                 fill = TryReadFill(shape);
                 if (typeName != "table")
                 {
-                    fontColor = TryReadFontColor(shape);
+                    fontColor = TryReadFontColor(shape, fontDbg);
                     fontSize = TryReadFontSize(shape);
                     fontBold = TryReadFontBold(shape);
                     fontName = TryReadFontName(shape);
@@ -568,11 +585,11 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static string TryReadFontColor(object shape)
+        private static string TryReadFontColor(object shape, PptHtmlReadDebug dbg)
         {
+            string tag = WppShapeProbeTag(shape);
             try
             {
-                // TextFrame2 + 主题色表；RGB=0 时按 ObjectThemeColor 还原，避免误导出黑。
                 try
                 {
                     object tf2 = WppCom.GetProperty(shape, "TextFrame2");
@@ -592,42 +609,89 @@ namespace WordAddIn1.PresentationHost
                         int themeIdx = themeObj == null ? 0 : Convert.ToInt32(themeObj);
                         float brightness = brightObj == null ? 0f : Convert.ToSingle(brightObj);
 
-                        if (rgbNorm != 0 && themeIdx == 0)
+                        dbg?.Probe(
+                            tag
+                            + " tf2-raw type=" + typeVal.ToString(CultureInfo.InvariantCulture)
+                            + " rgbRaw=" + rgbVal.ToString(CultureInfo.InvariantCulture)
+                            + " rgbNorm=" + rgbNorm.ToString(CultureInfo.InvariantCulture)
+                            + " theme=" + themeIdx.ToString(CultureInfo.InvariantCulture)
+                            + " bright=" + brightness.ToString("0.###", CultureInfo.InvariantCulture));
+
+                        if (IsMixedFontColorSignal(typeVal, themeIdx, rgbVal))
                         {
-                            return PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
+                            string mixedHex = TryReadWppFontColorFromFirstCharacter(shape, dbg, tag);
+                            if (!string.IsNullOrEmpty(mixedHex))
+                            {
+                                return mixedHex;
+                            }
+
+                            dbg?.Probe(tag + " mixed-char miss -> continue");
                         }
 
-                        if (themeIdx != 0 || rgbNorm == 0)
+                        bool hasTheme = themeIdx > 0;
+
+                        if (rgbNorm != 0 && !hasTheme)
                         {
-                            if (TryResolveWppThemeFontRgb(shape, fore2, themeIdx, brightness, out int themeRgb)
+                            string hex = PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
+                            dbg?.Probe(tag + " RESULT via=tf2 hex=" + hex);
+                            return hex;
+                        }
+
+                        if (hasTheme || rgbNorm == 0)
+                        {
+                            if (hasTheme
+                                && TryResolveWppThemeFontRgb(shape, fore2, themeIdx, brightness, out int themeRgb)
                                 && (themeRgb & 0x00FFFFFF) != 0)
                             {
-                                return PptHtmlStyleIo.FormatOfficeRgb(themeRgb);
+                                string hex = PptHtmlStyleIo.FormatOfficeRgb(themeRgb);
+                                dbg?.Probe(tag + " RESULT via=theme hex=" + hex);
+                                return hex;
+                            }
+
+                            if (hasTheme)
+                            {
+                                dbg?.Probe(
+                                    tag
+                                    + " theme-resolve FAIL/zero theme="
+                                    + themeIdx.ToString(CultureInfo.InvariantCulture));
                             }
                         }
 
                         if (rgbNorm != 0)
                         {
-                            return PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
+                            string hex = PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
+                            dbg?.Probe(tag + " RESULT via=tf2-fallback hex=" + hex);
+                            return hex;
                         }
 
-                        if (themeIdx != 0)
+                        if (hasTheme)
                         {
+                            dbg?.Probe(tag + " RESULT via=theme-omit hex=null");
                             return null;
                         }
 
                         if (typeVal == 1)
                         {
-                            return PptHtmlStyleIo.FormatOfficeRgb(0);
+                            string hex = PptHtmlStyleIo.FormatOfficeRgb(0);
+                            dbg?.Probe(tag + " RESULT via=tf2-black hex=" + hex);
+                            return hex;
                         }
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    dbg?.Probe(tag + " tf2 err=" + ex.Message);
+                }
+
+                string charHex = TryReadWppFontColorFromFirstCharacter(shape, dbg, tag);
+                if (!string.IsNullOrEmpty(charHex))
+                {
+                    return charHex;
                 }
 
                 if (!IsTruthy(WppCom.GetProperty(shape, "HasTextFrame")))
                 {
+                    dbg?.Probe(tag + " RESULT via=no-textframe hex=null");
                     return null;
                 }
 
@@ -637,24 +701,243 @@ namespace WordAddIn1.PresentationHost
                 object color = font == null ? null : WppCom.GetProperty(font, "Color");
                 object rgbObj = color == null ? null : WppCom.GetProperty(color, "RGB");
                 object typeObj = color == null ? null : WppCom.GetProperty(color, "Type");
+                object schemeObj = color == null ? null : WppCom.GetProperty(color, "SchemeColor");
                 if (rgbObj == null)
                 {
+                    dbg?.Probe(tag + " RESULT via=tf1-null hex=null");
                     return null;
                 }
 
                 int rgb = Convert.ToInt32(rgbObj) & 0x00FFFFFF;
                 int type = typeObj == null ? 1 : Convert.ToInt32(typeObj);
+                int scheme = schemeObj == null ? -1 : Convert.ToInt32(schemeObj);
+                int theme1 = 0;
+                try
+                {
+                    object th = WppCom.GetProperty(color, "ObjectThemeColor");
+                    if (th != null)
+                    {
+                        theme1 = Convert.ToInt32(th);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                dbg?.Probe(
+                    tag
+                    + " tf1-raw type=" + type.ToString(CultureInfo.InvariantCulture)
+                    + " rgbNorm=" + rgb.ToString(CultureInfo.InvariantCulture)
+                    + " scheme=" + scheme.ToString(CultureInfo.InvariantCulture)
+                    + " theme=" + theme1.ToString(CultureInfo.InvariantCulture));
+
+                if (IsMixedFontColorSignal(type, theme1, Convert.ToInt32(rgbObj)))
+                {
+                    string mixedHex = TryReadWppFontColorFromFirstCharacter(shape, dbg, tag);
+                    if (!string.IsNullOrEmpty(mixedHex))
+                    {
+                        return mixedHex;
+                    }
+                }
+
                 if (rgb == 0 && type != 1)
                 {
+                    dbg?.Probe(tag + " RESULT via=tf1-skip0 hex=null");
                     return null;
                 }
 
-                return PptHtmlStyleIo.FormatOfficeRgb(rgb);
+                string hex1 = PptHtmlStyleIo.FormatOfficeRgb(rgb);
+                dbg?.Probe(tag + " RESULT via=tf1 hex=" + hex1);
+                return hex1;
+            }
+            catch (Exception ex)
+            {
+                dbg?.Probe(tag + " RESULT via=exception hex=null err=" + ex.Message);
+                return null;
+            }
+        }
+
+        private static bool IsMixedFontColorSignal(int type, int themeIdx, int rgbRaw)
+        {
+            return type == -2 || themeIdx == -2 || rgbRaw == int.MinValue;
+        }
+
+        private static string TryReadWppFontColorFromFirstCharacter(
+            object shape,
+            PptHtmlReadDebug dbg,
+            string tag)
+        {
+            try
+            {
+                object tf2 = WppCom.GetProperty(shape, "TextFrame2");
+                object tr2 = tf2 == null ? null : WppCom.GetProperty(tf2, "TextRange");
+                if (tr2 != null)
+                {
+                    object lenObj = WppCom.GetProperty(tr2, "Length");
+                    int len = lenObj == null ? 0 : Convert.ToInt32(lenObj);
+                    if (len >= 1)
+                    {
+                        object ch = null;
+                        try
+                        {
+                            ch = WppCom.Invoke(tr2, "Characters", 1, 1);
+                        }
+                        catch (Exception)
+                        {
+                            try
+                            {
+                                ch = WppCom.GetIndexed(tr2, 1);
+                            }
+                            catch (Exception)
+                            {
+                            }
+                        }
+
+                        object font = ch == null ? null : WppCom.GetProperty(ch, "Font");
+                        object fill = font == null ? null : WppCom.GetProperty(font, "Fill");
+                        object fore = fill == null ? null : WppCom.GetProperty(fill, "ForeColor");
+                        if (fore != null)
+                        {
+                            object rgb2 = WppCom.GetProperty(fore, "RGB");
+                            object type2Obj = WppCom.GetProperty(fore, "Type");
+                            object themeObj = WppCom.GetProperty(fore, "ObjectThemeColor");
+                            object brightObj = WppCom.GetProperty(fore, "Brightness");
+                            int rgbVal = rgb2 == null ? 0 : Convert.ToInt32(rgb2);
+                            int rgbNorm = rgbVal & 0x00FFFFFF;
+                            int typeVal = type2Obj == null ? 1 : Convert.ToInt32(type2Obj);
+                            int themeIdx = themeObj == null ? 0 : Convert.ToInt32(themeObj);
+                            float brightness = brightObj == null ? 0f : Convert.ToSingle(brightObj);
+
+                            dbg?.Probe(
+                                tag
+                                + " char1-tf2 type=" + typeVal.ToString(CultureInfo.InvariantCulture)
+                                + " rgbNorm=" + rgbNorm.ToString(CultureInfo.InvariantCulture)
+                                + " theme=" + themeIdx.ToString(CultureInfo.InvariantCulture)
+                                + " bright=" + brightness.ToString("0.###", CultureInfo.InvariantCulture));
+
+                            if (!IsMixedFontColorSignal(typeVal, themeIdx, rgbVal))
+                            {
+                                if (rgbNorm != 0 && themeIdx <= 0)
+                                {
+                                    string hex = PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
+                                    dbg?.Probe(tag + " RESULT via=char1-tf2 hex=" + hex);
+                                    return hex;
+                                }
+
+                                if (themeIdx > 0
+                                    && TryResolveWppThemeFontRgb(shape, fore, themeIdx, brightness, out int themeRgb)
+                                    && (themeRgb & 0x00FFFFFF) != 0)
+                                {
+                                    string hex = PptHtmlStyleIo.FormatOfficeRgb(themeRgb);
+                                    dbg?.Probe(tag + " RESULT via=char1-theme hex=" + hex);
+                                    return hex;
+                                }
+
+                                if (rgbNorm != 0)
+                                {
+                                    string hex = PptHtmlStyleIo.FormatOfficeRgb(rgbNorm);
+                                    dbg?.Probe(tag + " RESULT via=char1-tf2-fallback hex=" + hex);
+                                    return hex;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                dbg?.Probe(tag + " char1-tf2 err=" + ex.Message);
+            }
+
+            try
+            {
+                object tf = WppCom.GetProperty(shape, "TextFrame");
+                object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                if (tr != null)
+                {
+                    object lenObj = WppCom.GetProperty(tr, "Length");
+                    int len = lenObj == null ? 0 : Convert.ToInt32(lenObj);
+                    if (len >= 1)
+                    {
+                        object ch = WppCom.Invoke(tr, "Characters", 1, 1);
+                        object font = ch == null ? null : WppCom.GetProperty(ch, "Font");
+                        object color = font == null ? null : WppCom.GetProperty(font, "Color");
+                        object rgbObj = color == null ? null : WppCom.GetProperty(color, "RGB");
+                        if (rgbObj != null)
+                        {
+                            int rgb = Convert.ToInt32(rgbObj) & 0x00FFFFFF;
+                            int type = 1;
+                            try
+                            {
+                                object t = WppCom.GetProperty(color, "Type");
+                                if (t != null)
+                                {
+                                    type = Convert.ToInt32(t);
+                                }
+                            }
+                            catch (Exception)
+                            {
+                            }
+
+                            dbg?.Probe(
+                                tag
+                                + " char1-tf1 type=" + type.ToString(CultureInfo.InvariantCulture)
+                                + " rgbNorm=" + rgb.ToString(CultureInfo.InvariantCulture));
+                            if (rgb != 0 || type == 1)
+                            {
+                                string hex = PptHtmlStyleIo.FormatOfficeRgb(rgb);
+                                dbg?.Probe(tag + " RESULT via=char1-tf1 hex=" + hex);
+                                return hex;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                dbg?.Probe(tag + " char1-tf1 err=" + ex.Message);
+            }
+
+            return null;
+        }
+
+        private static string WppShapeProbeTag(object shape)
+        {
+            string id = "?";
+            string name = "";
+            string text = "";
+            try
+            {
+                id = Convert.ToString(WppCom.GetProperty(shape, "Id")) ?? "?";
             }
             catch (Exception)
             {
-                return null;
             }
+
+            try
+            {
+                name = Convert.ToString(WppCom.GetProperty(shape, "Name")) ?? "";
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                object tf = WppCom.GetProperty(shape, "TextFrame");
+                object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                text = tr == null ? "" : (Convert.ToString(WppCom.GetProperty(tr, "Text")) ?? "");
+                text = text.Replace("\r", " ").Replace("\n", " ").Trim();
+                if (text.Length > 20)
+                {
+                    text = text.Substring(0, 20);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return "font id=" + id + " name=" + name + " text=[" + text + "]";
         }
 
         private static bool TryResolveWppThemeFontRgb(

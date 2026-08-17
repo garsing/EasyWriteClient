@@ -92,6 +92,11 @@ namespace WordAddIn1
                         }
                     }
 
+                    if (!string.IsNullOrEmpty(hostResult.DebugFilename))
+                    {
+                        data["debug_filename"] = hostResult.DebugFilename;
+                    }
+
                     if (!string.IsNullOrEmpty(exportHtml))
                     {
                         // 扁平公共图库，便于跨页引用同一文件
