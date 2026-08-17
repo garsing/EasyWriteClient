@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using WordAddIn1.HostPlatform;
 
 namespace WordAddIn1.PresentationHost
@@ -144,6 +145,56 @@ namespace WordAddIn1.PresentationHost
             else if (channel is WppChannel wpp)
             {
                 ok = WppPresentationHost.TryReadPptHtml(wpp, slideId, out result, out error);
+            }
+            else
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "unsupported: 当前渠道不是 ppt/wpp"
+                };
+                return false;
+            }
+
+            if (!ok)
+            {
+                errorResult = new ToolResult { Success = false, Error = error };
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 将页内图片导出到 assets 本地目录，并写入 result 中 picture 节点的 DataSrc（workspace:…）。
+        /// </summary>
+        public static bool TryExportPptHtmlPictures(
+            IOperationChannel channel,
+            PptHtmlReadResult result,
+            string assetsFolderName,
+            string assetsLocalDir,
+            out List<string> exportedRelativePaths,
+            out ToolResult errorResult)
+        {
+            exportedRelativePaths = null;
+            errorResult = null;
+            if (channel == null || result == null)
+            {
+                errorResult = new ToolResult { Success = false, Error = "无效渠道或读结果" };
+                return false;
+            }
+
+            bool ok;
+            string error;
+            if (channel is PptChannel ppt)
+            {
+                ok = PowerPointPresentationHost.TryExportPptHtmlPictures(
+                    ppt, result, assetsFolderName, assetsLocalDir, out exportedRelativePaths, out error);
+            }
+            else if (channel is WppChannel wpp)
+            {
+                ok = WppPresentationHost.TryExportPptHtmlPictures(
+                    wpp, result, assetsFolderName, assetsLocalDir, out exportedRelativePaths, out error);
             }
             else
             {

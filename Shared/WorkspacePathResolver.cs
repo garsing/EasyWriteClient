@@ -98,19 +98,32 @@ namespace WordAddIn1
 
         public static string ResolveWritePath(string filename, string conversationId = null)
         {
-            var safe = SanitizeFilename(filename);
-            if (safe == null)
+            var relative = SanitizeWorkspaceRelativePath(filename);
+            if (relative == null)
             {
                 throw new ArgumentException($"非法文件名: {filename}", nameof(filename));
             }
 
-            return Path.Combine(GetSessionDirectory(conversationId), safe);
+            var sessionDir = GetSessionDirectory(conversationId);
+            string full = sessionDir;
+            foreach (var part in relative.Split('/'))
+            {
+                full = Path.Combine(full, part);
+            }
+
+            string parent = Path.GetDirectoryName(full);
+            if (!string.IsNullOrEmpty(parent))
+            {
+                Directory.CreateDirectory(parent);
+            }
+
+            return full;
         }
 
         public static string ResolveReadPath(string filename, string conversationId = null)
         {
-            var safe = SanitizeFilename(filename);
-            if (safe == null)
+            var relative = SanitizeWorkspaceRelativePath(filename);
+            if (relative == null)
             {
                 return null;
             }
@@ -127,25 +140,25 @@ namespace WordAddIn1
             var candidates = new List<string>();
             if (mode == "sessions")
             {
-                candidates.Add(Path.Combine(root, "sessions", conv, safe));
-                candidates.Add(Path.Combine(root, "sessions", "_pending", safe));
+                candidates.Add(CombineUnder(Path.Combine(root, "sessions", conv), relative));
+                candidates.Add(CombineUnder(Path.Combine(root, "sessions", "_pending"), relative));
             }
             else
             {
-                candidates.Add(Path.Combine(root, "sessions", conv, safe));
+                candidates.Add(CombineUnder(Path.Combine(root, "sessions", conv), relative));
                 foreach (var sessDir in SortedOtherSessionDirs(root, conv))
                 {
-                    candidates.Add(Path.Combine(sessDir, safe));
+                    candidates.Add(CombineUnder(sessDir, relative));
                 }
 
-                candidates.Add(Path.Combine(root, safe));
-                candidates.Add(Path.Combine(root, "sessions", "_pending", safe));
+                candidates.Add(CombineUnder(root, relative));
+                candidates.Add(CombineUnder(Path.Combine(root, "sessions", "_pending"), relative));
             }
 
             string primary = candidates.Count > 0 ? candidates[0] : null;
             foreach (var path in candidates)
             {
-                if (File.Exists(path))
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
                 {
 #if DEBUG
                     if (mode == "history" && primary != null
@@ -163,13 +176,75 @@ namespace WordAddIn1
 
         public static string BuildRelativePath(string conversationId, string filename)
         {
-            var safe = SanitizeFilename(filename);
-            if (safe == null)
+            var relative = SanitizeWorkspaceRelativePath(filename);
+            if (relative == null)
             {
                 throw new ArgumentException($"非法文件名: {filename}", nameof(filename));
             }
 
-            return $"sessions/{NormalizeConversationId(conversationId ?? ConversationContext.CurrentId)}/{safe}";
+            return $"sessions/{NormalizeConversationId(conversationId ?? ConversationContext.CurrentId)}/{relative}";
+        }
+
+        /// <summary>
+        /// 工作区内相对路径：裸文件名，或少量子目录（如 slide256.assets/sid256-s5.png）。
+        /// 禁止 ..、盘符、绝对路径。
+        /// </summary>
+        public static string SanitizeWorkspaceRelativePath(string relativePath)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath))
+            {
+                return null;
+            }
+
+            var norm = relativePath.Replace('\\', '/').Trim();
+            while (norm.StartsWith("/", StringComparison.Ordinal))
+            {
+                norm = norm.Substring(1);
+            }
+
+            if (string.IsNullOrEmpty(norm)
+                || norm.IndexOf("..", StringComparison.Ordinal) >= 0
+                || norm.IndexOf(':') >= 0
+                || Path.IsPathRooted(relativePath.Trim()))
+            {
+                return null;
+            }
+
+            var parts = norm.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0 || parts.Length > 4)
+            {
+                return null;
+            }
+
+            var cleaned = new List<string>(parts.Length);
+            foreach (var part in parts)
+            {
+                var safe = SanitizeFilename(part);
+                if (safe == null)
+                {
+                    return null;
+                }
+
+                cleaned.Add(safe);
+            }
+
+            return string.Join("/", cleaned);
+        }
+
+        private static string CombineUnder(string baseDir, string relativeWithSlashes)
+        {
+            if (string.IsNullOrEmpty(baseDir) || string.IsNullOrEmpty(relativeWithSlashes))
+            {
+                return null;
+            }
+
+            string full = baseDir;
+            foreach (var part in relativeWithSlashes.Split('/'))
+            {
+                full = Path.Combine(full, part);
+            }
+
+            return full;
         }
 
         public static string SanitizeFilename(string filename)

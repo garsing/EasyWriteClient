@@ -94,7 +94,36 @@ namespace WordAddIn1
 
                     if (!string.IsNullOrEmpty(exportHtml))
                     {
-                        // 导出文件内容：与 apply 解析一致，含抬头亦可（apply 只取第一个 section）
+                        string stem = Path.GetFileNameWithoutExtension(exportHtml);
+                        if (string.IsNullOrWhiteSpace(stem))
+                        {
+                            return new ToolResult
+                            {
+                                Success = false,
+                                Error = "export_html 主名无效"
+                            };
+                        }
+
+                        string assetsFolder = stem + ".assets";
+                        string assetsLocalDir = Path.Combine(
+                            WorkspacePathResolver.GetSessionDirectory(),
+                            assetsFolder);
+
+                        if (!PresentationHostAdapter.TryExportPptHtmlPictures(
+                                channel,
+                                hostResult,
+                                assetsFolder,
+                                assetsLocalDir,
+                                out List<string> exportedRels,
+                                out ToolResult exportPicError))
+                        {
+                            return exportPicError;
+                        }
+
+                        // 含 data-src 的 HTML（须在导出图片回填后重建）
+                        display = PptConventionHtml.BuildDisplayContents(hostResult);
+                        data["display_contents"] = display;
+
                         string localPath = WorkspacePathResolver.ResolveWritePath(exportHtml);
                         try
                         {
@@ -118,6 +147,32 @@ namespace WordAddIn1
                                 Success = false,
                                 Error = "导出 HTML 已写本地但上传工作区失败: " + exportHtml
                             };
+                        }
+
+                        if (exportedRels != null)
+                        {
+                            foreach (string rel in exportedRels)
+                            {
+                                if (string.IsNullOrEmpty(rel))
+                                {
+                                    continue;
+                                }
+
+                                string picLocal = WorkspacePathResolver.ResolveWritePath(rel);
+                                bool picOk = await McpToolsHelpers.UploadWorkspaceFileAsync(picLocal, rel)
+                                    .ConfigureAwait(false);
+                                if (!picOk)
+                                {
+                                    return new ToolResult
+                                    {
+                                        Success = false,
+                                        Error = "导出图片已写本地但上传工作区失败: " + rel
+                                    };
+                                }
+                            }
+
+                            data["exported_images"] = exportedRels;
+                            data["assets_folder"] = assetsFolder;
                         }
 
                         data["html_filename"] = exportHtml;

@@ -117,8 +117,8 @@ namespace WordAddIn1.PresentationHost
 
         public static bool IsNonEditable(string shapeType)
         {
-            return shapeType == "picture"
-                || shapeType == "chart"
+            // picture 与标题/正文/普通形状同级：默认可编辑（可换 data-src）
+            return shapeType == "chart"
                 || shapeType == "smartart"
                 || shapeType == "media";
         }

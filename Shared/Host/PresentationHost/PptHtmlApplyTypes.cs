@@ -412,10 +412,11 @@ namespace WordAddIn1.PresentationHost
             if (s.StartsWith("workspace:", StringComparison.OrdinalIgnoreCase))
             {
                 isWorkspace = true;
-                workspaceFileName = Path.GetFileName(s.Substring("workspace:".Length).Trim());
+                string rest = s.Substring("workspace:".Length).Trim().Replace('\\', '/');
+                workspaceFileName = WorkspacePathResolver.SanitizeWorkspaceRelativePath(rest);
                 if (string.IsNullOrEmpty(workspaceFileName))
                 {
-                    error = "workspace: 后须为裸文件名";
+                    error = "workspace: 后须为工作区内相对路径（如 slide256.assets/sid256-s5.png）";
                     return false;
                 }
 
@@ -428,13 +429,12 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
-            // 裸文件名 → 工作区
+            // 裸文件名或相对路径 → 工作区
             isWorkspace = true;
-            workspaceFileName = Path.GetFileName(s);
-            if (string.IsNullOrEmpty(workspaceFileName)
-                || workspaceFileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            workspaceFileName = WorkspacePathResolver.SanitizeWorkspaceRelativePath(s.Replace('\\', '/'));
+            if (string.IsNullOrEmpty(workspaceFileName))
             {
-                error = "非法 data-src 文件名";
+                error = "非法 data-src 工作区路径";
                 return false;
             }
 

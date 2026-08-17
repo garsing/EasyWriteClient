@@ -200,6 +200,31 @@ namespace WordAddIn1.PresentationHost
                 out error);
         }
 
+        public static bool TryExportPptHtmlPictures(
+            PptChannel channel,
+            PptHtmlReadResult result,
+            string assetsFolderName,
+            string assetsLocalDir,
+            out System.Collections.Generic.List<string> exportedRelativePaths,
+            out string error)
+        {
+            exportedRelativePaths = null;
+            error = null;
+            if (channel == null || !channel.TryGetLivePresentation(out PowerPoint.Presentation presentation))
+            {
+                error = "渠道对应的演示文稿已关闭";
+                return false;
+            }
+
+            return PptHtmlPictureExporter.TryAttachExportedPictures(
+                presentation,
+                result,
+                assetsFolderName,
+                assetsLocalDir,
+                out exportedRelativePaths,
+                out error);
+        }
+
         public static bool TryApplyPptHtml(
             PptChannel channel,
             PptHtmlApplyPlan plan,

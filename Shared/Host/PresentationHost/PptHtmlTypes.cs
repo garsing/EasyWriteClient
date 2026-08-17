@@ -20,6 +20,9 @@ namespace WordAddIn1.PresentationHost
 
         public bool Editable { get; set; } = true;
 
+        /// <summary>图片等文件源，如 workspace:slide256.assets/sid256-s5.png</summary>
+        public string DataSrc { get; set; }
+
         public string Name { get; set; }
 
         public double? Rotation { get; set; }

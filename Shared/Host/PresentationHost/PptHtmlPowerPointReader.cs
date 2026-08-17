@@ -355,7 +355,7 @@ namespace WordAddIn1.PresentationHost
             {
                 innerHtml = TryBuildTableInner(shape, out textTruncated);
             }
-            else if (!PptShapeTypeMap.IsNonEditable(typeName))
+            else if (typeName != "picture" && !PptShapeTypeMap.IsNonEditable(typeName))
             {
                 text = TryReadText(shape);
                 text = PptConventionHtml.TruncateText(text, out textTruncated);
