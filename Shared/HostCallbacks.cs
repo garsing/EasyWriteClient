@@ -21,6 +21,15 @@ namespace WordAddIn1
         /// <summary>打开成功后刷新侧栏「打开文件」探测器。</summary>
         public static Action OpenFilesRefresh { get; set; }
 
+        /// <summary>
+        /// Desktop：易写浏览页建/更新后写入侧栏「打开文件」。
+        /// 参数：channelId, displayName, url。
+        /// </summary>
+        public static Action<string, string, string> BrowserOpenFileUpsert { get; set; }
+
+        /// <summary>Desktop：易写浏览窗关闭后从侧栏移除对应项（参数为 channelId）。</summary>
+        public static Action<string> BrowserOpenFileRemove { get; set; }
+
         /// <summary>用户登录成功后通知各任务窗格/桌面 UI 刷新。</summary>
         public static Func<Task> NotifyUserLoggedInAllAsync { get; set; }
 
@@ -68,6 +77,16 @@ namespace WordAddIn1
         public static void RaiseOpenFilesRefresh()
         {
             OpenFilesRefresh?.Invoke();
+        }
+
+        public static void RaiseBrowserOpenFileUpsert(string channelId, string displayName, string url)
+        {
+            BrowserOpenFileUpsert?.Invoke(channelId, displayName, url);
+        }
+
+        public static void RaiseBrowserOpenFileRemove(string channelId)
+        {
+            BrowserOpenFileRemove?.Invoke(channelId);
         }
 
         public static Task RaiseNotifyUserLoggedInAllAsync()

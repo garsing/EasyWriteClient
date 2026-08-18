@@ -53,10 +53,14 @@ namespace WordAddIn1.BrowserHost
 
             HostCallbacks.RaiseClearDesktopTopMost();
 
-            if (!string.IsNullOrWhiteSpace(tabUuid)
-                && ChannelRegistry.TryGet(BrowserChannel.AgentPrefix + tabUuid.Trim(), out _))
+            if (!string.IsNullOrWhiteSpace(tabUuid))
             {
-                ChannelRegistry.Remove(BrowserChannel.AgentPrefix + tabUuid.Trim());
+                string channelId = BrowserChannel.AgentPrefix + tabUuid.Trim();
+                HostCallbacks.RaiseBrowserOpenFileRemove(channelId);
+                if (ChannelRegistry.TryGet(channelId, out _))
+                {
+                    ChannelRegistry.Remove(channelId);
+                }
             }
         }
 
@@ -113,6 +117,11 @@ namespace WordAddIn1.BrowserHost
 
                 var channel = ChannelRegistry.CreateOrGetBrowserAgent(tabUuid, setAsDefault: true);
                 channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, visible);
+
+                HostCallbacks.RaiseBrowserOpenFileUpsert(
+                    channel.ChannelId,
+                    channel.TryGetDisplayName() ?? channel.Url,
+                    channel.Url);
 
                 if (visible)
                 {

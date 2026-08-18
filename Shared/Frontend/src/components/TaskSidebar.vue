@@ -172,6 +172,7 @@ import wordAppIcon from '../assets/images/word.png'
 import wpsAppIcon from '../assets/images/wps.png'
 import excelAppIcon from '../assets/images/excel.png'
 import pptAppIcon from '../assets/images/ppt.png'
+import knowledgeBaseIcon from '../assets/images/knowledge_base.png'
 import { openFileSelectionKey } from '../utils/selectedOpenFiles.js'
 
 const props = defineProps({
@@ -247,6 +248,8 @@ function openFileAppIcon (item) {
   if (type === 'excel') return excelAppIcon
   if (type === 'ppt') return pptAppIcon
   if (type === 'wps' || type === 'et' || type === 'wpp') return wpsAppIcon
+  // 易写浏览页暂无独立图标，用知识库图区分办公文档
+  if (type === 'browser') return knowledgeBaseIcon
   return wordAppIcon
 }
 

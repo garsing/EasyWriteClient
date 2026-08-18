@@ -54,6 +54,8 @@ namespace EasyWriteClient.Desktop
             HostCallbacks.ExcelApplicationResolved = OnExcelApplicationResolved;
             HostCallbacks.PowerPointApplicationResolved = OnPowerPointApplicationResolved;
             HostCallbacks.OpenFilesRefresh = OnOpenFilesRefresh;
+            HostCallbacks.BrowserOpenFileUpsert = OnBrowserOpenFileUpsert;
+            HostCallbacks.BrowserOpenFileRemove = OnBrowserOpenFileRemove;
             Disposed += (_, __) =>
             {
                 UserService.Instance.OnUserLoggedIn -= OnUserLoggedIn;
@@ -82,6 +84,16 @@ namespace EasyWriteClient.Desktop
                     HostCallbacks.OpenFilesRefresh = null;
                 }
 
+                if (ReferenceEquals(HostCallbacks.BrowserOpenFileUpsert, (Action<string, string, string>)OnBrowserOpenFileUpsert))
+                {
+                    HostCallbacks.BrowserOpenFileUpsert = null;
+                }
+
+                if (ReferenceEquals(HostCallbacks.BrowserOpenFileRemove, (Action<string>)OnBrowserOpenFileRemove))
+                {
+                    HostCallbacks.BrowserOpenFileRemove = null;
+                }
+
                 try
                 {
                     _openFilesMonitor?.Dispose();
@@ -104,6 +116,33 @@ namespace EasyWriteClient.Desktop
             {
                 System.Diagnostics.Debug.WriteLine(
                     "[DesktopChatSurface] OpenFilesRefresh: " + ex.Message);
+            }
+        }
+
+        private void OnBrowserOpenFileUpsert(string channelId, string displayName, string url)
+        {
+            try
+            {
+                StartOpenFilesMonitorIfNeeded();
+                _openFilesMonitor?.UpsertBrowserItem(channelId, displayName, url);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    "[DesktopChatSurface] BrowserOpenFileUpsert: " + ex.Message);
+            }
+        }
+
+        private void OnBrowserOpenFileRemove(string channelId)
+        {
+            try
+            {
+                _openFilesMonitor?.RemoveBrowserItem(channelId);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    "[DesktopChatSurface] BrowserOpenFileRemove: " + ex.Message);
             }
         }
 

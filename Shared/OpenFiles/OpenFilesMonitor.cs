@@ -122,6 +122,55 @@ namespace WordAddIn1.OpenFiles
             UpdateLateBindReconcileTimer();
         }
 
+        /// <summary>易写浏览页：按网页粒度写入侧栏（不经 COM 探测）。</summary>
+        public void UpsertBrowserItem(string channelId, string displayName, string url)
+        {
+            if (_disposed || string.IsNullOrWhiteSpace(channelId))
+            {
+                return;
+            }
+
+            string id = channelId.Trim();
+            string name = !string.IsNullOrWhiteSpace(displayName)
+                ? displayName.Trim()
+                : (!string.IsNullOrWhiteSpace(url) ? url.Trim() : "易写浏览器");
+
+            var item = new OpenFileItem
+            {
+                Id = id,
+                AppType = BrowserTypeKey,
+                DisplayName = name,
+                FullPath = string.IsNullOrWhiteSpace(url) ? null : url.Trim(),
+                IsSaved = true,
+                ChannelId = id
+            };
+
+            OnDocumentOpened(item);
+        }
+
+        /// <summary>易写浏览窗关闭：仅从侧栏移除；渠道由 Host 自行 Remove。</summary>
+        public void RemoveBrowserItem(string channelId)
+        {
+            if (_disposed || string.IsNullOrWhiteSpace(channelId))
+            {
+                return;
+            }
+
+            string id = channelId.Trim();
+            bool removed;
+            lock (_gate)
+            {
+                removed = _items.Remove(id);
+            }
+
+            if (removed)
+            {
+                RaiseChanged();
+            }
+        }
+
+        public const string BrowserTypeKey = "browser";
+
         public object BuildOpenChannelsPayload()
         {
             List<OpenFileItem> items;
@@ -235,7 +284,8 @@ namespace WordAddIn1.OpenFiles
                 || string.Equals(appType, ExcelOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(appType, EtOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(appType, PptOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(appType, WppOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase);
+                || string.Equals(appType, WppOpenFilesDetector.TypeKey, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(appType, BrowserTypeKey, StringComparison.OrdinalIgnoreCase);
         }
 
         private void ConfigureFromConfigUnlocked()
