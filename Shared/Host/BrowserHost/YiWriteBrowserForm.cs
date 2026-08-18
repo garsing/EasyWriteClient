@@ -178,6 +178,25 @@ namespace WordAddIn1.BrowserHost
                 .ConfigureAwait(true);
         }
 
+        /// <summary>调用 CDP；parametersAsJson 为方法参数对象 JSON。</summary>
+        public async Task<string> CallCdpAsync(string methodName, string parametersAsJson)
+        {
+            if (_closing || IsDisposed)
+            {
+                throw new InvalidOperationException("浏览窗已关闭");
+            }
+
+            await EnsureCoreAsync().ConfigureAwait(true);
+            if (_webView.CoreWebView2 == null)
+            {
+                throw new InvalidOperationException("WebView2 引擎不可用");
+            }
+
+            return await _webView.CoreWebView2
+                .CallDevToolsProtocolMethodAsync(methodName, parametersAsJson ?? "{}")
+                .ConfigureAwait(true);
+        }
+
         public void ApplyVisibility(bool visible)
         {
             _agentVisible = visible;

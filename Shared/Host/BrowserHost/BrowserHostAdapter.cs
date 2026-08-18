@@ -31,5 +31,18 @@ namespace WordAddIn1.BrowserHost
         {
             return YiWriteBrowserHost.SnapshotAsync(channel, refId);
         }
+
+        public static Task<BrowserInteractResult> InteractAgentAsync(
+            BrowserChannel channel,
+            string action,
+            string refId,
+            string text,
+            string direction,
+            string key,
+            string option)
+        {
+            return YiWriteBrowserHost.InteractAsync(
+                channel, action, refId, text, direction, key, option);
+        }
     }
 }
