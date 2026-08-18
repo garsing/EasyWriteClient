@@ -51,6 +51,8 @@ namespace WordAddIn1.BrowserHost
                 }
             }
 
+            HostCallbacks.RaiseClearDesktopTopMost();
+
             if (!string.IsNullOrWhiteSpace(tabUuid)
                 && ChannelRegistry.TryGet(BrowserChannel.AgentPrefix + tabUuid.Trim(), out _))
             {
@@ -111,6 +113,15 @@ namespace WordAddIn1.BrowserHost
 
                 var channel = ChannelRegistry.CreateOrGetBrowserAgent(tabUuid, setAsDefault: true);
                 channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, visible);
+
+                if (visible)
+                {
+                    HostCallbacks.RaiseBringDesktopToFront();
+                }
+                else
+                {
+                    HostCallbacks.RaiseClearDesktopTopMost();
+                }
 
                 return BrowserNavigateResult.Ok(channel, form.CurrentUrl, form.CurrentTitle, visible);
             }

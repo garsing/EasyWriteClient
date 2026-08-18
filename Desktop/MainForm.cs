@@ -37,6 +37,8 @@ namespace EasyWriteClient.Desktop
         private bool _expandedWasCustomMaximized;
         private WindowLayoutMode _layoutMode = WindowLayoutMode.Expanded;
         private Action _requestCompactHandler;
+        private Action _bringDesktopToFrontHandler;
+        private Action _clearDesktopTopMostHandler;
         private readonly System.Windows.Forms.Timer _idleTimer;
         private DateTime _lastActivityUtc = DateTime.UtcNow;
         private bool _isFloatBall;
@@ -91,6 +93,40 @@ namespace EasyWriteClient.Desktop
             };
             HostCallbacks.RequestCompact = _requestCompactHandler;
 
+            _bringDesktopToFrontHandler = () =>
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                if (InvokeRequired)
+                {
+                    BeginInvoke(_bringDesktopToFrontHandler);
+                    return;
+                }
+
+                BringDesktopToFrontOverBrowser();
+            };
+            HostCallbacks.BringDesktopToFront = _bringDesktopToFrontHandler;
+
+            _clearDesktopTopMostHandler = () =>
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                if (InvokeRequired)
+                {
+                    BeginInvoke(_clearDesktopTopMostHandler);
+                    return;
+                }
+
+                TopMost = false;
+            };
+            HostCallbacks.ClearDesktopTopMost = _clearDesktopTopMostHandler;
+
             _titleBar = new DesktopTitleBar(_dpiScale);
             _chatSurface = new DesktopChatSurface();
 
@@ -142,6 +178,16 @@ namespace EasyWriteClient.Desktop
                 if (ReferenceEquals(HostCallbacks.RequestCompact, _requestCompactHandler))
                 {
                     HostCallbacks.RequestCompact = null;
+                }
+
+                if (ReferenceEquals(HostCallbacks.BringDesktopToFront, _bringDesktopToFrontHandler))
+                {
+                    HostCallbacks.BringDesktopToFront = null;
+                }
+
+                if (ReferenceEquals(HostCallbacks.ClearDesktopTopMost, _clearDesktopTopMostHandler))
+                {
+                    HostCallbacks.ClearDesktopTopMost = null;
                 }
 
                 WordHost.Shutdown();
@@ -204,6 +250,35 @@ namespace EasyWriteClient.Desktop
             }
 
             SetLayoutMode(WindowLayoutMode.Compact);
+        }
+
+        /// <summary>易写浏览窗可见后：缩小版 Desktop 置顶，浮在浏览窗之上。</summary>
+        internal void BringDesktopToFrontOverBrowser()
+        {
+            if (_isFloatBall)
+            {
+                LeaveFloatBall();
+            }
+
+            if (_layoutMode != WindowLayoutMode.Compact)
+            {
+                SetLayoutMode(WindowLayoutMode.Compact);
+            }
+
+            TopMost = true;
+            if (WindowState == FormWindowState.Minimized)
+            {
+                WindowState = FormWindowState.Normal;
+            }
+
+            if (!Visible)
+            {
+                Show();
+            }
+
+            BringToFront();
+            Activate();
+            NoteUserActivity();
         }
 
         /// <summary>Agent 流式/请求忙碌：禁止收球；若已是球则弹回缩小版。</summary>
@@ -565,6 +640,7 @@ namespace EasyWriteClient.Desktop
             {
                 StopIdleWatch();
                 _compactUiBusy = false;
+                TopMost = false;
                 if (_layoutMode == WindowLayoutMode.Compact && !_isFloatBall)
                 {
                     // 离开缩小版前记下当前尺寸，便于下次回来

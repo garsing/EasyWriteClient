@@ -27,6 +27,14 @@ namespace WordAddIn1
         /// <summary>Desktop：请求进入缩小版窗口形态；Plugin 不注册则为 no-op。</summary>
         public static Action RequestCompact { get; set; }
 
+        /// <summary>
+        /// Desktop：易写浏览窗可见打开后，把缩小版 Desktop 置顶（浮在浏览窗之上）。
+        /// </summary>
+        public static Action BringDesktopToFront { get; set; }
+
+        /// <summary>Desktop：浏览窗关闭/隐藏后取消置顶。</summary>
+        public static Action ClearDesktopTopMost { get; set; }
+
         public static void RaiseWordApplicationResolved(object wordApplication)
         {
             WordApplicationResolved?.Invoke(wordApplication);
@@ -45,6 +53,16 @@ namespace WordAddIn1
         public static void RaiseRequestCompact()
         {
             RequestCompact?.Invoke();
+        }
+
+        public static void RaiseBringDesktopToFront()
+        {
+            BringDesktopToFront?.Invoke();
+        }
+
+        public static void RaiseClearDesktopTopMost()
+        {
+            ClearDesktopTopMost?.Invoke();
         }
 
         public static void RaiseOpenFilesRefresh()

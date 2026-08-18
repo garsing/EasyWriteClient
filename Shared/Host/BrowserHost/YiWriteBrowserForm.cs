@@ -156,6 +156,7 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 Location = new Point(-16000, -16000);
+                HostCallbacks.RaiseClearDesktopTopMost();
             }
         }
 
