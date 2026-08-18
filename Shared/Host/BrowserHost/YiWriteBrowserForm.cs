@@ -197,6 +197,32 @@ namespace WordAddIn1.BrowserHost
                 .ConfigureAwait(true);
         }
 
+        /// <summary>等待下一次导航完成；超时返回 false（未导航也算超时）。</summary>
+        public async Task<bool> WaitNavigationAsync(TimeSpan timeout)
+        {
+            if (_closing || IsDisposed || _webView?.CoreWebView2 == null)
+            {
+                return false;
+            }
+
+            var tcs = new TaskCompletionSource<bool>();
+            void OnNav(object sender, CoreWebView2NavigationCompletedEventArgs e)
+            {
+                _webView.CoreWebView2.NavigationCompleted -= OnNav;
+                tcs.TrySetResult(e.IsSuccess);
+            }
+
+            _webView.CoreWebView2.NavigationCompleted += OnNav;
+            Task winner = await Task.WhenAny(tcs.Task, Task.Delay(timeout)).ConfigureAwait(true);
+            _webView.CoreWebView2.NavigationCompleted -= OnNav;
+            if (winner == tcs.Task)
+            {
+                return await tcs.Task.ConfigureAwait(true);
+            }
+
+            return false;
+        }
+
         public void ApplyVisibility(bool visible)
         {
             _agentVisible = visible;

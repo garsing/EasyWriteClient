@@ -19,7 +19,14 @@ namespace WordAddIn1.BrowserHost
         {
             "button", "link", "textbox", "searchbox", "combobox", "checkbox", "radio",
             "switch", "tab", "menuitem", "menuitemcheckbox", "menuitemradio", "option",
-            "slider", "spinbutton", "treeitem", "listbox", "checkable"
+            "slider", "spinbutton", "treeitem", "listbox", "checkable",
+            "text field", "search box", "combo box"
+        };
+
+        /// <summary>可输入控件：百度等站点常标 ignored，overview 仍须发 ref。</summary>
+        private static readonly HashSet<string> InputRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "textbox", "searchbox", "combobox", "text field", "search box", "combo box"
         };
 
         private static readonly HashSet<string> StructureRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -98,7 +105,7 @@ namespace WordAddIn1.BrowserHost
                 return result;
             }
 
-            string startId = null;
+            string startId;
             if (!string.IsNullOrWhiteSpace(detailRootRef) && priorEntry != null)
             {
                 startId = FindNodeId(byId, priorEntry);
@@ -145,7 +152,9 @@ namespace WordAddIn1.BrowserHost
                     return;
                 }
 
-                if (node.Ignored && !IsRootLike(node.Role))
+                // 可输入控件即使 ignored 也要发 ref（百度搜索框常见）
+                bool inputLike = IsInputLike(node);
+                if (node.Ignored && !IsRootLike(node.Role) && !inputLike)
                 {
                     foreach (string child in node.ChildIds)
                     {
@@ -170,9 +179,9 @@ namespace WordAddIn1.BrowserHost
                     return;
                 }
 
-                bool wantRef = ShouldAssignRef(role, name, refs.Count);
+                bool wantRef = ShouldAssignRef(node, refs.Count);
                 string refId = null;
-                if (wantRef && refs.Count < MaxRefNodes)
+                if (wantRef && refs.Count < MaxRefNodes && node.BackendDomNodeId.HasValue)
                 {
                     refId = "e" + nextRef;
                     nextRef++;
@@ -184,6 +193,11 @@ namespace WordAddIn1.BrowserHost
                         Name = name
                     };
                 }
+                else if (wantRef && !node.BackendDomNodeId.HasValue)
+                {
+                    // 无可操作 backend id：仍打印，不发 ref
+                    wantRef = false;
+                }
                 else if (wantRef && refs.Count >= MaxRefNodes)
                 {
                     truncated = true;
@@ -191,6 +205,7 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 bool print = wantRef
+                    || inputLike
                     || StructureRoles.Contains(role)
                     || (!string.IsNullOrWhiteSpace(name) && !IsNoiseRole(role))
                     || depth == 0;
@@ -220,6 +235,11 @@ namespace WordAddIn1.BrowserHost
 
             Walk(startId, 0);
 
+            if (!truncated)
+            {
+                AppendMissingInputControls(byId, refs, sb, ref nextRef, ref truncated, ref truncatedReason);
+            }
+
             result.Success = true;
             result.TreeText = sb.ToString().TrimEnd();
             result.Refs = refs;
@@ -228,26 +248,113 @@ namespace WordAddIn1.BrowserHost
             return result;
         }
 
-        private static bool ShouldAssignRef(string role, string name, int currentRefCount)
+        /// <summary>补全遍历仍漏掉的可输入节点（断链 / ignored 父级未走到等）。</summary>
+        private static void AppendMissingInputControls(
+            Dictionary<string, AxNode> byId,
+            Dictionary<string, BrowserRefEntry> refs,
+            StringBuilder sb,
+            ref int nextRef,
+            ref bool truncated,
+            ref string truncatedReason)
         {
-            if (currentRefCount >= MaxRefNodes)
+            var already = new HashSet<int>();
+            foreach (var e in refs.Values)
+            {
+                if (e.BackendDomNodeId.HasValue)
+                {
+                    already.Add(e.BackendDomNodeId.Value);
+                }
+            }
+
+            bool header = false;
+            foreach (var node in byId.Values.OrderBy(n => n.NodeId, StringComparer.Ordinal))
+            {
+                if (truncated || sb.Length >= MaxTreeChars)
+                {
+                    truncated = true;
+                    truncatedReason = truncatedReason ?? ("tree_chars>" + MaxTreeChars);
+                    return;
+                }
+
+                if (!IsInputLike(node) || !node.BackendDomNodeId.HasValue)
+                {
+                    continue;
+                }
+
+                if (already.Contains(node.BackendDomNodeId.Value))
+                {
+                    continue;
+                }
+
+                if (refs.Count >= MaxRefNodes)
+                {
+                    truncated = true;
+                    truncatedReason = "ref_nodes>" + MaxRefNodes;
+                    return;
+                }
+
+                if (!header)
+                {
+                    sb.AppendLine("- (补全) 可输入控件");
+                    header = true;
+                }
+
+                string role = string.IsNullOrWhiteSpace(node.Role) ? "textbox" : node.Role;
+                string name = node.Name ?? "";
+                string refId = "e" + nextRef;
+                nextRef++;
+                refs[refId] = new BrowserRefEntry
+                {
+                    AxNodeId = node.NodeId,
+                    BackendDomNodeId = node.BackendDomNodeId,
+                    Role = role,
+                    Name = name
+                };
+                already.Add(node.BackendDomNodeId.Value);
+                AppendLine(sb, 1, role, name, refId, note: null);
+            }
+        }
+
+        private static bool IsInputLike(AxNode node)
+        {
+            if (node == null)
             {
                 return false;
             }
 
+            if (InputRoles.Contains(node.Role ?? ""))
+            {
+                return true;
+            }
+
+            return node.Editable;
+        }
+
+        private static bool ShouldAssignRef(AxNode node, int currentRefCount)
+        {
+            if (node == null || currentRefCount >= MaxRefNodes)
+            {
+                return false;
+            }
+
+            string role = node.Role ?? "";
             if (FrameRoles.Contains(role))
             {
                 return false;
             }
 
+            if (IsInputLike(node))
+            {
+                return true;
+            }
+
             if (InteractiveRoles.Contains(role))
             {
-                // 可交互：有名字优先；无名字仍给 ref（否则点不到无名按钮）
                 return true;
             }
 
             if (string.Equals(role, "heading", StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(name))
+                && !string.IsNullOrWhiteSpace(node.Name))
             {
                 return true;
             }
@@ -371,6 +478,7 @@ namespace WordAddIn1.BrowserHost
             public string Role { get; set; }
             public string Name { get; set; }
             public bool Ignored { get; set; }
+            public bool Editable { get; set; }
             public int? BackendDomNodeId { get; set; }
             public List<string> ChildIds { get; set; }
 
@@ -414,9 +522,73 @@ namespace WordAddIn1.BrowserHost
                     Role = ReadAxValue(jo["role"]),
                     Name = ReadAxValue(jo["name"]),
                     Ignored = jo["ignored"] != null && jo["ignored"].Type == JTokenType.Boolean && (bool)jo["ignored"],
+                    Editable = ReadEditable(jo["properties"]),
                     BackendDomNodeId = backend,
                     ChildIds = childIds
                 };
+            }
+
+            private static bool ReadEditable(JToken propertiesToken)
+            {
+                if (!(propertiesToken is JArray props))
+                {
+                    return false;
+                }
+
+                foreach (var p in props)
+                {
+                    if (!(p is JObject po))
+                    {
+                        continue;
+                    }
+
+                    string pname = Convert.ToString(po["name"]) ?? "";
+                    if (!string.Equals(pname, "editable", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    // editable: boolean true，或 token "plaintext" / "richtext" 等
+                    var val = po["value"];
+                    if (val == null || val.Type == JTokenType.Null)
+                    {
+                        return true;
+                    }
+
+                    if (val.Type == JTokenType.Boolean)
+                    {
+                        return (bool)val;
+                    }
+
+                    if (val is JObject vo)
+                    {
+                        if (vo["value"] != null && vo["value"].Type == JTokenType.Boolean)
+                        {
+                            return (bool)vo["value"];
+                        }
+
+                        string s = Convert.ToString(vo["value"]) ?? "";
+                        if (string.IsNullOrWhiteSpace(s))
+                        {
+                            return false;
+                        }
+
+                        if (string.Equals(s, "false", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(s, "none", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return false;
+                        }
+
+                        return true;
+                    }
+
+                    string raw = Convert.ToString(val) ?? "";
+                    return !string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(raw, "none", StringComparison.OrdinalIgnoreCase)
+                        && !string.IsNullOrWhiteSpace(raw);
+                }
+
+                return false;
             }
 
             private static string TokenToId(JToken t)

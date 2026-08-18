@@ -198,6 +198,12 @@ namespace WordAddIn1.BrowserHost
                     return BrowserSnapshotResult.Fail(built.Error ?? "取无障碍树失败");
                 }
 
+                // overview：DOM 再补一轮真实 input（AX 对百度搜索框常漏）
+                if (!isDetail)
+                {
+                    await BrowserDomInputSupplement.MergeAsync(form, built).ConfigureAwait(true);
+                }
+
                 BrowserRefStore.Replace(channel.ChannelId, built.Refs);
                 channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, channel.Visible);
 

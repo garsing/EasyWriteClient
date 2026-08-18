@@ -1,0 +1,256 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
+
+namespace WordAddIn1.BrowserHost
+{
+    /// <summary>
+    /// AX 树漏掉真实 input 时（如百度搜索框），用 DOM.querySelectorAll 补进 snapshot / ref 表。
+    /// </summary>
+    internal static class BrowserDomInputSupplement
+    {
+        private const string Selector =
+            "input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=image]):not([type=checkbox]):not([type=radio]):not([type=file]),"
+            + "textarea,"
+            + "select,"
+            + "[contenteditable=true],[contenteditable=\"\"],[contenteditable=plaintext-only]";
+
+        public static async Task MergeAsync(YiWriteBrowserForm form, BrowserAxBuildResult built)
+        {
+            if (form == null || built == null || !built.Success || built.Refs == null)
+            {
+                return;
+            }
+
+            try
+            {
+                string docJson = await form.CallCdpAsync(
+                    "DOM.getDocument",
+                    "{\"depth\":0,\"pierce\":true}").ConfigureAwait(true);
+                var doc = JObject.Parse(docJson);
+                if (doc["root"]?["nodeId"] == null)
+                {
+                    return;
+                }
+
+                int rootId = doc["root"]["nodeId"].Value<int>();
+                var qsPayload = new JObject
+                {
+                    ["nodeId"] = rootId,
+                    ["selector"] = Selector
+                };
+                string qsJson = await form.CallCdpAsync(
+                    "DOM.querySelectorAll",
+                    qsPayload.ToString(Newtonsoft.Json.Formatting.None)).ConfigureAwait(true);
+                var qs = JObject.Parse(qsJson);
+                var nodeIds = qs["nodeIds"] as JArray;
+                if (nodeIds == null || nodeIds.Count == 0)
+                {
+                    return;
+                }
+
+                var already = new HashSet<int>();
+                int maxRef = 0;
+                foreach (var kv in built.Refs)
+                {
+                    if (kv.Value?.BackendDomNodeId != null)
+                    {
+                        already.Add(kv.Value.BackendDomNodeId.Value);
+                    }
+
+                    if (kv.Key != null
+                        && kv.Key.Length > 1
+                        && kv.Key[0] == 'e'
+                        && int.TryParse(kv.Key.Substring(1), out int n)
+                        && n > maxRef)
+                    {
+                        maxRef = n;
+                    }
+                }
+
+                var sb = new StringBuilder(built.TreeText ?? "");
+                bool header = false;
+                int nextRef = maxRef + 1;
+
+                foreach (var idTok in nodeIds)
+                {
+                    if (built.Refs.Count >= BrowserAxTreeBuilder.MaxRefNodes)
+                    {
+                        built.Truncated = true;
+                        built.TruncatedReason = "ref_nodes>" + BrowserAxTreeBuilder.MaxRefNodes;
+                        break;
+                    }
+
+                    if (sb.Length >= BrowserAxTreeBuilder.MaxTreeChars)
+                    {
+                        built.Truncated = true;
+                        built.TruncatedReason = "tree_chars>" + BrowserAxTreeBuilder.MaxTreeChars;
+                        break;
+                    }
+
+                    if (idTok == null || idTok.Type == JTokenType.Null)
+                    {
+                        continue;
+                    }
+
+                    int nodeId = idTok.Value<int>();
+                    string descJson = await form.CallCdpAsync(
+                        "DOM.describeNode",
+                        "{\"nodeId\":" + nodeId.ToString(CultureInfo.InvariantCulture) + ",\"pierce\":true}")
+                        .ConfigureAwait(true);
+                    var desc = JObject.Parse(descJson);
+                    var node = desc["node"] as JObject;
+                    if (node == null)
+                    {
+                        continue;
+                    }
+
+                    if (node["backendNodeId"] == null || node["backendNodeId"].Type == JTokenType.Null)
+                    {
+                        continue;
+                    }
+
+                    int backendId = node["backendNodeId"].Value<int>();
+                    if (already.Contains(backendId))
+                    {
+                        continue;
+                    }
+
+                    string tag = (Convert.ToString(node["nodeName"]) ?? "INPUT").ToUpperInvariant();
+                    var attrs = ParseAttributes(node["attributes"] as JArray);
+                    string type = GetAttr(attrs, "type");
+                    if (string.Equals(type, "password", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // 仍列出，便于模型看见；type 操作会被 RiskGuard 拒绝
+                    }
+
+                    string role = InferRole(tag, type, attrs);
+                    string name = FirstNonEmpty(
+                        GetAttr(attrs, "aria-label"),
+                        GetAttr(attrs, "placeholder"),
+                        GetAttr(attrs, "title"),
+                        GetAttr(attrs, "name"),
+                        GetAttr(attrs, "id"));
+
+                    if (!header)
+                    {
+                        if (sb.Length > 0 && !sb.ToString().EndsWith("\n"))
+                        {
+                            sb.AppendLine();
+                        }
+
+                        sb.AppendLine("- (DOM补全) 可输入控件");
+                        header = true;
+                    }
+
+                    string refId = "e" + nextRef;
+                    nextRef++;
+                    built.Refs[refId] = new BrowserRefEntry
+                    {
+                        AxNodeId = null,
+                        BackendDomNodeId = backendId,
+                        Role = role,
+                        Name = name ?? ""
+                    };
+                    already.Add(backendId);
+
+                    sb.Append("  - ").Append(role).Append(" ref=").Append(refId);
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        sb.Append(" \"").Append(Escape(name.Trim())).Append('"');
+                    }
+
+                    sb.AppendLine();
+                }
+
+                if (header)
+                {
+                    built.TreeText = sb.ToString().TrimEnd();
+                }
+            }
+            catch
+            {
+                // DOM 补全失败不阻断 AX snapshot
+            }
+        }
+
+        private static Dictionary<string, string> ParseAttributes(JArray attrs)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (attrs == null)
+            {
+                return map;
+            }
+
+            for (int i = 0; i + 1 < attrs.Count; i += 2)
+            {
+                string k = Convert.ToString(attrs[i]) ?? "";
+                string v = Convert.ToString(attrs[i + 1]) ?? "";
+                if (!string.IsNullOrEmpty(k))
+                {
+                    map[k] = v;
+                }
+            }
+
+            return map;
+        }
+
+        private static string GetAttr(Dictionary<string, string> attrs, string key)
+        {
+            if (attrs == null || !attrs.TryGetValue(key, out string v))
+            {
+                return null;
+            }
+
+            return string.IsNullOrWhiteSpace(v) ? null : v;
+        }
+
+        private static string InferRole(string tag, string type, Dictionary<string, string> attrs)
+        {
+            string ariaRole = GetAttr(attrs, "role");
+            if (!string.IsNullOrWhiteSpace(ariaRole))
+            {
+                return ariaRole.Trim().ToLowerInvariant();
+            }
+
+            if (string.Equals(tag, "TEXTAREA", StringComparison.OrdinalIgnoreCase))
+            {
+                return "textbox";
+            }
+
+            if (string.Equals(tag, "SELECT", StringComparison.OrdinalIgnoreCase))
+            {
+                return "combobox";
+            }
+
+            if (string.Equals(type, "search", StringComparison.OrdinalIgnoreCase))
+            {
+                return "searchbox";
+            }
+
+            return "textbox";
+        }
+
+        private static string FirstNonEmpty(params string[] parts)
+        {
+            foreach (string p in parts)
+            {
+                if (!string.IsNullOrWhiteSpace(p))
+                {
+                    return p;
+                }
+            }
+
+            return "";
+        }
+
+        private static string Escape(string s)
+        {
+            return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", " ").Replace("\n", " ");
+        }
+    }
+}

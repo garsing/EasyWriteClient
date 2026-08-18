@@ -86,18 +86,43 @@ namespace WordAddIn1.BrowserHost
         public static async Task ClickAsync(YiWriteBrowserForm form, int backendNodeId)
         {
             string objectId = await ResolveObjectIdAsync(form, backendNodeId).ConfigureAwait(true);
+            // 优先点到最近 a[href]；派发完整鼠标序列，适配热搜等自定义点击
             await CallFunctionOnAsync(
                 form,
                 objectId,
                 @"function() {
   this.scrollIntoView({block:'center', inline:'center'});
-  if (typeof this.click === 'function') { this.click(); }
-  else {
-    var e = new MouseEvent('click', {bubbles:true, cancelable:true, view:window});
-    this.dispatchEvent(e);
+  var t = this;
+  try {
+    if (t.closest) {
+      var a = t.closest('a[href]');
+      if (a) t = a;
+    }
+  } catch (e) {}
+  function fire(type) {
+    try {
+      t.dispatchEvent(new MouseEvent(type, {bubbles:true, cancelable:true, view:window, buttons:1}));
+    } catch (e2) {}
   }
+  fire('pointerdown');
+  fire('mousedown');
+  fire('mouseup');
+  fire('click');
+  try {
+    if (typeof t.click === 'function') t.click();
+  } catch (e3) {}
+  return !!(t && (t.href || t.tagName));
 }",
                 null).ConfigureAwait(true);
+
+            // 若引发导航，稍等加载，避免立刻 snapshot 仍停在旧页
+            try
+            {
+                await form.WaitNavigationAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true);
+            }
+            catch
+            {
+            }
         }
 
         public static async Task TypeAsync(YiWriteBrowserForm form, int backendNodeId, string text)
@@ -113,9 +138,21 @@ namespace WordAddIn1.BrowserHost
   this.focus();
   if (typeof this.select === 'function') { try { this.select(); } catch(e) {} }
   if ('value' in this) {
-    this.value = '';
-    this.dispatchEvent(new Event('input', {bubbles:true}));
-    this.value = text;
+    try {
+      var proto = this.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (desc && desc.set) {
+        desc.set.call(this, '');
+        this.dispatchEvent(new Event('input', {bubbles:true}));
+        desc.set.call(this, text);
+      } else {
+        this.value = '';
+        this.dispatchEvent(new Event('input', {bubbles:true}));
+        this.value = text;
+      }
+    } catch (e2) {
+      this.value = text;
+    }
     this.dispatchEvent(new Event('input', {bubbles:true}));
     this.dispatchEvent(new Event('change', {bubbles:true}));
   } else if (this.isContentEditable) {
