@@ -26,7 +26,7 @@ namespace WordAddIn1
                         return Fail("必须提供 url 参数");
                     }
 
-                    bool visible = ParseBool(args, "visible", false);
+                    bool visible = ParseBool(args, "visible", true);
                     string channelId = TryGetString(args, "channel_id");
 
                     string existingTabUuid = null;

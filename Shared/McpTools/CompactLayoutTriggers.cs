@@ -44,6 +44,7 @@ namespace WordAddIn1
             "F_manage_ppt_slide",
             "F_ppt_animation",
             "F_ppt_transition",
+            "F_browser_navigate",
         };
 
         /// <summary>只读 action：不触发缩小版（即使用具名在白名单内）。</summary>
@@ -66,8 +67,69 @@ namespace WordAddIn1
                 return false;
             }
 
+            // 浏览器：仅在可见打开时缩 Desktop；visible=false 隐藏浏览不抢缩小版
+            if (string.Equals(toolName, "F_browser_navigate", StringComparison.Ordinal))
+            {
+                return IsBrowserNavigateVisible(args);
+            }
+
             string action = TryGetAction(args);
             if (!string.IsNullOrEmpty(action) && ReadOnlyActions.Contains(action))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>visible 省略视为 true（与 F_browser_navigate 默认一致）。</summary>
+        private static bool IsBrowserNavigateVisible(IReadOnlyDictionary<string, object> args)
+        {
+            if (args == null)
+            {
+                return true;
+            }
+
+            object raw = null;
+            if (args.TryGetValue("visible", out raw) && raw != null)
+            {
+                // ok
+            }
+            else
+            {
+                foreach (KeyValuePair<string, object> kv in args)
+                {
+                    if (string.Equals(kv.Key, "visible", StringComparison.OrdinalIgnoreCase) && kv.Value != null)
+                    {
+                        raw = kv.Value;
+                        break;
+                    }
+                }
+            }
+
+            if (raw == null)
+            {
+                return true;
+            }
+
+            if (raw is bool b)
+            {
+                return b;
+            }
+
+            string s = Convert.ToString(raw)?.Trim();
+            if (string.IsNullOrEmpty(s))
+            {
+                return true;
+            }
+
+            if (bool.TryParse(s, out bool parsed))
+            {
+                return parsed;
+            }
+
+            if (s == "0" || string.Equals(s, "no", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(s, "false", StringComparison.OrdinalIgnoreCase))
             {
                 return false;
             }

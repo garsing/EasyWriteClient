@@ -24,12 +24,15 @@ namespace WordAddIn1.BrowserHost
         {
             Text = "易写浏览器";
             StartPosition = FormStartPosition.CenterScreen;
-            Width = 1100;
-            Height = 760;
+            // 与 Desktop 工作台版接近或略大（工作台默认约 1280×800）
+            Size = PreferredBrowserSize();
+            MinimumSize = new Size(960, 640);
             ShowInTaskbar = true;
+            ShowIcon = true;
             FormBorderStyle = FormBorderStyle.Sizable;
             MinimizeBox = true;
             MaximizeBox = true;
+            Icon = LoadAppIcon();
 
             _webView = new WebView2 { Dock = DockStyle.Fill };
             Controls.Add(_webView);
@@ -186,21 +189,6 @@ namespace WordAddIn1.BrowserHost
         {
             Opacity = 1;
             ShowInTaskbar = true;
-            WindowState = FormWindowState.Normal;
-
-            if (_hasNormalBounds && _normalBounds.Width > 100 && _normalBounds.Height > 100)
-            {
-                Bounds = _normalBounds;
-            }
-            else
-            {
-                StartPosition = FormStartPosition.Manual;
-                Size = new Size(1100, 760);
-                Rectangle wa = Screen.PrimaryScreen.WorkingArea;
-                Location = new Point(
-                    wa.Left + Math.Max(0, (wa.Width - Width) / 2),
-                    wa.Top + Math.Max(0, (wa.Height - Height) / 2));
-            }
 
             if (!Visible)
             {
@@ -209,6 +197,8 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
+                // 可见打开直接最大化，避免相对工作台偏小
+                WindowState = FormWindowState.Maximized;
                 BringToFront();
                 Activate();
             }
@@ -242,6 +232,43 @@ namespace WordAddIn1.BrowserHost
             }
 
             return false;
+        }
+
+        private static Size PreferredBrowserSize()
+        {
+            // Desktop 工作台默认约 1280×800；浏览窗略大，且不超过工作区 92%
+            Rectangle wa = Screen.PrimaryScreen != null
+                ? Screen.PrimaryScreen.WorkingArea
+                : new Rectangle(0, 0, 1280, 800);
+            int w = Math.Min(1360, Math.Max(1100, (int)(wa.Width * 0.88)));
+            int h = Math.Min(900, Math.Max(720, (int)(wa.Height * 0.88)));
+            w = Math.Min(w, Math.Max(960, wa.Width - 40));
+            h = Math.Min(h, Math.Max(640, wa.Height - 40));
+            return new Size(w, h);
+        }
+
+        private static Icon LoadAppIcon()
+        {
+            try
+            {
+                // 与 Desktop MainForm 一致：优先 exe 内嵌图标
+                Icon fromExe = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+                if (fromExe != null)
+                {
+                    return fromExe;
+                }
+
+                string icoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "yi-write.ico");
+                if (File.Exists(icoPath))
+                {
+                    return new Icon(icoPath);
+                }
+            }
+            catch
+            {
+            }
+
+            return SystemIcons.Application;
         }
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)
