@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -15,6 +16,9 @@ namespace WordAddIn1.BrowserHost
         private readonly WebView2 _webView;
         private bool _coreReady;
         private bool _closing;
+        private bool _agentVisible;
+        private Rectangle _normalBounds;
+        private bool _hasNormalBounds;
 
         public YiWriteBrowserForm()
         {
@@ -31,6 +35,15 @@ namespace WordAddIn1.BrowserHost
             Controls.Add(_webView);
 
             FormClosing += OnFormClosing;
+            Activated += OnActivated;
+            Shown += (s, e) =>
+            {
+                if (!_hasNormalBounds && IsOnScreen(Bounds))
+                {
+                    _normalBounds = Bounds;
+                    _hasNormalBounds = true;
+                }
+            };
         }
 
         public string TabUuid { get; private set; }
@@ -123,26 +136,14 @@ namespace WordAddIn1.BrowserHost
 
         public void ApplyVisibility(bool visible)
         {
+            _agentVisible = visible;
             if (visible)
             {
-                Opacity = 1;
-                ShowInTaskbar = true;
-                if (!Visible)
-                {
-                    Show();
-                }
-
-                try
-                {
-                    WindowState = FormWindowState.Normal;
-                    BringToFront();
-                }
-                catch
-                {
-                }
+                RestoreOnScreen();
             }
             else
             {
+                RememberNormalBoundsIfOnScreen();
                 // 保持句柄存活以便加载；不抢任务栏与焦点
                 ShowInTaskbar = false;
                 Opacity = 0;
@@ -151,7 +152,7 @@ namespace WordAddIn1.BrowserHost
                     Show();
                 }
 
-                Location = new System.Drawing.Point(-16000, -16000);
+                Location = new Point(-16000, -16000);
             }
         }
 
@@ -164,6 +165,83 @@ namespace WordAddIn1.BrowserHost
 
             ApplyVisibility(true);
             return true;
+        }
+
+        private void OnActivated(object sender, EventArgs e)
+        {
+            if (_closing || IsDisposed)
+            {
+                return;
+            }
+
+            // 用户从任务栏 / Alt+Tab 点进来：即便先前是隐藏态，也应拉回屏幕可见
+            if (!_agentVisible || Opacity < 0.99 || !IsOnScreen(Bounds))
+            {
+                _agentVisible = true;
+                RestoreOnScreen();
+            }
+        }
+
+        private void RestoreOnScreen()
+        {
+            Opacity = 1;
+            ShowInTaskbar = true;
+            WindowState = FormWindowState.Normal;
+
+            if (_hasNormalBounds && _normalBounds.Width > 100 && _normalBounds.Height > 100)
+            {
+                Bounds = _normalBounds;
+            }
+            else
+            {
+                StartPosition = FormStartPosition.Manual;
+                Size = new Size(1100, 760);
+                Rectangle wa = Screen.PrimaryScreen.WorkingArea;
+                Location = new Point(
+                    wa.Left + Math.Max(0, (wa.Width - Width) / 2),
+                    wa.Top + Math.Max(0, (wa.Height - Height) / 2));
+            }
+
+            if (!Visible)
+            {
+                Show();
+            }
+
+            try
+            {
+                BringToFront();
+                Activate();
+            }
+            catch
+            {
+            }
+        }
+
+        private void RememberNormalBoundsIfOnScreen()
+        {
+            if (WindowState == FormWindowState.Normal && IsOnScreen(Bounds))
+            {
+                _normalBounds = Bounds;
+                _hasNormalBounds = true;
+            }
+        }
+
+        private static bool IsOnScreen(Rectangle bounds)
+        {
+            if (bounds.Width < 50 || bounds.Height < 50)
+            {
+                return false;
+            }
+
+            foreach (Screen screen in Screen.AllScreens)
+            {
+                if (screen.WorkingArea.IntersectsWith(bounds))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)
