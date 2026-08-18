@@ -62,6 +62,7 @@ namespace WordAddIn1
             F_ExcelPivotTool.Register(toolRegistry, wordApplication);
             F_ExcelChartTool.Register(toolRegistry, wordApplication);
             F_OpenDocumentTool.Register(toolRegistry, wordApplication);
+            F_BrowserNavigateTool.Register(toolRegistry, wordApplication);
             F_SwitchDefaultChannelTool.Register(toolRegistry, wordApplication);
             F_GetCurrDocChunkDisplayContentTool.Register(toolRegistry, wordApplication);
             F_GetCurrDocChunkParagraphDisplayContentTool.Register(toolRegistry, wordApplication);

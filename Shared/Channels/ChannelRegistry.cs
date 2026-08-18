@@ -252,6 +252,60 @@ namespace WordAddIn1
             }
         }
 
+        /// <summary>
+        /// 为易写浏览器页查找或创建渠道；channel_id 形如 <c>browser:agent:{tab_uuid}</c>。
+        /// </summary>
+        public static BrowserChannel CreateOrGetBrowserAgent(
+            string tabUuid,
+            bool setAsDefault = true)
+        {
+            if (string.IsNullOrWhiteSpace(tabUuid))
+            {
+                throw new ArgumentException("tab_uuid 不能为空。", nameof(tabUuid));
+            }
+
+            string uuid = tabUuid.Trim();
+            lock (Gate)
+            {
+                if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
+                    && Channels.TryGetValue(existingId, out IOperationChannel existing)
+                    && existing is BrowserChannel browserChannel
+                    && string.Equals(browserChannel.Track, "agent", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (setAsDefault)
+                    {
+                        _defaultChannelId = browserChannel.ChannelId;
+                    }
+
+                    return browserChannel;
+                }
+
+                string channelId = BrowserChannel.AgentPrefix + uuid;
+                var created = new BrowserChannel(channelId, uuid, "agent");
+                Channels[channelId] = created;
+                DocUuidToChannelId[uuid] = channelId;
+
+                if (setAsDefault || string.IsNullOrEmpty(_defaultChannelId))
+                {
+                    _defaultChannelId = channelId;
+                }
+
+                return created;
+            }
+        }
+
+        public static bool TryGetBrowser(string channelId, out BrowserChannel channel)
+        {
+            channel = null;
+            if (!TryGet(channelId, out IOperationChannel ch) || !(ch is BrowserChannel bc))
+            {
+                return false;
+            }
+
+            channel = bc;
+            return true;
+        }
+
         public static void Register(IOperationChannel channel, bool setAsDefault = false)
         {
             if (channel == null)
@@ -290,6 +344,10 @@ namespace WordAddIn1
                 else if (channel is WppChannel wpp && !string.IsNullOrEmpty(wpp.DocUuid))
                 {
                     DocUuidToChannelId[wpp.DocUuid] = channel.ChannelId;
+                }
+                else if (channel is BrowserChannel browser && !string.IsNullOrEmpty(browser.TabUuid))
+                {
+                    DocUuidToChannelId[browser.TabUuid] = channel.ChannelId;
                 }
 
                 if (setAsDefault || string.IsNullOrEmpty(_defaultChannelId))
@@ -478,6 +536,10 @@ namespace WordAddIn1
                 else if (ch is WppChannel wpp && !string.IsNullOrEmpty(wpp.DocUuid))
                 {
                     DocUuidToChannelId.Remove(wpp.DocUuid);
+                }
+                else if (ch is BrowserChannel browser && !string.IsNullOrEmpty(browser.TabUuid))
+                {
+                    DocUuidToChannelId.Remove(browser.TabUuid);
                 }
 
                 if (string.Equals(_defaultChannelId, channelId, StringComparison.Ordinal))

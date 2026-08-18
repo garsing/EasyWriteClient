@@ -176,6 +176,21 @@ namespace WordAddIn1
                 return true;
             }
 
+            if (channel is BrowserChannel browser)
+            {
+                if (!browser.IsLive())
+                {
+                    error = "渠道对应的浏览器页已关闭: " + channel.ChannelId;
+                    return false;
+                }
+
+                kind = "browser";
+                uuid = browser.TabUuid;
+                path = browser.Url ?? "";
+                name = browser.TryGetDisplayName() ?? "";
+                return true;
+            }
+
             error = "不支持的渠道类型: " + channel.ChannelId;
             return false;
         }
