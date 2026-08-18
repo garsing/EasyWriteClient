@@ -168,12 +168,8 @@ import { useWebViewBridge } from '../composables/useWebViewBridge'
 import addIcon from '../assets/images/add.png'
 import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
 import userIcon from '../assets/images/avatar.png'
-import wordAppIcon from '../assets/images/word.png'
-import wpsAppIcon from '../assets/images/wps.png'
-import excelAppIcon from '../assets/images/excel.png'
-import pptAppIcon from '../assets/images/ppt.png'
-import knowledgeBaseIcon from '../assets/images/knowledge_base.png'
 import { openFileSelectionKey } from '../utils/selectedOpenFiles.js'
+import { resolveOpenFileAppIcon } from '../utils/openFileAppIcon.js'
 
 const props = defineProps({
   collapsed: { type: Boolean, default: false },
@@ -244,13 +240,7 @@ const openFilesCount = computed(() =>
 )
 
 function openFileAppIcon (item) {
-  const type = String(item?.appType || item?.app_type || '').toLowerCase()
-  if (type === 'excel') return excelAppIcon
-  if (type === 'ppt') return pptAppIcon
-  if (type === 'wps' || type === 'et' || type === 'wpp') return wpsAppIcon
-  // 易写浏览页暂无独立图标，用知识库图区分办公文档
-  if (type === 'browser') return knowledgeBaseIcon
-  return wordAppIcon
+  return resolveOpenFileAppIcon(item)
 }
 
 function isOpenFileSelected (item) {

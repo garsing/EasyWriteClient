@@ -78,10 +78,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import submitIcon from '../assets/images/submit.png'
 import stopIcon from '../assets/images/stop.png'
-import wordAppIcon from '../assets/images/word.png'
-import wpsAppIcon from '../assets/images/wps.png'
-import excelAppIcon from '../assets/images/excel.png'
-import pptAppIcon from '../assets/images/ppt.png'
+import { resolveOpenFileAppIcon } from '../utils/openFileAppIcon.js'
 import { useWebViewBridge } from '../composables/useWebViewBridge'
 
 const { sendMessage } = useWebViewBridge()
@@ -131,11 +128,7 @@ const showSelectedOpenFiles = computed(
 )
 
 function chipAppIcon (f) {
-  const type = String(f?.appType || '').toLowerCase()
-  if (type === 'excel') return excelAppIcon
-  if (type === 'ppt') return pptAppIcon
-  if (type === 'wps' || type === 'et' || type === 'wpp') return wpsAppIcon
-  return wordAppIcon
+  return resolveOpenFileAppIcon(f)
 }
 
 function dataTransferHasFiles (dt) {
