@@ -137,6 +137,47 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
+        /// <summary>取根 frame 无障碍树 JSON（CDP）；不 Activate。</summary>
+        public async Task<string> GetAccessibilityTreeJsonAsync(int depth = BrowserAxTreeBuilder.DefaultDepth)
+        {
+            if (_closing || IsDisposed)
+            {
+                throw new InvalidOperationException("浏览窗已关闭");
+            }
+
+            await EnsureCoreAsync().ConfigureAwait(true);
+            if (_webView.CoreWebView2 == null)
+            {
+                throw new InvalidOperationException("WebView2 引擎不可用");
+            }
+
+            try
+            {
+                CurrentUrl = _webView.CoreWebView2.Source ?? CurrentUrl;
+                CurrentTitle = _webView.CoreWebView2.DocumentTitle ?? CurrentTitle;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                await _webView.CoreWebView2
+                    .CallDevToolsProtocolMethodAsync("Accessibility.enable", "{}")
+                    .ConfigureAwait(true);
+            }
+            catch
+            {
+                // 部分运行时 enable 可忽略
+            }
+
+            int d = depth < 1 ? BrowserAxTreeBuilder.DefaultDepth : depth;
+            string parameters = "{\"depth\":" + d + "}";
+            return await _webView.CoreWebView2
+                .CallDevToolsProtocolMethodAsync("Accessibility.getFullAXTree", parameters)
+                .ConfigureAwait(true);
+        }
+
         public void ApplyVisibility(bool visible)
         {
             _agentVisible = visible;

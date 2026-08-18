@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 namespace WordAddIn1.BrowserHost
 {
     /// <summary>
-    /// 浏览器适配层入口。本批仅落地易写浏览器 Navigate；扩展附着另册。
+    /// 浏览器适配层入口。本批落地易写浏览器 Navigate + Snapshot；扩展附着另册。
     /// </summary>
     public static class BrowserHostAdapter
     {
@@ -23,6 +23,13 @@ namespace WordAddIn1.BrowserHost
             string existingTabUuid)
         {
             return YiWriteBrowserHost.NavigateAsync(url, visible, existingTabUuid);
+        }
+
+        public static Task<BrowserSnapshotResult> SnapshotAgentAsync(
+            BrowserChannel channel,
+            string refId)
+        {
+            return YiWriteBrowserHost.SnapshotAsync(channel, refId);
         }
     }
 }

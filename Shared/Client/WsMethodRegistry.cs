@@ -27,6 +27,7 @@ namespace WordAddIn1
                 { "document.getContent", "F_get_document_content" },
                 { "document.open", "F_open_document" },
                 { "browser.navigate", "F_browser_navigate" },
+                { "browser.snapshot", "F_browser_snapshot" },
                 { "workbook.getContent", "F_get_workbook_content" },
                 { "presentation.getContent", "F_get_presentation_content" },
                 { "presentation.readHtml", "F_read_ppt_html" },

@@ -56,6 +56,7 @@ namespace WordAddIn1.BrowserHost
             if (!string.IsNullOrWhiteSpace(tabUuid))
             {
                 string channelId = BrowserChannel.AgentPrefix + tabUuid.Trim();
+                BrowserRefStore.Clear(channelId);
                 HostCallbacks.RaiseBrowserOpenFileRemove(channelId);
                 if (ChannelRegistry.TryGet(channelId, out _))
                 {
@@ -102,7 +103,6 @@ namespace WordAddIn1.BrowserHost
                 }
                 else if (string.IsNullOrWhiteSpace(existingTabUuid) && _form.IsCoreReady)
                 {
-                    // 无显式渠道但窗还在：复用同一页（同窗跳转）
                     tabUuid = string.IsNullOrWhiteSpace(_form.TabUuid)
                         ? tabUuid
                         : _form.TabUuid;
@@ -117,6 +117,7 @@ namespace WordAddIn1.BrowserHost
 
                 var channel = ChannelRegistry.CreateOrGetBrowserAgent(tabUuid, setAsDefault: true);
                 channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, visible);
+                BrowserRefStore.Clear(channel.ChannelId);
 
                 HostCallbacks.RaiseBrowserOpenFileUpsert(
                     channel.ChannelId,
@@ -137,6 +138,82 @@ namespace WordAddIn1.BrowserHost
             catch (Exception ex)
             {
                 return BrowserNavigateResult.Fail("打开易写浏览窗失败: " + ex.Message);
+            }
+        }
+
+        /// <summary>读页 snapshot：overview 或按 ref detail。</summary>
+        public static async Task<BrowserSnapshotResult> SnapshotAsync(
+            BrowserChannel channel,
+            string refId)
+        {
+            if (channel == null)
+            {
+                return BrowserSnapshotResult.Fail("无浏览器渠道");
+            }
+
+            if (!string.Equals(channel.Track, "agent", StringComparison.OrdinalIgnoreCase))
+            {
+                return BrowserSnapshotResult.Fail("本批仅支持 browser:agent: 渠道");
+            }
+
+            if (!IsPageLive(channel.TabUuid))
+            {
+                return BrowserSnapshotResult.Fail("浏览器渠道对应的页面已关闭: " + channel.ChannelId);
+            }
+
+            YiWriteBrowserForm form;
+            lock (Gate)
+            {
+                form = _form;
+            }
+
+            if (form == null || form.IsDisposed || !form.IsCoreReady)
+            {
+                return BrowserSnapshotResult.Fail("引擎不可用");
+            }
+
+            bool isDetail = !string.IsNullOrWhiteSpace(refId);
+            BrowserRefEntry prior = null;
+            if (isDetail)
+            {
+                if (!BrowserRefStore.TryGet(channel.ChannelId, refId.Trim(), out prior) || prior == null)
+                {
+                    return BrowserSnapshotResult.Fail(
+                        "ref 无效或已过期，请重新 F_browser_snapshot");
+                }
+            }
+
+            try
+            {
+                string json = await form
+                    .GetAccessibilityTreeJsonAsync(BrowserAxTreeBuilder.DefaultDepth)
+                    .ConfigureAwait(true);
+
+                BrowserAxBuildResult built = isDetail
+                    ? BrowserAxTreeBuilder.BuildDetail(json, refId.Trim(), prior)
+                    : BrowserAxTreeBuilder.BuildOverview(json);
+
+                if (!built.Success)
+                {
+                    return BrowserSnapshotResult.Fail(built.Error ?? "取无障碍树失败");
+                }
+
+                BrowserRefStore.Replace(channel.ChannelId, built.Refs);
+                channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, channel.Visible);
+
+                return BrowserSnapshotResult.Ok(
+                    channel,
+                    form.CurrentUrl,
+                    form.CurrentTitle,
+                    isDetail ? "detail" : "overview",
+                    isDetail ? refId.Trim() : null,
+                    built.TreeText,
+                    built.Truncated,
+                    built.TruncatedReason);
+            }
+            catch (Exception ex)
+            {
+                return BrowserSnapshotResult.Fail("取无障碍树失败: " + ex.Message);
             }
         }
     }
@@ -169,6 +246,53 @@ namespace WordAddIn1.BrowserHost
         public static BrowserNavigateResult Fail(string error)
         {
             return new BrowserNavigateResult
+            {
+                Success = false,
+                Error = error ?? "未知错误",
+            };
+        }
+    }
+
+    public sealed class BrowserSnapshotResult
+    {
+        public bool Success { get; private set; }
+        public string Error { get; private set; }
+        public BrowserChannel Channel { get; private set; }
+        public string Url { get; private set; }
+        public string Title { get; private set; }
+        public string Mode { get; private set; }
+        public string Ref { get; private set; }
+        public string Snapshot { get; private set; }
+        public bool Truncated { get; private set; }
+        public string TruncatedReason { get; private set; }
+
+        public static BrowserSnapshotResult Ok(
+            BrowserChannel channel,
+            string url,
+            string title,
+            string mode,
+            string refId,
+            string snapshot,
+            bool truncated,
+            string truncatedReason)
+        {
+            return new BrowserSnapshotResult
+            {
+                Success = true,
+                Channel = channel,
+                Url = url ?? "",
+                Title = title ?? "",
+                Mode = mode ?? "overview",
+                Ref = refId,
+                Snapshot = snapshot ?? "",
+                Truncated = truncated,
+                TruncatedReason = truncatedReason,
+            };
+        }
+
+        public static BrowserSnapshotResult Fail(string error)
+        {
+            return new BrowserSnapshotResult
             {
                 Success = false,
                 Error = error ?? "未知错误",
