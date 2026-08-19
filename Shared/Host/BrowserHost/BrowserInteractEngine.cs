@@ -151,30 +151,9 @@ namespace WordAddIn1.BrowserHost
         {
             string objectId = await ResolveObjectIdAsync(form, backendNodeId).ConfigureAwait(true);
             string argsJson = BuildCallArgs(text ?? "");
-            // 临时用简单赋值：验证「原生 value setter」是否可去掉
-            await CallFunctionOnAsync(
-                form,
-                objectId,
-                @"function(text) {
-  this.scrollIntoView({block:'center', inline:'center'});
-  this.focus();
-  if (typeof this.select === 'function') { try { this.select(); } catch(e) {} }
-  if ('value' in this) {
-    this.value = '';
-    this.dispatchEvent(new Event('input', {bubbles:true}));
-    this.value = text;
-    this.dispatchEvent(new Event('input', {bubbles:true}));
-    this.dispatchEvent(new Event('change', {bubbles:true}));
-  } else if (this.isContentEditable) {
-    this.innerText = '';
-    this.textContent = text;
-    this.dispatchEvent(new Event('input', {bubbles:true}));
-  }
-}",
-                argsJson).ConfigureAwait(true);
-
-            /* 增强版（HTMLInputElement.prototype.value setter）暂存对照：
-            await CallFunctionOnAsync(
+            // 必须走原型 value setter：百度等受控 input 直接 this.value= 写不进框架状态，
+            // 回车会提交空值/推荐占位文案。
+            string resultJson = await CallFunctionOnAsync(
                 form,
                 objectId,
                 @"function(text) {
@@ -199,14 +178,52 @@ namespace WordAddIn1.BrowserHost
     }
     this.dispatchEvent(new Event('input', {bubbles:true}));
     this.dispatchEvent(new Event('change', {bubbles:true}));
+    return { ok:true, value: String(this.value || '') };
   } else if (this.isContentEditable) {
     this.innerText = '';
     this.textContent = text;
     this.dispatchEvent(new Event('input', {bubbles:true}));
+    return { ok:true, value: String(this.innerText || this.textContent || '') };
   }
+  return { ok:false, reason:'not_editable' };
 }",
                 argsJson).ConfigureAwait(true);
-            */
+
+            try
+            {
+                var jo = JObject.Parse(resultJson);
+                var v = jo["result"]?["value"] as JObject;
+                if (v == null || v["ok"] == null || !(bool)v["ok"])
+                {
+                    throw new InvalidOperationException("目标不是可 type 的输入控件");
+                }
+
+                string got = (string)v["value"] ?? "";
+                if (!string.Equals(got, text ?? "", StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "输入未生效（读回 value=\"" + Truncate(got, 40)
+                        + "\"，期望=\"" + Truncate(text ?? "", 40) + "\"）");
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("type 失败: " + ex.Message);
+            }
+        }
+
+        private static string Truncate(string s, int max)
+        {
+            if (string.IsNullOrEmpty(s) || s.Length <= max)
+            {
+                return s ?? "";
+            }
+
+            return s.Substring(0, max) + "…";
         }
 
         public static async Task ScrollIntoViewAsync(YiWriteBrowserForm form, int backendNodeId)

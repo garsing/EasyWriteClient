@@ -190,9 +190,11 @@ namespace WordAddIn1.BrowserHost
                     string type = GetAttr(attrs, "type");
 
                     string role = InferRole(tag, type, attrs);
+                    string aria = GetAttr(attrs, "aria-label");
+                    string placeholder = GetAttr(attrs, "placeholder");
                     string name = FirstNonEmpty(
-                        GetAttr(attrs, "aria-label"),
-                        GetAttr(attrs, "placeholder"),
+                        aria,
+                        string.IsNullOrWhiteSpace(placeholder) ? null : ("placeholder=" + placeholder),
                         GetAttr(attrs, "title"),
                         GetAttr(attrs, "name"),
                         GetAttr(attrs, "id"));
