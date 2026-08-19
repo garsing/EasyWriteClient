@@ -14,8 +14,6 @@ namespace WordAddIn1.BrowserHost
     /// </summary>
     internal static class BrowserDomInputSupplement
     {
-        public const string DefaultSpec = "input,textarea,select,contenteditable";
-
         private const string InputSelector =
             "input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=image]):not([type=checkbox]):not([type=radio]):not([type=file])";
 
@@ -23,8 +21,9 @@ namespace WordAddIn1.BrowserHost
             "[contenteditable=true],[contenteditable=\"\"],[contenteditable=plaintext-only]";
 
         /// <summary>
-        /// 解析 dom_supplement：省略/空/default/all → 默认集合；
-        /// off/none/false → 关闭；否则按 , | ; 、 分隔的白名单项。
+        /// 解析 dom_supplement：省略/空/off/none/false/0 → 不补查；
+        /// 否则按 , | ; 、 分隔的白名单项（input|textarea|select|contenteditable）。
+        /// 无 default/all 等别名。
         /// </summary>
         public static bool TryResolveSelector(string spec, out string cssSelector, out string normalizedSpec, out string error)
         {
@@ -32,12 +31,10 @@ namespace WordAddIn1.BrowserHost
             normalizedSpec = null;
             error = null;
 
-            if (string.IsNullOrWhiteSpace(spec)
-                || string.Equals(spec.Trim(), "default", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(spec.Trim(), "all", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(spec))
             {
-                normalizedSpec = DefaultSpec;
-                cssSelector = BuildSelectorFromKinds(ParseKinds(DefaultSpec));
+                normalizedSpec = "off";
+                cssSelector = null;
                 return true;
             }
 
@@ -72,11 +69,6 @@ namespace WordAddIn1.BrowserHost
             normalizedSpec = string.Join(",", kinds);
             cssSelector = BuildSelectorFromKinds(kinds);
             return true;
-        }
-
-        public static async Task MergeAsync(YiWriteBrowserForm form, BrowserAxBuildResult built)
-        {
-            await MergeAsync(form, built, DefaultSpec).ConfigureAwait(true);
         }
 
         public static async Task MergeAsync(

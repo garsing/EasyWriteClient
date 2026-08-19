@@ -212,7 +212,7 @@ namespace WordAddIn1.BrowserHost
                     return BrowserSnapshotResult.Fail(built.Error ?? "取无障碍树失败");
                 }
 
-                // overview：按 dom_supplement 补 DOM 输入控件（省略=默认 input,textarea,select,contenteditable）
+                // overview：仅显式传 dom_supplement 时补查；省略=不补
                 if (!isDetail
                     && !string.Equals(domApplied, "off", StringComparison.OrdinalIgnoreCase))
                 {
