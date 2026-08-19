@@ -86,7 +86,30 @@ namespace WordAddIn1.BrowserHost
         public static async Task ClickAsync(YiWriteBrowserForm form, int backendNodeId)
         {
             string objectId = await ResolveObjectIdAsync(form, backendNodeId).ConfigureAwait(true);
-            // 优先点到最近 a[href]；派发完整鼠标序列，适配热搜等自定义点击
+            // 临时用简单 click：验证「完整鼠标序列 + 等导航」是否可去掉
+            await CallFunctionOnAsync(
+                form,
+                objectId,
+                @"function() {
+  this.scrollIntoView({block:'center', inline:'center'});
+  if (typeof this.click === 'function') { this.click(); }
+  else {
+    var e = new MouseEvent('click', {bubbles:true, cancelable:true, view:window});
+    this.dispatchEvent(e);
+  }
+}",
+                null).ConfigureAwait(true);
+
+            // 临时关闭：点击后短等导航
+            // try
+            // {
+            //     await form.WaitNavigationAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true);
+            // }
+            // catch
+            // {
+            // }
+
+            /* 增强版（完整鼠标序列 + closest a[href] + 等导航）暂存对照：
             await CallFunctionOnAsync(
                 form,
                 objectId,
@@ -114,8 +137,6 @@ namespace WordAddIn1.BrowserHost
   return !!(t && (t.href || t.tagName));
 }",
                 null).ConfigureAwait(true);
-
-            // 若引发导航，稍等加载，避免立刻 snapshot 仍停在旧页
             try
             {
                 await form.WaitNavigationAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true);
@@ -123,13 +144,36 @@ namespace WordAddIn1.BrowserHost
             catch
             {
             }
+            */
         }
 
         public static async Task TypeAsync(YiWriteBrowserForm form, int backendNodeId, string text)
         {
             string objectId = await ResolveObjectIdAsync(form, backendNodeId).ConfigureAwait(true);
-            // 参数经 CDP 传值，避免拼进脚本字符串
             string argsJson = BuildCallArgs(text ?? "");
+            // 临时用简单赋值：验证「原生 value setter」是否可去掉
+            await CallFunctionOnAsync(
+                form,
+                objectId,
+                @"function(text) {
+  this.scrollIntoView({block:'center', inline:'center'});
+  this.focus();
+  if (typeof this.select === 'function') { try { this.select(); } catch(e) {} }
+  if ('value' in this) {
+    this.value = '';
+    this.dispatchEvent(new Event('input', {bubbles:true}));
+    this.value = text;
+    this.dispatchEvent(new Event('input', {bubbles:true}));
+    this.dispatchEvent(new Event('change', {bubbles:true}));
+  } else if (this.isContentEditable) {
+    this.innerText = '';
+    this.textContent = text;
+    this.dispatchEvent(new Event('input', {bubbles:true}));
+  }
+}",
+                argsJson).ConfigureAwait(true);
+
+            /* 增强版（HTMLInputElement.prototype.value setter）暂存对照：
             await CallFunctionOnAsync(
                 form,
                 objectId,
@@ -162,6 +206,7 @@ namespace WordAddIn1.BrowserHost
   }
 }",
                 argsJson).ConfigureAwait(true);
+            */
         }
 
         public static async Task ScrollIntoViewAsync(YiWriteBrowserForm form, int backendNodeId)

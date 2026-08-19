@@ -152,9 +152,10 @@ namespace WordAddIn1.BrowserHost
                     return;
                 }
 
-                // 可输入控件即使 ignored 也要发 ref（百度搜索框常见）
-                bool inputLike = IsInputLike(node);
-                if (node.Ignored && !IsRootLike(node.Role) && !inputLike)
+                // 临时关闭「AX ignored 可输入仍发 ref」：验证仅 DOM 补查是否足够
+                // bool inputLike = IsInputLike(node);
+                // if (node.Ignored && !IsRootLike(node.Role) && !inputLike)
+                if (node.Ignored && !IsRootLike(node.Role))
                 {
                     foreach (string child in node.ChildIds)
                     {
@@ -163,6 +164,8 @@ namespace WordAddIn1.BrowserHost
 
                     return;
                 }
+
+                bool inputLike = IsInputLike(node);
 
                 string role = string.IsNullOrWhiteSpace(node.Role) ? "generic" : node.Role;
                 string name = node.Name ?? "";
@@ -235,10 +238,11 @@ namespace WordAddIn1.BrowserHost
 
             Walk(startId, 0);
 
-            if (!truncated)
-            {
-                AppendMissingInputControls(byId, refs, sb, ref nextRef, ref truncated, ref truncatedReason);
-            }
+            // 临时关闭：AX 树第二遍补全可输入控件（与 DOM 补查对照实验）
+            // if (!truncated)
+            // {
+            //     AppendMissingInputControls(byId, refs, sb, ref nextRef, ref truncated, ref truncatedReason);
+            // }
 
             result.Success = true;
             result.TreeText = sb.ToString().TrimEnd();
