@@ -22,6 +22,7 @@ namespace WordAddIn1
 
                     string channelId = TryGetString(args, "channel_id");
                     string refId = TryGetString(args, "ref");
+                    string domSupplement = TryGetString(args, "dom_supplement");
 
                     BrowserChannel channel;
                     if (!string.IsNullOrWhiteSpace(channelId))
@@ -55,7 +56,7 @@ namespace WordAddIn1
                     }
 
                     BrowserSnapshotResult result = await BrowserHostAdapter
-                        .SnapshotAgentAsync(channel, refId)
+                        .SnapshotAgentAsync(channel, refId, domSupplement)
                         .ConfigureAwait(true);
 
                     if (!result.Success)
@@ -78,6 +79,11 @@ namespace WordAddIn1
                     if (!string.IsNullOrEmpty(result.Ref))
                     {
                         data["ref"] = result.Ref;
+                    }
+
+                    if (!string.IsNullOrEmpty(result.DomSupplement))
+                    {
+                        data["dom_supplement"] = result.DomSupplement;
                     }
 
                     if (result.Truncated && !string.IsNullOrEmpty(result.TruncatedReason))

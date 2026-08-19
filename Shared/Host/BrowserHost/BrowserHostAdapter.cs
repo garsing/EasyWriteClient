@@ -27,9 +27,10 @@ namespace WordAddIn1.BrowserHost
 
         public static Task<BrowserSnapshotResult> SnapshotAgentAsync(
             BrowserChannel channel,
-            string refId)
+            string refId,
+            string domSupplement = null)
         {
-            return YiWriteBrowserHost.SnapshotAsync(channel, refId);
+            return YiWriteBrowserHost.SnapshotAsync(channel, refId, domSupplement);
         }
 
         public static Task<BrowserInteractResult> InteractAgentAsync(

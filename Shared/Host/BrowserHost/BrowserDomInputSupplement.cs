@@ -9,19 +9,92 @@ using Newtonsoft.Json.Linq;
 namespace WordAddIn1.BrowserHost
 {
     /// <summary>
-    /// AX 树漏掉真实 input 时（如百度搜索框），用 DOM.querySelectorAll 补进 snapshot / ref 表。
+    /// AX 树漏掉真实 input 时，用 DOM.querySelectorAll 补进 snapshot / ref 表。
+    /// 可由 F_browser_snapshot 的 dom_supplement 控制范围。
     /// </summary>
     internal static class BrowserDomInputSupplement
     {
-        private const string Selector =
-            "input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=image]):not([type=checkbox]):not([type=radio]):not([type=file]),"
-            + "textarea,"
-            + "select,"
-            + "[contenteditable=true],[contenteditable=\"\"],[contenteditable=plaintext-only]";
+        public const string DefaultSpec = "input,textarea,select,contenteditable";
+
+        private const string InputSelector =
+            "input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=image]):not([type=checkbox]):not([type=radio]):not([type=file])";
+
+        private const string ContenteditableSelector =
+            "[contenteditable=true],[contenteditable=\"\"],[contenteditable=plaintext-only]";
+
+        /// <summary>
+        /// 解析 dom_supplement：省略/空/default/all → 默认集合；
+        /// off/none/false → 关闭；否则按 , | ; 、 分隔的白名单项。
+        /// </summary>
+        public static bool TryResolveSelector(string spec, out string cssSelector, out string normalizedSpec, out string error)
+        {
+            cssSelector = null;
+            normalizedSpec = null;
+            error = null;
+
+            if (string.IsNullOrWhiteSpace(spec)
+                || string.Equals(spec.Trim(), "default", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(spec.Trim(), "all", StringComparison.OrdinalIgnoreCase))
+            {
+                normalizedSpec = DefaultSpec;
+                cssSelector = BuildSelectorFromKinds(ParseKinds(DefaultSpec));
+                return true;
+            }
+
+            string raw = spec.Trim();
+            if (string.Equals(raw, "off", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "none", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase)
+                || raw == "0")
+            {
+                normalizedSpec = "off";
+                cssSelector = null;
+                return true;
+            }
+
+            var kinds = ParseKinds(raw);
+            if (kinds.Count == 0)
+            {
+                error = "dom_supplement 无有效项；可用 input,textarea,select,contenteditable 或 off";
+                return false;
+            }
+
+            foreach (string k in kinds)
+            {
+                if (!IsAllowedKind(k))
+                {
+                    error = "dom_supplement 含未知项: " + k
+                        + "；允许 input|textarea|select|contenteditable，或 off";
+                    return false;
+                }
+            }
+
+            normalizedSpec = string.Join(",", kinds);
+            cssSelector = BuildSelectorFromKinds(kinds);
+            return true;
+        }
 
         public static async Task MergeAsync(YiWriteBrowserForm form, BrowserAxBuildResult built)
         {
+            await MergeAsync(form, built, DefaultSpec).ConfigureAwait(true);
+        }
+
+        public static async Task MergeAsync(
+            YiWriteBrowserForm form,
+            BrowserAxBuildResult built,
+            string domSupplementSpec)
+        {
             if (form == null || built == null || !built.Success || built.Refs == null)
+            {
+                return;
+            }
+
+            if (!TryResolveSelector(domSupplementSpec, out string selector, out _, out _))
+            {
+                return;
+            }
+
+            if (string.IsNullOrEmpty(selector))
             {
                 return;
             }
@@ -41,7 +114,7 @@ namespace WordAddIn1.BrowserHost
                 var qsPayload = new JObject
                 {
                     ["nodeId"] = rootId,
-                    ["selector"] = Selector
+                    ["selector"] = selector
                 };
                 string qsJson = await form.CallCdpAsync(
                     "DOM.querySelectorAll",
@@ -123,10 +196,6 @@ namespace WordAddIn1.BrowserHost
                     string tag = (Convert.ToString(node["nodeName"]) ?? "INPUT").ToUpperInvariant();
                     var attrs = ParseAttributes(node["attributes"] as JArray);
                     string type = GetAttr(attrs, "type");
-                    if (string.Equals(type, "password", StringComparison.OrdinalIgnoreCase))
-                    {
-                        // 仍列出，便于模型看见；type 操作会被 RiskGuard 拒绝
-                    }
 
                     string role = InferRole(tag, type, attrs);
                     string name = FirstNonEmpty(
@@ -176,6 +245,64 @@ namespace WordAddIn1.BrowserHost
             {
                 // DOM 补全失败不阻断 AX snapshot
             }
+        }
+
+        private static List<string> ParseKinds(string raw)
+        {
+            var list = new List<string>();
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return list;
+            }
+
+            string[] parts = raw.Split(new[] { ',', '|', ';', '、' }, StringSplitOptions.RemoveEmptyEntries);
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string p in parts)
+            {
+                string k = (p ?? "").Trim().ToLowerInvariant();
+                if (k.Length == 0 || !seen.Add(k))
+                {
+                    continue;
+                }
+
+                list.Add(k);
+            }
+
+            return list;
+        }
+
+        private static bool IsAllowedKind(string kind)
+        {
+            return string.Equals(kind, "input", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(kind, "textarea", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(kind, "select", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(kind, "contenteditable", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string BuildSelectorFromKinds(List<string> kinds)
+        {
+            var parts = new List<string>();
+            foreach (string k in kinds)
+            {
+                if (string.Equals(k, "input", StringComparison.OrdinalIgnoreCase))
+                {
+                    parts.Add(InputSelector);
+                }
+                else if (string.Equals(k, "textarea", StringComparison.OrdinalIgnoreCase))
+                {
+                    parts.Add("textarea");
+                }
+                else if (string.Equals(k, "select", StringComparison.OrdinalIgnoreCase))
+                {
+                    parts.Add("select");
+                }
+                else if (string.Equals(k, "contenteditable", StringComparison.OrdinalIgnoreCase))
+                {
+                    parts.Add(ContenteditableSelector);
+                }
+            }
+
+            return parts.Count == 0 ? null : string.Join(",", parts);
         }
 
         private static Dictionary<string, string> ParseAttributes(JArray attrs)

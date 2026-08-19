@@ -144,7 +144,8 @@ namespace WordAddIn1.BrowserHost
         /// <summary>读页 snapshot：overview 或按 ref detail。</summary>
         public static async Task<BrowserSnapshotResult> SnapshotAsync(
             BrowserChannel channel,
-            string refId)
+            string refId,
+            string domSupplementSpec = null)
         {
             if (channel == null)
             {
@@ -183,6 +184,19 @@ namespace WordAddIn1.BrowserHost
                 }
             }
 
+            string domApplied = "off";
+            if (!isDetail)
+            {
+                if (!BrowserDomInputSupplement.TryResolveSelector(
+                    domSupplementSpec,
+                    out _,
+                    out domApplied,
+                    out string domErr))
+                {
+                    return BrowserSnapshotResult.Fail(domErr ?? "dom_supplement 无效");
+                }
+            }
+
             try
             {
                 string json = await form
@@ -198,10 +212,13 @@ namespace WordAddIn1.BrowserHost
                     return BrowserSnapshotResult.Fail(built.Error ?? "取无障碍树失败");
                 }
 
-                // overview：DOM 再补一轮真实 input（AX 对百度搜索框常漏）
-                if (!isDetail)
+                // overview：按 dom_supplement 补 DOM 输入控件（省略=默认 input,textarea,select,contenteditable）
+                if (!isDetail
+                    && !string.Equals(domApplied, "off", StringComparison.OrdinalIgnoreCase))
                 {
-                    await BrowserDomInputSupplement.MergeAsync(form, built).ConfigureAwait(true);
+                    await BrowserDomInputSupplement
+                        .MergeAsync(form, built, domApplied)
+                        .ConfigureAwait(true);
                 }
 
                 BrowserRefStore.Replace(channel.ChannelId, built.Refs);
@@ -215,7 +232,8 @@ namespace WordAddIn1.BrowserHost
                     isDetail ? refId.Trim() : null,
                     built.TreeText,
                     built.Truncated,
-                    built.TruncatedReason);
+                    built.TruncatedReason,
+                    isDetail ? null : domApplied);
             }
             catch (Exception ex)
             {
@@ -475,6 +493,8 @@ namespace WordAddIn1.BrowserHost
         public string Snapshot { get; private set; }
         public bool Truncated { get; private set; }
         public string TruncatedReason { get; private set; }
+        /// <summary>overview 实际生效的 DOM 补查规格；detail 为 null；off 表示未补查。</summary>
+        public string DomSupplement { get; private set; }
 
         public static BrowserSnapshotResult Ok(
             BrowserChannel channel,
@@ -484,7 +504,8 @@ namespace WordAddIn1.BrowserHost
             string refId,
             string snapshot,
             bool truncated,
-            string truncatedReason)
+            string truncatedReason,
+            string domSupplement = null)
         {
             return new BrowserSnapshotResult
             {
@@ -497,6 +518,7 @@ namespace WordAddIn1.BrowserHost
                 Snapshot = snapshot ?? "",
                 Truncated = truncated,
                 TruncatedReason = truncatedReason,
+                DomSupplement = domSupplement,
             };
         }
 
