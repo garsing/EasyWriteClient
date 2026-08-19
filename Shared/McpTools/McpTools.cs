@@ -65,6 +65,7 @@ namespace WordAddIn1
             F_BrowserNavigateTool.Register(toolRegistry, wordApplication);
             F_BrowserSnapshotTool.Register(toolRegistry, wordApplication);
             F_BrowserInteractTool.Register(toolRegistry, wordApplication);
+            F_BrowserDownloadTool.Register(toolRegistry, wordApplication);
             F_SwitchDefaultChannelTool.Register(toolRegistry, wordApplication);
             F_GetCurrDocChunkDisplayContentTool.Register(toolRegistry, wordApplication);
             F_GetCurrDocChunkParagraphDisplayContentTool.Register(toolRegistry, wordApplication);

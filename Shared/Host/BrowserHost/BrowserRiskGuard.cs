@@ -26,6 +26,107 @@ namespace WordAddIn1.BrowserHost
             "密码", "口令", "password", "passwd", "pwd"
         };
 
+        private static readonly string[] DownloadNameMarkers =
+        {
+            "下载", "导出", "另存", "download", "save as", "export"
+        };
+
+        private static readonly string[] FileLikeExtensions =
+        {
+            ".pdf", ".xlsx", ".xls", ".docx", ".doc", ".pptx", ".ppt",
+            ".zip", ".rar", ".7z", ".csv", ".txt", ".json", ".xml",
+            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".mp4", ".mp3"
+        };
+
+        public static string CheckDownload(BrowserRefEntry entry, DomNodeProbe probe)
+        {
+            if (IsPasswordControl(entry, probe))
+            {
+                return "已拒绝对密码控件下载；请用户自己操作";
+            }
+
+            if (IsDeleteControl(entry, probe))
+            {
+                return "已拒绝点击删除类控件；请用户自己操作";
+            }
+
+            if (IsLoginSubmitPayControl(entry, probe))
+            {
+                return "已拒绝代点登录/提交/支付；请用户在看得见的窗里自己点击";
+            }
+
+            if (IsFrameRole(entry))
+            {
+                return "本批不支持 iframe 内下载";
+            }
+
+            if (LooksLikePlainImage(entry, probe))
+            {
+                return "纯展示图片请用 url 参数下载，不要用 ref";
+            }
+
+            if (!LooksLikeDownloadTarget(entry, probe))
+            {
+                return "目标不像可触发浏览器下载的控件；请换导出/附件类 ref，或对资源使用 url";
+            }
+
+            return null;
+        }
+
+        public static bool LooksLikePlainImage(BrowserRefEntry entry, DomNodeProbe probe)
+        {
+            string role = entry?.Role ?? probe?.Role ?? "";
+            if (string.Equals(role, "image", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(role, "img", StringComparison.OrdinalIgnoreCase))
+            {
+                // 带 download 属性的图链仍可能触发下载
+                if (probe != null && probe.HasDownloadAttr)
+                {
+                    return false;
+                }
+
+                return true;
+            }
+
+            if (probe != null && string.Equals(probe.Tag, "IMG", StringComparison.OrdinalIgnoreCase))
+            {
+                return !probe.HasDownloadAttr;
+            }
+
+            return false;
+        }
+
+        public static bool LooksLikeDownloadTarget(BrowserRefEntry entry, DomNodeProbe probe)
+        {
+            if (probe != null && probe.HasDownloadAttr)
+            {
+                return true;
+            }
+
+            string label = CombinedLabel(entry, probe);
+            if (ContainsAny(label, DownloadNameMarkers))
+            {
+                return true;
+            }
+
+            string href = probe?.Href ?? "";
+            if (!string.IsNullOrWhiteSpace(href)
+                && Uri.TryCreate(href, UriKind.Absolute, out Uri u)
+                && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps))
+            {
+                string path = (u.AbsolutePath ?? "").ToLowerInvariant();
+                foreach (string ext in FileLikeExtensions)
+                {
+                    if (path.EndsWith(ext, StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         public static string CheckType(BrowserRefEntry entry, DomNodeProbe probe)
         {
             if (IsPasswordControl(entry, probe))
@@ -224,6 +325,8 @@ namespace WordAddIn1.BrowserHost
         public string AccessibleName { get; set; }
         public string ValueAttr { get; set; }
         public string InnerText { get; set; }
+        public string Href { get; set; }
+        public bool HasDownloadAttr { get; set; }
         public bool PageHasPasswordInput { get; set; }
     }
 }

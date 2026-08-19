@@ -444,6 +444,118 @@ namespace WordAddIn1.BrowserHost
                 return BrowserInteractResult.Fail("F_browser_interact 失败: " + ex.Message);
             }
         }
+
+        public static async Task<BrowserDownloadResult> DownloadAsync(
+            BrowserChannel channel,
+            string refId,
+            string url)
+        {
+            if (channel == null)
+            {
+                return BrowserDownloadResult.Fail("无浏览器渠道");
+            }
+
+            if (!string.Equals(channel.Track, "agent", StringComparison.OrdinalIgnoreCase))
+            {
+                return BrowserDownloadResult.Fail("本批仅支持 browser:agent: 渠道");
+            }
+
+            if (!IsPageLive(channel.TabUuid))
+            {
+                return BrowserDownloadResult.Fail("浏览器渠道对应的页面已关闭: " + channel.ChannelId);
+            }
+
+            bool hasRef = !string.IsNullOrWhiteSpace(refId);
+            bool hasUrl = !string.IsNullOrWhiteSpace(url);
+            if (hasRef == hasUrl)
+            {
+                return BrowserDownloadResult.Fail("须且仅能提供 ref 或 url 之一");
+            }
+
+            YiWriteBrowserForm form;
+            lock (Gate)
+            {
+                form = _form;
+            }
+
+            if (form == null || form.IsDisposed || !form.IsCoreReady)
+            {
+                return BrowserDownloadResult.Fail("引擎不可用");
+            }
+
+            try
+            {
+                BrowserDownloadFileResult file;
+                bool clearRefs;
+
+                if (hasUrl)
+                {
+                    file = await BrowserDownloadEngine.FetchUrlAsync(form, url.Trim())
+                        .ConfigureAwait(true);
+                    clearRefs = false;
+                }
+                else
+                {
+                    string rid = refId.Trim();
+                    if (!BrowserRefStore.TryGet(channel.ChannelId, rid, out BrowserRefEntry entry)
+                        || entry == null)
+                    {
+                        return BrowserDownloadResult.Fail(
+                            "ref 无效或已过期，请重新 F_browser_snapshot");
+                    }
+
+                    if (!entry.BackendDomNodeId.HasValue)
+                    {
+                        return BrowserDownloadResult.Fail("该 ref 无法定位 DOM 节点");
+                    }
+
+                    DomNodeProbe probe = await BrowserInteractEngine
+                        .ProbeAsync(form, entry.BackendDomNodeId.Value)
+                        .ConfigureAwait(true);
+
+                    string risk = BrowserRiskGuard.CheckDownload(entry, probe);
+                    if (risk != null)
+                    {
+                        return BrowserDownloadResult.Fail(risk);
+                    }
+
+                    file = await BrowserDownloadEngine
+                        .ClickAndCaptureAsync(form, entry.BackendDomNodeId.Value)
+                        .ConfigureAwait(true);
+
+                    BrowserRefStore.Clear(channel.ChannelId);
+                    clearRefs = true;
+                }
+
+                try
+                {
+                    channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, channel.Visible);
+                }
+                catch
+                {
+                }
+
+                string message = clearRefs
+                    ? "已下载到会话工作区。DOM 可能已变，请重新 F_browser_snapshot。"
+                    : "已下载到会话工作区。";
+
+                return BrowserDownloadResult.Ok(
+                    channel,
+                    form.CurrentUrl,
+                    form.CurrentTitle,
+                    file.RelativePath,
+                    file.Bytes,
+                    file.ContentType,
+                    hasUrl ? file.SourceUrl : null,
+                    hasRef ? refId.Trim() : null,
+                    clearRefs,
+                    message);
+            }
+            catch (Exception ex)
+            {
+                return BrowserDownloadResult.Fail(ex.Message ?? "download 失败");
+            }
+        }
     }
 
     public sealed class BrowserNavigateResult
@@ -568,6 +680,59 @@ namespace WordAddIn1.BrowserHost
         public static BrowserInteractResult Fail(string error)
         {
             return new BrowserInteractResult
+            {
+                Success = false,
+                Error = error ?? "未知错误",
+            };
+        }
+    }
+
+    public sealed class BrowserDownloadResult
+    {
+        public bool Success { get; private set; }
+        public string Error { get; private set; }
+        public BrowserChannel Channel { get; private set; }
+        public string Url { get; private set; }
+        public string Title { get; private set; }
+        public string Filename { get; private set; }
+        public long Bytes { get; private set; }
+        public string ContentType { get; private set; }
+        public string SourceUrl { get; private set; }
+        public string Ref { get; private set; }
+        public bool RefsInvalidated { get; private set; }
+        public string Message { get; private set; }
+
+        public static BrowserDownloadResult Ok(
+            BrowserChannel channel,
+            string pageUrl,
+            string title,
+            string filename,
+            long bytes,
+            string contentType,
+            string sourceUrl,
+            string refId,
+            bool refsInvalidated,
+            string message)
+        {
+            return new BrowserDownloadResult
+            {
+                Success = true,
+                Channel = channel,
+                Url = pageUrl ?? "",
+                Title = title ?? "",
+                Filename = filename ?? "",
+                Bytes = bytes,
+                ContentType = contentType,
+                SourceUrl = sourceUrl,
+                Ref = refId,
+                RefsInvalidated = refsInvalidated,
+                Message = message ?? "",
+            };
+        }
+
+        public static BrowserDownloadResult Fail(string error)
+        {
+            return new BrowserDownloadResult
             {
                 Success = false,
                 Error = error ?? "未知错误",

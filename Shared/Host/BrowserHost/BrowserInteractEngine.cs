@@ -20,6 +20,10 @@ namespace WordAddIn1.BrowserHost
   var ac = (this.getAttribute && this.getAttribute('autocomplete')) || '';
   var role = (this.getAttribute && this.getAttribute('role')) || '';
   var name = (this.getAttribute && (this.getAttribute('aria-label') || this.getAttribute('name') || this.getAttribute('placeholder'))) || '';
+  var href = '';
+  try { href = this.href || (this.getAttribute && this.getAttribute('href')) || ''; } catch (eH) {}
+  var hasDownloadAttr = false;
+  try { hasDownloadAttr = !!(this.getAttribute && this.getAttribute('download') != null); } catch (eD) {}
   var val = (this.getAttribute && this.getAttribute('value')) || '';
   var text = (this.innerText || this.textContent || '').trim().slice(0, 120);
   var pageHasPwd = !!(document.querySelector && document.querySelector('input[type=password]'));
@@ -31,6 +35,8 @@ namespace WordAddIn1.BrowserHost
     accessibleName: name,
     valueAttr: val,
     innerText: text,
+    href: href,
+    hasDownloadAttr: hasDownloadAttr,
     pageHasPasswordInput: pageHasPwd
   };
 }",
@@ -50,6 +56,10 @@ namespace WordAddIn1.BrowserHost
                     probe.AccessibleName = (string)v["accessibleName"];
                     probe.ValueAttr = (string)v["valueAttr"];
                     probe.InnerText = (string)v["innerText"];
+                    probe.Href = (string)v["href"];
+                    probe.HasDownloadAttr = v["hasDownloadAttr"] != null
+                        && v["hasDownloadAttr"].Type == JTokenType.Boolean
+                        && (bool)v["hasDownloadAttr"];
                     probe.PageHasPasswordInput = v["pageHasPasswordInput"] != null
                         && v["pageHasPasswordInput"].Type == JTokenType.Boolean
                         && (bool)v["pageHasPasswordInput"];

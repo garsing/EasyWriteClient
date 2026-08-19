@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
@@ -19,6 +20,9 @@ namespace WordAddIn1.BrowserHost
         private bool _agentVisible;
         private Rectangle _normalBounds;
         private bool _hasNormalBounds;
+        private TaskCompletionSource<BrowserCapturedDownload> _expectDownloadTcs;
+        private CancellationTokenSource _expectDownloadTimeoutCts;
+        private EventHandler<CoreWebView2DownloadStartingEventArgs> _downloadStartingHandler;
 
         public YiWriteBrowserForm()
         {
@@ -91,7 +95,238 @@ namespace WordAddIn1.BrowserHost
                 }
             };
 
+            if (_downloadStartingHandler == null)
+            {
+                _downloadStartingHandler = OnDownloadStarting;
+            }
+
+            _webView.CoreWebView2.DownloadStarting -= _downloadStartingHandler;
+            _webView.CoreWebView2.DownloadStarting += _downloadStartingHandler;
+
             _coreReady = true;
+        }
+
+        /// <summary>开始等待下一次 DownloadStarting；超时抛 TimeoutException。</summary>
+        internal Task<BrowserCapturedDownload> BeginExpectDownloadAsync(TimeSpan timeout)
+        {
+            CancelExpectDownload();
+            var tcs = new TaskCompletionSource<BrowserCapturedDownload>();
+            _expectDownloadTcs = tcs;
+            _expectDownloadTimeoutCts = new CancellationTokenSource();
+            CancellationToken token = _expectDownloadTimeoutCts.Token;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(timeout, token).ConfigureAwait(false);
+                    if (!token.IsCancellationRequested)
+                    {
+                        tcs.TrySetException(new TimeoutException("等待下载超时"));
+                        ClearExpectDownloadState();
+                    }
+                }
+                catch (TaskCanceledException)
+                {
+                }
+            });
+            return tcs.Task;
+        }
+
+        internal void CancelExpectDownload()
+        {
+            try
+            {
+                _expectDownloadTimeoutCts?.Cancel();
+            }
+            catch
+            {
+            }
+
+            var tcs = _expectDownloadTcs;
+            ClearExpectDownloadState();
+            tcs?.TrySetCanceled();
+        }
+
+        internal async Task<CoreWebView2Cookie[]> GetCookiesAsync(string uri)
+        {
+            await EnsureCoreAsync().ConfigureAwait(true);
+            if (_webView.CoreWebView2?.CookieManager == null)
+            {
+                return Array.Empty<CoreWebView2Cookie>();
+            }
+
+            System.Collections.Generic.List<CoreWebView2Cookie> list =
+                await _webView.CoreWebView2.CookieManager.GetCookiesAsync(uri ?? "")
+                    .ConfigureAwait(true);
+            return list == null ? Array.Empty<CoreWebView2Cookie>() : list.ToArray();
+        }
+
+        private void OnDownloadStarting(object sender, CoreWebView2DownloadStartingEventArgs args)
+        {
+            TaskCompletionSource<BrowserCapturedDownload> tcs = _expectDownloadTcs;
+            if (tcs == null)
+            {
+                // 非工具触发的下载：静默取消，避免系统另存为
+                try
+                {
+                    args.Handled = true;
+                    args.Cancel = true;
+                }
+                catch
+                {
+                }
+
+                return;
+            }
+
+            try
+            {
+                string suggested = null;
+                try
+                {
+                    suggested = Path.GetFileName(args.ResultFilePath ?? "");
+                }
+                catch
+                {
+                }
+
+                if (string.IsNullOrWhiteSpace(suggested))
+                {
+                    try
+                    {
+                        string u = args.DownloadOperation?.Uri;
+                        if (!string.IsNullOrEmpty(u) && Uri.TryCreate(u, UriKind.Absolute, out Uri uri))
+                        {
+                            suggested = Path.GetFileName(uri.AbsolutePath);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                string relative;
+                string localPath = BrowserDownloadEngine.AllocateLocalPathForSuggestedName(
+                    suggested,
+                    out relative);
+                args.ResultFilePath = localPath;
+                args.Handled = true;
+
+                CoreWebView2DownloadOperation op = args.DownloadOperation;
+                string dlUri = null;
+                try
+                {
+                    dlUri = op?.Uri;
+                }
+                catch
+                {
+                }
+
+                if (op == null)
+                {
+                    CompleteExpectDownload(tcs, null, new InvalidOperationException("无 DownloadOperation"));
+                    return;
+                }
+
+                void OnStateChanged(object s2, object e2)
+                {
+                    try
+                    {
+                        if (op.State == CoreWebView2DownloadState.Completed)
+                        {
+                            op.StateChanged -= OnStateChanged;
+                            CompleteExpectDownload(
+                                tcs,
+                                new BrowserCapturedDownload
+                                {
+                                    LocalPath = localPath,
+                                    RelativePath = relative,
+                                    Uri = dlUri,
+                                    ContentType = null
+                                },
+                                null);
+                        }
+                        else if (op.State == CoreWebView2DownloadState.Interrupted)
+                        {
+                            op.StateChanged -= OnStateChanged;
+                            CompleteExpectDownload(
+                                tcs,
+                                null,
+                                new InvalidOperationException("下载被中断"));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        CompleteExpectDownload(tcs, null, ex);
+                    }
+                }
+
+                op.StateChanged += OnStateChanged;
+                if (op.State == CoreWebView2DownloadState.Completed)
+                {
+                    OnStateChanged(op, EventArgs.Empty);
+                }
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    args.Handled = true;
+                    args.Cancel = true;
+                }
+                catch
+                {
+                }
+
+                CompleteExpectDownload(tcs, null, ex);
+            }
+        }
+
+        private void CompleteExpectDownload(
+            TaskCompletionSource<BrowserCapturedDownload> tcs,
+            BrowserCapturedDownload result,
+            Exception error)
+        {
+            try
+            {
+                _expectDownloadTimeoutCts?.Cancel();
+            }
+            catch
+            {
+            }
+
+            ClearExpectDownloadState();
+            if (tcs == null)
+            {
+                return;
+            }
+
+            if (error != null)
+            {
+                tcs.TrySetException(error);
+            }
+            else if (result != null)
+            {
+                tcs.TrySetResult(result);
+            }
+            else
+            {
+                tcs.TrySetException(new InvalidOperationException("下载失败"));
+            }
+        }
+
+        private void ClearExpectDownloadState()
+        {
+            _expectDownloadTcs = null;
+            try
+            {
+                _expectDownloadTimeoutCts?.Dispose();
+            }
+            catch
+            {
+            }
+
+            _expectDownloadTimeoutCts = null;
         }
 
         public async Task NavigateAsync(string url, bool visible, string tabUuid)
