@@ -117,7 +117,24 @@ namespace WordAddIn1.BrowserHost
             catch (TimeoutException)
             {
                 throw new InvalidOperationException(
-                    "未产生浏览器下载；若为图片请改用 url 参数");
+                    "未产生浏览器下载；若为图片或已知直链请改用 url 参数");
+            }
+
+            if (captured != null && captured.Interrupted)
+            {
+                if (!string.IsNullOrWhiteSpace(captured.Uri)
+                    && Uri.TryCreate(captured.Uri.Trim(), UriKind.Absolute, out Uri iu)
+                    && (iu.Scheme == Uri.UriSchemeHttp || iu.Scheme == Uri.UriSchemeHttps))
+                {
+                    return await FetchUrlAsync(form, iu.AbsoluteUri).ConfigureAwait(true);
+                }
+
+                throw new InvalidOperationException(
+                    "下载被中断"
+                    + (string.IsNullOrEmpty(captured.InterruptReason)
+                        ? ""
+                        : ("（" + captured.InterruptReason + "）"))
+                    + "；请改用 url 参数传入安装包直链");
             }
 
             if (captured == null || string.IsNullOrEmpty(captured.LocalPath))
@@ -390,5 +407,7 @@ namespace WordAddIn1.BrowserHost
         public string RelativePath { get; set; }
         public string Uri { get; set; }
         public string ContentType { get; set; }
+        public bool Interrupted { get; set; }
+        public string InterruptReason { get; set; }
     }
 }

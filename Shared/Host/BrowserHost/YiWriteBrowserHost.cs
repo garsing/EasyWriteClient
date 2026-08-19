@@ -519,9 +519,58 @@ namespace WordAddIn1.BrowserHost
                         return BrowserDownloadResult.Fail(risk);
                     }
 
-                    file = await BrowserDownloadEngine
-                        .ClickAndCaptureAsync(form, entry.BackendDomNodeId.Value)
-                        .ConfigureAwait(true);
+                    // 节点上已有 .exe/.zip 等直链：直接拉取（许多「下载」按钮点了不走 DownloadStarting）
+                    if (BrowserRiskGuard.TryGetFileLikeHttpUrl(probe, out string fileUrl))
+                    {
+                        file = await BrowserDownloadEngine.FetchUrlAsync(form, fileUrl)
+                            .ConfigureAwait(true);
+                    }
+                    else
+                    {
+                        try
+                        {
+                            file = await BrowserDownloadEngine
+                                .ClickAndCaptureAsync(form, entry.BackendDomNodeId.Value)
+                                .ConfigureAwait(true);
+                        }
+                        catch (InvalidOperationException ex)
+                        {
+                            // 超时后再探一次；若点出了直链则补拉
+                            DomNodeProbe again = null;
+                            try
+                            {
+                                again = await BrowserInteractEngine
+                                    .ProbeAsync(form, entry.BackendDomNodeId.Value)
+                                    .ConfigureAwait(true);
+                            }
+                            catch
+                            {
+                            }
+
+                            if (BrowserRiskGuard.TryGetFileLikeHttpUrl(again ?? probe, out string retryUrl))
+                            {
+                                file = await BrowserDownloadEngine.FetchUrlAsync(form, retryUrl)
+                                    .ConfigureAwait(true);
+                            }
+                            else
+                            {
+                                string hint = "";
+                                string anyHref = !string.IsNullOrWhiteSpace(again?.Href)
+                                    ? again.Href
+                                    : probe?.Href;
+                                if (!string.IsNullOrWhiteSpace(anyHref)
+                                    && Uri.TryCreate(anyHref.Trim(), UriKind.Absolute, out Uri hu)
+                                    && (hu.Scheme == Uri.UriSchemeHttp || hu.Scheme == Uri.UriSchemeHttps))
+                                {
+                                    hint = " 可改用 url=\"" + hu.AbsoluteUri + "\"";
+                                }
+
+                                return BrowserDownloadResult.Fail(
+                                    (ex.Message ?? "未产生浏览器下载") + hint
+                                    + "；纯展示图请用 url");
+                            }
+                        }
+                    }
 
                     BrowserRefStore.Clear(channel.ChannelId);
                     clearRefs = true;

@@ -22,6 +22,22 @@ namespace WordAddIn1.BrowserHost
   var name = (this.getAttribute && (this.getAttribute('aria-label') || this.getAttribute('name') || this.getAttribute('placeholder'))) || '';
   var href = '';
   try { href = this.href || (this.getAttribute && this.getAttribute('href')) || ''; } catch (eH) {}
+  try {
+    if ((!href || href === '#' || (href + '').toLowerCase().indexOf('javascript:') === 0) && this.closest) {
+      var a = this.closest('a[href]');
+      if (a) href = a.href || a.getAttribute('href') || href;
+    }
+  } catch (eC) {}
+  var dataUrl = '';
+  try {
+    if (this.getAttribute) {
+      dataUrl = this.getAttribute('data-url')
+        || this.getAttribute('data-href')
+        || this.getAttribute('data-download')
+        || this.getAttribute('data-file')
+        || '';
+    }
+  } catch (eDu) {}
   var hasDownloadAttr = false;
   try { hasDownloadAttr = !!(this.getAttribute && this.getAttribute('download') != null); } catch (eD) {}
   var val = (this.getAttribute && this.getAttribute('value')) || '';
@@ -36,6 +52,7 @@ namespace WordAddIn1.BrowserHost
     valueAttr: val,
     innerText: text,
     href: href,
+    dataUrl: dataUrl,
     hasDownloadAttr: hasDownloadAttr,
     pageHasPasswordInput: pageHasPwd
   };
@@ -57,6 +74,7 @@ namespace WordAddIn1.BrowserHost
                     probe.ValueAttr = (string)v["valueAttr"];
                     probe.InnerText = (string)v["innerText"];
                     probe.Href = (string)v["href"];
+                    probe.DataUrl = (string)v["dataUrl"];
                     probe.HasDownloadAttr = v["hasDownloadAttr"] != null
                         && v["hasDownloadAttr"].Type == JTokenType.Boolean
                         && (bool)v["hasDownloadAttr"];

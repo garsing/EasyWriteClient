@@ -249,10 +249,27 @@ namespace WordAddIn1.BrowserHost
                         else if (op.State == CoreWebView2DownloadState.Interrupted)
                         {
                             op.StateChanged -= OnStateChanged;
+                            string reason = null;
+                            try
+                            {
+                                reason = op.InterruptReason.ToString();
+                            }
+                            catch
+                            {
+                            }
+
+                            // 交给上层：若有 URI 则改 HTTP 直取（许多站点 DownloadStarting 会立刻 Interrupted）
                             CompleteExpectDownload(
                                 tcs,
-                                null,
-                                new InvalidOperationException("下载被中断"));
+                                new BrowserCapturedDownload
+                                {
+                                    LocalPath = null,
+                                    RelativePath = relative,
+                                    Uri = dlUri,
+                                    Interrupted = true,
+                                    InterruptReason = reason
+                                },
+                                null);
                         }
                     }
                     catch (Exception ex)

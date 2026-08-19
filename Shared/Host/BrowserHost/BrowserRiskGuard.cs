@@ -35,8 +35,51 @@ namespace WordAddIn1.BrowserHost
         {
             ".pdf", ".xlsx", ".xls", ".docx", ".doc", ".pptx", ".ppt",
             ".zip", ".rar", ".7z", ".csv", ".txt", ".json", ".xml",
-            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".mp4", ".mp3"
+            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".mp4", ".mp3",
+            ".exe", ".msi", ".dmg", ".pkg", ".apk", ".deb", ".rpm"
         };
+
+        /// <summary>若探针上有可直取的 http(s) 文件链，返回该 URL。</summary>
+        public static bool TryGetFileLikeHttpUrl(DomNodeProbe probe, out string url)
+        {
+            url = null;
+            if (probe == null)
+            {
+                return false;
+            }
+
+            string[] candidates =
+            {
+                probe.Href,
+                probe.DataUrl
+            };
+
+            foreach (string raw in candidates)
+            {
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    continue;
+                }
+
+                if (!Uri.TryCreate(raw.Trim(), UriKind.Absolute, out Uri u)
+                    || (u.Scheme != Uri.UriSchemeHttp && u.Scheme != Uri.UriSchemeHttps))
+                {
+                    continue;
+                }
+
+                string path = (u.AbsolutePath ?? "").ToLowerInvariant();
+                foreach (string ext in FileLikeExtensions)
+                {
+                    if (path.EndsWith(ext, StringComparison.Ordinal))
+                    {
+                        url = u.AbsoluteUri;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
 
         public static string CheckDownload(BrowserRefEntry entry, DomNodeProbe probe)
         {
@@ -326,6 +369,7 @@ namespace WordAddIn1.BrowserHost
         public string ValueAttr { get; set; }
         public string InnerText { get; set; }
         public string Href { get; set; }
+        public string DataUrl { get; set; }
         public bool HasDownloadAttr { get; set; }
         public bool PageHasPasswordInput { get; set; }
     }
