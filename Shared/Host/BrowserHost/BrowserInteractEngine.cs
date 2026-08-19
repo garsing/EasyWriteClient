@@ -149,46 +149,133 @@ namespace WordAddIn1.BrowserHost
 
         public static async Task TypeAsync(YiWriteBrowserForm form, int backendNodeId, string text)
         {
+            string want = text ?? "";
             string objectId = await ResolveObjectIdAsync(form, backendNodeId).ConfigureAwait(true);
-            string argsJson = BuildCallArgs(text ?? "");
-            // 必须走原型 value setter：百度等受控 input 直接 this.value= 写不进框架状态，
-            // 回车会提交空值/推荐占位文案。
-            string resultJson = await CallFunctionOnAsync(
+
+            // 1) 真实聚焦 + 点一下 + 原生 setter 清空（百度等受控框需要）
+            string prepJson = await CallFunctionOnAsync(
                 form,
                 objectId,
-                @"function(text) {
+                @"function() {
   this.scrollIntoView({block:'center', inline:'center'});
-  this.focus();
-  if (typeof this.select === 'function') { try { this.select(); } catch(e) {} }
+  try {
+    this.dispatchEvent(new MouseEvent('mousedown', {bubbles:true, cancelable:true, view:window}));
+    this.dispatchEvent(new MouseEvent('mouseup', {bubbles:true, cancelable:true, view:window}));
+    this.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+  } catch (e0) {}
+  this.focus && this.focus();
+  if (typeof this.select === 'function') { try { this.select(); } catch(e1) {} }
   if ('value' in this) {
     try {
       var proto = this.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
       var desc = Object.getOwnPropertyDescriptor(proto, 'value');
-      if (desc && desc.set) {
-        desc.set.call(this, '');
-        this.dispatchEvent(new Event('input', {bubbles:true}));
-        desc.set.call(this, text);
-      } else {
-        this.value = '';
-        this.dispatchEvent(new Event('input', {bubbles:true}));
-        this.value = text;
-      }
-    } catch (e2) {
-      this.value = text;
+      if (desc && desc.set) desc.set.call(this, '');
+      else this.value = '';
+    } catch (e2) { try { this.value = ''; } catch (e3) {} }
+    try {
+      this.dispatchEvent(new InputEvent('input', {bubbles:true, cancelable:true, inputType:'deleteContentBackward', data:null}));
+    } catch (e4) {
+      this.dispatchEvent(new Event('input', {bubbles:true}));
     }
+    return { ok:true, kind:'value' };
+  }
+  if (this.isContentEditable) {
+    this.innerText = '';
+    this.textContent = '';
     this.dispatchEvent(new Event('input', {bubbles:true}));
+    return { ok:true, kind:'ce' };
+  }
+  return { ok:false, reason:'not_editable' };
+}",
+                null).ConfigureAwait(true);
+
+            EnsureTypePrepOk(prepJson);
+
+            // 2) CDP insertText：走浏览器输入通道，框架更容易收到（比单纯改 value 稳）
+            var insertPayload = new JObject { ["text"] = want };
+            await form.CallCdpAsync(
+                "Input.insertText",
+                insertPayload.ToString(Newtonsoft.Json.Formatting.None))
+                .ConfigureAwait(true);
+
+            // 3) 再补一枪：原生 setter + InputEvent（insertText 偶发未同步时兜底）
+            string argsJson = BuildCallArgs(want);
+            string syncJson = await CallFunctionOnAsync(
+                form,
+                objectId,
+                @"function(text) {
+  if ('value' in this) {
+    var cur = String(this.value || '');
+    if (cur !== text) {
+      try {
+        var proto = this.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (desc && desc.set) desc.set.call(this, text);
+        else this.value = text;
+      } catch (e) { this.value = text; }
+    }
+    try {
+      this.dispatchEvent(new InputEvent('input', {bubbles:true, cancelable:true, inputType:'insertText', data:text}));
+    } catch (e2) {
+      this.dispatchEvent(new Event('input', {bubbles:true}));
+    }
     this.dispatchEvent(new Event('change', {bubbles:true}));
     return { ok:true, value: String(this.value || '') };
-  } else if (this.isContentEditable) {
-    this.innerText = '';
-    this.textContent = text;
-    this.dispatchEvent(new Event('input', {bubbles:true}));
+  }
+  if (this.isContentEditable) {
+    var t = String(this.innerText || this.textContent || '');
+    if (t !== text) {
+      this.innerText = text;
+      this.textContent = text;
+      this.dispatchEvent(new Event('input', {bubbles:true}));
+    }
     return { ok:true, value: String(this.innerText || this.textContent || '') };
   }
   return { ok:false, reason:'not_editable' };
 }",
                 argsJson).ConfigureAwait(true);
 
+            string got = ReadTypedValue(syncJson);
+            if (!string.Equals(got, want, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "输入未生效（读回 value=\"" + Truncate(got, 40)
+                    + "\"，期望=\"" + Truncate(want, 40) + "\"）");
+            }
+
+            // 4) 收起下拉联想：否则按 Enter 常会选中推荐热词而不是刚输入的内容
+            await DispatchKeyAsync(form, "keyDown", "Escape").ConfigureAwait(true);
+            await DispatchKeyAsync(form, "keyUp", "Escape").ConfigureAwait(true);
+            await CallFunctionOnAsync(
+                form,
+                objectId,
+                "function(){ this.focus && this.focus(); }",
+                null).ConfigureAwait(true);
+        }
+
+        private static void EnsureTypePrepOk(string resultJson)
+        {
+            try
+            {
+                var jo = JObject.Parse(resultJson);
+                var v = jo["result"]?["value"] as JObject;
+                if (v == null || v["ok"] == null || !(bool)v["ok"])
+                {
+                    throw new InvalidOperationException("目标不是可 type 的输入控件");
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("type 失败: " + ex.Message);
+            }
+        }
+
+        private static string ReadTypedValue(string resultJson)
+        {
             try
             {
                 var jo = JObject.Parse(resultJson);
@@ -198,13 +285,7 @@ namespace WordAddIn1.BrowserHost
                     throw new InvalidOperationException("目标不是可 type 的输入控件");
                 }
 
-                string got = (string)v["value"] ?? "";
-                if (!string.Equals(got, text ?? "", StringComparison.Ordinal))
-                {
-                    throw new InvalidOperationException(
-                        "输入未生效（读回 value=\"" + Truncate(got, 40)
-                        + "\"，期望=\"" + Truncate(text ?? "", 40) + "\"）");
-                }
+                return (string)v["value"] ?? "";
             }
             catch (InvalidOperationException)
             {
@@ -266,6 +347,8 @@ namespace WordAddIn1.BrowserHost
 
         public static async Task PressAsync(YiWriteBrowserForm form, string key, int? backendNodeId)
         {
+            string keyName = NormalizeKey(key);
+
             if (backendNodeId.HasValue)
             {
                 string objectId = await ResolveObjectIdAsync(form, backendNodeId.Value).ConfigureAwait(true);
@@ -274,10 +357,20 @@ namespace WordAddIn1.BrowserHost
                     objectId,
                     "function(){ this.focus && this.focus(); }",
                     null).ConfigureAwait(true);
+
+                // 带 ref 的 Enter：先 Esc 收联想，避免提交高亮推荐词
+                if (string.Equals(keyName, "Enter", StringComparison.Ordinal))
+                {
+                    await DispatchKeyAsync(form, "keyDown", "Escape").ConfigureAwait(true);
+                    await DispatchKeyAsync(form, "keyUp", "Escape").ConfigureAwait(true);
+                    await CallFunctionOnAsync(
+                        form,
+                        objectId,
+                        "function(){ this.focus && this.focus(); }",
+                        null).ConfigureAwait(true);
+                }
             }
 
-            string keyName = NormalizeKey(key);
-            // keyDown + keyUp
             await DispatchKeyAsync(form, "keyDown", keyName).ConfigureAwait(true);
             await DispatchKeyAsync(form, "keyUp", keyName).ConfigureAwait(true);
         }
