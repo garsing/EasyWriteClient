@@ -57,22 +57,47 @@
         <div class="open-files-list-clip-inner">
           <div class="open-files-list">
             <div
-              v-for="item in openFiles"
-              :key="item.id || item.displayName"
-              class="open-file-item"
-              :class="{ selected: isOpenFileSelected(item) }"
-              @click="onOpenFileClick(item)"
-              @mouseenter="showHoverTip($event, openFileTooltip(item))"
-              @mouseleave="hideHoverTip"
-              @contextmenu.prevent="openFileContextMenu($event, item)"
+              v-for="group in openFileGroups"
+              :key="group.key"
+              class="open-file-group"
             >
-              <img
-                :src="openFileAppIcon(item)"
-                alt=""
-                class="open-file-app-icon"
-                aria-hidden="true"
-              />
-              <span class="open-file-name">{{ item.displayName || '未命名文档' }}</span>
+              <button
+                type="button"
+                class="open-file-group-header"
+                :aria-expanded="isAppGroupExpanded(group.key)"
+                @click="toggleAppGroup(group.key)"
+              >
+                <span
+                  class="open-file-group-chevron"
+                  :class="{ open: isAppGroupExpanded(group.key) }"
+                  aria-hidden="true"
+                >›</span>
+                <img
+                  :src="group.icon"
+                  alt=""
+                  class="open-file-app-icon"
+                  aria-hidden="true"
+                />
+                <span class="open-file-group-label">{{ group.label }}</span>
+                <span class="open-file-group-count">{{ group.items.length }}</span>
+              </button>
+              <div
+                v-show="isAppGroupExpanded(group.key)"
+                class="open-file-group-children"
+              >
+                <div
+                  v-for="item in group.items"
+                  :key="item.id || item.displayName"
+                  class="open-file-item open-file-child"
+                  :class="{ selected: isOpenFileSelected(item) }"
+                  @click="onOpenFileClick(item)"
+                  @mouseenter="showHoverTip($event, openFileTooltip(item))"
+                  @mouseleave="hideHoverTip"
+                  @contextmenu.prevent="openFileContextMenu($event, item)"
+                >
+                  <span class="open-file-name">{{ item.displayName || '未命名文档' }}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -169,7 +194,7 @@ import addIcon from '../assets/images/add.png'
 import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
 import userIcon from '../assets/images/avatar.png'
 import { openFileSelectionKey } from '../utils/selectedOpenFiles.js'
-import { resolveOpenFileAppIcon } from '../utils/openFileAppIcon.js'
+import { groupOpenFilesByApp } from '../utils/openFileAppIcon.js'
 
 const props = defineProps({
   collapsed: { type: Boolean, default: false },
@@ -189,6 +214,8 @@ const { sendMessage } = useWebViewBridge()
 const tasksExpanded = ref(true)
 /** 打开文件列表是否展开；默认展开，不持久化 */
 const openFilesExpanded = ref(true)
+/** 应用分组展开态：key → boolean；缺省视为展开 */
+const appGroupExpanded = ref({})
 
 const isLoggedIn = ref(false)
 const username = ref('')
@@ -197,6 +224,21 @@ const displayUsername = computed(() => {
   if (isLoggedIn.value && username.value) return username.value
   return '未登录'
 })
+
+const openFileGroups = computed(() => groupOpenFilesByApp(props.openFiles))
+
+function isAppGroupExpanded (key) {
+  const map = appGroupExpanded.value
+  if (Object.prototype.hasOwnProperty.call(map, key)) {
+    return !!map[key]
+  }
+  return true
+}
+
+function toggleAppGroup (key) {
+  const cur = isAppGroupExpanded(key)
+  appGroupExpanded.value = { ...appGroupExpanded.value, [key]: !cur }
+}
 
 const footerTitle = computed(() => {
   const name = displayUsername.value
@@ -238,10 +280,6 @@ const taskCountLabel = computed(() => {
 const openFilesCount = computed(() =>
   Array.isArray(props.openFiles) ? props.openFiles.length : 0
 )
-
-function openFileAppIcon (item) {
-  return resolveOpenFileAppIcon(item)
-}
 
 function isOpenFileSelected (item) {
   const id = openFileSelectionKey(item)
@@ -685,6 +723,78 @@ async function handleOpenSettings () {
   object-fit: contain;
   flex-shrink: 0;
   display: block;
+}
+
+.open-file-group {
+  margin-bottom: 4px;
+  min-width: 0;
+}
+
+.open-file-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  border: none;
+  background: transparent;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.open-file-group-header:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.open-file-group-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9a978f;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 0.18s ease;
+}
+
+.open-file-group-chevron.open {
+  transform: rotate(90deg);
+}
+
+.open-file-group-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3d3c38;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.open-file-group-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #9a978f;
+  font-variant-numeric: tabular-nums;
+}
+
+.open-file-group-children {
+  padding-left: 10px;
+  min-width: 0;
+}
+
+.open-file-item.open-file-child {
+  padding: 6px 10px 6px 18px;
+  gap: 0;
 }
 
 .sidebar-hover-tip {
