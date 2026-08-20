@@ -251,10 +251,6 @@ namespace WordAddIn1.BrowserHost
             {
                 string channelId = BrowserChannel.AttachPrefix + info.TabUuid;
                 string display = string.IsNullOrWhiteSpace(info.Title) ? info.Url : info.Title;
-                if (!string.IsNullOrWhiteSpace(info.Browser))
-                {
-                    display = "[" + info.Browser + "] " + display;
-                }
 
                 HostCallbacks.RaiseBrowserOpenFileUpsert(channelId, display, info.Url);
                 lock (Gate)
@@ -969,15 +965,13 @@ namespace WordAddIn1.BrowserHost
 
         private static string FormatDisplay(string tabUuid, string title, string url)
         {
-            string browser = "chrome";
-            int idx = (tabUuid ?? "").IndexOf(':');
-            if (idx > 0)
+            // 宿主用侧栏图标区分（chrome/edge/易写），标题不再加 [chrome]/[edge] 前缀
+            if (!string.IsNullOrWhiteSpace(title))
             {
-                browser = tabUuid.Substring(0, idx);
+                return title.Trim();
             }
 
-            string name = !string.IsNullOrWhiteSpace(title) ? title : url;
-            return "[" + browser + "] " + name;
+            return string.IsNullOrWhiteSpace(url) ? "浏览器" : url.Trim();
         }
 
         private static async Task<BrowserDownloadFileResult> ImportDownloadedFileAsync(JObject result)

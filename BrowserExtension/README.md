@@ -43,7 +43,7 @@ cd EasyWriteClient\BrowserExtension
 
 1. 完全退出并重启 Chrome/Edge（或在扩展页点「重新加载」）
 2. 打开若干网页标签
-3. 确认易写侧栏「打开文件」出现 `[chrome] …` / `[edge] …` 项
+3. 确认易写侧栏「打开文件」出现 Chrome/Edge 图标的网页项（标题不再带 [chrome]/[edge] 前缀）
 4. 对该渠调用 `F_browser_snapshot` 等工具验收
 
 ## 日志
