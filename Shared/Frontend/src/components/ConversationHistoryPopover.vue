@@ -13,11 +13,11 @@
         :key="item.id"
         type="button"
         class="history-item"
-        :class="{ active: String(item.id) === String(activeId) }"
+        :class="{ active: String(item.id) === String(activeId), draft: !!item.isDraft }"
         @click="$emit('select', item)"
       >
         <span class="history-item-title">{{ item.title || '未命名对话' }}</span>
-        <span class="history-item-time">{{ formatRelativeTime(item.last_message_at || item.updated_at) }}</span>
+        <span v-if="!item.isDraft" class="history-item-time">{{ formatRelativeTime(item.last_message_at || item.updated_at) }}</span>
       </button>
     </div>
   </div>

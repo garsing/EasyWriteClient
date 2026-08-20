@@ -130,13 +130,13 @@
               :key="item.id"
               type="button"
               class="task-item"
-              :class="{ active: String(item.id) === String(activeId) }"
+              :class="{ active: String(item.id) === String(activeId), draft: !!item.isDraft }"
               @mouseenter="showHoverTip($event, taskTooltip(item))"
               @mouseleave="hideHoverTip"
               @click="$emit('select', item)"
             >
               <span class="task-title">{{ item.title || '未命名任务' }}</span>
-              <span class="task-time">{{ formatRelativeTime(item.last_message_at || item.updated_at) }}</span>
+              <span v-if="!item.isDraft" class="task-time">{{ formatRelativeTime(item.last_message_at || item.updated_at) }}</span>
             </button>
           </div>
         </div>

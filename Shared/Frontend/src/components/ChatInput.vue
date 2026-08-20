@@ -75,11 +75,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import submitIcon from '../assets/images/submit.png'
 import stopIcon from '../assets/images/stop.png'
 import { resolveOpenFileAppIcon } from '../utils/openFileAppIcon.js'
 import { useWebViewBridge } from '../composables/useWebViewBridge'
+import { syncLiveDraftInput } from '../utils/draftChatInput.js'
 
 const { sendMessage } = useWebViewBridge()
 
@@ -176,6 +177,10 @@ function onFileDropCapture (e) {
 const inputValue = ref('')
 const placeholder = ref('输入消息')
 
+watch(inputValue, (v) => {
+  syncLiveDraftInput(v)
+}, { immediate: true })
+
 /** 上传中/处理中/失败：可显示；就绪：仅当有 upload_id 时显示，与丢弃 upload_id 后必须消失一致 */
 const showAttachmentStrip = computed(() => {
   const a = props.attachment
@@ -228,7 +233,7 @@ function truncateName (name) {
 
 onMounted(() => {
   window.addEventListener('restoreInput', (event) => {
-    if (event.detail && event.detail.value) {
+    if (event.detail && typeof event.detail.value === 'string') {
       inputValue.value = event.detail.value
     }
   })

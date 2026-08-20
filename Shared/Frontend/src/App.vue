@@ -10,7 +10,7 @@
     <TaskSidebar
       v-if="isDesktopHost && layoutMode === 'expanded'"
       :collapsed="sidebarCollapsed"
-      :tasks="taskList"
+      :tasks="displayTaskList"
       :open-files="openFiles"
       :selected-open-file-ids="selectedOpenFileIds"
       :active-id="activeTaskId"
@@ -43,7 +43,7 @@
         />
         <ConversationHistoryPopover
           v-if="historyPopoverOpen"
-          :tasks="taskList"
+          :tasks="displayTaskList"
           :loading="taskListLoading"
           :error="taskListError"
           :active-id="activeTaskId"
@@ -103,6 +103,14 @@ import {
   stripSelectedOpenFilesAppendix,
   pruneSelectionByOpenFiles
 } from './utils/selectedOpenFiles.js'
+import {
+  DRAFT_TASK_ID,
+  makeDraftTaskItem,
+  stashDraftInputFromLive,
+  peekStashedDraftInput,
+  clearStashedDraftInput,
+  clearAllDraftInput
+} from './utils/draftChatInput.js'
 
 const { sendMessage, onMessage } = useWebViewBridge()
 const chatFile = useChatFileUpload()
@@ -167,6 +175,32 @@ const taskList = ref([])
 const taskListLoading = ref(false)
 const taskListError = ref('')
 const activeTaskId = ref(null)
+/** 从「新对话」点进历史后，列表顶保留可切回的「新对话」 */
+const draftSlotVisible = ref(false)
+/** addConversation 会 clearMessages，延后到清空后再还原输入框 */
+let pendingRestoreDraftInput = null
+
+const displayTaskList = computed(() => {
+  const list = Array.isArray(taskList.value) ? taskList.value : []
+  if (!draftSlotVisible.value) return list
+  if (list.some((t) => String(t.id) === DRAFT_TASK_ID || t.isDraft)) return list
+  return [makeDraftTaskItem(), ...list]
+})
+
+function isOnNewChatDraft () {
+  if (String(activeTaskId.value) === DRAFT_TASK_ID) return true
+  return activeTaskId.value == null
+    || activeTaskId.value === ''
+    || String(activeTaskId.value) === '-1'
+}
+
+function clearInputBox () {
+  window.dispatchEvent(new CustomEvent('clearInput'))
+}
+
+function restoreInputBox (value) {
+  restoreInputValue(value == null ? '' : String(value))
+}
 const openFiles = ref([])
 /** Desktop：已选打开文件（芯片 / 发送附加段）；不落库 */
 const selectedOpenFiles = ref([])
@@ -225,8 +259,11 @@ async function refreshTaskList () {
 
 async function handleDesktopNewTask () {
   try {
+    draftSlotVisible.value = false
+    clearAllDraftInput()
+    clearInputBox()
     await sendMessage('addConversation', {})
-    activeTaskId.value = null
+    activeTaskId.value = DRAFT_TASK_ID
     clearSelectedOpenFiles()
     await refreshTaskList()
   } catch (e) {
@@ -236,7 +273,37 @@ async function handleDesktopNewTask () {
 
 async function handleDesktopSelectTask (item) {
   if (!item?.id) return
+
+  // 切回「新对话」草稿
+  if (item.isDraft || String(item.id) === DRAFT_TASK_ID) {
+    try {
+      const text = peekStashedDraftInput()
+      pendingRestoreDraftInput = text
+      await sendMessage('addConversation', {})
+      activeTaskId.value = DRAFT_TASK_ID
+      draftSlotVisible.value = false
+      clearSelectedOpenFiles()
+      await refreshTaskList()
+      // 若宿主未推 clearMessages，仍兜底还原
+      await nextTick()
+      if (pendingRestoreDraftInput != null) {
+        restoreInputBox(pendingRestoreDraftInput)
+        pendingRestoreDraftInput = null
+        clearStashedDraftInput()
+      }
+    } catch (e) {
+      pendingRestoreDraftInput = null
+      console.error('[App] 切回新对话失败:', e)
+    }
+    return
+  }
+
   try {
+    if (isOnNewChatDraft()) {
+      stashDraftInputFromLive()
+      draftSlotVisible.value = true
+      clearInputBox()
+    }
     activeTaskId.value = item.id
     const res = await sendMessage('openConversation', { id: item.id })
     if (!res?.success) {
@@ -870,6 +937,12 @@ onMounted(() => {
       chatFile.reset()
       resetTodoProgressBar()
       loadEmptyState()
+      if (pendingRestoreDraftInput != null) {
+        const text = pendingRestoreDraftInput
+        pendingRestoreDraftInput = null
+        clearStashedDraftInput()
+        nextTick(() => restoreInputBox(text))
+      }
     } else if (data.type === 'todoListUpdated') {
       handleTodoListUpdated(data.data || data)
     } else if (data.type === 'openFilesUpdated') {
@@ -888,6 +961,7 @@ onMounted(() => {
       messages.value = raw.map((m) => normalizeHistoryMessage(m))
       if (payload.conversationId && payload.conversationId !== '-1') {
         activeTaskId.value = payload.conversationId
+        // 保留 draftSlotVisible：从新对话点进历史后，列表顶仍显示「新对话」
       }
       if (!messages.value.length) {
         loadEmptyState()
@@ -896,6 +970,10 @@ onMounted(() => {
       const payload = data.data || data
       if (payload?.conversationId && payload.conversationId !== '-1') {
         activeTaskId.value = payload.conversationId
+        // 仅在未挂「新对话」入口时清理（例如当前草稿首次落成正式会话）
+        if (!draftSlotVisible.value) {
+          clearStashedDraftInput()
+        }
         if (isDesktopHost) refreshTaskList()
       }
     } else if (data.type === 'conversationTitleUpdated') {
