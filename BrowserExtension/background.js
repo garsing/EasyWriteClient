@@ -5,16 +5,21 @@
 const NATIVE_HOST = "com.yiwrite.browser_bridge";
 
 let port = null;
-let browserKind = "chrome";
+let browserKind = detectBrowserKind();
 let reconnectTimer = null;
 const pendingRpc = new Map();
 
-try {
-  if (typeof browser !== "undefined" && browser.runtime) {
-    browserKind = "edge";
+function detectBrowserKind() {
+  try {
+    const ua = (self.navigator && self.navigator.userAgent) || "";
+    // Chromium Edge 带 Edg/；Chrome 不会
+    if (/Edg\//.test(ua)) {
+      return "edge";
+    }
+  } catch (_) {
+    /* ignore */
   }
-} catch (_) {
-  /* chrome */
+  return "chrome";
 }
 
 function tabUuid(tabId) {

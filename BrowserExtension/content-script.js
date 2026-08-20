@@ -262,25 +262,45 @@
 
     if (action === "type") {
       const text = msg.text == null ? "" : String(msg.text);
-      el.focus();
       const tag = (el.tagName || "").toLowerCase();
+      el.focus();
+      try {
+        el.click();
+      } catch (_) {}
+
       if (tag === "input" || tag === "textarea") {
-        const proto = tag === "input" ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
-        const setter = Object.getOwnPropertyDescriptor(proto, "value");
-        if (setter && setter.set) {
-          setter.set.call(el, text);
-        } else {
-          el.value = text;
+        const filled = fillTextControl(el, text);
+        if (!filled.ok) {
+          throw new Error(filled.error || "输入未生效");
         }
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-        el.dispatchEvent(new Event("change", { bubbles: true }));
-      } else if (el.isContentEditable) {
-        el.textContent = text;
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-      } else {
-        throw new Error("目标不可输入");
+        // Esc 收联想，避免挡「百度一下」
+        el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent("keyup", { key: "Escape", bubbles: true }));
+        return {
+          ok: true,
+          message: "typed value=" + JSON.stringify(filled.value),
+          probe: entry.probe
+        };
       }
-      return { ok: true, message: "typed", probe: entry.probe };
+
+      if (el.isContentEditable) {
+        el.focus();
+        document.execCommand("selectAll", false, null);
+        document.execCommand("delete", false, null);
+        const ok = document.execCommand("insertText", false, text);
+        if (!ok) {
+          el.textContent = text;
+        }
+        el.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          cancelable: true,
+          inputType: "insertText",
+          data: text
+        }));
+        return { ok: true, message: "typed contenteditable", probe: entry.probe };
+      }
+
+      throw new Error("目标不可输入");
     }
 
     if (action === "press") {
@@ -319,6 +339,93 @@
     }
 
     throw new Error("不支持的 action: " + action);
+  }
+
+  function setNativeValue(el, value) {
+    const tag = (el.tagName || "").toLowerCase();
+    const proto = tag === "textarea"
+      ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype;
+    const desc = Object.getOwnPropertyDescriptor(proto, "value");
+    if (desc && desc.set) {
+      desc.set.call(el, value);
+    } else {
+      el.value = value;
+    }
+  }
+
+  function fillTextControl(el, text) {
+    // 1) 全选清空（对百度等受控框更稳）
+    try {
+      el.select();
+    } catch (_) {}
+    setNativeValue(el, "");
+    try {
+      el.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "deleteContentBackward",
+        data: null
+      }));
+    } catch (_) {
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    // 2) 优先 execCommand insertText（走编辑器通道）
+    let usedExec = false;
+    try {
+      usedExec = document.execCommand("insertText", false, text);
+    } catch (_) {
+      usedExec = false;
+    }
+
+    // 3) 原生 setter + InputEvent 兜底
+    if (!usedExec || String(el.value || "") !== text) {
+      setNativeValue(el, text);
+      try {
+        el.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          cancelable: true,
+          inputType: "insertText",
+          data: text
+        }));
+      } catch (_) {
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    const got = String(el.value || "");
+    if (got !== text) {
+      // 4) 逐字输入再试一次
+      setNativeValue(el, "");
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      for (let i = 0; i < text.length; i++) {
+        const ch = text.charAt(i);
+        const next = text.slice(0, i + 1);
+        setNativeValue(el, next);
+        try {
+          el.dispatchEvent(new InputEvent("input", {
+            bubbles: true,
+            cancelable: true,
+            inputType: "insertText",
+            data: ch
+          }));
+        } catch (_) {
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      }
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    const finalVal = String(el.value || "");
+    if (finalVal !== text) {
+      return {
+        ok: false,
+        error: "输入未生效（读回 value=" + JSON.stringify(finalVal) + "，期望 " + JSON.stringify(text) + "）"
+      };
+    }
+    return { ok: true, value: finalVal };
   }
 
   function doDownloadPrep(ref) {
