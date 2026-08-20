@@ -139,6 +139,141 @@ namespace WordAddIn1
             }
         }
 
+        public static object GetInteractionSettings()
+        {
+            try
+            {
+                var getter = HostCallbacks.GetDesktopInteractionSettings;
+                if (getter == null)
+                {
+                    return new { success = true, showInteraction = false };
+                }
+
+                return getter() ?? new { success = true, showInteraction = false };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[UserSettingsBridgeHandlers] 获取交互设置失败: {ex.Message}");
+                return new { success = false, message = ex.Message };
+            }
+        }
+
+        public static object SetInteractionSetting(object data)
+        {
+            try
+            {
+                var setter = HostCallbacks.SetDesktopInteractionSetting;
+                if (setter == null)
+                {
+                    return new { success = false, message = "当前宿主不支持交互设置" };
+                }
+
+                var key = ExtractStringField(data, "key");
+                if (key != "autoCompactEnabled" && key != "autoFloatEnabled"
+                    && key != "autoFloatIdleSeconds")
+                {
+                    return new { success = false, message = "未知设置项" };
+                }
+
+                object value = key == "autoFloatIdleSeconds"
+                    ? (object)ExtractIntField(data, "value", 5)
+                    : ExtractBoolField(data, "value", true);
+                setter(key, value);
+                return new { success = true, key, value };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[UserSettingsBridgeHandlers] 保存交互设置失败: {ex.Message}");
+                return new { success = false, message = ex.Message };
+            }
+        }
+
+        public static object ExtractRawField(object data, string fieldName)
+        {
+            if (data is JObject jObj)
+            {
+                return jObj[fieldName];
+            }
+
+            if (data is Dictionary<string, object> dict && dict.ContainsKey(fieldName))
+            {
+                return dict[fieldName];
+            }
+
+            return null;
+        }
+
+        public static bool ExtractBoolField(object data, string fieldName, bool fallback)
+        {
+            object raw = ExtractRawField(data, fieldName);
+            if (raw == null)
+            {
+                return fallback;
+            }
+
+            if (raw is bool b)
+            {
+                return b;
+            }
+
+            if (raw is JValue jv)
+            {
+                try
+                {
+                    return jv.ToObject<bool>();
+                }
+                catch
+                {
+                    // fall through
+                }
+            }
+
+            if (bool.TryParse(raw.ToString(), out var parsed))
+            {
+                return parsed;
+            }
+
+            return fallback;
+        }
+
+        public static int ExtractIntField(object data, string fieldName, int fallback)
+        {
+            object raw = ExtractRawField(data, fieldName);
+            if (raw == null)
+            {
+                return fallback;
+            }
+
+            if (raw is int i)
+            {
+                return i;
+            }
+
+            if (raw is long l)
+            {
+                return (int)l;
+            }
+
+            if (raw is JValue jv)
+            {
+                try
+                {
+                    return jv.ToObject<int>();
+                }
+                catch
+                {
+                    // fall through
+                }
+            }
+
+            if (int.TryParse(raw.ToString(), out var parsed))
+            {
+                return parsed;
+            }
+
+            return fallback;
+        }
+
         public static string ExtractStringField(object data, string fieldName)
         {
             if (data is JObject jObj)

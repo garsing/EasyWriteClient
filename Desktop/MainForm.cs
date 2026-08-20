@@ -39,6 +39,8 @@ namespace EasyWriteClient.Desktop
         private Action _requestCompactHandler;
         private Action _bringDesktopToFrontHandler;
         private Action _clearDesktopTopMostHandler;
+        private Func<object> _getInteractionSettingsHandler;
+        private Action<string, object> _setInteractionSettingHandler;
         private readonly System.Windows.Forms.Timer _idleTimer;
         private DateTime _lastActivityUtc = DateTime.UtcNow;
         private bool _isFloatBall;
@@ -127,6 +129,33 @@ namespace EasyWriteClient.Desktop
             };
             HostCallbacks.ClearDesktopTopMost = _clearDesktopTopMostHandler;
 
+            _getInteractionSettingsHandler = () => new
+            {
+                success = true,
+                showInteraction = true,
+                autoCompactEnabled = WindowLayoutStore.GetAutoCompactEnabled(),
+                autoFloatEnabled = WindowLayoutStore.GetAutoFloatEnabled(),
+                autoFloatIdleSeconds = WindowLayoutStore.GetAutoFloatIdleSeconds()
+            };
+            HostCallbacks.GetDesktopInteractionSettings = _getInteractionSettingsHandler;
+
+            _setInteractionSettingHandler = (key, value) =>
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                if (InvokeRequired)
+                {
+                    BeginInvoke(new Action(() => ApplyInteractionSetting(key, value)));
+                    return;
+                }
+
+                ApplyInteractionSetting(key, value);
+            };
+            HostCallbacks.SetDesktopInteractionSetting = _setInteractionSettingHandler;
+
             _titleBar = new DesktopTitleBar(_dpiScale);
             _chatSurface = new DesktopChatSurface();
 
@@ -190,6 +219,16 @@ namespace EasyWriteClient.Desktop
                     HostCallbacks.ClearDesktopTopMost = null;
                 }
 
+                if (ReferenceEquals(HostCallbacks.GetDesktopInteractionSettings, _getInteractionSettingsHandler))
+                {
+                    HostCallbacks.GetDesktopInteractionSettings = null;
+                }
+
+                if (ReferenceEquals(HostCallbacks.SetDesktopInteractionSetting, _setInteractionSettingHandler))
+                {
+                    HostCallbacks.SetDesktopInteractionSetting = null;
+                }
+
                 WordHost.Shutdown();
                 ExcelHost.Shutdown();
             };
@@ -201,6 +240,8 @@ namespace EasyWriteClient.Desktop
         internal bool IsCompactLayout => _layoutMode == WindowLayoutMode.Compact;
 
         internal bool IsFloatBall => _isFloatBall;
+
+        internal bool IsAutoFloatEnabled => WindowLayoutStore.GetAutoFloatEnabled();
 
         internal void ToggleMaximizeRestore()
         {
@@ -249,6 +290,16 @@ namespace EasyWriteClient.Desktop
                 LeaveFloatBall();
             }
 
+            if (_layoutMode == WindowLayoutMode.Compact)
+            {
+                return;
+            }
+
+            if (!WindowLayoutStore.GetAutoCompactEnabled())
+            {
+                return;
+            }
+
             SetLayoutMode(WindowLayoutMode.Compact);
         }
 
@@ -260,7 +311,8 @@ namespace EasyWriteClient.Desktop
                 LeaveFloatBall();
             }
 
-            if (_layoutMode != WindowLayoutMode.Compact)
+            if (_layoutMode != WindowLayoutMode.Compact
+                && WindowLayoutStore.GetAutoCompactEnabled())
             {
                 SetLayoutMode(WindowLayoutMode.Compact);
             }
@@ -355,7 +407,13 @@ namespace EasyWriteClient.Desktop
                 return;
             }
 
-            if ((DateTime.UtcNow - _lastActivityUtc).TotalSeconds >= 5)
+            int idleSec = WindowLayoutStore.GetAutoFloatIdleSeconds();
+            if (idleSec <= 0)
+            {
+                return;
+            }
+
+            if ((DateTime.UtcNow - _lastActivityUtc).TotalSeconds >= idleSec)
             {
                 EnterFloatBall(force: false);
             }
@@ -424,8 +482,97 @@ namespace EasyWriteClient.Desktop
             EnterFloatBall(force: true);
         }
 
+        internal void ApplyAutoFloatEnabled(bool enabled)
+        {
+            WindowLayoutStore.SetAutoFloatEnabled(enabled);
+            if (!enabled && _isFloatBall)
+            {
+                LeaveFloatBall();
+            }
+
+            _titleBar?.SyncMinButtonForFloatPref();
+        }
+
+        private void ApplyInteractionSetting(string key, object value)
+        {
+            if (string.Equals(key, "autoCompactEnabled", StringComparison.Ordinal))
+            {
+                WindowLayoutStore.SetAutoCompactEnabled(ToBool(value, true));
+                return;
+            }
+
+            if (string.Equals(key, "autoFloatEnabled", StringComparison.Ordinal))
+            {
+                ApplyAutoFloatEnabled(ToBool(value, true));
+                return;
+            }
+
+            if (string.Equals(key, "autoFloatIdleSeconds", StringComparison.Ordinal))
+            {
+                WindowLayoutStore.SetAutoFloatIdleSeconds(ToInt(value, WindowLayoutStore.IdleSecondsDefault));
+                NoteUserActivity();
+            }
+        }
+
+        private static bool ToBool(object value, bool fallback)
+        {
+            if (value == null)
+            {
+                return fallback;
+            }
+
+            if (value is bool b)
+            {
+                return b;
+            }
+
+            if (bool.TryParse(Convert.ToString(value), out bool parsed))
+            {
+                return parsed;
+            }
+
+            return fallback;
+        }
+
+        private static int ToInt(object value, int fallback)
+        {
+            if (value == null)
+            {
+                return fallback;
+            }
+
+            if (value is int i)
+            {
+                return i;
+            }
+
+            if (value is long l)
+            {
+                return (int)l;
+            }
+
+            if (int.TryParse(Convert.ToString(value), out int parsed))
+            {
+                return parsed;
+            }
+
+            try
+            {
+                return Convert.ToInt32(value);
+            }
+            catch
+            {
+                return fallback;
+            }
+        }
+
         private void EnterFloatBall(bool force = false)
         {
+            if (!WindowLayoutStore.GetAutoFloatEnabled())
+            {
+                return;
+            }
+
             if (_isFloatBall || _layoutMode != WindowLayoutMode.Compact || IsDisposed)
             {
                 return;

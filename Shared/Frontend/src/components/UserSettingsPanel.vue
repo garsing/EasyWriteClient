@@ -116,6 +116,59 @@
                 </div>
               </template>
 
+              <!-- 交互：Desktop 本机窗体偏好 -->
+              <template v-else-if="activeSection === 'interaction'">
+                <div class="settings-body settings-body--stack settings-body--top">
+                  <label class="pref-row">
+                    <span class="pref-text">
+                      <span class="pref-title">操作文档时自动切换为缩小版</span>
+                      <span class="pref-desc">关闭后仅能通过标题栏手动切换</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      class="pref-switch"
+                      :checked="autoCompactEnabled"
+                      :disabled="prefSaving"
+                      @change="onTogglePref('autoCompactEnabled', $event)"
+                    />
+                  </label>
+                  <label class="pref-row">
+                    <span class="pref-text">
+                      <span class="pref-title">保留圆形悬浮窗</span>
+                      <span class="pref-desc">关闭后缩小版闲置不再收球，「—」最小化到任务栏</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      class="pref-switch"
+                      :checked="autoFloatEnabled"
+                      :disabled="prefSaving"
+                      @change="onTogglePref('autoFloatEnabled', $event)"
+                    />
+                  </label>
+                  <label class="pref-row">
+                    <span class="pref-text">
+                      <span class="pref-title">缩小版闲置后收为悬浮窗</span>
+                      <span class="pref-desc">仅影响自动收球；「—」仍可立即收球</span>
+                    </span>
+                    <select
+                      class="pref-select"
+                      :value="autoFloatIdleSeconds"
+                      :disabled="prefSaving || !autoFloatEnabled"
+                      @change="onIdleSecondsChange"
+                    >
+                      <option
+                        v-for="opt in idleSecondsChoices"
+                        :key="opt.value"
+                        :value="opt.value"
+                      >
+                        {{ opt.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <p v-if="saveError" class="save-error">{{ saveError }}</p>
+                </div>
+              </template>
+
               <!-- 关于我们：本期留空 -->
               <template v-else-if="activeSection === 'about'">
                 <div class="settings-body settings-body--stack settings-body--top settings-about-empty" />
@@ -147,11 +200,33 @@ import RechargeLoosePanel from './RechargeLoosePanel.vue'
 
 const { sendMessage, isWebView2 } = useWebViewBridge()
 
-const navItems = [
-  { id: 'overview', label: '计划' },
-  { id: 'general', label: '通用' },
-  { id: 'about', label: '关于我们' }
+const idleSecondsChoices = [
+  { value: 3, label: '3 秒' },
+  { value: 5, label: '5 秒' },
+  { value: 10, label: '10 秒' },
+  { value: 15, label: '15 秒' },
+  { value: 30, label: '30 秒' },
+  { value: 60, label: '60 秒' },
+  { value: 0, label: '永不' }
 ]
+
+const showInteraction = ref(false)
+const autoCompactEnabled = ref(true)
+const autoFloatEnabled = ref(true)
+const autoFloatIdleSeconds = ref(5)
+const prefSaving = ref(false)
+
+const navItems = computed(() => {
+  const items = [
+    { id: 'overview', label: '计划' },
+    { id: 'general', label: '通用' }
+  ]
+  if (showInteraction.value) {
+    items.push({ id: 'interaction', label: '交互' })
+  }
+  items.push({ id: 'about', label: '关于我们' })
+  return items
+})
 
 /** 'main' | 'upgrade' | 'recharge' */
 const viewMode = ref('main')
@@ -266,6 +341,10 @@ async function loadSettings () {
       username.value = 'dev-user'
       workspaceRoot.value = 'D:/YiWrite/WorkSpace'
       remapHint.value = ''
+      showInteraction.value = true
+      autoCompactEnabled.value = true
+      autoFloatEnabled.value = true
+      autoFloatIdleSeconds.value = 5
       await loadLlmQuota()
       return
     }
@@ -282,6 +361,9 @@ async function loadSettings () {
     remapHint.value = res.remapHint || ''
     if (isLoggedIn.value) {
       await loadLlmQuota()
+      await loadInteractionSettings()
+    } else {
+      showInteraction.value = false
     }
   } catch (err) {
     console.error('[UserSettingsPanel] 加载设置失败:', err)
@@ -310,6 +392,87 @@ watch(activeSection, (id) => {
     loadLlmQuota()
   }
 })
+
+watch(showInteraction, (visible) => {
+  if (!visible && activeSection.value === 'interaction') {
+    activeSection.value = 'overview'
+  }
+})
+
+async function loadInteractionSettings () {
+  showInteraction.value = false
+  if (!isLoggedIn.value) return
+
+  try {
+    if (!isWebView2) {
+      showInteraction.value = true
+      return
+    }
+    const res = await sendMessage('getInteractionSettings', {})
+    if (!res || !res.success || !res.showInteraction) {
+      showInteraction.value = false
+      return
+    }
+    showInteraction.value = true
+    autoCompactEnabled.value = res.autoCompactEnabled !== false
+    autoFloatEnabled.value = res.autoFloatEnabled !== false
+    const sec = Number(res.autoFloatIdleSeconds)
+    autoFloatIdleSeconds.value = Number.isFinite(sec) ? sec : 5
+  } catch (err) {
+    console.error('[UserSettingsPanel] 加载交互设置失败:', err)
+    showInteraction.value = false
+  }
+}
+
+async function saveInteraction (key, value) {
+  saveError.value = ''
+  if (!isWebView2) return true
+
+  prefSaving.value = true
+  try {
+    const res = await sendMessage('setInteractionSetting', { key, value })
+    if (!res || !res.success) {
+      saveError.value = res?.message || '保存失败'
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error('[UserSettingsPanel] 保存交互设置失败:', err)
+    saveError.value = '保存失败'
+    return false
+  } finally {
+    prefSaving.value = false
+  }
+}
+
+async function onTogglePref (key, event) {
+  const next = !!event.target.checked
+  const prev = key === 'autoCompactEnabled' ? autoCompactEnabled.value : autoFloatEnabled.value
+  if (key === 'autoCompactEnabled') {
+    autoCompactEnabled.value = next
+  } else {
+    autoFloatEnabled.value = next
+  }
+  const ok = await saveInteraction(key, next)
+  if (!ok) {
+    if (key === 'autoCompactEnabled') {
+      autoCompactEnabled.value = prev
+    } else {
+      autoFloatEnabled.value = prev
+    }
+    event.target.checked = prev
+  }
+}
+
+async function onIdleSecondsChange (event) {
+  const next = Number(event.target.value)
+  const prev = autoFloatIdleSeconds.value
+  autoFloatIdleSeconds.value = next
+  const ok = await saveInteraction('autoFloatIdleSeconds', next)
+  if (!ok) {
+    autoFloatIdleSeconds.value = prev
+  }
+}
 
 async function handleSaveWorkspace () {
   if (!isLoggedIn.value || saving.value) return
@@ -682,6 +845,96 @@ onMounted(() => {
   border-radius: 5px;
   background: #1a4d8f;
   transition: width 0.2s ease;
+}
+
+.pref-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0;
+  padding: 4px 0 12px;
+}
+
+.pref-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pref-title {
+  font-size: 14px;
+  color: #333;
+}
+
+.pref-desc {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #888;
+}
+
+.pref-switch {
+  flex-shrink: 0;
+  width: 40px;
+  height: 22px;
+  margin: 0;
+  appearance: none;
+  border: none;
+  border-radius: 11px;
+  background: #d0d0d0;
+  cursor: pointer;
+  position: relative;
+  transition: background-color 0.15s ease;
+}
+
+.pref-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+
+.pref-switch:checked {
+  background: #1a4d8f;
+}
+
+.pref-switch:checked::after {
+  transform: translateX(18px);
+}
+
+.pref-switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pref-select {
+  flex-shrink: 0;
+  width: 112px;
+  height: 34px;
+  padding: 4px 8px;
+  font-size: 14px;
+  color: #333;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fff;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.pref-select:focus {
+  border-color: #b0b0b0;
+}
+
+.pref-select:disabled {
+  background: #f8f8f8;
+  color: #999;
+  cursor: not-allowed;
 }
 
 .workspace-label {

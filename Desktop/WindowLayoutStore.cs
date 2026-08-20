@@ -33,9 +33,17 @@ namespace EasyWriteClient.Desktop
             [JsonProperty("compactH")]
             public int? CompactH { get; set; }
 
-            /// <summary>缩小版闲置自动收为悬浮球；缺省 true。本期无设置页 UI。</summary>
+            /// <summary>操作文档时自动进入缩小版；缺省 true。</summary>
+            [JsonProperty("autoCompactEnabled")]
+            public bool? AutoCompactEnabled { get; set; }
+
+            /// <summary>缩小版闲置自动收为悬浮球；缺省 true。</summary>
             [JsonProperty("autoFloatEnabled")]
             public bool? AutoFloatEnabled { get; set; }
+
+            /// <summary>闲置多少秒后收球；缺省 5；0 = 永不自动收球。</summary>
+            [JsonProperty("autoFloatIdleSeconds")]
+            public int? AutoFloatIdleSeconds { get; set; }
 
             [JsonProperty("ballX")]
             public int? BallX { get; set; }
@@ -96,6 +104,77 @@ namespace EasyWriteClient.Desktop
                 dto.CompactY.Value,
                 dto.CompactW.Value,
                 dto.CompactH.Value);
+        }
+
+        public const int IdleSecondsDefault = 5;
+        public const int IdleSecondsNever = 0;
+        public static readonly int[] IdleSecondsChoices = { 3, 5, 10, 15, 30, 60 };
+
+        public static bool GetAutoCompactEnabled()
+        {
+            LayoutDto dto = ReadDto();
+            if (dto?.AutoCompactEnabled == null)
+            {
+                return true;
+            }
+
+            return dto.AutoCompactEnabled.Value;
+        }
+
+        public static void SetAutoCompactEnabled(bool enabled)
+        {
+            try
+            {
+                LayoutDto dto = ReadDto() ?? new LayoutDto();
+                dto.AutoCompactEnabled = enabled;
+                WriteDto(dto);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[WindowLayoutStore] SetAutoCompactEnabled: " + ex.Message);
+            }
+        }
+
+        public static int SnapIdleSeconds(int seconds)
+        {
+            if (seconds <= IdleSecondsNever)
+            {
+                return IdleSecondsNever;
+            }
+
+            int best = IdleSecondsChoices[0];
+            int bestDist = Math.Abs(seconds - best);
+            foreach (int c in IdleSecondsChoices)
+            {
+                int d = Math.Abs(seconds - c);
+                if (d < bestDist || (d == bestDist && c < best))
+                {
+                    best = c;
+                    bestDist = d;
+                }
+            }
+
+            return best;
+        }
+
+        public static int GetAutoFloatIdleSeconds()
+        {
+            int n = ReadDto()?.AutoFloatIdleSeconds ?? IdleSecondsDefault;
+            return SnapIdleSeconds(n);
+        }
+
+        public static void SetAutoFloatIdleSeconds(int seconds)
+        {
+            try
+            {
+                LayoutDto dto = ReadDto() ?? new LayoutDto();
+                dto.AutoFloatIdleSeconds = SnapIdleSeconds(seconds);
+                WriteDto(dto);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[WindowLayoutStore] SetAutoFloatIdleSeconds: " + ex.Message);
+            }
         }
 
         public static bool GetAutoFloatEnabled()

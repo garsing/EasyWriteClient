@@ -100,8 +100,8 @@ namespace EasyWriteClient.Desktop
                     return;
                 }
 
-                // 缩小版：收起为圆形/贴边胶囊悬浮球；工作台：任务栏最小化
-                if (OwnerForm.IsCompactLayout)
+                // 缩小版且保留悬浮窗：收为球；否则任务栏最小化
+                if (OwnerForm.IsCompactLayout && OwnerForm.IsAutoFloatEnabled)
                 {
                     OwnerForm.MinimizeToFloatBall();
                 }
@@ -150,7 +150,7 @@ namespace EasyWriteClient.Desktop
             if (_btnMin != null)
             {
                 _btnMin.Visible = true;
-                _btnMin.ToolTipText = compact ? "最小化（悬浮球）" : "最小化";
+                SyncMinButtonForFloatPref();
             }
 
             if (_btnMax != null)
@@ -201,6 +201,19 @@ namespace EasyWriteClient.Desktop
             }
 
             base.Dispose(disposing);
+        }
+
+        public void SyncMinButtonForFloatPref()
+        {
+            if (_btnMin == null)
+            {
+                return;
+            }
+
+            bool compactBall = OwnerForm != null
+                && OwnerForm.IsCompactLayout
+                && OwnerForm.IsAutoFloatEnabled;
+            _btnMin.ToolTipText = compactBall ? "最小化（悬浮球）" : "最小化";
         }
 
         public void SyncMaxButtonGlyph()

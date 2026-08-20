@@ -33,6 +33,17 @@ namespace WordAddIn1
         /// <summary>用户登录成功后通知各任务窗格/桌面 UI 刷新。</summary>
         public static Func<Task> NotifyUserLoggedInAllAsync { get; set; }
 
+        /// <summary>
+        /// Desktop 注册：返回 { showInteraction, autoCompactEnabled, autoFloatEnabled, autoFloatIdleSeconds }。
+        /// Plugin 不注册 → 设置页不展示「交互」。
+        /// </summary>
+        public static Func<object> GetDesktopInteractionSettings { get; set; }
+
+        /// <summary>
+        /// Desktop 注册：key = autoCompactEnabled | autoFloatEnabled | autoFloatIdleSeconds。
+        /// </summary>
+        public static Action<string, object> SetDesktopInteractionSetting { get; set; }
+
         /// <summary>Desktop：请求进入缩小版窗口形态；Plugin 不注册则为 no-op。</summary>
         public static Action RequestCompact { get; set; }
 

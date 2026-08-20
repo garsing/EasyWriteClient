@@ -357,6 +357,16 @@ namespace WordAddIn1
                 return await UserSettingsBridgeHandlers.SaveWorkspaceRootAsync(data);
             });
 
+            bridge.RegisterHandler("getInteractionSettings", async (data) =>
+            {
+                return await Task.FromResult(UserSettingsBridgeHandlers.GetInteractionSettings());
+            });
+
+            bridge.RegisterHandler("setInteractionSetting", async (data) =>
+            {
+                return await Task.FromResult(UserSettingsBridgeHandlers.SetInteractionSetting(data));
+            });
+
             bridge.RegisterHandler("logoutUser", async (data) =>
             {
                 return await UserSettingsBridgeHandlers.LogoutUserAsync(this);
