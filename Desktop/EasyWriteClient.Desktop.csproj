@@ -15,6 +15,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Shared\EasyWriteClient.Shared.csproj" />
+    <ProjectReference Include="..\BrowserBridge\YiWriteBrowserBridge.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
+    </ProjectReference>
   </ItemGroup>
 
   <ItemGroup>
@@ -64,5 +68,17 @@
       SkipUnchangedFiles="true"
       Condition="Exists('$(_SharedWwwroot)\index.html')" />
     <Warning Text="Shared/Frontend/wwwroot 不存在或缺少 index.html。请先在 Shared/Frontend 执行 npm run build。" Condition="!Exists('$(_SharedWwwroot)\index.html')" />
+  </Target>
+
+  <Target Name="CopyBrowserBridge" AfterTargets="Build">
+    <PropertyGroup>
+      <_BridgeOut>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\BrowserBridge\bin\$(Configuration)\net472\YiWriteBrowserBridge.exe'))</_BridgeOut>
+    </PropertyGroup>
+    <Copy
+      SourceFiles="$(_BridgeOut)"
+      DestinationFolder="$(OutputPath)"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(_BridgeOut)')" />
+    <Warning Text="YiWriteBrowserBridge.exe 未找到（$(_BridgeOut)）。请先编译 BrowserBridge。" Condition="!Exists('$(_BridgeOut)')" />
   </Target>
 </Project>

@@ -7,6 +7,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyWriteClient.Shared", "S
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyWriteClient.Desktop", "Desktop\EasyWriteClient.Desktop.csproj", "{A2222222-2222-2222-2222-222222222222}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "YiWriteBrowserBridge", "BrowserBridge\YiWriteBrowserBridge.csproj", "{A3333333-3333-3333-3333-333333333333}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin", "Plugin\WordAddIn1.csproj", "{FB624221-A566-4F67-96B6-B0215ABEBFD2}"
 EndProject
 Global
@@ -23,6 +25,10 @@ Global
 		{A2222222-2222-2222-2222-222222222222}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A2222222-2222-2222-2222-222222222222}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A2222222-2222-2222-2222-222222222222}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A3333333-3333-3333-3333-333333333333}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A3333333-3333-3333-3333-333333333333}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A3333333-3333-3333-3333-333333333333}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A3333333-3333-3333-3333-333333333333}.Release|Any CPU.Build.0 = Release|Any CPU
 		{FB624221-A566-4F67-96B6-B0215ABEBFD2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{FB624221-A566-4F67-96B6-B0215ABEBFD2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FB624221-A566-4F67-96B6-B0215ABEBFD2}.Release|Any CPU.ActiveCfg = Release|Any CPU

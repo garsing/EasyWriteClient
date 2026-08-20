@@ -56,10 +56,26 @@ namespace EasyWriteClient.Desktop
             HostCallbacks.OpenFilesRefresh = OnOpenFilesRefresh;
             HostCallbacks.BrowserOpenFileUpsert = OnBrowserOpenFileUpsert;
             HostCallbacks.BrowserOpenFileRemove = OnBrowserOpenFileRemove;
+            try
+            {
+                WordAddIn1.BrowserHost.BrowserHostAdapter.EnsureAttachHostStarted();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    "[DesktopChatSurface] ExtensionHost start: " + ex.Message);
+            }
             Disposed += (_, __) =>
             {
                 UserService.Instance.OnUserLoggedIn -= OnUserLoggedIn;
                 UserService.Instance.OnUserLoggedOut -= OnUserLoggedOut;
+                try
+                {
+                    WordAddIn1.BrowserHost.ExtensionHost.Shutdown();
+                }
+                catch (Exception)
+                {
+                }
                 if (_wsClient != null)
                 {
                     _wsClient.ServerUiMessage -= OnWsServerUiMessage;

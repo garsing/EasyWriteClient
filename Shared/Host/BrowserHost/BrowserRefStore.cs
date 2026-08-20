@@ -74,5 +74,11 @@ namespace WordAddIn1.BrowserHost
         public string Role { get; set; }
 
         public string Name { get; set; }
+
+        /// <summary>扩展附着轨：页内 CSS 路径（仅 attach）。</summary>
+        public string AttachCssPath { get; set; }
+
+        /// <summary>扩展附着轨：snapshot 时缓存的 DOM 探针。</summary>
+        public DomNodeProbe AttachProbe { get; set; }
     }
 }

@@ -45,16 +45,17 @@ namespace WordAddIn1
                     }
                     else if (!(def is BrowserChannel browser))
                     {
-                        return Fail("默认渠道不是浏览器渠道；请传入 browser:agent: channel_id");
+                        return Fail("默认渠道不是浏览器渠道；请传入 browser:agent: / browser:attach: channel_id");
                     }
                     else
                     {
                         channel = browser;
                     }
 
-                    if (!string.Equals(channel.Track, "agent", StringComparison.OrdinalIgnoreCase))
+                    if (!string.Equals(channel.Track, "agent", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(channel.Track, "attach", StringComparison.OrdinalIgnoreCase))
                     {
-                        return Fail("本批仅支持 browser:agent: 渠道");
+                        return Fail("不支持的浏览器 track: " + channel.Track);
                     }
 
                     if (!channel.IsLive())
@@ -63,7 +64,7 @@ namespace WordAddIn1
                     }
 
                     BrowserDownloadResult result = await BrowserHostAdapter
-                        .DownloadAgentAsync(channel, refId, url)
+                        .DownloadAsync(channel, refId, url)
                         .ConfigureAwait(true);
 
                     if (!result.Success)

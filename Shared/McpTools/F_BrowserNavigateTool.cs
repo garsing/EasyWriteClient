@@ -6,7 +6,7 @@ using WordAddIn1.BrowserHost;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 打开/跳转易写浏览窗（WebView2），建立 browser:agent: 渠道。
+    /// 打开/跳转：agent=易写浏览窗；attach=同标签跳转（Chrome/Edge）。
     /// </summary>
     public static class F_BrowserNavigateTool
     {
@@ -29,7 +29,9 @@ namespace WordAddIn1
                     bool visible = ParseBool(args, "visible", true);
                     string channelId = TryGetString(args, "channel_id");
 
-                    string existingTabUuid = null;
+                    BrowserChannel attachTarget = null;
+                    string existingAgentTabUuid = null;
+
                     if (!string.IsNullOrWhiteSpace(channelId))
                     {
                         if (!ChannelRegistry.TryGetBrowser(channelId, out BrowserChannel existing))
@@ -37,29 +39,66 @@ namespace WordAddIn1
                             return Fail("channel_id 不是浏览器渠道: " + channelId);
                         }
 
-                        if (!string.Equals(existing.Track, "agent", StringComparison.OrdinalIgnoreCase))
+                        if (string.Equals(existing.Track, "attach", StringComparison.OrdinalIgnoreCase))
                         {
-                            return Fail("本批仅支持 browser:agent: 渠道");
-                        }
+                            if (!visible)
+                            {
+                                return Fail("visible=false 不可用于附着 Chrome/Edge；请用易写浏览窗（browser:agent:）");
+                            }
 
-                        if (!existing.IsLive())
+                            if (!existing.IsLive())
+                            {
+                                return Fail("附着标签已断开: " + channelId);
+                            }
+
+                            attachTarget = existing;
+                        }
+                        else if (string.Equals(existing.Track, "agent", StringComparison.OrdinalIgnoreCase))
                         {
-                            return Fail("浏览器渠道对应的页面已关闭: " + channelId);
-                        }
+                            if (!existing.IsLive())
+                            {
+                                return Fail("浏览器渠道对应的页面已关闭: " + channelId);
+                            }
 
-                        existingTabUuid = existing.TabUuid;
+                            existingAgentTabUuid = existing.TabUuid;
+                        }
+                        else
+                        {
+                            return Fail("不支持的浏览器 track: " + existing.Track);
+                        }
                     }
                     else if (ChannelRegistry.TryGetDefault(out IOperationChannel def)
                         && def is BrowserChannel defBrowser
-                        && string.Equals(defBrowser.Track, "agent", StringComparison.OrdinalIgnoreCase)
                         && defBrowser.IsLive())
                     {
-                        existingTabUuid = defBrowser.TabUuid;
+                        if (string.Equals(defBrowser.Track, "attach", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!visible)
+                            {
+                                return Fail("visible=false 不可用于附着 Chrome/Edge；请用易写浏览窗");
+                            }
+
+                            attachTarget = defBrowser;
+                        }
+                        else if (string.Equals(defBrowser.Track, "agent", StringComparison.OrdinalIgnoreCase))
+                        {
+                            existingAgentTabUuid = defBrowser.TabUuid;
+                        }
                     }
 
-                    BrowserNavigateResult result = await BrowserHostAdapter
-                        .NavigateAgentAsync(url.Trim(), visible, existingTabUuid)
-                        .ConfigureAwait(true);
+                    BrowserNavigateResult result;
+                    if (attachTarget != null)
+                    {
+                        result = await BrowserHostAdapter
+                            .NavigateAttachAsync(attachTarget, url.Trim())
+                            .ConfigureAwait(true);
+                    }
+                    else
+                    {
+                        result = await BrowserHostAdapter
+                            .NavigateAgentAsync(url.Trim(), visible, existingAgentTabUuid)
+                            .ConfigureAwait(true);
+                    }
 
                     if (!result.Success || result.Channel == null)
                     {
@@ -139,9 +178,9 @@ namespace WordAddIn1
             return defaultValue;
         }
 
-        private static ToolResult Fail(string error)
+        private static ToolResult Fail(string message)
         {
-            return new ToolResult { Success = false, Error = error };
+            return new ToolResult { Success = false, Error = message };
         }
     }
 }

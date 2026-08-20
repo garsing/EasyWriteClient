@@ -259,18 +259,38 @@ namespace WordAddIn1
             string tabUuid,
             bool setAsDefault = true)
         {
+            return CreateOrGetBrowser(tabUuid, "agent", BrowserChannel.AgentPrefix, setAsDefault);
+        }
+
+        /// <summary>
+        /// 扩展附着页渠道；channel_id 形如 <c>browser:attach:{tab_uuid}</c>。
+        /// </summary>
+        public static BrowserChannel CreateOrGetBrowserAttach(
+            string tabUuid,
+            bool setAsDefault = true)
+        {
+            return CreateOrGetBrowser(tabUuid, "attach", BrowserChannel.AttachPrefix, setAsDefault);
+        }
+
+        private static BrowserChannel CreateOrGetBrowser(
+            string tabUuid,
+            string track,
+            string prefix,
+            bool setAsDefault)
+        {
             if (string.IsNullOrWhiteSpace(tabUuid))
             {
                 throw new ArgumentException("tab_uuid 不能为空。", nameof(tabUuid));
             }
 
             string uuid = tabUuid.Trim();
+            string trackNorm = string.IsNullOrWhiteSpace(track) ? "agent" : track.Trim();
             lock (Gate)
             {
                 if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
                     && Channels.TryGetValue(existingId, out IOperationChannel existing)
                     && existing is BrowserChannel browserChannel
-                    && string.Equals(browserChannel.Track, "agent", StringComparison.OrdinalIgnoreCase))
+                    && string.Equals(browserChannel.Track, trackNorm, StringComparison.OrdinalIgnoreCase))
                 {
                     if (setAsDefault)
                     {
@@ -280,8 +300,8 @@ namespace WordAddIn1
                     return browserChannel;
                 }
 
-                string channelId = BrowserChannel.AgentPrefix + uuid;
-                var created = new BrowserChannel(channelId, uuid, "agent");
+                string channelId = prefix + uuid;
+                var created = new BrowserChannel(channelId, uuid, trackNorm);
                 Channels[channelId] = created;
                 DocUuidToChannelId[uuid] = channelId;
 

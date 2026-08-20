@@ -3,7 +3,7 @@ using System;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 浏览器页渠道：一条逻辑页一条；本批仅 agent 轨（易写浏览窗）。
+    /// 浏览器页渠道：一条逻辑页一条；track = agent（易写窗）| attach（Chrome/Edge 扩展）。
     /// </summary>
     public sealed class BrowserChannel : IOperationChannel
     {
@@ -51,11 +51,21 @@ namespace WordAddIn1
 
         public bool IsLive()
         {
+            if (string.Equals(Track, "attach", StringComparison.OrdinalIgnoreCase))
+            {
+                return BrowserHost.BrowserHostAdapter.IsAttachPageLive(TabUuid);
+            }
+
             return BrowserHost.BrowserHostAdapter.IsAgentPageLive(TabUuid);
         }
 
         public bool TryActivate()
         {
+            if (string.Equals(Track, "attach", StringComparison.OrdinalIgnoreCase))
+            {
+                return BrowserHost.BrowserHostAdapter.TryShowAttachPage(TabUuid);
+            }
+
             return BrowserHost.BrowserHostAdapter.TryShowAgentPage(TabUuid);
         }
 

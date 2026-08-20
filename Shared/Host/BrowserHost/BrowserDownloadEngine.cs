@@ -177,6 +177,23 @@ namespace WordAddIn1.BrowserHost
             return WorkspacePathResolver.ResolveWritePath(relativePath);
         }
 
+        internal static void EnsureWorkspaceReadyPublic() => EnsureWorkspaceReady();
+
+        internal static string BuildRelativePathPublic(string suggestedFileName) => BuildRelativePath(suggestedFileName);
+
+        internal static Task UploadOrThrowPublicAsync(string localPath, string relative) =>
+            UploadOrThrowAsync(localPath, relative);
+
+        internal static Task CopyWithLimitPublicAsync(
+            Stream source,
+            Stream dest,
+            long maxBytes,
+            CancellationToken ct) =>
+            CopyWithLimitAsync(source, dest, maxBytes, ct);
+
+        internal static string SuggestNameFromUriPublic(Uri uri) =>
+            SuggestNameFromHeaders(null, uri) ?? "download.bin";
+
         private static void EnsureWorkspaceReady()
         {
             try
