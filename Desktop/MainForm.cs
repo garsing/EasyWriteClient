@@ -357,7 +357,7 @@ namespace EasyWriteClient.Desktop
 
             if ((DateTime.UtcNow - _lastActivityUtc).TotalSeconds >= 5)
             {
-                EnterFloatBall();
+                EnterFloatBall(force: false);
             }
         }
 
@@ -418,14 +418,21 @@ namespace EasyWriteClient.Desktop
             _idleTimer.Enabled = false;
         }
 
-        private void EnterFloatBall()
+        /// <summary>缩小版标题栏「最小化」：收起为悬浮球（贴边胶囊 / 游离圆）。</summary>
+        internal void MinimizeToFloatBall()
+        {
+            EnterFloatBall(force: true);
+        }
+
+        private void EnterFloatBall(bool force = false)
         {
             if (_isFloatBall || _layoutMode != WindowLayoutMode.Compact || IsDisposed)
             {
                 return;
             }
 
-            if (IsIdleBlocked())
+            // 闲置自动收起才看 IsIdleBlocked；标题栏显式最小化必须能点（鼠标在窗上）
+            if (!force && IsIdleBlocked())
             {
                 return;
             }

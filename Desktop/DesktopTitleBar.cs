@@ -95,7 +95,17 @@ namespace EasyWriteClient.Desktop
             };
             _btnMin.Click += (_, __) =>
             {
-                if (OwnerForm != null)
+                if (OwnerForm == null)
+                {
+                    return;
+                }
+
+                // 缩小版：收起为圆形/贴边胶囊悬浮球；工作台：任务栏最小化
+                if (OwnerForm.IsCompactLayout)
+                {
+                    OwnerForm.MinimizeToFloatBall();
+                }
+                else
                 {
                     OwnerForm.WindowState = FormWindowState.Minimized;
                 }
@@ -132,13 +142,15 @@ namespace EasyWriteClient.Desktop
         }
 
         /// <summary>
-        /// 缩小版：隐藏 —/□、隐藏左侧 Yi logo、收窄标题栏；工作台恢复。
+        /// 缩小版：隐藏 □（最大化）、保留 ⇄ / — / ×，收窄标题栏并隐藏左侧 Yi logo；工作台恢复全套按钮。
+        /// 视觉顺序（Dock.Right 后添加更靠右）：[⇄][—][×]
         /// </summary>
         public void ApplyChromeForLayout(bool compact)
         {
             if (_btnMin != null)
             {
-                _btnMin.Visible = !compact;
+                _btnMin.Visible = true;
+                _btnMin.ToolTipText = compact ? "最小化（悬浮球）" : "最小化";
             }
 
             if (_btnMax != null)
@@ -392,6 +404,11 @@ namespace EasyWriteClient.Desktop
             {
                 _toolTip = new ToolTip { ShowAlways = true };
                 ToolTipText = "缩小窗口";
+            }
+            else if (kind == TitleBarButtonKind.Minimize)
+            {
+                _toolTip = new ToolTip { ShowAlways = true };
+                ToolTipText = "最小化";
             }
         }
 
