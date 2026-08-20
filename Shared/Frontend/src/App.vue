@@ -1081,9 +1081,9 @@ const restoreInputValue = (value) => {
 .app-shell.host-desktop :deep(.task-sidebar) {
   background: #f0f0f0;
   border-right: none;
-  /* 侧栏贴底，主区单独留底边距 */
+  /* 侧栏贴底，主区单独留底边距；底栏不再额外垫高 */
   margin-bottom: -10px;
-  padding-bottom: 10px;
+  padding-bottom: 4px;
 }
 
 .chat-container {

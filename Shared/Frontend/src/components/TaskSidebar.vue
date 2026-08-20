@@ -558,26 +558,27 @@ async function handleOpenSettings () {
   min-width: 0;
 }
 
-/* 任务区约占侧栏一半高度 */
+/* 历史任务吃掉顶栏/打开文件/用户按钮之外的剩余高度 */
 .tasks-section {
-  flex: 0 0 50%;
-  max-height: 50%;
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 0 8px 8px;
+  padding: 0 8px 4px;
 }
 
 .sidebar-footer {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
   margin: 0;
   border: none;
   background: transparent;
-  padding: 10px 12px 14px;
+  padding: 8px 12px 8px;
+  min-height: 0;
+  line-height: 1;
   cursor: pointer;
   text-align: left;
   font: inherit;
@@ -592,13 +593,13 @@ async function handleOpenSettings () {
 
 .sidebar-footer.collapsed {
   justify-content: center;
-  padding: 10px 0 14px;
+  padding: 8px 0;
   border-radius: 0;
 }
 
 .user-avatar-img {
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   object-fit: contain;
   display: block;
   border-radius: 50%;
