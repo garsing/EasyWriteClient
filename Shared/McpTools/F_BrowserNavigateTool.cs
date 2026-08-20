@@ -28,6 +28,33 @@ namespace WordAddIn1
 
                     bool visible = ParseBool(args, "visible", true);
                     string channelId = TryGetString(args, "channel_id");
+                    string host = TryGetString(args, "host");
+                    if (string.IsNullOrWhiteSpace(host))
+                    {
+                        host = TryGetString(args, "browser");
+                    }
+
+                    // host: yiwrite | chrome | edge（省略=按渠道/默认，否则易写窗）
+                    string hostNorm = string.IsNullOrWhiteSpace(host)
+                        ? null
+                        : host.Trim().ToLowerInvariant();
+                    if (hostNorm == "yiwrite" || hostNorm == "agent" || hostNorm == "webview")
+                    {
+                        hostNorm = "yiwrite";
+                    }
+                    else if (hostNorm == "chrome" || hostNorm == "edge")
+                    {
+                        /* ok */
+                    }
+                    else if (hostNorm != null)
+                    {
+                        return Fail("host 仅支持 yiwrite | chrome | edge");
+                    }
+
+                    if ((hostNorm == "chrome" || hostNorm == "edge") && !visible)
+                    {
+                        return Fail("visible=false 时只能用易写浏览窗（host=yiwrite），不能拉起 Chrome/Edge");
+                    }
 
                     BrowserChannel attachTarget = null;
                     string existingAgentTabUuid = null;
@@ -67,7 +94,8 @@ namespace WordAddIn1
                             return Fail("不支持的浏览器 track: " + existing.Track);
                         }
                     }
-                    else if (ChannelRegistry.TryGetDefault(out IOperationChannel def)
+                    else if (hostNorm == null
+                        && ChannelRegistry.TryGetDefault(out IOperationChannel def)
                         && def is BrowserChannel defBrowser
                         && defBrowser.IsLive())
                     {
@@ -87,10 +115,17 @@ namespace WordAddIn1
                     }
 
                     BrowserNavigateResult result;
-                    if (attachTarget != null)
+                    if (attachTarget != null && hostNorm != "yiwrite")
                     {
+                        // 已有 attach 渠且未强制易写窗：同标签跳转
                         result = await BrowserHostAdapter
                             .NavigateAttachAsync(attachTarget, url.Trim())
+                            .ConfigureAwait(true);
+                    }
+                    else if (hostNorm == "chrome" || hostNorm == "edge")
+                    {
+                        result = await BrowserHostAdapter
+                            .LaunchAttachNavigateAsync(hostNorm, url.Trim())
                             .ConfigureAwait(true);
                     }
                     else

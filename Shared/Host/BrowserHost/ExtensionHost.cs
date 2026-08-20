@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -348,6 +349,265 @@ namespace WordAddIn1.BrowserHost
             {
                 return BrowserNavigateResult.Fail(ex.Message);
             }
+        }
+
+        /// <summary>
+        /// 用系统 Chrome/Edge 打开 URL（新标签或启动浏览器），等待扩展报到后建 attach 渠道。
+        /// </summary>
+        public static async Task<BrowserNavigateResult> LaunchNavigateAsync(string browser, string url)
+        {
+            EnsureStarted();
+            string kind = (browser ?? "").Trim().ToLowerInvariant();
+            if (kind != "chrome" && kind != "edge")
+            {
+                return BrowserNavigateResult.Fail("host 仅支持 chrome 或 edge");
+            }
+
+            if (string.IsNullOrWhiteSpace(url)
+                || !Uri.TryCreate(url.Trim(), UriKind.Absolute, out Uri uri)
+                || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                return BrowserNavigateResult.Fail("url 须为 http/https");
+            }
+
+            if (!HasBridgeForBrowser(kind))
+            {
+                return BrowserNavigateResult.Fail(
+                    "未连接到 " + kind + " 扩展。请确认已侧载并启用「易写浏览器助手」，且易写 Desktop 在运行。");
+            }
+
+            // 若该浏览器已有可操作标签：优先同标签跳转（少开窗）
+            BrowserChannel existing = FindLiveAttachChannel(kind);
+            if (existing != null)
+            {
+                return await NavigateAsync(existing, uri.AbsoluteUri).ConfigureAwait(true);
+            }
+
+            string exe = ResolveBrowserExe(kind);
+            if (string.IsNullOrEmpty(exe))
+            {
+                return BrowserNavigateResult.Fail("本机未找到 " + kind + " 可执行文件");
+            }
+
+            HashSet<string> before = SnapshotTabUuids(kind);
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = exe,
+                    Arguments = "\"" + uri.AbsoluteUri + "\"",
+                    UseShellExecute = false
+                });
+            }
+            catch (Exception ex)
+            {
+                return BrowserNavigateResult.Fail("启动 " + kind + " 失败: " + ex.Message);
+            }
+
+            AttachTabInfo matched = await WaitForNewOrMatchingTabAsync(
+                kind, uri, before, TimeSpan.FromSeconds(20)).ConfigureAwait(true);
+            if (matched == null)
+            {
+                return BrowserNavigateResult.Fail(
+                    "已启动 " + kind + "，但扩展未在超时内报到该页。请确认扩展已启用后重试。");
+            }
+
+            BrowserChannel channel = ChannelRegistry.CreateOrGetBrowserAttach(
+                matched.TabUuid, setAsDefault: true);
+            channel.UpdatePage(matched.Url, matched.Title, true);
+            HostCallbacks.RaiseBrowserOpenFileUpsert(
+                channel.ChannelId,
+                FormatDisplay(matched.TabUuid, matched.Title, matched.Url),
+                matched.Url);
+            return BrowserNavigateResult.Ok(channel, matched.Url, matched.Title, true);
+        }
+
+        private static bool HasBridgeForBrowser(string kind)
+        {
+            lock (Gate)
+            {
+                foreach (BrowserBridgePipeServer.ClientSession s in BrowserBridgePipeServer.SnapshotClients())
+                {
+                    if (s != null
+                        && string.Equals(s.BrowserKind, kind, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+
+                // 扩展刚连上时 hello 可能未到，有任意桥也允许启动；报到时再按浏览器过滤
+                return BrowserBridgePipeServer.SnapshotClients().Count > 0;
+            }
+        }
+
+        private static BrowserChannel FindLiveAttachChannel(string kind)
+        {
+            lock (Gate)
+            {
+                foreach (AttachTabInfo info in Tabs.Values)
+                {
+                    if (info == null || !info.Live)
+                    {
+                        continue;
+                    }
+
+                    if (!string.Equals(info.Browser, kind, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (!TabToSession.ContainsKey(info.TabUuid))
+                    {
+                        continue;
+                    }
+
+                    return ChannelRegistry.CreateOrGetBrowserAttach(info.TabUuid, setAsDefault: true);
+                }
+            }
+
+            return null;
+        }
+
+        private static HashSet<string> SnapshotTabUuids(string kind)
+        {
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            lock (Gate)
+            {
+                foreach (AttachTabInfo info in Tabs.Values)
+                {
+                    if (info != null
+                        && info.Live
+                        && string.Equals(info.Browser, kind, StringComparison.OrdinalIgnoreCase))
+                    {
+                        set.Add(info.TabUuid);
+                    }
+                }
+            }
+
+            return set;
+        }
+
+        private static async Task<AttachTabInfo> WaitForNewOrMatchingTabAsync(
+            string kind,
+            Uri target,
+            HashSet<string> before,
+            TimeSpan timeout)
+        {
+            DateTime deadline = DateTime.UtcNow + timeout;
+            string targetHost = (target.Host ?? "").ToLowerInvariant();
+            string targetPath = (target.AbsolutePath ?? "/").TrimEnd('/').ToLowerInvariant();
+            if (string.IsNullOrEmpty(targetPath))
+            {
+                targetPath = "/";
+            }
+
+            while (DateTime.UtcNow < deadline)
+            {
+                AgentRunCancellation.ThrowIfCancelled();
+                lock (Gate)
+                {
+                    AttachTabInfo urlHit = null;
+                    AttachTabInfo newHit = null;
+                    foreach (AttachTabInfo info in Tabs.Values)
+                    {
+                        if (info == null || !info.Live)
+                        {
+                            continue;
+                        }
+
+                        if (!string.Equals(info.Browser, kind, StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        if (!TabToSession.ContainsKey(info.TabUuid))
+                        {
+                            continue;
+                        }
+
+                        if (UrlLooksLike(info.Url, targetHost, targetPath))
+                        {
+                            urlHit = info;
+                            break;
+                        }
+
+                        if (before != null && !before.Contains(info.TabUuid) && newHit == null)
+                        {
+                            newHit = info;
+                        }
+                    }
+
+                    if (urlHit != null)
+                    {
+                        return urlHit;
+                    }
+
+                    if (newHit != null)
+                    {
+                        return newHit;
+                    }
+                }
+
+                await Task.Delay(300).ConfigureAwait(true);
+            }
+
+            return null;
+        }
+
+        private static bool UrlLooksLike(string pageUrl, string targetHost, string targetPath)
+        {
+            if (string.IsNullOrWhiteSpace(pageUrl)
+                || !Uri.TryCreate(pageUrl, UriKind.Absolute, out Uri u))
+            {
+                return false;
+            }
+
+            if (!string.Equals(u.Host, targetHost, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            string path = (u.AbsolutePath ?? "/").TrimEnd('/').ToLowerInvariant();
+            if (string.IsNullOrEmpty(path))
+            {
+                path = "/";
+            }
+
+            return path == targetPath
+                || path.StartsWith(targetPath, StringComparison.Ordinal)
+                || targetPath == "/"
+                || path.Contains("baidu") && targetHost.Contains("baidu");
+        }
+
+        private static string ResolveBrowserExe(string kind)
+        {
+            var candidates = new List<string>();
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string pf86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+
+            if (kind == "chrome")
+            {
+                candidates.Add(Path.Combine(local, @"Google\Chrome\Application\chrome.exe"));
+                candidates.Add(Path.Combine(pf, @"Google\Chrome\Application\chrome.exe"));
+                candidates.Add(Path.Combine(pf86, @"Google\Chrome\Application\chrome.exe"));
+            }
+            else
+            {
+                candidates.Add(Path.Combine(local, @"Microsoft\Edge\Application\msedge.exe"));
+                candidates.Add(Path.Combine(pf, @"Microsoft\Edge\Application\msedge.exe"));
+                candidates.Add(Path.Combine(pf86, @"Microsoft\Edge\Application\msedge.exe"));
+            }
+
+            foreach (string c in candidates)
+            {
+                if (!string.IsNullOrEmpty(c) && File.Exists(c))
+                {
+                    return c;
+                }
+            }
+
+            return null;
         }
 
         public static async Task<BrowserSnapshotResult> SnapshotAsync(

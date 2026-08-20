@@ -46,6 +46,11 @@ namespace WordAddIn1.BrowserHost
             return ExtensionHost.NavigateAsync(channel, url);
         }
 
+        public static Task<BrowserNavigateResult> LaunchAttachNavigateAsync(string host, string url)
+        {
+            return ExtensionHost.LaunchNavigateAsync(host, url);
+        }
+
         public static Task<BrowserSnapshotResult> SnapshotAsync(
             BrowserChannel channel,
             string refId,
