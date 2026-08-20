@@ -4,9 +4,9 @@
       <span class="history-popover-title">历史对话</span>
       <button type="button" class="history-popover-close" title="关闭" aria-label="关闭" @click="$emit('close')">×</button>
     </div>
-    <div class="history-popover-body">
-      <div v-if="loading" class="hint">加载中…</div>
-      <div v-else-if="error" class="hint error">{{ error }}</div>
+    <div class="history-popover-body" @scroll.passive="onHistoryScroll">
+      <div v-if="loading && !tasks.length" class="hint">加载中…</div>
+      <div v-else-if="error && !tasks.length" class="hint error">{{ error }}</div>
       <div v-else-if="!tasks.length" class="hint">暂无对话</div>
       <button
         v-for="item in tasks"
@@ -19,6 +19,7 @@
         <span class="history-item-title">{{ item.title || '未命名对话' }}</span>
         <span v-if="!item.isDraft" class="history-item-time">{{ formatRelativeTime(item.last_message_at || item.updated_at) }}</span>
       </button>
+      <div v-if="loadingMore" class="hint">加载更多…</div>
     </div>
   </div>
 </template>
@@ -26,14 +27,25 @@
 <script setup>
 import { formatRelativeTime } from '../services/conversationsApi.js'
 
-defineProps({
+const props = defineProps({
   tasks: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
+  loadingMore: { type: Boolean, default: false },
+  hasMore: { type: Boolean, default: false },
   error: { type: String, default: '' },
   activeId: { type: [String, Number], default: null }
 })
 
-defineEmits(['select', 'close'])
+const emit = defineEmits(['select', 'close', 'load-more'])
+
+function onHistoryScroll (e) {
+  if (!props.hasMore || props.loadingMore || props.loading) return
+  const el = e.target
+  if (!el) return
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) {
+    emit('load-more')
+  }
+}
 </script>
 
 <style scoped>

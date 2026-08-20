@@ -3,16 +3,35 @@
  */
 import { buildHeaders } from './knowledgeBaseApi.js'
 
-export async function listConversations () {
+export const CONVERSATION_PAGE_SIZE = 50
+
+export async function listConversations ({ page = 1, pageSize = CONVERSATION_PAGE_SIZE } = {}) {
   const { headers, baseUrl } = await buildHeaders(true)
-  const url = `${baseUrl.replace(/\/$/, '')}/conversations/?sort_by=last_message_at&sort_order=desc`
+  const qs = new URLSearchParams({
+    sort_by: 'last_message_at',
+    sort_order: 'desc',
+    page: String(page),
+    page_size: String(pageSize)
+  })
+  const url = `${baseUrl.replace(/\/$/, '')}/conversations/?${qs.toString()}`
   const res = await fetch(url, { method: 'GET', headers })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     throw new Error(`获取任务列表失败: HTTP ${res.status} ${text}`)
   }
   const data = await res.json()
-  return Array.isArray(data?.conversations) ? data.conversations : []
+  const conversations = Array.isArray(data?.conversations) ? data.conversations : []
+  const total = Number(data?.total) || 0
+  const currentPage = Number(data?.page) || page
+  const totalPages = Number(data?.total_pages) || 0
+  return {
+    conversations,
+    total,
+    page: currentPage,
+    pageSize: Number(data?.page_size) || pageSize,
+    totalPages,
+    hasMore: totalPages > 0 ? currentPage < totalPages : conversations.length >= pageSize
+  }
 }
 
 /**

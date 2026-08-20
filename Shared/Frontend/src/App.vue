@@ -16,10 +16,13 @@
       :active-id="activeTaskId"
       :loading="taskListLoading"
       :error="taskListError"
+      :loading-more="taskListLoadingMore"
+      :has-more="taskListHasMore"
       @toggle="handleSidebarToggle"
       @new-task="handleDesktopNewTask"
       @select="handleDesktopSelectTask"
       @select-open-file="handleSelectOpenFile"
+      @load-more="loadMoreTasks"
     />
     <div
       class="chat-container"
@@ -46,9 +49,12 @@
           :tasks="displayTaskList"
           :loading="taskListLoading"
           :error="taskListError"
+          :loading-more="taskListLoadingMore"
+          :has-more="taskListHasMore"
           :active-id="activeTaskId"
           @select="handleCompactSelectTask"
           @close="historyPopoverOpen = false"
+          @load-more="loadMoreTasks"
         />
       </div>
       <ChatMessages v-if="messages.length > 0" :messages="messages" />
@@ -95,7 +101,7 @@ import { useWebViewBridge } from './composables/useWebViewBridge'
 import { useChatFileUpload } from './composables/useChatFileUpload'
 import { ToolCallAccumulator } from './utils/toolCallAccumulator'
 import { fetchChatEmptyState } from './services/chatEmptyStateApi.js'
-import { listConversations } from './services/conversationsApi.js'
+import { listConversations, CONVERSATION_PAGE_SIZE } from './services/conversationsApi.js'
 import {
   MAX_SELECTED_OPEN_FILES,
   toSelectedOpenFile,
@@ -173,6 +179,9 @@ async function handleCompactSelectTask (item) {
 }
 const taskList = ref([])
 const taskListLoading = ref(false)
+const taskListLoadingMore = ref(false)
+const taskListHasMore = ref(false)
+const taskListPage = ref(0)
 const taskListError = ref('')
 const activeTaskId = ref(null)
 /** 从「新对话」点进历史后，列表顶保留可切回的「新对话」 */
@@ -248,12 +257,40 @@ async function refreshTaskList () {
   taskListLoading.value = true
   taskListError.value = ''
   try {
-    taskList.value = await listConversations()
+    const data = await listConversations({ page: 1, pageSize: CONVERSATION_PAGE_SIZE })
+    taskList.value = data.conversations
+    taskListPage.value = data.page
+    taskListHasMore.value = !!data.hasMore
   } catch (e) {
     taskListError.value = e?.message || '加载任务失败'
     taskList.value = []
+    taskListPage.value = 0
+    taskListHasMore.value = false
   } finally {
     taskListLoading.value = false
+  }
+}
+
+async function loadMoreTasks () {
+  if (!isDesktopHost || taskListLoading.value || taskListLoadingMore.value || !taskListHasMore.value) {
+    return
+  }
+
+  taskListLoadingMore.value = true
+  try {
+    const data = await listConversations({
+      page: taskListPage.value + 1,
+      pageSize: CONVERSATION_PAGE_SIZE
+    })
+    const seen = new Set(taskList.value.map((t) => String(t.id)))
+    const extra = data.conversations.filter((t) => !seen.has(String(t.id)))
+    taskList.value = [...taskList.value, ...extra]
+    taskListPage.value = data.page
+    taskListHasMore.value = !!data.hasMore
+  } catch (e) {
+    console.warn('[App] loadMoreTasks failed:', e?.message || e)
+  } finally {
+    taskListLoadingMore.value = false
   }
 }
 

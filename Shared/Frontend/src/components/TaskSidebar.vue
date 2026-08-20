@@ -115,15 +115,15 @@
         :title="tasksExpanded ? '收起历史任务' : '展开历史任务'"
         @click="tasksExpanded = !tasksExpanded"
       >
-        <span class="section-title">任务{{ taskCountLabel }}</span>
+        <span class="section-title">任务</span>
         <span class="section-chevron" :class="{ open: tasksExpanded }" aria-hidden="true">›</span>
       </button>
 
       <div class="task-list-clip" :class="{ open: tasksExpanded }">
         <div class="task-list-clip-inner">
-          <div class="task-list">
-            <div v-if="loading" class="hint">加载中…</div>
-            <div v-else-if="error" class="hint error">{{ error }}</div>
+          <div class="task-list" @scroll.passive="onTaskListScroll">
+            <div v-if="loading && !tasks.length" class="hint">加载中…</div>
+            <div v-else-if="error && !tasks.length" class="hint error">{{ error }}</div>
             <div v-else-if="!tasks.length" class="hint">暂无任务</div>
             <button
               v-for="item in tasks"
@@ -138,6 +138,7 @@
               <span class="task-title">{{ item.title || '未命名任务' }}</span>
               <span v-if="!item.isDraft" class="task-time">{{ formatRelativeTime(item.last_message_at || item.updated_at) }}</span>
             </button>
+            <div v-if="loadingMore" class="hint">加载更多…</div>
           </div>
         </div>
       </div>
@@ -203,14 +204,16 @@ const props = defineProps({
   selectedOpenFileIds: { type: Array, default: () => [] },
   activeId: { type: [String, Number], default: null },
   loading: { type: Boolean, default: false },
+  loadingMore: { type: Boolean, default: false },
+  hasMore: { type: Boolean, default: false },
   error: { type: String, default: '' }
 })
 
-const emit = defineEmits(['toggle', 'new-task', 'select', 'select-open-file'])
+const emit = defineEmits(['toggle', 'new-task', 'select', 'select-open-file', 'load-more'])
 
 const { sendMessage } = useWebViewBridge()
 
-/** 历史任务列表是否展开（点「任务 (N)」标题收起/展开） */
+/** 历史任务列表是否展开（点「任务」标题收起/展开） */
 const tasksExpanded = ref(true)
 /** 打开文件列表是否展开；默认展开，不持久化 */
 const openFilesExpanded = ref(true)
@@ -272,10 +275,14 @@ const ctxMenu = ref({
   hasPath: false
 })
 
-const taskCountLabel = computed(() => {
-  const n = Array.isArray(props.tasks) ? props.tasks.length : 0
-  return n > 0 ? ` (${n})` : ''
-})
+function onTaskListScroll (e) {
+  if (!props.hasMore || props.loadingMore || props.loading) return
+  const el = e.target
+  if (!el) return
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) {
+    emit('load-more')
+  }
+}
 
 const openFilesCount = computed(() =>
   Array.isArray(props.openFiles) ? props.openFiles.length : 0
