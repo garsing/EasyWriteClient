@@ -422,12 +422,7 @@ namespace EasyWriteClient.Desktop
         {
             var owner = FindForm() ?? (IWin32Window)this;
 
-            if (!UserService.Instance.CheckLoginStatus())
-            {
-                await LoginForm.ShowDialogAsync(owner, logoutFirst: false)
-                    .ConfigureAwait(true);
-            }
-
+            // 对齐插件 ThisAddIn：启动不弹登录，未登录等发消息 / 开设置再弹
             if (!UserService.Instance.CheckLoginStatus())
             {
                 return;
