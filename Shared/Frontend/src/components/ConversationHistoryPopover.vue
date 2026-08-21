@@ -7,7 +7,7 @@
     <div class="history-popover-body" @scroll.passive="onHistoryScroll">
       <div v-if="loading && !tasks.length" class="hint">加载中…</div>
       <div v-else-if="error && !tasks.length" class="hint error">{{ error }}</div>
-      <div v-else-if="!tasks.length" class="hint">暂无对话</div>
+      <div v-else-if="!tasks.length" class="hint empty">暂无对话</div>
       <button
         v-for="item in tasks"
         :key="item.id"
@@ -107,6 +107,10 @@ function onHistoryScroll (e) {
   text-align: center;
   font-size: 12px;
   color: #8a8780;
+}
+
+.hint.empty {
+  color: #999;
 }
 
 .hint.error {

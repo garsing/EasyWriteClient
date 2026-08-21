@@ -262,7 +262,9 @@ async function refreshTaskList () {
     taskListPage.value = data.page
     taskListHasMore.value = !!data.hasMore
   } catch (e) {
-    taskListError.value = e?.message || '加载任务失败'
+    const msg = String(e?.message || '')
+    const authFailed = /401|403|Not authenticated|未登录|未认证/i.test(msg)
+    taskListError.value = authFailed ? '' : (e?.message || '加载任务失败')
     taskList.value = []
     taskListPage.value = 0
     taskListHasMore.value = false

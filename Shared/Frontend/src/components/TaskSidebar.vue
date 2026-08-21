@@ -123,10 +123,11 @@
         <div class="task-list-clip-inner">
           <div class="task-list" @scroll.passive="onTaskListScroll">
             <div v-if="loading && !tasks.length" class="hint">加载中…</div>
+            <div v-else-if="!isLoggedIn" class="hint empty">暂无对话</div>
             <div v-else-if="error && !tasks.length" class="hint error">{{ error }}</div>
-            <div v-else-if="!tasks.length" class="hint">暂无任务</div>
+            <div v-else-if="!tasks.length" class="hint empty">暂无对话</div>
             <button
-              v-for="item in tasks"
+              v-for="item in visibleTasks"
               :key="item.id"
               type="button"
               class="task-item"
@@ -227,6 +228,8 @@ const displayUsername = computed(() => {
   if (isLoggedIn.value && username.value) return username.value
   return '未登录'
 })
+
+const visibleTasks = computed(() => (isLoggedIn.value ? props.tasks : []))
 
 const openFileGroups = computed(() => groupOpenFilesByApp(props.openFiles))
 
@@ -924,6 +927,10 @@ async function handleOpenSettings () {
   padding: 12px 10px;
   font-size: 12px;
   color: #8a877f;
+}
+
+.hint.empty {
+  color: #999;
 }
 
 .hint.error {

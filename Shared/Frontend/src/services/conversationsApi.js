@@ -14,8 +14,22 @@ export async function listConversations ({ page = 1, pageSize = CONVERSATION_PAG
     page_size: String(pageSize)
   })
   const url = `${baseUrl.replace(/\/$/, '')}/conversations/?${qs.toString()}`
+  const empty = {
+    conversations: [],
+    total: 0,
+    page,
+    pageSize,
+    totalPages: 0,
+    hasMore: false
+  }
+  if (!headers.get('Authorization')) {
+    return empty
+  }
   const res = await fetch(url, { method: 'GET', headers })
   if (!res.ok) {
+    if (res.status === 401 || res.status === 403) {
+      return empty
+    }
     const text = await res.text().catch(() => '')
     throw new Error(`获取任务列表失败: HTTP ${res.status} ${text}`)
   }

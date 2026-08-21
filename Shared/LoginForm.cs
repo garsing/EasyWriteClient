@@ -158,18 +158,18 @@ namespace WordAddIn1
 
         /// <summary>
         /// 与设置窗相同：按当前显示器工作区比例开。
-        /// 登录是小卡片，比例低于设置（约 33%×40%），且不小于 640×460。
+        /// 登录是小卡片，比例低于设置（约 25%×40%），且不小于 520×460。
         /// </summary>
         private void ApplyLoginWindowSize()
         {
             Screen screen = IsHandleCreated ? Screen.FromControl(this) : Screen.PrimaryScreen;
             Rectangle area = screen?.WorkingArea ?? new Rectangle(0, 0, 1920, 1080);
             int margin = 40;
-            int width = Math.Max(640, (int)Math.Round(area.Width * 0.33));
+            int width = Math.Max(520, (int)Math.Round(area.Width * 0.25));
             int height = Math.Max(460, (int)Math.Round(area.Height * 0.40));
-            width = Math.Min(width, Math.Max(640, area.Width - margin * 2));
+            width = Math.Min(width, Math.Max(520, area.Width - margin * 2));
             height = Math.Min(height, Math.Max(460, area.Height - margin * 2));
-            MinimumSize = new Size(640, 460);
+            MinimumSize = new Size(520, 460);
             ClientSize = new Size(width, height);
         }
 
@@ -352,7 +352,7 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// Desktop WebView2 视口偏小时放大窗体，使页面至少有 640×460 可用区域。
+        /// Desktop WebView2 视口偏小时放大窗体，使页面至少有 520×460 可用区域。
         /// </summary>
         private async Task FitCssViewportAsync(CoreWebView2 core)
         {
@@ -380,7 +380,7 @@ namespace WordAddIn1
                     return;
                 }
 
-                const double needW = 640;
+                const double needW = 520;
                 const double needH = 460;
                 if (cssW >= needW - 24 && cssH >= needH - 24)
                 {
