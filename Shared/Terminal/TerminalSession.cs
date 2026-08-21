@@ -87,7 +87,10 @@ namespace WordAddIn1.Terminal
             session._process.BeginOutputReadLine();
             session._process.BeginErrorReadLine();
 
-            session._stdin.WriteLine("$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new()");
+            session._stdin.WriteLine(
+                "chcp 65001 | Out-Null; "
+                + "$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); "
+                + "$env:PYTHONIOENCODING = 'utf-8'; $env:PYTHONUTF8 = '1'");
             return session;
         }
 
@@ -105,6 +108,7 @@ namespace WordAddIn1.Terminal
             string command,
             string cwd,
             int timeoutSec,
+            bool useManagedPython,
             CancellationToken cancellationToken)
         {
             if (_disposed || _process == null || _process.HasExited)
@@ -120,7 +124,8 @@ namespace WordAddIn1.Terminal
             }
 
             string marker = "EWTERM_" + Guid.NewGuid().ToString("N");
-            string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(command ?? ""));
+            string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(
+                WrapUserCommand(command, useManagedPython)));
             lock (_gate)
             {
                 _stdoutBuf.Clear();
@@ -135,8 +140,8 @@ namespace WordAddIn1.Terminal
                 + encoded
                 + "') -WorkingDirectory (Get-Location).Path -Wait -PassThru -WindowStyle Hidden "
                 + "-RedirectStandardOutput $__ew_out -RedirectStandardError $__ew_err; "
-                + "if (Test-Path $__ew_out) { Get-Content -Raw -ErrorAction SilentlyContinue $__ew_out }; "
-                + "if (Test-Path $__ew_err) { Get-Content -Raw -ErrorAction SilentlyContinue $__ew_err | Write-Error -ErrorAction Continue }; "
+                + "if (Test-Path $__ew_out) { Get-Content -Raw -Encoding utf8 -ErrorAction SilentlyContinue $__ew_out }; "
+                + "if (Test-Path $__ew_err) { Get-Content -Raw -Encoding utf8 -ErrorAction SilentlyContinue $__ew_err | Write-Error -ErrorAction Continue }; "
                 + "Write-Output ('" + marker + ":' + [int]$__ew_p.ExitCode)");
 
             var result = new TerminalCommandResult { Cwd = Cwd };
@@ -274,6 +279,31 @@ namespace WordAddIn1.Terminal
 
             truncated = true;
             return text.Substring(0, MaxOutputChars);
+        }
+
+        private static string WrapUserCommand(string command, bool useManagedPython)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("chcp 65001 | Out-Null");
+            sb.AppendLine("$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)");
+            sb.AppendLine("$env:PYTHONIOENCODING = 'utf-8'");
+            sb.AppendLine("$env:PYTHONUTF8 = '1'");
+            if (useManagedPython)
+            {
+                string prefix = Path.GetDirectoryName(ManagedPythonRuntime.PythonExe) ?? "";
+                sb.AppendLine("$env:PATH = '" + EscapePs(prefix) + ";' + $env:PATH");
+                sb.AppendLine("Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue");
+                sb.AppendLine("Remove-Item Env:PYTHONHOME -ErrorAction SilentlyContinue");
+            }
+            else
+            {
+                sb.AppendLine(
+                    "$env:PATH = (($env:PATH -split ';') | Where-Object { $_ -notmatch 'EasyWriteDesktop\\\\binaries\\\\python' }) -join ';'");
+                sb.AppendLine("Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue");
+            }
+
+            sb.AppendLine(command ?? "");
+            return sb.ToString();
         }
 
         private static string EscapePs(string value)

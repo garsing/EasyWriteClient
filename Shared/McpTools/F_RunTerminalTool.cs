@@ -43,8 +43,7 @@ namespace WordAddIn1
                 }
 
                 int timeoutSec = ParseTimeout(args);
-                bool useManaged = OpenDocumentPath.ParseBool(args, "use_managed_python", false)
-                    || NeedsPython.IsMatch(command);
+                bool useManaged = ResolveUseManagedPython(args, command);
 
                 string pythonExe = null;
                 if (useManaged)
@@ -75,7 +74,9 @@ namespace WordAddIn1
                     string pathPrefix = System.IO.Path.GetDirectoryName(ManagedPythonRuntime.PythonExe);
                     session.RunBootstrap(
                         "$env:PATH = '" + pathPrefix.Replace("'", "''") + ";' + $env:PATH; "
-                        + "$env:PYTHONPATH = '" + ManagedPythonRuntime.SiteDirectory.Replace("'", "''") + "'");
+                        + "Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue; "
+                        + "Remove-Item Env:PYTHONHOME -ErrorAction SilentlyContinue; "
+                        + "$env:PYTHONIOENCODING = 'utf-8'; $env:PYTHONUTF8 = '1'");
                     session.ManagedPythonPathPrepended = true;
                 }
 
@@ -83,7 +84,7 @@ namespace WordAddIn1
                 {
                     linked.Token.Register(() => session.KillCurrentCommand());
                     TerminalCommandResult result = await session.RunCommandAsync(
-                        command, cwdArg, timeoutSec, linked.Token).ConfigureAwait(false);
+                        command, cwdArg, timeoutSec, useManaged, linked.Token).ConfigureAwait(false);
 
                     var data = new Dictionary<string, object>
                     {
@@ -130,6 +131,19 @@ namespace WordAddIn1
             {
                 return Fail("终端执行失败: " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// 显式 true/false 优先；未传则按命令启发式。false 不得被「命令里有 python」覆盖。
+        /// </summary>
+        private static bool ResolveUseManagedPython(Dictionary<string, object> args, string command)
+        {
+            if (args != null && args.ContainsKey("use_managed_python") && args["use_managed_python"] != null)
+            {
+                return OpenDocumentPath.ParseBool(args, "use_managed_python", false);
+            }
+
+            return NeedsPython.IsMatch(command ?? "");
         }
 
         private static int ParseTimeout(Dictionary<string, object> args)

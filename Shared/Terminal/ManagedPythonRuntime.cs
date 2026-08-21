@@ -37,12 +37,25 @@ namespace WordAddIn1.Terminal
 
         public static bool IsInstalled()
         {
-            return File.Exists(PythonExe) && Directory.Exists(Path.Combine(SiteDirectory, "docx"));
+            return File.Exists(PythonExe)
+                && File.Exists(Path.Combine(VersionDirectory, "python312.zip"))
+                && Directory.Exists(Path.Combine(SiteDirectory, "docx"));
+        }
+
+        public static bool IsHealthy()
+        {
+            if (!IsInstalled())
+            {
+                return false;
+            }
+
+            RepairPth(VersionDirectory);
+            return Probe("import encodings, docx");
         }
 
         public static async Task EnsureInstalledAsync(CancellationToken cancellationToken)
         {
-            if (IsInstalled())
+            if (IsHealthy())
             {
                 return;
             }
@@ -50,7 +63,7 @@ namespace WordAddIn1.Terminal
             await InstallLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                if (IsInstalled())
+                if (IsHealthy())
                 {
                     return;
                 }
@@ -62,6 +75,11 @@ namespace WordAddIn1.Terminal
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     await InstallCoreAsync(cancellationToken).ConfigureAwait(false);
+                    if (!IsHealthy())
+                    {
+                        throw new InvalidOperationException(
+                            "托管 Python 安装失败：安装完成后无法 import encodings / docx");
+                    }
                 }
             }
             finally
@@ -84,8 +102,12 @@ namespace WordAddIn1.Terminal
             await DownloadAsync(DefaultZipUrl, zipPath, cancellationToken).ConfigureAwait(false);
             VerifySha256(zipPath, DefaultSha256);
             ZipFile.ExtractToDirectory(zipPath, VersionDirectory);
+            if (!File.Exists(PythonExe) || !File.Exists(Path.Combine(VersionDirectory, "python312.zip")))
+            {
+                throw new InvalidOperationException("托管 Python 安装失败：解压后缺少 python.exe 或 python312.zip");
+            }
 
-            EnableSite(VersionDirectory);
+            RepairPth(VersionDirectory);
             string getPip = Path.Combine(RootDirectory, "get-pip.py");
             await DownloadAsync(GetPipUrl, getPip, cancellationToken).ConfigureAwait(false);
 
@@ -98,18 +120,82 @@ namespace WordAddIn1.Terminal
                 Encoding.UTF8);
         }
 
-        private static void EnableSite(string versionDir)
+        /// <summary>
+        /// embed 的 ._pth 必须无 BOM。Encoding.UTF8 默认带 BOM，会导致找不到 python312.zip，
+        /// 进而报 No module named encodings。
+        /// </summary>
+        internal static void RepairPth(string versionDir)
         {
+            if (!Directory.Exists(versionDir))
+            {
+                return;
+            }
+
             foreach (string pth in Directory.GetFiles(versionDir, "python*._pth"))
             {
                 string text = File.ReadAllText(pth, Encoding.UTF8);
+                if (text.Length > 0 && text[0] == '\uFEFF')
+                {
+                    text = text.Substring(1);
+                }
+
                 text = text.Replace("#import site", "import site");
                 if (text.IndexOf("import site", StringComparison.Ordinal) < 0)
                 {
                     text = text.TrimEnd() + Environment.NewLine + "import site" + Environment.NewLine;
                 }
 
-                File.WriteAllText(pth, text, Encoding.UTF8);
+                string siteLine = SiteDirectory.Replace('\\', '/');
+                if (text.IndexOf(siteLine, StringComparison.OrdinalIgnoreCase) < 0
+                    && text.IndexOf(SiteDirectory, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    int siteIdx = text.IndexOf("import site", StringComparison.Ordinal);
+                    if (siteIdx >= 0)
+                    {
+                        text = text.Insert(siteIdx, siteLine + Environment.NewLine);
+                    }
+                    else
+                    {
+                        text = text.TrimEnd() + Environment.NewLine + siteLine + Environment.NewLine;
+                    }
+                }
+
+                File.WriteAllText(pth, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            }
+        }
+
+        private static bool Probe(string code)
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = PythonExe,
+                    Arguments = "-c \"" + code + "\"",
+                    WorkingDirectory = VersionDirectory,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                psi.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
+                psi.EnvironmentVariables["PYTHONUTF8"] = "1";
+                psi.EnvironmentVariables.Remove("PYTHONPATH");
+                psi.EnvironmentVariables.Remove("PYTHONHOME");
+                using (var p = System.Diagnostics.Process.Start(psi))
+                {
+                    if (p == null)
+                    {
+                        return false;
+                    }
+
+                    p.WaitForExit(15000);
+                    return p.HasExited && p.ExitCode == 0;
+                }
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -164,6 +250,9 @@ namespace WordAddIn1.Terminal
                 CreateNoWindow = true
             };
             psi.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
+            psi.EnvironmentVariables["PYTHONUTF8"] = "1";
+            psi.EnvironmentVariables.Remove("PYTHONPATH");
+            psi.EnvironmentVariables.Remove("PYTHONHOME");
             using (var p = System.Diagnostics.Process.Start(psi))
             {
                 if (p == null)
