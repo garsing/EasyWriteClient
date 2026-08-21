@@ -140,8 +140,6 @@ namespace WordAddIn1.Terminal
                 + encoded
                 + "') -WorkingDirectory (Get-Location).Path -Wait -PassThru -WindowStyle Hidden "
                 + "-RedirectStandardOutput $__ew_out -RedirectStandardError $__ew_err; "
-                + "if (Test-Path $__ew_out) { Get-Content -Raw -Encoding utf8 -ErrorAction SilentlyContinue $__ew_out }; "
-                + "if (Test-Path $__ew_err) { Get-Content -Raw -Encoding utf8 -ErrorAction SilentlyContinue $__ew_err | Write-Error -ErrorAction Continue }; "
                 + "Write-Output ('" + marker + ":' + [int]$__ew_p.ExitCode)");
 
             var result = new TerminalCommandResult { Cwd = Cwd };
@@ -172,7 +170,7 @@ namespace WordAddIn1.Terminal
 
             if (result.Cancelled)
             {
-                FillOutput(result, marker);
+                FillOutputFromFiles(result, outFile, errFile);
                 return result;
             }
 
@@ -181,14 +179,12 @@ namespace WordAddIn1.Terminal
                 ProcessTreeKiller.KillDescendants(_process.Id);
                 result.TimedOut = true;
                 result.ExitCode = -1;
-                FillOutput(result, marker);
+                FillOutputFromFiles(result, outFile, errFile);
                 return result;
             }
 
             result.ExitCode = ParseExit(markerLine);
-            FillOutput(result, marker);
-            TryDelete(outFile);
-            TryDelete(errFile);
+            FillOutputFromFiles(result, outFile, errFile);
             return result;
         }
 
@@ -245,22 +241,62 @@ namespace WordAddIn1.Terminal
             return code;
         }
 
-        private void FillOutput(TerminalCommandResult result, string marker)
+        private static void FillOutputFromFiles(TerminalCommandResult result, string outFile, string errFile)
         {
-            string rawOut;
-            string rawErr;
-            lock (_gate)
-            {
-                rawOut = _stdoutBuf.ToString();
-                rawErr = _stderrBuf.ToString();
-            }
-
-            rawOut = Regex.Replace(rawOut, marker + @":-?\d+\r?\n?", "");
+            string rawOut = ReadCapturedFile(outFile);
+            string rawErr = ReadCapturedFile(errFile);
             result.StdoutChars = rawOut.Length;
             result.StderrChars = rawErr.Length;
             result.Stdout = Truncate(rawOut, out bool t1);
             result.Stderr = Truncate(rawErr, out bool t2);
             result.Truncated = t1 || t2;
+            TryDelete(outFile);
+            TryDelete(errFile);
+        }
+
+        /// <summary>
+        /// Start-Process 重定向在 WinPS 5.1 常写成 UTF-16 LE；Python 直写则是 UTF-8 / GBK。
+        /// 禁止再经 PowerShell Get-Content 转码。
+        /// </summary>
+        internal static string ReadCapturedFile(string path)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                {
+                    return "";
+                }
+
+                byte[] bytes = File.ReadAllBytes(path);
+                if (bytes.Length == 0)
+                {
+                    return "";
+                }
+
+                if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+                {
+                    return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+                }
+
+                if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+                {
+                    return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+                }
+
+                var strictUtf8 = new UTF8Encoding(false, true);
+                try
+                {
+                    return strictUtf8.GetString(bytes);
+                }
+                catch (DecoderFallbackException)
+                {
+                    return Encoding.GetEncoding(936).GetString(bytes);
+                }
+            }
+            catch
+            {
+                return "";
+            }
         }
 
         private static string Truncate(string text, out bool truncated)
@@ -285,9 +321,12 @@ namespace WordAddIn1.Terminal
         {
             var sb = new StringBuilder();
             sb.AppendLine("chcp 65001 | Out-Null");
-            sb.AppendLine("$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)");
+            sb.AppendLine("$script:__ewUtf8 = [Text.UTF8Encoding]::new($false)");
+            sb.AppendLine("[Console]::InputEncoding = [Console]::OutputEncoding = $script:__ewUtf8");
+            sb.AppendLine("$OutputEncoding = $script:__ewUtf8");
             sb.AppendLine("$env:PYTHONIOENCODING = 'utf-8'");
             sb.AppendLine("$env:PYTHONUTF8 = '1'");
+            sb.AppendLine("$env:PYTHONLEGACYWINDOWSSTDIO = '0'");
             if (useManagedPython)
             {
                 string prefix = Path.GetDirectoryName(ManagedPythonRuntime.PythonExe) ?? "";
