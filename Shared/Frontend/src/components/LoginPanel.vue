@@ -1,5 +1,16 @@
 <template>
   <div class="login-page">
+    <!-- 关闭放在前端，避免 Desktop 上 WebView2 盖住 WinForms 按钮 -->
+    <button
+      type="button"
+      class="login-close-btn"
+      title="关闭"
+      aria-label="关闭"
+      @click="handleClose"
+    >
+      ×
+    </button>
+
     <!-- 提示固定在窗口最顶部（登录 / 注册共用） -->
     <div
       v-if="(viewMode === 'login' && (loginNotice || loginError)) || (viewMode === 'register' && (registerBanner || registerError))"
@@ -385,6 +396,17 @@ const canSubmitRegister = computed(() =>
   validatePassword(regPassword.value).valid &&
   validateConfirmPassword(regPassword.value, regConfirm.value).valid
 )
+
+async function handleClose () {
+  if (!isWebView2) {
+    return
+  }
+  try {
+    await sendMessage('closeLoginWindow', {})
+  } catch (err) {
+    console.error('[LoginPanel] 关闭登录窗失败:', err)
+  }
+}
 
 async function openAgreement (kind) {
   if (!isWebView2) {

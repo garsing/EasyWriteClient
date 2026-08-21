@@ -1,7 +1,8 @@
 using System;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
-using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.WinForms;
@@ -19,7 +20,6 @@ namespace WordAddIn1
 
         private WebView2 webView2;
         private WebView2Bridge bridge;
-        private Button btnClose;
         private bool isDragging;
         private Point dragStartPoint;
         private bool _loadStarted;
@@ -107,6 +107,7 @@ namespace WordAddIn1
 
         private void LoginForm_Shown(object sender, EventArgs e)
         {
+            ApplyLoginWindowSize();
             System.Diagnostics.Debug.WriteLine(
                 $"[LoginForm] Shown ClientSize={ClientSize}, webView2={webView2?.Size}");
             // 可见后再初始化引擎并加载页面
@@ -126,13 +127,9 @@ namespace WordAddIn1
             SuspendLayout();
 
             Text = "登录";
-            // 适配常见笔记本分辨率；过大且在 Show 前 Init 的 WebView2 易白屏
-            var screen = Screen.FromControl(this).WorkingArea;
-            int w = Math.Min(920, Math.Max(720, screen.Width - 80));
-            int h = Math.Min(720, Math.Max(560, screen.Height - 80));
-            Size = new Size(w, h);
-            MinimumSize = new Size(640, 480);
-            StartPosition = FormStartPosition.CenterParent;
+            AutoScaleMode = AutoScaleMode.None;
+            ApplyLoginWindowSize();
+            StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.None;
             ShowIcon = false;
             BackColor = Color.FromArgb(247, 247, 245);
@@ -145,63 +142,54 @@ namespace WordAddIn1
             };
             Controls.Add(webView2);
 
-            btnClose = new Button
-            {
-                Size = new Size(32, 32),
-                Anchor = AnchorStyles.Top | AnchorStyles.Right,
-                FlatStyle = FlatStyle.Flat,
-                TabStop = false,
-                Cursor = Cursors.Hand
-            };
-            btnClose.FlatAppearance.BorderSize = 0;
-            btnClose.FlatAppearance.MouseOverBackColor = Color.FromArgb(232, 232, 228);
-            btnClose.Click += (s, ev) => Close();
-            LoadCloseIcon();
-            Controls.Add(btnClose);
-            btnClose.BringToFront();
-
             MouseDown += LoginForm_MouseDown;
             MouseMove += LoginForm_MouseMove;
             MouseUp += LoginForm_MouseUp;
-            Layout += LoginForm_Layout;
 
             Name = "LoginForm";
             ResumeLayout(false);
-            LoginForm_Layout(this, null);
         }
 
-        private void LoginForm_Layout(object sender, LayoutEventArgs e)
+        protected override void OnHandleCreated(EventArgs e)
         {
-            if (btnClose != null && ClientSize.Width > 0)
-            {
-                btnClose.Location = new Point(ClientSize.Width - btnClose.Width - 10, 12);
-            }
+            base.OnHandleCreated(e);
+            ApplyLoginWindowSize();
         }
 
-        private void LoadCloseIcon()
+        /// <summary>
+        /// 与设置窗相同：按当前显示器工作区比例开。
+        /// 登录是小卡片，比例低于设置（约 33%×40%），且不小于 640×460。
+        /// </summary>
+        private void ApplyLoginWindowSize()
         {
-            try
+            Screen screen = IsHandleCreated ? Screen.FromControl(this) : Screen.PrimaryScreen;
+            Rectangle area = screen?.WorkingArea ?? new Rectangle(0, 0, 1920, 1080);
+            int margin = 40;
+            int width = Math.Max(640, (int)Math.Round(area.Width * 0.33));
+            int height = Math.Max(460, (int)Math.Round(area.Height * 0.40));
+            width = Math.Min(width, Math.Max(640, area.Width - margin * 2));
+            height = Math.Min(height, Math.Max(460, area.Height - margin * 2));
+            MinimumSize = new Size(640, 460);
+            ClientSize = new Size(width, height);
+        }
+
+        private static string ResolveWwwroot()
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string local = Path.GetFullPath(Path.Combine(baseDir, "wwwroot"));
+            string sharedWww = Path.GetFullPath(Path.Combine(
+                baseDir, "..", "..", "..", "..", "Shared", "Frontend", "wwwroot"));
+
+            bool localOk = File.Exists(Path.Combine(local, "login.html"));
+            bool sharedOk = File.Exists(Path.Combine(sharedWww, "login.html"));
+            if (localOk && sharedOk)
             {
-                Assembly assembly = Assembly.GetExecutingAssembly();
-                using (Stream closeStream = assembly.GetManifestResourceStream("close.png"))
-                {
-                    if (closeStream != null)
-                    {
-                        btnClose.BackgroundImage = Image.FromStream(closeStream);
-                        btnClose.BackgroundImageLayout = ImageLayout.Zoom;
-                    }
-                    else
-                    {
-                        btnClose.Text = "×";
-                        btnClose.Font = new Font("Segoe UI", 14, FontStyle.Regular);
-                    }
-                }
+                DateTime localCss = File.GetLastWriteTimeUtc(Path.Combine(local, "assets", "login.css"));
+                DateTime sharedCss = File.GetLastWriteTimeUtc(Path.Combine(sharedWww, "assets", "login.css"));
+                return sharedCss >= localCss ? sharedWww : local;
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[LoginForm] 加载关闭图标失败: {ex.Message}");
-                btnClose.Text = "×";
-            }
+
+            return sharedOk ? sharedWww : local;
         }
 
         private static void Log(string msg)
@@ -253,8 +241,7 @@ namespace WordAddIn1
                     .ConfigureAwait(true);
                 await webView2.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
 
-                string wwwroot = Path.GetFullPath(
-                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wwwroot"));
+                string wwwroot = ResolveWwwroot();
                 string htmlPath = Path.Combine(wwwroot, "login.html");
                 string jsPath = Path.Combine(wwwroot, "assets", "login.js");
                 string cssPath = Path.Combine(wwwroot, "assets", "login.css");
@@ -295,27 +282,6 @@ namespace WordAddIn1
                     if (!navArgs.IsSuccess)
                     {
                         ShowFallbackHtml("页面加载失败 (" + navArgs.WebErrorStatus + ")");
-                        return;
-                    }
-
-                    try
-                    {
-                        await core.ExecuteScriptAsync(@"
-(function () {
-  function fit() {
-    var h = window.innerHeight, w = window.innerWidth;
-    document.documentElement.style.cssText = 'width:'+w+'px;height:'+h+'px;overflow:hidden;margin:0;padding:0';
-    document.body.style.cssText = 'width:'+w+'px;height:'+h+'px;overflow:hidden;margin:0;padding:0';
-    var app = document.getElementById('login-app');
-    if (app) app.style.cssText = 'width:'+w+'px;height:'+h+'px;overflow:hidden';
-  }
-  fit();
-  window.addEventListener('resize', fit);
-})();").ConfigureAwait(true);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log("fit script: " + ex.Message);
                     }
                 };
 
@@ -332,7 +298,6 @@ namespace WordAddIn1
 
                 Log("Navigate login.html");
                 core.Navigate("http://appassets.local/login.html");
-                btnClose.BringToFront();
 
                 var finished = await Task.WhenAny(navTcs.Task, Task.Delay(12000)).ConfigureAwait(true);
                 if (finished != navTcs.Task)
@@ -344,7 +309,8 @@ namespace WordAddIn1
 
                 if (navTcs.Task.Result)
                 {
-                    await Task.Delay(500).ConfigureAwait(true);
+                    await FitCssViewportAsync(core).ConfigureAwait(true);
+                    await Task.Delay(300).ConfigureAwait(true);
                     try
                     {
                         string check = await core.ExecuteScriptAsync(
@@ -383,6 +349,75 @@ namespace WordAddIn1
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
+        }
+
+        /// <summary>
+        /// Desktop WebView2 视口偏小时放大窗体，使页面至少有 640×460 可用区域。
+        /// </summary>
+        private async Task FitCssViewportAsync(CoreWebView2 core)
+        {
+            try
+            {
+                string raw = await core.ExecuteScriptAsync(
+                    "JSON.stringify({w:window.innerWidth,h:window.innerHeight,dpr:window.devicePixelRatio||1})")
+                    .ConfigureAwait(true);
+                Log("css-viewport " + raw);
+                if (string.IsNullOrEmpty(raw))
+                {
+                    return;
+                }
+
+                string json = raw.Trim();
+                if (json.Length >= 2 && json[0] == '"')
+                {
+                    json = json.Substring(1, json.Length - 2).Replace("\\\"", "\"");
+                }
+
+                double cssW = ReadJsonNumber(json, "w");
+                double cssH = ReadJsonNumber(json, "h");
+                if (cssW < 8 || cssH < 8)
+                {
+                    return;
+                }
+
+                const double needW = 640;
+                const double needH = 460;
+                if (cssW >= needW - 24 && cssH >= needH - 24)
+                {
+                    return;
+                }
+
+                double scale = Math.Max(needW / cssW, needH / cssH);
+                Rectangle wa = Screen.FromControl(this).WorkingArea;
+                int newW = Math.Min(wa.Width - 40, (int)Math.Round(ClientSize.Width * scale));
+                int newH = Math.Min(wa.Height - 40, (int)Math.Round(ClientSize.Height * scale));
+                if (newW <= ClientSize.Width && newH <= ClientSize.Height)
+                {
+                    return;
+                }
+
+                ClientSize = new Size(Math.Max(ClientSize.Width, newW), Math.Max(ClientSize.Height, newH));
+                CenterToScreen();
+                Log($"FitCssViewport scale={scale:0.###} -> ClientSize={ClientSize}");
+            }
+            catch (Exception ex)
+            {
+                Log("FitCssViewport: " + ex.Message);
+            }
+        }
+
+        private static double ReadJsonNumber(string json, string key)
+        {
+            Match m = Regex.Match(json, "\"" + key + "\"\\s*:\\s*(-?\\d+(\\.\\d+)?)");
+            if (!m.Success)
+            {
+                return 0;
+            }
+
+            double value;
+            return double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+                ? value
+                : 0;
         }
 
         private void ShowFallbackHtml(string message)
