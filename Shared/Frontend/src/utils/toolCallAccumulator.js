@@ -138,6 +138,7 @@ export class ToolCallAccumulator {
       segments.push({
         type: 'toolCall',
         toolName: partial.name || '',
+        toolCallId: partial.id || '',
         content: args,
         isComplete: complete,
         startIndex: this._toolSeq++

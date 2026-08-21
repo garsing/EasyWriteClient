@@ -1042,6 +1042,25 @@ onMounted(() => {
       chatFile.reset()
       chatFile.phase.value = 'error'
       chatFile.errorMessage.value = msg
+    } else if (data.type === 'clientToolResult') {
+      const payload = data.data || data
+      const toolCallId = payload.tool_call_id || payload.toolCallId
+      if (toolCallId) {
+        for (const msg of messages.value) {
+          if (!msg.segments) continue
+          const seg = msg.segments.find(
+            (s) => s && s.type === 'toolCall' && s.toolCallId === toolCallId
+          )
+          if (seg) {
+            seg.result = {
+              success: payload.success,
+              error: payload.error,
+              data: payload.data || {}
+            }
+            break
+          }
+        }
+      }
     } else if (data.type === 'layoutModeChanged') {
       const payload = data.data || data
       const mode = payload?.mode

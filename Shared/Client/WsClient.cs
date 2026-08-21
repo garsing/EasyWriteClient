@@ -49,6 +49,9 @@ namespace WordAddIn1
         /// </summary>
         public event Action<string, Dictionary<string, object>> ServerUiMessage;
 
+        /// <summary>invoke 完成后回传 tool_call_id / method / ToolResult，供对话气泡贴输出。</summary>
+        public event Action<string, string, ToolResult> InvokeCompleted;
+
         public WsClient(Control syncControl)
         {
             _syncControl = syncControl ?? throw new ArgumentNullException(nameof(syncControl));
@@ -557,6 +560,7 @@ namespace WordAddIn1
                 {
                     errorText = toolResult.Error ?? resultText;
                 }
+                TryRaiseInvokeCompleted(toolCallId, method, toolResult);
                 await SendInvokeResultAsync(requestId, toolCallId, ok, resultText, errorText);
                 EasyWriteDiagnostics.Log(DebugCategory.Ws, 
                     $"[WsClient] invoke END method={method} ok={ok} elapsed_ms={invokeSw.ElapsedMilliseconds} result_len={resultText?.Length ?? 0}");
@@ -872,6 +876,23 @@ namespace WordAddIn1
                 _pendingBindConversationId = null;
                 _unbindTcs?.TrySetResult(false);
                 _unbindTcs = null;
+            }
+        }
+
+        private void TryRaiseInvokeCompleted(string toolCallId, string method, ToolResult toolResult)
+        {
+            if (string.IsNullOrEmpty(toolCallId) || InvokeCompleted == null)
+            {
+                return;
+            }
+
+            try
+            {
+                InvokeCompleted(toolCallId, method ?? "", toolResult);
+            }
+            catch (Exception ex)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.Ws, "[WsClient] InvokeCompleted: " + ex.Message);
             }
         }
 

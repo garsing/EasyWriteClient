@@ -600,6 +600,14 @@ namespace WordAddIn1
             return Remove(channelId);
         }
 
+        public static IReadOnlyList<IOperationChannel> Snapshot()
+        {
+            lock (Gate)
+            {
+                return new List<IOperationChannel>(Channels.Values);
+            }
+        }
+
         /// <summary>测试/进程退出用。</summary>
         public static void ClearAll()
         {

@@ -8,6 +8,7 @@
     :allow-expand="shouldShowDetails"
     :language="languageType"
     :icon="toolIcon"
+    :result="result"
   />
 </template>
 
@@ -29,6 +30,10 @@ const props = defineProps({
   isComplete: {
     type: Boolean,
     default: false
+  },
+  result: {
+    type: Object,
+    default: null
   }
 })
 
@@ -47,7 +52,10 @@ const manipulateTools = [
   'F_write_format_file',
   'B_calculate',
   'B_run_python',
-  'B_write_python'
+  'B_write_python',
+  'F_run_terminal',
+  'F_close_terminal',
+  'F_close_document'
 ]
 
 // 使用 read_tool.png 图标的工具列表
@@ -76,7 +84,10 @@ const toolsHidden = [
 const toolsWithDetails = [
   'F_process_paragraph_actions',
   'F_read_file',
-  'B_write_python'
+  'B_write_python',
+  'F_run_terminal',
+  'F_close_terminal',
+  'F_close_document'
 ]
 
 const shouldRenderBox = computed(() => {
@@ -98,6 +109,9 @@ const languageType = computed(() => {
       return 'yaml'
     case 'F_process_paragraph_actions':
     case 'F_process_document_actions':
+    case 'F_run_terminal':
+    case 'F_close_terminal':
+    case 'F_close_document':
       return 'json'
     default:
       return 'text'
@@ -134,6 +148,12 @@ const formattedContent = computed(() => {
         console.warn('[ToolCallBoxDisplayRule] F_write_format_file: content 字段不存在', parsed)
         return JSON.stringify(parsed, null, 2)
         
+      case 'F_run_terminal':
+        if (parsed.command !== undefined && parsed.command !== null) {
+          return String(parsed.command)
+        }
+        return JSON.stringify(parsed, null, 2)
+
       case 'B_write_python':
         // 显示 "写入[filename]文件" + python_code 内容
         let result = ''

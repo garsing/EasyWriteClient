@@ -22,6 +22,7 @@
             :tool-name="segment.toolName"
             :content="segment.content"
             :is-complete="segment.isComplete"
+            :result="segment.result"
           />
         </template>
       </div>

@@ -26,6 +26,9 @@ namespace WordAddIn1
             {
                 { "document.getContent", "F_get_document_content" },
                 { "document.open", "F_open_document" },
+                { "terminal.run", "F_run_terminal" },
+                { "terminal.close", "F_close_terminal" },
+                { "document.close", "F_close_document" },
                 { "browser.navigate", "F_browser_navigate" },
                 { "browser.snapshot", "F_browser_snapshot" },
                 { "browser.interact", "F_browser_interact" },

@@ -11,6 +11,10 @@
     </div>
     <div v-if="isExpanded && allowExpand" class="tool-call-content">
       <pre :class="['code-content', `language-${language}`]"><code ref="codeElement" v-html="highlightedContent"></code></pre>
+      <div v-if="resultText" class="tool-output">
+        <div class="tool-output-label">输出</div>
+        <pre class="tool-output-body">{{ resultText }}</pre>
+      </div>
     </div>
   </div>
 </template>
@@ -52,7 +56,31 @@ const props = defineProps({
   icon: {
     type: String,
     default: null // 图标路径，可选
+  },
+  result: {
+    type: Object,
+    default: null
   }
+})
+
+const resultText = computed(() => {
+  const r = props.result
+  if (!r) return ''
+  const data = r.data || {}
+  const parts = []
+  if (r.success === false && r.error) {
+    parts.push(String(r.error))
+  }
+  if (data.exit_code !== undefined && data.exit_code !== null) {
+    parts.push('exit_code=' + data.exit_code)
+  }
+  if (data.stdout) parts.push(String(data.stdout))
+  if (data.stderr) parts.push(String(data.stderr))
+  if (data.path) parts.push(String(data.path))
+  if (data.closed && !data.stdout) {
+    parts.push(data.already ? '终端已关闭（原本没有会话）' : '已关闭')
+  }
+  return parts.join('\n').trim()
 })
 
 const toolAlias = ref('')
@@ -255,6 +283,26 @@ const toggleExpand = () => {
   padding: 0 10px 10px 24px;
   background-color: transparent;
   border-top: none;
+}
+
+.tool-output {
+  margin-top: 8px;
+}
+
+.tool-output-label {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 4px;
+}
+
+.tool-output-body {
+  margin: 0;
+  font-family: 'Courier New', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #555;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
 .code-content {

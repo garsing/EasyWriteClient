@@ -13,6 +13,7 @@ using Newtonsoft.Json.Linq;
 using Word = Microsoft.Office.Interop.Word;
 using WordAddIn1;
 using WordAddIn1.OpenFiles;
+using WordAddIn1.Terminal;
 
 namespace EasyWriteClient.Desktop
 {
@@ -725,6 +726,7 @@ namespace EasyWriteClient.Desktop
             {
                 _wsClient = new WsClient(this);
                 _wsClient.ServerUiMessage += OnWsServerUiMessage;
+                _wsClient.InvokeCompleted += OnWsInvokeCompleted;
             }
 
             _wsClient.SetWordApplication(wordApp);
@@ -845,6 +847,54 @@ namespace EasyWriteClient.Desktop
         private void SyncConversationContext()
         {
             ConversationContext.CurrentId = _currentConversationId;
+        }
+
+        private void OnWsInvokeCompleted(string toolCallId, string method, ToolResult result)
+        {
+            if (_bridge == null || result == null)
+            {
+                return;
+            }
+
+            if (method != "terminal.run"
+                && method != "terminal.close"
+                && method != "document.close")
+            {
+                return;
+            }
+
+            void Send()
+            {
+                _bridge.SendToJavaScript("clientToolResult", new
+                {
+                    tool_call_id = toolCallId,
+                    tool_name = method == "terminal.run"
+                        ? "F_run_terminal"
+                        : method == "terminal.close" ? "F_close_terminal" : "F_close_document",
+                    success = result.Success,
+                    error = result.Error,
+                    data = result.Data
+                });
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke((MethodInvoker)Send);
+            }
+            else
+            {
+                Send();
+            }
+        }
+
+        private static void DisposeTerminalFor(string conversationId)
+        {
+            if (string.IsNullOrWhiteSpace(conversationId) || conversationId == "-1")
+            {
+                return;
+            }
+
+            TerminalSessionHub.Dispose(conversationId);
         }
 
         private async Task<object> HandleSendMessageAsync(object data)
@@ -1140,6 +1190,7 @@ namespace EasyWriteClient.Desktop
                 }
 
                 _conversationHistory.Clear();
+                DisposeTerminalFor(_currentConversationId);
                 _currentConversationId = "-1";
                 SyncConversationContext();
                 _authoritativeUploadId = null;
@@ -1211,6 +1262,7 @@ namespace EasyWriteClient.Desktop
                     : (JsonConvert.DeserializeObject<List<JObject>>(content) ?? new List<JObject>());
                 var vueMessages = BuildVueHistoryMessages(rawMessages);
 
+                DisposeTerminalFor(_currentConversationId);
                 _currentConversationId = id.ToString();
                 SyncConversationContext();
                 _conversationHistory.Clear();
@@ -1365,6 +1417,7 @@ namespace EasyWriteClient.Desktop
 
             if (_currentConversationId != conversationId)
             {
+                DisposeTerminalFor(_currentConversationId);
                 _currentConversationId = conversationId;
                 SyncConversationContext();
                 _bridge.SendToJavaScript("conversationIdChanged", new { conversationId });
