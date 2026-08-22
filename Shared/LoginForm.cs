@@ -1,8 +1,6 @@
 using System;
 using System.Drawing;
-using System.Globalization;
 using System.IO;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.WinForms;
@@ -158,17 +156,13 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 按工作区百分比开窗。注册保持 25%×40%；登录约 31%×43%。
+        /// 按工作区百分比开窗。注册 35%×58%；登录约 31%×43%。
         /// </summary>
         internal void ApplyViewMode(bool registerView)
         {
             _registerView = registerView;
             Text = registerView ? "注册" : "登录";
             ApplyLoginWindowSize();
-            if (registerView && webView2?.CoreWebView2 != null)
-            {
-                _ = FitCssViewportAsync(webView2.CoreWebView2);
-            }
         }
 
         private void ApplyLoginWindowSize()
@@ -178,8 +172,8 @@ namespace WordAddIn1
             int margin = 40;
             int minW = _registerView ? 520 : 600;
             int minH = _registerView ? 460 : 480;
-            double ratioW = _registerView ? 0.25 : 0.31;
-            double ratioH = _registerView ? 0.40 : 0.43;
+            double ratioW = _registerView ? 0.35 : 0.31;
+            double ratioH = _registerView ? 0.58 : 0.43;
             int width = Math.Max(minW, (int)Math.Round(area.Width * ratioW));
             int height = Math.Max(minH, (int)Math.Round(area.Height * ratioH));
             width = Math.Min(width, Math.Max(minW, area.Width - margin * 2));
@@ -379,81 +373,6 @@ namespace WordAddIn1
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
-        }
-
-        /// <summary>
-        /// 仅注册页使用：高分屏下把客户区补到至少 520×460 CSS 像素，与改尺寸前一致。
-        /// 登录页不调用，避免被放大成注册窗。
-        /// </summary>
-        private async Task FitCssViewportAsync(CoreWebView2 core)
-        {
-            if (!_registerView || core == null)
-            {
-                return;
-            }
-
-            try
-            {
-                string raw = await core.ExecuteScriptAsync(
-                    "JSON.stringify({w:window.innerWidth,h:window.innerHeight,dpr:window.devicePixelRatio||1})")
-                    .ConfigureAwait(true);
-                Log("css-viewport " + raw);
-                if (string.IsNullOrEmpty(raw))
-                {
-                    return;
-                }
-
-                string json = raw.Trim();
-                if (json.Length >= 2 && json[0] == '"')
-                {
-                    json = json.Substring(1, json.Length - 2).Replace("\\\"", "\"");
-                }
-
-                double cssW = ReadJsonNumber(json, "w");
-                double cssH = ReadJsonNumber(json, "h");
-                if (cssW < 8 || cssH < 8)
-                {
-                    return;
-                }
-
-                const double needW = 520;
-                const double needH = 460;
-                if (cssW >= needW - 24 && cssH >= needH - 24)
-                {
-                    return;
-                }
-
-                double scale = Math.Max(needW / cssW, needH / cssH);
-                Rectangle wa = Screen.FromControl(this).WorkingArea;
-                int newW = Math.Min(wa.Width - 40, (int)Math.Round(ClientSize.Width * scale));
-                int newH = Math.Min(wa.Height - 40, (int)Math.Round(ClientSize.Height * scale));
-                if (newW <= ClientSize.Width && newH <= ClientSize.Height)
-                {
-                    return;
-                }
-
-                ClientSize = new Size(Math.Max(ClientSize.Width, newW), Math.Max(ClientSize.Height, newH));
-                CenterToScreen();
-                Log($"FitCssViewport scale={scale:0.###} -> ClientSize={ClientSize}");
-            }
-            catch (Exception ex)
-            {
-                Log("FitCssViewport: " + ex.Message);
-            }
-        }
-
-        private static double ReadJsonNumber(string json, string key)
-        {
-            Match m = Regex.Match(json, "\"" + key + "\"\\s*:\\s*(-?\\d+(\\.\\d+)?)");
-            if (!m.Success)
-            {
-                return 0;
-            }
-
-            double value;
-            return double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
-                ? value
-                : 0;
         }
 
         private void ShowFallbackHtml(string message)
