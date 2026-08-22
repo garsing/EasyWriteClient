@@ -55,7 +55,7 @@ namespace WordAddIn1
                         Success = true,
                         Data = new Dictionary<string, object>
                         {
-                            ["channel_id"] = hostResult.ChannelId ?? "",
+                            ["channel_id"] = ChannelRegistry.ToPublicId(hostResult.ChannelId) ?? "",
                             ["kind"] = hostResult.Kind ?? "",
                             ["action"] = hostResult.Action ?? "",
                             ["sheet"] = hostResult.Sheet ?? "",

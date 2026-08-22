@@ -145,7 +145,7 @@ namespace WordAddIn1
                         Success = true,
                         Data = new Dictionary<string, object>
                         {
-                            ["channel_id"] = result.Channel.ChannelId,
+                            ["channel_id"] = ChannelRegistry.ToPublicId(result.Channel.ChannelId),
                             ["kind"] = "browser",
                             ["track"] = result.Channel.Track,
                             ["tab_uuid"] = result.Channel.TabUuid,

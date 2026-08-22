@@ -16,6 +16,14 @@ namespace WordAddIn1
             new Dictionary<string, IOperationChannel>(StringComparer.Ordinal);
         private static readonly Dictionary<string, string> DocUuidToChannelId =
             new Dictionary<string, string>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, string> InternalToPublic =
+            new Dictionary<string, string>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, string> PublicToInternal =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private static int _nextW;
+        private static int _nextX;
+        private static int _nextP;
+        private static int _nextB;
         private static string _defaultChannelId;
 
         public static string DefaultChannelId
@@ -30,7 +38,160 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 为 Word 文档查找或创建渠道；channel_id 形如 <c>word:{doc_uuid}</c>。
+        /// 助手可见短号（w1/x1/p1/b1）。底层仍用 word:{uuid} 等。
+        /// </summary>
+        public static string PublicDefaultChannelId
+        {
+            get
+            {
+                lock (Gate)
+                {
+                    if (string.IsNullOrEmpty(_defaultChannelId))
+                    {
+                        return null;
+                    }
+
+                    return ToPublicUnlocked(_defaultChannelId);
+                }
+            }
+        }
+
+        public static string ToPublicId(string channelId)
+        {
+            if (string.IsNullOrWhiteSpace(channelId))
+            {
+                return channelId;
+            }
+
+            lock (Gate)
+            {
+                string resolved = ResolveUnlocked(channelId);
+                if (!InternalToPublic.ContainsKey(resolved) && Channels.ContainsKey(resolved))
+                {
+                    AssignAliasUnlocked(resolved);
+                }
+
+                return ToPublicUnlocked(resolved);
+            }
+        }
+
+        private static string ResolveUnlocked(string channelId)
+        {
+            if (string.IsNullOrWhiteSpace(channelId))
+            {
+                return channelId;
+            }
+
+            string key = channelId.Trim();
+            if (PublicToInternal.TryGetValue(key, out string intern))
+            {
+                return intern;
+            }
+
+            return key;
+        }
+
+        private static string ToPublicUnlocked(string internalId)
+        {
+            if (string.IsNullOrEmpty(internalId))
+            {
+                return internalId;
+            }
+
+            if (InternalToPublic.TryGetValue(internalId, out string pub))
+            {
+                return pub;
+            }
+
+            if (PublicToInternal.ContainsKey(internalId))
+            {
+                return internalId.Trim().ToLowerInvariant();
+            }
+
+            return internalId;
+        }
+
+        private static char FamilyPrefixUnlocked(string internalId)
+        {
+            if (internalId.StartsWith("word:", StringComparison.OrdinalIgnoreCase)
+                || internalId.StartsWith("wps:", StringComparison.OrdinalIgnoreCase))
+            {
+                return 'w';
+            }
+
+            if (internalId.StartsWith("excel:", StringComparison.OrdinalIgnoreCase)
+                || internalId.StartsWith("et:", StringComparison.OrdinalIgnoreCase))
+            {
+                return 'x';
+            }
+
+            if (internalId.StartsWith("ppt:", StringComparison.OrdinalIgnoreCase)
+                || internalId.StartsWith("wpp:", StringComparison.OrdinalIgnoreCase))
+            {
+                return 'p';
+            }
+
+            if (internalId.StartsWith("browser:", StringComparison.OrdinalIgnoreCase))
+            {
+                return 'b';
+            }
+
+            return '\0';
+        }
+
+        private static void AssignAliasUnlocked(string internalId)
+        {
+            if (string.IsNullOrEmpty(internalId) || InternalToPublic.ContainsKey(internalId))
+            {
+                return;
+            }
+
+            char family = FamilyPrefixUnlocked(internalId);
+            if (family == '\0')
+            {
+                return;
+            }
+
+            int n;
+            switch (family)
+            {
+                case 'w':
+                    n = ++_nextW;
+                    break;
+                case 'x':
+                    n = ++_nextX;
+                    break;
+                case 'p':
+                    n = ++_nextP;
+                    break;
+                default:
+                    n = ++_nextB;
+                    break;
+            }
+
+            string pub = family + n.ToString();
+            InternalToPublic[internalId] = pub;
+            PublicToInternal[pub] = internalId;
+        }
+
+        private static void UnassignAliasUnlocked(string internalId)
+        {
+            if (string.IsNullOrEmpty(internalId))
+            {
+                return;
+            }
+
+            if (!InternalToPublic.TryGetValue(internalId, out string pub))
+            {
+                return;
+            }
+
+            InternalToPublic.Remove(internalId);
+            PublicToInternal.Remove(pub);
+        }
+
+        /// <summary>
+        /// 为 Word 文档查找或创建渠道；底层 <c>word:{doc_uuid}</c>，对外短号 <c>w1</c>。
         /// </summary>
         /// <param name="claimDefaultIfEmpty">
         /// 默认渠道为空时是否自动占用（默认 true，保持 Plugin / 旧工具行为）。
@@ -63,6 +224,7 @@ namespace WordAddIn1
                 var created = new WordChannel(channelId, uuid, doc, filePath);
                 Channels[channelId] = created;
                 DocUuidToChannelId[uuid] = channelId;
+                AssignAliasUnlocked(channelId);
 
                 if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
                 {
@@ -106,6 +268,7 @@ namespace WordAddIn1
                 var created = new WpsChannel(channelId, uuid, wpsDocument, filePath);
                 Channels[channelId] = created;
                 DocUuidToChannelId[uuid] = channelId;
+                AssignAliasUnlocked(channelId);
 
                 if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
                 {
@@ -141,6 +304,7 @@ namespace WordAddIn1
                 var created = new ExcelChannel(channelId, uuid, workbook, filePath);
                 Channels[channelId] = created;
                 DocUuidToChannelId[uuid] = channelId;
+                AssignAliasUnlocked(channelId);
                 if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
                 {
                     _defaultChannelId = channelId;
@@ -175,6 +339,7 @@ namespace WordAddIn1
                 var created = new EtChannel(channelId, uuid, workbook, filePath);
                 Channels[channelId] = created;
                 DocUuidToChannelId[uuid] = channelId;
+                AssignAliasUnlocked(channelId);
                 if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
                 {
                     _defaultChannelId = channelId;
@@ -209,6 +374,7 @@ namespace WordAddIn1
                 var created = new PptChannel(channelId, uuid, presentation, filePath);
                 Channels[channelId] = created;
                 DocUuidToChannelId[uuid] = channelId;
+                AssignAliasUnlocked(channelId);
                 if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
                 {
                     _defaultChannelId = channelId;
@@ -243,6 +409,7 @@ namespace WordAddIn1
                 var created = new WppChannel(channelId, uuid, presentation, filePath);
                 Channels[channelId] = created;
                 DocUuidToChannelId[uuid] = channelId;
+                AssignAliasUnlocked(channelId);
                 if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
                 {
                     _defaultChannelId = channelId;
@@ -304,6 +471,7 @@ namespace WordAddIn1
                 var created = new BrowserChannel(channelId, uuid, trackNorm);
                 Channels[channelId] = created;
                 DocUuidToChannelId[uuid] = channelId;
+                AssignAliasUnlocked(channelId);
 
                 if (setAsDefault || string.IsNullOrEmpty(_defaultChannelId))
                 {
@@ -374,6 +542,8 @@ namespace WordAddIn1
                 {
                     _defaultChannelId = channel.ChannelId;
                 }
+
+                AssignAliasUnlocked(channel.ChannelId);
             }
         }
 
@@ -387,7 +557,7 @@ namespace WordAddIn1
 
             lock (Gate)
             {
-                return Channels.TryGetValue(channelId, out channel);
+                return Channels.TryGetValue(ResolveUnlocked(channelId), out channel);
             }
         }
 
@@ -461,12 +631,13 @@ namespace WordAddIn1
 
             lock (Gate)
             {
-                if (!Channels.ContainsKey(channelId))
+                string resolved = ResolveUnlocked(channelId);
+                if (!Channels.ContainsKey(resolved))
                 {
                     return false;
                 }
 
-                _defaultChannelId = channelId;
+                _defaultChannelId = resolved;
                 return true;
             }
         }
@@ -527,12 +698,15 @@ namespace WordAddIn1
             IOperationChannel ch;
             lock (Gate)
             {
-                if (!Channels.TryGetValue(channelId, out ch))
+                string resolved = ResolveUnlocked(channelId);
+                if (!Channels.TryGetValue(resolved, out ch))
                 {
                     return false;
                 }
 
+                channelId = resolved;
                 Channels.Remove(channelId);
+                UnassignAliasUnlocked(channelId);
                 if (ch is WordChannel wc && !string.IsNullOrEmpty(wc.DocUuid))
                 {
                     DocUuidToChannelId.Remove(wc.DocUuid);
@@ -615,6 +789,12 @@ namespace WordAddIn1
             {
                 Channels.Clear();
                 DocUuidToChannelId.Clear();
+                InternalToPublic.Clear();
+                PublicToInternal.Clear();
+                _nextW = 0;
+                _nextX = 0;
+                _nextP = 0;
+                _nextB = 0;
                 _defaultChannelId = null;
             }
         }

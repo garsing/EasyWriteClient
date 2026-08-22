@@ -26,7 +26,7 @@ namespace WordAddIn1.HostPlatform
         {
             var data = new Dictionary<string, object>
             {
-                ["channel_id"] = ChannelId ?? "",
+                ["channel_id"] = ChannelRegistry.ToPublicId(ChannelId) ?? "",
                 ["kind"] = Kind ?? "",
                 ["doc_uuid"] = DocUuid ?? "",
                 ["path"] = Path ?? "",

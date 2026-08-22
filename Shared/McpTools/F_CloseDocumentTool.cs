@@ -41,7 +41,7 @@ namespace WordAddIn1
                         {
                             closed = true,
                             path,
-                            channel_id = channel.ChannelId,
+                            channel_id = ChannelRegistry.ToPublicId(channel.ChannelId),
                             kind
                         }
                     });

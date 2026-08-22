@@ -191,14 +191,14 @@ namespace WordAddIn1.OpenFiles
             {
                 ["display_name"] = i.DisplayName ?? "",
                 ["full_path"] = (object)i.FullPath ?? null,
-                ["channel_id"] = i.ChannelId ?? "",
+                ["channel_id"] = ChannelRegistry.ToPublicId(i.ChannelId) ?? "",
                 ["app_type"] = i.AppType ?? "",
                 ["is_saved"] = i.IsSaved
             }).ToList();
 
             return new Dictionary<string, object>
             {
-                ["default_channel_id"] = (object)ChannelRegistry.DefaultChannelId ?? null,
+                ["default_channel_id"] = (object)ChannelRegistry.PublicDefaultChannelId ?? null,
                 ["items"] = payloadItems,
                 ["truncated"] = truncated
             };

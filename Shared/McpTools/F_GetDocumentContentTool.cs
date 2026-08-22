@@ -64,7 +64,7 @@ namespace WordAddIn1
                         { "code_level", codeLevel },
                         { "processing_method", processingResult.ProcessingMethod ?? "Unknown" },
                         { "note", note },
-                        { "channel_id", hostResult.Context?.ChannelId ?? "" },
+                        { "channel_id", ChannelRegistry.ToPublicId(hostResult.Context?.ChannelId) ?? "" },
                         { "host", hostResult.Context?.Kind.ToString().ToLowerInvariant() ?? "" }
                     };
 

@@ -27,7 +27,7 @@ namespace WordAddIn1.DocumentHost
 
         public string ChannelId
         {
-            get { return Context?.ChannelId ?? ""; }
+            get { return ChannelRegistry.ToPublicId(Context?.ChannelId) ?? ""; }
         }
 
         public string HostName

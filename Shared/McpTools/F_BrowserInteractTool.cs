@@ -89,7 +89,7 @@ namespace WordAddIn1
 
                     var data = new Dictionary<string, object>
                     {
-                        ["channel_id"] = result.Channel.ChannelId,
+                        ["channel_id"] = ChannelRegistry.ToPublicId(result.Channel.ChannelId),
                         ["kind"] = "browser",
                         ["track"] = result.Channel.Track,
                         ["action"] = result.Action ?? act,

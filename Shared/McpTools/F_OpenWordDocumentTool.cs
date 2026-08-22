@@ -149,7 +149,7 @@ namespace WordAddIn1
 
                     var data = new Dictionary<string, object>
                     {
-                        ["channel_id"] = channel.ChannelId,
+                        ["channel_id"] = ChannelRegistry.ToPublicId(channel.ChannelId),
                         ["kind"] = "word",
                         ["doc_uuid"] = channel.DocUuid,
                         ["path"] = fullPath,

@@ -52,7 +52,7 @@ namespace WordAddIn1
                         Success = true,
                         Data = new Dictionary<string, object>
                         {
-                            ["channel_id"] = channel.ChannelId,
+                            ["channel_id"] = ChannelRegistry.ToPublicId(channel.ChannelId),
                             ["kind"] = kind,
                             ["doc_uuid"] = uuid ?? "",
                             ["path"] = path ?? "",
