@@ -321,6 +321,12 @@ namespace WordAddIn1
                     return (false, "无法解析本地路径: " + pair.Key);
                 }
 
+                if (IsHeldOpenOffice(localPath)
+                    || (localEntry != null && IsHeldOpenOffice(localEntry.LocalPath)))
+                {
+                    continue;
+                }
+
                 bool downloaded = await BackendApiClient
                     .DownloadFileFromUserDirectoryAsync(pair.Key, localPath)
                     .ConfigureAwait(false);
@@ -336,9 +342,23 @@ namespace WordAddIn1
             {
                 if (!backend.ContainsKey(pair.Key) && File.Exists(pair.Value.LocalPath))
                 {
+                    if (IsHeldOpenOffice(pair.Value.LocalPath))
+                    {
+                        continue;
+                    }
+
                     try
                     {
                         File.Delete(pair.Value.LocalPath);
+                    }
+                    catch (IOException)
+                    {
+                        if (IsHeldOpenOffice(pair.Value.LocalPath) || HasOfficeLockFile(pair.Value.LocalPath))
+                        {
+                            continue;
+                        }
+
+                        return (false, "删除本地多余文件失败: 文件被占用 (" + pair.Key + ")");
                     }
                     catch (Exception ex)
                     {
@@ -375,6 +395,11 @@ namespace WordAddIn1
 
             foreach (var pair in local)
             {
+                if (IsHeldOpenOffice(pair.Value.LocalPath))
+                {
+                    continue;
+                }
+
                 backend.TryGetValue(pair.Key, out BackendApiClient.WorkspaceFileStat remote);
                 if (SameFile(pair.Value, remote))
                 {
@@ -427,6 +452,11 @@ namespace WordAddIn1
                     string key = file.RelativePath.Replace('\\', '/');
                     backendKeys.Add(key);
                     local.TryGetValue(key, out LocalEntry localEntry);
+                    if (localEntry != null && IsHeldOpenOffice(localEntry.LocalPath))
+                    {
+                        continue;
+                    }
+
                     if (!SameFile(localEntry, file))
                     {
                         return (false, "内容不一致: " + key);
@@ -434,12 +464,14 @@ namespace WordAddIn1
                 }
             }
 
-            foreach (var key in local.Keys)
+            foreach (var pair in local)
             {
-                if (!backendKeys.Contains(key))
+                if (backendKeys.Contains(pair.Key) || IsHeldOpenOffice(pair.Value.LocalPath))
                 {
-                    return (false, "前端多出文件: " + key);
+                    continue;
                 }
+
+                return (false, "前端多出文件: " + pair.Key);
             }
 
             return (true, null);
@@ -449,6 +481,110 @@ namespace WordAddIn1
         {
             string name = Path.GetFileName(relativePath.Replace('/', Path.DirectorySeparatorChar));
             return IsTempName(name);
+        }
+
+        /// <summary>
+        /// 渠道里正打开的办公文件，或同目录存在 Office <c>~$</c> 锁文件。对账跳过（不传、不覆盖、不删）。
+        /// </summary>
+        public static bool IsHeldOpenOffice(string localPath)
+        {
+            if (string.IsNullOrEmpty(localPath))
+            {
+                return false;
+            }
+
+            string full;
+            try
+            {
+                full = Path.GetFullPath(localPath);
+            }
+            catch
+            {
+                return false;
+            }
+
+            foreach (IOperationChannel channel in ChannelRegistry.Snapshot())
+            {
+                string open = TryChannelFilePath(channel);
+                if (string.IsNullOrEmpty(open))
+                {
+                    continue;
+                }
+
+                string openFull;
+                try
+                {
+                    openFull = Path.GetFullPath(open);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (string.Equals(full, openFull, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return HasOfficeLockFile(full);
+        }
+
+        private static string TryChannelFilePath(IOperationChannel channel)
+        {
+            if (channel is WordChannel word)
+            {
+                return word.FilePath;
+            }
+
+            if (channel is WpsChannel wps)
+            {
+                return wps.FilePath;
+            }
+
+            if (channel is ExcelChannel excel)
+            {
+                return excel.FilePath;
+            }
+
+            if (channel is EtChannel et)
+            {
+                return et.FilePath;
+            }
+
+            if (channel is PptChannel ppt)
+            {
+                return ppt.FilePath;
+            }
+
+            if (channel is WppChannel wpp)
+            {
+                return wpp.FilePath;
+            }
+
+            return null;
+        }
+
+        private static bool HasOfficeLockFile(string fullPath)
+        {
+            string dir = Path.GetDirectoryName(fullPath);
+            string name = Path.GetFileName(fullPath);
+            if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            if (File.Exists(Path.Combine(dir, "~$" + name)))
+            {
+                return true;
+            }
+
+            if (name.Length > 2 && File.Exists(Path.Combine(dir, "~$" + name.Substring(2))))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private sealed class LocalEntry
