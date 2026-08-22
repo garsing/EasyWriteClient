@@ -74,10 +74,16 @@ namespace WordAddIn1
                         };
                     }
 
+                    string pathArg = FilePathResolver.TryGetArg(args, "path");
                     bool saveToFile = true;
                     if (args.ContainsKey("save_to_file"))
                     {
                         saveToFile = ParseBoolArg(args["save_to_file"], true);
+                    }
+
+                    if (!string.IsNullOrEmpty(pathArg))
+                    {
+                        saveToFile = true;
                     }
 
                     Word.InlineShape inlineShape = ChartResolveHelper.ResolveInlineShapeByChartId(
@@ -100,7 +106,7 @@ namespace WordAddIn1
                     bool saved = false;
                     if (saveToFile)
                     {
-                        string filename = ChartFormatXmlBuilder.GenerateFilename(scope, selection.ChartId);
+                        string filename = pathArg ?? ChartFormatXmlBuilder.GenerateFilename(scope, selection.ChartId);
                         var saveResult = await TableFormatFileHelper.SaveXmlAsync(filename, xmlContent);
                         saved = saveResult.Success;
                         xmlFile = filename;

@@ -39,38 +39,36 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[DEBUG] csv_to_xml工具开始执行");
 
-                    string csvFilename = args.ContainsKey("csv_filename") ? args["csv_filename"]?.ToString() : "";
-                    string xmlFilename = args.ContainsKey("xml_filename") ? args["xml_filename"]?.ToString() : "";
-
-                    if (string.IsNullOrEmpty(csvFilename))
+                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath csvResolved, out string csvError, "path", "csv_filename"))
                     {
-                        return new ToolResult { Success = false, Error = "必须提供csv_filename参数（CSV文件名）" };
+                        return new ToolResult { Success = false, Error = csvError };
                     }
 
-                    if (string.IsNullOrEmpty(xmlFilename))
+                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out string xmlError, "output_path", "xml_filename"))
                     {
-                        return new ToolResult { Success = false, Error = "必须提供xml_filename参数（XML文件名）" };
+                        return new ToolResult { Success = false, Error = xmlError };
                     }
 
-                    if (!UserService.Instance.CheckLoginStatus()
-                        || string.IsNullOrWhiteSpace(UserService.Instance.WorkspaceRootEffective))
+                    string csvFilename = csvResolved.Display;
+                    string xmlFilename = xmlResolved.Display;
+
+                    var csvRead = await FilePathResolver.ReadBytesAsync(csvResolved).ConfigureAwait(false);
+                    if (!csvRead.Success)
                     {
-                        return new ToolResult { Success = false, Error = "用户未登录或工作区未初始化" };
+                        return new ToolResult { Success = false, Error = csvRead.Error };
                     }
 
-                    var csvEnsure = await McpToolsHelpers.EnsureWorkspaceFileAsync(csvFilename).ConfigureAwait(false);
-                    if (!csvEnsure.success)
-                    {
-                        return new ToolResult { Success = false, Error = csvEnsure.error };
-                    }
-
-                    string csvFilePath = csvEnsure.localPath;
+                    string csvFilePath = csvResolved.LocalPath;
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 读取CSV文件: {csvFilePath}");
 
-                    var xmlEnsure = await McpToolsHelpers.EnsureWorkspaceFileAsync(xmlFilename).ConfigureAwait(false);
-                    string xmlFilePath = xmlEnsure.success
-                        ? xmlEnsure.localPath
-                        : WorkspacePathResolver.ResolveWritePath(xmlFilename);
+                    bool xmlEnsureSuccess = File.Exists(xmlResolved.LocalPath);
+                    if (!xmlEnsureSuccess && xmlResolved.Kind == FilePathKind.Workspace)
+                    {
+                        var xmlRead = await FilePathResolver.ReadBytesAsync(xmlResolved).ConfigureAwait(false);
+                        xmlEnsureSuccess = xmlRead.Success;
+                    }
+
+                    string xmlFilePath = xmlResolved.LocalPath;
 
                     Directory.CreateDirectory(Path.GetDirectoryName(xmlFilePath));
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 操作XML文件: {xmlFilePath}");
@@ -83,7 +81,7 @@ namespace WordAddIn1
                     }
 
                     // 检查XML文件是否存在，不存在则创建新文件
-                    if (!xmlEnsure.success && !File.Exists(xmlFilePath))
+                    if (!xmlEnsureSuccess && !File.Exists(xmlFilePath))
                     {
                         System.Diagnostics.Debug.WriteLine($"[DEBUG] 将创建新的XML文件: {xmlFilename}");
                     }
@@ -122,12 +120,20 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = "无法识别的XML文件格式" };
                     }
 
-                    // 保存XML文件
-                    xmlDoc.Save(xmlFilePath);
+                    string xmlText;
+                    using (var writer = new StringWriter())
+                    {
+                        xmlDoc.Save(writer);
+                        xmlText = writer.ToString();
+                    }
 
-                    // 上传生成的XML文件到用户工作目录
-                    bool uploadSuccess = await McpToolsHelpers.UploadWorkspaceFileAsync(xmlFilePath, xmlFilename);
-                    System.Diagnostics.Debug.WriteLine($"[DEBUG] XML文件上传结果: {uploadSuccess}");
+                    var written = await FilePathResolver.WriteAsync(xmlResolved, xmlText).ConfigureAwait(false);
+                    if (!written.Success)
+                    {
+                        return new ToolResult { Success = false, Error = written.Error };
+                    }
+
+                    bool uploadSuccess = true;
 
                     // 获取文件信息
                     FileInfo xmlFileInfo = new FileInfo(xmlFilePath);

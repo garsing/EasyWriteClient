@@ -52,51 +52,27 @@ namespace WordAddIn1
                         };
                     }
 
-                    string htmlFilename = GetStringArg(args, "html_filename");
-                    if (string.IsNullOrWhiteSpace(htmlFilename))
+                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath htmlResolved, out string htmlPathError, "path", "html_filename"))
                     {
                         return new ToolResult
                         {
                             Success = false,
-                            Error = "必须提供 html_filename（工作区裸文件名；可由 F_read_ppt_html 的 export_html 得到）"
+                            Error = htmlPathError ?? "必须提供 path"
                         };
                     }
 
-                    htmlFilename = Path.GetFileName(htmlFilename.Trim());
-                    if (string.IsNullOrEmpty(htmlFilename)
-                        || htmlFilename.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                    string htmlFilename = htmlResolved.Display;
+                    var htmlRead = await FilePathResolver.ReadAsync(htmlResolved).ConfigureAwait(false);
+                    if (!htmlRead.Success)
                     {
                         return new ToolResult
                         {
                             Success = false,
-                            Error = "html_filename 须为合法裸文件名"
+                            Error = htmlRead.Error ?? ("文件不可用: " + htmlFilename)
                         };
                     }
 
-                    var ensure = await McpToolsHelpers.EnsureWorkspaceFileAsync(htmlFilename)
-                        .ConfigureAwait(false);
-                    if (!ensure.success)
-                    {
-                        return new ToolResult
-                        {
-                            Success = false,
-                            Error = ensure.error ?? ("工作区文件不可用: " + htmlFilename)
-                        };
-                    }
-
-                    string html;
-                    try
-                    {
-                        html = File.ReadAllText(ensure.localPath, Encoding.UTF8);
-                    }
-                    catch (Exception ex)
-                    {
-                        return new ToolResult
-                        {
-                            Success = false,
-                            Error = "读取 html_filename 失败: " + ex.Message
-                        };
-                    }
+                    string html = htmlRead.Text;
 
                     if (string.IsNullOrWhiteSpace(html))
                     {
@@ -177,18 +153,15 @@ namespace WordAddIn1
                         }
                     }
 
-                    // 尽量上传 debug 文件到工作区，便于对话里直接读
-                    if (!string.IsNullOrEmpty(hostResult.DebugFilename))
+                    if (!string.IsNullOrEmpty(hostResult.DebugFilename)
+                        && FilePathResolver.TryResolve(hostResult.DebugFilename, out ResolvedFilePath debugResolved, out _)
+                        && File.Exists(debugResolved.LocalPath))
                     {
                         try
                         {
-                            string localDebug = WorkspacePathResolver.ResolveWritePath(hostResult.DebugFilename);
-                            if (File.Exists(localDebug))
-                            {
-                                await McpToolsHelpers.UploadWorkspaceFileAsync(
-                                        localDebug, hostResult.DebugFilename)
-                                    .ConfigureAwait(false);
-                            }
+                            await FilePathResolver
+                                .WriteBytesAsync(debugResolved, File.ReadAllBytes(debugResolved.LocalPath))
+                                .ConfigureAwait(false);
                         }
                         catch (Exception)
                         {
@@ -253,9 +226,13 @@ namespace WordAddIn1
                         continue;
                     }
 
-                    var ensure = await McpToolsHelpers.EnsureWorkspaceFileAsync(workspaceName)
-                        .ConfigureAwait(false);
-                    if (!ensure.success || string.IsNullOrEmpty(ensure.localPath) || !File.Exists(ensure.localPath))
+                    if (!FilePathResolver.TryResolve(workspaceName, out ResolvedFilePath picResolved, out string picError))
+                    {
+                        return "工作区图片路径无效: " + workspaceName + "（" + picError + "）";
+                    }
+
+                    var picRead = await FilePathResolver.ReadBytesAsync(picResolved).ConfigureAwait(false);
+                    if (!picRead.Success || string.IsNullOrEmpty(picResolved.LocalPath) || !File.Exists(picResolved.LocalPath))
                     {
                         string sessionHint = "";
                         try
@@ -267,12 +244,12 @@ namespace WordAddIn1
                         }
 
                         return "工作区图片不可用: " + workspaceName
-                            + "（" + (ensure.error ?? "本地与云端均未找到") + "）"
+                            + "（" + (picRead.Error ?? "本地与云端均未找到") + "）"
                             + sessionHint
-                            + "。请确认同会话已 F_read_ppt_html(export_html=…) 导出并生成 ppt_images/ 下文件。";
+                            + "。请确认同会话已 F_read_ppt_html 导出并生成 ppt_images/ 下文件。";
                     }
 
-                    node.ResolvedLocalPath = Path.GetFullPath(ensure.localPath);
+                    node.ResolvedLocalPath = Path.GetFullPath(picResolved.LocalPath);
                 }
             }
 
@@ -288,33 +265,15 @@ namespace WordAddIn1
                 return false;
             }
 
-            try
+            if (!FilePathResolver.TryResolve(workspaceRelative, out ResolvedFilePath resolved, out _)
+                || string.IsNullOrEmpty(resolved.LocalPath)
+                || !File.Exists(resolved.LocalPath))
             {
-                string writePath = WorkspacePathResolver.ResolveWritePath(workspaceRelative);
-                if (!string.IsNullOrEmpty(writePath) && File.Exists(writePath))
-                {
-                    fullPath = Path.GetFullPath(writePath);
-                    return true;
-                }
-            }
-            catch (Exception)
-            {
+                return false;
             }
 
-            try
-            {
-                string readPath = WorkspacePathResolver.ResolveReadPath(workspaceRelative);
-                if (!string.IsNullOrEmpty(readPath) && File.Exists(readPath))
-                {
-                    fullPath = Path.GetFullPath(readPath);
-                    return true;
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            return false;
+            fullPath = Path.GetFullPath(resolved.LocalPath);
+            return true;
         }
 
         private static string GetStringArg(Dictionary<string, object> args, string key)

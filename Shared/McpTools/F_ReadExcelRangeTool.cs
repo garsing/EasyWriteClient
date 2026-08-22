@@ -35,15 +35,12 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = contentError };
                     }
 
-                    string exportCsv = GetStringArg(args, "export_csv");
-                    if (!string.IsNullOrEmpty(exportCsv))
+                    string exportCsv = FilePathResolver.TryGetArg(args, "path", "export_csv");
+                    ResolvedFilePath exportResolved = null;
+                    if (!string.IsNullOrEmpty(exportCsv)
+                        && !FilePathResolver.TryResolve(exportCsv, out exportResolved, out string exportError))
                     {
-                        exportCsv = Path.GetFileName(exportCsv.Trim());
-                        if (string.IsNullOrEmpty(exportCsv)
-                            || exportCsv.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-                        {
-                            return new ToolResult { Success = false, Error = "export_csv 须为合法裸文件名" };
-                        }
+                        return new ToolResult { Success = false, Error = exportError };
                     }
 
                     if (!SpreadsheetHostAdapter.TryReadRange(
@@ -83,7 +80,7 @@ namespace WordAddIn1
                         ["content"] = SpreadsheetContentModeUtil.ToWire(contentMode)
                     };
 
-                    if (!string.IsNullOrEmpty(exportCsv))
+                    if (exportResolved != null)
                     {
                         List<List<string>> grid = SpreadsheetCsv.BuildGridFromPreview(
                             hostResult.ActualRange ?? "",
@@ -100,9 +97,15 @@ namespace WordAddIn1
                             };
                         }
 
-                        string localPath = WorkspacePathResolver.ResolveWritePath(exportCsv);
+                        string localPath = exportResolved.LocalPath;
                         try
                         {
+                            string parent = Path.GetDirectoryName(localPath);
+                            if (!string.IsNullOrEmpty(parent))
+                            {
+                                Directory.CreateDirectory(parent);
+                            }
+
                             SpreadsheetCsv.WriteFile(localPath, grid);
                         }
                         catch (Exception ex)
@@ -114,18 +117,20 @@ namespace WordAddIn1
                             };
                         }
 
-                        bool uploaded = await McpToolsHelpers.UploadWorkspaceFileAsync(localPath, exportCsv)
+                        var written = await FilePathResolver
+                            .WriteBytesAsync(exportResolved, File.ReadAllBytes(localPath))
                             .ConfigureAwait(false);
-                        if (!uploaded)
+                        if (!written.Success)
                         {
                             return new ToolResult
                             {
                                 Success = false,
-                                Error = "导出 CSV 已写本地但上传工作区失败: " + exportCsv
+                                Error = written.Error
                             };
                         }
 
-                        data["csv_filename"] = exportCsv;
+                        data["path"] = exportResolved.Display;
+                        data["csv_filename"] = exportResolved.Display;
                         data["csv_rows"] = csvRows;
                         data["csv_columns"] = csvCols;
                     }

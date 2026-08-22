@@ -37,18 +37,14 @@ namespace WordAddIn1
                     bool clear = args != null
                         && args.ContainsKey("clear")
                         && Convert.ToBoolean(args["clear"]);
-                    string csvFilename = GetStringArg(args, "csv_filename");
-                    if (!string.IsNullOrEmpty(csvFilename))
-                    {
-                        csvFilename = Path.GetFileName(csvFilename.Trim());
-                    }
+                    string csvFilename = FilePathResolver.TryGetArg(args, "path", "csv_filename");
 
                     if (clear && !string.IsNullOrEmpty(csvFilename))
                     {
                         return new ToolResult
                         {
                             Success = false,
-                            Error = "须提供 csv_filename+range，或 clear+range（二者互斥）"
+                            Error = "须提供 path+range，或 clear+range（二者互斥）"
                         };
                     }
 
@@ -57,7 +53,7 @@ namespace WordAddIn1
                         return new ToolResult
                         {
                             Success = false,
-                            Error = "须提供 csv_filename+range，或 clear+range"
+                            Error = "须提供 path+range，或 clear+range"
                         };
                     }
 
@@ -70,18 +66,22 @@ namespace WordAddIn1
 
                     if (!clear)
                     {
-                        var ensure = await McpToolsHelpers.EnsureWorkspaceFileAsync(csvFilename)
-                            .ConfigureAwait(false);
-                        if (!ensure.success)
+                        if (!FilePathResolver.TryResolve(csvFilename, out ResolvedFilePath csvResolved, out string csvError))
+                        {
+                            return new ToolResult { Success = false, Error = csvError };
+                        }
+
+                        var ensure = await FilePathResolver.ReadBytesAsync(csvResolved).ConfigureAwait(false);
+                        if (!ensure.Success)
                         {
                             return new ToolResult
                             {
                                 Success = false,
-                                Error = ensure.error ?? ("CSV 不在工作区: " + csvFilename)
+                                Error = ensure.Error ?? ("CSV 不存在: " + csvFilename)
                             };
                         }
 
-                        List<List<string>> parsed = SpreadsheetCsv.ParseFile(ensure.localPath);
+                        List<List<string>> parsed = SpreadsheetCsv.ParseFile(csvResolved.LocalPath);
                         if (parsed == null)
                         {
                             return new ToolResult { Success = false, Error = "CSV 文件解析失败" };

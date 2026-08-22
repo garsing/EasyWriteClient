@@ -93,28 +93,19 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_create_table_from_xml] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
-                    // 获取文件名
-                    string filename = args.ContainsKey("filename") ? args["filename"]?.ToString() : "";
-                    if (string.IsNullOrEmpty(filename))
+                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out string pathError, "path", "filename"))
                     {
-                        return new ToolResult { Success = false, Error = "未提供文件名" };
+                        return new ToolResult { Success = false, Error = pathError };
                     }
 
-                    // 获取用户名
-                    var userService = UserService.Instance;
-                    if (!userService.CheckLoginStatus()
-                        || string.IsNullOrWhiteSpace(userService.WorkspaceRootEffective))
+                    string filename = xmlResolved.Display;
+                    var xmlRead = await FilePathResolver.ReadAsync(xmlResolved).ConfigureAwait(false);
+                    if (!xmlRead.Success)
                     {
-                        return new ToolResult { Success = false, Error = "用户未登录或工作区未初始化" };
+                        return new ToolResult { Success = false, Error = xmlRead.Error };
                     }
 
-                    var ensure = await McpToolsHelpers.EnsureWorkspaceFileAsync(filename).ConfigureAwait(false);
-                    if (!ensure.success)
-                    {
-                        return new ToolResult { Success = false, Error = ensure.error };
-                    }
-
-                    string xmlFilePath = ensure.localPath;
+                    string xmlFilePath = xmlResolved.LocalPath;
 
                     // 解析XML
                     var parseResult = ParseXmlFile(xmlFilePath);
@@ -773,7 +764,7 @@ namespace WordAddIn1
             }
 
             sb.Append("  修复：每行补齐至 ").Append(inferred)
-                .Append(" 个 Cell（含空占位）；或重写 XML 参考 F_write_format_file 工具描述中的示例。");
+                .Append(" 个 Cell（含空占位）；或重写 XML 参考 F_write_file 工具描述中的示例。");
             return sb.ToString();
         }
 

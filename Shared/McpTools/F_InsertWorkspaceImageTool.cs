@@ -31,7 +31,7 @@ namespace WordAddIn1
             Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
             object wordApplication)
         {
-            toolRegistry["F_insert_workspace_image"] = async (args) =>
+            toolRegistry["F_insert_image"] = async (args) =>
             {
                 var sw = Stopwatch.StartNew();
                 try
@@ -53,16 +53,12 @@ namespace WordAddIn1
                     Debug.WriteLine(
                         $"[F_insert_workspace_image] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
-                    string rawName = args != null && args.ContainsKey("filename")
-                        ? args["filename"]?.ToString()
-                        : null;
-                    string safeName = WorkspacePathResolver.SanitizeFilename(rawName);
-                    if (string.IsNullOrEmpty(safeName))
+                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out string pathError, "path", "filename"))
                     {
-                        return Fail("invalid_filename: 文件名无效或含路径");
+                        return Fail(pathError);
                     }
 
-                    string ext = Path.GetExtension(safeName);
+                    string ext = Path.GetExtension(resolved.LocalPath);
                     if (string.IsNullOrEmpty(ext) || !AllowedExtensions.Contains(ext))
                     {
                         return Fail(
@@ -71,25 +67,10 @@ namespace WordAddIn1
 
                     double widthCm = TryParseWidthCm(args) ?? DefaultWidthCm;
 
-                    bool hadLocal = false;
-                    try
+                    var ensure = await FilePathResolver.ReadBytesAsync(resolved).ConfigureAwait(true);
+                    if (!ensure.Success || string.IsNullOrEmpty(resolved.LocalPath) || !File.Exists(resolved.LocalPath))
                     {
-                        string existing = WorkspacePathResolver.ResolveReadPath(safeName);
-                        hadLocal = !string.IsNullOrEmpty(existing) && File.Exists(existing);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"[InsertWorkspaceImage] ResolveReadPath 警告: {ex.Message}");
-                    }
-
-                    var ensure = await McpToolsHelpers.EnsureWorkspaceFileAsync(safeName)
-                        .ConfigureAwait(true);
-                    if (!ensure.success || string.IsNullOrEmpty(ensure.localPath) || !File.Exists(ensure.localPath))
-                    {
-                        string detail = string.IsNullOrEmpty(ensure.error)
-                            ? safeName
-                            : ensure.error;
-                        return Fail($"file_not_found: {detail}");
+                        return Fail($"file_not_found: {ensure.Error ?? resolved.Display}");
                     }
 
                     try
@@ -108,7 +89,7 @@ namespace WordAddIn1
                     }
 
                     double heightCm;
-                    double? aspect = TryGetImageAspectRatio(ensure.localPath);
+                    double? aspect = TryGetImageAspectRatio(resolved.LocalPath);
                     if (aspect.HasValue && aspect.Value > 0)
                     {
                         heightCm = widthCm / aspect.Value;
@@ -123,7 +104,7 @@ namespace WordAddIn1
                     {
                         Word.Range range = locate.Range;
                         Word.InlineShape picture = range.InlineShapes.AddPicture(
-                            FileName: ensure.localPath,
+                            FileName: resolved.LocalPath,
                             LinkToFile: false,
                             SaveWithDocument: true);
                         picture.Width = (float)(widthCm * PointsPerCm);
@@ -152,11 +133,12 @@ namespace WordAddIn1
                     string resolvedImageId = ImageResolveHelper.TryResolveImageIdAfterInsert(
                         document, pictureStart, warnings);
 
-                    bool downloaded = !hadLocal;
+                    bool downloaded = resolved.Kind == FilePathKind.Workspace;
                     var data = new Dictionary<string, object>
                     {
                         ["inserted"] = true,
-                        ["filename"] = safeName,
+                        ["path"] = resolved.Display,
+                        ["filename"] = resolved.Display,
                         ["image_width_cm"] = Math.Round(widthCm, 2),
                         ["image_height_cm"] = Math.Round(heightCm, 2),
                         ["used_cursor"] = locate.UsedCursor,
@@ -178,7 +160,7 @@ namespace WordAddIn1
                     }
 
                     Debug.WriteLine(
-                        $"[InsertWorkspaceImage] ok file={safeName} downloaded={downloaded} " +
+                        $"[InsertWorkspaceImage] ok file={resolved.Display} downloaded={downloaded} " +
                         $"image_id={resolvedImageId ?? "(null)"} " +
                         $"used_cursor={locate.UsedCursor} w_cm={widthCm:F2} h_cm={heightCm:F2} " +
                         $"ms={sw.ElapsedMilliseconds}");

@@ -29,6 +29,18 @@ namespace WordAddIn1
                     bool createBlank = OpenDocumentPath.ParseBool(args, "create_blank", false);
                     string app = OpenDocumentPath.TryGetString(args, "app");
 
+                    if (FilePathResolver.TryResolve(path, out ResolvedFilePath mapped, out _)
+                        && !createBlank
+                        && mapped.Kind == FilePathKind.Workspace
+                        && !System.IO.File.Exists(mapped.LocalPath))
+                    {
+                        var ensure = await FilePathResolver.ReadBytesAsync(mapped).ConfigureAwait(false);
+                        if (!ensure.Success)
+                        {
+                            return Fail(ensure.Error);
+                        }
+                    }
+
                     if (!OpenDocumentPath.TryResolve(path, createBlank, out string fullPath, out string pathError))
                     {
                         return Fail(pathError);

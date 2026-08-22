@@ -19,13 +19,9 @@ namespace WordAddIn1
             {
                 try
                 {
-                    string insertFile = args.ContainsKey("insert_file")
-                        ? args["insert_file"]?.ToString()?.Trim()
-                        : "";
-
-                    if (string.IsNullOrEmpty(insertFile))
+                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out string pathError, "path", "insert_file"))
                     {
-                        return new ToolResult { Success = false, Error = "必须提供 insert_file 参数" };
+                        return new ToolResult { Success = false, Error = pathError };
                     }
 
                     ActionFormatHelper.Spec formatSpec = ActionFormatHelper.ParseFormatObject(args, required: true);
@@ -38,10 +34,10 @@ namespace WordAddIn1
                         };
                     }
 
-                    var loadResult = await McpToolsHelpers.LoadUserFormatFileAsync(insertFile);
-                    if (!loadResult.success)
+                    var loadResult = await FilePathResolver.ReadAsync(resolved).ConfigureAwait(false);
+                    if (!loadResult.Success || string.IsNullOrEmpty(loadResult.Text))
                     {
-                        return new ToolResult { Success = false, Error = loadResult.error };
+                        return new ToolResult { Success = false, Error = loadResult.Error ?? $"文件内容为空: {resolved.Display}" };
                     }
 
                     string targetCodes = args.ContainsKey("target_codes") ? args["target_codes"]?.ToString()?.Trim() : "";
@@ -51,7 +47,7 @@ namespace WordAddIn1
                     string targetImage = args.ContainsKey("target_image") ? args["target_image"]?.ToString()?.Trim() : "";
 
                     var build = BuildInsertProcessArgs(
-                        loadResult.content,
+                        loadResult.Text,
                         targetCodes,
                         inTable,
                         targetTable,
@@ -88,15 +84,16 @@ namespace WordAddIn1
                         Success = true,
                         Data = new
                         {
-                            insert_file = insertFile,
+                            path = resolved.Display,
+                            insert_file = resolved.Display,
                             target_codes = string.IsNullOrEmpty(targetCodes) ? null : targetCodes,
                             in_table = string.IsNullOrEmpty(inTable) ? null : inTable,
                             target_table = string.IsNullOrEmpty(targetTable) ? null : targetTable,
                             target_chart = string.IsNullOrEmpty(targetChart) ? null : targetChart,
                             target_image = string.IsNullOrEmpty(targetImage) ? null : targetImage,
-                            characters_inserted = loadResult.content?.Length ?? 0,
+                            characters_inserted = loadResult.Text?.Length ?? 0,
                             process_result = processResult.Data,
-                            message = $"已从文件 {insertFile} 插入文档内容"
+                            message = $"已从文件 {resolved.Display} 插入文档内容"
                         }
                     };
                 }

@@ -32,14 +32,14 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[DEBUG] modify_yaml_file工具开始执行");
 
-                    string filename = args.ContainsKey("filename") ? args["filename"]?.ToString() : "";
+                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out string pathError, "path", "filename"))
+                    {
+                        return new ToolResult { Success = false, Error = pathError };
+                    }
+
+                    string filename = resolved.Display;
                     string nodePath = args.ContainsKey("node_path") ? args["node_path"]?.ToString() : "";
                     string newContent = args.ContainsKey("new_content") ? args["new_content"]?.ToString() : "";
-
-                    if (string.IsNullOrEmpty(filename))
-                    {
-                        return new ToolResult { Success = false, Error = "必须提供filename参数（YAML文件名）" };
-                    }
 
                     if (string.IsNullOrEmpty(nodePath))
                     {
@@ -59,19 +59,19 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = "用户未登录或工作区未初始化" };
                     }
 
-                    var ensure = await McpToolsHelpers.EnsureWorkspaceFileAsync(filename).ConfigureAwait(false);
-                    if (!ensure.success)
+                    var read = await FilePathResolver.ReadAsync(resolved).ConfigureAwait(false);
+                    if (!read.Success)
                     {
-                        return new ToolResult { Success = false, Error = ensure.error };
+                        return new ToolResult { Success = false, Error = read.Error };
                     }
 
-                    string filePath = ensure.localPath;
+                    string filePath = resolved.LocalPath;
 
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 修改YAML文件: {filePath}");
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 节点路径: {nodePath}");
 
                     // 读取并解析YAML文件
-                    string yamlContent = File.ReadAllText(filePath, Encoding.UTF8);
+                    string yamlContent = read.Text ?? "";
                     var yamlStream = new YamlStream();
                     yamlStream.Load(new StringReader(yamlContent));
 
@@ -185,12 +185,13 @@ namespace WordAddIn1
                     }
 
                     string updatedYamlContent = stringBuilder.ToString();
-                    File.WriteAllText(filePath, updatedYamlContent, Encoding.UTF8);
-                    McpToolsHelpers.TryHideWorkspaceFormatFile(filePath);
+                    var written = await FilePathResolver.WriteAsync(resolved, updatedYamlContent, Encoding.UTF8).ConfigureAwait(false);
+                    if (!written.Success)
+                    {
+                        return new ToolResult { Success = false, Error = written.Error };
+                    }
 
-                    // 上传修改后的YAML文件到用户工作目录
-                    bool uploadSuccess = await UploadModifiedYamlFileToUserDirectory(filePath, filename);
-                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 修改后的YAML文件上传结果: {uploadSuccess}");
+                    bool uploadSuccess = true;
 
                     // 获取文件信息
                     FileInfo fileInfo = new FileInfo(filePath);

@@ -30,7 +30,7 @@ namespace WordAddIn1
             "F_apply_chart_from_xml",
             "F_delete_chart",
             "F_insert_svg_image",
-            "F_insert_workspace_image",
+            "F_insert_image",
             "F_apply_data_provenance",
             "F_restore_document_checkpoint",
             "F_write_excel_range",

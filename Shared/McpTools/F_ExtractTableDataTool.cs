@@ -63,7 +63,8 @@ namespace WordAddIn1
 
                     string xmlContent = TableFormatXmlBuilder.BuildDataOnly(dto);
                     int emptyCellCount = TableMergeHelper.CountFillableEmptyCells(dto.Data, dto.Merge);
-                    string filename = TableFormatFileHelper.GenerateFilename(
+                    string filename = FilePathResolver.TryGetArg(args, "path")
+                        ?? TableFormatFileHelper.GenerateFilename(
                         document,
                         selection.TableIndex,
                         "data");

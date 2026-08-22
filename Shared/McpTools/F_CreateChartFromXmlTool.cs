@@ -46,26 +46,19 @@ namespace WordAddIn1
                             "create_chart (WPS 不支持 Word/Excel 内嵌图表 COM；请用 Word 或改用 SVG/图片)");
                     }
 
-                    string filename = args.ContainsKey("filename") ? args["filename"]?.ToString() : "";
-                    if (string.IsNullOrEmpty(filename))
+                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out string pathError, "path", "filename"))
                     {
-                        return new ToolResult { Success = false, Error = "未提供文件名" };
+                        return new ToolResult { Success = false, Error = pathError };
                     }
 
-                    var userService = UserService.Instance;
-                    if (!userService.CheckLoginStatus()
-                        || string.IsNullOrWhiteSpace(userService.WorkspaceRootEffective))
+                    string filename = xmlResolved.Display;
+                    var xmlRead = await FilePathResolver.ReadAsync(xmlResolved).ConfigureAwait(false);
+                    if (!xmlRead.Success)
                     {
-                        return new ToolResult { Success = false, Error = "用户未登录或工作区未初始化" };
+                        return new ToolResult { Success = false, Error = xmlRead.Error };
                     }
 
-                    var ensure = await McpToolsHelpers.EnsureWorkspaceFileAsync(filename).ConfigureAwait(false);
-                    if (!ensure.success)
-                    {
-                        return new ToolResult { Success = false, Error = ensure.error };
-                    }
-
-                    string xmlFilePath = ensure.localPath;
+                    string xmlFilePath = xmlResolved.LocalPath;
 
                     var parseResult = await ChartXmlParser.ParseXmlFile(xmlFilePath);
                     if (parseResult.Config == null)

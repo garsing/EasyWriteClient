@@ -19,17 +19,14 @@ namespace WordAddIn1
             {
                 try
                 {
-                    string replaceFile = args.ContainsKey("replace_file")
-                        ? args["replace_file"]?.ToString()?.Trim()
-                        : "";
+                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out string pathError, "path", "replace_file"))
+                    {
+                        return new ToolResult { Success = false, Error = pathError };
+                    }
+
                     string originalCodes = args.ContainsKey("original_codes")
                         ? args["original_codes"]?.ToString()?.Trim()
                         : "";
-
-                    if (string.IsNullOrEmpty(replaceFile))
-                    {
-                        return new ToolResult { Success = false, Error = "必须提供 replace_file 参数" };
-                    }
 
                     if (string.IsNullOrEmpty(originalCodes))
                     {
@@ -46,13 +43,13 @@ namespace WordAddIn1
                         };
                     }
 
-                    var loadResult = await McpToolsHelpers.LoadUserFormatFileAsync(replaceFile);
-                    if (!loadResult.success)
+                    var loadResult = await FilePathResolver.ReadAsync(resolved).ConfigureAwait(false);
+                    if (!loadResult.Success || string.IsNullOrEmpty(loadResult.Text))
                     {
-                        return new ToolResult { Success = false, Error = loadResult.error };
+                        return new ToolResult { Success = false, Error = loadResult.Error ?? $"文件内容为空: {resolved.Display}" };
                     }
 
-                    var processArgs = BuildReplaceProcessArgs(loadResult.content, originalCodes, args["format"]);
+                    var processArgs = BuildReplaceProcessArgs(loadResult.Text, originalCodes, args["format"]);
                     if (args.ContainsKey("channel_id"))
                     {
                         processArgs["channel_id"] = args["channel_id"];
@@ -78,11 +75,12 @@ namespace WordAddIn1
                         Success = true,
                         Data = new
                         {
-                            replace_file = replaceFile,
+                            path = resolved.Display,
+                            replace_file = resolved.Display,
                             original_codes = originalCodes,
-                            characters_replaced = loadResult.content?.Length ?? 0,
+                            characters_replaced = loadResult.Text?.Length ?? 0,
                             process_result = processResult.Data,
-                            message = $"已从文件 {replaceFile} 替换文档内容（编码: {originalCodes}）"
+                            message = $"已从文件 {resolved.Display} 替换文档内容（编码: {originalCodes}）"
                         }
                     };
                 }

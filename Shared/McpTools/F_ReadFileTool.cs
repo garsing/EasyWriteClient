@@ -28,23 +28,23 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[DEBUG] read_file工具开始执行");
 
-                    string filename = args.ContainsKey("filename") ? args["filename"]?.ToString() : "";
                     string encoding = args.ContainsKey("encoding") ? args["encoding"]?.ToString().ToLower() : "auto";
                     int maxLength = args.ContainsKey("max_length") ? Convert.ToInt32(args["max_length"]) : -1;
                     int offset = args.ContainsKey("offset") ? Convert.ToInt32(args["offset"]) : 0;
 
-                    if (string.IsNullOrEmpty(filename))
+                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out string pathError, "path", "filename"))
                     {
-                        return new ToolResult { Success = false, Error = "必须提供filename参数" };
+                        return new ToolResult { Success = false, Error = pathError };
                     }
 
-                    var ensure = await McpToolsHelpers.EnsureWorkspaceFileAsync(filename).ConfigureAwait(false);
-                    if (!ensure.success)
+                    var read = await FilePathResolver.ReadBytesAsync(resolved).ConfigureAwait(false);
+                    if (!read.Success)
                     {
-                        return new ToolResult { Success = false, Error = ensure.error };
+                        return new ToolResult { Success = false, Error = read.Error };
                     }
 
-                    string absolutePath = ensure.localPath;
+                    string filename = resolved.Display;
+                    string absolutePath = resolved.LocalPath;
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 读取文件: {absolutePath}");
 
                     FileInfo fileInfo = new FileInfo(absolutePath);

@@ -116,7 +116,8 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = $"表格格式提取失败: {ex.Message}" };
                     }
 
-                    string filename = TableFormatFileHelper.GenerateFilename(
+                    string filename = FilePathResolver.TryGetArg(args, "path")
+                        ?? TableFormatFileHelper.GenerateFilename(
                         document,
                         tableIndex,
                         "format");

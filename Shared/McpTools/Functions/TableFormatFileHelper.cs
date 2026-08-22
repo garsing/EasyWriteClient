@@ -32,17 +32,24 @@ namespace WordAddIn1
         {
             try
             {
-                string filePath = WorkspacePathResolver.ResolveWritePath(filename);
+                if (!FilePathResolver.TryResolve(filename, out ResolvedFilePath resolved, out string pathError))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[TableFormatFileHelper] 路径失败：{pathError}");
+                    return (false, xmlContent);
+                }
 
                 if (!string.IsNullOrEmpty(xmlContent))
                 {
                     XDocument.Parse(xmlContent);
                 }
 
-                File.WriteAllText(filePath, xmlContent);
-                bool uploadSuccess = await McpToolsHelpers.UploadWorkspaceFileAsync(filePath, filename);
-                System.Diagnostics.Debug.WriteLine(
-                    $"[TableFormatFileHelper] 上传 {filename} 结果: {uploadSuccess}");
+                var written = await FilePathResolver.WriteAsync(resolved, xmlContent).ConfigureAwait(false);
+                if (!written.Success)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[TableFormatFileHelper] 写入失败：{written.Error}");
+                    return (false, xmlContent);
+                }
+
                 return (true, xmlContent);
             }
             catch (Exception ex)

@@ -130,14 +130,18 @@ namespace WordAddIn1
 
                         parsedCsvFileName = fileName;
 
-                        var ensure = await McpToolsHelpers.EnsureWorkspaceFileAsync(Path.GetFileName(fileName))
-                            .ConfigureAwait(false);
-                        if (!ensure.success)
+                        if (!FilePathResolver.TryResolve(fileName, out ResolvedFilePath csvResolved, out string csvError))
                         {
-                            return new ChartXmlParseResult { Config = null, Error = ensure.error };
+                            return new ChartXmlParseResult { Config = null, Error = csvError };
                         }
 
-                        string csvFilePath = ensure.localPath;
+                        var csvRead = await FilePathResolver.ReadBytesAsync(csvResolved).ConfigureAwait(false);
+                        if (!csvRead.Success || string.IsNullOrEmpty(csvResolved.LocalPath) || !File.Exists(csvResolved.LocalPath))
+                        {
+                            return new ChartXmlParseResult { Config = null, Error = csvRead.Error ?? csvError ?? "CSV 文件不可用" };
+                        }
+
+                        string csvFilePath = csvResolved.LocalPath;
                         
                         // 读取CSV文件
                         bool hasHeader = bool.TryParse(dataFileElement.Attribute("hasHeader")?.Value, out bool header) && header;

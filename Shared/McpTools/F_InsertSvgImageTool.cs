@@ -39,7 +39,34 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_insert_svg_image] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
+                    string pathArg = FilePathResolver.TryGetArg(args, "path");
                     string svg = args != null && args.ContainsKey("svg") ? args["svg"]?.ToString() : null;
+                    if (!string.IsNullOrEmpty(pathArg) && !string.IsNullOrEmpty(svg))
+                    {
+                        return Fail("path 与 svg 只能传其中一个");
+                    }
+
+                    if (string.IsNullOrEmpty(pathArg) && string.IsNullOrEmpty(svg))
+                    {
+                        return Fail("必须提供 path 或 svg");
+                    }
+
+                    if (!string.IsNullOrEmpty(pathArg))
+                    {
+                        if (!FilePathResolver.TryResolve(pathArg, out ResolvedFilePath svgResolved, out string pathError))
+                        {
+                            return Fail(pathError);
+                        }
+
+                        var svgRead = await FilePathResolver.ReadAsync(svgResolved).ConfigureAwait(true);
+                        if (!svgRead.Success)
+                        {
+                            return Fail(svgRead.Error);
+                        }
+
+                        svg = svgRead.Text;
+                    }
+
                     var validation = SvgSecurityValidator.Validate(svg);
                     if (!validation.Success)
                     {

@@ -48,26 +48,24 @@ namespace WordAddIn1
                     {
                         xmlContent = args["xml_content"].ToString();
                     }
-                    else if (args.ContainsKey("filename") && !string.IsNullOrEmpty(args["filename"]?.ToString()))
+                    else if (FilePathResolver.TryGetArg(args, "path", "filename") != null)
                     {
-                        string filename = args["filename"].ToString();
-                        if (!UserService.Instance.CheckLoginStatus()
-                            || string.IsNullOrWhiteSpace(UserService.Instance.WorkspaceRootEffective))
+                        if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out string pathError, "path", "filename"))
                         {
-                            return new ToolResult { Success = false, Error = "用户未登录或工作区未初始化" };
+                            return new ToolResult { Success = false, Error = pathError };
                         }
 
-                        var ensure = await McpToolsHelpers.EnsureWorkspaceFileAsync(filename).ConfigureAwait(false);
-                        if (!ensure.success)
+                        var xmlRead = await FilePathResolver.ReadAsync(xmlResolved).ConfigureAwait(false);
+                        if (!xmlRead.Success)
                         {
-                            return new ToolResult { Success = false, Error = ensure.error };
+                            return new ToolResult { Success = false, Error = xmlRead.Error };
                         }
 
-                        xmlContent = File.ReadAllText(ensure.localPath, Encoding.UTF8);
+                        xmlContent = xmlRead.Text;
                     }
                     else
                     {
-                        return new ToolResult { Success = false, Error = "必须提供 filename 或 xml_content 参数" };
+                        return new ToolResult { Success = false, Error = "必须提供 path 或 xml_content 参数" };
                     }
 
                     var applyResult = TableDataApplyHelper.ApplyTableDataToExistingTable(

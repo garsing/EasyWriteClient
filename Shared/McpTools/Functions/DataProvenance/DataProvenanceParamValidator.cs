@@ -82,7 +82,7 @@ namespace WordAddIn1
             return new ProvenanceSourceInput
             {
                 Type = obj["type"]?.ToString()?.Trim(),
-                File = obj["file"]?.ToString()?.Trim(),
+                File = (obj["path"] ?? obj["file"])?.ToString()?.Trim(),
                 DataSource = obj["data_source"]?.ToString()?.Trim(),
                 Title = obj["title"]?.ToString()?.Trim(),
                 Url = obj["url"]?.ToString()?.Trim(),

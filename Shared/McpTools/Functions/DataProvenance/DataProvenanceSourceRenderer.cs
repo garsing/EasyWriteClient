@@ -192,19 +192,15 @@ namespace WordAddIn1
 
         private static string RenderFile(ProvenanceSourceInput src)
         {
-            string file = Require(src.File, "file");
-            if (file.Contains("/") || file.Contains("\\"))
+            string file = Require(src.File, "path");
+            if (!FilePathResolver.TryResolve(file, out ResolvedFilePath resolved, out string pathError)
+                || string.IsNullOrEmpty(resolved.LocalPath)
+                || !File.Exists(resolved.LocalPath))
             {
-                throw new InvalidOperationException("file 须为裸文件名，不可含路径");
+                throw new InvalidOperationException(pathError ?? $"文件不存在: {file}");
             }
 
-            string path = WorkspacePathResolver.ResolveReadPath(file, ConversationContext.CurrentId);
-            if (string.IsNullOrEmpty(path) || !File.Exists(path))
-            {
-                throw new InvalidOperationException($"工作区文件不存在: {file}");
-            }
-
-            string display = path.Replace('\\', '/');
+            string display = resolved.Display;
             return Require(src.Title, "title")
                 + "，数据来源：" + Require(src.DataSource, "data_source")
                 + "，文件：" + display;

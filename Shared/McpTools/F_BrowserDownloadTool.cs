@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 using WordAddIn1.BrowserHost;
 
@@ -29,6 +30,11 @@ namespace WordAddIn1
                     if (hasRef == hasUrl)
                     {
                         return Fail("须且仅能提供 ref 或 url 之一");
+                    }
+
+                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath dest, out string destError, "path"))
+                    {
+                        return Fail(destError ?? "必须提供 path");
                     }
 
                     BrowserChannel channel;
@@ -72,6 +78,36 @@ namespace WordAddIn1
                         return Fail(result.Error ?? "download 失败");
                     }
 
+                    ResolvedFilePath downloaded = null;
+                    if (!string.IsNullOrEmpty(result.Filename))
+                    {
+                        if (!FilePathResolver.TryResolve(result.Filename, out downloaded, out _)
+                            || !File.Exists(downloaded.LocalPath))
+                        {
+                            FilePathResolver.TryResolve(
+                                "browser_dl/" + Path.GetFileName(result.Filename),
+                                out downloaded,
+                                out _);
+                        }
+                    }
+
+                    if (downloaded != null
+                        && File.Exists(downloaded.LocalPath)
+                        && !string.Equals(downloaded.LocalPath, dest.LocalPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var copied = await FilePathResolver
+                            .WriteBytesAsync(dest, File.ReadAllBytes(downloaded.LocalPath))
+                            .ConfigureAwait(true);
+                        if (!copied.Success)
+                        {
+                            return Fail(copied.Error);
+                        }
+                    }
+                    else if (!File.Exists(dest.LocalPath))
+                    {
+                        return Fail("下载完成但无法落到指定 path");
+                    }
+
                     var data = new Dictionary<string, object>
                     {
                         ["channel_id"] = result.Channel.ChannelId,
@@ -79,7 +115,8 @@ namespace WordAddIn1
                         ["track"] = result.Channel.Track,
                         ["url"] = result.Url ?? "",
                         ["title"] = result.Title ?? "",
-                        ["filename"] = result.Filename ?? "",
+                        ["path"] = dest.Display,
+                        ["filename"] = dest.Display,
                         ["bytes"] = result.Bytes,
                         ["refs_invalidated"] = result.RefsInvalidated,
                         ["message"] = result.Message ?? "",

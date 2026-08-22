@@ -49,10 +49,9 @@ const manipulateTools = [
   'F_modify_yaml_file',
   'F_process_paragraph_actions',
   'F_process_document_actions',
-  'F_write_format_file',
+  'F_write_file',
   'B_calculate',
   'B_run_python',
-  'B_write_python',
   'F_run_terminal',
   'F_close_terminal',
   'F_close_document'
@@ -84,7 +83,7 @@ const toolsHidden = [
 const toolsWithDetails = [
   'F_process_paragraph_actions',
   'F_read_file',
-  'B_write_python',
+  'F_write_file',
   'F_run_terminal',
   'F_close_terminal',
   'F_close_document'
@@ -101,12 +100,29 @@ const shouldShowDetails = computed(() => {
 })
 
 // 根据工具类型确定语言类型
+function guessWriteLanguage(path) {
+  const p = String(path || '').toLowerCase()
+  if (p.endsWith('.py')) return 'python'
+  if (p.endsWith('.xml')) return 'xml'
+  if (p.endsWith('.yaml') || p.endsWith('.yml')) return 'yaml'
+  if (p.endsWith('.json')) return 'json'
+  return 'text'
+}
+
+function tryParsePath(raw) {
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed.path || parsed.filename || ''
+  } catch {
+    const match = String(raw || '').match(/"path"\s*:\s*"([^"]*)"/)
+    return match ? match[1] : ''
+  }
+}
+
 const languageType = computed(() => {
   switch (props.toolName) {
-    case 'B_write_python':
-      return 'python'
-    case 'F_write_format_file':
-      return 'yaml'
+    case 'F_write_file':
+      return guessWriteLanguage(tryParsePath(props.content))
     case 'F_process_paragraph_actions':
     case 'F_process_document_actions':
     case 'F_run_terminal':
@@ -131,22 +147,21 @@ const formattedContent = computed(() => {
     
     switch (props.toolName) {
       case 'F_read_file':
-        // 只显示 filename
+        if (parsed.path !== undefined && parsed.path !== null) {
+          return String(parsed.path)
+        }
         if (parsed.filename !== undefined && parsed.filename !== null) {
           return String(parsed.filename)
         }
-        // 如果没有 filename，显示完整 JSON
         return JSON.stringify(parsed, null, 2)
         
-      case 'F_write_format_file':
-        // 只显示 content
-        if (parsed.content !== undefined && parsed.content !== null) {
-          // 直接返回 content 的值，不管是否为空
-          return String(parsed.content)
-        }
-        // 如果没有 content 字段，显示完整 JSON（用于调试）
-        console.warn('[ToolCallBoxDisplayRule] F_write_format_file: content 字段不存在', parsed)
-        return JSON.stringify(parsed, null, 2)
+      case 'F_write_file': {
+        const writePath = parsed.path || parsed.filename || ''
+        const body = parsed.content !== undefined && parsed.content !== null
+          ? String(parsed.content)
+          : JSON.stringify(parsed, null, 2)
+        return writePath ? `写入 "${writePath}"\n\n${body}` : body
+      }
         
       case 'F_run_terminal':
         if (parsed.command !== undefined && parsed.command !== null) {
@@ -154,22 +169,6 @@ const formattedContent = computed(() => {
         }
         return JSON.stringify(parsed, null, 2)
 
-      case 'B_write_python':
-        // 显示 "写入[filename]文件" + python_code 内容
-        let result = ''
-        if (parsed.filename !== undefined && parsed.filename !== null) {
-          result = `写入 "${parsed.filename}" 文件\n\n`
-        }
-        // 尝试多种可能的字段名
-        const pythonCode = parsed.python_code || parsed.pythonCode || parsed.code
-        if (pythonCode !== undefined && pythonCode !== null) {
-          result += String(pythonCode)
-        } else {
-          // 如果没有找到代码字段，显示完整 JSON
-          result += JSON.stringify(parsed, null, 2)
-        }
-        return result
-        
       case 'F_process_paragraph_actions':
       case 'F_process_document_actions':
         // 显示完整 JSON
@@ -183,7 +182,7 @@ const formattedContent = computed(() => {
     // 如果不是有效的JSON，可能是还在流式输出中
     // 对于特定工具，尝试提取部分内容
     
-    if (props.toolName === 'F_write_format_file') {
+    if (props.toolName === 'F_write_file') {
       // 尝试从原始字符串中提取 content 字段
       // content 可能是多行字符串，需要处理转义字符
       // 使用更强大的正则表达式来匹配可能包含换行符和转义字符的字符串
@@ -197,7 +196,8 @@ const formattedContent = computed(() => {
           .replace(/\\r/g, '\r')
           .replace(/\\"/g, '"')
           .replace(/\\\\/g, '\\')
-        return decodedContent
+        const pathMatch = props.content.match(/"path"\s*:\s*"([^"]*)"/)
+        return pathMatch ? `写入 "${pathMatch[1]}"\n\n${decodedContent}` : decodedContent
       }
       
       // 如果正则匹配失败，尝试查找 content 字段的位置
@@ -233,99 +233,14 @@ const formattedContent = computed(() => {
               }
               i++
             }
-            return extracted
+            const pathMatch = props.content.match(/"path"\s*:\s*"([^"]*)"/)
+            return pathMatch ? `写入 "${pathMatch[1]}"\n\n${extracted}` : extracted
           }
         }
       }
     }
     
-    if (props.toolName === 'B_write_python') {
-      // 使用手动解析方法提取 python_code（适用于流式输出和不完整 JSON）
-      let pythonCodeMatch = null
-      let isIncompleteMatch = false
-      
-      const pythonCodeIndex = props.content.indexOf('"python_code"')
-      if (pythonCodeIndex !== -1) {
-        // 找到 python_code 字段，手动提取值
-        const afterPythonCode = props.content.substring(pythonCodeIndex + 13) // 跳过 "python_code"
-        const colonIndex = afterPythonCode.indexOf(':')
-        if (colonIndex !== -1) {
-          const afterColon = afterPythonCode.substring(colonIndex + 1).trim()
-          // 如果以引号开始，尝试提取字符串值
-          if (afterColon.startsWith('"')) {
-            let extracted = ''
-            let i = 1 // 跳过第一个引号
-            let escaped = false
-            while (i < afterColon.length) {
-              const char = afterColon[i]
-              if (escaped) {
-                // 处理转义字符
-                if (char === 'n') extracted += '\n'
-                else if (char === 't') extracted += '\t'
-                else if (char === 'r') extracted += '\r'
-                else if (char === '"') extracted += '"'
-                else if (char === '\\') extracted += '\\'
-                else extracted += char
-                escaped = false
-              } else if (char === '\\') {
-                escaped = true
-              } else if (char === '"') {
-                // 找到结束引号，字符串完整
-                pythonCodeMatch = { 1: extracted }
-                break
-              } else {
-                extracted += char
-              }
-              i++
-            }
-            // 如果没有找到结束引号，说明还在流式输出中（不完整匹配）
-            if (i >= afterColon.length && !pythonCodeMatch) {
-              pythonCodeMatch = { 1: extracted }
-              isIncompleteMatch = true
-            }
-          }
-        }
-      }
-      
-      const filenameMatch = props.content.match(/"filename"\s*:\s*"([^"]*)"/)
-      
-      if (pythonCodeMatch || filenameMatch) {
-        let result = ''
-        if (filenameMatch) {
-          result = `写入 "${filenameMatch[1]}" 文件\n\n`
-        }
-        if (pythonCodeMatch && pythonCodeMatch[1] !== undefined) {
-          // 手动解析时转义字符已经处理过了，直接使用
-          result += pythonCodeMatch[1]
-          
-          // 调试日志（仅在开发环境）
-          if (process.env.NODE_ENV === 'development') {
-            console.log('[ToolCallBoxDisplayRule] B_write_python: 提取 python_code', {
-              contentLength: props.content.length,
-              pythonCodeLength: pythonCodeMatch[1].length,
-              isIncomplete: isIncompleteMatch
-            })
-          }
-        }
-        // 如果找到了匹配（pythonCodeMatch 或 filenameMatch），返回结果
-        // 即使 pythonCodeMatch[1] 为空字符串，也返回（可能是空代码）
-        return result
-      } else {
-        // 调试日志：无法识别 python_code
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('[ToolCallBoxDisplayRule] B_write_python: 无法识别 python_code', {
-            contentLength: props.content.length,
-            contentPreview: props.content.substring(0, 200),
-            hasPythonCodeField: props.content.includes('"python_code"')
-          })
-        }
-      }
-    }
-    
-    // 如果解析失败且无法提取，对于 B_write_python 工具，返回截断的预览以避免性能问题
-    // 其他工具返回原内容
-    if (props.toolName === 'B_write_python') {
-      // 如果无法识别 python_code，返回一个简短的提示，避免对大量 JSON 进行语法高亮
+    if (props.toolName === 'F_write_file') {
       const preview = props.content.length > 500 
         ? props.content.substring(0, 500) + '...' 
         : props.content

@@ -105,25 +105,30 @@ namespace WordAddIn1
             }
 
             Exception lastIllegal = null;
+            string lastResolveError = null;
             foreach (string candidate in candidates)
             {
-                string resolved;
-                try
+                if (!FilePathResolver.TryResolve(candidate, out ResolvedFilePath mapped, out string resolveError))
                 {
-                    resolved = Path.GetFullPath(candidate);
-                }
-                catch (Exception ex)
-                {
-                    lastIllegal = ex;
+                    lastResolveError = resolveError;
+                    try
+                    {
+                        Path.GetFullPath(candidate);
+                    }
+                    catch (Exception ex)
+                    {
+                        lastIllegal = ex;
+                    }
+
                     continue;
                 }
 
-                bool exists = File.Exists(resolved);
+                bool exists = File.Exists(mapped.LocalPath);
                 if (createBlank)
                 {
                     if (!exists)
                     {
-                        fullPath = resolved;
+                        fullPath = mapped.LocalPath;
                         return true;
                     }
 
@@ -132,7 +137,7 @@ namespace WordAddIn1
 
                 if (exists)
                 {
-                    fullPath = resolved;
+                    fullPath = mapped.LocalPath;
                     return true;
                 }
             }
@@ -141,27 +146,33 @@ namespace WordAddIn1
             {
                 foreach (string candidate in candidates)
                 {
-                    try
+                    if (!FilePathResolver.TryResolve(candidate, out ResolvedFilePath mapped, out string resolveError))
                     {
-                        string resolved = Path.GetFullPath(candidate);
-                        if (File.Exists(resolved))
-                        {
-                            error = "create_blank=true 但路径已存在，拒绝覆盖: " + resolved;
-                            return false;
-                        }
+                        lastResolveError = resolveError;
+                        continue;
+                    }
 
-                        fullPath = resolved;
-                        return true;
-                    }
-                    catch (Exception)
+                    if (File.Exists(mapped.LocalPath))
                     {
+                        error = "create_blank=true 但路径已存在，拒绝覆盖: " + mapped.LocalPath;
+                        return false;
                     }
+
+                    fullPath = mapped.LocalPath;
+                    return true;
                 }
 
-                error = lastIllegal != null
-                    ? "路径非法: " + lastIllegal.Message
-                      + "（文件名勿用英文引号 \"，请用中文 “” 或去掉引号）"
-                    : "无法解析新建路径";
+                error = lastResolveError
+                    ?? (lastIllegal != null
+                        ? "路径非法: " + lastIllegal.Message
+                          + "（文件名勿用英文引号 \"，请用中文 “” 或去掉引号）"
+                        : "无法解析新建路径");
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(lastResolveError) && candidates.Count == 1)
+            {
+                error = lastResolveError;
                 return false;
             }
 
