@@ -24,6 +24,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3650.58" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="PdfiumViewer.Native.x86_64.v8-xfa" Version="2018.4.8.256" />
+    <PackageReference Include="PdfiumViewer.Native.x86.v8-xfa" Version="2018.4.8.256" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -68,6 +70,19 @@
       SkipUnchangedFiles="true"
       Condition="Exists('$(_SharedWwwroot)\index.html')" />
     <Warning Text="Shared/Frontend/wwwroot 不存在或缺少 index.html。请先在 Shared/Frontend 执行 npm run build。" Condition="!Exists('$(_SharedWwwroot)\index.html')" />
+  </Target>
+
+  <!-- PdfiumViewer 只带托管程序集；原生 pdfium.dll 须落到输出目录的 x64/x86 -->
+  <Target Name="CopyPdfiumNative" AfterTargets="Build">
+    <PropertyGroup>
+      <_PdfiumX64>$(MSBuildThisFileDirectory)..\Plugin\packages\PdfiumViewer.Native.x86_64.v8-xfa.2018.4.8.256\Build\x64\pdfium.dll</_PdfiumX64>
+      <_PdfiumX86>$(MSBuildThisFileDirectory)..\Plugin\packages\PdfiumViewer.Native.x86.v8-xfa.2018.4.8.256\Build\x86\pdfium.dll</_PdfiumX86>
+    </PropertyGroup>
+    <MakeDir Directories="$(OutputPath)x64" Condition="Exists('$(_PdfiumX64)')" />
+    <MakeDir Directories="$(OutputPath)x86" Condition="Exists('$(_PdfiumX86)')" />
+    <Copy SourceFiles="$(_PdfiumX64)" DestinationFolder="$(OutputPath)x64" SkipUnchangedFiles="true" Condition="Exists('$(_PdfiumX64)')" />
+    <Copy SourceFiles="$(_PdfiumX86)" DestinationFolder="$(OutputPath)x86" SkipUnchangedFiles="true" Condition="Exists('$(_PdfiumX86)')" />
+    <Warning Text="未找到 x64\pdfium.dll（$(_PdfiumX64)）。请还原 Plugin 的 PdfiumViewer.Native 包。" Condition="!Exists('$(_PdfiumX64)')" />
   </Target>
 
   <Target Name="CopyBrowserBridge" AfterTargets="Build">
