@@ -158,7 +158,7 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 按工作区百分比开窗。注册保持原来的 25%×40%；登录同宽、高度改为 32%。
+        /// 按工作区百分比开窗。注册保持 25%×40%；登录约 31%×43%。
         /// </summary>
         internal void ApplyViewMode(bool registerView)
         {
@@ -176,11 +176,10 @@ namespace WordAddIn1
             Screen screen = IsHandleCreated ? Screen.FromControl(this) : Screen.PrimaryScreen;
             Rectangle area = screen?.WorkingArea ?? new Rectangle(0, 0, 1920, 1080);
             int margin = 40;
-            // 注册完全沿用改之前的算法；登录只降低高度百分比。
-            int minW = 520;
-            int minH = _registerView ? 460 : 400;
-            double ratioW = 0.25;
-            double ratioH = _registerView ? 0.40 : 0.32;
+            int minW = _registerView ? 520 : 600;
+            int minH = _registerView ? 460 : 480;
+            double ratioW = _registerView ? 0.25 : 0.31;
+            double ratioH = _registerView ? 0.40 : 0.43;
             int width = Math.Max(minW, (int)Math.Round(area.Width * ratioW));
             int height = Math.Max(minH, (int)Math.Round(area.Height * ratioH));
             width = Math.Min(width, Math.Max(minW, area.Width - margin * 2));
