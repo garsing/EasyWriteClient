@@ -96,7 +96,9 @@ namespace WordAddIn1
 
         public IList<string> GetMethodNames()
         {
-            return _methodToToolName.Keys.ToList();
+            var names = _methodToToolName.Keys.ToList();
+            names.Add("workspace.pullFromBackend");
+            return names;
         }
 
         public async Task<ToolResult> InvokeRawAsync(string method, Dictionary<string, object> parameters)
@@ -104,6 +106,17 @@ namespace WordAddIn1
             if (string.IsNullOrWhiteSpace(method))
             {
                 return new ToolResult { Success = false, Error = "method is required" };
+            }
+
+            if (string.Equals(method, "workspace.pullFromBackend", StringComparison.Ordinal))
+            {
+                string conversationId = null;
+                if (parameters != null && parameters.ContainsKey("conversation_id"))
+                {
+                    conversationId = parameters["conversation_id"]?.ToString();
+                }
+
+                return await WorkspaceReconcile.PullAssumingLockedAsync(conversationId).ConfigureAwait(false);
             }
 
             if (!_methodToToolName.TryGetValue(method, out var toolName))
@@ -133,6 +146,22 @@ namespace WordAddIn1
                 return new ToolResult { Success = false, Error = "cancelled by user" };
             }
 
+            if (WorkspaceReconcile.ShouldWrapFrontendWrite(toolName, args))
+            {
+                int ttl = WorkspaceReconcile.TtlSecForTool(toolName, args);
+                return await WorkspaceReconcile
+                    .AroundFrontendWriteAsync(ttl, () => InvokeHandlerCoreAsync(toolName, handler, args))
+                    .ConfigureAwait(false);
+            }
+
+            return await InvokeHandlerCoreAsync(toolName, handler, args).ConfigureAwait(false);
+        }
+
+        private static async Task<ToolResult> InvokeHandlerCoreAsync(
+            string toolName,
+            Func<Dictionary<string, object>, Task<ToolResult>> handler,
+            Dictionary<string, object> args)
+        {
             if (toolName == "F_list_document_operations" || toolName == "F_restore_document_checkpoint")
             {
                 return await handler(args);

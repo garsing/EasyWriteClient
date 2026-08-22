@@ -1457,7 +1457,21 @@ namespace EasyWriteClient.Desktop
                 return false;
             }
 
-            return await _wsClient.BindAsync(conversationId).ConfigureAwait(false);
+            bool bound = await _wsClient.BindAsync(conversationId).ConfigureAwait(false);
+            if (bound)
+            {
+                try
+                {
+                    await WorkspaceReconcile.PullForOpenConversationAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("[DesktopChatSurface] 打开对话对账失败: " + ex.Message);
+                    ConversationContext.WorkspaceReady = false;
+                }
+            }
+
+            return bound;
         }
 
         private async Task<object> HandleGetToolAliasAsync(object data)

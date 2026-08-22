@@ -59,7 +59,7 @@ namespace WordAddIn1
                             bytes = info.Exists ? info.Length : 0,
                             encoding = "utf-8",
                             message = resolved.Kind == FilePathKind.Workspace
-                                ? $"已写入工作区并同步: {resolved.Display}"
+                                ? $"已写入工作区: {resolved.Display}"
                                 : $"已写入本机: {resolved.Display}"
                         }
                     };

@@ -294,7 +294,9 @@ namespace WordAddIn1
         /// </summary>
         private static Task<bool> UploadModifiedYamlFileToUserDirectory(string filePath, string filename)
         {
-            return McpToolsHelpers.UploadWorkspaceFileAsync(filePath, filename);
+            _ = filePath;
+            _ = filename;
+            return Task.FromResult(true);
         }
     }
 }

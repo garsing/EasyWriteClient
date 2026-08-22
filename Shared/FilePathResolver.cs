@@ -31,6 +31,7 @@ namespace WordAddIn1
 
     /// <summary>
     /// 磁盘路径统一入口（D1 / D13 / D18 / D22）。清单内 F_* 只调本类型。
+    /// 工作区读只碰本机（不再 Ensure）；写只落盘（不再即时上传）。
     /// </summary>
     public static class FilePathResolver
     {
@@ -188,22 +189,6 @@ namespace WordAddIn1
                 return FailIo($"写入文件失败: {ex.Message}", resolved);
             }
 
-            if (resolved.Kind == FilePathKind.Workspace)
-            {
-                if (string.IsNullOrEmpty(resolved.Relative))
-                {
-                    return FailIo("工作区相对路径无效", resolved);
-                }
-
-                bool uploaded = await McpToolsHelpers
-                    .UploadWorkspaceFileAsync(resolved.LocalPath, resolved.Relative)
-                    .ConfigureAwait(false);
-                if (!uploaded)
-                {
-                    return FailIo("已写入本机，但同步到后端会话目录失败", resolved);
-                }
-            }
-
             return new FilePathIoResult
             {
                 Success = true,
@@ -228,13 +213,16 @@ namespace WordAddIn1
                 return new FilePathIoResult { Success = true, Path = resolved };
             }
 
-            var ensure = await McpToolsHelpers.EnsureWorkspaceFileAsync(resolved.Relative).ConfigureAwait(false);
-            if (!ensure.success || string.IsNullOrEmpty(ensure.localPath) || !File.Exists(ensure.localPath))
+            if (!ConversationContext.WorkspaceReady)
             {
-                return FailIo(string.IsNullOrEmpty(ensure.error) ? $"文件不存在: {resolved.Display}" : ensure.error, resolved);
+                return FailIo("会话工作区未对齐", resolved);
             }
 
-            resolved.LocalPath = ensure.localPath;
+            if (!File.Exists(resolved.LocalPath))
+            {
+                return FailIo("文件不存在: " + resolved.Display, resolved);
+            }
+
             return new FilePathIoResult { Success = true, Path = resolved };
         }
 

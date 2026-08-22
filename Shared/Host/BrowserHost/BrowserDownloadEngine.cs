@@ -71,7 +71,6 @@ namespace WordAddIn1.BrowserHost
                     }
 
                     string contentType = resp.Content.Headers.ContentType?.MediaType;
-                    await UploadOrThrowAsync(localPath, relative).ConfigureAwait(true);
 
                     return new BrowserDownloadFileResult
                     {
@@ -159,8 +158,6 @@ namespace WordAddIn1.BrowserHost
             {
                 relative = BuildRelativePath(Path.GetFileName(captured.LocalPath));
             }
-
-            await UploadOrThrowAsync(captured.LocalPath, relative).ConfigureAwait(true);
 
             return new BrowserDownloadFileResult
             {
@@ -385,14 +382,11 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
-        private static async Task UploadOrThrowAsync(string localPath, string relative)
+        private static Task UploadOrThrowAsync(string localPath, string relative)
         {
-            bool ok = await McpToolsHelpers.UploadWorkspaceFileAsync(localPath, relative).ConfigureAwait(true);
-            if (!ok)
-            {
-                // 本地已有文件仍返回路径，但提示上传失败更清晰
-                throw new InvalidOperationException("文件已写入本地工作区，但上传云端失败: " + relative);
-            }
+            _ = localPath;
+            _ = relative;
+            return Task.CompletedTask;
         }
 
         private static void TryDelete(string path)

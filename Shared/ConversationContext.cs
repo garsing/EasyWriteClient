@@ -1,3 +1,5 @@
+using System;
+
 namespace WordAddIn1
 {
     /// <summary>
@@ -10,7 +12,19 @@ namespace WordAddIn1
         public static string CurrentId
         {
             get => _currentId;
-            set => _currentId = string.IsNullOrEmpty(value) ? "-1" : value;
+            set
+            {
+                string next = string.IsNullOrEmpty(value) ? "-1" : value;
+                if (!string.Equals(_currentId, next, StringComparison.Ordinal))
+                {
+                    WorkspaceReady = false;
+                }
+
+                _currentId = next;
+            }
         }
+
+        /// <summary>打开对话对账成功后为 true。区内读在未对齐时失败。</summary>
+        public static bool WorkspaceReady { get; set; }
     }
 }

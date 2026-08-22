@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -535,6 +536,195 @@ namespace WordAddIn1
             return new JsonResult { Success = false, StatusCode = 0, Body = "" };
         }
 
+        public sealed class WorkspaceLockResult
+        {
+            public bool Acquired { get; set; }
+            public bool HeldByOther { get; set; }
+            public string LockId { get; set; }
+            public DateTime? ExpiresAtUtc { get; set; }
+            public string Error { get; set; }
+        }
+
+        public static async Task<WorkspaceLockResult> TryAcquireWorkspaceLockAsync(
+            int ttlSec,
+            string conversationId,
+            string reason)
+        {
+            var result = new WorkspaceLockResult();
+            try
+            {
+                if (!UserService.Instance.CheckLoginStatus())
+                {
+                    result.Error = "用户未登录";
+                    return result;
+                }
+
+                string baseUrl = ConfigManager.Config.Api.BaseUrl;
+                string url = baseUrl + "/files/lock";
+                string json = JsonConvert.SerializeObject(new
+                {
+                    ttl_sec = ttlSec,
+                    conversation_id = conversationId,
+                    reason = reason
+                });
+                JsonResult response = await PostJsonAuthenticatedAsync(url, json).ConfigureAwait(false);
+                if (response.Success)
+                {
+                    var dto = JsonConvert.DeserializeObject<LockOkDto>(response.Body);
+                    if (dto != null && dto.success && dto.data != null && !string.IsNullOrEmpty(dto.data.lock_id))
+                    {
+                        result.Acquired = true;
+                        result.LockId = dto.data.lock_id;
+                        if (TryParseUtc(dto.data.expires_at, out DateTime exp))
+                        {
+                            result.ExpiresAtUtc = exp;
+                        }
+
+                        return result;
+                    }
+
+                    result.Error = "申请写锁失败";
+                    return result;
+                }
+
+                if (response.StatusCode == HttpStatusCode.Conflict)
+                {
+                    result.HeldByOther = true;
+                    var conflict = JsonConvert.DeserializeObject<LockConflictDto>(response.Body);
+                    string expIso = conflict?.detail?.expires_at;
+                    if (TryParseUtc(expIso, out DateTime exp))
+                    {
+                        result.ExpiresAtUtc = exp;
+                    }
+
+                    result.Error = "用户工作区正被占用";
+                    return result;
+                }
+
+                result.Error = "申请写锁失败: " + response.StatusCode;
+                return result;
+            }
+            catch (Exception ex)
+            {
+                result.Error = ex.Message;
+                return result;
+            }
+        }
+
+        public static async Task ReleaseWorkspaceLockAsync(string lockId)
+        {
+            if (string.IsNullOrEmpty(lockId) || !UserService.Instance.CheckLoginStatus())
+            {
+                return;
+            }
+
+            try
+            {
+                string url = ConfigManager.Config.Api.BaseUrl + "/files/unlock";
+                string json = JsonConvert.SerializeObject(new { lock_id = lockId });
+                await PostJsonAuthenticatedAsync(url, json).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[BackendApiClient] unlock: " + ex.Message);
+            }
+        }
+
+        public static async Task<(bool ok, List<WorkspaceFileStat> files, string error)> ListWorkspaceTreeAsync(
+            string conversationId)
+        {
+            try
+            {
+                if (!UserService.Instance.CheckLoginStatus())
+                {
+                    return (false, null, "用户未登录");
+                }
+
+                string url = ConfigManager.Config.Api.BaseUrl + "/files/tree?conversation_id="
+                    + Uri.EscapeDataString(conversationId ?? "_pending");
+                JsonResult response = await GetAuthenticatedAsync(url).ConfigureAwait(false);
+                if (!response.Success)
+                {
+                    return (false, null, "列出会话文件失败: " + response.StatusCode);
+                }
+
+                var dto = JsonConvert.DeserializeObject<TreeResponseDto>(response.Body);
+                var files = new List<WorkspaceFileStat>();
+                if (dto?.success == true && dto.data?.files != null)
+                {
+                    foreach (var item in dto.data.files)
+                    {
+                        if (item == null || string.IsNullOrEmpty(item.relative_path))
+                        {
+                            continue;
+                        }
+
+                        DateTime mtime;
+                        TryParseUtc(item.mtime_utc, out mtime);
+                        files.Add(new WorkspaceFileStat
+                        {
+                            RelativePath = item.relative_path,
+                            Size = item.size,
+                            MtimeUtc = mtime
+                        });
+                    }
+                }
+
+                return (true, files, null);
+            }
+            catch (Exception ex)
+            {
+                return (false, null, ex.Message);
+            }
+        }
+
+        public static async Task<bool> DeleteWorkspaceFileAsync(string relativePath)
+        {
+            try
+            {
+                if (!UserService.Instance.CheckLoginStatus() || string.IsNullOrWhiteSpace(relativePath))
+                {
+                    return false;
+                }
+
+                string url = ConfigManager.Config.Api.BaseUrl + "/files/" + EncodeRelativePathForUrl(relativePath);
+                for (int attempt = 0; attempt < 2; attempt++)
+                {
+                    using (var client = CreateClient())
+                    {
+                        ApplyAuthHeaders(client, UserService.Instance);
+                        using (var request = new HttpRequestMessage(HttpMethod.Delete, url))
+                        {
+                            var response = await client.SendAsync(request).ConfigureAwait(false);
+                            if (response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NotFound)
+                            {
+                                return response.IsSuccessStatusCode;
+                            }
+
+                            if (attempt == 0 && response.StatusCode == HttpStatusCode.Unauthorized)
+                            {
+                                var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                                var newToken = await Auth.Instance.HandleApiResponse(response, body).ConfigureAwait(false);
+                                if (!string.IsNullOrEmpty(newToken))
+                                {
+                                    continue;
+                                }
+                            }
+
+                            return false;
+                        }
+                    }
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[BackendApiClient] delete: " + ex.Message);
+                return false;
+            }
+        }
+
         private static string EncodeRelativePathForUrl(string relativePath)
         {
             var segments = relativePath.Replace('\\', '/').Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
@@ -606,6 +796,46 @@ namespace WordAddIn1
         private sealed class StatDataDto
         {
             public string filename { get; set; }
+            public string relative_path { get; set; }
+            public long size { get; set; }
+            public string mtime_utc { get; set; }
+        }
+
+        private sealed class LockOkDto
+        {
+            public bool success { get; set; }
+            public LockDataDto data { get; set; }
+        }
+
+        private sealed class LockDataDto
+        {
+            public string lock_id { get; set; }
+            public string expires_at { get; set; }
+        }
+
+        private sealed class LockConflictDto
+        {
+            public LockConflictDetail detail { get; set; }
+        }
+
+        private sealed class LockConflictDetail
+        {
+            public string expires_at { get; set; }
+        }
+
+        private sealed class TreeResponseDto
+        {
+            public bool success { get; set; }
+            public TreeDataDto data { get; set; }
+        }
+
+        private sealed class TreeDataDto
+        {
+            public List<TreeFileDto> files { get; set; }
+        }
+
+        private sealed class TreeFileDto
+        {
             public string relative_path { get; set; }
             public long size { get; set; }
             public string mtime_utc { get; set; }

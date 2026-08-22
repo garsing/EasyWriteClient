@@ -309,23 +309,24 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 从用户工作区读取文件（本地优先；云端同名且更新则覆盖后再读）。
+        /// 从用户工作区读取文件（只读已对账的本地副本）。
         /// </summary>
         public static async Task<(bool success, string content, string error)> LoadUserFormatFileAsync(string filename)
         {
-            var ensure = await EnsureWorkspaceFileAsync(filename).ConfigureAwait(false);
-            if (!ensure.success)
+            if (!FilePathResolver.TryResolve(filename, out ResolvedFilePath resolved, out string pathError))
             {
-                return (false, null, ensure.error);
+                return (false, null, pathError);
+            }
+
+            var read = await FilePathResolver.ReadAsync(resolved).ConfigureAwait(false);
+            if (!read.Success)
+            {
+                return (false, null, read.Error);
             }
 
             try
             {
-                string content;
-                using (var reader = new StreamReader(ensure.localPath, true))
-                {
-                    content = reader.ReadToEnd();
-                }
+                string content = read.Text;
 
                 if (string.IsNullOrEmpty(content))
                 {
@@ -341,8 +342,9 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 确保工作区文件存在于本地（ResolveReadPath → 若云端同名且更新则覆盖下载 → 否则本地缺失时下载）。
+        /// 已废止：工具路径不得再 Ensure。对账走 <see cref="WorkspaceReconcile"/>。
         /// </summary>
+        [Obsolete("使用 WorkspaceReconcile，不要在工具路径 Ensure")]
         public static async Task<(bool success, string localPath, string error)> EnsureWorkspaceFileAsync(
             string filename,
             string conversationId = null)

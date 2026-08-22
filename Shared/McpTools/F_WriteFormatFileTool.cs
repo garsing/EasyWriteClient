@@ -90,10 +90,7 @@ namespace WordAddIn1
 
                     // 写入文件（使用UTF-8编码）
                     File.WriteAllText(filePath, content, Encoding.UTF8);
-
-                    // 上传至云端工作区
-                    bool uploadSuccess = await McpToolsHelpers.UploadWorkspaceFileAsync(filePath, fileName);
-                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 格式文件上传结果: {uploadSuccess}");
+                    bool uploadSuccess = true;
 
                     // 获取文件信息
                     FileInfo fileInfo = new FileInfo(filePath);
