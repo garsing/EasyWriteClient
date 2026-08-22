@@ -81,6 +81,8 @@ namespace WordAddIn1
                 { "document.insertImage", "F_insert_image" },
                 { "file.write", "F_write_file" },
                 { "file.read", "F_read_file" },
+                { "workspace.info", "F_workspace_info" },
+                { "workspace.copyFile", "F_copy_workspace_file" },
                 { "file.modifyYaml", "F_modify_yaml_file" },
                 { "file.csvToXml", "F_csv_to_xml" },
                 { "misc.greet", "F_greet" },

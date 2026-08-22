@@ -154,6 +154,11 @@ namespace WordAddIn1
                 return true;
             }
 
+            if (string.Equals(toolName, "F_copy_workspace_file", StringComparison.Ordinal))
+            {
+                return HasWorkspacePath(args, "dest");
+            }
+
             if (string.Equals(toolName, "F_read_excel_range", StringComparison.Ordinal))
             {
                 return HasWorkspacePath(args, "export_csv") || HasWorkspacePath(args, "path");
@@ -213,6 +218,7 @@ namespace WordAddIn1
         private static readonly HashSet<string> WrapTools = new HashSet<string>(StringComparer.Ordinal)
         {
             "F_write_file",
+            "F_copy_workspace_file",
             "F_modify_yaml_file",
             "F_csv_to_xml",
             "F_run_terminal",
