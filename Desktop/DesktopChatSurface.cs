@@ -507,14 +507,15 @@ namespace EasyWriteClient.Desktop
             {
                 try
                 {
+                    // 与插件一致：未登录只弹登录，登录成功后不再自动打开设置。
                     if (!UserService.Instance.IsLoggedIn)
                     {
                         await LoginForm.ShowDialogAsync(FindForm() ?? (IWin32Window)this, logoutFirst: false)
                             .ConfigureAwait(true);
-                        if (!UserService.Instance.CheckLoginStatus())
+                        return new
                         {
-                            return new { success = false, message = "未登录" };
-                        }
+                            success = UserService.Instance.CheckLoginStatus()
+                        };
                     }
 
                     await UserSettingsForm.ShowAsync(FindForm() ?? (IWin32Window)this).ConfigureAwait(true);

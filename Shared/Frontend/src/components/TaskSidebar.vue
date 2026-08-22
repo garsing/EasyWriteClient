@@ -440,7 +440,11 @@ onUnmounted(() => {
 
 async function handleOpenSettings () {
   try {
-    await sendMessage('openSettings', {})
+    if (!isLoggedIn.value) {
+      await sendMessage('openLoginWindow', {})
+    } else {
+      await sendMessage('openSettings', {})
+    }
     await refreshUsername()
   } catch (e) {
     console.error('[TaskSidebar] 打开设置失败:', e)
