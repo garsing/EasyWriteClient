@@ -126,7 +126,8 @@ body,
 
 .register-center .login-title--register {
   margin: 0 0 32px;
-  font-size: 26px;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .register-inline-banners {
@@ -474,7 +475,9 @@ body,
 .link-btn {
   padding: 0;
   font-size: 15px;
-  color: #666;
+  font-weight: 400;
+  font-family: inherit;
+  color: #8a8f98;
   background: none;
   border: none;
   cursor: pointer;
