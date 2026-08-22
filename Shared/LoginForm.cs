@@ -156,7 +156,7 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 按工作区百分比开窗。注册 35%×58%；登录约 31%×43%。
+        /// 按工作区百分比开窗。注册 31%×58%；登录约 31%×43%。
         /// </summary>
         internal void ApplyViewMode(bool registerView)
         {
@@ -172,7 +172,7 @@ namespace WordAddIn1
             int margin = 40;
             int minW = _registerView ? 520 : 600;
             int minH = _registerView ? 460 : 480;
-            double ratioW = _registerView ? 0.35 : 0.31;
+            double ratioW = 0.31;
             double ratioH = _registerView ? 0.58 : 0.43;
             int width = Math.Max(minW, (int)Math.Round(area.Width * ratioW));
             int height = Math.Max(minH, (int)Math.Round(area.Height * ratioH));
