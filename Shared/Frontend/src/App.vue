@@ -102,6 +102,7 @@ import { useChatFileUpload } from './composables/useChatFileUpload'
 import { ToolCallAccumulator } from './utils/toolCallAccumulator'
 import { fetchChatEmptyState } from './services/chatEmptyStateApi.js'
 import { listConversations, CONVERSATION_PAGE_SIZE } from './services/conversationsApi.js'
+import { clearApiConfigCache } from './services/knowledgeBaseApi.js'
 import {
   MAX_SELECTED_OPEN_FILES,
   toSelectedOpenFile,
@@ -1067,6 +1068,13 @@ onMounted(() => {
       const payload = data.data || data
       const mode = payload?.mode
       if (isDesktopHost) applyLayoutMode(mode)
+    } else if (data.type === 'authChanged') {
+      if (isDesktopHost) {
+        clearApiConfigCache()
+        draftSlotVisible.value = false
+        clearAllDraftInput()
+        refreshTaskList()
+      }
     }
   })
 })

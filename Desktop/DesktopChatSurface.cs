@@ -1495,11 +1495,29 @@ namespace EasyWriteClient.Desktop
         {
             _ = EnsureWsReadyAsync();
             _ = McpToolsInfo.EnsureRegistryAliasesAsync();
+            PushAuthChanged();
         }
 
         private void OnUserLoggedOut(object sender, UserEventArgs e)
         {
             _ = HandleAddConversationAsync(null);
+            PushAuthChanged();
+        }
+
+        /// <summary>通知主界面刷新侧栏用户名和历史任务。</summary>
+        private void PushAuthChanged()
+        {
+            if (_bridge == null)
+            {
+                return;
+            }
+
+            var user = UserService.Instance;
+            _bridge.SendToJavaScript("authChanged", new
+            {
+                isLoggedIn = user.IsLoggedIn,
+                username = user.UserName ?? string.Empty
+            });
         }
 
         private static object BuildToolCallsDelta(StreamMessage delta)

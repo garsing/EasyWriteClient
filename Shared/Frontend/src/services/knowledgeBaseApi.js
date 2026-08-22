@@ -6,6 +6,11 @@
 // API 配置缓存
 let apiConfigCache = null
 
+/** 登录/退出后清掉鉴权缓存，避免侧栏仍用旧 token。 */
+export function clearApiConfigCache() {
+  apiConfigCache = null
+}
+
 /**
  * 获取 API 配置（baseUrl 和认证头）
  * 未登录也可返回 baseUrl（headers 可为空）；无 Authorization 时不缓存，避免登录后仍用空头。

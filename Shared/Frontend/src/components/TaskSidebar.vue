@@ -212,7 +212,7 @@ const props = defineProps({
 
 const emit = defineEmits(['toggle', 'new-task', 'select', 'select-open-file', 'load-more'])
 
-const { sendMessage } = useWebViewBridge()
+const { sendMessage, onMessage } = useWebViewBridge()
 
 /** 历史任务列表是否展开（点「任务」标题收起/展开） */
 const tasksExpanded = ref(true)
@@ -411,12 +411,21 @@ function onGlobalKeyDown (e) {
   if (e.key === 'Escape') closeFileContextMenu()
 }
 
+function onAuthChanged () {
+  refreshUsername()
+}
+
+let offAuthChanged = null
+
 onMounted(() => {
   window.addEventListener('mousedown', onGlobalPointerDown, true)
   window.addEventListener('keydown', onGlobalKeyDown, true)
   window.addEventListener('blur', closeFileContextMenu)
   window.addEventListener('resize', closeFileContextMenu)
   window.addEventListener('scroll', closeFileContextMenu, true)
+  offAuthChanged = onMessage((data) => {
+    if (data?.type === 'authChanged') onAuthChanged()
+  })
   refreshUsername()
 })
 
@@ -426,6 +435,7 @@ onUnmounted(() => {
   window.removeEventListener('blur', closeFileContextMenu)
   window.removeEventListener('resize', closeFileContextMenu)
   window.removeEventListener('scroll', closeFileContextMenu, true)
+  if (typeof offAuthChanged === 'function') offAuthChanged()
 })
 
 async function handleOpenSettings () {
