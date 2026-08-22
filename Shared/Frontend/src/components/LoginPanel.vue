@@ -308,7 +308,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useWebViewBridge } from '../composables/useWebViewBridge'
 import {
   validatePhone,
@@ -456,9 +456,22 @@ function startSmsCountdown () {
   }, 1000)
 }
 
+onMounted(() => {
+  notifyWindowSize('login')
+})
+
 onUnmounted(() => {
   if (smsTimer) clearInterval(smsTimer)
 })
+
+function notifyWindowSize (mode) {
+  if (!isWebView2) {
+    return
+  }
+  sendMessage('resizeLoginWindow', { mode }).catch((err) => {
+    console.error('[LoginPanel] 调整窗口尺寸失败:', err)
+  })
+}
 
 function switchToRegister () {
   viewMode.value = 'register'
@@ -467,12 +480,14 @@ function switchToRegister () {
   registerError.value = ''
   registerBanner.value = ''
   refreshRegHints()
+  notifyWindowSize('register')
 }
 
 function switchToLogin () {
   viewMode.value = 'login'
   registerError.value = ''
   registerBanner.value = ''
+  notifyWindowSize('login')
 }
 
 async function handleSendSms (scene) {

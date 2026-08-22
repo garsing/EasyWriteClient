@@ -83,6 +83,10 @@ body,
   padding: 56px 48px 36px;
 }
 
+.login-body--login {
+  padding: 40px 40px 28px;
+}
+
 .login-body--register {
   padding: 48px 48px 36px;
 }

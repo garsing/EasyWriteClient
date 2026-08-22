@@ -23,6 +23,7 @@ namespace WordAddIn1
         private bool isDragging;
         private Point dragStartPoint;
         private bool _loadStarted;
+        private bool _registerView;
 
         public static bool IsOpen =>
             _activeInstance != null && !_activeInstance.IsDisposed;
@@ -157,20 +158,49 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 与设置窗相同：按当前显示器工作区比例开。
-        /// 登录是小卡片，比例低于设置（约 25%×40%），且不小于 520×460。
+        /// 按工作区百分比开窗。注册保持原来的 25%×40%；登录同宽、高度改为 32%。
         /// </summary>
+        internal void ApplyViewMode(bool registerView)
+        {
+            _registerView = registerView;
+            Text = registerView ? "注册" : "登录";
+            ApplyLoginWindowSize();
+            if (registerView && webView2?.CoreWebView2 != null)
+            {
+                _ = FitCssViewportAsync(webView2.CoreWebView2);
+            }
+        }
+
         private void ApplyLoginWindowSize()
         {
             Screen screen = IsHandleCreated ? Screen.FromControl(this) : Screen.PrimaryScreen;
             Rectangle area = screen?.WorkingArea ?? new Rectangle(0, 0, 1920, 1080);
             int margin = 40;
-            int width = Math.Max(520, (int)Math.Round(area.Width * 0.25));
-            int height = Math.Max(460, (int)Math.Round(area.Height * 0.40));
-            width = Math.Min(width, Math.Max(520, area.Width - margin * 2));
-            height = Math.Min(height, Math.Max(460, area.Height - margin * 2));
-            MinimumSize = new Size(520, 460);
+            // 注册完全沿用改之前的算法；登录只降低高度百分比。
+            int minW = 520;
+            int minH = _registerView ? 460 : 400;
+            double ratioW = 0.25;
+            double ratioH = _registerView ? 0.40 : 0.32;
+            int width = Math.Max(minW, (int)Math.Round(area.Width * ratioW));
+            int height = Math.Max(minH, (int)Math.Round(area.Height * ratioH));
+            width = Math.Min(width, Math.Max(minW, area.Width - margin * 2));
+            height = Math.Min(height, Math.Max(minH, area.Height - margin * 2));
+
+            Point? center = null;
+            if (IsHandleCreated && Visible)
+            {
+                center = new Point(Left + Width / 2, Top + Height / 2);
+            }
+
+            MinimumSize = new Size(minW, minH);
             ClientSize = new Size(width, height);
+
+            if (center.HasValue)
+            {
+                Location = new Point(center.Value.X - Width / 2, center.Value.Y - Height / 2);
+            }
+
+            Log($"ApplyLoginWindowSize register={_registerView} ClientSize={ClientSize} area={area.Width}x{area.Height}");
         }
 
         private static string ResolveWwwroot()
@@ -309,8 +339,9 @@ namespace WordAddIn1
 
                 if (navTcs.Task.Result)
                 {
-                    await FitCssViewportAsync(core).ConfigureAwait(true);
+                    // 首帧 innerWidth/innerHeight 经常偏小，按比例放大登录窗会变成注册尺寸。
                     await Task.Delay(300).ConfigureAwait(true);
+                    ApplyLoginWindowSize();
                     try
                     {
                         string check = await core.ExecuteScriptAsync(
@@ -352,10 +383,16 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// Desktop WebView2 视口偏小时放大窗体，使页面至少有 520×460 可用区域。
+        /// 仅注册页使用：高分屏下把客户区补到至少 520×460 CSS 像素，与改尺寸前一致。
+        /// 登录页不调用，避免被放大成注册窗。
         /// </summary>
         private async Task FitCssViewportAsync(CoreWebView2 core)
         {
+            if (!_registerView || core == null)
+            {
+                return;
+            }
+
             try
             {
                 string raw = await core.ExecuteScriptAsync(
@@ -464,6 +501,11 @@ namespace WordAddIn1
             bridge.RegisterHandler("openAgreement", async (data) =>
             {
                 return await LoginBridgeHandlers.OpenAgreementAsync(data, this);
+            });
+
+            bridge.RegisterHandler("resizeLoginWindow", async (data) =>
+            {
+                return await LoginBridgeHandlers.ResizeLoginWindowAsync(data, this);
             });
         }
 

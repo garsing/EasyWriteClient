@@ -175,6 +175,25 @@ namespace WordAddIn1
             }).ContinueWith(_ => (object)new { success = true });
         }
 
+        public static Task<object> ResizeLoginWindowAsync(object data, LoginForm loginForm)
+        {
+            var mode = UserSettingsBridgeHandlers.ExtractStringField(data, "mode")?.Trim();
+            if (string.IsNullOrEmpty(mode) && data is Newtonsoft.Json.Linq.JToken token)
+            {
+                mode = token["mode"]?.ToString()?.Trim();
+            }
+
+            bool register = string.Equals(mode, "register", StringComparison.OrdinalIgnoreCase);
+            System.Diagnostics.Debug.WriteLine($"[LoginBridgeHandlers] resizeLoginWindow mode={mode} register={register}");
+            return UserSettingsBridgeHandlers.RunOnUiThreadAsync(loginForm, () =>
+            {
+                if (loginForm != null && !loginForm.IsDisposed)
+                {
+                    loginForm.ApplyViewMode(register);
+                }
+            }).ContinueWith(_ => (object)new { success = true });
+        }
+
         public static async Task<object> OpenAgreementAsync(object data, Form loginForm)
         {
             try
