@@ -1,14 +1,18 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Xml.Linq;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// I14：对源文档抽全表 catalog + standard（kb_table_id = 源 T_ stem）。
+    /// I14：对源文档抽全表 catalog + standard。文档级一次 WordOpenXML，失败直接抛。
     /// </summary>
     public static class SourceTableFormatCatalogExtractor
     {
+        private static readonly XNamespace W = OpenXmlPackage.W;
+
         public static void ExtractIntoSession(Word.Document document, DocumentSessionState session, bool disallowBackendApi = false)
         {
             if (session == null)
@@ -16,8 +20,6 @@ namespace WordAddIn1
                 return;
             }
 
-            var catalog = new List<Dictionary<string, object>>();
-            var xmlById = new Dictionary<string, string>(StringComparer.Ordinal);
             ProcessDocumentOptions options = ProcessDocumentOptions.ForGetDocumentContent("source_table_catalog");
             options.DisallowBackendApi = disallowBackendApi;
             WordDocumentExtractor.ProcessDocument(document, options);
@@ -25,21 +27,20 @@ namespace WordAddIn1
             List<string> tableIds = DocumentState.GetTableIdOrder();
             if (tableIds == null || tableIds.Count == 0)
             {
-                session.TableFormatCatalog = catalog;
+                session.TableFormatCatalog = new List<Dictionary<string, object>>();
                 session.TableFormatStandard = null;
                 return;
             }
 
-            int wordTableCount = 0;
-            try
+            OpenXmlPackage pkg = OpenXmlPackage.Load(document);
+            List<XElement> tables = pkg.Body.Descendants(W + "tbl").ToList();
+            if (tables.Count != tableIds.Count)
             {
-                wordTableCount = document.Tables.Count;
-            }
-            catch
-            {
-                wordTableCount = 0;
+                throw new InvalidOperationException(
+                    "WordOpenXML 表数(" + tables.Count + ") 与 T_ 数(" + tableIds.Count + ") 不一致");
             }
 
+            var catalog = new List<Dictionary<string, object>>();
             for (int i = 0; i < tableIds.Count; i++)
             {
                 string tableId = tableIds[i];
@@ -48,60 +49,44 @@ namespace WordAddIn1
                     continue;
                 }
 
-                int comIndex = i + 1;
-                if (comIndex > wordTableCount)
+                TableExtractDto dto = TableFormatExtractCore.Extract(tables[i]);
+                string xml = TableFormatXmlBuilder.BuildGeneralOnly(dto);
+
+                var entry = new Dictionary<string, object>
                 {
-                    break;
+                    ["kb_table_id"] = tableId,
+                    ["rows"] = dto.Rows,
+                    ["cols"] = dto.Cols,
+                    ["xml_content"] = xml
+                };
+                if (!string.IsNullOrEmpty(dto.Style))
+                {
+                    entry["Style"] = dto.Style;
                 }
 
-                try
+                if (dto.FontStats != null)
                 {
-                    Word.Table table = document.Tables[comIndex];
-                    TableExtractDto dto = TableFormatExtractCore.Extract(table, document);
-                    string xml = TableFormatXmlBuilder.BuildGeneralOnly(dto);
-                    xmlById[tableId] = xml;
-
-                    var entry = new Dictionary<string, object>
+                    if (!string.IsNullOrEmpty(dto.FontStats.TableFontName))
                     {
-                        ["kb_table_id"] = tableId,
-                        ["rows"] = dto.Rows,
-                        ["cols"] = dto.Cols,
-                        ["xml_content"] = xml
-                    };
-                    if (!string.IsNullOrEmpty(dto.Style))
-                    {
-                        entry["Style"] = dto.Style;
+                        entry["TableFontName"] = dto.FontStats.TableFontName;
                     }
 
-                    if (dto.FontStats != null)
+                    if (dto.FontStats.TableFontSize > 0)
                     {
-                        if (!string.IsNullOrEmpty(dto.FontStats.TableFontName))
-                        {
-                            entry["TableFontName"] = dto.FontStats.TableFontName;
-                        }
-
-                        if (dto.FontStats.TableFontSize > 0)
-                        {
-                            entry["TableFontSize"] = dto.FontStats.TableFontSize;
-                        }
-
-                        if (!string.IsNullOrEmpty(dto.FontStats.TableFontColor))
-                        {
-                            entry["TableFontColor"] = dto.FontStats.TableFontColor;
-                        }
+                        entry["TableFontSize"] = dto.FontStats.TableFontSize;
                     }
 
-                    catalog.Add(entry);
+                    if (!string.IsNullOrEmpty(dto.FontStats.TableFontColor))
+                    {
+                        entry["TableFontColor"] = dto.FontStats.TableFontColor;
+                    }
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine(
-                        "[SourceTableFormatCatalogExtractor] " + tableId + ": " + ex.Message);
-                }
+
+                catalog.Add(entry);
             }
 
             session.TableFormatCatalog = catalog;
-            session.TableFormatStandard = BuildStandard(catalog, xmlById);
+            session.TableFormatStandard = BuildStandard(catalog);
         }
 
         public static string FindXml(DocumentSessionState session, string kbTableId)
@@ -131,8 +116,7 @@ namespace WordAddIn1
         }
 
         private static Dictionary<string, object> BuildStandard(
-            List<Dictionary<string, object>> catalog,
-            Dictionary<string, string> xmlById)
+            List<Dictionary<string, object>> catalog)
         {
             if (catalog == null || catalog.Count == 0)
             {

@@ -27,6 +27,45 @@ namespace WordAddIn1
         private static readonly XNamespace W =
             "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
+        public static TableExtractDto Extract(XElement tableElement)
+        {
+            if (tableElement == null)
+            {
+                throw new ArgumentNullException(nameof(tableElement));
+            }
+
+            int actualRows = tableElement.Elements(W + "tr").Count();
+            int gridCols = GetLogicalGridColumnCount(tableElement, W);
+            int actualCols = gridCols > 0 ? gridCols : CountRowCells(tableElement);
+            actualCols = ResolveLogicalColumnCount(tableElement, W, null, null, actualCols);
+
+            string tableStyle = TableFormatExtractor.ExtractTableStyleFromXml(tableElement, W, null);
+            List<float> colWidths = TableFormatExtractor.ExtractColWidthsFromXml(tableElement, W, actualCols);
+
+            var merge = new List<List<int>>();
+            var data = new List<List<string>>();
+            string defaultSpanColor = TableFormatExtractor.ExtractMergeInfoAndDataFromXml(
+                tableElement, W, actualRows, actualCols, merge, data);
+            actualCols = ResolveLogicalColumnCount(tableElement, W, null, merge, actualCols);
+
+            return new TableExtractDto
+            {
+                Rows = actualRows,
+                Cols = actualCols,
+                ColWidths = colWidths ?? new List<float>(),
+                Style = tableStyle,
+                StyleConfig = new TableStyleConfig
+                {
+                    TableStyle = tableStyle,
+                    HeaderRows = 1,
+                },
+                FontStats = TableFontStatsHelper.ComputeModeTripletFromTableElement(tableElement),
+                DefaultSpanColor = defaultSpanColor,
+                Merge = merge ?? new List<List<int>>(),
+                Data = data ?? new List<List<string>>(),
+            };
+        }
+
         public static TableExtractDto Extract(Word.Table table, Word.Document document)
         {
             if (table == null)
@@ -172,6 +211,17 @@ namespace WordAddIn1
             int wordCols = table.Columns.Count;
             int gridCols = GetLogicalGridColumnCount(tableElement, W);
             actualCols = gridCols > 0 ? Math.Max(gridCols, wordCols) : wordCols;
+        }
+
+        private static int CountRowCells(XElement tableElement)
+        {
+            int max = 0;
+            foreach (XElement tr in tableElement.Elements(W + "tr"))
+            {
+                max = Math.Max(max, tr.Elements(W + "tc").Count());
+            }
+
+            return max;
         }
     }
 }

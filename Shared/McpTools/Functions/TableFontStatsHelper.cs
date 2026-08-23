@@ -22,6 +22,19 @@ namespace WordAddIn1
         private static readonly XNamespace W =
             "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
+        public static TableFontStatsResult ComputeModeTripletFromTableElement(XElement tableElement)
+        {
+            var nameCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+            var sizeCounts = new Dictionary<float, int>();
+            var colorCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (tableElement != null)
+            {
+                AccumulateRunStats(tableElement, nameCounts, sizeCounts, colorCounts);
+            }
+
+            return FinishModeTriplet(nameCounts, sizeCounts, colorCounts, "", 0f, "000000");
+        }
+
         public static TableFontStatsResult ComputeModeTriplet(Word.Table table, Word.Document document)
         {
             var nameCounts = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -34,45 +47,7 @@ namespace WordAddIn1
                 if (!string.IsNullOrEmpty(tableXml))
                 {
                     XDocument xmlDoc = XDocument.Parse(tableXml);
-                    foreach (var run in xmlDoc.Descendants(W + "r"))
-                    {
-                        string text = string.Join("", run.Descendants(W + "t").Select(t => (string)t));
-                        if (string.IsNullOrWhiteSpace(text))
-                        {
-                            continue;
-                        }
-
-                        var rPr = run.Element(W + "rPr");
-                        string name = ExtractRunFontName(rPr);
-                        if (!string.IsNullOrWhiteSpace(name))
-                        {
-                            if (!nameCounts.ContainsKey(name))
-                            {
-                                nameCounts[name] = 0;
-                            }
-
-                            nameCounts[name]++;
-                        }
-
-                        float size = ExtractRunFontSize(rPr);
-                        if (size > 0)
-                        {
-                            if (!sizeCounts.ContainsKey(size))
-                            {
-                                sizeCounts[size] = 0;
-                            }
-
-                            sizeCounts[size]++;
-                        }
-
-                        string colorKey = ExtractRunColorKey(rPr);
-                        if (!colorCounts.ContainsKey(colorKey))
-                        {
-                            colorCounts[colorKey] = 0;
-                        }
-
-                        colorCounts[colorKey]++;
-                    }
+                    AccumulateRunStats(xmlDoc.Root, nameCounts, sizeCounts, colorCounts);
                 }
             }
             catch (Exception ex)
@@ -81,7 +56,69 @@ namespace WordAddIn1
             }
 
             GetBodyFormat(document, out string bodyName, out float bodySize, out string bodyColor);
+            return FinishModeTriplet(nameCounts, sizeCounts, colorCounts, bodyName, bodySize, bodyColor);
+        }
 
+        private static void AccumulateRunStats(
+            XElement root,
+            Dictionary<string, int> nameCounts,
+            Dictionary<float, int> sizeCounts,
+            Dictionary<string, int> colorCounts)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            foreach (XElement run in root.Descendants(W + "r"))
+            {
+                string text = string.Join("", run.Descendants(W + "t").Select(t => (string)t));
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    continue;
+                }
+
+                XElement rPr = run.Element(W + "rPr");
+                string name = ExtractRunFontName(rPr);
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    if (!nameCounts.ContainsKey(name))
+                    {
+                        nameCounts[name] = 0;
+                    }
+
+                    nameCounts[name]++;
+                }
+
+                float size = ExtractRunFontSize(rPr);
+                if (size > 0)
+                {
+                    if (!sizeCounts.ContainsKey(size))
+                    {
+                        sizeCounts[size] = 0;
+                    }
+
+                    sizeCounts[size]++;
+                }
+
+                string colorKey = ExtractRunColorKey(rPr);
+                if (!colorCounts.ContainsKey(colorKey))
+                {
+                    colorCounts[colorKey] = 0;
+                }
+
+                colorCounts[colorKey]++;
+            }
+        }
+
+        private static TableFontStatsResult FinishModeTriplet(
+            Dictionary<string, int> nameCounts,
+            Dictionary<float, int> sizeCounts,
+            Dictionary<string, int> colorCounts,
+            string bodyName,
+            float bodySize,
+            string bodyColor)
+        {
             var result = new TableFontStatsResult();
             var warnings = new List<string>();
 

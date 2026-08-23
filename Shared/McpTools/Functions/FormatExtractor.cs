@@ -198,6 +198,8 @@ namespace WordAddIn1
                 return (emptyClass, new List<Dictionary<string, object>>());
             }
 
+            CharFormatOoxmlIndex ooxml = CharFormatOoxmlIndex.Load(doc);
+
             var step3StartTime = System.Diagnostics.Stopwatch.StartNew();
             var recognizer = new HeadingRecognizer();
             DocumentLineClassificationResult classification = recognizer.ClassifyLinesForFormatExtraction(readText);
@@ -239,8 +241,8 @@ namespace WordAddIn1
                     }
                     
                     bodySampleSearched++;
-                    List<Word.Range> foundRanges = FindAllSentenceMatches(doc, sentenceText);
-                    int n = foundRanges.Count;
+                    List<Dictionary<string, object>> foundFormats = ooxml.ExtractAllMatches(sentenceText);
+                    int n = foundFormats.Count;
                     if (n > 0)
                     {
                         bodySampleLinesHit++;
@@ -249,12 +251,8 @@ namespace WordAddIn1
                     {
                         bodySampleLinesMiss++;
                     }
-                    
-                    foreach (Word.Range range in foundRanges)
-                    {
-                        Dictionary<string, object> format = ExtractFormatFromRange(range);
-                        bodyFormats.Add(format);
-                    }
+
+                    bodyFormats.AddRange(foundFormats);
                 }
                 
                 System.Diagnostics.Debug.WriteLine(
@@ -348,33 +346,10 @@ namespace WordAddIn1
                     }
                     
                     totalSentencesProcessed++;
-                    
-                    // 在Word中搜索该句子（可能找到多个匹配）
-                    var searchStartTime = System.Diagnostics.Stopwatch.StartNew();
-                    List<Word.Range> foundRanges = FindAllSentenceMatches(doc, sentenceText);
-                    searchStartTime.Stop();
-                    
-                    totalRangesFound += foundRanges.Count;
-                    
-                    if (foundRanges.Count > 0)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[步骤5.3]   句子 \"{sentenceText.Substring(0, Math.Min(30, sentenceText.Length))}...\" 找到 {foundRanges.Count} 个匹配，搜索耗时: {searchStartTime.ElapsedMilliseconds}ms");
-                    }
-                    
-                    // 对每个找到的Range提取格式
-                    var extractStartTime = System.Diagnostics.Stopwatch.StartNew();
-                    foreach (Word.Range range in foundRanges)
-                    {
-                        Dictionary<string, object> format = ExtractFormatFromRange(range);
-                        formatsForThisSubtype.Add(format);
-                        totalFormatsExtracted++;
-                    }
-                    extractStartTime.Stop();
-                    
-                    if (foundRanges.Count > 0)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[步骤5.3]     提取格式耗时: {extractStartTime.ElapsedMilliseconds}ms（平均每个Range: {(foundRanges.Count > 0 ? extractStartTime.ElapsedMilliseconds / (double)foundRanges.Count : 0):F2}ms）");
-                    }
+                    List<Dictionary<string, object>> foundFormats = ooxml.ExtractAllMatches(sentenceText);
+                    totalRangesFound += foundFormats.Count;
+                    formatsForThisSubtype.AddRange(foundFormats);
+                    totalFormatsExtracted += foundFormats.Count;
                 }
                 
                 subtypeStartTime.Stop();
@@ -567,6 +542,8 @@ namespace WordAddIn1
                 return (emptyClass, new List<Dictionary<string, object>>());
             }
 
+            CharFormatOoxmlIndex ooxml = CharFormatOoxmlIndex.Load(doc);
+
             if (sentencePool == null || sentencePool.Count == 0)
             {
                 System.Diagnostics.Debug.WriteLine("⚠️ [sampling_pool] empty_pool: format 使用推断/默认 body 与标题 subtype");
@@ -647,10 +624,7 @@ namespace WordAddIn1
                     continue;
                 }
 
-                foreach (Word.Range range in FindAllSentenceMatches(doc, sentenceText))
-                {
-                    bodyFormats.Add(ExtractFormatFromRange(range));
-                }
+                bodyFormats.AddRange(ooxml.ExtractAllMatches(sentenceText));
             }
 
             if (bodyCandidates.Count == 0 && sentencePool != null && sentencePool.Count > 0)
@@ -685,10 +659,7 @@ namespace WordAddIn1
                         continue;
                     }
 
-                    foreach (Word.Range range in FindAllSentenceMatches(doc, sentenceText))
-                    {
-                        formatsFor.Add(ExtractFormatFromRange(range));
-                    }
+                    formatsFor.AddRange(ooxml.ExtractAllMatches(sentenceText));
                 }
 
                 if (formatsFor.Count > 0)
@@ -1138,84 +1109,7 @@ namespace WordAddIn1
             
             return defaultFormat;
         }
-        
-        /// <summary>
-        /// 在Word文档中查找所有匹配指定文本的Range位置
-        /// </summary>
-        private static List<Word.Range> FindAllSentenceMatches(Word.Document doc, string sentenceText)
-        {
-            List<Word.Range> matches = new List<Word.Range>();
-            
-            try
-            {
-                if (doc == null || string.IsNullOrEmpty(sentenceText))
-                {
-                    return matches;
-                }
-                
-                // 转换换行符为Word代码格式
-                string convertedText = WordRangeFinder.ConvertNewlinesToWordCodes(sentenceText);
-                
-                // 使用WordRangeFinder的FindAllMatches方法
-                // 注意：FindAllMatches是private的，我们需要自己实现
-                int searchStart = 0;
-                int lastFoundStart = -1;
-                int lastFoundEnd = -1;
-                int maxIterations = 1000;
-                int iterationCount = 0;
-                
-                while (searchStart < doc.Content.End && iterationCount < maxIterations)
-                {
-                    iterationCount++;
-                    
-                    Word.Range searchRange = doc.Range(searchStart, doc.Content.End);
-                    searchRange.Find.ClearFormatting();
-                    searchRange.Find.Text = convertedText;
-                    searchRange.Find.MatchCase = true;
-                    searchRange.Find.MatchWholeWord = false;
-                    searchRange.Find.Wrap = Word.WdFindWrap.wdFindStop;
-                    
-                    if (searchRange.Find.Execute())
-                    {
-                        // 检查是否找到了新的匹配
-                        if (searchRange.Start == lastFoundStart && searchRange.End == lastFoundEnd)
-                        {
-                            break;
-                        }
-                        
-                        if (searchRange.Start < searchStart)
-                        {
-                            break;
-                        }
-                        
-                        Word.Range foundRange = doc.Range(searchRange.Start, searchRange.End);
-                        matches.Add(foundRange);
-                        
-                        lastFoundStart = searchRange.Start;
-                        lastFoundEnd = searchRange.End;
-                        
-                        int newSearchStart = searchRange.End + 1;
-                        if (newSearchStart <= searchStart)
-                        {
-                            break;
-                        }
-                        
-                        searchStart = newSearchStart;
-                    }
-                    else
-                    {
-                        break;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[FindAllSentenceMatches] ❌ 异常: {ex.Message}");
-            }
-            
-            return matches;
-        }
-        
+
         /// <summary>
         /// 从Word Range提取格式信息
         /// </summary>

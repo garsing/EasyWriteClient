@@ -33,12 +33,8 @@ namespace WordAddIn1
             WordDocumentExtractor.ProcessDocument(document, options);
 
             var sw = Stopwatch.StartNew();
-            if (!ParaFormatOoxmlReader.TryReadOpenXml(document, out XDocument xmlDoc, out string xmlError))
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    "[ParaFormatCluster] WordOpenXML 失败: " + (xmlError ?? "unknown") + "，回退 COM Find");
-                return ExtractViaComFind(document);
-            }
+            OpenXmlPackage pkg = OpenXmlPackage.Load(document);
+            XDocument xmlDoc = pkg.Xml;
 
             List<ParaFormatOoxmlReader.BodyParagraph> xmlParas =
                 ParaFormatOoxmlReader.CollectBodyParagraphs(xmlDoc);
@@ -101,45 +97,6 @@ namespace WordAddIn1
             System.Diagnostics.Debug.WriteLine(
                 $"[ParaFormatCluster] ooxml P_={codes.Count} xml_p={xmlParas.Count} " +
                 $"aligned={aligned.Count} used={used} skipped={skipped} elapsed_ms={sw.ElapsedMilliseconds}");
-
-            return BuildPayload(groups);
-        }
-
-        private static Dictionary<string, object> ExtractViaComFind(Word.Document document)
-        {
-            var groups = new Dictionary<string, ClusterAcc>(StringComparer.Ordinal);
-            foreach (string code in CollectParagraphCodes())
-            {
-                if (!WordAddIn1.DocumentMapping.CodeResolve.ParagraphCodeResolver.TryResolveParagraphRange(
-                        document,
-                        code,
-                        out Word.Range range,
-                        out _,
-                        out _))
-                {
-                    continue;
-                }
-
-                if (!IsEligibleCom(range))
-                {
-                    continue;
-                }
-
-                Dictionary<string, object> paraFormat = ParaFormatReader.Extract(range);
-                string fingerprint = Fingerprint(paraFormat);
-                if (!groups.TryGetValue(fingerprint, out ClusterAcc acc))
-                {
-                    acc = new ClusterAcc { ParaFormat = paraFormat };
-                    groups[fingerprint] = acc;
-                }
-
-                acc.Count++;
-                string sample = SampleTextCom(range);
-                if (!string.IsNullOrEmpty(sample) && acc.Samples.Count < 5 && !acc.Samples.Contains(sample))
-                {
-                    acc.Samples.Add(sample);
-                }
-            }
 
             return BuildPayload(groups);
         }
@@ -243,37 +200,6 @@ namespace WordAddIn1
             }
 
             return map;
-        }
-
-        private static bool IsEligibleCom(Word.Range range)
-        {
-            try
-            {
-                if (range.Tables == null || range.Tables.Count == 0)
-                {
-                    return true;
-                }
-
-                Word.Table table = range.Tables[1];
-                return table.Rows.Count == 1 && table.Columns.Count == 1;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private static string SampleTextCom(Word.Range range)
-        {
-            try
-            {
-                string text = (range.Text ?? "").Replace("\r", "").Replace("\a", "").Trim();
-                return text.Length > 200 ? text.Substring(0, 200) : text;
-            }
-            catch
-            {
-                return "";
-            }
         }
 
         private static string Fingerprint(Dictionary<string, object> paraFormat)

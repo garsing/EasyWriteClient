@@ -251,11 +251,13 @@ namespace WordAddIn1
                     }
                 }
 
-                // 如果 XML 中没有，降级使用 Word API
-                var style = table.get_Style();
-                if (style != null)
+                if (table != null)
                 {
-                    return style.ToString();
+                    var style = table.get_Style();
+                    if (style != null)
+                    {
+                        return style.ToString();
+                    }
                 }
             }
             catch (Exception)
