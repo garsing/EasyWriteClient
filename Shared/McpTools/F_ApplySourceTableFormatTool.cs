@@ -6,19 +6,19 @@ using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
-    /// <summary>
-    /// 格式转移：粗迁页布局 + body + 标题。源为 source_channel_id 或知识库。
-    /// </summary>
-    public static class F_FormatTransferTool
+    public static class F_ApplySourceTableFormatTool
     {
         public static void Register(
             Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
             object wordApplication)
         {
-            toolRegistry["F_format_transfer"] = async (args) =>
+            toolRegistry["F_apply_source_table_format"] = async (args) =>
             {
                 try
                 {
+                    string targetTableId = FormatSourceResolver.GetArgString(args, "target_table_id");
+                    string kbTableId = FormatSourceResolver.GetArgString(args, "kb_table_id");
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -29,7 +29,20 @@ namespace WordAddIn1
                     }
 
                     Word.Document doc = docHandle.Document;
-                    Word.Application app = ResolveApplication(wordApplication, doc);
+                    Word.Application app = null;
+                    try
+                    {
+                        app = doc.Application;
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    if (app == null)
+                    {
+                        app = wordApplication as Word.Application;
+                    }
+
                     if (app == null)
                     {
                         return new ToolResult { Success = false, Error = "无法获取文档 Application（Word/WPS）" };
@@ -45,43 +58,18 @@ namespace WordAddIn1
                         return sourceError;
                     }
 
-                    string pageLayoutContentMode = FormatSourceResolver.GetArgString(args, "page_layout_content_mode");
-                    if (string.IsNullOrEmpty(pageLayoutContentMode))
-                    {
-                        pageLayoutContentMode = "auto";
-                    }
-
-                    bool applyPageSetup = FormatSourceResolver.GetBoolArg(args, "apply_page_setup", true);
-
-                    return await FormatTransferHelper.RunFormatTransferAsync(
+                    return await KbTableFormatApplyHelper.RunApplyAsync(
                         app,
+                        targetTableId,
+                        kbTableId,
                         source,
-                        pageLayoutContentMode,
-                        applyPageSetup,
-                        doc).ConfigureAwait(false);
+                        doc);
                 }
                 catch (Exception ex)
                 {
-                    return new ToolResult { Success = false, Error = $"格式转移工具异常: {ex.Message}" };
+                    return new ToolResult { Success = false, Error = $"apply_source_table_format 失败: {ex.Message}" };
                 }
             };
-        }
-
-        private static Word.Application ResolveApplication(object wordApplication, Word.Document doc)
-        {
-            try
-            {
-                Word.Application fromDoc = doc?.Application;
-                if (fromDoc != null)
-                {
-                    return fromDoc;
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            return wordApplication as Word.Application;
         }
     }
 }

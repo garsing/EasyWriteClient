@@ -77,40 +77,35 @@ namespace WordAddIn1
         /// </summary>
         public static async Task<ToolResult> RunFormatTransferAsync(
             Word.Application wordApp,
-            string targetDocumentName,
-            string targetKnowledgeBaseUuid = null,
-            string targetStorageDocUuid = null,
+            FormatSourceResolution source,
             string pageLayoutContentMode = "auto",
             bool applyPageSetup = true,
             Word.Document document = null)
         {
             var totalSw = FtDebugEnabled ? Stopwatch.StartNew() : null;
+            if (source == null || !source.Success)
+            {
+                return new ToolResult { Success = false, Error = source?.Error ?? "缺少格式源" };
+            }
+
             FtLog(
-                $"BEGIN RunFormatTransferAsync storage={targetStorageDocUuid ?? ""} " +
-                $"doc={targetDocumentName ?? ""} kb={targetKnowledgeBaseUuid ?? ""} " +
+                $"BEGIN RunFormatTransferAsync kind={source.Kind} storage={source.StorageDocUuid ?? ""} " +
+                $"doc={source.DocumentName ?? ""} kb={source.KnowledgeBaseUuid ?? ""} " +
+                $"source_channel={source.ChannelId ?? ""} " +
                 $"page_layout_content_mode={pageLayoutContentMode ?? "auto"} apply_page_setup={applyPageSetup}");
 
-            var storageUuid = (targetStorageDocUuid ?? "").Trim();
-            var docName = (targetDocumentName ?? "").Trim();
-            var kbUuid = (targetKnowledgeBaseUuid ?? "").Trim();
+            var storageUuid = (source.StorageDocUuid ?? "").Trim();
+            var docName = (source.DocumentName ?? "").Trim();
+            var kbUuid = (source.KnowledgeBaseUuid ?? "").Trim();
 
-            if (string.IsNullOrEmpty(storageUuid) && string.IsNullOrEmpty(docName))
+            if (source.Kind == FormatSourceKind.KnowledgeBase)
             {
-                FtLog("ABORT missing target identity");
-                return new ToolResult { Success = false, Error = "缺少 target_storage_doc_uuid 或 target_document_name" };
-            }
-
-            if (string.IsNullOrEmpty(storageUuid) && string.IsNullOrEmpty(kbUuid))
-            {
-                FtLog("ABORT missing kb uuid for document_name");
-                return new ToolResult { Success = false, Error = "按 document_name 定位时必须提供 target_knowledge_base_uuid" };
-            }
-
-            var userService = UserService.Instance;
-            if (!userService.CheckLoginStatus())
-            {
-                FtLog("ABORT not logged in");
-                return new ToolResult { Success = false, Error = "用户未登录，无法调用知识库接口" };
+                var userService = UserService.Instance;
+                if (!userService.CheckLoginStatus())
+                {
+                    FtLog("ABORT not logged in");
+                    return new ToolResult { Success = false, Error = "用户未登录，无法调用知识库接口" };
+                }
             }
 
             Word.Document doc = document;
@@ -175,25 +170,49 @@ namespace WordAddIn1
                 }
 
                 List<Dictionary<string, object>> targetMapping;
-                using (new FtStep("FetchSubtypeFormatMapping"))
-                {
-                    targetMapping = await FetchSubtypeFormatMappingAsync(
-                        docName, kbUuid, storageUuid).ConfigureAwait(false);
-                }
-
-                if (targetMapping == null)
-                {
-                    FtLog("ABORT FetchSubtypeFormatMapping returned null");
-                    return new ToolResult { Success = false, Error = "获取目标文档 subtype_format_mapping 失败" };
-                }
-
-                FtLog($"FetchSubtypeFormatMapping ok count={targetMapping.Count}");
-
                 Dictionary<string, object> pageLayoutPayload;
-                using (new FtStep("FetchSectionPageLayout"))
+                if (source.Kind == FormatSourceKind.Local)
                 {
-                    pageLayoutPayload = await FetchSectionPageLayoutAsync(
-                        docName, kbUuid, storageUuid).ConfigureAwait(false);
+                    using (new FtStep("EnsureLocalSource"))
+                    {
+                        FormatSourceEnsure.RunOnSource(source.Document, doc, () =>
+                        {
+                            FormatSourceEnsure.EnsurePageLayout(source.Document, source.ForceRefresh);
+                            FormatSourceEnsure.EnsureCharMapping(source.Document, source.ForceRefresh, source.DisallowBackendApi);
+                            FormatSourceEnsure.EnsureTableCatalog(source.Document, source.ForceRefresh, source.DisallowBackendApi);
+                        });
+                    }
+
+                    DocumentSessionState sourceSession = FormatSourceEnsure.SessionOf(source.Document);
+                    targetMapping = FormatSourceEnsure.CopyMapping(sourceSession);
+                    pageLayoutPayload = FormatSourceEnsure.CopyDict(sourceSession?.SectionPageLayout);
+                    if (targetMapping == null)
+                    {
+                        FtLog("ABORT local source mapping null");
+                        return new ToolResult { Success = false, Error = "从已打开源抽取字符格式失败" };
+                    }
+                }
+                else
+                {
+                    using (new FtStep("FetchSubtypeFormatMapping"))
+                    {
+                        targetMapping = await FetchSubtypeFormatMappingAsync(
+                            docName, kbUuid, storageUuid).ConfigureAwait(false);
+                    }
+
+                    if (targetMapping == null)
+                    {
+                        FtLog("ABORT FetchSubtypeFormatMapping returned null");
+                        return new ToolResult { Success = false, Error = "获取目标文档 subtype_format_mapping 失败" };
+                    }
+
+                    FtLog($"FetchSubtypeFormatMapping ok count={targetMapping.Count}");
+
+                    using (new FtStep("FetchSectionPageLayout"))
+                    {
+                        pageLayoutPayload = await FetchSectionPageLayoutAsync(
+                            docName, kbUuid, storageUuid).ConfigureAwait(false);
+                    }
                 }
 
                 FtLog($"FetchSectionPageLayout ok has_payload={pageLayoutPayload != null}");

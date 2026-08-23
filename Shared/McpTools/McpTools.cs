@@ -94,9 +94,11 @@ namespace WordAddIn1
             F_GetFormatContextTool.Register(toolRegistry, wordApplication);
             F_ApplyDocumentFormatTool.Register(toolRegistry, wordApplication);
             F_ApplyParagraphFormatTool.Register(toolRegistry, wordApplication);
-            F_ApplyKbFormatTool.Register(toolRegistry, wordApplication);
-            F_ApplyKbParagraphFormatTool.Register(toolRegistry, wordApplication);
-            F_ApplyKbTableFormatTool.Register(toolRegistry, wordApplication);
+            F_ApplySourceFormatTool.Register(toolRegistry, wordApplication);
+            F_ApplySourceParagraphFormatTool.Register(toolRegistry, wordApplication);
+            F_ApplySourceTableFormatTool.Register(toolRegistry, wordApplication);
+            F_GetFormatDisplayTool.Register(toolRegistry, wordApplication);
+            F_GetTableFormatDisplayTool.Register(toolRegistry, wordApplication);
             F_ListDocumentOperationsTool.Register(toolRegistry, wordApplication);
             F_RestoreDocumentCheckpointTool.Register(toolRegistry, wordApplication);
         }

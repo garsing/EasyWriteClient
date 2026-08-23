@@ -98,6 +98,12 @@ namespace WordAddIn1
                 "drawing", "pict", "object", "control", "ruby", "rt"
             };
 
+        /// <summary>I10：ProcessDocument 缓存与源分片过期共用入口。</summary>
+        public static string Compute(Word.Document document)
+        {
+            return ComputeDetailed(document).Fingerprint;
+        }
+
         public static BodyFingerprintDetail ComputeDetailed(Word.Document document)
         {
             if (document == null)

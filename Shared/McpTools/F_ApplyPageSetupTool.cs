@@ -60,26 +60,43 @@ namespace WordAddIn1
                         }
                     }
 
-                    string storageUuid = GetStringArg(args, "target_storage_doc_uuid");
-                    string docName = GetStringArg(args, "target_document_name");
-                    string kbUuid = GetStringArg(args, "target_knowledge_base_uuid");
+                    if (!FormatSourceResolver.TryResolve(
+                            args,
+                            wordApplication,
+                            docHandle.Context?.DocUuid,
+                            out FormatSourceResolution source,
+                            out ToolResult sourceError,
+                            requireSource: false))
+                    {
+                        return Fail(sourceError?.Error ?? "格式源定位失败");
+                    }
+
+                    string storageUuid = source?.StorageDocUuid ?? "";
+                    string docName = source?.DocumentName ?? "";
 
                     Dictionary<string, object> mode = null;
-                    if (!string.IsNullOrEmpty(storageUuid) || !string.IsNullOrEmpty(docName))
+                    if (source != null && source.Kind == FormatSourceKind.Local)
                     {
-                        if (string.IsNullOrEmpty(storageUuid) && string.IsNullOrEmpty(kbUuid))
+                        FormatSourceEnsure.RunOnSource(source.Document, doc, () =>
                         {
-                            return Fail("按 document_name 定位时必须提供 target_knowledge_base_uuid");
+                            FormatSourceEnsure.EnsurePageLayout(source.Document, source.ForceRefresh);
+                        });
+                        Dictionary<string, object> payload = FormatSourceEnsure.CopyDict(
+                            FormatSourceEnsure.SessionOf(source.Document)?.SectionPageLayout);
+                        if (!FormatTransferHelper.TryGetPageLayoutMode(payload, out mode) || mode == null)
+                        {
+                            return Fail("从已打开源抽取 section_page_layout.mode 失败或 mode 为空");
                         }
-
-                        var userService = UserService.Instance;
-                        if (!userService.CheckLoginStatus())
+                    }
+                    else if (source != null && source.Kind == FormatSourceKind.KnowledgeBase)
+                    {
+                        if (!UserService.Instance.CheckLoginStatus())
                         {
                             return Fail("用户未登录，无法调用知识库接口");
                         }
 
                         Dictionary<string, object> payload = await FormatTransferHelper.FetchSectionPageLayoutAsync(
-                                docName, kbUuid, storageUuid)
+                                source.DocumentName, source.KnowledgeBaseUuid, source.StorageDocUuid)
                             .ConfigureAwait(true);
                         if (!FormatTransferHelper.TryGetPageLayoutMode(payload, out mode) || mode == null)
                         {

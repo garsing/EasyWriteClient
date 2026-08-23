@@ -15,9 +15,7 @@ namespace WordAddIn1
             Word.Application wordApp,
             string targetTableId,
             string kbTableId,
-            string targetDocumentName,
-            string targetKnowledgeBaseUuid,
-            string targetStorageDocUuid,
+            FormatSourceResolution source,
             Word.Document document = null)
         {
             string tid = (targetTableId ?? "").Trim();
@@ -32,21 +30,16 @@ namespace WordAddIn1
                 return new ToolResult { Success = false, Error = "缺少 kb_table_id" };
             }
 
-            var storageUuid = (targetStorageDocUuid ?? "").Trim();
-            var docName = (targetDocumentName ?? "").Trim();
-            var kbUuid = (targetKnowledgeBaseUuid ?? "").Trim();
-
-            if (string.IsNullOrEmpty(storageUuid) && string.IsNullOrEmpty(docName))
+            if (source == null || !source.Success)
             {
-                return new ToolResult { Success = false, Error = "缺少 target_storage_doc_uuid 或 target_document_name" };
+                return new ToolResult { Success = false, Error = source?.Error ?? "缺少格式源" };
             }
 
-            if (string.IsNullOrEmpty(storageUuid) && string.IsNullOrEmpty(kbUuid))
-            {
-                return new ToolResult { Success = false, Error = "按 document_name 定位时必须提供 target_knowledge_base_uuid" };
-            }
+            var storageUuid = (source.StorageDocUuid ?? "").Trim();
+            var docName = (source.DocumentName ?? "").Trim();
+            var kbUuid = (source.KnowledgeBaseUuid ?? "").Trim();
 
-            if (!UserService.Instance.CheckLoginStatus())
+            if (source.Kind == FormatSourceKind.KnowledgeBase && !UserService.Instance.CheckLoginStatus())
             {
                 return new ToolResult { Success = false, Error = "用户未登录，无法调用知识库接口" };
             }
@@ -106,8 +99,21 @@ namespace WordAddIn1
                 };
             }
 
-            string xmlContent = await FetchTableFormatXmlAsync(
-                docName, kbUuid, storageUuid, kbTid);
+            string xmlContent;
+            if (source.Kind == FormatSourceKind.Local)
+            {
+                FormatSourceEnsure.RunOnSource(source.Document, doc, () =>
+                {
+                    FormatSourceEnsure.EnsureTableCatalog(source.Document, source.ForceRefresh, source.DisallowBackendApi);
+                });
+                xmlContent = SourceTableFormatCatalogExtractor.FindXml(
+                    FormatSourceEnsure.SessionOf(source.Document), kbTid);
+            }
+            else
+            {
+                xmlContent = await FetchTableFormatXmlAsync(
+                    docName, kbUuid, storageUuid, kbTid);
+            }
             if (string.IsNullOrEmpty(xmlContent))
             {
                 return new ToolResult
@@ -115,7 +121,7 @@ namespace WordAddIn1
                     Success = false,
                     Error =
                         $"无法获取 KB 表格 XML（kb_table_id={kbTid}）；"
-                        + "请先 B_get_kb_table_format_display 核对 catalog 中的 kb_table_id 并原样复制",
+                        + "请先 F_get_table_format_display 核对 catalog 中的 kb_table_id 并原样复制",
                 };
             }
 

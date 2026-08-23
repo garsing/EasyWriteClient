@@ -71,6 +71,26 @@ namespace WordAddIn1
         /// <summary>正文轻量抽取众数；与 SubtypeFormatMapping 隔离。</summary>
         public Dictionary<string, object> BodyFormat { get; set; }
 
+        /// <summary>抽格式时记下的源 body 指纹；四类产物共用一份。</summary>
+        public string FormatExtractBodyFingerprint { get; set; }
+
+        public Dictionary<string, object> SectionPageLayout { get; set; }
+
+        public List<Dictionary<string, object>> TableFormatCatalog { get; set; }
+
+        public Dictionary<string, object> TableFormatStandard { get; set; }
+
+        public Dictionary<string, object> ParaFormatClusters { get; set; }
+
+        public void ClearFormatExtractProducts()
+        {
+            SubtypeFormatMapping.Clear();
+            SectionPageLayout = null;
+            TableFormatCatalog = null;
+            TableFormatStandard = null;
+            ParaFormatClusters = null;
+        }
+
         /// <summary>UUID 变更后清除易失状态；checkpoint restore 后亦调用（I6/B：不清 SentenceNameMapping）。</summary>
         public void ClearVolatileState()
         {

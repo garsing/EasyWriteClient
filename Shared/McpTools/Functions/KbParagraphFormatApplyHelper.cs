@@ -19,9 +19,7 @@ namespace WordAddIn1
             string targetParagraphCodesCsv,
             string clusterId,
             Dictionary<string, object> explicitParaFormat,
-            string targetDocumentName,
-            string targetKnowledgeBaseUuid,
-            string targetStorageDocUuid,
+            FormatSourceResolution source,
             string tableId = null,
             Word.Document document = null)
         {
@@ -43,31 +41,22 @@ namespace WordAddIn1
                 return new ToolResult { Success = false, Error = "缺少 cluster_id 或 para_format" };
             }
 
-            var storageUuid = (targetStorageDocUuid ?? "").Trim();
-            var docName = (targetDocumentName ?? "").Trim();
-            var kbUuid = (targetKnowledgeBaseUuid ?? "").Trim();
-
             if (hasClusterId)
             {
-                if (string.IsNullOrEmpty(storageUuid) && string.IsNullOrEmpty(docName))
+                if (source == null || !source.Success)
                 {
-                    return new ToolResult { Success = false, Error = "缺少 target_storage_doc_uuid 或 target_document_name" };
+                    return new ToolResult { Success = false, Error = source?.Error ?? "缺少格式源" };
                 }
 
-                if (string.IsNullOrEmpty(storageUuid) && string.IsNullOrEmpty(kbUuid))
-                {
-                    return new ToolResult
-                    {
-                        Success = false,
-                        Error = "按 document_name 定位时必须提供 target_knowledge_base_uuid"
-                    };
-                }
-
-                if (!UserService.Instance.CheckLoginStatus())
+                if (source.Kind == FormatSourceKind.KnowledgeBase && !UserService.Instance.CheckLoginStatus())
                 {
                     return new ToolResult { Success = false, Error = "用户未登录，无法调用知识库接口" };
                 }
             }
+
+            var storageUuid = (source?.StorageDocUuid ?? "").Trim();
+            var docName = (source?.DocumentName ?? "").Trim();
+            var kbUuid = (source?.KnowledgeBaseUuid ?? "").Trim();
 
             var targetParagraphCodes = FormatContextHelper.ParseParagraphCodes(targetParagraphCodesCsv ?? "");
             if (targetParagraphCodes.Count == 0)
@@ -122,11 +111,25 @@ namespace WordAddIn1
 
             if (hasClusterId)
             {
-                Dictionary<string, object> clustersPayload = await FormatTransferHelper.FetchParaFormatClustersAsync(
-                    docName, kbUuid, storageUuid);
+                Dictionary<string, object> clustersPayload;
+                if (source != null && source.Kind == FormatSourceKind.Local)
+                {
+                    FormatSourceEnsure.RunOnSource(source.Document, doc, () =>
+                    {
+                        FormatSourceEnsure.EnsureParaClusters(source.Document, source.ForceRefresh, source.DisallowBackendApi);
+                    });
+                    clustersPayload = FormatSourceEnsure.CopyDict(
+                        FormatSourceEnsure.SessionOf(source.Document)?.ParaFormatClusters);
+                }
+                else
+                {
+                    clustersPayload = await FormatTransferHelper.FetchParaFormatClustersAsync(
+                        docName, kbUuid, storageUuid);
+                }
+
                 if (clustersPayload == null)
                 {
-                    return new ToolResult { Success = false, Error = "获取目标文档 para_format_clusters 失败" };
+                    return new ToolResult { Success = false, Error = "获取源文档 para_format_clusters 失败" };
                 }
 
                 availableClusterIds = CollectAvailableClusterIds(clustersPayload);
@@ -151,7 +154,7 @@ namespace WordAddIn1
                 inheritFromParagraph: "",
                 scopeArgs,
                 targetParagraphCodes,
-                "F_apply_kb_paragraph_format",
+                "F_apply_source_paragraph_format",
                 out TableScopeIndex tableScope,
                 out string cacheError);
             if (cacheError != null)
@@ -162,7 +165,7 @@ namespace WordAddIn1
             if (ambiguityResult != null && ambiguityResult.HasBlockingError)
             {
                 return SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
-                    "F_apply_kb_paragraph_format",
+                    "F_apply_source_paragraph_format",
                     ambiguityResult);
             }
 

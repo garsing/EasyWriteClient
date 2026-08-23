@@ -18,9 +18,7 @@ namespace WordAddIn1
             Word.Application wordApp,
             string targetCodesCsv,
             string kbDetailedSubtype,
-            string targetDocumentName,
-            string targetKnowledgeBaseUuid,
-            string targetStorageDocUuid,
+            FormatSourceResolution source,
             string tableId = null,
             Word.Document document = null)
         {
@@ -30,19 +28,14 @@ namespace WordAddIn1
                 return new ToolResult { Success = false, Error = "缺少 kb_detailed_subtype" };
             }
 
-            var storageUuid = (targetStorageDocUuid ?? "").Trim();
-            var docName = (targetDocumentName ?? "").Trim();
-            var kbUuid = (targetKnowledgeBaseUuid ?? "").Trim();
-
-            if (string.IsNullOrEmpty(storageUuid) && string.IsNullOrEmpty(docName))
+            if (source == null || !source.Success)
             {
-                return new ToolResult { Success = false, Error = "缺少 target_storage_doc_uuid 或 target_document_name" };
+                return new ToolResult { Success = false, Error = source?.Error ?? "缺少格式源" };
             }
 
-            if (string.IsNullOrEmpty(storageUuid) && string.IsNullOrEmpty(kbUuid))
-            {
-                return new ToolResult { Success = false, Error = "按 document_name 定位时必须提供 target_knowledge_base_uuid" };
-            }
+            var storageUuid = (source.StorageDocUuid ?? "").Trim();
+            var docName = (source.DocumentName ?? "").Trim();
+            var kbUuid = (source.KnowledgeBaseUuid ?? "").Trim();
 
             var targetCodes = FormatContextHelper.ParseSentenceCodes(targetCodesCsv ?? "");
             if (targetCodes.Count == 0)
@@ -55,7 +48,7 @@ namespace WordAddIn1
                 return new ToolResult { Success = false, Error = "apply 仅支持 S_ 句子编码，不支持 T_" };
             }
 
-            if (!UserService.Instance.CheckLoginStatus())
+            if (source.Kind == FormatSourceKind.KnowledgeBase && !UserService.Instance.CheckLoginStatus())
             {
                 return new ToolResult { Success = false, Error = "用户未登录，无法调用知识库接口" };
             }
@@ -97,11 +90,24 @@ namespace WordAddIn1
 
             DocumentState.BindAndActivate(doc);
 
-            List<Dictionary<string, object>> mapping = await FormatTransferHelper.FetchSubtypeFormatMappingAsync(
-                docName, kbUuid, storageUuid);
+            List<Dictionary<string, object>> mapping;
+            if (source.Kind == FormatSourceKind.Local)
+            {
+                FormatSourceEnsure.RunOnSource(source.Document, doc, () =>
+                {
+                    FormatSourceEnsure.EnsureCharMapping(source.Document, source.ForceRefresh, source.DisallowBackendApi);
+                });
+                mapping = FormatSourceEnsure.CopyMapping(FormatSourceEnsure.SessionOf(source.Document));
+            }
+            else
+            {
+                mapping = await FormatTransferHelper.FetchSubtypeFormatMappingAsync(
+                    docName, kbUuid, storageUuid);
+            }
+
             if (mapping == null)
             {
-                return new ToolResult { Success = false, Error = "获取目标文档 subtype_format_mapping 失败" };
+                return new ToolResult { Success = false, Error = "获取源文档 subtype_format_mapping 失败" };
             }
 
             List<string> availableSubtypes = CollectAvailableSubtypes(mapping);
@@ -130,7 +136,7 @@ namespace WordAddIn1
                 inheritFrom: "",
                 targetCodes,
                 scopeArgs,
-                "F_apply_kb_format",
+                "F_apply_source_format",
                 out TableScopeIndex tableScope,
                 out string cacheError);
             if (cacheError != null)
@@ -141,7 +147,7 @@ namespace WordAddIn1
             if (ambiguityResult != null && ambiguityResult.HasBlockingError)
             {
                 return SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
-                    "F_apply_kb_format",
+                    "F_apply_source_format",
                     ambiguityResult);
             }
 

@@ -6,19 +6,24 @@ using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
-    /// <summary>
-    /// 格式转移：粗迁页布局 + body + 标题。源为 source_channel_id 或知识库。
-    /// </summary>
-    public static class F_FormatTransferTool
+    public static class F_ApplySourceFormatTool
     {
         public static void Register(
             Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
             object wordApplication)
         {
-            toolRegistry["F_format_transfer"] = async (args) =>
+            toolRegistry["F_apply_source_format"] = async (args) =>
             {
                 try
                 {
+                    string targetCodes = FormatSourceResolver.GetArgString(args, "target_codes");
+                    string kbDetailedSubtype = FormatSourceResolver.GetArgString(args, "kb_detailed_subtype");
+                    string tableId = FormatSourceResolver.GetArgString(args, "in_table");
+                    if (string.IsNullOrEmpty(tableId))
+                    {
+                        tableId = null;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -45,24 +50,17 @@ namespace WordAddIn1
                         return sourceError;
                     }
 
-                    string pageLayoutContentMode = FormatSourceResolver.GetArgString(args, "page_layout_content_mode");
-                    if (string.IsNullOrEmpty(pageLayoutContentMode))
-                    {
-                        pageLayoutContentMode = "auto";
-                    }
-
-                    bool applyPageSetup = FormatSourceResolver.GetBoolArg(args, "apply_page_setup", true);
-
-                    return await FormatTransferHelper.RunFormatTransferAsync(
+                    return await KbFormatApplyHelper.RunApplyAsync(
                         app,
+                        targetCodes,
+                        kbDetailedSubtype,
                         source,
-                        pageLayoutContentMode,
-                        applyPageSetup,
-                        doc).ConfigureAwait(false);
+                        tableId,
+                        doc);
                 }
                 catch (Exception ex)
                 {
-                    return new ToolResult { Success = false, Error = $"格式转移工具异常: {ex.Message}" };
+                    return new ToolResult { Success = false, Error = $"apply_source_format 失败: {ex.Message}" };
                 }
             };
         }

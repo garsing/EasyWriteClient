@@ -216,7 +216,7 @@ namespace WordAddIn1
                     return "⚠️ 当前返回的是各分块摘要，不是 paragraph_display_content。"
                         + "大文档请用 F_get_curr_doc_chunk_paragraph_display_content（chunk_idx）取完整 P_ 原文。"
                         + "\n\n[P_00000-start] 与 [P_00000-end] 是段落编号标记，不是正文。"
-                        + "段版式精迁（F_apply_kb_paragraph_format）须使用 P_ 编码，与 S_ 不可混用。";
+                        + "段版式精迁（F_apply_source_paragraph_format）须使用 P_ 编码，与 S_ 不可混用。";
                 }
 
                 return "⚠️ 当前返回的是各分块摘要，不是 DisplayContent。"
@@ -228,7 +228,7 @@ namespace WordAddIn1
             if (isParagraph)
             {
                 return "注意：[P_00000-start] 与 [P_00000-end] 是段落编号标记，不是正文。"
-                    + "段版式精迁（F_apply_kb_paragraph_format）须使用 P_ 编码；句子改字仍用 S_（code_level=sentence）。"
+                    + "段版式精迁（F_apply_source_paragraph_format）须使用 P_ 编码；句子改字仍用 S_（code_level=sentence）。"
                     + "若同一 P_ 出现多次，apply 时须读 suggested_locator_codes 写入 target_paragraph_codes（见 document-format §3.2）；禁止 index。";
             }
 
@@ -305,7 +305,7 @@ namespace WordAddIn1
 
             return "注意：以下段落编码在文档中出现多次（相同段落文本复用同一编码）："
                 + string.Join(", ", duplicateCodes)
-                + "。使用 F_apply_paragraph_format / F_apply_kb_paragraph_format 定位时，须在 target_paragraph_codes 中写入 suggested_locator_codes（见 document-format §3.2）；禁止 index。";
+                + "。使用 F_apply_paragraph_format / F_apply_source_paragraph_format 定位时，须在 target_paragraph_codes 中写入 suggested_locator_codes（见 document-format §3.2）；禁止 index。";
         }
     }
 }
