@@ -108,6 +108,20 @@ namespace WordAddIn1
             }
         }
 
+        public static CompressedImage CompressBytes(byte[] bytes)
+        {
+            if (bytes == null || bytes.Length == 0)
+            {
+                throw new InvalidOperationException("图片字节为空");
+            }
+
+            using (var stream = new MemoryStream(bytes, writable: false))
+            using (var bitmap = new Bitmap(stream))
+            {
+                return Compress(bitmap);
+            }
+        }
+
         /// <summary>
         /// CopyPicture 贴进空 Chart 时经常只导出白底淡框。用深色像素占比判断。
         /// </summary>
