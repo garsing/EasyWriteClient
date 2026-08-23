@@ -644,6 +644,7 @@ namespace WordAddIn1.BrowserHost
             }
             catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine("[ExtensionHost] screenshot failed: " + ex.Message);
                 return BrowserCaptureResult.Fail(ex.Message);
             }
         }

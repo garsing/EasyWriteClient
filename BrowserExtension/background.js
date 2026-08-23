@@ -207,18 +207,31 @@ async function screenshotTab(tabUuid) {
       /* ignore */
     }
   }
-  // Native Messaging 单条消息约 1MB；PNG 全页很容易超，用 JPEG 阶梯压到能回传
+  // captureVisibleTab 要求 host_permissions 含 <all_urls>；仅 http/https 会立刻报
+  // “Either the '<all_urls>' or 'activeTab' permission is required.”
+  // Native Messaging 单条约 1MB；PNG 全页很容易超，用 JPEG 阶梯压到能回传
   let quality = 70;
-  let dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
-    format: "jpeg",
-    quality
-  });
-  while (dataUrl && dataUrl.length > 900000 && quality > 40) {
-    quality -= 15;
+  let dataUrl;
+  try {
     dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
       format: "jpeg",
       quality
     });
+    while (dataUrl && dataUrl.length > 900000 && quality > 40) {
+      quality -= 15;
+      dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+        format: "jpeg",
+        quality
+      });
+    }
+  } catch (e) {
+    const msg = String(e && e.message ? e.message : e);
+    if (/all_urls|activeTab/i.test(msg)) {
+      throw new Error(
+        "扩展缺少截图像素权限（须 <all_urls>）。请在 chrome://extensions 确认版本 ≥ 0.1.2 并重新加载「易写浏览器助手」"
+      );
+    }
+    throw e;
   }
   if (!dataUrl || typeof dataUrl !== "string" || dataUrl.indexOf(",") < 0) {
     throw new Error("captureVisibleTab 无数据");
