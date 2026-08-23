@@ -421,40 +421,65 @@ namespace WordAddIn1.SpreadsheetHost
             out string error)
         {
             error = null;
-            Excel.Application app = null;
-            bool? prevUpdating = null;
             Excel.ChartObject chartObj = null;
             try
             {
+                // xlPicture(EMF) + 未激活表 + 关 ScreenUpdating：Chart.Paste 经常只剩空框。
+                // xlBitmap 才是像素图；须先 Activate，且 CopyPicture 时保持屏幕更新。
                 try
                 {
-                    app = sheet.Application;
-                    prevUpdating = app.ScreenUpdating;
-                    app.ScreenUpdating = false;
+                    sheet.Activate();
                 }
                 catch (Exception)
                 {
-                    app = null;
                 }
-
-                target.CopyPicture(
-                    Excel.XlPictureAppearance.xlScreen,
-                    Excel.XlCopyPictureFormat.xlPicture);
 
                 double left = Convert.ToDouble(target.Left);
                 double top = Convert.ToDouble(target.Top);
                 double width = Math.Max(10, Convert.ToDouble(target.Width));
                 double height = Math.Max(10, Convert.ToDouble(target.Height));
-                chartObj = (Excel.ChartObject)sheet.ChartObjects().Add(left, top, width, height);
-                chartObj.Chart.Paste();
-                chartObj.Chart.Export(pngPath, "PNG");
-                if (!File.Exists(pngPath) || new FileInfo(pngPath).Length == 0)
+
+                Excel.XlCopyPictureFormat[] formats =
                 {
-                    error = "表格区域导出图片为空";
-                    return false;
+                    Excel.XlCopyPictureFormat.xlBitmap,
+                    Excel.XlCopyPictureFormat.xlPicture
+                };
+                Exception last = null;
+                foreach (Excel.XlCopyPictureFormat format in formats)
+                {
+                    try
+                    {
+                        target.CopyPicture(Excel.XlPictureAppearance.xlScreen, format);
+                        chartObj = (Excel.ChartObject)sheet.ChartObjects().Add(left, top, width, height);
+                        try
+                        {
+                            chartObj.Activate();
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        chartObj.Chart.Paste();
+                        chartObj.Chart.Export(pngPath, "PNG");
+                        DeleteChartQuiet(ref chartObj);
+                        if (File.Exists(pngPath)
+                            && new FileInfo(pngPath).Length > 0
+                            && !ImageCaptureCompressor.LooksMostlyBlankFile(pngPath))
+                        {
+                            return true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        last = ex;
+                        DeleteChartQuiet(ref chartObj);
+                    }
                 }
 
-                return true;
+                error = last != null
+                    ? "CopyPicture 失败: " + last.Message
+                    : "表格区域截图为空白，未带出格子内容";
+                return false;
             }
             catch (Exception ex)
             {
@@ -463,28 +488,26 @@ namespace WordAddIn1.SpreadsheetHost
             }
             finally
             {
-                if (chartObj != null)
-                {
-                    try
-                    {
-                        chartObj.Delete();
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-
-                if (app != null && prevUpdating.HasValue)
-                {
-                    try
-                    {
-                        app.ScreenUpdating = prevUpdating.Value;
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
+                DeleteChartQuiet(ref chartObj);
             }
+        }
+
+        private static void DeleteChartQuiet(ref Excel.ChartObject chartObj)
+        {
+            if (chartObj == null)
+            {
+                return;
+            }
+
+            try
+            {
+                chartObj.Delete();
+            }
+            catch (Exception)
+            {
+            }
+
+            chartObj = null;
         }
 
         private static void TryDeleteQuiet(string path)

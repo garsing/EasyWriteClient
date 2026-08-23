@@ -432,42 +432,63 @@ namespace WordAddIn1.SpreadsheetHost
             out string error)
         {
             error = null;
-            object app = null;
-            object prevUpdating = null;
             object chartObj = null;
             try
             {
                 try
                 {
-                    app = EtCom.GetProperty(sheet, "Application");
-                    prevUpdating = EtCom.GetProperty(app, "ScreenUpdating");
-                    EtCom.TrySetProperty(app, "ScreenUpdating", false);
+                    EtCom.Invoke(sheet, "Activate");
                 }
                 catch (Exception)
                 {
-                    app = null;
                 }
 
                 const int xlScreen = 1;
+                const int xlBitmap = 2;
                 const int xlPicture = -4147;
-                EtCom.Invoke(target, "CopyPicture", xlScreen, xlPicture);
-
                 double left = Convert.ToDouble(EtCom.GetProperty(target, "Left"));
                 double top = Convert.ToDouble(EtCom.GetProperty(target, "Top"));
                 double width = Math.Max(10, Convert.ToDouble(EtCom.GetProperty(target, "Width")));
                 double height = Math.Max(10, Convert.ToDouble(EtCom.GetProperty(target, "Height")));
-                object charts = EtCom.GetProperty(sheet, "ChartObjects");
-                chartObj = EtCom.Invoke(charts, "Add", left, top, width, height);
-                object chart = EtCom.GetProperty(chartObj, "Chart");
-                EtCom.Invoke(chart, "Paste");
-                EtCom.Invoke(chart, "Export", pngPath, "PNG");
-                if (!File.Exists(pngPath) || new FileInfo(pngPath).Length == 0)
+                int[] formats = { xlBitmap, xlPicture };
+                Exception last = null;
+                foreach (int format in formats)
                 {
-                    error = "表格区域导出图片为空";
-                    return false;
+                    try
+                    {
+                        EtCom.Invoke(target, "CopyPicture", xlScreen, format);
+                        object charts = EtCom.GetProperty(sheet, "ChartObjects");
+                        chartObj = EtCom.Invoke(charts, "Add", left, top, width, height);
+                        try
+                        {
+                            EtCom.Invoke(chartObj, "Activate");
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        object chart = EtCom.GetProperty(chartObj, "Chart");
+                        EtCom.Invoke(chart, "Paste");
+                        EtCom.Invoke(chart, "Export", pngPath, "PNG");
+                        DeleteChartQuiet(ref chartObj);
+                        if (File.Exists(pngPath)
+                            && new FileInfo(pngPath).Length > 0
+                            && !ImageCaptureCompressor.LooksMostlyBlankFile(pngPath))
+                        {
+                            return true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        last = ex;
+                        DeleteChartQuiet(ref chartObj);
+                    }
                 }
 
-                return true;
+                error = last != null
+                    ? "unsupported: WPS 表格 CopyPicture 失败: " + last.Message
+                    : "表格区域截图为空白，未带出格子内容";
+                return false;
             }
             catch (Exception ex)
             {
@@ -476,28 +497,26 @@ namespace WordAddIn1.SpreadsheetHost
             }
             finally
             {
-                if (chartObj != null)
-                {
-                    try
-                    {
-                        EtCom.Invoke(chartObj, "Delete");
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-
-                if (app != null && prevUpdating != null)
-                {
-                    try
-                    {
-                        EtCom.TrySetProperty(app, "ScreenUpdating", prevUpdating);
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
+                DeleteChartQuiet(ref chartObj);
             }
+        }
+
+        private static void DeleteChartQuiet(ref object chartObj)
+        {
+            if (chartObj == null)
+            {
+                return;
+            }
+
+            try
+            {
+                EtCom.Invoke(chartObj, "Delete");
+            }
+            catch (Exception)
+            {
+            }
+
+            chartObj = null;
         }
 
         private static void TryDeleteQuiet(string path)

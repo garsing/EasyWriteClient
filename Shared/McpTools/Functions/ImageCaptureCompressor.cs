@@ -108,6 +108,39 @@ namespace WordAddIn1
             }
         }
 
+        /// <summary>
+        /// CopyPicture 贴进空 Chart 时经常只导出白底淡框。用深色像素占比判断。
+        /// </summary>
+        public static bool LooksMostlyBlankFile(string imagePath)
+        {
+            if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath))
+            {
+                return true;
+            }
+
+            using (var bitmap = new Bitmap(imagePath))
+            {
+                int dark = 0;
+                int total = 0;
+                int stepX = Math.Max(1, bitmap.Width / 80);
+                int stepY = Math.Max(1, bitmap.Height / 80);
+                for (int y = 0; y < bitmap.Height; y += stepY)
+                {
+                    for (int x = 0; x < bitmap.Width; x += stepX)
+                    {
+                        Color c = bitmap.GetPixel(x, y);
+                        total++;
+                        if ((0.299 * c.R) + (0.587 * c.G) + (0.114 * c.B) < 160)
+                        {
+                            dark++;
+                        }
+                    }
+                }
+
+                return total == 0 || (dark * 200) < total;
+            }
+        }
+
         private static Bitmap ResizeBitmap(Bitmap source, int width, int height)
         {
             var target = new Bitmap(width, height);
