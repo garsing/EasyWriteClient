@@ -164,6 +164,11 @@ namespace WordAddIn1
                 return HasWorkspacePath(args, "export_csv") || HasWorkspacePath(args, "path");
             }
 
+            if (string.Equals(toolName, "F_capture_document_page_image", StringComparison.Ordinal))
+            {
+                return HasWorkspacePath(args, "path");
+            }
+
             if (string.Equals(toolName, "F_read_ppt_html", StringComparison.Ordinal))
             {
                 return HasWorkspacePath(args, "path");
@@ -224,6 +229,7 @@ namespace WordAddIn1
             "F_run_terminal",
             "F_browser_download",
             "F_read_excel_range",
+            "F_capture_document_page_image",
             "F_read_ppt_html",
             "F_extract_table_format",
             "F_extract_table_data",

@@ -177,6 +177,124 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
+        public static bool TryCaptureSlide(
+            PptChannel channel,
+            int pageNumber,
+            out PresentationCaptureResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLivePresentation(out PowerPoint.Presentation presentation))
+            {
+                error = "渠道对应的演示文稿已关闭";
+                return false;
+            }
+
+            int count;
+            try
+            {
+                count = presentation.Slides.Count;
+            }
+            catch (Exception ex)
+            {
+                error = "COM 不可用: " + ex.Message;
+                return false;
+            }
+
+            if (pageNumber < 1 || pageNumber > count)
+            {
+                error = "页码 " + pageNumber + " 超出范围，演示文稿共 " + count + " 页";
+                return false;
+            }
+
+            PowerPoint.Slide slide;
+            try
+            {
+                slide = presentation.Slides[pageNumber];
+                if (slide.SlideIndex != pageNumber)
+                {
+                    slide = null;
+                    for (int i = 1; i <= count; i++)
+                    {
+                        PowerPoint.Slide candidate = presentation.Slides[i];
+                        if (candidate.SlideIndex == pageNumber)
+                        {
+                            slide = candidate;
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "定位幻灯片失败: " + ex.Message;
+                return false;
+            }
+
+            if (slide == null)
+            {
+                error = "页码 " + pageNumber + " 超出范围，演示文稿共 " + count + " 页";
+                return false;
+            }
+
+            string tempDir = Path.Combine(Path.GetTempPath(), "EasyWrite", "capture", Guid.NewGuid().ToString("N"));
+            string pngPath = Path.Combine(tempDir, "slide.png");
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+                slide.Export(pngPath, "PNG");
+                if (!File.Exists(pngPath) || new FileInfo(pngPath).Length == 0)
+                {
+                    error = "幻灯片导出图片为空";
+                    return false;
+                }
+
+                string slideId = "";
+                try
+                {
+                    slideId = Convert.ToString(slide.SlideID) ?? "";
+                }
+                catch (Exception)
+                {
+                }
+
+                result = new PresentationCaptureResult
+                {
+                    ChannelId = channel.ChannelId,
+                    Kind = "ppt",
+                    PageNumber = pageNumber,
+                    SlideCount = count,
+                    SlideId = slideId,
+                    Image = ImageCaptureCompressor.CompressFile(pngPath)
+                };
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "导出幻灯片失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(pngPath))
+                    {
+                        File.Delete(pngPath);
+                    }
+
+                    if (Directory.Exists(tempDir))
+                    {
+                        Directory.Delete(tempDir, true);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
         public static bool TryReadPptHtml(
             PptChannel channel,
             string slideId,

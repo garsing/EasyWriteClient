@@ -51,6 +51,17 @@ namespace WordAddIn1.BrowserHost
             return ExtensionHost.LaunchNavigateAsync(host, url);
         }
 
+        internal static Task<BrowserCaptureResult> CaptureViewportAsync(BrowserChannel channel)
+        {
+            if (channel != null
+                && string.Equals(channel.Track, "attach", StringComparison.OrdinalIgnoreCase))
+            {
+                return ExtensionHost.CaptureViewportAsync(channel);
+            }
+
+            return YiWriteBrowserHost.CaptureViewportAsync(channel);
+        }
+
         public static Task<BrowserSnapshotResult> SnapshotAsync(
             BrowserChannel channel,
             string refId,

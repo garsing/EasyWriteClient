@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Web.Script.Serialization;
 
 namespace WordAddIn1.BrowserHost
 {
@@ -138,6 +140,60 @@ namespace WordAddIn1.BrowserHost
             catch (Exception ex)
             {
                 return BrowserNavigateResult.Fail("打开易写浏览窗失败: " + ex.Message);
+            }
+        }
+
+        internal static async Task<BrowserCaptureResult> CaptureViewportAsync(BrowserChannel channel)
+        {
+            if (channel == null)
+            {
+                return BrowserCaptureResult.Fail("无浏览器渠道");
+            }
+
+            if (!string.Equals(channel.Track, "agent", StringComparison.OrdinalIgnoreCase))
+            {
+                return BrowserCaptureResult.Fail("本批仅支持 browser:agent: 渠道");
+            }
+
+            if (!IsPageLive(channel.TabUuid))
+            {
+                return BrowserCaptureResult.Fail("浏览器渠道对应的页面已关闭: " + channel.ChannelId);
+            }
+
+            YiWriteBrowserForm form;
+            lock (Gate)
+            {
+                form = _form;
+            }
+
+            if (form == null || form.IsDisposed || !form.IsCoreReady)
+            {
+                return BrowserCaptureResult.Fail("引擎不可用");
+            }
+
+            try
+            {
+                string shotJson = await form.CallCdpAsync(
+                    "Page.captureScreenshot",
+                    "{\"format\":\"png\",\"fromSurface\":true}").ConfigureAwait(true);
+                var serializer = new JavaScriptSerializer();
+                var shotObj = serializer.Deserialize<Dictionary<string, object>>(shotJson);
+                if (shotObj == null || !shotObj.ContainsKey("data") || shotObj["data"] == null)
+                {
+                    return BrowserCaptureResult.Fail("截图无 data");
+                }
+
+                byte[] pngBytes = Convert.FromBase64String(shotObj["data"].ToString());
+                using (var stream = new System.IO.MemoryStream(pngBytes))
+                using (var bitmap = new System.Drawing.Bitmap(stream))
+                {
+                    var image = ImageCaptureCompressor.Compress(bitmap);
+                    return BrowserCaptureResult.Ok(channel, form.CurrentUrl, form.CurrentTitle, image);
+                }
+            }
+            catch (Exception ex)
+            {
+                return BrowserCaptureResult.Fail("截取可视区失败: " + ex.Message);
             }
         }
 
@@ -635,6 +691,41 @@ namespace WordAddIn1.BrowserHost
         public static BrowserNavigateResult Fail(string error)
         {
             return new BrowserNavigateResult
+            {
+                Success = false,
+                Error = error ?? "未知错误",
+            };
+        }
+    }
+
+    internal sealed class BrowserCaptureResult
+    {
+        public bool Success { get; private set; }
+        public string Error { get; private set; }
+        public BrowserChannel Channel { get; private set; }
+        public string Url { get; private set; }
+        public string Title { get; private set; }
+        public ImageCaptureCompressor.CompressedImage Image { get; private set; }
+
+        public static BrowserCaptureResult Ok(
+            BrowserChannel channel,
+            string url,
+            string title,
+            ImageCaptureCompressor.CompressedImage image)
+        {
+            return new BrowserCaptureResult
+            {
+                Success = true,
+                Channel = channel,
+                Url = url ?? "",
+                Title = title ?? "",
+                Image = image
+            };
+        }
+
+        public static BrowserCaptureResult Fail(string error)
+        {
+            return new BrowserCaptureResult
             {
                 Success = false,
                 Error = error ?? "未知错误",

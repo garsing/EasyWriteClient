@@ -40,4 +40,14 @@ namespace WordAddIn1.PresentationHost
 
         public string TruncatedReason { get; set; }
     }
+
+    internal sealed class PresentationCaptureResult
+    {
+        public string ChannelId { get; set; }
+        public string Kind { get; set; }
+        public int PageNumber { get; set; }
+        public int SlideCount { get; set; }
+        public string SlideId { get; set; }
+        public ImageCaptureCompressor.CompressedImage Image { get; set; }
+    }
 }

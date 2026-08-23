@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using WordAddIn1.HostPlatform;
 
@@ -466,6 +467,66 @@ namespace WordAddIn1.PresentationHost
             if (!ok)
             {
                 errorResult = new ToolResult { Success = false, Error = error };
+                return false;
+            }
+
+            return true;
+        }
+
+        internal static bool TryCaptureSlide(
+            IOperationChannel channel,
+            int pageNumber,
+            out PresentationCaptureResult result,
+            out ToolResult errorResult)
+        {
+            result = null;
+            errorResult = null;
+            if (channel == null)
+            {
+                errorResult = new ToolResult { Success = false, Error = "未知 channel_id" };
+                return false;
+            }
+
+            bool ok;
+            string error;
+            if (channel is PptChannel ppt)
+            {
+                ok = PowerPointPresentationHost.TryCaptureSlide(ppt, pageNumber, out result, out error);
+            }
+            else if (channel is WppChannel wpp)
+            {
+                ok = WppPresentationHost.TryCaptureSlide(wpp, pageNumber, out result, out error);
+            }
+            else
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "unsupported: 当前渠道不是 ppt/wpp"
+                };
+                return false;
+            }
+
+            if (!ok)
+            {
+                errorResult = new ToolResult { Success = false, Error = error };
+                if (error != null && error.Contains("超出范围") && result == null)
+                {
+                    int count = 0;
+                    int start = error.LastIndexOf("共 ", StringComparison.Ordinal);
+                    int end = error.LastIndexOf(" 页", StringComparison.Ordinal);
+                    if (start >= 0 && end > start)
+                    {
+                        int.TryParse(error.Substring(start + 2, end - start - 2), out count);
+                    }
+
+                    errorResult.Data = new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["page_number"] = pageNumber,
+                        ["slide_count"] = count
+                    };
+                }
+
                 return false;
             }
 

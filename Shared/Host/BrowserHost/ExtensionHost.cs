@@ -606,6 +606,44 @@ namespace WordAddIn1.BrowserHost
             return null;
         }
 
+        internal static async Task<BrowserCaptureResult> CaptureViewportAsync(BrowserChannel channel)
+        {
+            EnsureStarted();
+            if (channel == null || !IsAttachTabLive(channel.TabUuid))
+            {
+                return BrowserCaptureResult.Fail("附着标签不可用");
+            }
+
+            try
+            {
+                var req = new JObject
+                {
+                    ["tab_uuid"] = channel.TabUuid
+                };
+                JObject result = await RpcAsync(channel.TabUuid, "rpc.screenshot", req).ConfigureAwait(true);
+                string b64 = (string)result["image_base64"];
+                if (string.IsNullOrWhiteSpace(b64))
+                {
+                    return BrowserCaptureResult.Fail("扩展截图无 image_base64");
+                }
+
+                byte[] pngBytes = Convert.FromBase64String(b64);
+                string url = (string)result["url"] ?? channel.Url;
+                string title = (string)result["title"] ?? channel.Title;
+                channel.UpdatePage(url, title, true);
+                using (var stream = new MemoryStream(pngBytes))
+                using (var bitmap = new System.Drawing.Bitmap(stream))
+                {
+                    var image = ImageCaptureCompressor.Compress(bitmap);
+                    return BrowserCaptureResult.Ok(channel, url, title, image);
+                }
+            }
+            catch (Exception ex)
+            {
+                return BrowserCaptureResult.Fail(ex.Message);
+            }
+        }
+
         public static async Task<BrowserSnapshotResult> SnapshotAsync(
             BrowserChannel channel,
             string refId,

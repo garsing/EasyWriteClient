@@ -102,6 +102,7 @@ namespace WordAddIn1
         {
             var names = _methodToToolName.Keys.ToList();
             names.Add("workspace.pullFromBackend");
+            names.Add("document.writeCaptureImage");
             return names;
         }
 
@@ -121,6 +122,12 @@ namespace WordAddIn1
                 }
 
                 return await WorkspaceReconcile.PullAssumingLockedAsync(conversationId).ConfigureAwait(false);
+            }
+
+            if (string.Equals(method, "document.writeCaptureImage", StringComparison.Ordinal))
+            {
+                return await WriteCaptureImageHelper.ExecuteAsync(parameters ?? new Dictionary<string, object>())
+                    .ConfigureAwait(false);
             }
 
             if (!_methodToToolName.TryGetValue(method, out var toolName))

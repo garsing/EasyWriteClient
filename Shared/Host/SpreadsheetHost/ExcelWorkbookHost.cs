@@ -313,6 +313,208 @@ namespace WordAddIn1.SpreadsheetHost
             return true;
         }
 
+        public static bool TryCaptureRange(
+            ExcelChannel channel,
+            string sheetName,
+            string rangeA1,
+            out SpreadsheetCaptureResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLiveWorkbook(out Excel.Workbook book))
+            {
+                error = "渠道对应的工作簿已关闭";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(sheetName))
+            {
+                error = "必须提供 sheet";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(rangeA1))
+            {
+                error = "必须提供 range（A1 矩形，如 A1:G30）";
+                return false;
+            }
+
+            string requested = rangeA1.Trim();
+            if (requested.IndexOf('!') >= 0)
+            {
+                error = "range 须为纯 A1（如 A1:G40），表名请用 sheet 参数";
+                return false;
+            }
+
+            if (!TryFindWorksheet(book, sheetName.Trim(), out Excel.Worksheet sheet, out error))
+            {
+                return false;
+            }
+
+            if (!A1Address.TryParseRange(
+                    requested,
+                    out int firstRow,
+                    out int firstCol,
+                    out int lastRow,
+                    out int lastCol,
+                    out error))
+            {
+                return false;
+            }
+
+            if (!SpreadsheetRangeLimits.TryValidateExact(firstRow, firstCol, lastRow, lastCol, out error))
+            {
+                return false;
+            }
+
+            string actualRange = A1Address.Range(firstRow, firstCol, lastRow, lastCol);
+            Excel.Range target;
+            try
+            {
+                target = sheet.Range[actualRange];
+            }
+            catch (Exception ex)
+            {
+                error = "非法 range: " + actualRange + " (" + ex.Message + ")";
+                return false;
+            }
+
+            string tempDir = Path.Combine(Path.GetTempPath(), "EasyWrite", "capture", Guid.NewGuid().ToString("N"));
+            string pngPath = Path.Combine(tempDir, "range.png");
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+                if (!TryExportRangePicture(sheet, target, pngPath, out error))
+                {
+                    return false;
+                }
+
+                var image = ImageCaptureCompressor.CompressFile(pngPath);
+                result = new SpreadsheetCaptureResult
+                {
+                    ChannelId = channel.ChannelId,
+                    Kind = "excel",
+                    Sheet = sheet.Name,
+                    Range = requested,
+                    ActualRange = actualRange,
+                    Image = image
+                };
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "截取表格区域失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                TryDeleteQuiet(pngPath);
+                TryDeleteDirQuiet(tempDir);
+            }
+        }
+
+        private static bool TryExportRangePicture(
+            Excel.Worksheet sheet,
+            Excel.Range target,
+            string pngPath,
+            out string error)
+        {
+            error = null;
+            Excel.Application app = null;
+            bool? prevUpdating = null;
+            Excel.ChartObject chartObj = null;
+            try
+            {
+                try
+                {
+                    app = sheet.Application;
+                    prevUpdating = app.ScreenUpdating;
+                    app.ScreenUpdating = false;
+                }
+                catch (Exception)
+                {
+                    app = null;
+                }
+
+                target.CopyPicture(
+                    Excel.XlPictureAppearance.xlScreen,
+                    Excel.XlCopyPictureFormat.xlPicture);
+
+                double left = Convert.ToDouble(target.Left);
+                double top = Convert.ToDouble(target.Top);
+                double width = Math.Max(10, Convert.ToDouble(target.Width));
+                double height = Math.Max(10, Convert.ToDouble(target.Height));
+                chartObj = (Excel.ChartObject)sheet.ChartObjects().Add(left, top, width, height);
+                chartObj.Chart.Paste();
+                chartObj.Chart.Export(pngPath, "PNG");
+                if (!File.Exists(pngPath) || new FileInfo(pngPath).Length == 0)
+                {
+                    error = "表格区域导出图片为空";
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "CopyPicture 失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                if (chartObj != null)
+                {
+                    try
+                    {
+                        chartObj.Delete();
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                if (app != null && prevUpdating.HasValue)
+                {
+                    try
+                    {
+                        app.ScreenUpdating = prevUpdating.Value;
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+        }
+
+        private static void TryDeleteQuiet(string path)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryDeleteDirQuiet(string path)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
+                {
+                    Directory.Delete(path, true);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         private static SpreadsheetRangeResult EmptyResult(
             ExcelChannel channel,
             string sheetName,

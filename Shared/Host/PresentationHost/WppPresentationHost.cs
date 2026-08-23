@@ -182,6 +182,133 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
+        public static bool TryCaptureSlide(
+            WppChannel channel,
+            int pageNumber,
+            out PresentationCaptureResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLivePresentation(out object presentation))
+            {
+                error = "渠道对应的演示文稿已关闭";
+                return false;
+            }
+
+            object slidesCollection;
+            int count;
+            try
+            {
+                slidesCollection = WppCom.GetProperty(presentation, "Slides");
+                count = Convert.ToInt32(WppCom.GetProperty(slidesCollection, "Count"));
+            }
+            catch (Exception ex)
+            {
+                error = "COM 不可用: " + ex.Message;
+                return false;
+            }
+
+            if (pageNumber < 1 || pageNumber > count)
+            {
+                error = "页码 " + pageNumber + " 超出范围，演示文稿共 " + count + " 页";
+                return false;
+            }
+
+            object slide = null;
+            try
+            {
+                for (int i = 1; i <= count; i++)
+                {
+                    object candidate = WppCom.GetIndexed(slidesCollection, i);
+                    if (candidate == null)
+                    {
+                        continue;
+                    }
+
+                    object index = WppCom.GetProperty(candidate, "SlideIndex");
+                    if (index != null && Convert.ToInt32(index) == pageNumber)
+                    {
+                        slide = candidate;
+                        break;
+                    }
+                }
+
+                if (slide == null)
+                {
+                    slide = WppCom.GetIndexed(slidesCollection, pageNumber);
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "unsupported: WPS 演示定位幻灯片失败: " + ex.Message;
+                return false;
+            }
+
+            if (slide == null)
+            {
+                error = "页码 " + pageNumber + " 超出范围，演示文稿共 " + count + " 页";
+                return false;
+            }
+
+            string tempDir = Path.Combine(Path.GetTempPath(), "EasyWrite", "capture", Guid.NewGuid().ToString("N"));
+            string pngPath = Path.Combine(tempDir, "slide.png");
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+                WppCom.Invoke(slide, "Export", pngPath, "PNG");
+                if (!File.Exists(pngPath) || new FileInfo(pngPath).Length == 0)
+                {
+                    error = "unsupported: WPS 演示导出图片为空";
+                    return false;
+                }
+
+                string slideId = "";
+                try
+                {
+                    object id = WppCom.GetProperty(slide, "SlideID");
+                    slideId = id == null ? "" : Convert.ToString(id) ?? "";
+                }
+                catch (Exception)
+                {
+                }
+
+                result = new PresentationCaptureResult
+                {
+                    ChannelId = channel.ChannelId,
+                    Kind = "wpp",
+                    PageNumber = pageNumber,
+                    SlideCount = count,
+                    SlideId = slideId,
+                    Image = ImageCaptureCompressor.CompressFile(pngPath)
+                };
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "unsupported: WPS 演示导出失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(pngPath))
+                    {
+                        File.Delete(pngPath);
+                    }
+
+                    if (Directory.Exists(tempDir))
+                    {
+                        Directory.Delete(tempDir, true);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
         public static bool TryReadPptHtml(
             WppChannel channel,
             string slideId,

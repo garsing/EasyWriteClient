@@ -126,7 +126,7 @@ function onHostMessage(msg) {
 
   if (type === "rpc.snapshot" || type === "rpc.interact"
     || type === "rpc.navigate" || type === "rpc.download"
-    || type === "rpc.activate_tab") {
+    || type === "rpc.activate_tab" || type === "rpc.screenshot") {
     handleRpc(msg).catch((e) => {
       sendToHost({
         type: "rpc.result",
@@ -157,6 +157,9 @@ async function handleRpc(msg) {
         break;
       case "rpc.download":
         result = await downloadTab(msg);
+        break;
+      case "rpc.screenshot":
+        result = await screenshotTab(msg.tab_uuid);
         break;
       default:
         throw new Error("unknown rpc: " + msg.type);
@@ -191,6 +194,30 @@ async function activateTab(tabUuid) {
   const tabId = parseTabId(tabUuid);
   await chrome.tabs.update(tabId, { active: true });
   return { activated: true };
+}
+
+async function screenshotTab(tabUuid) {
+  const tabId = parseTabId(tabUuid);
+  const tab = await chrome.tabs.get(tabId);
+  await chrome.tabs.update(tabId, { active: true });
+  if (tab.windowId != null) {
+    try {
+      await chrome.windows.update(tab.windowId, { focused: true });
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+  if (!dataUrl || typeof dataUrl !== "string" || dataUrl.indexOf(",") < 0) {
+    throw new Error("captureVisibleTab 无数据");
+  }
+  const refreshed = await chrome.tabs.get(tabId);
+  return {
+    image_base64: dataUrl.slice(dataUrl.indexOf(",") + 1),
+    format: "png",
+    url: refreshed.url || tab.url || "",
+    title: refreshed.title || tab.title || ""
+  };
 }
 
 async function navigateTab(tabUuid, url) {

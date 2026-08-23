@@ -86,5 +86,44 @@ namespace WordAddIn1.SpreadsheetHost
                 reason = string.IsNullOrEmpty(reason) ? "max_cells" : reason + ",max_cells";
             }
         }
+
+        /// <summary>截图用：超限失败，不截断。</summary>
+        public static bool TryValidateExact(
+            int firstRow,
+            int firstCol,
+            int lastRow,
+            int lastCol,
+            out string error)
+        {
+            int rowCount = lastRow - firstRow + 1;
+            int colCount = lastCol - firstCol + 1;
+            long cells = (long)rowCount * colCount;
+            if (rowCount < 1 || colCount < 1)
+            {
+                error = "非法 range: 行或列为空";
+                return false;
+            }
+
+            if (rowCount > MaxRows || colCount > MaxCols || cells > MaxCells)
+            {
+                error = "区域超过截图上限（最多 " + MaxRows + " 行 × " + MaxCols
+                    + " 列，或 " + MaxCells + " 格）；本次 " + rowCount + " 行 × "
+                    + colCount + " 列 = " + cells + " 格";
+                return false;
+            }
+
+            error = null;
+            return true;
+        }
+    }
+
+    internal sealed class SpreadsheetCaptureResult
+    {
+        public string ChannelId { get; set; }
+        public string Kind { get; set; }
+        public string Sheet { get; set; }
+        public string Range { get; set; }
+        public string ActualRange { get; set; }
+        public ImageCaptureCompressor.CompressedImage Image { get; set; }
     }
 }

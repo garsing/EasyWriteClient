@@ -311,6 +311,223 @@ namespace WordAddIn1.SpreadsheetHost
             return true;
         }
 
+        public static bool TryCaptureRange(
+            EtChannel channel,
+            string sheetName,
+            string rangeA1,
+            out SpreadsheetCaptureResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLiveWorkbook(out object book))
+            {
+                error = "渠道对应的工作簿已关闭";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(sheetName))
+            {
+                error = "必须提供 sheet";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(rangeA1))
+            {
+                error = "必须提供 range（A1 矩形，如 A1:G30）";
+                return false;
+            }
+
+            string requested = rangeA1.Trim();
+            if (requested.IndexOf('!') >= 0)
+            {
+                error = "range 须为纯 A1（如 A1:G40），表名请用 sheet 参数";
+                return false;
+            }
+
+            if (!TryFindWorksheet(book, sheetName.Trim(), out object sheet, out error))
+            {
+                return false;
+            }
+
+            if (!A1Address.TryParseRange(
+                    requested,
+                    out int firstRow,
+                    out int firstCol,
+                    out int lastRow,
+                    out int lastCol,
+                    out error))
+            {
+                return false;
+            }
+
+            if (!SpreadsheetRangeLimits.TryValidateExact(firstRow, firstCol, lastRow, lastCol, out error))
+            {
+                return false;
+            }
+
+            string actualRange = A1Address.Range(firstRow, firstCol, lastRow, lastCol);
+            object target;
+            try
+            {
+                target = sheet.GetType().InvokeMember(
+                    "Range",
+                    System.Reflection.BindingFlags.GetProperty
+                        | System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.Public,
+                    null,
+                    sheet,
+                    new object[] { actualRange });
+            }
+            catch (Exception ex)
+            {
+                error = "非法 range: " + actualRange + " (" + ex.Message + ")";
+                return false;
+            }
+
+            if (target == null)
+            {
+                error = "非法 range: " + actualRange;
+                return false;
+            }
+
+            string tempDir = Path.Combine(Path.GetTempPath(), "EasyWrite", "capture", Guid.NewGuid().ToString("N"));
+            string pngPath = Path.Combine(tempDir, "range.png");
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+                if (!TryExportRangePicture(sheet, target, pngPath, out error))
+                {
+                    return false;
+                }
+
+                var image = ImageCaptureCompressor.CompressFile(pngPath);
+                result = new SpreadsheetCaptureResult
+                {
+                    ChannelId = channel.ChannelId,
+                    Kind = "et",
+                    Sheet = EtCom.TryReadName(sheet) ?? sheetName.Trim(),
+                    Range = requested,
+                    ActualRange = actualRange,
+                    Image = image
+                };
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "unsupported: WPS 表格截图失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                TryDeleteQuiet(pngPath);
+                TryDeleteDirQuiet(tempDir);
+            }
+        }
+
+        private static bool TryExportRangePicture(
+            object sheet,
+            object target,
+            string pngPath,
+            out string error)
+        {
+            error = null;
+            object app = null;
+            object prevUpdating = null;
+            object chartObj = null;
+            try
+            {
+                try
+                {
+                    app = EtCom.GetProperty(sheet, "Application");
+                    prevUpdating = EtCom.GetProperty(app, "ScreenUpdating");
+                    EtCom.TrySetProperty(app, "ScreenUpdating", false);
+                }
+                catch (Exception)
+                {
+                    app = null;
+                }
+
+                const int xlScreen = 1;
+                const int xlPicture = -4147;
+                EtCom.Invoke(target, "CopyPicture", xlScreen, xlPicture);
+
+                double left = Convert.ToDouble(EtCom.GetProperty(target, "Left"));
+                double top = Convert.ToDouble(EtCom.GetProperty(target, "Top"));
+                double width = Math.Max(10, Convert.ToDouble(EtCom.GetProperty(target, "Width")));
+                double height = Math.Max(10, Convert.ToDouble(EtCom.GetProperty(target, "Height")));
+                object charts = EtCom.GetProperty(sheet, "ChartObjects");
+                chartObj = EtCom.Invoke(charts, "Add", left, top, width, height);
+                object chart = EtCom.GetProperty(chartObj, "Chart");
+                EtCom.Invoke(chart, "Paste");
+                EtCom.Invoke(chart, "Export", pngPath, "PNG");
+                if (!File.Exists(pngPath) || new FileInfo(pngPath).Length == 0)
+                {
+                    error = "表格区域导出图片为空";
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "unsupported: WPS 表格 CopyPicture 失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                if (chartObj != null)
+                {
+                    try
+                    {
+                        EtCom.Invoke(chartObj, "Delete");
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                if (app != null && prevUpdating != null)
+                {
+                    try
+                    {
+                        EtCom.TrySetProperty(app, "ScreenUpdating", prevUpdating);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+        }
+
+        private static void TryDeleteQuiet(string path)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryDeleteDirQuiet(string path)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
+                {
+                    Directory.Delete(path, true);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         private static SpreadsheetRangeResult EmptyResult(
             EtChannel channel,
             string sheetName,
