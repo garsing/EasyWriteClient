@@ -173,10 +173,17 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
-                string shotJson = await form.CallCdpAsync(
+                Task<string> cdpTask = form.CallCdpAsync(
                     "Page.captureScreenshot",
-                    "{\"format\":\"png\",\"fromSurface\":true}").ConfigureAwait(true);
-                var serializer = new JavaScriptSerializer();
+                    "{\"format\":\"jpeg\",\"quality\":80,\"fromSurface\":true}");
+                Task winner = await Task.WhenAny(cdpTask, Task.Delay(TimeSpan.FromSeconds(20))).ConfigureAwait(true);
+                if (!ReferenceEquals(winner, cdpTask))
+                {
+                    return BrowserCaptureResult.Fail("截取可视区超时（WebView2 CDP 20 秒未返回）");
+                }
+
+                string shotJson = await cdpTask.ConfigureAwait(true);
+                var serializer = new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 };
                 var shotObj = serializer.Deserialize<Dictionary<string, object>>(shotJson);
                 if (shotObj == null || !shotObj.ContainsKey("data") || shotObj["data"] == null)
                 {

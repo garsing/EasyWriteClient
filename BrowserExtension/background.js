@@ -207,14 +207,29 @@ async function screenshotTab(tabUuid) {
       /* ignore */
     }
   }
-  const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+  // Native Messaging 单条消息约 1MB；PNG 全页很容易超，用 JPEG 阶梯压到能回传
+  let quality = 70;
+  let dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+    format: "jpeg",
+    quality
+  });
+  while (dataUrl && dataUrl.length > 900000 && quality > 40) {
+    quality -= 15;
+    dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+      format: "jpeg",
+      quality
+    });
+  }
   if (!dataUrl || typeof dataUrl !== "string" || dataUrl.indexOf(",") < 0) {
     throw new Error("captureVisibleTab 无数据");
+  }
+  if (dataUrl.length > 1200000) {
+    throw new Error("截图过大，无法经扩展回传");
   }
   const refreshed = await chrome.tabs.get(tabId);
   return {
     image_base64: dataUrl.slice(dataUrl.indexOf(",") + 1),
-    format: "png",
+    format: "jpeg",
     url: refreshed.url || tab.url || "",
     title: refreshed.title || tab.title || ""
   };

@@ -620,7 +620,11 @@ namespace WordAddIn1.BrowserHost
                 {
                     ["tab_uuid"] = channel.TabUuid
                 };
-                JObject result = await RpcAsync(channel.TabUuid, "rpc.screenshot", req).ConfigureAwait(true);
+                JObject result = await RpcAsync(
+                    channel.TabUuid,
+                    "rpc.screenshot",
+                    req,
+                    TimeSpan.FromSeconds(45)).ConfigureAwait(true);
                 string b64 = (string)result["image_base64"];
                 if (string.IsNullOrWhiteSpace(b64))
                 {
@@ -925,7 +929,16 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
-        private static async Task<JObject> RpcAsync(string tabUuid, string type, JObject body)
+        private static Task<JObject> RpcAsync(string tabUuid, string type, JObject body)
+        {
+            return RpcAsync(tabUuid, type, body, TimeSpan.FromSeconds(30));
+        }
+
+        private static async Task<JObject> RpcAsync(
+            string tabUuid,
+            string type,
+            JObject body,
+            TimeSpan timeout)
         {
             BrowserBridgePipeServer.ClientSession session;
             lock (Gate)
@@ -963,12 +976,18 @@ namespace WordAddIn1.BrowserHost
                 throw;
             }
 
-            Task completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(30))).ConfigureAwait(true);
+            Task completed = await Task.WhenAny(tcs.Task, Task.Delay(timeout)).ConfigureAwait(true);
             if (!ReferenceEquals(completed, tcs.Task))
             {
                 lock (Gate)
                 {
                     PendingRpc.Remove(id);
+                }
+
+                if (string.Equals(type, "rpc.screenshot", StringComparison.Ordinal))
+                {
+                    throw new TimeoutException(
+                        "扩展截图超时。请在 Chrome/Edge 打开 chrome://extensions ，对「易写浏览器助手」点重新加载后再试");
                 }
 
                 throw new TimeoutException("扩展 RPC 超时: " + type);
