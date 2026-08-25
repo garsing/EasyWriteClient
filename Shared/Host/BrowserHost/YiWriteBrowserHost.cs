@@ -338,6 +338,13 @@ namespace WordAddIn1.BrowserHost
                     BrowserFrameResolver.Stamp(built, stampFrame, frameMap, sessionId);
                 }
 
+                if (!isDetail)
+                {
+                    await BrowserDomClickableSupplement
+                        .MergeAsync(form, built, stampFrame, sessionId)
+                        .ConfigureAwait(true);
+                }
+
                 BrowserRefStore.Replace(channel.ChannelId, built.Refs);
                 channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, channel.Visible);
 
@@ -409,6 +416,9 @@ namespace WordAddIn1.BrowserHost
             }
 
             BrowserFrameResolver.Stamp(built, childId, frameMap, ax.SessionId);
+            await BrowserDomClickableSupplement
+                .MergeAsync(form, built, childId, ax.SessionId)
+                .ConfigureAwait(true);
             BrowserRefStore.Replace(channel.ChannelId, built.Refs);
             try
             {

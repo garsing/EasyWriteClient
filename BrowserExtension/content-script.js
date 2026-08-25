@@ -123,13 +123,71 @@
       };
     }
 
+    function ownText(el) {
+      let t = "";
+      const nodes = el.childNodes || [];
+      for (let i = 0; i < nodes.length; i++) {
+        if (nodes[i].nodeType === 3) t += nodes[i].textContent || "";
+      }
+      return t.replace(/\s+/g, " ").trim();
+    }
+
+    function isDetailRevealName(s) {
+      if (!s) return false;
+      const n = String(s).replace(/\s+/g, " ").trim();
+      if (n.indexOf("查看详情") >= 0) return true;
+      if (n.indexOf("查看更多") >= 0) return true;
+      return n === "详情";
+    }
+
+    function hasDetailLabel(el) {
+      const own = ownText(el);
+      if (isDetailRevealName(own)) return true;
+      const inner = (el.innerText || "").replace(/\s+/g, " ").trim();
+      return inner.length <= 12 && isDetailRevealName(inner);
+    }
+
     function isHoverRevealControl(el) {
       if (!el || el.nodeType !== 1) return false;
+      if (hasDetailLabel(el)) return true;
       const tag = (el.tagName || "").toLowerCase();
       if (tag === "a" || tag === "button") return true;
       const role = (el.getAttribute("role") || "").toLowerCase();
       return role === "button" || role === "link" || role === "menuitem"
         || role === "menuitemcheckbox" || role === "menuitemradio" || role === "tab";
+    }
+
+    function isPointerCard(el) {
+      try {
+        const st = window.getComputedStyle(el);
+        if (!st || st.cursor !== "pointer" || st.display === "none") return false;
+        if (!el.querySelector || !el.querySelector("img")) return false;
+        return el.offsetWidth >= 100 && el.offsetHeight >= 60;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function closestPointerCard(el) {
+      let p = el;
+      while (p && p.nodeType === 1 && p !== document.body) {
+        if (isPointerCard(p)) return p;
+        p = p.parentElement;
+      }
+      return null;
+    }
+
+    function isPointerMenu(el) {
+      try {
+        const st = window.getComputedStyle(el);
+        if (!st || st.cursor !== "pointer" || st.display === "none") return false;
+        const own = ownText(el);
+        if (own.length < 2 || own.length > 16) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.left >= 0 && rect.left < 240 && rect.width > 0 && rect.height > 0;
+      } catch (_) {
+        return false;
+      }
     }
 
     function isHoverHiddenStyle(el) {
@@ -154,7 +212,9 @@
         return !(el.querySelector && el.querySelector("iframe, frame"));
       }
       if (st && st.visibility === "hidden") {
-        if (isHoverRevealControl(el)) return false;
+        if (isHoverRevealControl(el) || hasDetailLabel(el)) return false;
+        const inner = (el.innerText || "").replace(/\s+/g, " ").trim();
+        if (inner.length <= 16 && isDetailRevealName(inner)) return false;
         if (el.querySelector && el.querySelector("a, button, [role='button'], [role='link'], [role='menuitem'], iframe, frame")) {
           return false;
         }
@@ -165,7 +225,9 @@
 
     function interesting(el) {
       const tag = (el.tagName || "").toLowerCase();
-      if (["a", "button", "input", "textarea", "select", "img", "label", "iframe", "frame"].indexOf(tag) >= 0) {
+      if (hasDetailLabel(el) || isPointerCard(el) || isPointerMenu(el)) return true;
+      if (tag === "img" && !closestPointerCard(el.parentElement)) return true;
+      if (["a", "button", "input", "textarea", "select", "label", "iframe", "frame"].indexOf(tag) >= 0) {
         return true;
       }
       if (el.isContentEditable) return true;
@@ -193,7 +255,7 @@
         if (el.tagName && el.tagName.toLowerCase() === "input" && (el.getAttribute("type") || "") === "password") {
           line += " (password)";
         }
-        if (isHoverRevealControl(el) && isHoverHiddenStyle(el)) {
+        if ((isHoverRevealControl(el) || hasDetailLabel(el)) && isHoverHiddenStyle(el)) {
           line += " (隐藏)";
         }
         lines.push(line);

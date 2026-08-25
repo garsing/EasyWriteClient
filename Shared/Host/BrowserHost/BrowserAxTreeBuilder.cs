@@ -162,7 +162,8 @@ namespace WordAddIn1.BrowserHost
                 // bool inputLike = IsInputLike(node);
                 // if (node.Ignored && !IsRootLike(node.Role) && !inputLike)
                 string peekRole = string.IsNullOrWhiteSpace(node.Role) ? "generic" : node.Role;
-                bool hoverReveal = HoverRevealRoles.Contains(peekRole);
+                bool hoverReveal = HoverRevealRoles.Contains(peekRole)
+                    || IsDetailRevealName(node.Name);
                 if (node.Ignored && !IsRootLike(node.Role) && !FrameRoles.Contains(peekRole) && !hoverReveal)
                 {
                     foreach (string child in node.ChildIds)
@@ -385,6 +386,11 @@ namespace WordAddIn1.BrowserHost
                 return true;
             }
 
+            if (IsDetailRevealName(node.Name))
+            {
+                return true;
+            }
+
             if (string.Equals(role, "heading", StringComparison.OrdinalIgnoreCase)
                 && !string.IsNullOrWhiteSpace(node.Name))
             {
@@ -403,6 +409,27 @@ namespace WordAddIn1.BrowserHost
                 || string.Equals(role, "LayoutTable", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(role, "LayoutTableRow", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(role, "LayoutTableCell", StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static bool IsDetailRevealName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return false;
+            }
+
+            string n = name.Trim();
+            if (n.IndexOf("查看详情", StringComparison.Ordinal) >= 0)
+            {
+                return true;
+            }
+
+            if (n.IndexOf("查看更多", StringComparison.Ordinal) >= 0)
+            {
+                return true;
+            }
+
+            return string.Equals(n, "详情", StringComparison.Ordinal);
         }
 
         private static bool IsRootLike(string role)
