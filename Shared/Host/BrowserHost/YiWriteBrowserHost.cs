@@ -649,10 +649,10 @@ namespace WordAddIn1.BrowserHost
                         return BrowserInteractResult.Fail("select 必须提供 option");
                     }
 
-                    string file = BrowserRiskGuard.CheckFileChooser(entry, probe);
-                    if (file != null)
+                    string selRisk = BrowserRiskGuard.CheckSelect(entry, probe);
+                    if (selRisk != null)
                     {
-                        return BrowserInteractResult.Fail(file);
+                        return BrowserInteractResult.Fail(selRisk);
                     }
 
                     await BrowserInteractEngine

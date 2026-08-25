@@ -189,7 +189,39 @@ namespace WordAddIn1.BrowserHost
                 return file;
             }
 
+            return CheckNotEditable(entry, probe);
+        }
+
+        public static string CheckSelect(BrowserRefEntry entry, DomNodeProbe probe)
+        {
+            string file = CheckFileChooser(entry, probe);
+            if (file != null)
+            {
+                return file;
+            }
+
+            return CheckNotEditable(entry, probe);
+        }
+
+        /// <summary>N4：disabled / readonly / fieldset / aria-disabled 禁止写成成功。</summary>
+        public static string CheckNotEditable(BrowserRefEntry entry, DomNodeProbe probe)
+        {
+            if (IsNotEditable(entry, probe))
+            {
+                return "目标不可编辑";
+            }
+
             return null;
+        }
+
+        public static bool IsNotEditable(BrowserRefEntry entry, DomNodeProbe probe)
+        {
+            if (probe == null)
+            {
+                return false;
+            }
+
+            return probe.Disabled || probe.ReadOnly || probe.AriaDisabled;
         }
 
         public static string CheckClick(BrowserRefEntry entry, DomNodeProbe probe)
@@ -418,5 +450,8 @@ namespace WordAddIn1.BrowserHost
         public bool HasDownloadAttr { get; set; }
         public bool PageHasPasswordInput { get; set; }
         public bool IsFileChooser { get; set; }
+        public bool Disabled { get; set; }
+        public bool ReadOnly { get; set; }
+        public bool AriaDisabled { get; set; }
     }
 }

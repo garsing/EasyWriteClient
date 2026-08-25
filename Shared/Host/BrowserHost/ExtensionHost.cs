@@ -837,7 +837,7 @@ namespace WordAddIn1.BrowserHost
             }
             else if (string.Equals(act, "select", StringComparison.Ordinal))
             {
-                risk = BrowserRiskGuard.CheckFileChooser(entry, probe);
+                risk = BrowserRiskGuard.CheckSelect(entry, probe);
             }
             else if (string.Equals(act, "press", StringComparison.Ordinal)
                 && string.Equals((key ?? "Enter").Trim(), "Enter", StringComparison.OrdinalIgnoreCase))
@@ -1116,7 +1116,10 @@ namespace WordAddIn1.BrowserHost
                 DataUrl = (string)probe["dataUrl"],
                 HasDownloadAttr = probe["hasDownloadAttr"]?.Value<bool>() ?? false,
                 PageHasPasswordInput = probe["pageHasPasswordInput"]?.Value<bool>() ?? false,
-                IsFileChooser = probe["isFileChooser"]?.Value<bool>() ?? false
+                IsFileChooser = probe["isFileChooser"]?.Value<bool>() ?? false,
+                Disabled = probe["disabled"]?.Value<bool>() ?? false,
+                ReadOnly = probe["readOnly"]?.Value<bool>() ?? false,
+                AriaDisabled = probe["ariaDisabled"]?.Value<bool>() ?? false
             };
         }
 

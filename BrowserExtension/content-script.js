@@ -37,6 +37,22 @@
     }
   }
 
+  function looksLikeNotEditable(node) {
+    if (!node) return false;
+    try {
+      if (node.disabled) return true;
+      if (node.matches && node.matches(":disabled")) return true;
+    } catch (_) {}
+    try {
+      if (node.readOnly) return true;
+    } catch (_) {}
+    try {
+      const ad = node.getAttribute && node.getAttribute("aria-disabled");
+      if (ad != null && String(ad).toLowerCase() !== "false") return true;
+    } catch (_) {}
+    return false;
+  }
+
   function looksLikeFileChooser(node) {
     if (!node) return false;
     try {
@@ -149,7 +165,19 @@
         dataUrl: el.src || el.getAttribute("src") || null,
         hasDownloadAttr: el.hasAttribute("download"),
         pageHasPasswordInput: !!document.querySelector('input[type="password"]'),
-        isFileChooser: looksLikeFileChooser(el)
+        isFileChooser: looksLikeFileChooser(el),
+        disabled: (() => {
+          try {
+            if (el.disabled) return true;
+            if (el.matches && el.matches(":disabled")) return true;
+          } catch (_) {}
+          return false;
+        })(),
+        readOnly: !!el.readOnly,
+        ariaDisabled: (() => {
+          const ad = el.getAttribute && el.getAttribute("aria-disabled");
+          return ad != null && String(ad).toLowerCase() !== "false";
+        })()
       };
     }
 
@@ -624,6 +652,9 @@
     if (looksLikeFileChooser(el) || looksLikeFileChooser(target)) {
       throw new Error("本批不支持文件选择。请用户自己在窗里选文件。");
     }
+    if ((action === "type" || action === "select") && looksLikeNotEditable(el)) {
+      throw new Error("目标不可编辑");
+    }
     target.scrollIntoView({ block: "center", inline: "nearest" });
 
     if (action === "click") {
@@ -728,6 +759,9 @@
   }
 
   function fillTextControl(el, text) {
+    if (looksLikeNotEditable(el)) {
+      return { ok: false, error: "目标不可编辑" };
+    }
     // 1) 全选清空（对百度等受控框更稳）
     try {
       el.select();

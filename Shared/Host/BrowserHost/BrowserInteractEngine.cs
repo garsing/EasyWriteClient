@@ -46,6 +46,18 @@ namespace WordAddIn1.BrowserHost
   var val = (this.getAttribute && this.getAttribute('value')) || '';
   var text = (this.innerText || this.textContent || '').trim().slice(0, 120);
   var pageHasPwd = !!(document.querySelector && document.querySelector('input[type=password]'));
+  var disabled = false;
+  var readOnly = false;
+  var ariaDisabled = false;
+  try {
+    if (this.disabled) disabled = true;
+    if (this.matches && this.matches(':disabled')) disabled = true;
+  } catch (eDis) {}
+  try { if (this.readOnly) readOnly = true; } catch (eRo) {}
+  try {
+    var ad = this.getAttribute && this.getAttribute('aria-disabled');
+    if (ad != null && String(ad).toLowerCase() !== 'false') ariaDisabled = true;
+  } catch (eAd) {}
   var isFileChooser = false;
   try {
     var tLow = (tag || '').toLowerCase();
@@ -78,7 +90,10 @@ namespace WordAddIn1.BrowserHost
     dataUrl: dataUrl,
     hasDownloadAttr: hasDownloadAttr,
     pageHasPasswordInput: pageHasPwd,
-    isFileChooser: isFileChooser
+    isFileChooser: isFileChooser,
+    disabled: disabled,
+    readOnly: readOnly,
+    ariaDisabled: ariaDisabled
   };
 }",
                 null,
@@ -109,6 +124,15 @@ namespace WordAddIn1.BrowserHost
                     probe.IsFileChooser = v["isFileChooser"] != null
                         && v["isFileChooser"].Type == JTokenType.Boolean
                         && (bool)v["isFileChooser"];
+                    probe.Disabled = v["disabled"] != null
+                        && v["disabled"].Type == JTokenType.Boolean
+                        && (bool)v["disabled"];
+                    probe.ReadOnly = v["readOnly"] != null
+                        && v["readOnly"].Type == JTokenType.Boolean
+                        && (bool)v["readOnly"];
+                    probe.AriaDisabled = v["ariaDisabled"] != null
+                        && v["ariaDisabled"].Type == JTokenType.Boolean
+                        && (bool)v["ariaDisabled"];
                 }
             }
             catch

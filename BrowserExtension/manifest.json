@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "易写浏览器助手",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "将当前 Chrome/Edge 标签页附着到易写，供读页与操作。仅经本机 Native Messaging 与易写通信。",
   "permissions": [
     "nativeMessaging",
