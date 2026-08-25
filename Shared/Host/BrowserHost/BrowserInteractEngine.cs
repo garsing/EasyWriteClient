@@ -130,7 +130,7 @@ namespace WordAddIn1.BrowserHost
                 ClickWithHitTestJs,
                 null,
                 sessionId).ConfigureAwait(true);
-            ThrowIfClickBlocked(resultJson);
+            ThrowIfJsNotOk(resultJson, "点击被挡住");
 
             // 临时关闭：点击后短等导航
             // try
@@ -353,12 +353,13 @@ namespace WordAddIn1.BrowserHost
             string sessionId = null)
         {
             string objectId = await ResolveObjectIdAsync(form, backendNodeId, sessionId).ConfigureAwait(true);
-            await CallFunctionOnAsync(
+            string resultJson = await CallFunctionOnAsync(
                 form,
                 objectId,
-                "function(){ this.scrollIntoView({block:'center', inline:'nearest'}); }",
+                ScrollIntoOverflowJs,
                 null,
                 sessionId).ConfigureAwait(true);
+            ThrowIfJsNotOk(resultJson, "滚动失败");
         }
 
         public static async Task ScrollByDirectionAsync(YiWriteBrowserForm form, string direction)
@@ -714,7 +715,40 @@ namespace WordAddIn1.BrowserHost
   return { ok: true };
 }";
 
-        private static void ThrowIfClickBlocked(string resultJson)
+        private const string ScrollIntoOverflowJs =
+            @"function() {
+  function isScrollable(el) {
+    if (!el || el === document.body || el === document.documentElement) return false;
+    var st;
+    try { st = window.getComputedStyle(el); } catch (e) { return false; }
+    if (!st) return false;
+    var oy = st.overflowY, ox = st.overflowX, o = st.overflow;
+    var y = (oy === 'auto' || oy === 'scroll' || o === 'auto' || o === 'scroll') && el.scrollHeight > el.clientHeight + 1;
+    var x = (ox === 'auto' || ox === 'scroll' || o === 'auto' || o === 'scroll') && el.scrollWidth > el.clientWidth + 1;
+    return y || x;
+  }
+  function nearestScrollable(el) {
+    var p = el && el.parentElement;
+    while (p && p !== document.body && p !== document.documentElement) {
+      if (isScrollable(p)) return p;
+      p = p.parentElement;
+    }
+    return null;
+  }
+  var t = this;
+  if (!t || !t.isConnected) return { ok: false, error: '滚动目标已不在页面上' };
+  try { t.scrollIntoView({block:'center', inline:'nearest'}); } catch (eV) {}
+  var box = nearestScrollable(t);
+  if (box) {
+    var er = t.getBoundingClientRect();
+    var br = box.getBoundingClientRect();
+    box.scrollTop += (er.top + er.height / 2) - (br.top + br.height / 2);
+    box.scrollLeft += (er.left + er.width / 2) - (br.left + br.width / 2);
+  }
+  return { ok: true };
+}";
+
+        private static void ThrowIfJsNotOk(string resultJson, string fallback)
         {
             try
             {
@@ -724,7 +758,7 @@ namespace WordAddIn1.BrowserHost
                 {
                     string msg = (string)ex["exception"]?["description"]
                         ?? (string)ex["text"]
-                        ?? "点击失败";
+                        ?? fallback;
                     throw new InvalidOperationException(msg);
                 }
 
@@ -735,7 +769,7 @@ namespace WordAddIn1.BrowserHost
                     && !(bool)v["ok"])
                 {
                     throw new InvalidOperationException(
-                        (string)v["error"] ?? "点击被挡住");
+                        (string)v["error"] ?? fallback);
                 }
             }
             catch (InvalidOperationException)
@@ -744,7 +778,7 @@ namespace WordAddIn1.BrowserHost
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException("点击结果无法解析: " + (ex.Message ?? ""));
+                throw new InvalidOperationException("工具结果无法解析: " + (ex.Message ?? ""));
             }
         }
 

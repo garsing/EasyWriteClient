@@ -500,6 +500,43 @@
     return "点击被挡住：挡在上面的是「" + previewHit(hit) + "」。请先操作该蒙层（如接受 Cookie / 关闭），再点原来的目标。";
   }
 
+  function isOverflowScrollable(el) {
+    if (!el || el === document.body || el === document.documentElement) return false;
+    let st;
+    try { st = window.getComputedStyle(el); } catch (_) { return false; }
+    if (!st) return false;
+    const oy = st.overflowY, ox = st.overflowX, o = st.overflow;
+    const y = (oy === "auto" || oy === "scroll" || o === "auto" || o === "scroll")
+      && el.scrollHeight > el.clientHeight + 1;
+    const x = (ox === "auto" || ox === "scroll" || o === "auto" || o === "scroll")
+      && el.scrollWidth > el.clientWidth + 1;
+    return y || x;
+  }
+
+  function nearestOverflowBox(el) {
+    let p = el && el.parentElement;
+    while (p && p !== document.body && p !== document.documentElement) {
+      if (isOverflowScrollable(p)) return p;
+      p = p.parentElement;
+    }
+    return null;
+  }
+
+  function scrollRefIntoView(el) {
+    if (!el || !el.isConnected) {
+      return { ok: false, error: "滚动目标已不在页面上" };
+    }
+    try { el.scrollIntoView({ block: "center", inline: "nearest" }); } catch (_) {}
+    const box = nearestOverflowBox(el);
+    if (box) {
+      const er = el.getBoundingClientRect();
+      const br = box.getBoundingClientRect();
+      box.scrollTop += (er.top + er.height / 2) - (br.top + br.height / 2);
+      box.scrollLeft += (er.left + er.width / 2) - (br.left + br.width / 2);
+    }
+    return { ok: true };
+  }
+
   function clickWithHitTest(el) {
     const err = hitTestError(el);
     if (err) return { ok: false, error: err };
@@ -632,7 +669,8 @@
     }
 
     if (action === "scroll") {
-      el.scrollIntoView({ block: "center" });
+      const scrolled = scrollRefIntoView(el);
+      if (!scrolled.ok) return scrolled;
       return { ok: true, message: "scrolled to ref", probe: entry.probe };
     }
 
