@@ -124,49 +124,13 @@ namespace WordAddIn1.BrowserHost
             string sessionId = null)
         {
             string objectId = await ResolveObjectIdAsync(form, backendNodeId, sessionId).ConfigureAwait(true);
-            // 临时用简单 click：验证「完整鼠标序列 + 等导航」是否可去掉
-            await CallFunctionOnAsync(
+            string resultJson = await CallFunctionOnAsync(
                 form,
                 objectId,
-                @"function() {
-  var t = this;
-  var tag = (this.tagName || '').toUpperCase();
-  var role = '';
-  try { role = ((this.getAttribute && this.getAttribute('role')) || '').toLowerCase(); } catch (eR) {}
-  var isImg = tag === 'IMG' || role === 'img' || role === 'image';
-  if (isImg) {
-    try {
-      if (this.closest) {
-        var card = this.closest('.imgtext');
-        if (card) {
-          var btn = card.querySelector('.imgtextbtn');
-          t = btn || card;
-        } else {
-          var hit = this.closest('a[href], button, [role=button], [role=link], [onclick]');
-          if (hit) t = hit;
-        }
-      }
-      if (t === this) {
-        var p = this.parentElement;
-        for (var i = 0; i < 5 && p; i++) {
-          try {
-            var st = window.getComputedStyle(p);
-            if (st && st.cursor === 'pointer') { t = p; break; }
-          } catch (eS) {}
-          p = p.parentElement;
-        }
-      }
-    } catch (eC) {}
-  }
-  try { t.scrollIntoView({block:'center', inline:'center'}); } catch (eV) {}
-  if (typeof t.click === 'function') { t.click(); }
-  else {
-    var e = new MouseEvent('click', {bubbles:true, cancelable:true, view:window});
-    t.dispatchEvent(e);
-  }
-}",
+                ClickWithHitTestJs,
                 null,
                 sessionId).ConfigureAwait(true);
+            ThrowIfClickBlocked(resultJson);
 
             // 临时关闭：点击后短等导航
             // try
@@ -633,6 +597,155 @@ namespace WordAddIn1.BrowserHost
             }
 
             return k;
+        }
+
+        private const string ClickWithHitTestJs =
+            @"function() {
+  function classNameOf(el) {
+    var c = el && el.className;
+    if (c && typeof c === 'object' && c.baseVal != null) return String(c.baseVal);
+    return String(c || '');
+  }
+  function ownText(el) {
+    var t = '';
+    if (!el || !el.childNodes) return t;
+    for (var i = 0; i < el.childNodes.length; i++) {
+      var n = el.childNodes[i];
+      if (n.nodeType === 3) t += n.textContent || '';
+    }
+    return String(t || '').replace(/\s+/g, ' ').trim();
+  }
+  function isDetailRevealName(s) {
+    if (!s) return false;
+    var n = String(s).replace(/\s+/g, ' ').trim();
+    if (n.indexOf('查看详情') >= 0) return true;
+    if (n.indexOf('查看更多') >= 0) return true;
+    return n === '详情';
+  }
+  function isForceTarget(el) {
+    if (!el) return false;
+    if (/\bimgtextbtn\b/.test(classNameOf(el))) return true;
+    if (isDetailRevealName(ownText(el))) return true;
+    var inner = '';
+    try { inner = String(el.innerText || '').replace(/\s+/g, ' ').trim(); } catch (eI) {}
+    return inner.length <= 12 && isDetailRevealName(inner);
+  }
+  function parentComposed(el) {
+    if (!el) return null;
+    if (el.assignedSlot) return el.assignedSlot;
+    if (el.parentElement) return el.parentElement;
+    var root = el.getRootNode && el.getRootNode();
+    if (root && root.host) return root.host;
+    return null;
+  }
+  function isOnTarget(hit, t) {
+    var n = hit;
+    while (n) {
+      if (n === t) return true;
+      n = parentComposed(n);
+    }
+    try { return !!(t && t.contains && hit && t.contains(hit)); } catch (eC) { return false; }
+  }
+  function previewHit(hit) {
+    var tag = ((hit && hit.tagName) || 'div').toLowerCase();
+    var text = '';
+    try {
+      text = (hit.getAttribute && (hit.getAttribute('aria-label') || hit.getAttribute('title'))) || '';
+      if (!text) text = String(hit.innerText || hit.textContent || '').replace(/\s+/g, ' ').trim();
+    } catch (eP) {}
+    if (text.length > 40) text = text.slice(0, 40);
+    return text ? (tag + ' ' + text) : tag;
+  }
+  function doClick(t) {
+    if (typeof t.click === 'function') t.click();
+    else t.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+  }
+
+  var t = this;
+  var tag = (this.tagName || '').toUpperCase();
+  var role = '';
+  try { role = ((this.getAttribute && this.getAttribute('role')) || '').toLowerCase(); } catch (eR) {}
+  var isImg = tag === 'IMG' || role === 'img' || role === 'image';
+  if (isImg) {
+    try {
+      if (this.closest) {
+        var card = this.closest('.imgtext');
+        if (card) {
+          var btn = card.querySelector('.imgtextbtn');
+          t = btn || card;
+        } else {
+          var hitA = this.closest('a[href], button, [role=button], [role=link], [onclick]');
+          if (hitA) t = hitA;
+        }
+      }
+      if (t === this) {
+        var p = this.parentElement;
+        for (var i = 0; i < 5 && p; i++) {
+          try {
+            var st = window.getComputedStyle(p);
+            if (st && st.cursor === 'pointer') { t = p; break; }
+          } catch (eS) {}
+          p = p.parentElement;
+        }
+      }
+    } catch (eC) {}
+  }
+  try { t.scrollIntoView({block:'center', inline:'center'}); } catch (eV) {}
+  if (isForceTarget(t)) {
+    doClick(t);
+    return { ok: true };
+  }
+  var r = { width: 0, height: 0, left: 0, top: 0 };
+  try { r = t.getBoundingClientRect(); } catch (eB) {}
+  if (r.width <= 0 || r.height <= 0) {
+    return { ok: false, error: '点击被挡住：目标没有可点区域。' };
+  }
+  var x = r.left + r.width / 2;
+  var y = r.top + r.height / 2;
+  var hit = null;
+  try { hit = document.elementFromPoint(x, y); } catch (eH) {}
+  if (!hit) {
+    return { ok: false, error: '点击被挡住：目标不在当前视口内，请先 scroll 再点。' };
+  }
+  if (!isOnTarget(hit, t)) {
+    return { ok: false, error: '点击被挡住：挡在上面的是「' + previewHit(hit) + '」。请先操作该蒙层（如接受 Cookie / 关闭），再点原来的目标。' };
+  }
+  doClick(t);
+  return { ok: true };
+}";
+
+        private static void ThrowIfClickBlocked(string resultJson)
+        {
+            try
+            {
+                var jo = JObject.Parse(resultJson ?? "{}");
+                var ex = jo["exceptionDetails"];
+                if (ex != null && ex.Type != JTokenType.Null)
+                {
+                    string msg = (string)ex["exception"]?["description"]
+                        ?? (string)ex["text"]
+                        ?? "点击失败";
+                    throw new InvalidOperationException(msg);
+                }
+
+                var v = jo["result"]?["value"] as JObject;
+                if (v != null
+                    && v["ok"] != null
+                    && v["ok"].Type == JTokenType.Boolean
+                    && !(bool)v["ok"])
+                {
+                    throw new InvalidOperationException(
+                        (string)v["error"] ?? "点击被挡住");
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("点击结果无法解析: " + (ex.Message ?? ""));
+            }
         }
 
         private static async Task<string> ResolveObjectIdAsync(

@@ -425,6 +425,90 @@
     return { el, entry: entry.cssPath ? entry : { cssPath: path, probe: {} } };
   }
 
+  function isForceClickTarget(el) {
+    if (!el) return false;
+    const cls = el.className && typeof el.className === "object" && el.className.baseVal != null
+      ? String(el.className.baseVal)
+      : String(el.className || "");
+    if (/\bimgtextbtn\b/.test(cls)) return true;
+    function revealName(s) {
+      if (!s) return false;
+      const n = String(s).replace(/\s+/g, " ").trim();
+      if (n.indexOf("查看详情") >= 0) return true;
+      if (n.indexOf("查看更多") >= 0) return true;
+      return n === "详情";
+    }
+    let own = "";
+    const nodes = el.childNodes || [];
+    for (let i = 0; i < nodes.length; i++) {
+      if (nodes[i].nodeType === 3) own += nodes[i].textContent || "";
+    }
+    own = own.replace(/\s+/g, " ").trim();
+    if (revealName(own)) return true;
+    const inner = (el.innerText || "").replace(/\s+/g, " ").trim();
+    return inner.length <= 12 && revealName(inner);
+  }
+
+  function parentComposed(el) {
+    if (!el) return null;
+    if (el.assignedSlot) return el.assignedSlot;
+    if (el.parentElement) return el.parentElement;
+    const root = el.getRootNode && el.getRootNode();
+    if (root && root.host) return root.host;
+    return null;
+  }
+
+  function isOnTarget(hit, t) {
+    let n = hit;
+    while (n) {
+      if (n === t) return true;
+      n = parentComposed(n);
+    }
+    try {
+      return !!(t && t.contains && hit && t.contains(hit));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function previewHit(hit) {
+    const tag = ((hit && hit.tagName) || "div").toLowerCase();
+    let text = "";
+    try {
+      text = (hit.getAttribute && (hit.getAttribute("aria-label") || hit.getAttribute("title"))) || "";
+      if (!text) text = String(hit.innerText || hit.textContent || "").replace(/\s+/g, " ").trim();
+    } catch (_) {}
+    if (text.length > 40) text = text.slice(0, 40);
+    return text ? (tag + " " + text) : tag;
+  }
+
+  function hitTestError(t) {
+    if (isForceClickTarget(t)) return null;
+    let r = { width: 0, height: 0, left: 0, top: 0 };
+    try { r = t.getBoundingClientRect(); } catch (_) {}
+    if (r.width <= 0 || r.height <= 0) {
+      return "点击被挡住：目标没有可点区域。";
+    }
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    let hit = null;
+    try { hit = document.elementFromPoint(x, y); } catch (_) {}
+    if (!hit) {
+      return "点击被挡住：目标不在当前视口内，请先 scroll 再点。";
+    }
+    if (isOnTarget(hit, t)) return null;
+    return "点击被挡住：挡在上面的是「" + previewHit(hit) + "」。请先操作该蒙层（如接受 Cookie / 关闭），再点原来的目标。";
+  }
+
+  function clickWithHitTest(el) {
+    const err = hitTestError(el);
+    if (err) return { ok: false, error: err };
+    try { el.focus && el.focus(); } catch (_) {}
+    if (typeof el.click === "function") el.click();
+    else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    return { ok: true };
+  }
+
   function resolveClickTarget(el) {
     if (!el) return el;
     const tag = (el.tagName || "").toLowerCase();
@@ -469,8 +553,8 @@
     target.scrollIntoView({ block: "center", inline: "nearest" });
 
     if (action === "click") {
-      target.focus && target.focus();
-      target.click();
+      const clicked = clickWithHitTest(target);
+      if (!clicked.ok) return clicked;
       return { ok: true, message: "clicked", probe: entry.probe };
     }
 
@@ -652,8 +736,8 @@
 
   function doDownloadClick(ref, cssPathHint) {
     const { el } = resolveRef(ref, cssPathHint);
-    el.scrollIntoView({ block: "center" });
-    el.click();
-    return { ok: true };
+    const target = resolveClickTarget(el);
+    try { target.scrollIntoView({ block: "center" }); } catch (_) {}
+    return clickWithHitTest(target);
   }
 })();

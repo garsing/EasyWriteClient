@@ -57,3 +57,4 @@ cd EasyWriteClient\BrowserExtension
 - 操作时会自动切到目标标签，但不会把浏览器窗口置顶
 - `visible=false` 的 navigate 不会附着用户 Chrome/Edge
 - **0.1.6** 起按教评 `.imgtext` / `.imgtextbtn` 识别「查看详情」（含 display:none）。须重新加载扩展。
+- **0.1.7** 起普通 click 做命中测试：被 Cookie/蒙层挡住会失败；「查看详情」/`.imgtextbtn` 免检。须重新加载扩展。
