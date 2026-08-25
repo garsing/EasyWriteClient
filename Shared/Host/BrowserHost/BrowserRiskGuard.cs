@@ -226,6 +226,11 @@ namespace WordAddIn1.BrowserHost
 
         public static bool IsFileChooser(BrowserRefEntry entry, DomNodeProbe probe)
         {
+            if (probe != null && probe.IsFileChooser)
+            {
+                return true;
+            }
+
             if (probe != null
                 && string.Equals(probe.InputType, "file", StringComparison.OrdinalIgnoreCase))
             {
@@ -412,5 +417,6 @@ namespace WordAddIn1.BrowserHost
         public string DataUrl { get; set; }
         public bool HasDownloadAttr { get; set; }
         public bool PageHasPasswordInput { get; set; }
+        public bool IsFileChooser { get; set; }
     }
 }

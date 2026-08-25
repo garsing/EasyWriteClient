@@ -61,3 +61,4 @@ cd EasyWriteClient\BrowserExtension
 - **0.1.8** 起 `scroll` 有 ref 时会滚内部 overflow 容器，不只滚整页。须重新加载扩展。
 - **0.1.9** 起图标按钮取名：`aria-label` → `title` → `alt`（含按钮内 img / svg title / area）。须重新加载扩展。
 - **0.1.10** 起不代点 `<input type=file>`；`chrome://` / PDF / 扩展页注入失败会写「此页无法附着」。须重新加载扩展。
+- **0.1.11** 起点到包着 file 的 label 也拒绝（不只认 input 本身）。须重新加载扩展。

@@ -46,6 +46,26 @@ namespace WordAddIn1.BrowserHost
   var val = (this.getAttribute && this.getAttribute('value')) || '';
   var text = (this.innerText || this.textContent || '').trim().slice(0, 120);
   var pageHasPwd = !!(document.querySelector && document.querySelector('input[type=password]'));
+  var isFileChooser = false;
+  try {
+    var tLow = (tag || '').toLowerCase();
+    var typLow = String(type || '').toLowerCase();
+    if (tLow === 'input' && typLow === 'file') isFileChooser = true;
+    else if (this.querySelector && this.querySelector('input[type=file]')) isFileChooser = true;
+    else if (this.closest) {
+      var lab = this.closest('label');
+      if (lab) {
+        if (lab.querySelector && lab.querySelector('input[type=file]')) isFileChooser = true;
+        else {
+          var fid = lab.htmlFor || (lab.getAttribute && lab.getAttribute('for')) || '';
+          if (fid) {
+            var fe = document.getElementById(fid);
+            if (fe && String(fe.type || '').toLowerCase() === 'file') isFileChooser = true;
+          }
+        }
+      }
+    }
+  } catch (eF) {}
   return {
     tag: tag,
     type: type,
@@ -57,7 +77,8 @@ namespace WordAddIn1.BrowserHost
     href: href,
     dataUrl: dataUrl,
     hasDownloadAttr: hasDownloadAttr,
-    pageHasPasswordInput: pageHasPwd
+    pageHasPasswordInput: pageHasPwd,
+    isFileChooser: isFileChooser
   };
 }",
                 null,
@@ -85,6 +106,9 @@ namespace WordAddIn1.BrowserHost
                     probe.PageHasPasswordInput = v["pageHasPasswordInput"] != null
                         && v["pageHasPasswordInput"].Type == JTokenType.Boolean
                         && (bool)v["pageHasPasswordInput"];
+                    probe.IsFileChooser = v["isFileChooser"] != null
+                        && v["isFileChooser"].Type == JTokenType.Boolean
+                        && (bool)v["isFileChooser"];
                 }
             }
             catch

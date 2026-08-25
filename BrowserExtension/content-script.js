@@ -37,6 +37,26 @@
     }
   }
 
+  function looksLikeFileChooser(node) {
+    if (!node) return false;
+    try {
+      const tag = (node.tagName || "").toLowerCase();
+      const typ = String((node.getAttribute && node.getAttribute("type")) || node.type || "").toLowerCase();
+      if (tag === "input" && typ === "file") return true;
+      if (node.querySelector && node.querySelector('input[type="file"]')) return true;
+      const lab = node.closest && node.closest("label");
+      if (lab) {
+        if (lab.querySelector && lab.querySelector('input[type="file"]')) return true;
+        const id = lab.htmlFor || lab.getAttribute("for");
+        if (id) {
+          const t = document.getElementById(id);
+          if (t && String(t.type || "").toLowerCase() === "file") return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
   function doSnapshot(msg) {
     const nodes = {};
     let counter = 0;
@@ -128,7 +148,8 @@
         href: el.href || el.getAttribute("href") || null,
         dataUrl: el.src || el.getAttribute("src") || null,
         hasDownloadAttr: el.hasAttribute("download"),
-        pageHasPasswordInput: !!document.querySelector('input[type="password"]')
+        pageHasPasswordInput: !!document.querySelector('input[type="password"]'),
+        isFileChooser: looksLikeFileChooser(el)
       };
     }
 
@@ -600,13 +621,7 @@
 
     const { el, entry } = resolveRef(msg.ref, msg.css_path);
     const target = action === "click" ? resolveClickTarget(el) : el;
-    function isFileChooser(node) {
-      if (!node) return false;
-      const tag = (node.tagName || "").toLowerCase();
-      const typ = String((node.getAttribute && node.getAttribute("type")) || node.type || "").toLowerCase();
-      return tag === "input" && typ === "file";
-    }
-    if (isFileChooser(el) || isFileChooser(target)) {
+    if (looksLikeFileChooser(el) || looksLikeFileChooser(target)) {
       throw new Error("本批不支持文件选择。请用户自己在窗里选文件。");
     }
     target.scrollIntoView({ block: "center", inline: "nearest" });
@@ -797,6 +812,9 @@
   function doDownloadClick(ref, cssPathHint) {
     const { el } = resolveRef(ref, cssPathHint);
     const target = resolveClickTarget(el);
+    if (looksLikeFileChooser(el) || looksLikeFileChooser(target)) {
+      throw new Error("本批不支持文件选择。请用户自己在窗里选文件。");
+    }
     try { target.scrollIntoView({ block: "center" }); } catch (_) {}
     return clickWithHitTest(target);
   }

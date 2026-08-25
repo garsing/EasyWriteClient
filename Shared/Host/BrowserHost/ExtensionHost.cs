@@ -1115,7 +1115,8 @@ namespace WordAddIn1.BrowserHost
                 Href = (string)probe["href"],
                 DataUrl = (string)probe["dataUrl"],
                 HasDownloadAttr = probe["hasDownloadAttr"]?.Value<bool>() ?? false,
-                PageHasPasswordInput = probe["pageHasPasswordInput"]?.Value<bool>() ?? false
+                PageHasPasswordInput = probe["pageHasPasswordInput"]?.Value<bool>() ?? false,
+                IsFileChooser = probe["isFileChooser"]?.Value<bool>() ?? false
             };
         }
 
