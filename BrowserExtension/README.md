@@ -64,3 +64,4 @@ cd EasyWriteClient\BrowserExtension
 - **0.1.11** 起点到包着 file 的 label 也拒绝（不只认 input 本身）。须重新加载扩展。
 - **0.1.12** 起 type/select 对 disabled、readonly、fieldset、aria-disabled 失败（目标不可编辑）。须重新加载扩展。
 - **0.1.13** 起 click 原生 `<select>` 失败（请用 action=select）；输入框不把「不能为空」当 name，并印 value=。须重新加载扩展。
+- **0.1.14** 起 combobox 行带 options=（最多 8 项）；select 找不到选项时会列出可选原文。须重新加载扩展。

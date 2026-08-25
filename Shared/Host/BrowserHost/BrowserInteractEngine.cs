@@ -486,26 +486,51 @@ namespace WordAddIn1.BrowserHost
                 form,
                 objectId,
                 @"function(option) {
-  this.scrollIntoView({block:'center', inline:'center'});
-  this.focus && this.focus();
-  var tag = (this.tagName || '').toUpperCase();
-  if (tag === 'SELECT') {
-    var exact = -1, contains = -1;
-    for (var i = 0; i < this.options.length; i++) {
-      var o = this.options[i];
-      var t = (o.text || '').trim();
-      var v = (o.value || '').trim();
-      if (v === option || t === option) { exact = i; break; }
-      if (contains < 0 && (t.indexOf(option) >= 0 || v.indexOf(option) >= 0)) contains = i;
-    }
-    var idx = exact >= 0 ? exact : contains;
-    if (idx < 0) return { ok:false, reason:'no_match' };
-    this.selectedIndex = idx;
-    this.dispatchEvent(new Event('input', {bubbles:true}));
-    this.dispatchEvent(new Event('change', {bubbles:true}));
-    return { ok:true };
+  function findSelect(el) {
+    if (!el) return null;
+    if ((el.tagName || '').toUpperCase() === 'SELECT') return el;
+    try {
+      if (el.querySelector) {
+        var inner = el.querySelector('select');
+        if (inner) return inner;
+      }
+      if (el.closest) {
+        var g = el.closest('.input-group');
+        if (g && g.querySelector) {
+          var inGroup = g.querySelector('select');
+          if (inGroup) return inGroup;
+        }
+      }
+    } catch (eF) {}
+    return null;
   }
-  return { ok:false, reason:'not_select' };
+  function optionPreview(sel) {
+    var out = [];
+    if (!sel || !sel.options) return '';
+    for (var i = 0; i < sel.options.length && out.length < 8; i++) {
+      var tx = String(sel.options[i].text || '').replace(/\s+/g, ' ').trim();
+      if (tx) out.push(tx);
+    }
+    return out.join('、');
+  }
+  var sel = findSelect(this);
+  if (!sel) return { ok:false, reason:'not_select' };
+  sel.scrollIntoView({block:'center', inline:'center'});
+  sel.focus && sel.focus();
+  var exact = -1, contains = -1;
+  for (var i = 0; i < sel.options.length; i++) {
+    var o = sel.options[i];
+    var t = (o.text || '').trim();
+    var v = (o.value || '').trim();
+    if (v === option || t === option) { exact = i; break; }
+    if (contains < 0 && (t.indexOf(option) >= 0 || v.indexOf(option) >= 0)) contains = i;
+  }
+  var idx = exact >= 0 ? exact : contains;
+  if (idx < 0) return { ok:false, reason:'no_match', options: optionPreview(sel) };
+  sel.selectedIndex = idx;
+  sel.dispatchEvent(new Event('input', {bubbles:true}));
+  sel.dispatchEvent(new Event('change', {bubbles:true}));
+  return { ok:true };
 }",
                 argsJson,
                 sessionId).ConfigureAwait(true);
@@ -519,7 +544,11 @@ namespace WordAddIn1.BrowserHost
                     string reason = v != null ? (string)v["reason"] : "failed";
                     if (reason == "no_match")
                     {
-                        throw new InvalidOperationException("未找到匹配的下拉选项");
+                        string hint = v != null ? (string)v["options"] : null;
+                        throw new InvalidOperationException(
+                            string.IsNullOrWhiteSpace(hint)
+                                ? "未找到匹配的下拉选项"
+                                : "未找到匹配的下拉选项。可选：" + hint);
                     }
 
                     throw new InvalidOperationException("目标不是可 select 的下拉控件");

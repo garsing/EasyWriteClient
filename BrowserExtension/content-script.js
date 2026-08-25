@@ -53,6 +53,23 @@
     return false;
   }
 
+  function findSelect(el) {
+    if (!el) return null;
+    if ((el.tagName || "").toLowerCase() === "select") return el;
+    try {
+      if (el.querySelector) {
+        const inner = el.querySelector("select");
+        if (inner) return inner;
+      }
+      const g = el.closest && el.closest(".input-group");
+      if (g && g.querySelector) {
+        const inGroup = g.querySelector("select");
+        if (inGroup) return inGroup;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   function looksLikeFileChooser(node) {
     if (!node) return false;
     try {
@@ -185,6 +202,16 @@
       }
       const text = t(el.innerText || el.textContent);
       return isValidatorText(text) ? "" : text.slice(0, 120);
+    }
+
+    function optionsOf(el) {
+      if ((el.tagName || "").toLowerCase() !== "select" || !el.options) return null;
+      const out = [];
+      for (let i = 0; i < el.options.length && out.length < 8; i++) {
+        const tx = String(el.options[i].text || "").replace(/\s+/g, " ").trim();
+        if (tx) out.push(tx);
+      }
+      return out.length ? out.join("|") : null;
     }
 
     function valueOf(el) {
@@ -387,6 +414,8 @@
         if (name) line += ' "' + name.replace(/"/g, "'") + '"';
         line += " [ref=" + ref + "]";
         if (val != null) line += ' value="' + String(val).replace(/"/g, "'") + '"';
+        const opts = optionsOf(el);
+        if (opts) line += " options=" + opts;
         if (el.tagName && el.tagName.toLowerCase() === "input" && (el.getAttribute("type") || "") === "password") {
           line += " (password)";
         }
@@ -781,21 +810,28 @@
     }
 
     if (action === "select") {
-      if ((el.tagName || "").toLowerCase() !== "select") {
-        throw new Error("select 仅用于 <select>");
+      const sel = findSelect(el);
+      if (!sel) {
+        throw new Error("select 仅用于原生下拉。请对 combobox 用 action=select，option 填树上 options= 里的原文。");
       }
       const option = String(msg.option || "");
       let matched = false;
-      for (let i = 0; i < el.options.length; i++) {
-        const opt = el.options[i];
-        if (opt.value === option || (opt.textContent || "").trim() === option) {
-          el.selectedIndex = i;
+      const preview = [];
+      for (let i = 0; i < sel.options.length; i++) {
+        const opt = sel.options[i];
+        const text = (opt.textContent || "").trim();
+        if (preview.length < 8 && text) preview.push(text);
+        if (opt.value === option || text === option || text.indexOf(option) >= 0 || String(opt.value).indexOf(option) >= 0) {
+          sel.selectedIndex = i;
           matched = true;
           break;
         }
       }
-      if (!matched) throw new Error("未找到选项: " + option);
-      el.dispatchEvent(new Event("change", { bubbles: true }));
+      if (!matched) {
+        throw new Error("未找到选项: " + option + (preview.length ? "。可选：" + preview.join("、") : ""));
+      }
+      sel.dispatchEvent(new Event("input", { bubbles: true }));
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
       return { ok: true, message: "selected", probe: entry.probe };
     }
 

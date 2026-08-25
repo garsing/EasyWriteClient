@@ -112,6 +112,95 @@ namespace WordAddIn1.BrowserHost
             built.TreeText = tree;
         }
 
+        private const string ReadSelectOptionsJs =
+            @"function() {
+  function findSelect(el) {
+    if (!el) return null;
+    if ((el.tagName || '').toUpperCase() === 'SELECT') return el;
+    try {
+      if (el.querySelector) {
+        var inner = el.querySelector('select');
+        if (inner) return inner;
+      }
+      if (el.closest) {
+        var g = el.closest('.input-group');
+        if (g && g.querySelector) {
+          var inGroup = g.querySelector('select');
+          if (inGroup) return inGroup;
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+  var sel = findSelect(this);
+  if (!sel || !sel.options) return '';
+  var out = [];
+  for (var i = 0; i < sel.options.length && out.length < 8; i++) {
+    var tx = String(sel.options[i].text || '').replace(/\s+/g, ' ').trim();
+    if (tx) out.push(tx);
+  }
+  return out.join('|');
+}";
+
+        public static async Task FillSelectHintsAsync(
+            YiWriteBrowserForm form,
+            BrowserAxBuildResult built,
+            string sessionId)
+        {
+            if (form == null || built == null || built.Refs == null || string.IsNullOrEmpty(built.TreeText))
+            {
+                return;
+            }
+
+            int n = 0;
+            string tree = built.TreeText;
+            foreach (var kv in built.Refs)
+            {
+                if (n >= MaxAttempts)
+                {
+                    break;
+                }
+
+                BrowserRefEntry e = kv.Value;
+                if (e == null || !e.BackendDomNodeId.HasValue)
+                {
+                    continue;
+                }
+
+                string role = e.Role ?? "";
+                if (!string.Equals(role, "combobox", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(role, "combo box", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(role, "listbox", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                n++;
+                string sid = string.IsNullOrWhiteSpace(e.CdpSessionId) ? sessionId : e.CdpSessionId;
+                try
+                {
+                    string objectId = await BrowserInteractEngine
+                        .ResolveObjectIdAsync(form, e.BackendDomNodeId.Value, sid)
+                        .ConfigureAwait(true);
+                    string json = await BrowserInteractEngine
+                        .CallFunctionOnAsync(form, objectId, ReadSelectOptionsJs, null, sid)
+                        .ConfigureAwait(true);
+                    string opts = ReadReturnedString(json);
+                    if (string.IsNullOrWhiteSpace(opts))
+                    {
+                        continue;
+                    }
+
+                    tree = InsertOnRefLine(tree, kv.Key, " options=" + opts);
+                }
+                catch
+                {
+                }
+            }
+
+            built.TreeText = tree;
+        }
+
         /// <summary>树格式：<c>- button ref=e5</c> → <c>- button ref=e5 "设置"</c></summary>
         private static string InsertNameAfterRef(string tree, string refId, string name)
         {
@@ -139,6 +228,48 @@ namespace WordAddIn1.BrowserHost
 
                 string quoted = " \"" + Escape(name) + "\"";
                 return tree.Substring(0, end) + quoted + tree.Substring(end);
+            }
+
+            return tree;
+        }
+
+        private static string InsertOnRefLine(string tree, string refId, string suffix)
+        {
+            if (string.IsNullOrEmpty(tree) || string.IsNullOrEmpty(suffix))
+            {
+                return tree;
+            }
+
+            string needle = "ref=" + refId;
+            int at = 0;
+            while (at < tree.Length)
+            {
+                int found = tree.IndexOf(needle, at, StringComparison.Ordinal);
+                if (found < 0)
+                {
+                    return tree;
+                }
+
+                int end = found + needle.Length;
+                if (end < tree.Length && char.IsDigit(tree[end]))
+                {
+                    at = end;
+                    continue;
+                }
+
+                int lineEnd = tree.IndexOf('\n', found);
+                if (lineEnd < 0)
+                {
+                    lineEnd = tree.Length;
+                }
+
+                string line = tree.Substring(found, lineEnd - found);
+                if (line.IndexOf(" options=", StringComparison.Ordinal) >= 0)
+                {
+                    return tree;
+                }
+
+                return tree.Substring(0, lineEnd) + suffix + tree.Substring(lineEnd);
             }
 
             return tree;

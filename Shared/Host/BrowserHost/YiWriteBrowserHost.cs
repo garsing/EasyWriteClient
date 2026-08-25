@@ -348,6 +348,9 @@ namespace WordAddIn1.BrowserHost
                 await BrowserAccessibleNameFill
                     .FillEmptyAsync(form, built, sessionId)
                     .ConfigureAwait(true);
+                await BrowserAccessibleNameFill
+                    .FillSelectHintsAsync(form, built, sessionId)
+                    .ConfigureAwait(true);
 
                 BrowserRefStore.Replace(channel.ChannelId, built.Refs);
                 channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, channel.Visible);
@@ -425,6 +428,9 @@ namespace WordAddIn1.BrowserHost
                 .ConfigureAwait(true);
             await BrowserAccessibleNameFill
                 .FillEmptyAsync(form, built, ax.SessionId)
+                .ConfigureAwait(true);
+            await BrowserAccessibleNameFill
+                .FillSelectHintsAsync(form, built, ax.SessionId)
                 .ConfigureAwait(true);
             BrowserRefStore.Replace(channel.ChannelId, built.Refs);
             try
