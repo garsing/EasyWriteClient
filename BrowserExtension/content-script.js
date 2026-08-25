@@ -123,6 +123,27 @@
       }
     }
 
+    function isValidatorText(s) {
+      const n = String(s || "").replace(/\s+/g, " ").trim();
+      if (!n) return false;
+      if (n === "不能为空" || n === "必填" || n === "此项必填") return true;
+      if (n.indexOf("输入格式不正确") >= 0) return true;
+      const low = n.toLowerCase();
+      return low === "required" || low === "this field is required"
+        || low === "cannot be empty" || low === "must not be empty";
+    }
+
+    function isValidatorLabel(lab) {
+      if (!lab) return false;
+      if (lab.getAttribute && lab.getAttribute("data-bv-validator")) return true;
+      if (/\bhelp-block\b/.test(String(lab.className || ""))) return true;
+      try {
+        const st = window.getComputedStyle(lab);
+        if (st && st.display === "none" && isValidatorText(lab.innerText)) return true;
+      } catch (_) {}
+      return isValidatorText(lab.innerText);
+    }
+
     function nameOf(el) {
       const tag = (el.tagName || "").toLowerCase();
       const t = (s) => String(s || "").replace(/\s+/g, " ").trim();
@@ -134,8 +155,8 @@
         return srcTail(src) || "iframe";
       }
       const aria = el.getAttribute("aria-label");
-      if (t(aria)) return t(aria).slice(0, 120);
-      if (t(el.title)) return t(el.title).slice(0, 120);
+      if (t(aria) && !isValidatorText(aria)) return t(aria).slice(0, 120);
+      if (t(el.title) && !isValidatorText(el.title)) return t(el.title).slice(0, 120);
       if (t(el.alt)) return t(el.alt).slice(0, 120);
       try {
         const img = el.querySelector && el.querySelector("img[alt]");
@@ -145,10 +166,43 @@
         const area = el.querySelector && el.querySelector("area[alt]");
         if (area && t(area.alt)) return t(area.alt).slice(0, 120);
       } catch (_) {}
-      if (el.placeholder) return String(el.placeholder).trim().slice(0, 120);
-      const label = el.labels && el.labels[0];
-      if (label) return t(label.innerText).slice(0, 120);
-      return t(el.innerText || el.textContent).slice(0, 120);
+      try {
+        const g = el.closest && el.closest(".input-group");
+        if (g) {
+          const addon = g.querySelector(".input-group-addon");
+          const n = t(addon && addon.innerText).replace(/^\*+\s*/, "");
+          if (n && !isValidatorText(n)) return n.slice(0, 120);
+        }
+      } catch (_) {}
+      if (el.placeholder && !isValidatorText(el.placeholder)) {
+        return String(el.placeholder).trim().slice(0, 120);
+      }
+      const labels = el.labels ? Array.from(el.labels) : [];
+      for (let i = 0; i < labels.length; i++) {
+        if (isValidatorLabel(labels[i])) continue;
+        const n = t(labels[i].innerText);
+        if (n) return n.slice(0, 120);
+      }
+      const text = t(el.innerText || el.textContent);
+      return isValidatorText(text) ? "" : text.slice(0, 120);
+    }
+
+    function valueOf(el) {
+      const tag = (el.tagName || "").toLowerCase();
+      if (tag === "input" && (el.getAttribute("type") || "").toLowerCase() === "password") {
+        return null;
+      }
+      if (tag === "select") {
+        const o = el.options && el.selectedIndex >= 0 ? el.options[el.selectedIndex] : null;
+        return o ? String(o.text || o.value || "").replace(/\s+/g, " ").trim() : "";
+      }
+      if (tag === "input" || tag === "textarea") {
+        return el.value != null ? String(el.value).slice(0, 120) : "";
+      }
+      if (el.isContentEditable) {
+        return String(el.innerText || "").replace(/\s+/g, " ").trim().slice(0, 120);
+      }
+      return null;
     }
 
     function probeOf(el) {
@@ -327,10 +381,12 @@
         const ref = nextRef();
         const role = roleOf(el);
         const name = nameOf(el);
+        const val = valueOf(el);
         const indent = "  ".repeat(Math.min(depth, 12));
         let line = indent + "- " + role;
         if (name) line += ' "' + name.replace(/"/g, "'") + '"';
         line += " [ref=" + ref + "]";
+        if (val != null) line += ' value="' + String(val).replace(/"/g, "'") + '"';
         if (el.tagName && el.tagName.toLowerCase() === "input" && (el.getAttribute("type") || "") === "password") {
           line += " (password)";
         }
@@ -651,6 +707,13 @@
     const target = action === "click" ? resolveClickTarget(el) : el;
     if (looksLikeFileChooser(el) || looksLikeFileChooser(target)) {
       throw new Error("本批不支持文件选择。请用户自己在窗里选文件。");
+    }
+    if (action === "click") {
+      const tagEl = ((el && el.tagName) || "").toLowerCase();
+      const tagTg = ((target && target.tagName) || "").toLowerCase();
+      if (tagEl === "select" || tagTg === "select") {
+        throw new Error("这是原生下拉，请用 action=select，option 填选项原文或 value。");
+      }
     }
     if ((action === "type" || action === "select") && looksLikeNotEditable(el)) {
       throw new Error("目标不可编辑");

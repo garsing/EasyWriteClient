@@ -63,3 +63,4 @@ cd EasyWriteClient\BrowserExtension
 - **0.1.10** 起不代点 `<input type=file>`；`chrome://` / PDF / 扩展页注入失败会写「此页无法附着」。须重新加载扩展。
 - **0.1.11** 起点到包着 file 的 label 也拒绝（不只认 input 本身）。须重新加载扩展。
 - **0.1.12** 起 type/select 对 disabled、readonly、fieldset、aria-disabled 失败（目标不可编辑）。须重新加载扩展。
+- **0.1.13** 起 click 原生 `<select>` 失败（请用 action=select）；输入框不把「不能为空」当 name，并印 value=。须重新加载扩展。

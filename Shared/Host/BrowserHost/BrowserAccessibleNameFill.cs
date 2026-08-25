@@ -19,8 +19,15 @@ namespace WordAddIn1.BrowserHost
   if (!el) return '';
   try {
     var a = el.getAttribute && el.getAttribute('aria-label');
-    if (t(a)) return t(a);
-    if (t(el.title)) return t(el.title);
+    function bad(s) {
+      s = t(s);
+      if (!s) return true;
+      if (s === '不能为空' || s === '必填' || s === '此项必填') return true;
+      if (s.indexOf('输入格式不正确') >= 0) return true;
+      return false;
+    }
+    if (t(a) && !bad(a)) return t(a);
+    if (t(el.title) && !bad(el.title)) return t(el.title);
     if (t(el.alt)) return t(el.alt);
     var img = el.querySelector && el.querySelector('img[alt]');
     if (img && t(img.alt)) return t(img.alt);
@@ -74,6 +81,11 @@ namespace WordAddIn1.BrowserHost
                         .ConfigureAwait(true);
                     string name = ReadReturnedString(json);
                     if (string.IsNullOrWhiteSpace(name))
+                    {
+                        continue;
+                    }
+
+                    if (BrowserAxTreeBuilder.IsValidatorAccessibleName(name))
                     {
                         continue;
                     }

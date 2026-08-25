@@ -177,7 +177,8 @@ namespace WordAddIn1.BrowserHost
                 bool inputLike = IsInputLike(node);
 
                 string role = peekRole;
-                string name = ResolveFrameName(node, role);
+                string name = SanitizeAccessibleName(ResolveFrameName(node, role));
+                node.Name = name;
 
                 if (FrameRoles.Contains(role))
                 {
@@ -244,7 +245,8 @@ namespace WordAddIn1.BrowserHost
                 if (print)
                 {
                     string note = (hoverReveal && node.Ignored) ? "隐藏" : null;
-                    AppendLine(sb, depth, role, name, refId, note);
+                    string value = ShouldPrintValue(node) ? (node.Value ?? "") : null;
+                    AppendLine(sb, depth, role, name, refId, note, value);
                     if (sb.Length >= MaxTreeChars)
                     {
                         truncated = true;
@@ -333,7 +335,7 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 string role = string.IsNullOrWhiteSpace(node.Role) ? "textbox" : node.Role;
-                string name = node.Name ?? "";
+                string name = SanitizeAccessibleName(node.Name ?? "");
                 string refId = "e" + nextRef;
                 nextRef++;
                 refs[refId] = new BrowserRefEntry
@@ -344,7 +346,8 @@ namespace WordAddIn1.BrowserHost
                     Name = name
                 };
                 already.Add(node.BackendDomNodeId.Value);
-                AppendLine(sb, 1, role, name, refId, note: null);
+                string value = ShouldPrintValue(node) ? (node.Value ?? "") : null;
+                AppendLine(sb, 1, role, name, refId, note: null, value);
             }
         }
 
@@ -492,13 +495,59 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
+        internal static bool IsValidatorAccessibleName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return false;
+            }
+
+            string s = name.Replace("\r", " ").Replace("\n", " ").Trim();
+            if (string.Equals(s, "不能为空", StringComparison.Ordinal)
+                || string.Equals(s, "必填", StringComparison.Ordinal)
+                || string.Equals(s, "此项必填", StringComparison.Ordinal)
+                || s.IndexOf("输入格式不正确", StringComparison.Ordinal) >= 0)
+            {
+                return true;
+            }
+
+            string low = s.ToLowerInvariant();
+            return low == "required"
+                || low == "this field is required"
+                || low == "cannot be empty"
+                || low == "must not be empty";
+        }
+
+        private static string SanitizeAccessibleName(string name)
+        {
+            return IsValidatorAccessibleName(name) ? "" : (name ?? "");
+        }
+
+        private static bool ShouldPrintValue(AxNode node)
+        {
+            if (node == null || !IsInputLike(node))
+            {
+                return false;
+            }
+
+            string n = node.Name ?? "";
+            if (n.IndexOf("密码", StringComparison.Ordinal) >= 0
+                || n.IndexOf("password", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         private static void AppendLine(
             StringBuilder sb,
             int depth,
             string role,
             string name,
             string refId,
-            string note)
+            string note,
+            string value = null)
         {
             for (int i = 0; i < depth; i++)
             {
@@ -514,6 +563,11 @@ namespace WordAddIn1.BrowserHost
             if (!string.IsNullOrWhiteSpace(name))
             {
                 sb.Append(" \"").Append(Escape(name.Trim())).Append('"');
+            }
+
+            if (value != null)
+            {
+                sb.Append(" value=\"").Append(Escape(value.Trim())).Append('"');
             }
 
             if (!string.IsNullOrWhiteSpace(note))
@@ -590,6 +644,7 @@ namespace WordAddIn1.BrowserHost
             public string NodeId { get; set; }
             public string Role { get; set; }
             public string Name { get; set; }
+            public string Value { get; set; }
             public string UrlHint { get; set; }
             public bool Ignored { get; set; }
             public bool Editable { get; set; }
@@ -635,7 +690,8 @@ namespace WordAddIn1.BrowserHost
                     NodeId = id,
                     Role = ReadAxValue(jo["role"]),
                     Name = ReadAxValue(jo["name"]),
-                    UrlHint = ReadUrlProperty(jo["properties"]),
+                    Value = ReadNamedAxProperty(jo["properties"], "value"),
+                    UrlHint = ReadNamedAxProperty(jo["properties"], "url"),
                     Ignored = jo["ignored"] != null && jo["ignored"].Type == JTokenType.Boolean && (bool)jo["ignored"],
                     Editable = ReadEditable(jo["properties"]),
                     BackendDomNodeId = backend,
@@ -643,9 +699,9 @@ namespace WordAddIn1.BrowserHost
                 };
             }
 
-            private static string ReadUrlProperty(JToken propertiesToken)
+            private static string ReadNamedAxProperty(JToken propertiesToken, string propertyName)
             {
-                if (!(propertiesToken is JArray props))
+                if (!(propertiesToken is JArray props) || string.IsNullOrEmpty(propertyName))
                 {
                     return "";
                 }
@@ -658,7 +714,7 @@ namespace WordAddIn1.BrowserHost
                     }
 
                     string pname = Convert.ToString(po["name"]) ?? "";
-                    if (!string.Equals(pname, "url", StringComparison.OrdinalIgnoreCase))
+                    if (!string.Equals(pname, propertyName, StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }

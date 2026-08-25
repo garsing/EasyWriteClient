@@ -242,7 +242,35 @@ namespace WordAddIn1.BrowserHost
                 return file;
             }
 
+            string native = CheckNativeSelect(entry, probe);
+            if (native != null)
+            {
+                return native;
+            }
+
             return null;
+        }
+
+        /// <summary>原生 select 禁止 click（系统层无 ref）。失败不清表。</summary>
+        public static string CheckNativeSelect(BrowserRefEntry entry, DomNodeProbe probe)
+        {
+            if (IsNativeSelect(entry, probe))
+            {
+                return "这是原生下拉，请用 action=select，option 填选项原文或 value。";
+            }
+
+            return null;
+        }
+
+        public static bool IsNativeSelect(BrowserRefEntry entry, DomNodeProbe probe)
+        {
+            if (probe != null
+                && string.Equals(probe.Tag, "SELECT", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>J4：不实现上传；点到 file 框须失败，不要弹出系统选文件。</summary>
