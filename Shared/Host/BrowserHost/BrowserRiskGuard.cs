@@ -98,6 +98,12 @@ namespace WordAddIn1.BrowserHost
                 return "已拒绝代点登录/提交/支付；请用户在看得见的窗里自己点击";
             }
 
+            string file = CheckFileChooser(entry, probe);
+            if (file != null)
+            {
+                return file;
+            }
+
             if (IsFrameRole(entry))
             {
                 return "请先 snapshot 或 click 展开 iframe，不要对该行下载";
@@ -177,6 +183,12 @@ namespace WordAddIn1.BrowserHost
                 return "已拒绝向密码框输入；请用户在看得见的窗里自己填写密码";
             }
 
+            string file = CheckFileChooser(entry, probe);
+            if (file != null)
+            {
+                return file;
+            }
+
             return null;
         }
 
@@ -192,7 +204,35 @@ namespace WordAddIn1.BrowserHost
                 return "已拒绝代点登录/提交/支付；请用户在看得见的窗里自己点击";
             }
 
+            string file = CheckFileChooser(entry, probe);
+            if (file != null)
+            {
+                return file;
+            }
+
             return null;
+        }
+
+        /// <summary>J4：不实现上传；点到 file 框须失败，不要弹出系统选文件。</summary>
+        public static string CheckFileChooser(BrowserRefEntry entry, DomNodeProbe probe)
+        {
+            if (IsFileChooser(entry, probe))
+            {
+                return "本批不支持文件选择。请用户自己在窗里选文件。";
+            }
+
+            return null;
+        }
+
+        public static bool IsFileChooser(BrowserRefEntry entry, DomNodeProbe probe)
+        {
+            if (probe != null
+                && string.Equals(probe.InputType, "file", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         public static string CheckPressEnter(BrowserRefEntry focusEntry, DomNodeProbe probe, bool pageHasPasswordHint)

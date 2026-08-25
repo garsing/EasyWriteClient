@@ -308,7 +308,24 @@ async function ensureContentScript(tabId, frameId) {
       files: ["content-script.js"]
     });
   } catch (e) {
-    throw new Error("无法读取 iframe（注入失败）: " + String(e && e.message ? e.message : e));
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      const u = String((tab && tab.url) || "");
+      if (/^(chrome|edge|about|devtools|chrome-extension|edge-extension|moz-extension):/i.test(u)
+          || u.indexOf("chrome://") === 0
+          || u.indexOf("edge://") === 0
+          || /\.pdf(\?|#|$)/i.test(u)) {
+        throw new Error("此页无法附着（chrome:// / PDF 查看器 / 扩展页）。请换普通 http(s) 网页。");
+      }
+    } catch (inner) {
+      if (inner && /此页无法附着/.test(String(inner.message || ""))) {
+        throw inner;
+      }
+    }
+    if (frameId != null && Number.isFinite(frameId)) {
+      throw new Error("无法读取 iframe（注入失败）: " + String(e && e.message ? e.message : e));
+    }
+    throw new Error("无法注入页面脚本: " + String(e && e.message ? e.message : e));
   }
 }
 

@@ -835,6 +835,10 @@ namespace WordAddIn1.BrowserHost
             {
                 risk = BrowserRiskGuard.CheckClick(entry, probe);
             }
+            else if (string.Equals(act, "select", StringComparison.Ordinal))
+            {
+                risk = BrowserRiskGuard.CheckFileChooser(entry, probe);
+            }
             else if (string.Equals(act, "press", StringComparison.Ordinal)
                 && string.Equals((key ?? "Enter").Trim(), "Enter", StringComparison.OrdinalIgnoreCase))
             {

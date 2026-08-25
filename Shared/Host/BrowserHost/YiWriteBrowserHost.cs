@@ -649,6 +649,12 @@ namespace WordAddIn1.BrowserHost
                         return BrowserInteractResult.Fail("select 必须提供 option");
                     }
 
+                    string file = BrowserRiskGuard.CheckFileChooser(entry, probe);
+                    if (file != null)
+                    {
+                        return BrowserInteractResult.Fail(file);
+                    }
+
                     await BrowserInteractEngine
                         .SelectAsync(form, entry.BackendDomNodeId.Value, option.Trim(), sessionId)
                         .ConfigureAwait(true);

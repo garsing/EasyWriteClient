@@ -600,6 +600,15 @@
 
     const { el, entry } = resolveRef(msg.ref, msg.css_path);
     const target = action === "click" ? resolveClickTarget(el) : el;
+    function isFileChooser(node) {
+      if (!node) return false;
+      const tag = (node.tagName || "").toLowerCase();
+      const typ = String((node.getAttribute && node.getAttribute("type")) || node.type || "").toLowerCase();
+      return tag === "input" && typ === "file";
+    }
+    if (isFileChooser(el) || isFileChooser(target)) {
+      throw new Error("本批不支持文件选择。请用户自己在窗里选文件。");
+    }
     target.scrollIntoView({ block: "center", inline: "nearest" });
 
     if (action === "click") {
