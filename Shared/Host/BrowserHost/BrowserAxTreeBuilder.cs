@@ -39,6 +39,12 @@ namespace WordAddIn1.BrowserHost
             "Iframe", "iframe", "Frame", "frame"
         };
 
+        /// <summary>hover 才显现、AX 常标 ignored：仍发 ref。不含 display:none 模板。</summary>
+        private static readonly HashSet<string> HoverRevealRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "button", "link", "menuitem", "menuitemcheckbox", "menuitemradio", "tab"
+        };
+
         public static BrowserAxBuildResult BuildOverview(string axTreeJson)
         {
             return Build(axTreeJson, detailRootRef: null, priorEntry: null);
@@ -156,7 +162,8 @@ namespace WordAddIn1.BrowserHost
                 // bool inputLike = IsInputLike(node);
                 // if (node.Ignored && !IsRootLike(node.Role) && !inputLike)
                 string peekRole = string.IsNullOrWhiteSpace(node.Role) ? "generic" : node.Role;
-                if (node.Ignored && !IsRootLike(node.Role) && !FrameRoles.Contains(peekRole))
+                bool hoverReveal = HoverRevealRoles.Contains(peekRole);
+                if (node.Ignored && !IsRootLike(node.Role) && !FrameRoles.Contains(peekRole) && !hoverReveal)
                 {
                     foreach (string child in node.ChildIds)
                     {
@@ -235,7 +242,8 @@ namespace WordAddIn1.BrowserHost
 
                 if (print)
                 {
-                    AppendLine(sb, depth, role, name, refId, note: null);
+                    string note = (hoverReveal && node.Ignored) ? "隐藏" : null;
+                    AppendLine(sb, depth, role, name, refId, note);
                     if (sb.Length >= MaxTreeChars)
                     {
                         truncated = true;

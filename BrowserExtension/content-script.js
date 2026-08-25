@@ -123,14 +123,42 @@
       };
     }
 
+    function isHoverRevealControl(el) {
+      if (!el || el.nodeType !== 1) return false;
+      const tag = (el.tagName || "").toLowerCase();
+      if (tag === "a" || tag === "button") return true;
+      const role = (el.getAttribute("role") || "").toLowerCase();
+      return role === "button" || role === "link" || role === "menuitem"
+        || role === "menuitemcheckbox" || role === "menuitemradio" || role === "tab";
+    }
+
+    function isHoverHiddenStyle(el) {
+      try {
+        const st = window.getComputedStyle(el);
+        if (!st) return false;
+        if (st.visibility === "hidden") return true;
+        const op = parseFloat(st.opacity);
+        return !isNaN(op) && op === 0;
+      } catch (_) {
+        return false;
+      }
+    }
+
     function shouldSkip(el) {
       if (!el || el.nodeType !== 1) return true;
       const tag = (el.tagName || "").toLowerCase();
       if (tag === "iframe" || tag === "frame") return false;
       if (tag === "script" || tag === "style" || tag === "noscript" || tag === "svg") return true;
       const st = window.getComputedStyle(el);
-      if (st && (st.display === "none" || st.visibility === "hidden")) {
+      if (st && st.display === "none") {
         return !(el.querySelector && el.querySelector("iframe, frame"));
+      }
+      if (st && st.visibility === "hidden") {
+        if (isHoverRevealControl(el)) return false;
+        if (el.querySelector && el.querySelector("a, button, [role='button'], [role='link'], [role='menuitem'], iframe, frame")) {
+          return false;
+        }
+        return true;
       }
       return false;
     }
@@ -164,6 +192,9 @@
         line += " [ref=" + ref + "]";
         if (el.tagName && el.tagName.toLowerCase() === "input" && (el.getAttribute("type") || "") === "password") {
           line += " (password)";
+        }
+        if (isHoverRevealControl(el) && isHoverHiddenStyle(el)) {
+          line += " (隐藏)";
         }
         lines.push(line);
         const tag = (el.tagName || "").toLowerCase();
@@ -314,6 +345,29 @@
     return { el, entry: entry.cssPath ? entry : { cssPath: path, probe: {} } };
   }
 
+  function resolveClickTarget(el) {
+    if (!el) return el;
+    const tag = (el.tagName || "").toLowerCase();
+    const role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase();
+    const isImg = tag === "img" || role === "img" || role === "image";
+    if (!isImg) return el;
+    try {
+      if (el.closest) {
+        const hit = el.closest("a[href], button, [role='button'], [role='link'], [onclick]");
+        if (hit) return hit;
+      }
+      let p = el.parentElement;
+      for (let i = 0; i < 5 && p; i++) {
+        try {
+          const st = window.getComputedStyle(p);
+          if (st && st.cursor === "pointer") return p;
+        } catch (_) {}
+        p = p.parentElement;
+      }
+    } catch (_) {}
+    return el;
+  }
+
   function doInteract(msg) {
     const action = (msg.action || "").toLowerCase();
     if (action === "scroll" && !msg.ref) {
@@ -325,11 +379,12 @@
     }
 
     const { el, entry } = resolveRef(msg.ref, msg.css_path);
-    el.scrollIntoView({ block: "center", inline: "nearest" });
+    const target = action === "click" ? resolveClickTarget(el) : el;
+    target.scrollIntoView({ block: "center", inline: "nearest" });
 
     if (action === "click") {
-      el.focus();
-      el.click();
+      target.focus && target.focus();
+      target.click();
       return { ok: true, message: "clicked", probe: entry.probe };
     }
 

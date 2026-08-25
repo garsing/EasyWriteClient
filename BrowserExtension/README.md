@@ -56,4 +56,4 @@ cd EasyWriteClient\BrowserExtension
 - 关易写只断连，不杀浏览器
 - 操作时会自动切到目标标签，但不会把浏览器窗口置顶
 - `visible=false` 的 navigate 不会附着用户 Chrome/Edge
-- **0.1.3** 起支持进 iframe。已启用用户须在扩展页**重新加载**本扩展（不是升级 Chrome），否则 attach 仍只能读顶层
+- **0.1.3** 起支持进 iframe；**0.1.4** 起 hover 才显现的按钮仍出现在 snapshot（标「隐藏」），点封面图会点到卡片。已启用用户须在扩展页**重新加载**本扩展（不是升级 Chrome）

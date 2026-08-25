@@ -129,11 +129,34 @@ namespace WordAddIn1.BrowserHost
                 form,
                 objectId,
                 @"function() {
-  this.scrollIntoView({block:'center', inline:'center'});
-  if (typeof this.click === 'function') { this.click(); }
+  var t = this;
+  var tag = (this.tagName || '').toUpperCase();
+  var role = '';
+  try { role = ((this.getAttribute && this.getAttribute('role')) || '').toLowerCase(); } catch (eR) {}
+  var isImg = tag === 'IMG' || role === 'img' || role === 'image';
+  if (isImg) {
+    try {
+      if (this.closest) {
+        var hit = this.closest('a[href], button, [role=button], [role=link], [onclick]');
+        if (hit) t = hit;
+      }
+      if (t === this) {
+        var p = this.parentElement;
+        for (var i = 0; i < 5 && p; i++) {
+          try {
+            var st = window.getComputedStyle(p);
+            if (st && st.cursor === 'pointer') { t = p; break; }
+          } catch (eS) {}
+          p = p.parentElement;
+        }
+      }
+    } catch (eC) {}
+  }
+  t.scrollIntoView({block:'center', inline:'center'});
+  if (typeof t.click === 'function') { t.click(); }
   else {
     var e = new MouseEvent('click', {bubbles:true, cancelable:true, view:window});
-    this.dispatchEvent(e);
+    t.dispatchEvent(e);
   }
 }",
                 null,
