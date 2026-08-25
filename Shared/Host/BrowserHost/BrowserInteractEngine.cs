@@ -782,7 +782,7 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
-        private static async Task<string> ResolveObjectIdAsync(
+        internal static async Task<string> ResolveObjectIdAsync(
             YiWriteBrowserForm form,
             int backendNodeId,
             string sessionId = null)
@@ -812,7 +812,7 @@ namespace WordAddIn1.BrowserHost
             return objectId;
         }
 
-        private static async Task<string> CallFunctionOnAsync(
+        internal static async Task<string> CallFunctionOnAsync(
             YiWriteBrowserForm form,
             string objectId,
             string functionDeclaration,

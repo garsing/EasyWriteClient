@@ -67,6 +67,7 @@
       if (tag === "select") return "combobox";
       if (el.isContentEditable) return "textbox";
       if (tag === "img") return "image";
+      if (tag === "area") return "link";
       if (tag === "iframe" || tag === "frame") return tag;
       if (/^h[1-6]$/.test(tag)) return "heading";
       if (tag === "li") return "listitem";
@@ -88,22 +89,30 @@
 
     function nameOf(el) {
       const tag = (el.tagName || "").toLowerCase();
+      const t = (s) => String(s || "").replace(/\s+/g, " ").trim();
       if (tag === "iframe" || tag === "frame") {
         const aria = el.getAttribute("aria-label");
-        if (aria) return aria.trim();
-        if (el.title) return String(el.title).trim();
+        if (t(aria)) return t(aria);
+        if (t(el.title)) return t(el.title);
         const src = el.getAttribute("src") || el.src || "";
         return srcTail(src) || "iframe";
       }
       const aria = el.getAttribute("aria-label");
-      if (aria) return aria.trim();
-      if (el.alt) return String(el.alt).trim();
-      if (el.title) return String(el.title).trim();
-      if (el.placeholder) return String(el.placeholder).trim();
+      if (t(aria)) return t(aria).slice(0, 120);
+      if (t(el.title)) return t(el.title).slice(0, 120);
+      if (t(el.alt)) return t(el.alt).slice(0, 120);
+      try {
+        const img = el.querySelector && el.querySelector("img[alt]");
+        if (img && t(img.alt)) return t(img.alt).slice(0, 120);
+        const st = el.querySelector && el.querySelector("svg title");
+        if (st && t(st.textContent)) return t(st.textContent).slice(0, 120);
+        const area = el.querySelector && el.querySelector("area[alt]");
+        if (area && t(area.alt)) return t(area.alt).slice(0, 120);
+      } catch (_) {}
+      if (el.placeholder) return String(el.placeholder).trim().slice(0, 120);
       const label = el.labels && el.labels[0];
-      if (label) return (label.innerText || "").trim().slice(0, 120);
-      const text = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
-      return text.slice(0, 120);
+      if (label) return t(label.innerText).slice(0, 120);
+      return t(el.innerText || el.textContent).slice(0, 120);
     }
 
     function probeOf(el) {
@@ -221,6 +230,7 @@
       if (!el || el.nodeType !== 1) return true;
       const tag = (el.tagName || "").toLowerCase();
       if (tag === "iframe" || tag === "frame") return false;
+      if (tag === "map" || tag === "area") return false;
       if (tag === "script" || tag === "style" || tag === "noscript" || tag === "svg") return true;
       const st = window.getComputedStyle(el);
       if (st && st.display === "none") {
@@ -245,6 +255,9 @@
       if (hasDetailLabel(el) || isImgtextBtn(el) || isPointerCard(el) || isPointerMenu(el)) return true;
       if (tag === "img" && !closestPointerCard(el.parentElement)) return true;
       if (["a", "button", "input", "textarea", "select", "label", "iframe", "frame"].indexOf(tag) >= 0) {
+        return true;
+      }
+      if (tag === "area" && (el.getAttribute("alt") || el.title || el.getAttribute("aria-label"))) {
         return true;
       }
       if (el.isContentEditable) return true;

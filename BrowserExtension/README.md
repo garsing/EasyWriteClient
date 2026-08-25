@@ -59,3 +59,4 @@ cd EasyWriteClient\BrowserExtension
 - **0.1.6** 起按教评 `.imgtext` / `.imgtextbtn` 识别「查看详情」（含 display:none）。须重新加载扩展。
 - **0.1.7** 起普通 click 做命中测试：被 Cookie/蒙层挡住会失败；「查看详情」/`.imgtextbtn` 免检。须重新加载扩展。
 - **0.1.8** 起 `scroll` 有 ref 时会滚内部 overflow 容器，不只滚整页。须重新加载扩展。
+- **0.1.9** 起图标按钮取名：`aria-label` → `title` → `alt`（含按钮内 img / svg title / area）。须重新加载扩展。
