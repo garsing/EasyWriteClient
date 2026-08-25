@@ -137,8 +137,14 @@ namespace WordAddIn1.BrowserHost
   if (isImg) {
     try {
       if (this.closest) {
-        var hit = this.closest('a[href], button, [role=button], [role=link], [onclick]');
-        if (hit) t = hit;
+        var card = this.closest('.imgtext');
+        if (card) {
+          var btn = card.querySelector('.imgtextbtn');
+          t = btn || card;
+        } else {
+          var hit = this.closest('a[href], button, [role=button], [role=link], [onclick]');
+          if (hit) t = hit;
+        }
       }
       if (t === this) {
         var p = this.parentElement;
@@ -152,7 +158,7 @@ namespace WordAddIn1.BrowserHost
       }
     } catch (eC) {}
   }
-  t.scrollIntoView({block:'center', inline:'center'});
+  try { t.scrollIntoView({block:'center', inline:'center'}); } catch (eV) {}
   if (typeof t.click === 'function') { t.click(); }
   else {
     var e = new MouseEvent('click', {bubbles:true, cancelable:true, view:window});

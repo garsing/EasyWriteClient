@@ -9,8 +9,8 @@ using Newtonsoft.Json.Linq;
 namespace WordAddIn1.BrowserHost
 {
     /// <summary>
-    /// 补全 hover 才显现的「查看详情」块、cursor:pointer 课程卡、侧栏短菜单。
-    /// 不放行 display:none。失败不阻断 AX snapshot。
+    /// 补全 hover 才显现的「查看详情」块（含 .imgtextbtn / display:none）、课程卡、侧栏短菜单。
+    /// 仍不放行无详情文案的大段 display:none 模板。失败不阻断 AX snapshot。
     /// </summary>
     internal static class BrowserDomClickableSupplement
     {
@@ -39,6 +39,17 @@ namespace WordAddIn1.BrowserHost
     var role=((el.getAttribute&&el.getAttribute('role'))||'').toLowerCase();
     return role==='button'||role==='link'||role==='menuitem'||role==='tab';
   }
+  function classNameOf(el){
+    var c=el.className;
+    if (c && typeof c==='object' && c.baseVal!=null) return String(c.baseVal);
+    return String(c||'');
+  }
+  function isImgtextBtn(el){
+    return /\bimgtextbtn\b/.test(classNameOf(el));
+  }
+  function isImgtextCard(el){
+    return /\bimgtext\b/.test(classNameOf(el)) && el.querySelector && !!el.querySelector('img');
+  }
   function isPointerCard(el, st){
     if (!st || st.cursor!=='pointer') return false;
     if (!el.querySelector) return false;
@@ -47,35 +58,35 @@ namespace WordAddIn1.BrowserHost
   }
   var items=[];
   var all=document.querySelectorAll('body *');
-  var cardEls=[];
   for (var i=0;i<all.length && items.length<120;i++){
     var el=all[i];
     var tag=(el.tagName||'').toLowerCase();
     if (tag==='script'||tag==='style'||tag==='svg'||tag==='path'||tag==='noscript') continue;
     var st;
     try { st=window.getComputedStyle(el); } catch (e) { continue; }
-    if (!st || st.display==='none') continue;
-    var hidden=st.visibility==='hidden' || parseFloat(st.opacity)===0;
     var own=ownText(el);
-    var inner=String(el.innerText||'').replace(/\s+/g,' ').trim();
+    var displayNone=!!(st && st.display==='none');
+    if (displayNone && !isDetailName(own) && !isImgtextBtn(el) && !isImgtextCard(el)) continue;
+    var hidden=displayNone || (st && (st.visibility==='hidden' || parseFloat(st.opacity)===0));
+    var inner=String(el.textContent||'').replace(/\s+/g,' ').trim();
     var shortInner=inner.slice(0,24);
     var kind=null;
     var name=own;
     var role='button';
-    if (isDetailName(own) || (isDetailName(shortInner) && shortInner.length<=12)){
+    if (isImgtextBtn(el) || isDetailName(own) || (isDetailName(shortInner) && shortInner.length<=12 && !el.querySelector('img'))){
       kind=hidden?'hidden_detail':'detail';
-      name=own||shortInner;
+      name=own||shortInner||'查看详情';
       role='button';
     } else if (hidden && isHoverRole(el)){
       kind='hidden_detail';
       name=own||shortInner||'button';
       role='button';
-    } else if (!hidden && isPointerCard(el, st)){
+    } else if (isImgtextCard(el) || (!hidden && isPointerCard(el, st))){
       kind='card';
-      name=(inner||'').slice(0,40) || ((el.querySelector('img')&&el.querySelector('img').alt)||'卡片');
+      var alt=(el.querySelector('img')&&el.querySelector('img').alt)||'';
+      name=(own||'').slice(0,40) || alt || inner.slice(0,40) || '卡片';
       role='generic';
-      cardEls.push(el);
-    } else if (!hidden && st.cursor==='pointer' && own.length>=2 && own.length<=16){
+    } else if (!hidden && st && st.cursor==='pointer' && own.length>=2 && own.length<=16){
       var rect=el.getBoundingClientRect();
       if (rect.left>=0 && rect.left<240 && rect.width>0 && rect.height>0){
         kind='menu';

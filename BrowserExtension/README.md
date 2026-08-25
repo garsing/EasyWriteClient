@@ -56,4 +56,4 @@ cd EasyWriteClient\BrowserExtension
 - 关易写只断连，不杀浏览器
 - 操作时会自动切到目标标签，但不会把浏览器窗口置顶
 - `visible=false` 的 navigate 不会附着用户 Chrome/Edge
-- **0.1.3** 起支持进 iframe；**0.1.5** 起「查看详情」div、pointer 卡片、左侧短菜单也会发 ref。已启用用户须在扩展页**重新加载**本扩展（不是升级 Chrome）
+- **0.1.6** 起按教评 `.imgtext` / `.imgtextbtn` 识别「查看详情」（含 display:none）。须重新加载扩展。

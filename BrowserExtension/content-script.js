@@ -157,7 +157,22 @@
         || role === "menuitemcheckbox" || role === "menuitemradio" || role === "tab";
     }
 
+    function classNameOf(el) {
+      const c = el.className;
+      if (c && typeof c === "object" && c.baseVal != null) return String(c.baseVal);
+      return String(c || "");
+    }
+
+    function isImgtextBtn(el) {
+      return /\bimgtextbtn\b/.test(classNameOf(el));
+    }
+
+    function isImgtextCard(el) {
+      return /\bimgtext\b/.test(classNameOf(el)) && !!(el.querySelector && el.querySelector("img"));
+    }
+
     function isPointerCard(el) {
+      if (isImgtextCard(el)) return true;
       try {
         const st = window.getComputedStyle(el);
         if (!st || st.cursor !== "pointer" || st.display === "none") return false;
@@ -209,7 +224,9 @@
       if (tag === "script" || tag === "style" || tag === "noscript" || tag === "svg") return true;
       const st = window.getComputedStyle(el);
       if (st && st.display === "none") {
-        return !(el.querySelector && el.querySelector("iframe, frame"));
+        if (hasDetailLabel(el) || isImgtextBtn(el) || isDetailRevealName(ownText(el))) return false;
+        if (el.querySelector && el.querySelector(".imgtextbtn, iframe, frame")) return false;
+        return true;
       }
       if (st && st.visibility === "hidden") {
         if (isHoverRevealControl(el) || hasDetailLabel(el)) return false;
@@ -225,7 +242,7 @@
 
     function interesting(el) {
       const tag = (el.tagName || "").toLowerCase();
-      if (hasDetailLabel(el) || isPointerCard(el) || isPointerMenu(el)) return true;
+      if (hasDetailLabel(el) || isImgtextBtn(el) || isPointerCard(el) || isPointerMenu(el)) return true;
       if (tag === "img" && !closestPointerCard(el.parentElement)) return true;
       if (["a", "button", "input", "textarea", "select", "label", "iframe", "frame"].indexOf(tag) >= 0) {
         return true;
@@ -255,7 +272,8 @@
         if (el.tagName && el.tagName.toLowerCase() === "input" && (el.getAttribute("type") || "") === "password") {
           line += " (password)";
         }
-        if ((isHoverRevealControl(el) || hasDetailLabel(el)) && isHoverHiddenStyle(el)) {
+        if ((isHoverRevealControl(el) || hasDetailLabel(el) || isImgtextBtn(el))
+          && (isHoverHiddenStyle(el) || (window.getComputedStyle(el).display === "none"))) {
           line += " (隐藏)";
         }
         lines.push(line);
@@ -415,6 +433,12 @@
     if (!isImg) return el;
     try {
       if (el.closest) {
+        const card = el.closest(".imgtext");
+        if (card) {
+          const btn = card.querySelector(".imgtextbtn");
+          if (btn) return btn;
+          return card;
+        }
         const hit = el.closest("a[href], button, [role='button'], [role='link'], [onclick]");
         if (hit) return hit;
       }
