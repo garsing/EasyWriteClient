@@ -228,7 +228,7 @@ async function screenshotTab(tabUuid) {
     const msg = String(e && e.message ? e.message : e);
     if (/all_urls|activeTab/i.test(msg)) {
       throw new Error(
-        "扩展缺少截图像素权限（须 <all_urls>）。请在 chrome://extensions 确认版本 ≥ 0.1.2 并重新加载「易写浏览器助手」"
+        "扩展缺少截图像素权限（须 <all_urls>）。请在 chrome://extensions 确认版本 ≥ 0.1.3 并重新加载「易写浏览器助手」"
       );
     }
     throw e;
@@ -279,38 +279,147 @@ function waitTabComplete(tabId, timeoutMs) {
   });
 }
 
-async function ensureContentScript(tabId) {
+function frameMessageOptions(frameId) {
+  if (frameId == null || !Number.isFinite(frameId)) {
+    return undefined;
+  }
+  return { frameId };
+}
+
+async function ensureContentScript(tabId, frameId) {
+  const opts = frameMessageOptions(frameId);
   try {
-    await chrome.tabs.sendMessage(tabId, { type: "ping" });
+    if (opts) {
+      await chrome.tabs.sendMessage(tabId, { type: "ping" }, opts);
+    } else {
+      await chrome.tabs.sendMessage(tabId, { type: "ping" });
+    }
     return;
   } catch (_) {
     /* inject */
   }
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: ["content-script.js"]
+  const target = { tabId };
+  if (frameId != null && Number.isFinite(frameId)) {
+    target.frameIds = [frameId];
+  }
+  try {
+    await chrome.scripting.executeScript({
+      target,
+      files: ["content-script.js"]
+    });
+  } catch (e) {
+    throw new Error("无法读取 iframe（注入失败）: " + String(e && e.message ? e.message : e));
+  }
+}
+
+async function sendToTab(tabId, message, frameId) {
+  const opts = frameMessageOptions(frameId);
+  if (opts) {
+    return chrome.tabs.sendMessage(tabId, message, opts);
+  }
+  return chrome.tabs.sendMessage(tabId, message);
+}
+
+function normalizeUrl(url) {
+  let s = String(url || "").trim();
+  const hash = s.indexOf("#");
+  if (hash >= 0) s = s.slice(0, hash);
+  return s.replace(/\/+$/, "");
+}
+
+function urlsLooselyMatch(a, b) {
+  if (!a || !b) return false;
+  const na = normalizeUrl(a);
+  const nb = normalizeUrl(b);
+  return na.toLowerCase() === nb.toLowerCase()
+    || na.toLowerCase().indexOf(nb.toLowerCase()) >= 0
+    || nb.toLowerCase().indexOf(na.toLowerCase()) >= 0;
+}
+
+async function getTopFrameId(tabId) {
+  try {
+    const frames = await chrome.webNavigation.getAllFrames({ tabId });
+    const top = (frames || []).find((f) => f.parentFrameId === -1);
+    return top ? top.frameId : 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+async function annotateIframes(tabId, parentChromeFrameId, nodes) {
+  if (!nodes) return;
+  let frames;
+  try {
+    frames = await chrome.webNavigation.getAllFrames({ tabId });
+  } catch (_) {
+    return;
+  }
+  const kids = (frames || [])
+    .filter((f) => f.parentFrameId === parentChromeFrameId)
+    .sort((a, b) => a.frameId - b.frameId);
+  const iframeRefs = Object.keys(nodes).filter((k) => {
+    const n = nodes[k] || {};
+    const role = String(n.role || "").toLowerCase();
+    const tag = String(n.tag || "").toLowerCase();
+    return role === "iframe" || role === "frame" || tag === "iframe" || tag === "frame";
+  });
+  const used = new Set();
+  iframeRefs.forEach((ref) => {
+    const n = nodes[ref];
+    const src = n.src || "";
+    if (!src) return;
+    const hit = kids.find((k) => !used.has(k.frameId) && urlsLooselyMatch(k.url, src));
+    if (hit) {
+      n.frameId = hit.frameId;
+      used.add(hit.frameId);
+    }
+  });
+  const remainingKids = kids.filter((k) => !used.has(k.frameId));
+  iframeRefs
+    .filter((ref) => nodes[ref].frameId == null)
+    .sort((a, b) => (nodes[a].iframeIndex || 0) - (nodes[b].iframeIndex || 0))
+    .forEach((ref, i) => {
+      if (remainingKids[i]) {
+        nodes[ref].frameId = remainingKids[i].frameId;
+      }
+    });
+}
+
+function stampDocumentFrame(nodes, documentFrameId) {
+  if (!nodes) return;
+  Object.keys(nodes).forEach((k) => {
+    nodes[k].documentFrameId = documentFrameId;
   });
 }
 
 async function snapshotTab(msg) {
   const tabId = parseTabId(msg.tab_uuid);
   await chrome.tabs.update(tabId, { active: true });
-  await ensureContentScript(tabId);
-  const resp = await chrome.tabs.sendMessage(tabId, {
+  const frameId = msg.frame_id != null && msg.frame_id !== ""
+    ? Number(msg.frame_id)
+    : null;
+  const targetFrame = frameId != null && Number.isFinite(frameId)
+    ? frameId
+    : await getTopFrameId(tabId);
+  await ensureContentScript(tabId, frameId != null && Number.isFinite(frameId) ? frameId : undefined);
+  const resp = await sendToTab(tabId, {
     type: "snapshot",
     mode: msg.mode || "overview",
     ref: msg.ref || null,
     dom_supplement: msg.dom_supplement || null
-  });
+  }, frameId != null && Number.isFinite(frameId) ? frameId : undefined);
   if (!resp || !resp.ok) {
     throw new Error((resp && resp.error) || "snapshot 失败");
   }
+  const nodes = resp.nodes || {};
+  stampDocumentFrame(nodes, targetFrame);
+  await annotateIframes(tabId, targetFrame, nodes);
   const tab = await chrome.tabs.get(tabId);
   return {
     url: tab.url || "",
     title: tab.title || "",
     snapshot: resp.snapshot,
-    nodes: resp.nodes || {},
+    nodes,
     truncated: !!resp.truncated,
     truncated_reason: resp.truncated_reason || null,
     dom_supplement: resp.dom_supplement || null
@@ -320,16 +429,20 @@ async function snapshotTab(msg) {
 async function interactTab(msg) {
   const tabId = parseTabId(msg.tab_uuid);
   await chrome.tabs.update(tabId, { active: true });
-  await ensureContentScript(tabId);
-  const resp = await chrome.tabs.sendMessage(tabId, {
+  const frameId = msg.frame_id != null && msg.frame_id !== ""
+    ? Number(msg.frame_id)
+    : null;
+  await ensureContentScript(tabId, frameId != null && Number.isFinite(frameId) ? frameId : undefined);
+  const resp = await sendToTab(tabId, {
     type: "interact",
     action: msg.action,
     ref: msg.ref,
     text: msg.text,
     direction: msg.direction,
     key: msg.key,
-    option: msg.option
-  });
+    option: msg.option,
+    css_path: msg.css_path || null
+  }, frameId != null && Number.isFinite(frameId) ? frameId : undefined);
   if (!resp || !resp.ok) {
     throw new Error((resp && resp.error) || "interact 失败");
   }
@@ -356,11 +469,15 @@ async function downloadTab(msg) {
     return file;
   }
 
-  await ensureContentScript(tabId);
-  const prep = await chrome.tabs.sendMessage(tabId, {
+  const frameId = msg.frame_id != null && msg.frame_id !== ""
+    ? Number(msg.frame_id)
+    : null;
+  await ensureContentScript(tabId, frameId != null && Number.isFinite(frameId) ? frameId : undefined);
+  const prep = await sendToTab(tabId, {
     type: "download_prep",
-    ref: msg.ref
-  });
+    ref: msg.ref,
+    css_path: msg.css_path || null
+  }, frameId != null && Number.isFinite(frameId) ? frameId : undefined);
   if (!prep || !prep.ok) {
     throw new Error((prep && prep.error) || "无法定位下载目标");
   }
@@ -377,10 +494,11 @@ async function downloadTab(msg) {
   }
 
   const downloadPromise = waitNextDownload(30000);
-  const click = await chrome.tabs.sendMessage(tabId, {
+  const click = await sendToTab(tabId, {
     type: "download_click",
-    ref: msg.ref
-  });
+    ref: msg.ref,
+    css_path: msg.css_path || null
+  }, frameId != null && Number.isFinite(frameId) ? frameId : undefined);
   if (!click || !click.ok) {
     throw new Error((click && click.error) || "点击下载失败");
   }

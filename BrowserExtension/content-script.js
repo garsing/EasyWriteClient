@@ -7,8 +7,8 @@
   }
   window.__yiwriteContentLoaded = true;
 
-  const MAX_CHARS = 120000;
-  const MAX_NODES = 800;
+  const MAX_CHARS = 36000;
+  const MAX_NODES = 300;
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     handle(msg).then(sendResponse).catch((e) => {
@@ -29,9 +29,9 @@
       case "interact":
         return doInteract(msg);
       case "download_prep":
-        return doDownloadPrep(msg.ref);
+        return doDownloadPrep(msg.ref, msg.css_path);
       case "download_click":
-        return doDownloadClick(msg.ref);
+        return doDownloadClick(msg.ref, msg.css_path);
       default:
         return { ok: false, error: "unknown: " + msg.type };
     }
@@ -67,12 +67,34 @@
       if (tag === "select") return "combobox";
       if (el.isContentEditable) return "textbox";
       if (tag === "img") return "image";
+      if (tag === "iframe" || tag === "frame") return tag;
       if (/^h[1-6]$/.test(tag)) return "heading";
       if (tag === "li") return "listitem";
       return tag || "generic";
     }
 
+    function srcTail(src) {
+      if (!src) return "";
+      try {
+        const u = new URL(src, document.baseURI);
+        const last = (u.pathname || "").split("/").filter(Boolean).pop();
+        return last || u.hostname || "";
+      } catch (_) {
+        const s = String(src);
+        const i = s.lastIndexOf("/");
+        return i >= 0 && i < s.length - 1 ? s.slice(i + 1) : s.slice(-40);
+      }
+    }
+
     function nameOf(el) {
+      const tag = (el.tagName || "").toLowerCase();
+      if (tag === "iframe" || tag === "frame") {
+        const aria = el.getAttribute("aria-label");
+        if (aria) return aria.trim();
+        if (el.title) return String(el.title).trim();
+        const src = el.getAttribute("src") || el.src || "";
+        return srcTail(src) || "iframe";
+      }
       const aria = el.getAttribute("aria-label");
       if (aria) return aria.trim();
       if (el.alt) return String(el.alt).trim();
@@ -104,15 +126,18 @@
     function shouldSkip(el) {
       if (!el || el.nodeType !== 1) return true;
       const tag = (el.tagName || "").toLowerCase();
+      if (tag === "iframe" || tag === "frame") return false;
       if (tag === "script" || tag === "style" || tag === "noscript" || tag === "svg") return true;
       const st = window.getComputedStyle(el);
-      if (st && (st.display === "none" || st.visibility === "hidden")) return true;
+      if (st && (st.display === "none" || st.visibility === "hidden")) {
+        return !(el.querySelector && el.querySelector("iframe, frame"));
+      }
       return false;
     }
 
     function interesting(el) {
       const tag = (el.tagName || "").toLowerCase();
-      if (["a", "button", "input", "textarea", "select", "img", "label"].indexOf(tag) >= 0) {
+      if (["a", "button", "input", "textarea", "select", "img", "label", "iframe", "frame"].indexOf(tag) >= 0) {
         return true;
       }
       if (el.isContentEditable) return true;
@@ -141,16 +166,27 @@
           line += " (password)";
         }
         lines.push(line);
-        nodes[ref] = {
+        const tag = (el.tagName || "").toLowerCase();
+        const rec = {
           role,
           name,
           cssPath: cssPath(el),
-          probe: probeOf(el)
+          probe: probeOf(el),
+          tag
         };
+        if (tag === "iframe" || tag === "frame") {
+          rec.src = el.getAttribute("src") || el.src || "";
+          rec.iframeIndex = iframeIndexOf(el);
+        }
+        nodes[ref] = rec;
 
         if (lines.join("\n").length > MAX_CHARS) {
           truncated = true;
           truncatedReason = "char_limit";
+          return;
+        }
+
+        if (tag === "iframe" || tag === "frame") {
           return;
         }
       }
@@ -162,8 +198,44 @@
       }
     }
 
+    function iframeIndexOf(el) {
+      const all = Array.from(document.querySelectorAll("iframe, frame"));
+      return all.indexOf(el);
+    }
+
+    function collectMissedIframes() {
+      const seen = new Set();
+      Object.keys(nodes).forEach((k) => {
+        if (nodes[k] && nodes[k].cssPath) seen.add(nodes[k].cssPath);
+      });
+      Array.from(document.querySelectorAll("iframe, frame")).forEach((el) => {
+        if (truncated || counter >= MAX_NODES) {
+          truncated = true;
+          truncatedReason = truncatedReason || "node_limit";
+          return;
+        }
+        const path = cssPath(el);
+        if (seen.has(path)) return;
+        const ref = nextRef();
+        const role = roleOf(el);
+        const name = nameOf(el);
+        lines.push("- " + role + (name ? ' "' + name.replace(/"/g, "'") + '"' : "") + " [ref=" + ref + "]");
+        nodes[ref] = {
+          role,
+          name,
+          cssPath: path,
+          probe: probeOf(el),
+          tag: (el.tagName || "").toLowerCase(),
+          src: el.getAttribute("src") || el.src || "",
+          iframeIndex: iframeIndexOf(el)
+        };
+        seen.add(path);
+      });
+    }
+
     const root = document.body || document.documentElement;
     walk(root, 0);
+    collectMissedIframes();
 
     // DOM supplement
     let domSupplement = null;
@@ -228,17 +300,18 @@
     return parts.join(" > ");
   }
 
-  function resolveRef(ref) {
+  function resolveRef(ref, cssPathHint) {
     const nodes = window.__yiwriteNodes || {};
-    const entry = nodes[ref];
-    if (!entry || !entry.cssPath) {
+    const entry = nodes[ref] || {};
+    const path = entry.cssPath || cssPathHint;
+    if (!path) {
       throw new Error("未知 ref: " + ref + "；请重新 snapshot");
     }
-    const el = document.querySelector(entry.cssPath);
+    const el = document.querySelector(path);
     if (!el) {
       throw new Error("ref 对应元素已失效: " + ref);
     }
-    return { el, entry };
+    return { el, entry: entry.cssPath ? entry : { cssPath: path, probe: {} } };
   }
 
   function doInteract(msg) {
@@ -251,7 +324,7 @@
       return { ok: true, message: "scrolled " + dir };
     }
 
-    const { el, entry } = resolveRef(msg.ref);
+    const { el, entry } = resolveRef(msg.ref, msg.css_path);
     el.scrollIntoView({ block: "center", inline: "nearest" });
 
     if (action === "click") {
@@ -428,16 +501,16 @@
     return { ok: true, value: finalVal };
   }
 
-  function doDownloadPrep(ref) {
-    const { el, entry } = resolveRef(ref);
+  function doDownloadPrep(ref, cssPathHint) {
+    const { el, entry } = resolveRef(ref, cssPathHint);
     const probe = entry.probe || {};
     let href = probe.href || el.href || null;
     if (href && href.indexOf("javascript:") === 0) href = null;
     return { ok: true, href, probe };
   }
 
-  function doDownloadClick(ref) {
-    const { el } = resolveRef(ref);
+  function doDownloadClick(ref, cssPathHint) {
+    const { el } = resolveRef(ref, cssPathHint);
     el.scrollIntoView({ block: "center" });
     el.click();
     return { ok: true };

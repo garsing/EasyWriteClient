@@ -8,9 +8,12 @@ namespace WordAddIn1.BrowserHost
     /// <summary>WebView2 CDP：click / type / scroll / press / select。</summary>
     internal static class BrowserInteractEngine
     {
-        public static async Task<DomNodeProbe> ProbeAsync(YiWriteBrowserForm form, int backendNodeId)
+        public static async Task<DomNodeProbe> ProbeAsync(
+            YiWriteBrowserForm form,
+            int backendNodeId,
+            string sessionId = null)
         {
-            string objectId = await ResolveObjectIdAsync(form, backendNodeId).ConfigureAwait(true);
+            string objectId = await ResolveObjectIdAsync(form, backendNodeId, sessionId).ConfigureAwait(true);
             string resultJson = await CallFunctionOnAsync(
                 form,
                 objectId,
@@ -57,7 +60,8 @@ namespace WordAddIn1.BrowserHost
     pageHasPasswordInput: pageHasPwd
   };
 }",
-                null).ConfigureAwait(true);
+                null,
+                sessionId).ConfigureAwait(true);
 
             var probe = new DomNodeProbe();
             try
@@ -90,11 +94,14 @@ namespace WordAddIn1.BrowserHost
             return probe;
         }
 
-        public static async Task<DomNodeProbe> ProbePagePasswordAsync(YiWriteBrowserForm form)
+        public static async Task<DomNodeProbe> ProbePagePasswordAsync(
+            YiWriteBrowserForm form,
+            string sessionId = null)
         {
             string json = await form.CallCdpAsync(
                 "Runtime.evaluate",
-                "{\"expression\":\"!!document.querySelector('input[type=password]')\",\"returnByValue\":true}")
+                "{\"expression\":\"!!document.querySelector('input[type=password]')\",\"returnByValue\":true}",
+                sessionId)
                 .ConfigureAwait(true);
             var probe = new DomNodeProbe();
             try
@@ -111,9 +118,12 @@ namespace WordAddIn1.BrowserHost
             return probe;
         }
 
-        public static async Task ClickAsync(YiWriteBrowserForm form, int backendNodeId)
+        public static async Task ClickAsync(
+            YiWriteBrowserForm form,
+            int backendNodeId,
+            string sessionId = null)
         {
-            string objectId = await ResolveObjectIdAsync(form, backendNodeId).ConfigureAwait(true);
+            string objectId = await ResolveObjectIdAsync(form, backendNodeId, sessionId).ConfigureAwait(true);
             // 临时用简单 click：验证「完整鼠标序列 + 等导航」是否可去掉
             await CallFunctionOnAsync(
                 form,
@@ -126,7 +136,8 @@ namespace WordAddIn1.BrowserHost
     this.dispatchEvent(e);
   }
 }",
-                null).ConfigureAwait(true);
+                null,
+                sessionId).ConfigureAwait(true);
 
             // 临时关闭：点击后短等导航
             // try
@@ -175,10 +186,14 @@ namespace WordAddIn1.BrowserHost
             */
         }
 
-        public static async Task TypeAsync(YiWriteBrowserForm form, int backendNodeId, string text)
+        public static async Task TypeAsync(
+            YiWriteBrowserForm form,
+            int backendNodeId,
+            string text,
+            string sessionId = null)
         {
             string want = text ?? "";
-            string objectId = await ResolveObjectIdAsync(form, backendNodeId).ConfigureAwait(true);
+            string objectId = await ResolveObjectIdAsync(form, backendNodeId, sessionId).ConfigureAwait(true);
 
             // 1) 真实聚焦 + 点一下 + 原生 setter 清空（百度等受控框需要）
             string prepJson = await CallFunctionOnAsync(
@@ -215,7 +230,8 @@ namespace WordAddIn1.BrowserHost
   }
   return { ok:false, reason:'not_editable' };
 }",
-                null).ConfigureAwait(true);
+                null,
+                sessionId).ConfigureAwait(true);
 
             EnsureTypePrepOk(prepJson);
 
@@ -223,7 +239,8 @@ namespace WordAddIn1.BrowserHost
             var insertPayload = new JObject { ["text"] = want };
             await form.CallCdpAsync(
                 "Input.insertText",
-                insertPayload.ToString(Newtonsoft.Json.Formatting.None))
+                insertPayload.ToString(Newtonsoft.Json.Formatting.None),
+                sessionId)
                 .ConfigureAwait(true);
 
             // 3) 再补一枪：原生 setter + InputEvent（insertText 偶发未同步时兜底）
@@ -261,7 +278,8 @@ namespace WordAddIn1.BrowserHost
   }
   return { ok:false, reason:'not_editable' };
 }",
-                argsJson).ConfigureAwait(true);
+                argsJson,
+                sessionId).ConfigureAwait(true);
 
             string got = ReadTypedValue(syncJson);
             if (!string.Equals(got, want, StringComparison.Ordinal))
@@ -272,13 +290,14 @@ namespace WordAddIn1.BrowserHost
             }
 
             // 4) 收起下拉联想：否则按 Enter 常会选中推荐热词而不是刚输入的内容
-            await DispatchKeyAsync(form, "keyDown", "Escape").ConfigureAwait(true);
-            await DispatchKeyAsync(form, "keyUp", "Escape").ConfigureAwait(true);
+            await DispatchKeyAsync(form, "keyDown", "Escape", sessionId).ConfigureAwait(true);
+            await DispatchKeyAsync(form, "keyUp", "Escape", sessionId).ConfigureAwait(true);
             await CallFunctionOnAsync(
                 form,
                 objectId,
                 "function(){ this.focus && this.focus(); }",
-                null).ConfigureAwait(true);
+                null,
+                sessionId).ConfigureAwait(true);
         }
 
         private static void EnsureTypePrepOk(string resultJson)
@@ -335,14 +354,18 @@ namespace WordAddIn1.BrowserHost
             return s.Substring(0, max) + "…";
         }
 
-        public static async Task ScrollIntoViewAsync(YiWriteBrowserForm form, int backendNodeId)
+        public static async Task ScrollIntoViewAsync(
+            YiWriteBrowserForm form,
+            int backendNodeId,
+            string sessionId = null)
         {
-            string objectId = await ResolveObjectIdAsync(form, backendNodeId).ConfigureAwait(true);
+            string objectId = await ResolveObjectIdAsync(form, backendNodeId, sessionId).ConfigureAwait(true);
             await CallFunctionOnAsync(
                 form,
                 objectId,
                 "function(){ this.scrollIntoView({block:'center', inline:'nearest'}); }",
-                null).ConfigureAwait(true);
+                null,
+                sessionId).ConfigureAwait(true);
         }
 
         public static async Task ScrollByDirectionAsync(YiWriteBrowserForm form, string direction)
@@ -373,39 +396,49 @@ namespace WordAddIn1.BrowserHost
                 .ConfigureAwait(true);
         }
 
-        public static async Task PressAsync(YiWriteBrowserForm form, string key, int? backendNodeId)
+        public static async Task PressAsync(
+            YiWriteBrowserForm form,
+            string key,
+            int? backendNodeId,
+            string sessionId = null)
         {
             string keyName = NormalizeKey(key);
 
             if (backendNodeId.HasValue)
             {
-                string objectId = await ResolveObjectIdAsync(form, backendNodeId.Value).ConfigureAwait(true);
+                string objectId = await ResolveObjectIdAsync(form, backendNodeId.Value, sessionId).ConfigureAwait(true);
                 await CallFunctionOnAsync(
                     form,
                     objectId,
                     "function(){ this.focus && this.focus(); }",
-                    null).ConfigureAwait(true);
+                    null,
+                    sessionId).ConfigureAwait(true);
 
                 // 带 ref 的 Enter：先 Esc 收联想，避免提交高亮推荐词
                 if (string.Equals(keyName, "Enter", StringComparison.Ordinal))
                 {
-                    await DispatchKeyAsync(form, "keyDown", "Escape").ConfigureAwait(true);
-                    await DispatchKeyAsync(form, "keyUp", "Escape").ConfigureAwait(true);
+                    await DispatchKeyAsync(form, "keyDown", "Escape", sessionId).ConfigureAwait(true);
+                    await DispatchKeyAsync(form, "keyUp", "Escape", sessionId).ConfigureAwait(true);
                     await CallFunctionOnAsync(
                         form,
                         objectId,
                         "function(){ this.focus && this.focus(); }",
-                        null).ConfigureAwait(true);
+                        null,
+                        sessionId).ConfigureAwait(true);
                 }
             }
 
-            await DispatchKeyAsync(form, "keyDown", keyName).ConfigureAwait(true);
-            await DispatchKeyAsync(form, "keyUp", keyName).ConfigureAwait(true);
+            await DispatchKeyAsync(form, "keyDown", keyName, sessionId).ConfigureAwait(true);
+            await DispatchKeyAsync(form, "keyUp", keyName, sessionId).ConfigureAwait(true);
         }
 
-        public static async Task SelectAsync(YiWriteBrowserForm form, int backendNodeId, string option)
+        public static async Task SelectAsync(
+            YiWriteBrowserForm form,
+            int backendNodeId,
+            string option,
+            string sessionId = null)
         {
-            string objectId = await ResolveObjectIdAsync(form, backendNodeId).ConfigureAwait(true);
+            string objectId = await ResolveObjectIdAsync(form, backendNodeId, sessionId).ConfigureAwait(true);
             string argsJson = BuildCallArgs(option ?? "");
             string resultJson = await CallFunctionOnAsync(
                 form,
@@ -432,7 +465,8 @@ namespace WordAddIn1.BrowserHost
   }
   return { ok:false, reason:'not_select' };
 }",
-                argsJson).ConfigureAwait(true);
+                argsJson,
+                sessionId).ConfigureAwait(true);
 
             try
             {
@@ -459,7 +493,11 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
-        private static async Task DispatchKeyAsync(YiWriteBrowserForm form, string type, string key)
+        private static async Task DispatchKeyAsync(
+            YiWriteBrowserForm form,
+            string type,
+            string key,
+            string sessionId = null)
         {
             int vk;
             string code;
@@ -523,7 +561,10 @@ namespace WordAddIn1.BrowserHost
                 payload["unmodifiedText"] = text;
             }
 
-            await form.CallCdpAsync("Input.dispatchKeyEvent", payload.ToString(Newtonsoft.Json.Formatting.None))
+            await form.CallCdpAsync(
+                    "Input.dispatchKeyEvent",
+                    payload.ToString(Newtonsoft.Json.Formatting.None),
+                    sessionId)
                 .ConfigureAwait(true);
         }
 
@@ -565,12 +606,26 @@ namespace WordAddIn1.BrowserHost
             return k;
         }
 
-        private static async Task<string> ResolveObjectIdAsync(YiWriteBrowserForm form, int backendNodeId)
+        private static async Task<string> ResolveObjectIdAsync(
+            YiWriteBrowserForm form,
+            int backendNodeId,
+            string sessionId = null)
         {
-            string json = await form.CallCdpAsync(
-                "DOM.resolveNode",
-                "{\"backendNodeId\":" + backendNodeId.ToString(CultureInfo.InvariantCulture) + "}")
-                .ConfigureAwait(true);
+            string json;
+            try
+            {
+                json = await form.CallCdpAsync(
+                    "DOM.resolveNode",
+                    "{\"backendNodeId\":" + backendNodeId.ToString(CultureInfo.InvariantCulture) + "}",
+                    sessionId)
+                    .ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "无法解析页面节点（可能跨进程 iframe）: " + (ex.Message ?? ""));
+            }
+
             var jo = JObject.Parse(json);
             string objectId = (string)jo["object"]?["objectId"];
             if (string.IsNullOrEmpty(objectId))
@@ -585,7 +640,8 @@ namespace WordAddIn1.BrowserHost
             YiWriteBrowserForm form,
             string objectId,
             string functionDeclaration,
-            string argumentsJsonArrayOrNull)
+            string argumentsJsonArrayOrNull,
+            string sessionId = null)
         {
             var payload = new JObject
             {
@@ -599,7 +655,10 @@ namespace WordAddIn1.BrowserHost
                 payload["arguments"] = JArray.Parse(argumentsJsonArrayOrNull);
             }
 
-            return await form.CallCdpAsync("Runtime.callFunctionOn", payload.ToString(Newtonsoft.Json.Formatting.None))
+            return await form.CallCdpAsync(
+                    "Runtime.callFunctionOn",
+                    payload.ToString(Newtonsoft.Json.Formatting.None),
+                    sessionId)
                 .ConfigureAwait(true);
         }
 

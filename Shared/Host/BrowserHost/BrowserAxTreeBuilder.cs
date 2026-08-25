@@ -11,8 +11,8 @@ namespace WordAddIn1.BrowserHost
     /// </summary>
     internal static class BrowserAxTreeBuilder
     {
-        public const int MaxRefNodes = 200;
-        public const int MaxTreeChars = 24000;
+        public const int MaxRefNodes = 300;
+        public const int MaxTreeChars = 36000;
         public const int DefaultDepth = 12;
 
         private static readonly HashSet<string> InteractiveRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -155,7 +155,8 @@ namespace WordAddIn1.BrowserHost
                 // 临时关闭「AX ignored 可输入仍发 ref」：验证仅 DOM 补查是否足够
                 // bool inputLike = IsInputLike(node);
                 // if (node.Ignored && !IsRootLike(node.Role) && !inputLike)
-                if (node.Ignored && !IsRootLike(node.Role))
+                string peekRole = string.IsNullOrWhiteSpace(node.Role) ? "generic" : node.Role;
+                if (node.Ignored && !IsRootLike(node.Role) && !FrameRoles.Contains(peekRole))
                 {
                     foreach (string child in node.ChildIds)
                     {
@@ -167,12 +168,31 @@ namespace WordAddIn1.BrowserHost
 
                 bool inputLike = IsInputLike(node);
 
-                string role = string.IsNullOrWhiteSpace(node.Role) ? "generic" : node.Role;
-                string name = node.Name ?? "";
+                string role = peekRole;
+                string name = ResolveFrameName(node, role);
 
                 if (FrameRoles.Contains(role))
                 {
-                    AppendLine(sb, depth, role, name, refId: null, note: "未展开 iframe");
+                    string frameRef = null;
+                    if (refs.Count < MaxRefNodes)
+                    {
+                        frameRef = "e" + nextRef;
+                        nextRef++;
+                        refs[frameRef] = new BrowserRefEntry
+                        {
+                            AxNodeId = node.NodeId,
+                            BackendDomNodeId = node.BackendDomNodeId,
+                            Role = role,
+                            Name = name
+                        };
+                    }
+                    else
+                    {
+                        truncated = true;
+                        truncatedReason = "ref_nodes>" + MaxRefNodes;
+                    }
+
+                    AppendLine(sb, depth, role, name, frameRef, note: null);
                     if (sb.Length >= MaxTreeChars)
                     {
                         truncated = true;
@@ -344,7 +364,7 @@ namespace WordAddIn1.BrowserHost
             string role = node.Role ?? "";
             if (FrameRoles.Contains(role))
             {
-                return false;
+                return true;
             }
 
             if (IsInputLike(node))
@@ -381,6 +401,60 @@ namespace WordAddIn1.BrowserHost
         {
             return string.Equals(role, "RootWebArea", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(role, "WebArea", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ResolveFrameName(AxNode node, string role)
+        {
+            string name = node?.Name ?? "";
+            if (!FrameRoles.Contains(role ?? ""))
+            {
+                return name;
+            }
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                return name.Trim();
+            }
+
+            if (node != null && !string.IsNullOrWhiteSpace(node.UrlHint))
+            {
+                string tail = SrcTail(node.UrlHint);
+                if (!string.IsNullOrWhiteSpace(tail))
+                {
+                    return tail;
+                }
+            }
+
+            return "iframe";
+        }
+
+        private static string SrcTail(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return "";
+            }
+
+            try
+            {
+                var u = new Uri(url.Trim(), UriKind.Absolute);
+                if (u.Segments != null && u.Segments.Length > 0)
+                {
+                    string last = (u.Segments[u.Segments.Length - 1] ?? "").Trim('/');
+                    if (!string.IsNullOrWhiteSpace(last))
+                    {
+                        return last;
+                    }
+                }
+
+                return u.Host ?? "";
+            }
+            catch
+            {
+                string s = url.Trim();
+                int slash = s.LastIndexOf('/');
+                return slash >= 0 && slash < s.Length - 1 ? s.Substring(slash + 1) : s;
+            }
         }
 
         private static void AppendLine(
@@ -481,6 +555,7 @@ namespace WordAddIn1.BrowserHost
             public string NodeId { get; set; }
             public string Role { get; set; }
             public string Name { get; set; }
+            public string UrlHint { get; set; }
             public bool Ignored { get; set; }
             public bool Editable { get; set; }
             public int? BackendDomNodeId { get; set; }
@@ -525,11 +600,38 @@ namespace WordAddIn1.BrowserHost
                     NodeId = id,
                     Role = ReadAxValue(jo["role"]),
                     Name = ReadAxValue(jo["name"]),
+                    UrlHint = ReadUrlProperty(jo["properties"]),
                     Ignored = jo["ignored"] != null && jo["ignored"].Type == JTokenType.Boolean && (bool)jo["ignored"],
                     Editable = ReadEditable(jo["properties"]),
                     BackendDomNodeId = backend,
                     ChildIds = childIds
                 };
+            }
+
+            private static string ReadUrlProperty(JToken propertiesToken)
+            {
+                if (!(propertiesToken is JArray props))
+                {
+                    return "";
+                }
+
+                foreach (var p in props)
+                {
+                    if (!(p is JObject po))
+                    {
+                        continue;
+                    }
+
+                    string pname = Convert.ToString(po["name"]) ?? "";
+                    if (!string.Equals(pname, "url", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    return ReadAxValue(po["value"]);
+                }
+
+                return "";
             }
 
             private static bool ReadEditable(JToken propertiesToken)

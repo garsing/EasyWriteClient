@@ -262,9 +262,60 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
-                string json = await form
-                    .GetAccessibilityTreeJsonAsync(BrowserAxTreeBuilder.DefaultDepth)
-                    .ConfigureAwait(true);
+                BrowserFrameMap frameMap = await BrowserFrameResolver.LoadAsync(form).ConfigureAwait(true);
+
+                if (isDetail && BrowserRiskGuard.IsFrameRole(prior))
+                {
+                    return await ExpandFrameAsync(channel, form, refId.Trim(), prior, frameMap)
+                        .ConfigureAwait(true);
+                }
+
+                string json;
+                string stampFrame = frameMap.RootFrameId;
+                string sessionId = null;
+
+                if (isDetail)
+                {
+                    stampFrame = string.IsNullOrWhiteSpace(prior.FrameId)
+                        ? frameMap.RootFrameId
+                        : prior.FrameId;
+                    sessionId = prior.CdpSessionId;
+
+                    bool useRoot = string.IsNullOrWhiteSpace(stampFrame)
+                        || string.Equals(stampFrame, frameMap.RootFrameId, StringComparison.Ordinal);
+                    if (!string.IsNullOrWhiteSpace(sessionId) || !useRoot)
+                    {
+                        BrowserFrameAxResult ax = await BrowserFrameResolver
+                            .GetFrameAxTreeAsync(
+                                form,
+                                useRoot ? frameMap.RootFrameId : stampFrame,
+                                BrowserAxTreeBuilder.DefaultDepth,
+                                sessionId)
+                            .ConfigureAwait(true);
+                        if (ax == null || string.IsNullOrWhiteSpace(ax.Json))
+                        {
+                            return BrowserSnapshotResult.Fail("无法读取该节点所在文档");
+                        }
+
+                        json = ax.Json;
+                        if (!string.IsNullOrWhiteSpace(ax.SessionId))
+                        {
+                            sessionId = ax.SessionId;
+                        }
+                    }
+                    else
+                    {
+                        json = await form
+                            .GetAccessibilityTreeJsonAsync(BrowserAxTreeBuilder.DefaultDepth)
+                            .ConfigureAwait(true);
+                    }
+                }
+                else
+                {
+                    json = await form
+                        .GetAccessibilityTreeJsonAsync(BrowserAxTreeBuilder.DefaultDepth)
+                        .ConfigureAwait(true);
+                }
 
                 BrowserAxBuildResult built = isDetail
                     ? BrowserAxTreeBuilder.BuildDetail(json, refId.Trim(), prior)
@@ -275,13 +326,16 @@ namespace WordAddIn1.BrowserHost
                     return BrowserSnapshotResult.Fail(built.Error ?? "取无障碍树失败");
                 }
 
-                // overview：仅显式传 dom_supplement 时补查；省略=不补
+                BrowserFrameResolver.Stamp(built, stampFrame, frameMap, sessionId);
+
+                // overview：仅显式传 dom_supplement 时补查；省略=不补（根文档）
                 if (!isDetail
                     && !string.Equals(domApplied, "off", StringComparison.OrdinalIgnoreCase))
                 {
                     await BrowserDomInputSupplement
                         .MergeAsync(form, built, domApplied)
                         .ConfigureAwait(true);
+                    BrowserFrameResolver.Stamp(built, stampFrame, frameMap, sessionId);
                 }
 
                 BrowserRefStore.Replace(channel.ChannelId, built.Refs);
@@ -302,6 +356,78 @@ namespace WordAddIn1.BrowserHost
             {
                 return BrowserSnapshotResult.Fail("取无障碍树失败: " + ex.Message);
             }
+        }
+
+        internal static async Task<BrowserSnapshotResult> ExpandFrameAsync(
+            BrowserChannel channel,
+            YiWriteBrowserForm form,
+            string refId,
+            BrowserRefEntry prior,
+            BrowserFrameMap frameMap = null)
+        {
+            if (channel == null || form == null || prior == null)
+            {
+                return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
+            }
+
+            if (frameMap == null)
+            {
+                frameMap = await BrowserFrameResolver.LoadAsync(form).ConfigureAwait(true);
+            }
+
+            string childId = prior.ChildFrameId;
+            if (string.IsNullOrWhiteSpace(childId) && prior.BackendDomNodeId.HasValue)
+            {
+                childId = frameMap.ChildFrameIdForOwner(prior.BackendDomNodeId.Value);
+            }
+
+            if (string.IsNullOrWhiteSpace(childId) && prior.BackendDomNodeId.HasValue)
+            {
+                childId = await BrowserFrameResolver
+                    .TryDescribeChildFrameIdAsync(form, prior.BackendDomNodeId.Value, prior.CdpSessionId)
+                    .ConfigureAwait(true);
+            }
+
+            if (string.IsNullOrWhiteSpace(childId))
+            {
+                return BrowserSnapshotResult.Fail("无法读取 iframe（无子 frame）");
+            }
+
+            BrowserFrameAxResult ax = await BrowserFrameResolver
+                .GetFrameAxTreeAsync(form, childId, BrowserAxTreeBuilder.DefaultDepth, prior.CdpSessionId)
+                .ConfigureAwait(true);
+            if (ax == null || string.IsNullOrWhiteSpace(ax.Json))
+            {
+                return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
+            }
+
+            BrowserAxBuildResult built = BrowserAxTreeBuilder.BuildOverview(ax.Json);
+            if (!built.Success)
+            {
+                return BrowserSnapshotResult.Fail(
+                    string.IsNullOrWhiteSpace(built.Error) ? "无法读取 iframe 内容" : built.Error);
+            }
+
+            BrowserFrameResolver.Stamp(built, childId, frameMap, ax.SessionId);
+            BrowserRefStore.Replace(channel.ChannelId, built.Refs);
+            try
+            {
+                channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, channel.Visible);
+            }
+            catch
+            {
+            }
+
+            return BrowserSnapshotResult.Ok(
+                channel,
+                form.CurrentUrl,
+                form.CurrentTitle,
+                "detail",
+                refId,
+                built.TreeText,
+                built.Truncated,
+                built.TruncatedReason,
+                null);
         }
 
         /// <summary>页内交互：五 action；成功后清空 ref 表。</summary>
@@ -367,7 +493,31 @@ namespace WordAddIn1.BrowserHost
 
                     if (BrowserRiskGuard.IsFrameRole(entry))
                     {
-                        return BrowserInteractResult.Fail("本批不支持操作 iframe 内控件");
+                        if (act != "click")
+                        {
+                            return BrowserInteractResult.Fail(
+                                "请 snapshot 或 click 展开 iframe，不要对该行 type/scroll/press/select");
+                        }
+
+                        BrowserSnapshotResult expanded = await SnapshotAsync(channel, refId.Trim(), null)
+                            .ConfigureAwait(true);
+                        if (!expanded.Success)
+                        {
+                            return BrowserInteractResult.Fail(
+                                expanded.Error ?? "无法读取 iframe 内容");
+                        }
+
+                        return BrowserInteractResult.OkExpanded(
+                            channel,
+                            "click",
+                            refId.Trim(),
+                            expanded.Url,
+                            expanded.Title,
+                            "已展开 iframe，请使用本次返回的新 ref。",
+                            expanded.Snapshot,
+                            expanded.Mode,
+                            expanded.Truncated,
+                            expanded.TruncatedReason);
                     }
 
                     if (!entry.BackendDomNodeId.HasValue)
@@ -376,11 +526,12 @@ namespace WordAddIn1.BrowserHost
                     }
                 }
 
+                string sessionId = entry != null ? entry.CdpSessionId : null;
                 DomNodeProbe probe = null;
                 if (entry != null && entry.BackendDomNodeId.HasValue)
                 {
                     probe = await BrowserInteractEngine
-                        .ProbeAsync(form, entry.BackendDomNodeId.Value)
+                        .ProbeAsync(form, entry.BackendDomNodeId.Value, sessionId)
                         .ConfigureAwait(true);
                 }
 
@@ -400,7 +551,7 @@ namespace WordAddIn1.BrowserHost
                         return BrowserInteractResult.Fail(risk);
                     }
 
-                    await BrowserInteractEngine.ClickAsync(form, entry.BackendDomNodeId.Value)
+                    await BrowserInteractEngine.ClickAsync(form, entry.BackendDomNodeId.Value, sessionId)
                         .ConfigureAwait(true);
                 }
                 else if (act == "type")
@@ -416,14 +567,15 @@ namespace WordAddIn1.BrowserHost
                         return BrowserInteractResult.Fail(risk);
                     }
 
-                    await BrowserInteractEngine.TypeAsync(form, entry.BackendDomNodeId.Value, text)
+                    await BrowserInteractEngine.TypeAsync(form, entry.BackendDomNodeId.Value, text, sessionId)
                         .ConfigureAwait(true);
                 }
                 else if (act == "scroll")
                 {
                     if (entry != null && entry.BackendDomNodeId.HasValue)
                     {
-                        await BrowserInteractEngine.ScrollIntoViewAsync(form, entry.BackendDomNodeId.Value)
+                        await BrowserInteractEngine
+                            .ScrollIntoViewAsync(form, entry.BackendDomNodeId.Value, sessionId)
                             .ConfigureAwait(true);
                     }
                     else
@@ -449,7 +601,8 @@ namespace WordAddIn1.BrowserHost
                         || string.Equals(normKey, "Return", StringComparison.OrdinalIgnoreCase))
                     {
                         DomNodeProbe pageProbe = probe
-                            ?? await BrowserInteractEngine.ProbePagePasswordAsync(form).ConfigureAwait(true);
+                            ?? await BrowserInteractEngine.ProbePagePasswordAsync(form, sessionId)
+                                .ConfigureAwait(true);
                         bool hasPwd = pageProbe != null && pageProbe.PageHasPasswordInput;
                         if (probe != null)
                         {
@@ -470,7 +623,7 @@ namespace WordAddIn1.BrowserHost
                     }
 
                     int? backend = entry != null ? entry.BackendDomNodeId : null;
-                    await BrowserInteractEngine.PressAsync(form, normKey, backend).ConfigureAwait(true);
+                    await BrowserInteractEngine.PressAsync(form, normKey, backend, sessionId).ConfigureAwait(true);
                 }
                 else if (act == "select")
                 {
@@ -480,7 +633,7 @@ namespace WordAddIn1.BrowserHost
                     }
 
                     await BrowserInteractEngine
-                        .SelectAsync(form, entry.BackendDomNodeId.Value, option.Trim())
+                        .SelectAsync(form, entry.BackendDomNodeId.Value, option.Trim(), sessionId)
                         .ConfigureAwait(true);
                 }
 
@@ -573,7 +726,7 @@ namespace WordAddIn1.BrowserHost
                     }
 
                     DomNodeProbe probe = await BrowserInteractEngine
-                        .ProbeAsync(form, entry.BackendDomNodeId.Value)
+                        .ProbeAsync(form, entry.BackendDomNodeId.Value, entry.CdpSessionId)
                         .ConfigureAwait(true);
 
                     string risk = BrowserRiskGuard.CheckDownload(entry, probe);
@@ -593,7 +746,7 @@ namespace WordAddIn1.BrowserHost
                         try
                         {
                             file = await BrowserDownloadEngine
-                                .ClickAndCaptureAsync(form, entry.BackendDomNodeId.Value)
+                                .ClickAndCaptureAsync(form, entry.BackendDomNodeId.Value, entry.CdpSessionId)
                                 .ConfigureAwait(true);
                         }
                         catch (InvalidOperationException ex)
@@ -603,7 +756,7 @@ namespace WordAddIn1.BrowserHost
                             try
                             {
                                 again = await BrowserInteractEngine
-                                    .ProbeAsync(form, entry.BackendDomNodeId.Value)
+                                    .ProbeAsync(form, entry.BackendDomNodeId.Value, entry.CdpSessionId)
                                     .ConfigureAwait(true);
                             }
                             catch
@@ -802,6 +955,11 @@ namespace WordAddIn1.BrowserHost
         public string Title { get; private set; }
         public string Message { get; private set; }
         public bool RefsInvalidated { get; private set; }
+        public bool ExpandedFrame { get; private set; }
+        public string Mode { get; private set; }
+        public string Snapshot { get; private set; }
+        public bool Truncated { get; private set; }
+        public string TruncatedReason { get; private set; }
 
         public static BrowserInteractResult Ok(
             BrowserChannel channel,
@@ -821,6 +979,36 @@ namespace WordAddIn1.BrowserHost
                 Title = title ?? "",
                 Message = message ?? "",
                 RefsInvalidated = true,
+            };
+        }
+
+        public static BrowserInteractResult OkExpanded(
+            BrowserChannel channel,
+            string action,
+            string refId,
+            string url,
+            string title,
+            string message,
+            string snapshot,
+            string mode,
+            bool truncated,
+            string truncatedReason)
+        {
+            return new BrowserInteractResult
+            {
+                Success = true,
+                Channel = channel,
+                Action = action,
+                Ref = refId,
+                Url = url ?? "",
+                Title = title ?? "",
+                Message = message ?? "",
+                RefsInvalidated = false,
+                ExpandedFrame = true,
+                Snapshot = snapshot ?? "",
+                Mode = mode ?? "detail",
+                Truncated = truncated,
+                TruncatedReason = truncatedReason,
             };
         }
 

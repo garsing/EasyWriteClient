@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace WordAddIn1.BrowserHost
 {
@@ -389,8 +391,10 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
-        /// <summary>取根 frame 无障碍树 JSON（CDP）；不 Activate。</summary>
-        public async Task<string> GetAccessibilityTreeJsonAsync(int depth = BrowserAxTreeBuilder.DefaultDepth)
+        /// <summary>取无障碍树 JSON（CDP）；frameId 空=根。不 Activate。</summary>
+        public async Task<string> GetAccessibilityTreeJsonAsync(
+            int depth = BrowserAxTreeBuilder.DefaultDepth,
+            string frameId = null)
         {
             if (_closing || IsDisposed)
             {
@@ -424,14 +428,21 @@ namespace WordAddIn1.BrowserHost
             }
 
             int d = depth < 1 ? BrowserAxTreeBuilder.DefaultDepth : depth;
-            string parameters = "{\"depth\":" + d + "}";
+            var parameters = new JObject { ["depth"] = d };
+            if (!string.IsNullOrWhiteSpace(frameId))
+            {
+                parameters["frameId"] = frameId.Trim();
+            }
+
             return await _webView.CoreWebView2
-                .CallDevToolsProtocolMethodAsync("Accessibility.getFullAXTree", parameters)
+                .CallDevToolsProtocolMethodAsync(
+                    "Accessibility.getFullAXTree",
+                    parameters.ToString(Formatting.None))
                 .ConfigureAwait(true);
         }
 
-        /// <summary>调用 CDP；parametersAsJson 为方法参数对象 JSON。</summary>
-        public async Task<string> CallCdpAsync(string methodName, string parametersAsJson)
+        /// <summary>调用 CDP；parametersAsJson 为方法参数对象 JSON。sessionId 用于 OOPIF。</summary>
+        public async Task<string> CallCdpAsync(string methodName, string parametersAsJson, string sessionId = null)
         {
             if (_closing || IsDisposed)
             {
@@ -444,8 +455,16 @@ namespace WordAddIn1.BrowserHost
                 throw new InvalidOperationException("WebView2 引擎不可用");
             }
 
+            string payload = parametersAsJson ?? "{}";
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                return await _webView.CoreWebView2
+                    .CallDevToolsProtocolMethodAsync(methodName, payload)
+                    .ConfigureAwait(true);
+            }
+
             return await _webView.CoreWebView2
-                .CallDevToolsProtocolMethodAsync(methodName, parametersAsJson ?? "{}")
+                .CallDevToolsProtocolMethodForSessionAsync(sessionId, methodName, payload)
                 .ConfigureAwait(true);
         }
 

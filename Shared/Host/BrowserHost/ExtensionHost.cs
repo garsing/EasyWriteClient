@@ -662,12 +662,41 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
+                int? targetFrame = null;
+                bool expandingFrame = false;
+                string mode = string.IsNullOrWhiteSpace(refId) ? "overview" : "detail";
+                if (!string.IsNullOrWhiteSpace(refId))
+                {
+                    if (!BrowserRefStore.TryGet(channel.ChannelId, refId.Trim(), out BrowserRefEntry prior)
+                        || prior == null)
+                    {
+                        return BrowserSnapshotResult.Fail("ref 无效或已过期，请重新 F_browser_snapshot");
+                    }
+
+                    if (BrowserRiskGuard.IsFrameRole(prior))
+                    {
+                        if (!prior.AttachFrameId.HasValue)
+                        {
+                            return BrowserSnapshotResult.Fail("无法读取 iframe（未对齐到子 frame）");
+                        }
+
+                        targetFrame = prior.AttachFrameId;
+                        expandingFrame = true;
+                        mode = "frame";
+                    }
+                    else if (prior.AttachFrameId.HasValue)
+                    {
+                        targetFrame = prior.AttachFrameId;
+                    }
+                }
+
                 var req = new JObject
                 {
                     ["tab_uuid"] = channel.TabUuid,
-                    ["mode"] = string.IsNullOrWhiteSpace(refId) ? "overview" : "detail",
-                    ["ref"] = string.IsNullOrWhiteSpace(refId) ? null : refId,
-                    ["dom_supplement"] = domSupplement
+                    ["mode"] = mode,
+                    ["ref"] = expandingFrame ? null : (string.IsNullOrWhiteSpace(refId) ? null : refId),
+                    ["frame_id"] = targetFrame,
+                    ["dom_supplement"] = expandingFrame ? null : domSupplement
                 };
                 JObject result = await RpcAsync(channel.TabUuid, "rpc.snapshot", req).ConfigureAwait(true);
 
@@ -696,6 +725,20 @@ namespace WordAddIn1.BrowserHost
                             Name = (string)n["name"],
                             AttachCssPath = (string)n["cssPath"]
                         };
+                        int? childFrame = ReadOptionalInt(n["frameId"]);
+                        int? docFrame = ReadOptionalInt(n["documentFrameId"]) ?? targetFrame;
+                        bool isFrame = BrowserRiskGuard.IsFrameRole(entry);
+                        entry.AttachFrameId = isFrame ? childFrame : docFrame;
+                        if (isFrame && childFrame.HasValue)
+                        {
+                            entry.ChildFrameId = childFrame.Value.ToString(CultureInfo.InvariantCulture);
+                        }
+
+                        if (docFrame.HasValue)
+                        {
+                            entry.FrameId = docFrame.Value.ToString(CultureInfo.InvariantCulture);
+                        }
+
                         JObject probe = n["probe"] as JObject;
                         if (probe != null)
                         {
@@ -713,11 +756,11 @@ namespace WordAddIn1.BrowserHost
                     pageUrl,
                     title,
                     string.IsNullOrWhiteSpace(refId) ? "overview" : "detail",
-                    refId,
+                    string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
                     snapshot,
                     truncated,
                     truncatedReason,
-                    (string)result["dom_supplement"]);
+                    expandingFrame ? null : (string)result["dom_supplement"]);
             }
             catch (Exception ex)
             {
@@ -756,6 +799,33 @@ namespace WordAddIn1.BrowserHost
                 probe = entry.AttachProbe;
             }
 
+            if (entry != null && BrowserRiskGuard.IsFrameRole(entry))
+            {
+                if (!string.Equals(act, "click", StringComparison.Ordinal))
+                {
+                    return BrowserInteractResult.Fail(
+                        "请 snapshot 或 click 展开 iframe，不要对该行 type/scroll/press/select");
+                }
+
+                BrowserSnapshotResult expanded = await SnapshotAsync(channel, refId, null).ConfigureAwait(true);
+                if (!expanded.Success)
+                {
+                    return BrowserInteractResult.Fail(expanded.Error ?? "无法读取 iframe 内容");
+                }
+
+                return BrowserInteractResult.OkExpanded(
+                    channel,
+                    "click",
+                    refId,
+                    expanded.Url,
+                    expanded.Title,
+                    "已展开 iframe，请使用本次返回的新 ref。",
+                    expanded.Snapshot,
+                    expanded.Mode,
+                    expanded.Truncated,
+                    expanded.TruncatedReason);
+            }
+
             string risk = null;
             if (string.Equals(act, "type", StringComparison.Ordinal))
             {
@@ -787,7 +857,9 @@ namespace WordAddIn1.BrowserHost
                     ["text"] = text,
                     ["direction"] = direction,
                     ["key"] = key,
-                    ["option"] = option
+                    ["option"] = option,
+                    ["frame_id"] = entry != null ? entry.AttachFrameId : null,
+                    ["css_path"] = entry != null ? entry.AttachCssPath : null
                 };
                 JObject result = await RpcAsync(channel.TabUuid, "rpc.interact", req).ConfigureAwait(true);
                 string pageUrl = (string)result["url"] ?? channel.Url;
@@ -907,7 +979,9 @@ namespace WordAddIn1.BrowserHost
                     new JObject
                     {
                         ["tab_uuid"] = channel.TabUuid,
-                        ["ref"] = refId
+                        ["ref"] = refId,
+                        ["frame_id"] = entry.AttachFrameId,
+                        ["css_path"] = entry.AttachCssPath
                     }).ConfigureAwait(true);
 
                 BrowserDownloadFileResult imported = await ImportDownloadedFileAsync(result).ConfigureAwait(true);
@@ -1001,6 +1075,26 @@ namespace WordAddIn1.BrowserHost
             }
 
             return resp["result"] as JObject ?? new JObject();
+        }
+
+        private static int? ReadOptionalInt(JToken token)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return token.Value<int>();
+            }
+            catch
+            {
+                int parsed;
+                return int.TryParse(token.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed)
+                    ? parsed
+                    : (int?)null;
+            }
         }
 
         private static DomNodeProbe ProbeFromJson(JObject probe)

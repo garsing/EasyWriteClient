@@ -100,7 +100,7 @@ namespace WordAddIn1.BrowserHost
 
             if (IsFrameRole(entry))
             {
-                return "本批不支持 iframe 内下载";
+                return "请先 snapshot 或 click 展开 iframe，不要对该行下载";
             }
 
             if (LooksLikePlainImage(entry, probe))

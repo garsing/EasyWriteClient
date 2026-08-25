@@ -80,5 +80,17 @@ namespace WordAddIn1.BrowserHost
 
         /// <summary>扩展附着轨：snapshot 时缓存的 DOM 探针。</summary>
         public DomNodeProbe AttachProbe { get; set; }
+
+        /// <summary>该节点所在文档的 CDP frameId（不对 Agent 暴露）。</summary>
+        public string FrameId { get; set; }
+
+        /// <summary>仅 iframe 结构行：子文档 CDP frameId。</summary>
+        public string ChildFrameId { get; set; }
+
+        /// <summary>扩展附着轨：chrome frameId。结构行=子 frame，其它节点=所在文档。</summary>
+        public int? AttachFrameId { get; set; }
+
+        /// <summary>OOPIF 子 session（不对 Agent 暴露）。</summary>
+        public string CdpSessionId { get; set; }
     }
 }
