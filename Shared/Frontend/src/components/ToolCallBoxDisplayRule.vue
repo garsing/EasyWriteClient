@@ -80,10 +80,10 @@ const toolsHidden = [
 ]
 
 // 需要显示详细内容、可展开的工具列表
+// F_write_file 不在此列：只有写 .py 才展开（对齐旧 B_write_python）
 const toolsWithDetails = [
   'F_process_paragraph_actions',
   'F_read_file',
-  'F_write_file',
   'F_run_terminal',
   'F_close_terminal',
   'F_close_document'
@@ -96,13 +96,20 @@ const shouldRenderBox = computed(() => {
 // 判断是否应该显示详细内容（可展开）
 const shouldShowDetails = computed(() => {
   if (!shouldRenderBox.value) return false
+  if (props.toolName === 'F_write_file') {
+    return isPythonWritePath(tryParsePath(props.content))
+  }
   return toolsWithDetails.includes(props.toolName)
 })
 
 // 根据工具类型确定语言类型
+function isPythonWritePath(path) {
+  return String(path || '').toLowerCase().endsWith('.py')
+}
+
 function guessWriteLanguage(path) {
   const p = String(path || '').toLowerCase()
-  if (p.endsWith('.py')) return 'python'
+  if (isPythonWritePath(p)) return 'python'
   if (p.endsWith('.xml')) return 'xml'
   if (p.endsWith('.yaml') || p.endsWith('.yml')) return 'yaml'
   if (p.endsWith('.json')) return 'json'

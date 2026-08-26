@@ -134,7 +134,7 @@ export class ToolCallAccumulator {
     for (const index of indices) {
       const partial = this._partials.get(index)
       const args = partial.argumentsParts.join('')
-      const complete = forceComplete || isValidJson(args || '{}')
+      const complete = forceComplete || isValidJson(args)
       segments.push({
         type: 'toolCall',
         toolName: partial.name || '',

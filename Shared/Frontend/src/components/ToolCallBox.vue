@@ -115,17 +115,23 @@ watch(() => props.toolName, (newName) => {
 // 只有允许展开的工具才初始化展开状态
 const isExpanded = ref(props.allowExpand && !props.isComplete) // 完整的默认折叠，不完整的默认展开
 
-// 当工具调用从不完整变为完整时，自动折叠
+// 进行中展开（让用户看见写入过程）；完成后折叠。
+// F_write_file 常先吐出合法 {"path":"x.py"}，随后才流 content：complete→incomplete 也要重新展开。
 watch(() => props.isComplete, (newComplete, oldComplete) => {
-  if (newComplete && !oldComplete && props.allowExpand) {
+  if (!props.allowExpand) return
+  if (newComplete && !oldComplete) {
     isExpanded.value = false
+  } else if (!newComplete && oldComplete) {
+    isExpanded.value = true
   }
 })
 
-// 监听 allowExpand 变化，如果不允许展开则关闭
+// 中途才识别出可展开（例如 path 刚落到 .py）且仍在流式：立刻展开
 watch(() => props.allowExpand, (newAllowExpand) => {
   if (!newAllowExpand) {
     isExpanded.value = false
+  } else if (!props.isComplete) {
+    isExpanded.value = true
   }
 })
 
