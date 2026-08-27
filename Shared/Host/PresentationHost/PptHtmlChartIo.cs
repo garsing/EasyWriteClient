@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Xml.Linq;
 using WordAddIn1.OpenFiles;
@@ -614,31 +615,25 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
 
-                string lastCol = ColLetter(cols);
-                string lastRow = (rows + 1).ToString(CultureInfo.InvariantCulture);
-                object range = TryInvoke(ws, "Range", "A1", lastCol + lastRow);
-                if (range == null)
+                // 对齐 Word ChartEngine.FillChartData：不把 SetSourceData/Range 当主路径
+                // （Word 现网已注释掉 SetSourceData，改写 Series.Values/XValues 再删多余系列）
+                object range = TryGetDataRange(ws, rows + 1, cols);
+                if (range != null)
                 {
-                    range = TryInvoke(ws, "Range", "A1:" + lastCol + lastRow);
+                    TrySetSourceData(chart, range);
                 }
 
-                if (range == null)
-                {
-                    error = "无法定位图表数据区域";
-                    return false;
-                }
-
-                if (!TrySetSourceData(chart, range))
-                {
-                    error = "无法绑定图表数据区域";
-                    return false;
-                }
-
-                if (!TrimExtraSeries(chart, wantSeries, out error))
+                if (!TryEnsureSeriesCount(chart, wantSeries, out error))
                 {
                     return false;
                 }
 
+                if (!TryPourSeriesLikeWord(chart, grid, out error))
+                {
+                    return false;
+                }
+
+                TrimExtraSeries(chart, wantSeries, out _);
                 TryInvoke(chart, "Refresh");
                 ApplySeriesExtras(chart, grid);
                 return true;
@@ -1466,6 +1461,72 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private static object TryGetDataRange(object ws, int lastRow, int lastCol)
+        {
+            string a2 = ColLetter(lastCol) + lastRow.ToString(CultureInfo.InvariantCulture);
+            object range = TryGetExcelRange(ws, "A1", a2);
+            if (range != null)
+            {
+                return range;
+            }
+
+            range = TryGetExcelRange(ws, "A1:" + a2, null);
+            if (range != null)
+            {
+                return range;
+            }
+
+            object c1 = GetCellObject(ws, 1, 1);
+            object c2 = GetCellObject(ws, lastRow, lastCol);
+            if (c1 != null && c2 != null)
+            {
+                range = TryGetExcelRange(ws, c1, c2);
+                if (range != null)
+                {
+                    return range;
+                }
+            }
+
+            try
+            {
+                return WppCom.GetProperty(ws, "UsedRange");
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static object TryGetExcelRange(object ws, object arg1, object arg2)
+        {
+            if (ws == null || arg1 == null)
+            {
+                return null;
+            }
+
+            object[] args = arg2 == null ? new object[] { arg1 } : new object[] { arg1, arg2 };
+            const BindingFlags flags = BindingFlags.GetProperty
+                | BindingFlags.InvokeMethod
+                | BindingFlags.Instance
+                | BindingFlags.Public;
+            try
+            {
+                return ws.GetType().InvokeMember("Range", flags, null, ws, args);
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                return ws.GetType().InvokeMember("get_Range", flags, null, ws, args);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
         private static bool TrySetSourceData(object chart, object range)
         {
             try
@@ -1489,6 +1550,135 @@ namespace WordAddIn1.PresentationHost
             return false;
         }
 
+        private static object GetSeries(object chart, int index)
+        {
+            object series = TryInvoke(chart, "SeriesCollection", index);
+            if (series != null)
+            {
+                return series;
+            }
+
+            object sc = TryInvoke(chart, "SeriesCollection");
+            if (sc == null)
+            {
+                sc = WppCom.GetProperty(chart, "SeriesCollection");
+            }
+
+            return WppCom.GetIndexed(sc, index);
+        }
+
+        private static int GetSeriesCount(object chart)
+        {
+            object sc = TryInvoke(chart, "SeriesCollection");
+            if (sc == null)
+            {
+                sc = WppCom.GetProperty(chart, "SeriesCollection");
+            }
+
+            return Convert.ToInt32(WppCom.GetProperty(sc, "Count"));
+        }
+
+        private static bool TryEnsureSeriesCount(object chart, int wantSeries, out string error)
+        {
+            error = null;
+            if (wantSeries < 1)
+            {
+                return true;
+            }
+
+            try
+            {
+                int count = GetSeriesCount(chart);
+                for (int i = count; i < wantSeries; i++)
+                {
+                    object sc = TryInvoke(chart, "SeriesCollection");
+                    if (sc == null)
+                    {
+                        sc = WppCom.GetProperty(chart, "SeriesCollection");
+                    }
+
+                    if (TryInvoke(sc, "NewSeries") == null && GetSeriesCount(chart) <= i)
+                    {
+                        error = "无法把图表扩到 " + wantSeries + " 个系列";
+                        return false;
+                    }
+                }
+
+                return GetSeriesCount(chart) >= wantSeries;
+            }
+            catch (Exception ex)
+            {
+                error = "扩展图表系列失败: " + ex.Message;
+                return false;
+            }
+        }
+
+        private static bool TryPourSeriesLikeWord(object chart, PptHtmlChartGrid grid, out string error)
+        {
+            error = null;
+            var cats = new List<string>();
+            if (grid.Rows != null)
+            {
+                foreach (List<string> row in grid.Rows)
+                {
+                    cats.Add(row != null && row.Count > 0 ? (row[0] ?? "") : "");
+                }
+            }
+
+            int si = 0;
+            for (int c = 0; c < grid.Columns.Count; c++)
+            {
+                if (grid.Columns[c].Role == "category")
+                {
+                    continue;
+                }
+
+                si++;
+                object series = GetSeries(chart, si);
+                if (series == null)
+                {
+                    error = "无法访问图表系列 " + si;
+                    return false;
+                }
+
+                var values = new List<double>();
+                if (grid.Rows != null)
+                {
+                    foreach (List<string> row in grid.Rows)
+                    {
+                        string raw = row != null && c < row.Count ? row[c] : "";
+                        if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double n))
+                        {
+                            n = 0;
+                        }
+
+                        values.Add(n);
+                    }
+                }
+
+                try
+                {
+                    WppCom.TrySetProperty(series, "Values", values.ToArray());
+                    if (cats.Count > 0)
+                    {
+                        WppCom.TrySetProperty(series, "XValues", cats.ToArray());
+                    }
+
+                    if (!string.IsNullOrEmpty(grid.Columns[c].Name))
+                    {
+                        WppCom.TrySetProperty(series, "Name", grid.Columns[c].Name);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    error = "写入系列 " + si + " 失败: " + ex.Message;
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         private static bool TrimExtraSeries(object chart, int wantSeries, out string error)
         {
             error = null;
@@ -1499,37 +1689,23 @@ namespace WordAddIn1.PresentationHost
 
             try
             {
-                for (int guard = 0; guard < 16; guard++)
+                int total = GetSeriesCount(chart);
+                for (int i = total; i > wantSeries; i--)
                 {
-                    object sc = TryInvoke(chart, "SeriesCollection");
-                    if (sc == null)
+                    try
                     {
-                        sc = WppCom.GetProperty(chart, "SeriesCollection");
+                        object series = GetSeries(chart, i);
+                        if (series != null)
+                        {
+                            WppCom.Invoke(series, "Delete");
+                        }
                     }
-
-                    int count = Convert.ToInt32(WppCom.GetProperty(sc, "Count"));
-                    if (count <= wantSeries)
+                    catch (Exception)
                     {
-                        return true;
                     }
-
-                    object last = WppCom.GetIndexed(sc, count);
-                    if (last == null)
-                    {
-                        last = TryInvoke(chart, "SeriesCollection", count);
-                    }
-
-                    if (last == null)
-                    {
-                        error = "无法删除图表多余系列（柱子会对不齐分类）";
-                        return false;
-                    }
-
-                    WppCom.Invoke(last, "Delete");
                 }
 
-                error = "无法把图表系列数收到 " + wantSeries;
-                return false;
+                return true;
             }
             catch (Exception ex)
             {
@@ -1542,10 +1718,10 @@ namespace WordAddIn1.PresentationHost
         {
             try
             {
-                object block = TryInvoke(ws, "Range", "A1", "H40");
+                object block = TryGetExcelRange(ws, "A1", "H40");
                 if (block == null)
                 {
-                    block = TryInvoke(ws, "Range", "A1:H40");
+                    block = TryGetExcelRange(ws, "A1:H40", null);
                 }
 
                 TryInvoke(block, "Clear");
@@ -1565,27 +1741,41 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static void SetCell(object ws, int row, int col, object value)
+        private static object GetCellObject(object ws, int row, int col)
         {
-            object cells = WppCom.GetProperty(ws, "Cells");
-            object cell;
             try
             {
-                cell = cells.GetType().InvokeMember(
-                    "Item",
-                    System.Reflection.BindingFlags.GetProperty
-                    | System.Reflection.BindingFlags.InvokeMethod
-                    | System.Reflection.BindingFlags.Instance
-                    | System.Reflection.BindingFlags.Public,
-                    null,
-                    cells,
-                    new object[] { row, col });
+                object cells = WppCom.GetProperty(ws, "Cells");
+                if (cells != null)
+                {
+                    return cells.GetType().InvokeMember(
+                        "Item",
+                        BindingFlags.GetProperty
+                        | BindingFlags.InvokeMethod
+                        | BindingFlags.Instance
+                        | BindingFlags.Public,
+                        null,
+                        cells,
+                        new object[] { row, col });
+                }
             }
             catch (Exception)
             {
-                cell = WppCom.Invoke(ws, "Cells", row, col);
             }
 
+            try
+            {
+                return WppCom.Invoke(ws, "Cells", row, col);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static void SetCell(object ws, int row, int col, object value)
+        {
+            object cell = GetCellObject(ws, row, col);
             WppCom.TrySetProperty(cell, "Value", value);
             WppCom.TrySetProperty(cell, "Value2", value);
         }
@@ -1594,16 +1784,7 @@ namespace WordAddIn1.PresentationHost
         {
             try
             {
-                object cells = WppCom.GetProperty(ws, "Cells");
-                object cell = cells.GetType().InvokeMember(
-                    "Item",
-                    System.Reflection.BindingFlags.GetProperty
-                    | System.Reflection.BindingFlags.InvokeMethod
-                    | System.Reflection.BindingFlags.Instance
-                    | System.Reflection.BindingFlags.Public,
-                    null,
-                    cells,
-                    new object[] { row, col });
+                object cell = GetCellObject(ws, row, col);
                 object v = WppCom.GetProperty(cell, "Value2");
                 return v ?? WppCom.GetProperty(cell, "Value");
             }
