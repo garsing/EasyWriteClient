@@ -122,6 +122,10 @@ namespace WordAddIn1.BrowserHost
         var inner = el.querySelector('select');
         if (inner) return inner;
       }
+      var prev = el.previousElementSibling;
+      if (prev && (prev.tagName || '').toUpperCase() === 'SELECT') return prev;
+      var next = el.nextElementSibling;
+      if (next && (next.tagName || '').toUpperCase() === 'SELECT') return next;
       if (el.closest) {
         var g = el.closest('.input-group');
         if (g && g.querySelector) {

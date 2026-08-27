@@ -494,6 +494,10 @@ namespace WordAddIn1.BrowserHost
         var inner = el.querySelector('select');
         if (inner) return inner;
       }
+      var prev = el.previousElementSibling;
+      if (prev && (prev.tagName || '').toUpperCase() === 'SELECT') return prev;
+      var next = el.nextElementSibling;
+      if (next && (next.tagName || '').toUpperCase() === 'SELECT') return next;
       if (el.closest) {
         var g = el.closest('.input-group');
         if (g && g.querySelector) {
@@ -514,7 +518,7 @@ namespace WordAddIn1.BrowserHost
     return out.join('、');
   }
   var sel = findSelect(this);
-  if (!sel) return { ok:false, reason:'not_select' };
+  if (!sel) return { ok:false, reason:'not_select', tag: (this.tagName || '?') };
   sel.scrollIntoView({block:'center', inline:'center'});
   sel.focus && sel.focus();
   var exact = -1, contains = -1;
@@ -551,7 +555,12 @@ namespace WordAddIn1.BrowserHost
                                 : "未找到匹配的下拉选项。可选：" + hint);
                     }
 
-                    throw new InvalidOperationException("目标不是可 select 的下拉控件");
+                    string tag = v != null ? (string)v["tag"] : null;
+                    throw new InvalidOperationException(
+                        string.IsNullOrWhiteSpace(tag)
+                            ? "select 未落到原生下拉。请重新 snapshot，对带 options= 的那一行再 select，不要改 click。"
+                            : "select 未落到原生下拉（当前是 " + tag
+                                + "）。请重新 snapshot，对带 options= 的那一行再 select，不要改 click。");
                 }
             }
             catch (InvalidOperationException)

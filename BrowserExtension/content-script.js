@@ -61,6 +61,10 @@
         const inner = el.querySelector("select");
         if (inner) return inner;
       }
+      const prev = el.previousElementSibling;
+      if (prev && (prev.tagName || "").toLowerCase() === "select") return prev;
+      const next = el.nextElementSibling;
+      if (next && (next.tagName || "").toLowerCase() === "select") return next;
       const g = el.closest && el.closest(".input-group");
       if (g && g.querySelector) {
         const inGroup = g.querySelector("select");
@@ -561,13 +565,13 @@
   function resolveRef(ref, cssPathHint) {
     const nodes = window.__yiwriteNodes || {};
     const entry = nodes[ref] || {};
-    const path = entry.cssPath || cssPathHint;
+    const path = cssPathHint || entry.cssPath;
     if (!path) {
       throw new Error("未知 ref: " + ref + "；请重新 snapshot");
     }
     const el = document.querySelector(path);
     if (!el) {
-      throw new Error("ref 对应元素已失效: " + ref);
+      throw new Error("ref 对应元素已失效: " + ref + "。请重新 snapshot 后再操作，不要改用 click。");
     }
     return { el, entry: entry.cssPath ? entry : { cssPath: path, probe: {} } };
   }
@@ -744,7 +748,7 @@
         throw new Error("这是原生下拉，请用 action=select，option 填选项原文或 value。");
       }
     }
-    if ((action === "type" || action === "select") && looksLikeNotEditable(el)) {
+    if (action === "type" && looksLikeNotEditable(el)) {
       throw new Error("目标不可编辑");
     }
     target.scrollIntoView({ block: "center", inline: "nearest" });
@@ -812,7 +816,14 @@
     if (action === "select") {
       const sel = findSelect(el);
       if (!sel) {
-        throw new Error("select 仅用于原生下拉。请对 combobox 用 action=select，option 填树上 options= 里的原文。");
+        const tag = ((el && el.tagName) || "?").toLowerCase();
+        throw new Error(
+          "select 未落到原生下拉（当前是 " + tag
+            + "）。请重新 snapshot，对带 options= 的那一行再 select，不要改 click。"
+        );
+      }
+      if (looksLikeNotEditable(sel)) {
+        throw new Error("目标不可编辑");
       }
       const option = String(msg.option || "");
       let matched = false;
