@@ -649,10 +649,31 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
-        public static async Task<BrowserSnapshotResult> SnapshotAsync(
+        internal static Task<BrowserSnapshotResult> SnapshotLayerAsync(
+            BrowserChannel channel,
+            BrowserResnapshotLayer layer)
+        {
+            if (layer != null && layer.AttachFrameId.HasValue)
+            {
+                return SnapshotAsync(channel, null, null, layer.AttachFrameId);
+            }
+
+            return SnapshotAsync(channel, null, null);
+        }
+
+        public static Task<BrowserSnapshotResult> SnapshotAsync(
             BrowserChannel channel,
             string refId,
             string domSupplement)
+        {
+            return SnapshotAsync(channel, refId, domSupplement, null);
+        }
+
+        private static async Task<BrowserSnapshotResult> SnapshotAsync(
+            BrowserChannel channel,
+            string refId,
+            string domSupplement,
+            int? forceFrameId)
         {
             EnsureStarted();
             if (channel == null || !IsAttachTabLive(channel.TabUuid))
@@ -665,7 +686,12 @@ namespace WordAddIn1.BrowserHost
                 int? targetFrame = null;
                 bool expandingFrame = false;
                 string mode = string.IsNullOrWhiteSpace(refId) ? "overview" : "detail";
-                if (!string.IsNullOrWhiteSpace(refId))
+                if (forceFrameId.HasValue)
+                {
+                    targetFrame = forceFrameId;
+                    mode = "frame";
+                }
+                else if (!string.IsNullOrWhiteSpace(refId))
                 {
                     if (!BrowserRefStore.TryGet(channel.ChannelId, refId.Trim(), out BrowserRefEntry prior)
                         || prior == null)
@@ -869,14 +895,13 @@ namespace WordAddIn1.BrowserHost
                 string pageUrl = (string)result["url"] ?? channel.Url;
                 string title = (string)result["title"] ?? channel.Title;
                 channel.UpdatePage(pageUrl, title, true);
-                BrowserRefStore.Clear(channel.ChannelId);
-                return BrowserInteractResult.Ok(
-                    channel,
-                    act,
-                    refId,
-                    pageUrl,
-                    title,
-                    (string)result["message"] ?? "ok");
+                return await BrowserResnapshotAfterAction
+                    .CompleteInteractAsync(
+                        channel,
+                        act,
+                        string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
+                        BrowserResnapshotLayer.FromEntry(entry))
+                    .ConfigureAwait(true);
             }
             catch (Exception ex)
             {
@@ -919,32 +944,34 @@ namespace WordAddIn1.BrowserHost
                             }).ConfigureAwait(true);
 
                         BrowserDownloadFileResult file = await ImportDownloadedFileAsync(ext).ConfigureAwait(true);
-                        return BrowserDownloadResult.Ok(
-                            channel,
-                            channel.Url,
-                            channel.Title,
-                            file.RelativePath,
-                            file.Bytes,
-                            file.ContentType,
-                            file.SourceUrl ?? url.Trim(),
-                            null,
-                            refsInvalidated: false,
-                            message: "ok");
+                        return await BrowserResnapshotAfterAction
+                            .CompleteDownloadAsync(
+                                channel,
+                                channel.Url,
+                                channel.Title,
+                                file.RelativePath,
+                                file.Bytes,
+                                file.ContentType,
+                                file.SourceUrl ?? url.Trim(),
+                                null,
+                                BrowserResnapshotLayer.Shell())
+                            .ConfigureAwait(true);
                     }
                     catch
                     {
                         BrowserDownloadFileResult plain = await FetchUrlPlainAsync(url.Trim()).ConfigureAwait(true);
-                        return BrowserDownloadResult.Ok(
-                            channel,
-                            channel.Url,
-                            channel.Title,
-                            plain.RelativePath,
-                            plain.Bytes,
-                            plain.ContentType,
-                            plain.SourceUrl,
-                            null,
-                            false,
-                            "ok");
+                        return await BrowserResnapshotAfterAction
+                            .CompleteDownloadAsync(
+                                channel,
+                                channel.Url,
+                                channel.Title,
+                                plain.RelativePath,
+                                plain.Bytes,
+                                plain.ContentType,
+                                plain.SourceUrl,
+                                null,
+                                BrowserResnapshotLayer.Shell())
+                            .ConfigureAwait(true);
                     }
                 }
 
@@ -963,18 +990,18 @@ namespace WordAddIn1.BrowserHost
                 if (BrowserRiskGuard.TryGetFileLikeHttpUrl(probe, out string direct))
                 {
                     BrowserDownloadFileResult file = await FetchUrlPlainAsync(direct).ConfigureAwait(true);
-                    BrowserRefStore.Clear(channel.ChannelId);
-                    return BrowserDownloadResult.Ok(
-                        channel,
-                        channel.Url,
-                        channel.Title,
-                        file.RelativePath,
-                        file.Bytes,
-                        file.ContentType,
-                        file.SourceUrl,
-                        refId,
-                        true,
-                        "ok");
+                    return await BrowserResnapshotAfterAction
+                        .CompleteDownloadAsync(
+                            channel,
+                            channel.Url,
+                            channel.Title,
+                            file.RelativePath,
+                            file.Bytes,
+                            file.ContentType,
+                            file.SourceUrl,
+                            refId,
+                            BrowserResnapshotLayer.FromEntry(entry))
+                        .ConfigureAwait(true);
                 }
 
                 JObject result = await RpcAsync(
@@ -989,18 +1016,18 @@ namespace WordAddIn1.BrowserHost
                     }).ConfigureAwait(true);
 
                 BrowserDownloadFileResult imported = await ImportDownloadedFileAsync(result).ConfigureAwait(true);
-                BrowserRefStore.Clear(channel.ChannelId);
-                return BrowserDownloadResult.Ok(
-                    channel,
-                    channel.Url,
-                    channel.Title,
-                    imported.RelativePath,
-                    imported.Bytes,
-                    imported.ContentType,
-                    imported.SourceUrl,
-                    refId,
-                    true,
-                    "ok");
+                return await BrowserResnapshotAfterAction
+                    .CompleteDownloadAsync(
+                        channel,
+                        channel.Url,
+                        channel.Title,
+                        imported.RelativePath,
+                        imported.Bytes,
+                        imported.ContentType,
+                        imported.SourceUrl,
+                        refId,
+                        BrowserResnapshotLayer.FromEntry(entry))
+                    .ConfigureAwait(true);
             }
             catch (Exception ex)
             {

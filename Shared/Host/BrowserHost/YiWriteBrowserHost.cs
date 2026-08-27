@@ -407,8 +407,77 @@ namespace WordAddIn1.BrowserHost
                 return BrowserSnapshotResult.Fail("无法读取 iframe（无子 frame）");
             }
 
+            return await SnapshotDocumentAsync(
+                    channel,
+                    form,
+                    childId,
+                    prior.CdpSessionId,
+                    "detail",
+                    refId,
+                    frameMap)
+                .ConfigureAwait(true);
+        }
+
+        /// <summary>拍某一文档层的整棵 overview（壳走 SnapshotAsync(ref=null)）。</summary>
+        internal static async Task<BrowserSnapshotResult> SnapshotLayerAsync(
+            BrowserChannel channel,
+            BrowserResnapshotLayer layer)
+        {
+            if (layer == null || string.IsNullOrWhiteSpace(layer.FrameId))
+            {
+                return await SnapshotAsync(channel, null, null).ConfigureAwait(true);
+            }
+
+            YiWriteBrowserForm form;
+            lock (Gate)
+            {
+                form = _form;
+            }
+
+            if (form == null || form.IsDisposed || !form.IsCoreReady)
+            {
+                return BrowserSnapshotResult.Fail("引擎不可用");
+            }
+
+            BrowserFrameMap frameMap = await BrowserFrameResolver.LoadAsync(form).ConfigureAwait(true);
+            if (!string.IsNullOrWhiteSpace(frameMap.RootFrameId)
+                && string.Equals(layer.FrameId, frameMap.RootFrameId, StringComparison.Ordinal))
+            {
+                return await SnapshotAsync(channel, null, null).ConfigureAwait(true);
+            }
+
+            return await SnapshotDocumentAsync(
+                    channel,
+                    form,
+                    layer.FrameId,
+                    layer.CdpSessionId,
+                    "overview",
+                    null,
+                    frameMap)
+                .ConfigureAwait(true);
+        }
+
+        internal static async Task<BrowserSnapshotResult> SnapshotDocumentAsync(
+            BrowserChannel channel,
+            YiWriteBrowserForm form,
+            string frameId,
+            string sessionId,
+            string mode,
+            string snapshotRef,
+            BrowserFrameMap frameMap = null)
+        {
+            if (channel == null || form == null || string.IsNullOrWhiteSpace(frameId))
+            {
+                return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
+            }
+
+            if (frameMap == null)
+            {
+                frameMap = await BrowserFrameResolver.LoadAsync(form).ConfigureAwait(true);
+            }
+
             BrowserFrameAxResult ax = await BrowserFrameResolver
-                .GetFrameAxTreeAsync(form, childId, BrowserAxTreeBuilder.DefaultDepth, prior.CdpSessionId)
+                .GetFrameAxTreeAsync(form, frameId, BrowserAxTreeBuilder.DefaultDepth, sessionId)
                 .ConfigureAwait(true);
             if (ax == null || string.IsNullOrWhiteSpace(ax.Json))
             {
@@ -422,9 +491,9 @@ namespace WordAddIn1.BrowserHost
                     string.IsNullOrWhiteSpace(built.Error) ? "无法读取 iframe 内容" : built.Error);
             }
 
-            BrowserFrameResolver.Stamp(built, childId, frameMap, ax.SessionId);
+            BrowserFrameResolver.Stamp(built, frameId, frameMap, ax.SessionId);
             await BrowserDomClickableSupplement
-                .MergeAsync(form, built, childId, ax.SessionId)
+                .MergeAsync(form, built, frameId, ax.SessionId)
                 .ConfigureAwait(true);
             await BrowserAccessibleNameFill
                 .FillEmptyAsync(form, built, ax.SessionId)
@@ -445,15 +514,15 @@ namespace WordAddIn1.BrowserHost
                 channel,
                 form.CurrentUrl,
                 form.CurrentTitle,
-                "detail",
-                refId,
+                string.IsNullOrWhiteSpace(mode) ? "overview" : mode,
+                snapshotRef,
                 built.TreeText,
                 built.Truncated,
                 built.TruncatedReason,
                 null);
         }
 
-        /// <summary>页内交互：五 action；成功后清空 ref 表。</summary>
+        /// <summary>页内交互：五 action；结构行展开走 OkExpanded，其它成功后按所在层自动拍树。</summary>
         public static async Task<BrowserInteractResult> InteractAsync(
             BrowserChannel channel,
             string action,
@@ -666,7 +735,6 @@ namespace WordAddIn1.BrowserHost
                         .ConfigureAwait(true);
                 }
 
-                BrowserRefStore.Clear(channel.ChannelId);
                 try
                 {
                     channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, channel.Visible);
@@ -675,14 +743,13 @@ namespace WordAddIn1.BrowserHost
                 {
                 }
 
-                string message = "操作已执行。DOM 可能已变，请重新 F_browser_snapshot 后再操作。";
-                return BrowserInteractResult.Ok(
-                    channel,
-                    act,
-                    string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
-                    form.CurrentUrl,
-                    form.CurrentTitle,
-                    message);
+                return await BrowserResnapshotAfterAction
+                    .CompleteInteractAsync(
+                        channel,
+                        act,
+                        string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
+                        BrowserResnapshotLayer.FromEntry(entry))
+                    .ConfigureAwait(true);
             }
             catch (Exception ex)
             {
@@ -731,13 +798,12 @@ namespace WordAddIn1.BrowserHost
             try
             {
                 BrowserDownloadFileResult file;
-                bool clearRefs;
+                BrowserResnapshotLayer layer = BrowserResnapshotLayer.Shell();
 
                 if (hasUrl)
                 {
                     file = await BrowserDownloadEngine.FetchUrlAsync(form, url.Trim())
                         .ConfigureAwait(true);
-                    clearRefs = false;
                 }
                 else
                 {
@@ -748,6 +814,8 @@ namespace WordAddIn1.BrowserHost
                         return BrowserDownloadResult.Fail(
                             "ref 无效或已过期，请重新 F_browser_snapshot");
                     }
+
+                    layer = BrowserResnapshotLayer.FromEntry(entry);
 
                     if (!entry.BackendDomNodeId.HasValue)
                     {
@@ -817,8 +885,6 @@ namespace WordAddIn1.BrowserHost
                         }
                     }
 
-                    BrowserRefStore.Clear(channel.ChannelId);
-                    clearRefs = true;
                 }
 
                 try
@@ -829,21 +895,18 @@ namespace WordAddIn1.BrowserHost
                 {
                 }
 
-                string message = clearRefs
-                    ? "已下载到会话工作区。DOM 可能已变，请重新 F_browser_snapshot。"
-                    : "已下载到会话工作区。";
-
-                return BrowserDownloadResult.Ok(
-                    channel,
-                    form.CurrentUrl,
-                    form.CurrentTitle,
-                    file.RelativePath,
-                    file.Bytes,
-                    file.ContentType,
-                    hasUrl ? file.SourceUrl : null,
-                    hasRef ? refId.Trim() : null,
-                    clearRefs,
-                    message);
+                return await BrowserResnapshotAfterAction
+                    .CompleteDownloadAsync(
+                        channel,
+                        form.CurrentUrl,
+                        form.CurrentTitle,
+                        file.RelativePath,
+                        file.Bytes,
+                        file.ContentType,
+                        hasUrl ? file.SourceUrl : null,
+                        hasRef ? refId.Trim() : null,
+                        layer)
+                    .ConfigureAwait(true);
             }
             catch (Exception ex)
             {
@@ -985,6 +1048,7 @@ namespace WordAddIn1.BrowserHost
         public string Message { get; private set; }
         public bool RefsInvalidated { get; private set; }
         public bool ExpandedFrame { get; private set; }
+        public bool Resnapshot { get; private set; }
         public string Mode { get; private set; }
         public string Snapshot { get; private set; }
         public bool Truncated { get; private set; }
@@ -1008,6 +1072,52 @@ namespace WordAddIn1.BrowserHost
                 Title = title ?? "",
                 Message = message ?? "",
                 RefsInvalidated = true,
+            };
+        }
+
+        public static BrowserInteractResult OkResnapshot(
+            BrowserChannel channel,
+            string action,
+            string refId,
+            string message,
+            BrowserSnapshotResult snap)
+        {
+            return new BrowserInteractResult
+            {
+                Success = true,
+                Channel = channel,
+                Action = action,
+                Ref = refId,
+                Url = snap != null && !string.IsNullOrWhiteSpace(snap.Url) ? snap.Url : (channel != null ? channel.Url : ""),
+                Title = snap != null && !string.IsNullOrWhiteSpace(snap.Title) ? snap.Title : (channel != null ? channel.Title : ""),
+                Message = message ?? "",
+                RefsInvalidated = false,
+                ExpandedFrame = false,
+                Resnapshot = true,
+                Snapshot = snap != null ? snap.Snapshot : "",
+                Mode = snap != null && !string.IsNullOrWhiteSpace(snap.Mode) ? snap.Mode : "overview",
+                Truncated = snap != null && snap.Truncated,
+                TruncatedReason = snap != null ? snap.TruncatedReason : null,
+            };
+        }
+
+        public static BrowserInteractResult OkMissedTree(
+            BrowserChannel channel,
+            string action,
+            string refId,
+            string message)
+        {
+            return new BrowserInteractResult
+            {
+                Success = true,
+                Channel = channel,
+                Action = action,
+                Ref = refId,
+                Url = channel != null ? channel.Url : "",
+                Title = channel != null ? channel.Title : "",
+                Message = message ?? "",
+                RefsInvalidated = true,
+                Resnapshot = false,
             };
         }
 
@@ -1064,7 +1174,12 @@ namespace WordAddIn1.BrowserHost
         public string SourceUrl { get; private set; }
         public string Ref { get; private set; }
         public bool RefsInvalidated { get; private set; }
+        public bool Resnapshot { get; private set; }
         public string Message { get; private set; }
+        public string Snapshot { get; private set; }
+        public string Mode { get; private set; }
+        public bool Truncated { get; private set; }
+        public string TruncatedReason { get; private set; }
 
         public static BrowserDownloadResult Ok(
             BrowserChannel channel,
@@ -1091,6 +1206,65 @@ namespace WordAddIn1.BrowserHost
                 Ref = refId,
                 RefsInvalidated = refsInvalidated,
                 Message = message ?? "",
+            };
+        }
+
+        public static BrowserDownloadResult OkResnapshot(
+            BrowserChannel channel,
+            string pageUrl,
+            string title,
+            string filename,
+            long bytes,
+            string contentType,
+            string sourceUrl,
+            string refId,
+            BrowserSnapshotResult snap)
+        {
+            return new BrowserDownloadResult
+            {
+                Success = true,
+                Channel = channel,
+                Url = snap != null && !string.IsNullOrWhiteSpace(snap.Url) ? snap.Url : (pageUrl ?? ""),
+                Title = snap != null && !string.IsNullOrWhiteSpace(snap.Title) ? snap.Title : (title ?? ""),
+                Filename = filename ?? "",
+                Bytes = bytes,
+                ContentType = contentType,
+                SourceUrl = sourceUrl,
+                Ref = refId,
+                RefsInvalidated = false,
+                Resnapshot = true,
+                Message = "已下载到会话工作区。" + BrowserResnapshotAfterAction.UseNewRefsSuffix,
+                Snapshot = snap != null ? snap.Snapshot : "",
+                Mode = snap != null && !string.IsNullOrWhiteSpace(snap.Mode) ? snap.Mode : "overview",
+                Truncated = snap != null && snap.Truncated,
+                TruncatedReason = snap != null ? snap.TruncatedReason : null,
+            };
+        }
+
+        public static BrowserDownloadResult OkMissedTree(
+            BrowserChannel channel,
+            string pageUrl,
+            string title,
+            string filename,
+            long bytes,
+            string contentType,
+            string sourceUrl,
+            string refId)
+        {
+            return new BrowserDownloadResult
+            {
+                Success = true,
+                Channel = channel,
+                Url = pageUrl ?? "",
+                Title = title ?? "",
+                Filename = filename ?? "",
+                Bytes = bytes,
+                ContentType = contentType,
+                SourceUrl = sourceUrl,
+                Ref = refId,
+                RefsInvalidated = true,
+                Resnapshot = false,
+                Message = BrowserResnapshotAfterAction.DownloadMissedTreeHint,
             };
         }
 

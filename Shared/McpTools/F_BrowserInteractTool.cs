@@ -104,17 +104,14 @@ namespace WordAddIn1
                         data["ref"] = result.Ref;
                     }
 
-                    if (result.ExpandedFrame)
-                    {
-                        data["expanded_frame"] = true;
-                        data["mode"] = result.Mode ?? "detail";
-                        data["snapshot"] = result.Snapshot ?? "";
-                        data["truncated"] = result.Truncated;
-                        if (!string.IsNullOrWhiteSpace(result.TruncatedReason))
-                        {
-                            data["truncated_reason"] = result.TruncatedReason;
-                        }
-                    }
+                    BrowserResnapshotAfterAction.WriteSnapshotFields(
+                        data,
+                        result.ExpandedFrame,
+                        result.Resnapshot,
+                        result.Snapshot,
+                        result.Mode,
+                        result.Truncated,
+                        result.TruncatedReason);
 
                     return new ToolResult { Success = true, Data = data };
                 }

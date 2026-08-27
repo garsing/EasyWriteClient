@@ -137,6 +137,15 @@ namespace WordAddIn1
                         data["ref"] = result.Ref;
                     }
 
+                    BrowserResnapshotAfterAction.WriteSnapshotFields(
+                        data,
+                        expandedFrame: false,
+                        result.Resnapshot,
+                        result.Snapshot,
+                        result.Mode,
+                        result.Truncated,
+                        result.TruncatedReason);
+
                     return new ToolResult { Success = true, Data = data };
                 }
                 catch (OperationCanceledException)
