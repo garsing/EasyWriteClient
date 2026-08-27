@@ -25,8 +25,29 @@ namespace WordAddIn1.SpreadsheetHost
                 }
             }
 
-            return !string.IsNullOrEmpty(file)
-                && string.Equals(file, "PERSONAL.XLSB", StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(file))
+            {
+                return false;
+            }
+
+            if (string.Equals(file, "PERSONAL.XLSB", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // Word/PPT/WPS 访问 ChartData 会拉起内嵌簿，不是用户打开的表
+            if (file.IndexOf("中的图表", StringComparison.Ordinal) >= 0)
+            {
+                return true;
+            }
+
+            if (file.StartsWith("Chart in Microsoft", StringComparison.OrdinalIgnoreCase)
+                || file.StartsWith("Chart in WPS", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         public static bool IsSavedPath(string fullName)

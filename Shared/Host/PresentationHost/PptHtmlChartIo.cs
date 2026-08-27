@@ -555,77 +555,30 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            object workbook = null;
             object excelApp = null;
             try
             {
-                object chartData = WppCom.GetProperty(chart, "ChartData");
-                if (chartData == null)
-                {
-                    error = "无法访问 ChartData";
-                    return false;
-                }
-
-                TryInvoke(chartData, "Activate");
-                workbook = WppCom.GetProperty(chartData, "Workbook");
-                if (workbook == null)
-                {
-                    error = "无法打开图表内嵌工作簿";
-                    return false;
-                }
-
-                excelApp = WppCom.GetProperty(workbook, "Application");
-                SuppressExcel(excelApp);
-
-                object sheets = WppCom.GetProperty(workbook, "Worksheets");
-                object ws = WppCom.GetIndexed(sheets, 1);
-                if (ws == null)
-                {
-                    error = "图表内嵌表不存在";
-                    return false;
-                }
-
-                TryClearSheet(ws);
-                int cols = grid.Columns.Count;
-                int rows = grid.Rows.Count;
                 int wantSeries = 0;
-                for (int c = 0; c < cols; c++)
+                for (int c = 0; c < grid.Columns.Count; c++)
                 {
-                    SetCell(ws, 1, c + 1, grid.Columns[c].Name ?? "");
                     if (grid.Columns[c].Role != "category")
                     {
                         wantSeries++;
                     }
                 }
 
-                for (int r = 0; r < rows; r++)
-                {
-                    for (int c = 0; c < cols; c++)
-                    {
-                        string raw = r < grid.Rows.Count && c < grid.Rows[r].Count ? grid.Rows[r][c] : "";
-                        if (grid.Columns[c].Role == "value"
-                            && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double n))
-                        {
-                            SetCell(ws, r + 2, c + 1, n);
-                        }
-                        else
-                        {
-                            SetCell(ws, r + 2, c + 1, raw ?? "");
-                        }
-                    }
-                }
-
-                // 对齐 Word ChartEngine.FillChartData：不把 SetSourceData/Range 当主路径
-                // （Word 现网已注释掉 SetSourceData，改写 Series.Values/XValues 再删多余系列）
-                object range = TryGetDataRange(ws, rows + 1, cols);
-                if (range != null)
-                {
-                    TrySetSourceData(chart, range);
-                }
-
+                // 与 Word FillChartData 相同：直接写 Series，不 Activate ChartData（避免拉起内嵌 Excel）
                 if (!TryEnsureSeriesCount(chart, wantSeries, out error))
                 {
-                    return false;
+                    if (!TryExpandViaChartData(chart, grid, out excelApp, out error))
+                    {
+                        return false;
+                    }
+
+                    if (!TryEnsureSeriesCount(chart, wantSeries, out error))
+                    {
+                        return false;
+                    }
                 }
 
                 if (!TryPourSeriesLikeWord(chart, grid, out error))
@@ -645,7 +598,7 @@ namespace WordAddIn1.PresentationHost
             }
             finally
             {
-                RestoreExcel(excelApp);
+                HideEmbeddedExcel(excelApp);
             }
         }
 
@@ -918,7 +871,7 @@ namespace WordAddIn1.PresentationHost
             }
             finally
             {
-                RestoreExcel(excelApp);
+                HideEmbeddedExcel(excelApp);
             }
         }
 
@@ -1445,8 +1398,9 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static void RestoreExcel(object excelApp)
+        private static void HideEmbeddedExcel(object excelApp)
         {
+            SuppressExcel(excelApp);
             if (excelApp == null)
             {
                 return;
@@ -1454,10 +1408,91 @@ namespace WordAddIn1.PresentationHost
 
             try
             {
-                WppCom.TrySetProperty(excelApp, "DisplayAlerts", false);
+                object windows = WppCom.GetProperty(excelApp, "Windows");
+                int count = Convert.ToInt32(WppCom.GetProperty(windows, "Count"));
+                for (int i = count; i >= 1; i--)
+                {
+                    object win = WppCom.GetIndexed(windows, i);
+                    WppCom.TrySetProperty(win, "Visible", false);
+                }
             }
             catch (Exception)
             {
+            }
+        }
+
+        private static bool TryExpandViaChartData(
+            object chart,
+            PptHtmlChartGrid grid,
+            out object excelApp,
+            out string error)
+        {
+            excelApp = null;
+            error = null;
+            try
+            {
+                object chartData = WppCom.GetProperty(chart, "ChartData");
+                if (chartData == null)
+                {
+                    error = "无法访问 ChartData";
+                    return false;
+                }
+
+                TryInvoke(chartData, "Activate");
+                object workbook = WppCom.GetProperty(chartData, "Workbook");
+                if (workbook == null)
+                {
+                    error = "无法打开图表内嵌工作簿";
+                    return false;
+                }
+
+                excelApp = WppCom.GetProperty(workbook, "Application");
+                SuppressExcel(excelApp);
+                object sheets = WppCom.GetProperty(workbook, "Worksheets");
+                object ws = WppCom.GetIndexed(sheets, 1);
+                if (ws == null)
+                {
+                    error = "图表内嵌表不存在";
+                    return false;
+                }
+
+                TryClearSheet(ws);
+                int cols = grid.Columns.Count;
+                int rows = grid.Rows.Count;
+                for (int c = 0; c < cols; c++)
+                {
+                    SetCell(ws, 1, c + 1, grid.Columns[c].Name ?? "");
+                }
+
+                for (int r = 0; r < rows; r++)
+                {
+                    for (int c = 0; c < cols; c++)
+                    {
+                        string raw = r < grid.Rows.Count && c < grid.Rows[r].Count ? grid.Rows[r][c] : "";
+                        if (grid.Columns[c].Role == "value"
+                            && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double n))
+                        {
+                            SetCell(ws, r + 2, c + 1, n);
+                        }
+                        else
+                        {
+                            SetCell(ws, r + 2, c + 1, raw ?? "");
+                        }
+                    }
+                }
+
+                object range = TryGetDataRange(ws, rows + 1, cols);
+                if (range != null)
+                {
+                    TrySetSourceData(chart, range);
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "灌入图表数据失败: " + ex.Message;
+                return false;
             }
         }
 
