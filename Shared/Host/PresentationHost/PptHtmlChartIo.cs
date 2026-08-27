@@ -612,19 +612,22 @@ namespace WordAddIn1.PresentationHost
 
             if (!string.IsNullOrWhiteSpace(fmt.ChartType))
             {
-                if (!TryParseType(fmt.ChartType, out int xl, out _, out error))
+                if (!TryParseType(fmt.ChartType, out int xl, out string canon, out error))
                 {
                     return false;
                 }
 
-                try
+                if (!IsSameChartType(chart, canon))
                 {
-                    WppCom.TrySetProperty(chart, "ChartType", xl);
-                }
-                catch (Exception ex)
-                {
-                    error = "无法改 data-chart-type: " + ex.Message;
-                    return false;
+                    try
+                    {
+                        WppCom.TrySetProperty(chart, "ChartType", xl);
+                    }
+                    catch (Exception ex)
+                    {
+                        error = "无法改 data-chart-type: " + ex.Message;
+                        return false;
+                    }
                 }
             }
 
@@ -653,7 +656,7 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            if (grid != null)
+            if (grid != null && !GridAlreadyMatches(chart, grid))
             {
                 if (!TryPourGrid(chart, grid, out error))
                 {
@@ -1066,7 +1069,11 @@ namespace WordAddIn1.PresentationHost
                 try
                 {
                     int style = string.Equals(fmt.Theme, "office", StringComparison.OrdinalIgnoreCase) ? 1 : 1;
-                    WppCom.TrySetProperty(chart, "ChartStyle", style);
+                    object cur = WppCom.GetProperty(chart, "ChartStyle");
+                    if (cur == null || Convert.ToInt32(cur) != style)
+                    {
+                        WppCom.TrySetProperty(chart, "ChartStyle", style);
+                    }
                 }
                 catch (Exception)
                 {
@@ -1120,9 +1127,12 @@ namespace WordAddIn1.PresentationHost
                 {
                     object plot = WppCom.GetProperty(chart, "PlotArea");
                     object fill = WppCom.GetProperty(WppCom.GetProperty(plot, "Format"), "Fill");
-                    TryInvoke(fill, "Solid");
-                    object fc = WppCom.GetProperty(fill, "ForeColor");
-                    WppCom.TrySetProperty(fc, "RGB", plotRgb);
+                    if (!FillRgbAlreadyMatches(fill, plotRgb))
+                    {
+                        TryInvoke(fill, "Solid");
+                        object fc = WppCom.GetProperty(fill, "ForeColor");
+                        WppCom.TrySetProperty(fc, "RGB", plotRgb);
+                    }
                 }
                 catch (Exception)
                 {
@@ -1489,6 +1499,115 @@ namespace WordAddIn1.PresentationHost
             }
 
             return Convert.ToInt32(WppCom.GetProperty(sc, "Count"));
+        }
+
+        private static bool FillRgbAlreadyMatches(object fill, int rgb)
+        {
+            try
+            {
+                object vis = WppCom.GetProperty(fill, "Visible");
+                if (vis != null && Convert.ToInt32(vis) == 0)
+                {
+                    return false;
+                }
+
+                object fc = WppCom.GetProperty(fill, "ForeColor");
+                object cur = fc == null ? null : WppCom.GetProperty(fc, "RGB");
+                if (cur == null)
+                {
+                    return false;
+                }
+
+                return (Convert.ToInt32(cur) & 0x00FFFFFF) == (rgb & 0x00FFFFFF);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool IsSameChartType(object chart, string canon)
+        {
+            try
+            {
+                object t = WppCom.GetProperty(chart, "ChartType");
+                if (t == null)
+                {
+                    return false;
+                }
+
+                return string.Equals(
+                    CanonicalTypeFromXl(Convert.ToInt32(t)),
+                    canon,
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool GridAlreadyMatches(object chart, PptHtmlChartGrid grid)
+        {
+            if (chart == null || grid == null || !grid.IsPourable)
+            {
+                return false;
+            }
+
+            if (!TryReadGridFromSeries(chart, out PptHtmlChartGrid cur, out _)
+                || cur == null
+                || !cur.IsPourable
+                || cur.Columns == null
+                || cur.Rows == null
+                || cur.Columns.Count != grid.Columns.Count
+                || cur.Rows.Count != grid.Rows.Count)
+            {
+                return false;
+            }
+
+            for (int c = 0; c < grid.Columns.Count; c++)
+            {
+                string role = grid.Columns[c].Role ?? "";
+                if (!string.Equals(cur.Columns[c].Role ?? "", role, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                if (role != "category"
+                    && !string.Equals(cur.Columns[c].Name ?? "", grid.Columns[c].Name ?? "", StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            for (int r = 0; r < grid.Rows.Count; r++)
+            {
+                List<string> a = grid.Rows[r];
+                List<string> b = cur.Rows[r];
+                if (a == null || b == null || a.Count < grid.Columns.Count || b.Count < grid.Columns.Count)
+                {
+                    return false;
+                }
+
+                for (int c = 0; c < grid.Columns.Count; c++)
+                {
+                    if (grid.Columns[c].Role == "value")
+                    {
+                        if (!double.TryParse(a[c], NumberStyles.Float, CultureInfo.InvariantCulture, out double x)
+                            || !double.TryParse(b[c], NumberStyles.Float, CultureInfo.InvariantCulture, out double y)
+                            || Math.Abs(x - y) > 0.0001)
+                        {
+                            return false;
+                        }
+                    }
+                    else if (!string.Equals(a[c] ?? "", b[c] ?? "", StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
         }
 
         private static bool TryEnsureSeriesCount(object chart, int wantSeries, out string error)

@@ -1308,8 +1308,11 @@ namespace WordAddIn1.PresentationHost
                             return false;
                         }
 
-                        shape.Line.Visible = Office.MsoTriState.msoTrue;
-                        shape.Line.ForeColor.RGB = rgb;
+                        if (!LineRgbAlreadyMatches(shape, rgb))
+                        {
+                            shape.Line.Visible = Office.MsoTriState.msoTrue;
+                            shape.Line.ForeColor.RGB = rgb;
+                        }
                     }
                 }
 
@@ -1438,7 +1441,10 @@ namespace WordAddIn1.PresentationHost
                 {
                     if (string.Equals(node.Fill, "none", StringComparison.OrdinalIgnoreCase))
                     {
-                        shape.Fill.Visible = Office.MsoTriState.msoFalse;
+                        if (shape.Fill.Visible != Office.MsoTriState.msoFalse)
+                        {
+                            shape.Fill.Visible = Office.MsoTriState.msoFalse;
+                        }
                     }
                     else
                     {
@@ -1447,16 +1453,20 @@ namespace WordAddIn1.PresentationHost
                             return false;
                         }
 
-                        shape.Fill.Visible = Office.MsoTriState.msoTrue;
-                        try
+                        // 读出的 hex 再写回会 Solid()，渐变/发光/半透明会被拍成一块实心色
+                        if (!FillRgbAlreadyMatches(shape, rgb))
                         {
-                            shape.Fill.Solid();
-                        }
-                        catch (Exception)
-                        {
-                        }
+                            shape.Fill.Visible = Office.MsoTriState.msoTrue;
+                            try
+                            {
+                                shape.Fill.Solid();
+                            }
+                            catch (Exception)
+                            {
+                            }
 
-                        shape.Fill.ForeColor.RGB = rgb;
+                            shape.Fill.ForeColor.RGB = rgb;
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -1719,6 +1729,40 @@ namespace WordAddIn1.PresentationHost
             catch (Exception)
             {
                 return 0;
+            }
+        }
+
+        private static bool FillRgbAlreadyMatches(PowerPoint.Shape shape, int rgb)
+        {
+            try
+            {
+                if (shape.Fill.Visible == Office.MsoTriState.msoFalse)
+                {
+                    return false;
+                }
+
+                return (shape.Fill.ForeColor.RGB & 0x00FFFFFF) == (rgb & 0x00FFFFFF);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool LineRgbAlreadyMatches(PowerPoint.Shape shape, int rgb)
+        {
+            try
+            {
+                if (shape.Line.Visible == Office.MsoTriState.msoFalse)
+                {
+                    return false;
+                }
+
+                return (shape.Line.ForeColor.RGB & 0x00FFFFFF) == (rgb & 0x00FFFFFF);
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
     }

@@ -851,9 +851,12 @@ namespace WordAddIn1.PresentationHost
                             return false;
                         }
 
-                        TrySet(line, "Visible", -1);
-                        object fore = WppCom.GetProperty(line, "ForeColor");
-                        TrySet(fore, "RGB", rgb);
+                        if (!ForeRgbAlreadyMatches(line, rgb))
+                        {
+                            TrySet(line, "Visible", -1);
+                            object fore = WppCom.GetProperty(line, "ForeColor");
+                            TrySet(fore, "RGB", rgb);
+                        }
                     }
                 }
 
@@ -984,7 +987,10 @@ namespace WordAddIn1.PresentationHost
 
                     if (string.Equals(node.Fill, "none", StringComparison.OrdinalIgnoreCase))
                     {
-                        TrySet(fill, "Visible", 0);
+                        if (IsVisibleTrue(fill))
+                        {
+                            TrySet(fill, "Visible", 0);
+                        }
                     }
                     else
                     {
@@ -993,17 +999,20 @@ namespace WordAddIn1.PresentationHost
                             return false;
                         }
 
-                        TrySet(fill, "Visible", -1);
-                        try
+                        if (!ForeRgbAlreadyMatches(fill, rgb))
                         {
-                            WppCom.Invoke(fill, "Solid");
-                        }
-                        catch (Exception)
-                        {
-                        }
+                            TrySet(fill, "Visible", -1);
+                            try
+                            {
+                                WppCom.Invoke(fill, "Solid");
+                            }
+                            catch (Exception)
+                            {
+                            }
 
-                        object fore = WppCom.GetProperty(fill, "ForeColor");
-                        TrySet(fore, "RGB", rgb);
+                            object fore = WppCom.GetProperty(fill, "ForeColor");
+                            TrySet(fore, "RGB", rgb);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -1192,6 +1201,48 @@ namespace WordAddIn1.PresentationHost
             }
             catch (Exception)
             {
+            }
+        }
+
+        private static bool IsVisibleTrue(object format)
+        {
+            try
+            {
+                object v = WppCom.GetProperty(format, "Visible");
+                if (v == null)
+                {
+                    return false;
+                }
+
+                return Convert.ToInt32(v) != 0;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool ForeRgbAlreadyMatches(object format, int rgb)
+        {
+            try
+            {
+                if (!IsVisibleTrue(format))
+                {
+                    return false;
+                }
+
+                object fore = WppCom.GetProperty(format, "ForeColor");
+                object cur = fore == null ? null : WppCom.GetProperty(fore, "RGB");
+                if (cur == null)
+                {
+                    return false;
+                }
+
+                return (Convert.ToInt32(cur) & 0x00FFFFFF) == (rgb & 0x00FFFFFF);
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
     }
