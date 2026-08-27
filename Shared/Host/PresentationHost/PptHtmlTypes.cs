@@ -85,6 +85,8 @@ namespace WordAddIn1.PresentationHost
         public double? Rotation { get; set; }
 
         public bool TextTruncated { get; set; }
+
+        internal PptHtmlChartFormat ChartFormat { get; set; }
     }
 
     public sealed class PptHtmlReadResult

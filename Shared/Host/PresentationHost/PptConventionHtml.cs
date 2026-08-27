@@ -146,6 +146,27 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
+            if (node.ShapeType == "chart")
+            {
+                sb.Append("  <div ShapeId=\"").Append(EscapeAttr(node.ShapeId)).Append("\"");
+                AppendCommonAttrs(sb, node);
+                PptHtmlChartIo.AppendFormatAttrs(sb, node.ChartFormat);
+                sb.AppendLine(">");
+                sb.AppendLine("    <table>");
+                if (!string.IsNullOrEmpty(node.InnerHtml))
+                {
+                    sb.Append(node.InnerHtml);
+                    if (!node.InnerHtml.EndsWith("\n", StringComparison.Ordinal))
+                    {
+                        sb.AppendLine();
+                    }
+                }
+
+                sb.AppendLine("    </table>");
+                sb.AppendLine("  </div>");
+                return;
+            }
+
             sb.Append("  <").Append(tag)
                 .Append(" ShapeId=\"").Append(EscapeAttr(node.ShapeId)).Append("\"");
             AppendCommonAttrs(sb, node);

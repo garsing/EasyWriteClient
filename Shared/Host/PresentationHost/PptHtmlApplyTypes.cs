@@ -91,6 +91,10 @@ namespace WordAddIn1.PresentationHost
         public bool HasGeometry { get; set; }
 
         public List<List<string>> TableCells { get; set; }
+
+        internal PptHtmlChartGrid ChartGrid { get; set; }
+
+        internal PptHtmlChartFormat ChartFormat { get; set; }
     }
 
     public sealed class PptHtmlApplyPlan
@@ -248,6 +252,13 @@ namespace WordAddIn1.PresentationHost
             // 有可解析的页内 Shape.Id → 更新（不要求 ShapeId 内 SlideID 等于目标页）
             // 无 → 新建
             bool hasFormalId = PptShapeId.TryParseShapeComId(shapeId, out int comId);
+
+            string chartSource = GetAttr(el, "data-chart-source");
+            if (!string.IsNullOrWhiteSpace(chartSource))
+            {
+                error = "不支持绑定页内表格，请把数据写在 chart 节点的 <table> 里";
+                return false;
+            }
 
             bool isCreate = !hasFormalId;
             if (isCreate)
@@ -505,7 +516,61 @@ namespace WordAddIn1.PresentationHost
                 item.Rotation = rv;
             }
 
-            if (string.Equals(el.Name.LocalName, "table", StringComparison.OrdinalIgnoreCase)
+            if (string.Equals(shapeType, "chart", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.Equals(el.Name.LocalName, "table", StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "chart 须用 <div> 包内嵌 <table>，不能用根 table";
+                    return false;
+                }
+
+                item.ChartFormat = PptHtmlChartIo.ParseFormat(el);
+                string typeRaw = item.ChartFormat.ChartType ?? item.ChartType;
+                if (!PptHtmlChartIo.TryParseType(typeRaw, out _, out string canon, out error))
+                {
+                    return false;
+                }
+
+                if (!string.IsNullOrWhiteSpace(typeRaw))
+                {
+                    item.ChartType = canon;
+                    item.ChartFormat.ChartType = canon;
+                }
+
+                List<XElement> tables = el.Elements().Where(e =>
+                    string.Equals(e.Name.LocalName, "table", StringComparison.OrdinalIgnoreCase)).ToList();
+                if (tables.Count > 1)
+                {
+                    error = "chart 节点只能有一张内嵌 <table>";
+                    return false;
+                }
+
+                if (tables.Count == 1)
+                {
+                    if (!PptHtmlChartIo.TryParseGrid(tables[0], true, out PptHtmlChartGrid grid, out error))
+                    {
+                        return false;
+                    }
+
+                    item.ChartGrid = grid;
+                }
+                else
+                {
+                    string loose = GetElementText(el);
+                    if (!string.IsNullOrWhiteSpace(loose))
+                    {
+                        item.Text = loose;
+                        item.HasText = true;
+                    }
+
+                    if (isCreate)
+                    {
+                        error = "新建 chart 必须在节点内嵌 <table> 灌数，不能建空图";
+                        return false;
+                    }
+                }
+            }
+            else if (string.Equals(el.Name.LocalName, "table", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(shapeType, "table", StringComparison.OrdinalIgnoreCase))
             {
                 item.TableCells = ParseTableCells(el);

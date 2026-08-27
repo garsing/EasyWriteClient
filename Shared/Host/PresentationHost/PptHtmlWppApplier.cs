@@ -101,7 +101,7 @@ namespace WordAddIn1.PresentationHost
                             continue;
                         }
 
-                        if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, out string newId, out string createError))
+                        if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, warnings, out string newId, out string createError))
                         {
                             error = createError;
                             return false;
@@ -142,7 +142,7 @@ namespace WordAddIn1.PresentationHost
                             }
 
                             PptHtmlApplyUpsert.MutateNodeForCreate(node, plannedType, warnings);
-                            if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, out string newId, out string createError))
+                            if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, warnings, out string newId, out string createError))
                             {
                                 error = createError;
                                 return false;
@@ -298,7 +298,20 @@ namespace WordAddIn1.PresentationHost
 
             string existingType = ResolveExistingType(shape);
 
-            if (node.TableCells != null)
+            if (existingType == "chart")
+            {
+                if (!PptHtmlChartIo.TryApplyToShape(
+                    shape,
+                    node.ChartGrid,
+                    node.ChartFormat,
+                    node.HasText,
+                    warnings,
+                    out error))
+                {
+                    return false;
+                }
+            }
+            else if (node.TableCells != null)
             {
                 if (!TryWriteTable(shape, node.TableCells, out error))
                 {
@@ -307,9 +320,9 @@ namespace WordAddIn1.PresentationHost
             }
             else if (node.HasText)
             {
-                if (existingType == "chart" || existingType == "smartart")
+                if (existingType == "smartart")
                 {
-                    warnings.Add("忽略对 " + existingType + " 的文本修改: " + node.ShapeId);
+                    warnings.Add("忽略对 smartart 的文本修改: " + node.ShapeId);
                 }
                 else if (existingType != "picture" && existingType != "media")
                 {
@@ -388,7 +401,7 @@ namespace WordAddIn1.PresentationHost
                 node.WidthPct = width / slideWidth * 100;
                 node.HeightPct = height / slideHeight * 100;
                 node.ShapeType = existingType == "media" ? "media" : "picture";
-                if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, out string newId, out error))
+                if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, warnings, out string newId, out error))
                 {
                     return false;
                 }
@@ -449,6 +462,7 @@ namespace WordAddIn1.PresentationHost
             PptHtmlApplyNode node,
             double slideWidth,
             double slideHeight,
+            List<string> warnings,
             out string newShapeId,
             out string error)
         {
@@ -527,9 +541,32 @@ namespace WordAddIn1.PresentationHost
                         return false;
                     }
                 }
-                else if (type == "chart" || type == "media")
+                else if (type == "chart")
                 {
-                    error = "当前 WPS 演示宿主暂无法稳定创建 " + type + "，请用 powerpoint 渠道或仅更新已有形状";
+                    if (!PptHtmlChartIo.TryParseType(node.ChartType, out int xlType, out _, out error))
+                    {
+                        return false;
+                    }
+
+                    if (!PptHtmlChartIo.TryCreateOnSlide(
+                        shapes,
+                        (float)left,
+                        (float)top,
+                        (float)width,
+                        (float)height,
+                        xlType,
+                        node.ChartGrid,
+                        node.ChartFormat,
+                        warnings,
+                        out shape,
+                        out error))
+                    {
+                        return false;
+                    }
+                }
+                else if (type == "media")
+                {
+                    error = "当前 WPS 演示宿主暂无法稳定创建 media，请仅更新已有形状";
                     return false;
                 }
                 else if (PptShapeTypeMap.TryGetAutoShapeType(type, out int autoType))
@@ -704,7 +741,7 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
-            if (shapeType == "picture" || shapeType == "media" || shapeType == "table")
+            if (shapeType == "picture" || shapeType == "media" || shapeType == "table" || shapeType == "chart")
             {
                 return true;
             }
@@ -729,7 +766,7 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
-            if (shapeType == "picture" || shapeType == "media" || shapeType == "table")
+            if (shapeType == "picture" || shapeType == "media" || shapeType == "table" || shapeType == "chart")
             {
                 return true;
             }
@@ -783,7 +820,7 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
-            if (shapeType == "picture" || shapeType == "media")
+            if (shapeType == "picture" || shapeType == "media" || shapeType == "chart")
             {
                 return true;
             }
@@ -930,7 +967,7 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
-            if (shapeType == "picture" || shapeType == "media")
+            if (shapeType == "picture" || shapeType == "media" || shapeType == "chart")
             {
                 return true;
             }

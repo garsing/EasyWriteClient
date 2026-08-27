@@ -119,8 +119,7 @@ namespace WordAddIn1.PresentationHost
         {
             // picture 与标题/正文/普通形状同级：默认可编辑（可换 data-src）
             // smartart/group 在 B2 读侧会栅格成 picture，此处仅覆盖未栅格残留
-            return shapeType == "chart"
-                || shapeType == "smartart"
+            return shapeType == "smartart"
                 || shapeType == "media";
         }
 

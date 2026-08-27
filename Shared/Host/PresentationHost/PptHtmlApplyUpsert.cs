@@ -75,6 +75,11 @@ namespace WordAddIn1.PresentationHost
                 return PptHtmlMissingShapeAction.Fail;
             }
 
+            if (!TryValidateChartCreate(node, type, out error))
+            {
+                return PptHtmlMissingShapeAction.Fail;
+            }
+
             plannedType = type;
             return PptHtmlMissingShapeAction.Create;
         }
@@ -145,7 +150,24 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            return true;
+            return TryValidateChartCreate(node, type, out error);
+        }
+
+        private static bool TryValidateChartCreate(PptHtmlApplyNode node, string type, out string error)
+        {
+            error = null;
+            if (type != "chart")
+            {
+                return true;
+            }
+
+            if (node.ChartGrid == null || !node.ChartGrid.IsPourable)
+            {
+                error = "新建 chart 必须在节点内嵌 <table> 灌数，不能建空图";
+                return false;
+            }
+
+            return PptHtmlChartIo.TryParseType(node.ChartType, out _, out _, out error);
         }
 
         public static bool ShouldSkipExplicitCreate(PptHtmlApplyNode node)

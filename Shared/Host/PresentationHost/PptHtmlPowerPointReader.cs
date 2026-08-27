@@ -91,7 +91,7 @@ namespace WordAddIn1.PresentationHost
                 + "x" + slideHeight.ToString("0.#", CultureInfo.InvariantCulture));
             try
             {
-                CollectShapes(
+                if (!CollectShapes(
                     slide.Shapes,
                     trimmed,
                     slideWidth,
@@ -99,7 +99,13 @@ namespace WordAddIn1.PresentationHost
                     shapes,
                     ref truncated,
                     ref truncatedReason,
-                    fontDbg);
+                    fontDbg,
+                    out string collectError))
+                {
+                    error = collectError;
+                    return false;
+                }
+
                 if (truncated && string.IsNullOrEmpty(truncatedReason))
                 {
                     truncatedReason = "部分形状文本超过 " + PptHtmlReadResult.MaxTextChars + " 字符，已截断";
@@ -168,7 +174,7 @@ namespace WordAddIn1.PresentationHost
             return null;
         }
 
-        private static void CollectShapes(
+        private static bool CollectShapes(
             PowerPoint.Shapes shapes,
             string slideId,
             float slideWidth,
@@ -176,11 +182,13 @@ namespace WordAddIn1.PresentationHost
             List<PptHtmlShapeNode> output,
             ref bool truncated,
             ref string truncatedReason,
-            PptHtmlReadDebug fontDbg)
+            PptHtmlReadDebug fontDbg,
+            out string error)
         {
+            error = null;
             if (shapes == null)
             {
-                return;
+                return true;
             }
 
             int count;
@@ -190,7 +198,7 @@ namespace WordAddIn1.PresentationHost
             }
             catch (Exception)
             {
-                return;
+                return true;
             }
 
             for (int i = 1; i <= count; i++)
@@ -199,7 +207,7 @@ namespace WordAddIn1.PresentationHost
                 {
                     truncated = true;
                     truncatedReason = "单页形状超过 " + PptHtmlReadResult.MaxShapes + "，已截断";
-                    return;
+                    return true;
                 }
 
                 PowerPoint.Shape shape;
@@ -213,22 +221,39 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 // B2：整组栅格为一张 picture，不再展开子项
-                AppendNode(shape, slideId, slideWidth, slideHeight, output, ref truncated, fontDbg);
+                if (!AppendNode(
+                    shape,
+                    slideId,
+                    slideWidth,
+                    slideHeight,
+                    output,
+                    ref truncated,
+                    ref truncatedReason,
+                    fontDbg,
+                    out error))
+                {
+                    return false;
+                }
             }
+
+            return true;
         }
 
-        private static void AppendNode(
+        private static bool AppendNode(
             PowerPoint.Shape shape,
             string slideId,
             float slideWidth,
             float slideHeight,
             List<PptHtmlShapeNode> output,
             ref bool pageTextTruncated,
-            PptHtmlReadDebug fontDbg)
+            ref string truncatedReason,
+            PptHtmlReadDebug fontDbg,
+            out string error)
         {
+            error = null;
             if (output.Count >= PptHtmlReadResult.MaxShapes)
             {
-                return;
+                return true;
             }
 
             int comId;
@@ -238,7 +263,7 @@ namespace WordAddIn1.PresentationHost
             }
             catch (Exception)
             {
-                return;
+                return true;
             }
 
             int shapeType = 0;
@@ -285,6 +310,10 @@ namespace WordAddIn1.PresentationHost
             {
                 typeName = "table";
             }
+            else if (PptHtmlChartIo.LooksLikeChart(shape))
+            {
+                typeName = "chart";
+            }
 
             string rasterizedFrom = null;
             if (PptShapeTypeMap.ShouldRasterizeAsPicture(typeName))
@@ -296,7 +325,26 @@ namespace WordAddIn1.PresentationHost
             string text = "";
             bool textTruncated = false;
             string innerHtml = null;
-            if (typeName == "table")
+            PptHtmlChartFormat chartFormat = null;
+            if (typeName == "chart")
+            {
+                if (!PptHtmlChartIo.TryRead(shape, out PptHtmlChartReadModel model, out error))
+                {
+                    error = "无法读取图表 sid" + slideId + "-s"
+                        + comId.ToString(CultureInfo.InvariantCulture) + ": " + (error ?? "");
+                    return false;
+                }
+
+                innerHtml = PptHtmlChartIo.BuildInnerHtml(model.Grid);
+                chartFormat = model.Format;
+                if (model.Grid != null && model.Grid.Truncated)
+                {
+                    textTruncated = true;
+                    truncatedReason = "图表数据超过 "
+                        + PptHtmlChartIo.MaxRows + "×" + PptHtmlChartIo.MaxCols + "，已截断";
+                }
+            }
+            else if (typeName == "table")
             {
                 innerHtml = TryBuildTableInner(shape, out textTruncated);
             }
@@ -350,7 +398,7 @@ namespace WordAddIn1.PresentationHost
             double? marginRight = null;
             double? marginTop = null;
             double? marginBottom = null;
-            if (typeName != "picture" && typeName != "media")
+            if (typeName != "picture" && typeName != "media" && typeName != "chart")
             {
                 fill = TryReadFill(shape);
                 if (typeName != "table")
@@ -416,8 +464,10 @@ namespace WordAddIn1.PresentationHost
                 RasterizedFrom = rasterizedFrom,
                 Name = typeName == "picture" ? name : null,
                 Rotation = rotation,
-                TextTruncated = textTruncated
+                TextTruncated = textTruncated,
+                ChartFormat = chartFormat
             });
+            return true;
         }
 
         private static void TryReadTextMargins(
