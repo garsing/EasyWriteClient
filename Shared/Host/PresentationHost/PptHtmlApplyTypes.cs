@@ -263,15 +263,18 @@ namespace WordAddIn1.PresentationHost
             bool isCreate = !hasFormalId;
             if (isCreate)
             {
+                shapeType = PptShapeTypeMap.NormalizeForCreate(shapeType, el.Name.LocalName);
                 if (string.IsNullOrEmpty(shapeType))
                 {
-                    error = "新建节点必须提供 data-shape-type（无 ShapeId 时视为新建）";
+                    error = "新建节点必须提供 data-shape-type（无 ShapeId 时视为新建）。"
+                        + "标题用 textbox（或 <h1>）；图表用 chart";
                     return false;
                 }
 
                 if (!PptShapeTypeMap.IsCreatable(shapeType))
                 {
-                    error = "不允许新建 data-shape-type=" + shapeType;
+                    error = "不允许新建 data-shape-type=" + shapeType
+                        + "。标题请用 textbox，不要用 placeholder_title";
                     return false;
                 }
             }
@@ -651,8 +654,7 @@ namespace WordAddIn1.PresentationHost
         private static List<List<string>> ParseTableCells(XElement table)
         {
             var rows = new List<List<string>>();
-            foreach (XElement tr in table.Elements().Where(e =>
-                string.Equals(e.Name.LocalName, "tr", StringComparison.OrdinalIgnoreCase)))
+            foreach (XElement tr in PptHtmlChartIo.EnumerateTableRows(table))
             {
                 var row = new List<string>();
                 foreach (XElement td in tr.Elements().Where(e =>

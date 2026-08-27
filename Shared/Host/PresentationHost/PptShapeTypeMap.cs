@@ -146,6 +146,51 @@ namespace WordAddIn1.PresentationHost
             return NameToAutoShape.TryGetValue(shapeType, out autoShapeType);
         }
 
+        /// <summary>
+        /// 新建时把模型常抄的只读 type / 标签收成可建 type。
+        /// placeholder_*、title/text → textbox；无 type 的 h1/p → textbox；table/img 跟标签。
+        /// </summary>
+        public static string NormalizeForCreate(string shapeType, string tag)
+        {
+            if (!string.IsNullOrWhiteSpace(shapeType))
+            {
+                string t = shapeType.Trim();
+                if (t.StartsWith("placeholder_", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "textbox";
+                }
+
+                switch (t.ToLowerInvariant())
+                {
+                    case "title":
+                    case "text":
+                    case "text_box":
+                    case "text-box":
+                        return "textbox";
+                    default:
+                        return t;
+                }
+            }
+
+            if (string.Equals(tag, "h1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(tag, "p", StringComparison.OrdinalIgnoreCase))
+            {
+                return "textbox";
+            }
+
+            if (string.Equals(tag, "table", StringComparison.OrdinalIgnoreCase))
+            {
+                return "table";
+            }
+
+            if (string.Equals(tag, "img", StringComparison.OrdinalIgnoreCase))
+            {
+                return "picture";
+            }
+
+            return null;
+        }
+
         public static bool IsCreatable(string shapeType)
         {
             if (string.IsNullOrEmpty(shapeType))

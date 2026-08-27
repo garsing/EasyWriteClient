@@ -187,6 +187,35 @@ namespace WordAddIn1.PresentationHost
             return "column";
         }
 
+        public static IEnumerable<XElement> EnumerateTableRows(XElement table)
+        {
+            if (table == null)
+            {
+                yield break;
+            }
+
+            foreach (XElement child in table.Elements())
+            {
+                string name = child.Name.LocalName;
+                if (string.Equals(name, "tr", StringComparison.OrdinalIgnoreCase))
+                {
+                    yield return child;
+                    continue;
+                }
+
+                if (string.Equals(name, "thead", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(name, "tbody", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(name, "tfoot", StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (XElement tr in child.Elements().Where(e =>
+                        string.Equals(e.Name.LocalName, "tr", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        yield return tr;
+                    }
+                }
+            }
+        }
+
         public static bool TryParseGrid(XElement table, bool enforceLimitFail, out PptHtmlChartGrid grid, out string error)
         {
             grid = null;
@@ -200,8 +229,7 @@ namespace WordAddIn1.PresentationHost
             var columns = new List<PptHtmlChartColumn>();
             var dataRows = new List<List<string>>();
             bool first = true;
-            foreach (XElement tr in table.Elements().Where(e =>
-                string.Equals(e.Name.LocalName, "tr", StringComparison.OrdinalIgnoreCase)))
+            foreach (XElement tr in EnumerateTableRows(table))
             {
                 var cells = tr.Elements().Where(e =>
                     string.Equals(e.Name.LocalName, "td", StringComparison.OrdinalIgnoreCase)
@@ -254,7 +282,9 @@ namespace WordAddIn1.PresentationHost
 
             if (columns.Count < 2 || dataRows.Count < 1)
             {
-                error = "新建 chart 必须在节点内嵌 <table> 灌数，不能建空图";
+                error = "chart 内嵌表至少要有表头行 + 一行数字。"
+                    + "写成 <tr><th>类别</th><th>系列</th></tr><tr><td>Q1</td><td>120</td></tr>；"
+                    + "thead/tbody 也可以";
                 return false;
             }
 
