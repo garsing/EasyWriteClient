@@ -770,109 +770,19 @@ namespace WordAddIn1.PresentationHost
         {
             grid = null;
             error = null;
-            if (TryReadGridFromWorkbook(chart, out grid, out string wbErr) && grid != null && grid.IsPourable)
+            // 只读 SeriesCollection，不 Activate ChartData。
+            // 访问内嵌簿会拉起 Excel，读一页带图 HTML 会像卡住。
+            if (TryReadGridFromSeries(chart, out grid, out error) && grid != null && grid.IsPourable)
             {
                 return true;
             }
 
-            if (TryReadGridFromSeries(chart, out grid, out string seriesErr) && grid != null && grid.IsPourable)
+            if (string.IsNullOrEmpty(error))
             {
-                return true;
+                error = "无法读取图表数据";
             }
 
-            error = string.IsNullOrEmpty(seriesErr)
-                ? (string.IsNullOrEmpty(wbErr) ? "无法读取图表数据" : wbErr)
-                : seriesErr;
             return false;
-        }
-
-        private static bool TryReadGridFromWorkbook(object chart, out PptHtmlChartGrid grid, out string error)
-        {
-            grid = null;
-            error = null;
-            object excelApp = null;
-            try
-            {
-                object chartData = WppCom.GetProperty(chart, "ChartData");
-                if (chartData == null)
-                {
-                    error = "无 ChartData";
-                    return false;
-                }
-
-                TryInvoke(chartData, "Activate");
-                object workbook = WppCom.GetProperty(chartData, "Workbook");
-                if (workbook == null)
-                {
-                    error = "无内嵌工作簿";
-                    return false;
-                }
-
-                excelApp = WppCom.GetProperty(workbook, "Application");
-                SuppressExcel(excelApp);
-                object sheets = WppCom.GetProperty(workbook, "Worksheets");
-                object ws = WppCom.GetIndexed(sheets, 1);
-                object used = WppCom.GetProperty(ws, "UsedRange");
-                if (used == null)
-                {
-                    error = "内嵌表为空";
-                    return false;
-                }
-
-                object rowsObj = WppCom.GetProperty(used, "Rows");
-                object colsObj = WppCom.GetProperty(used, "Columns");
-                int rowCount = Convert.ToInt32(WppCom.GetProperty(rowsObj, "Count"));
-                int colCount = Convert.ToInt32(WppCom.GetProperty(colsObj, "Count"));
-                if (rowCount < 2 || colCount < 2)
-                {
-                    error = "内嵌表行列不足";
-                    return false;
-                }
-
-                bool truncated = rowCount > MaxRows || colCount > MaxCols;
-                int useRows = Math.Min(rowCount, MaxRows);
-                int useCols = Math.Min(colCount, MaxCols);
-                var columns = new List<PptHtmlChartColumn>();
-                for (int c = 1; c <= useCols; c++)
-                {
-                    columns.Add(new PptHtmlChartColumn
-                    {
-                        Role = c == 1 ? "category" : "value",
-                        Name = Convert.ToString(GetCell(ws, 1, c) ?? "")
-                    });
-                }
-
-                var data = new List<List<string>>();
-                for (int r = 2; r <= useRows; r++)
-                {
-                    var row = new List<string>();
-                    for (int c = 1; c <= useCols; c++)
-                    {
-                        object v = GetCell(ws, r, c);
-                        row.Add(FormatCell(v));
-                    }
-
-                    data.Add(row);
-                }
-
-                TryReadSeriesMeta(chart, columns);
-                grid = new PptHtmlChartGrid
-                {
-                    Columns = columns,
-                    Rows = data,
-                    Truncated = truncated
-                };
-                return true;
-            }
-            catch (Exception ex)
-            {
-                error = "读 ChartData 失败: " + ex.Message;
-                return false;
-            }
-            finally
-            {
-                HideEmbeddedExcel(excelApp);
-            }
         }
 
         private static bool TryReadGridFromSeries(object chart, out PptHtmlChartGrid grid, out string error)
@@ -894,7 +804,7 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                object s1 = WppCom.GetIndexed(sc, 1);
+                object s1 = GetSeries(chart, 1);
                 object xvals = WppCom.GetProperty(s1, "XValues");
                 List<string> cats = ToStringList(xvals);
                 if (cats.Count == 0)
@@ -911,7 +821,7 @@ namespace WordAddIn1.PresentationHost
                 int useSeries = Math.Min(count, MaxCols - 1);
                 for (int i = 1; i <= useSeries; i++)
                 {
-                    object series = WppCom.GetIndexed(sc, i);
+                    object series = GetSeries(chart, i);
                     string name = Convert.ToString(WppCom.GetProperty(series, "Name") ?? ("系列" + i));
                     var col = new PptHtmlChartColumn
                     {
@@ -948,38 +858,6 @@ namespace WordAddIn1.PresentationHost
             {
                 error = "读 SeriesCollection 失败: " + ex.Message;
                 return false;
-            }
-        }
-
-        private static void TryReadSeriesMeta(object chart, List<PptHtmlChartColumn> columns)
-        {
-            try
-            {
-                object sc = TryInvoke(chart, "SeriesCollection");
-                int count = Convert.ToInt32(WppCom.GetProperty(sc, "Count"));
-                int si = 0;
-                for (int i = 0; i < columns.Count; i++)
-                {
-                    if (columns[i].Role == "category")
-                    {
-                        continue;
-                    }
-
-                    si++;
-                    if (si > count)
-                    {
-                        break;
-                    }
-
-                    object series = WppCom.GetIndexed(sc, si);
-                    if (string.IsNullOrEmpty(columns[i].Color))
-                    {
-                        columns[i].Color = TryReadSeriesColor(series);
-                    }
-                }
-            }
-            catch (Exception)
-            {
             }
         }
 
