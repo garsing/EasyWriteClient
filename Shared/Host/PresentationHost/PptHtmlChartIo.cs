@@ -128,6 +128,9 @@ namespace WordAddIn1.PresentationHost
         private const int XlValue = 2;
         private const int XlPrimary = 1;
         private const int XlSecondary = 2;
+        private const int XlCategoryScale = 2;
+        private const int XlTickLabelPositionNone = -4142;
+        private const int XlTickLabelPositionNextToAxis = 4;
 
         public static bool TryParseType(string raw, out int xlType, out string canonical, out string error)
         {
@@ -619,6 +622,7 @@ namespace WordAddIn1.PresentationHost
 
                 if (!IsSameChartType(chart, canon))
                 {
+                    TryCaptureTickLabelFont(chart, out object tickColor, out object tickSize);
                     try
                     {
                         WppCom.TrySetProperty(chart, "ChartType", xl);
@@ -628,6 +632,8 @@ namespace WordAddIn1.PresentationHost
                         error = "无法改 data-chart-type: " + ex.Message;
                         return false;
                     }
+
+                    TryRestoreTickLabelFont(chart, tickColor, tickSize);
                 }
             }
 
@@ -668,7 +674,18 @@ namespace WordAddIn1.PresentationHost
                 warnings?.Add("忽略对 chart 的正文（请改内嵌 <table>）");
             }
 
-            return TryApplyFormat(chart, format, warnings, out error);
+            if (!TryApplyFormat(chart, format, warnings, out error))
+            {
+                return false;
+            }
+
+            // 年份类标签灌 XValues 后常被收成时间轴，刻度字会消失；只改高度时也要把轴拉回来
+            if (grid != null)
+            {
+                EnsureCategoryAxisLabels(chart, grid);
+            }
+
+            return true;
         }
 
         public static bool TryCreateOnSlide(
@@ -737,6 +754,7 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            EnsureCategoryAxisLabels(chart, grid);
             return true;
         }
 
@@ -1608,6 +1626,133 @@ namespace WordAddIn1.PresentationHost
             }
 
             return true;
+        }
+
+        private static List<string> CategoryLabels(PptHtmlChartGrid grid)
+        {
+            var cats = new List<string>();
+            if (grid == null || grid.Rows == null)
+            {
+                return cats;
+            }
+
+            int catCol = 0;
+            if (grid.Columns != null)
+            {
+                for (int i = 0; i < grid.Columns.Count; i++)
+                {
+                    if (grid.Columns[i].Role == "category")
+                    {
+                        catCol = i;
+                        break;
+                    }
+                }
+            }
+
+            foreach (List<string> row in grid.Rows)
+            {
+                cats.Add(row != null && catCol < row.Count ? (row[catCol] ?? "") : "");
+            }
+
+            return cats;
+        }
+
+        private static void EnsureCategoryAxisLabels(object chart, PptHtmlChartGrid grid)
+        {
+            if (chart == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object axis = TryInvoke(chart, "Axes", XlCategory, XlPrimary);
+                if (axis == null)
+                {
+                    return;
+                }
+
+                // 2018/2019 这类标签灌进 XValues 后常被收成时间轴，横坐标字会空白
+                WppCom.TrySetProperty(axis, "CategoryType", XlCategoryScale);
+
+                List<string> cats = CategoryLabels(grid);
+                if (cats.Count > 0)
+                {
+                    WppCom.TrySetProperty(axis, "CategoryNames", cats.ToArray());
+                }
+
+                object pos = WppCom.GetProperty(axis, "TickLabelPosition");
+                if (pos == null || Convert.ToInt32(pos) == XlTickLabelPositionNone)
+                {
+                    WppCom.TrySetProperty(axis, "TickLabelPosition", XlTickLabelPositionNextToAxis);
+                }
+
+                try
+                {
+                    object ticks = WppCom.GetProperty(axis, "TickLabels");
+                    WppCom.TrySetProperty(ticks, "NumberFormat", "@");
+                }
+                catch (Exception)
+                {
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryCaptureTickLabelFont(object chart, out object color, out object size)
+        {
+            color = null;
+            size = null;
+            try
+            {
+                object axis = TryInvoke(chart, "Axes", XlCategory, XlPrimary);
+                object ticks = axis == null ? null : WppCom.GetProperty(axis, "TickLabels");
+                object font = ticks == null ? null : WppCom.GetProperty(ticks, "Font");
+                if (font == null)
+                {
+                    return;
+                }
+
+                color = WppCom.GetProperty(font, "Color");
+                size = WppCom.GetProperty(font, "Size");
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryRestoreTickLabelFont(object chart, object color, object size)
+        {
+            if (color == null && size == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object axis = TryInvoke(chart, "Axes", XlCategory, XlPrimary);
+                object ticks = axis == null ? null : WppCom.GetProperty(axis, "TickLabels");
+                object font = ticks == null ? null : WppCom.GetProperty(ticks, "Font");
+                if (font == null)
+                {
+                    return;
+                }
+
+                if (color != null)
+                {
+                    WppCom.TrySetProperty(font, "Color", color);
+                }
+
+                if (size != null)
+                {
+                    WppCom.TrySetProperty(font, "Size", size);
+                }
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private static bool TryEnsureSeriesCount(object chart, int wantSeries, out string error)
