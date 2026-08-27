@@ -587,9 +587,14 @@ namespace WordAddIn1.PresentationHost
                 TryClearSheet(ws);
                 int cols = grid.Columns.Count;
                 int rows = grid.Rows.Count;
+                int wantSeries = 0;
                 for (int c = 0; c < cols; c++)
                 {
                     SetCell(ws, 1, c + 1, grid.Columns[c].Name ?? "");
+                    if (grid.Columns[c].Role != "category")
+                    {
+                        wantSeries++;
+                    }
                 }
 
                 for (int r = 0; r < rows; r++)
@@ -614,7 +619,7 @@ namespace WordAddIn1.PresentationHost
                 object range = TryInvoke(ws, "Range", "A1", lastCol + lastRow);
                 if (range == null)
                 {
-                    range = WppCom.GetProperty(ws, "UsedRange");
+                    range = TryInvoke(ws, "Range", "A1:" + lastCol + lastRow);
                 }
 
                 if (range == null)
@@ -623,15 +628,18 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                try
+                if (!TrySetSourceData(chart, range))
                 {
-                    WppCom.Invoke(chart, "SetSourceData", range);
-                }
-                catch (Exception)
-                {
-                    TryInvoke(chart, "SetSourceData", range, 2);
+                    error = "无法绑定图表数据区域";
+                    return false;
                 }
 
+                if (!TrimExtraSeries(chart, wantSeries, out error))
+                {
+                    return false;
+                }
+
+                TryInvoke(chart, "Refresh");
                 ApplySeriesExtras(chart, grid);
                 return true;
             }
@@ -1144,12 +1152,32 @@ namespace WordAddIn1.PresentationHost
             {
                 object plot = WppCom.GetProperty(chart, "PlotArea");
                 object fill = WppCom.GetProperty(WppCom.GetProperty(plot, "Format"), "Fill");
-                object fc = WppCom.GetProperty(fill, "ForeColor");
-                object rgb = WppCom.GetProperty(fc, "RGB");
-                if (rgb != null)
+                if (!IsTruthy(WppCom.GetProperty(fill, "Visible")))
                 {
-                    format.PlotColor = OfficeRgbToHex(Convert.ToInt32(Convert.ToDouble(rgb)));
+                    return;
                 }
+
+                object fc = WppCom.GetProperty(fill, "ForeColor");
+                object type = WppCom.GetProperty(fc, "Type");
+                // msoColorTypeRGB = 1；主题/自动色读出来常是 0，不能当成 #000000
+                if (type != null && Convert.ToInt32(type) != 1)
+                {
+                    return;
+                }
+
+                object rgb = WppCom.GetProperty(fc, "RGB");
+                if (rgb == null)
+                {
+                    return;
+                }
+
+                int rgbVal = Convert.ToInt32(Convert.ToDouble(rgb));
+                if (rgbVal == 0 && type == null)
+                {
+                    return;
+                }
+
+                format.PlotColor = OfficeRgbToHex(rgbVal);
             }
             catch (Exception)
             {
@@ -1438,8 +1466,95 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private static bool TrySetSourceData(object chart, object range)
+        {
+            try
+            {
+                WppCom.Invoke(chart, "SetSourceData", range, 2);
+                return true;
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                WppCom.Invoke(chart, "SetSourceData", range);
+                return true;
+            }
+            catch (Exception)
+            {
+            }
+
+            return false;
+        }
+
+        private static bool TrimExtraSeries(object chart, int wantSeries, out string error)
+        {
+            error = null;
+            if (wantSeries < 1)
+            {
+                return true;
+            }
+
+            try
+            {
+                for (int guard = 0; guard < 16; guard++)
+                {
+                    object sc = TryInvoke(chart, "SeriesCollection");
+                    if (sc == null)
+                    {
+                        sc = WppCom.GetProperty(chart, "SeriesCollection");
+                    }
+
+                    int count = Convert.ToInt32(WppCom.GetProperty(sc, "Count"));
+                    if (count <= wantSeries)
+                    {
+                        return true;
+                    }
+
+                    object last = WppCom.GetIndexed(sc, count);
+                    if (last == null)
+                    {
+                        last = TryInvoke(chart, "SeriesCollection", count);
+                    }
+
+                    if (last == null)
+                    {
+                        error = "无法删除图表多余系列（柱子会对不齐分类）";
+                        return false;
+                    }
+
+                    WppCom.Invoke(last, "Delete");
+                }
+
+                error = "无法把图表系列数收到 " + wantSeries;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                error = "删除图表多余系列失败: " + ex.Message;
+                return false;
+            }
+        }
+
         private static void TryClearSheet(object ws)
         {
+            try
+            {
+                object block = TryInvoke(ws, "Range", "A1", "H40");
+                if (block == null)
+                {
+                    block = TryInvoke(ws, "Range", "A1:H40");
+                }
+
+                TryInvoke(block, "Clear");
+                TryInvoke(block, "ClearContents");
+            }
+            catch (Exception)
+            {
+            }
+
             try
             {
                 object used = WppCom.GetProperty(ws, "UsedRange");
