@@ -131,6 +131,156 @@ namespace WordAddIn1.PresentationHost
         private const int XlCategoryScale = 2;
         private const int XlTickLabelPositionNone = -4142;
         private const int XlTickLabelPositionNextToAxis = 4;
+        private const int XlTickMarkNone = -4142;
+        private const int MsoFillGradient = 3;
+
+        private sealed class ChartStyleSnap
+        {
+            public int? ChartStyle { get; set; }
+
+            public bool? HasTitle { get; set; }
+
+            public string TitleFontColor { get; set; }
+
+            public string TitleFontSize { get; set; }
+
+            public bool? TitleFontBold { get; set; }
+
+            public bool? HasLegend { get; set; }
+
+            public int? LegendPosition { get; set; }
+
+            public string LegendFontColor { get; set; }
+
+            public bool? ChartAreaFillVisible { get; set; }
+
+            public int? ChartAreaFillRgb { get; set; }
+
+            public bool? PlotFillVisible { get; set; }
+
+            public int? PlotFillRgb { get; set; }
+
+            public float? PlotLeft { get; set; }
+
+            public float? PlotTop { get; set; }
+
+            public float? PlotWidth { get; set; }
+
+            public float? PlotHeight { get; set; }
+
+            public float? PlotInsideLeft { get; set; }
+
+            public float? PlotInsideTop { get; set; }
+
+            public float? PlotInsideWidth { get; set; }
+
+            public float? PlotInsideHeight { get; set; }
+
+            public int? GapWidth { get; set; }
+
+            public int? Overlap { get; set; }
+
+            public AxisStyleSnap Category { get; set; }
+
+            public AxisStyleSnap Value { get; set; }
+
+            public AxisStyleSnap ValueSecondary { get; set; }
+
+            public List<SeriesStyleSnap> Series { get; set; }
+        }
+
+        private sealed class AxisStyleSnap
+        {
+            public bool? Deleted { get; set; }
+
+            public bool? HasTitle { get; set; }
+
+            public string Title { get; set; }
+
+            public string TickFontName { get; set; }
+
+            public int? TickFontColor { get; set; }
+
+            public double? TickFontSize { get; set; }
+
+            public int? TickLabelPosition { get; set; }
+
+            public int? MajorTickMark { get; set; }
+
+            public int? MinorTickMark { get; set; }
+
+            public string NumberFormat { get; set; }
+
+            public bool? HasMajorGridlines { get; set; }
+
+            public int? MajorGridlineRgb { get; set; }
+
+            public bool? LineVisible { get; set; }
+
+            public int? LineRgb { get; set; }
+
+            public double? LineWeight { get; set; }
+        }
+
+        private sealed class SeriesStyleSnap
+        {
+            public int? ChartType { get; set; }
+
+            public int? AxisGroup { get; set; }
+
+            public FillSnap Fill { get; set; }
+
+            public LineSnap Line { get; set; }
+
+            public int? MarkerStyle { get; set; }
+
+            public int? MarkerSize { get; set; }
+
+            public int? MarkerForeRgb { get; set; }
+
+            public int? MarkerBackRgb { get; set; }
+
+            public bool? HasDataLabels { get; set; }
+
+            public int? DataLabelPosition { get; set; }
+
+            public string DataLabelFontName { get; set; }
+
+            public double? DataLabelFontSize { get; set; }
+
+            public int? DataLabelFontColor { get; set; }
+
+            public string DataLabelNumberFormat { get; set; }
+        }
+
+        private sealed class FillSnap
+        {
+            public bool? Visible { get; set; }
+
+            public int? SolidRgb { get; set; }
+
+            public List<GradientStopSnap> Stops { get; set; }
+        }
+
+        private sealed class LineSnap
+        {
+            public bool? Visible { get; set; }
+
+            public int? Rgb { get; set; }
+
+            public double? Weight { get; set; }
+
+            public List<GradientStopSnap> Stops { get; set; }
+        }
+
+        private sealed class GradientStopSnap
+        {
+            public double Position { get; set; }
+
+            public int Rgb { get; set; }
+
+            public double Transparency { get; set; }
+        }
 
         public static bool TryParseType(string raw, out int xlType, out string canonical, out string error)
         {
@@ -646,46 +796,1470 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
-        public static bool TryApplyToShape(
-            object shape,
+        /// <summary>
+        /// 改已有图：先 AddChart 再建、再删旧图。新图自带包内 embeddings，不继承外链。
+        /// </summary>
+        public static bool TryReplaceOnSlide(
+            object shapes,
+            object oldShape,
             PptHtmlChartGrid grid,
             PptHtmlChartFormat format,
-            bool hasTextNoise,
+            float? left,
+            float? top,
+            float? width,
+            float? height,
             List<string> warnings,
+            out object newShape,
             out string error)
         {
+            newShape = null;
             error = null;
-            object chart = TryGetChart(shape);
-            if (chart == null)
+            if (shapes == null || oldShape == null)
             {
-                error = "目标形状不是图表";
+                error = "无法定位要替换的图表";
                 return false;
             }
 
-            if (grid != null && !GridAlreadyMatches(chart, grid))
+            if (!TryReadBox(oldShape, out float oldLeft, out float oldTop, out float oldWidth, out float oldHeight))
             {
-                if (!TryPourGrid(chart, grid, out error))
+                error = "无法读取原图位置";
+                return false;
+            }
+
+            float useLeft = left ?? oldLeft;
+            float useTop = top ?? oldTop;
+            float useWidth = width ?? oldWidth;
+            float useHeight = height ?? oldHeight;
+
+            PptHtmlChartFormat useFormat = format ?? new PptHtmlChartFormat();
+            PptHtmlChartGrid useGrid = grid != null && grid.IsPourable ? grid : null;
+            if (useGrid == null)
+            {
+                if (TryRead(oldShape, out PptHtmlChartReadModel model, out _)
+                    && model != null
+                    && model.Grid != null
+                    && model.Grid.IsPourable)
+                {
+                    useGrid = model.Grid;
+                    if (string.IsNullOrWhiteSpace(useFormat.ChartType)
+                        && model.Format != null
+                        && !string.IsNullOrWhiteSpace(model.Format.ChartType))
+                    {
+                        useFormat.ChartType = model.Format.ChartType;
+                    }
+                }
+            }
+
+            if (useGrid == null || !useGrid.IsPourable)
+            {
+                error = "改已有 chart 须带内嵌 <table>（将删旧图重建，避免继承外链）";
+                return false;
+            }
+
+            object oldChart = TryGetChart(oldShape);
+            if (string.IsNullOrWhiteSpace(useFormat.ChartType))
+            {
+                try
+                {
+                    object t = oldChart == null ? null : WppCom.GetProperty(oldChart, "ChartType");
+                    if (t != null)
+                    {
+                        useFormat.ChartType = CanonicalTypeFromXl(Convert.ToInt32(t));
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            if (!TryParseType(useFormat.ChartType, out int xlType, out _, out error))
+            {
+                return false;
+            }
+
+            ChartStyleSnap snap = null;
+            try
+            {
+                snap = TryCaptureStyle(oldChart);
+            }
+            catch (Exception)
+            {
+            }
+
+            if (!TryCreateOnSlide(
+                shapes,
+                useLeft,
+                useTop,
+                useWidth,
+                useHeight,
+                xlType,
+                useGrid,
+                useFormat,
+                warnings,
+                out newShape,
+                out error,
+                snap == null || !snap.ChartStyle.HasValue ? -1 : snap.ChartStyle.Value,
+                newLayout: false))
+            {
+                return false;
+            }
+
+            TryApplyStyleSnap(TryGetChart(newShape), snap, warnings);
+            TryDelete(oldShape);
+            warnings?.Add("已删除原图并新建（不继承外链；已套回原图样式）");
+            return true;
+        }
+
+        private static ChartStyleSnap TryCaptureStyle(object chart)
+        {
+            if (chart == null)
+            {
+                return null;
+            }
+
+            var snap = new ChartStyleSnap { Series = new List<SeriesStyleSnap>() };
+            try
+            {
+                object style = WppCom.GetProperty(chart, "ChartStyle");
+                if (style != null)
+                {
+                    snap.ChartStyle = Convert.ToInt32(style);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                snap.HasTitle = IsTruthy(WppCom.GetProperty(chart, "HasTitle"));
+                if (snap.HasTitle == true)
+                {
+                    object title = WppCom.GetProperty(chart, "ChartTitle");
+                    object font = title == null ? null : WppCom.GetProperty(title, "Font");
+                    snap.TitleFontColor = TryReadFontColorHex(font);
+                    object sz = font == null ? null : WppCom.GetProperty(font, "Size");
+                    if (sz != null)
+                    {
+                        snap.TitleFontSize = Convert.ToDouble(sz).ToString("0.##", CultureInfo.InvariantCulture);
+                    }
+
+                    object bold = font == null ? null : WppCom.GetProperty(font, "Bold");
+                    if (bold != null)
+                    {
+                        snap.TitleFontBold = IsTruthy(bold);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                snap.HasLegend = IsTruthy(WppCom.GetProperty(chart, "HasLegend"));
+                if (snap.HasLegend == true)
+                {
+                    object legend = WppCom.GetProperty(chart, "Legend");
+                    object pos = legend == null ? null : WppCom.GetProperty(legend, "Position");
+                    if (pos != null)
+                    {
+                        snap.LegendPosition = Convert.ToInt32(pos);
+                    }
+
+                    object legendFont = legend == null ? null : WppCom.GetProperty(legend, "Font");
+                    snap.LegendFontColor = TryReadFontColorHex(legendFont);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            TryReadAreaFill(chart, "ChartArea", out bool? areaVis, out int? areaRgb);
+            snap.ChartAreaFillVisible = areaVis;
+            snap.ChartAreaFillRgb = areaRgb;
+            TryReadAreaFill(chart, "PlotArea", out bool? plotVis, out int? plotRgb);
+            snap.PlotFillVisible = plotVis;
+            snap.PlotFillRgb = plotRgb;
+            TryCapturePlotLayout(chart, snap);
+            TryCaptureChartGroup(chart, snap);
+
+            snap.Category = TryCaptureAxis(chart, XlCategory, XlPrimary);
+            snap.Value = TryCaptureAxis(chart, XlValue, XlPrimary);
+            snap.ValueSecondary = TryCaptureAxis(chart, XlValue, XlSecondary);
+
+            try
+            {
+                object sc = TryInvoke(chart, "SeriesCollection");
+                if (sc == null)
+                {
+                    sc = WppCom.GetProperty(chart, "SeriesCollection");
+                }
+
+                int n = Convert.ToInt32(WppCom.GetProperty(sc, "Count"));
+                for (int i = 1; i <= n; i++)
+                {
+                    object series = GetSeries(chart, i);
+                    if (series == null)
+                    {
+                        continue;
+                    }
+
+                    var one = new SeriesStyleSnap();
+                    try
+                    {
+                        object t = WppCom.GetProperty(series, "ChartType");
+                        if (t != null)
+                        {
+                            one.ChartType = Convert.ToInt32(t);
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    try
+                    {
+                        object g = WppCom.GetProperty(series, "AxisGroup");
+                        if (g != null)
+                        {
+                            one.AxisGroup = Convert.ToInt32(g);
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    one.Fill = TryCaptureFill(series);
+                    one.Line = TryCaptureLine(series);
+                    TryCaptureMarker(series, one);
+                    TryCaptureDataLabels(series, one);
+                    snap.Series.Add(one);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return snap;
+        }
+
+        private static void TryApplyStyleSnap(object chart, ChartStyleSnap snap, List<string> warnings)
+        {
+            if (chart == null || snap == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (snap.Series != null)
+                {
+                    for (int i = 0; i < snap.Series.Count; i++)
+                    {
+                        object series = GetSeries(chart, i + 1);
+                        if (series == null)
+                        {
+                            continue;
+                        }
+
+                        SeriesStyleSnap one = snap.Series[i];
+                        if (one.ChartType.HasValue)
+                        {
+                            WppCom.TrySetProperty(series, "ChartType", one.ChartType.Value);
+                        }
+
+                        if (one.AxisGroup.HasValue)
+                        {
+                            WppCom.TrySetProperty(series, "AxisGroup", one.AxisGroup.Value);
+                        }
+                    }
+                }
+
+                if (snap.ChartStyle.HasValue)
+                {
+                    WppCom.TrySetProperty(chart, "ChartStyle", snap.ChartStyle.Value);
+                }
+
+                if (snap.HasTitle.HasValue)
+                {
+                    WppCom.TrySetProperty(chart, "HasTitle", snap.HasTitle.Value);
+                    if (snap.HasTitle.Value)
+                    {
+                        object title = WppCom.GetProperty(chart, "ChartTitle");
+                        object font = title == null ? null : WppCom.GetProperty(title, "Font");
+                        if (font != null)
+                        {
+                            if (!string.IsNullOrEmpty(snap.TitleFontColor)
+                                && TryParseHexToOffice(snap.TitleFontColor, out int tRgb))
+                            {
+                                WppCom.TrySetProperty(font, "Color", tRgb);
+                            }
+
+                            if (!string.IsNullOrEmpty(snap.TitleFontSize)
+                                && double.TryParse(snap.TitleFontSize, NumberStyles.Float, CultureInfo.InvariantCulture, out double sz))
+                            {
+                                WppCom.TrySetProperty(font, "Size", sz);
+                            }
+
+                            if (snap.TitleFontBold.HasValue)
+                            {
+                                WppCom.TrySetProperty(font, "Bold", snap.TitleFontBold.Value);
+                            }
+                        }
+                    }
+                }
+
+                if (snap.HasLegend.HasValue)
+                {
+                    WppCom.TrySetProperty(chart, "HasLegend", snap.HasLegend.Value);
+                    if (snap.HasLegend.Value)
+                    {
+                        object legend = WppCom.GetProperty(chart, "Legend");
+                        if (snap.LegendPosition.HasValue)
+                        {
+                            WppCom.TrySetProperty(legend, "Position", snap.LegendPosition.Value);
+                        }
+
+                        if (!string.IsNullOrEmpty(snap.LegendFontColor)
+                            && TryParseHexToOffice(snap.LegendFontColor, out int lRgb))
+                        {
+                            object legendFont = legend == null ? null : WppCom.GetProperty(legend, "Font");
+                            WppCom.TrySetProperty(legendFont, "Color", lRgb);
+                        }
+                    }
+                }
+
+                TryWriteAreaFill(chart, "ChartArea", snap.ChartAreaFillVisible, snap.ChartAreaFillRgb);
+                TryWriteAreaFill(chart, "PlotArea", snap.PlotFillVisible, snap.PlotFillRgb);
+                TryApplyChartGroup(chart, snap);
+                TryApplyAxis(chart, XlCategory, XlPrimary, snap.Category);
+                TryApplyAxis(chart, XlValue, XlPrimary, snap.Value);
+                TryApplyAxis(chart, XlValue, XlSecondary, snap.ValueSecondary);
+
+                if (snap.Series != null)
+                {
+                    for (int i = 0; i < snap.Series.Count; i++)
+                    {
+                        object series = GetSeries(chart, i + 1);
+                        if (series == null)
+                        {
+                            continue;
+                        }
+
+                        SeriesStyleSnap one = snap.Series[i];
+                        TryApplyFill(series, one.Fill);
+                        TryApplyLine(series, one.Line);
+                        TryApplyMarker(series, one);
+                        TryApplyDataLabels(series, one);
+                    }
+                }
+
+                TryApplyPlotLayout(chart, snap);
+            }
+            catch (Exception ex)
+            {
+                warnings?.Add("套回原图样式部分失败: " + ex.Message);
+            }
+        }
+
+        private static AxisStyleSnap TryCaptureAxis(object chart, int axisType, int group)
+        {
+            bool? hasAxis = TryReadHasAxis(chart, axisType, group);
+            if (hasAxis == false)
+            {
+                return new AxisStyleSnap { Deleted = true };
+            }
+
+            try
+            {
+                object axis = TryInvoke(chart, "Axes", axisType, group);
+                if (axis == null)
+                {
+                    return hasAxis == true ? null : new AxisStyleSnap { Deleted = true };
+                }
+
+                var snap = new AxisStyleSnap { Deleted = false };
+                try
+                {
+                    snap.HasTitle = IsTruthy(WppCom.GetProperty(axis, "HasTitle"));
+                    if (snap.HasTitle == true)
+                    {
+                        object t = WppCom.GetProperty(axis, "AxisTitle");
+                        snap.Title = Convert.ToString(WppCom.GetProperty(t, "Text") ?? "");
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                try
+                {
+                    object ticks = WppCom.GetProperty(axis, "TickLabels");
+                    object font = ticks == null ? null : WppCom.GetProperty(ticks, "Font");
+                    string hex = TryReadFontColorHex(font);
+                    if (!string.IsNullOrEmpty(hex) && TryParseHexToOffice(hex, out int rgb))
+                    {
+                        snap.TickFontColor = rgb;
+                    }
+
+                    object sz = font == null ? null : WppCom.GetProperty(font, "Size");
+                    if (sz != null)
+                    {
+                        snap.TickFontSize = Convert.ToDouble(sz);
+                    }
+
+                    object name = font == null ? null : WppCom.GetProperty(font, "Name");
+                    if (name != null)
+                    {
+                        snap.TickFontName = Convert.ToString(name);
+                    }
+
+                    object fmt = ticks == null ? null : WppCom.GetProperty(ticks, "NumberFormat");
+                    if (fmt != null)
+                    {
+                        snap.NumberFormat = Convert.ToString(fmt);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                try
+                {
+                    object pos = WppCom.GetProperty(axis, "TickLabelPosition");
+                    if (pos != null)
+                    {
+                        snap.TickLabelPosition = Convert.ToInt32(pos);
+                    }
+
+                    object major = WppCom.GetProperty(axis, "MajorTickMark");
+                    if (major != null)
+                    {
+                        snap.MajorTickMark = Convert.ToInt32(major);
+                    }
+
+                    object minor = WppCom.GetProperty(axis, "MinorTickMark");
+                    if (minor != null)
+                    {
+                        snap.MinorTickMark = Convert.ToInt32(minor);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                try
+                {
+                    snap.HasMajorGridlines = IsTruthy(WppCom.GetProperty(axis, "HasMajorGridlines"));
+                    if (snap.HasMajorGridlines == true)
+                    {
+                        object gl = WppCom.GetProperty(axis, "MajorGridlines");
+                        object glLine = gl == null ? null : WppCom.GetProperty(WppCom.GetProperty(gl, "Format"), "Line");
+                        object glColor = glLine == null ? null : WppCom.GetProperty(glLine, "ForeColor");
+                        snap.MajorGridlineRgb = TryReadExplicitRgb(glColor);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                try
+                {
+                    object axisLine = WppCom.GetProperty(WppCom.GetProperty(axis, "Format"), "Line");
+                    object vis = axisLine == null ? null : WppCom.GetProperty(axisLine, "Visible");
+                    if (vis != null)
+                    {
+                        snap.LineVisible = Convert.ToInt32(vis) != 0;
+                    }
+
+                    object axisColor = axisLine == null ? null : WppCom.GetProperty(axisLine, "ForeColor");
+                    snap.LineRgb = TryReadExplicitRgb(axisColor);
+                    object weight = axisLine == null ? null : WppCom.GetProperty(axisLine, "Weight");
+                    if (weight != null)
+                    {
+                        snap.LineWeight = Convert.ToDouble(weight);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                if (hasAxis == null
+                    && snap.TickLabelPosition == XlTickLabelPositionNone
+                    && snap.LineVisible == false
+                    && snap.HasTitle != true)
+                {
+                    snap.Deleted = true;
+                }
+
+                return snap;
+            }
+            catch (Exception)
+            {
+                return hasAxis == false ? new AxisStyleSnap { Deleted = true } : null;
+            }
+        }
+
+        private static void TryApplyAxis(object chart, int axisType, int group, AxisStyleSnap snap)
+        {
+            if (snap == null)
+            {
+                return;
+            }
+
+            if (snap.Deleted == true)
+            {
+                TryHideAxis(chart, axisType, group);
+                return;
+            }
+
+            try
+            {
+                object axis = TryInvoke(chart, "Axes", axisType, group);
+                if (axis == null)
+                {
+                    return;
+                }
+
+                if (snap.HasTitle.HasValue)
+                {
+                    WppCom.TrySetProperty(axis, "HasTitle", snap.HasTitle.Value);
+                    if (snap.HasTitle.Value && !string.IsNullOrEmpty(snap.Title))
+                    {
+                        object at = WppCom.GetProperty(axis, "AxisTitle");
+                        WppCom.TrySetProperty(at, "Text", snap.Title);
+                    }
+                }
+
+                if (snap.TickLabelPosition.HasValue)
+                {
+                    WppCom.TrySetProperty(axis, "TickLabelPosition", snap.TickLabelPosition.Value);
+                }
+
+                if (snap.MajorTickMark.HasValue)
+                {
+                    WppCom.TrySetProperty(axis, "MajorTickMark", snap.MajorTickMark.Value);
+                }
+
+                if (snap.MinorTickMark.HasValue)
+                {
+                    WppCom.TrySetProperty(axis, "MinorTickMark", snap.MinorTickMark.Value);
+                }
+
+                object ticks = WppCom.GetProperty(axis, "TickLabels");
+                object font = ticks == null ? null : WppCom.GetProperty(ticks, "Font");
+                if (font != null)
+                {
+                    if (!string.IsNullOrEmpty(snap.TickFontName))
+                    {
+                        WppCom.TrySetProperty(font, "Name", snap.TickFontName);
+                    }
+
+                    if (snap.TickFontColor.HasValue)
+                    {
+                        WppCom.TrySetProperty(font, "Color", snap.TickFontColor.Value);
+                    }
+
+                    if (snap.TickFontSize.HasValue)
+                    {
+                        WppCom.TrySetProperty(font, "Size", snap.TickFontSize.Value);
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(snap.NumberFormat) && ticks != null)
+                {
+                    WppCom.TrySetProperty(ticks, "NumberFormat", snap.NumberFormat);
+                }
+
+                if (snap.HasMajorGridlines.HasValue)
+                {
+                    WppCom.TrySetProperty(axis, "HasMajorGridlines", snap.HasMajorGridlines.Value);
+                    if (snap.HasMajorGridlines.Value && snap.MajorGridlineRgb.HasValue)
+                    {
+                        object gl = WppCom.GetProperty(axis, "MajorGridlines");
+                        object glLine = gl == null ? null : WppCom.GetProperty(WppCom.GetProperty(gl, "Format"), "Line");
+                        object glColor = glLine == null ? null : WppCom.GetProperty(glLine, "ForeColor");
+                        WppCom.TrySetProperty(glColor, "RGB", snap.MajorGridlineRgb.Value);
+                    }
+                }
+
+                object axisLine = WppCom.GetProperty(WppCom.GetProperty(axis, "Format"), "Line");
+                if (snap.LineVisible == false)
+                {
+                    WppCom.TrySetProperty(axisLine, "Visible", 0);
+                }
+                else
+                {
+                    if (snap.LineRgb.HasValue)
+                    {
+                        object axisColor = axisLine == null ? null : WppCom.GetProperty(axisLine, "ForeColor");
+                        WppCom.TrySetProperty(axisColor, "RGB", snap.LineRgb.Value);
+                    }
+
+                    if (snap.LineWeight.HasValue)
+                    {
+                        WppCom.TrySetProperty(axisLine, "Weight", snap.LineWeight.Value);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryReadAreaFill(object chart, string areaName, out bool? visible, out int? rgb)
+        {
+            visible = null;
+            rgb = null;
+            try
+            {
+                object area = WppCom.GetProperty(chart, areaName);
+                object fill = WppCom.GetProperty(WppCom.GetProperty(area, "Format"), "Fill");
+                object vis = WppCom.GetProperty(fill, "Visible");
+                if (vis != null)
+                {
+                    visible = Convert.ToInt32(vis) != 0;
+                }
+
+                if (visible == true)
+                {
+                    object fc = WppCom.GetProperty(fill, "ForeColor");
+                    rgb = TryReadExplicitRgb(fc);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryWriteAreaFill(object chart, string areaName, bool? visible, int? rgb)
+        {
+            if (!visible.HasValue)
+            {
+                return;
+            }
+
+            try
+            {
+                object area = WppCom.GetProperty(chart, areaName);
+                object fill = WppCom.GetProperty(WppCom.GetProperty(area, "Format"), "Fill");
+                if (!visible.Value)
+                {
+                    WppCom.TrySetProperty(fill, "Visible", 0);
+                    return;
+                }
+
+                WppCom.TrySetProperty(fill, "Visible", -1);
+                if (rgb.HasValue)
+                {
+                    TryInvoke(fill, "Solid");
+                    object fc = WppCom.GetProperty(fill, "ForeColor");
+                    WppCom.TrySetProperty(fc, "RGB", rgb.Value);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryCapturePlotLayout(object chart, ChartStyleSnap snap)
+        {
+            try
+            {
+                object plot = WppCom.GetProperty(chart, "PlotArea");
+                if (plot == null)
+                {
+                    return;
+                }
+
+                snap.PlotLeft = TryReadFloat(plot, "Left");
+                snap.PlotTop = TryReadFloat(plot, "Top");
+                snap.PlotWidth = TryReadFloat(plot, "Width");
+                snap.PlotHeight = TryReadFloat(plot, "Height");
+                snap.PlotInsideLeft = TryReadFloat(plot, "InsideLeft");
+                snap.PlotInsideTop = TryReadFloat(plot, "InsideTop");
+                snap.PlotInsideWidth = TryReadFloat(plot, "InsideWidth");
+                snap.PlotInsideHeight = TryReadFloat(plot, "InsideHeight");
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryApplyPlotLayout(object chart, ChartStyleSnap snap)
+        {
+            try
+            {
+                object plot = WppCom.GetProperty(chart, "PlotArea");
+                if (plot == null)
+                {
+                    return;
+                }
+
+                if (snap.PlotLeft.HasValue)
+                {
+                    WppCom.TrySetProperty(plot, "Left", snap.PlotLeft.Value);
+                }
+
+                if (snap.PlotTop.HasValue)
+                {
+                    WppCom.TrySetProperty(plot, "Top", snap.PlotTop.Value);
+                }
+
+                if (snap.PlotWidth.HasValue && snap.PlotWidth.Value > 0)
+                {
+                    WppCom.TrySetProperty(plot, "Width", snap.PlotWidth.Value);
+                }
+
+                if (snap.PlotHeight.HasValue && snap.PlotHeight.Value > 0)
+                {
+                    WppCom.TrySetProperty(plot, "Height", snap.PlotHeight.Value);
+                }
+
+                if (snap.PlotInsideLeft.HasValue)
+                {
+                    WppCom.TrySetProperty(plot, "InsideLeft", snap.PlotInsideLeft.Value);
+                }
+
+                if (snap.PlotInsideTop.HasValue)
+                {
+                    WppCom.TrySetProperty(plot, "InsideTop", snap.PlotInsideTop.Value);
+                }
+
+                if (snap.PlotInsideWidth.HasValue && snap.PlotInsideWidth.Value > 0)
+                {
+                    WppCom.TrySetProperty(plot, "InsideWidth", snap.PlotInsideWidth.Value);
+                }
+
+                if (snap.PlotInsideHeight.HasValue && snap.PlotInsideHeight.Value > 0)
+                {
+                    WppCom.TrySetProperty(plot, "InsideHeight", snap.PlotInsideHeight.Value);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryCaptureChartGroup(object chart, ChartStyleSnap snap)
+        {
+            try
+            {
+                object g = TryInvoke(chart, "ChartGroups", 1);
+                if (g == null)
+                {
+                    return;
+                }
+
+                object gap = WppCom.GetProperty(g, "GapWidth");
+                if (gap != null)
+                {
+                    snap.GapWidth = Convert.ToInt32(gap);
+                }
+
+                object overlap = WppCom.GetProperty(g, "Overlap");
+                if (overlap != null)
+                {
+                    snap.Overlap = Convert.ToInt32(overlap);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryApplyChartGroup(object chart, ChartStyleSnap snap)
+        {
+            try
+            {
+                object g = TryInvoke(chart, "ChartGroups", 1);
+                if (g == null)
+                {
+                    return;
+                }
+
+                if (snap.GapWidth.HasValue)
+                {
+                    WppCom.TrySetProperty(g, "GapWidth", snap.GapWidth.Value);
+                }
+
+                if (snap.Overlap.HasValue)
+                {
+                    WppCom.TrySetProperty(g, "Overlap", snap.Overlap.Value);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static FillSnap TryCaptureFill(object series)
+        {
+            try
+            {
+                object fill = WppCom.GetProperty(WppCom.GetProperty(series, "Format"), "Fill");
+                if (fill == null)
+                {
+                    return null;
+                }
+
+                var snap = new FillSnap();
+                object vis = WppCom.GetProperty(fill, "Visible");
+                if (vis != null)
+                {
+                    snap.Visible = Convert.ToInt32(vis) != 0;
+                }
+
+                if (snap.Visible == false)
+                {
+                    return snap;
+                }
+
+                snap.Stops = TryReadGradientStops(fill);
+                snap.SolidRgb = TryReadExplicitRgb(WppCom.GetProperty(fill, "ForeColor"));
+                if (!snap.SolidRgb.HasValue && snap.Stops != null && snap.Stops.Count > 0)
+                {
+                    snap.SolidRgb = snap.Stops[snap.Stops.Count - 1].Rgb;
+                }
+
+                return snap;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static void TryApplyFill(object series, FillSnap snap)
+        {
+            if (snap == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object fill = WppCom.GetProperty(WppCom.GetProperty(series, "Format"), "Fill");
+                if (fill == null)
+                {
+                    return;
+                }
+
+                if (snap.Visible == false)
+                {
+                    WppCom.TrySetProperty(fill, "Visible", 0);
+                    return;
+                }
+
+                WppCom.TrySetProperty(fill, "Visible", -1);
+                if (snap.Stops != null && snap.Stops.Count >= 2 && TryWriteGradientStops(fill, snap.Stops))
+                {
+                    return;
+                }
+
+                if (snap.SolidRgb.HasValue)
+                {
+                    TryInvoke(fill, "Solid");
+                    object fc = WppCom.GetProperty(fill, "ForeColor");
+                    WppCom.TrySetProperty(fc, "RGB", snap.SolidRgb.Value);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static LineSnap TryCaptureLine(object series)
+        {
+            try
+            {
+                object line = WppCom.GetProperty(WppCom.GetProperty(series, "Format"), "Line");
+                if (line == null)
+                {
+                    return null;
+                }
+
+                var snap = new LineSnap();
+                object vis = WppCom.GetProperty(line, "Visible");
+                if (vis != null)
+                {
+                    snap.Visible = Convert.ToInt32(vis) != 0;
+                }
+
+                object weight = WppCom.GetProperty(line, "Weight");
+                if (weight != null)
+                {
+                    snap.Weight = Convert.ToDouble(weight);
+                }
+
+                if (snap.Visible == false)
+                {
+                    return snap;
+                }
+
+                object lineFill = null;
+                try
+                {
+                    lineFill = WppCom.GetProperty(line, "Fill");
+                }
+                catch (Exception)
+                {
+                }
+
+                if (lineFill != null)
+                {
+                    snap.Stops = TryReadGradientStops(lineFill);
+                }
+
+                snap.Rgb = TryReadExplicitRgb(WppCom.GetProperty(line, "ForeColor"));
+                if (!snap.Rgb.HasValue && snap.Stops != null && snap.Stops.Count > 0)
+                {
+                    snap.Rgb = snap.Stops[snap.Stops.Count - 1].Rgb;
+                }
+
+                return snap;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static void TryApplyLine(object series, LineSnap snap)
+        {
+            if (snap == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object line = WppCom.GetProperty(WppCom.GetProperty(series, "Format"), "Line");
+                if (line == null)
+                {
+                    return;
+                }
+
+                if (snap.Visible == false)
+                {
+                    WppCom.TrySetProperty(line, "Visible", 0);
+                    return;
+                }
+
+                WppCom.TrySetProperty(line, "Visible", -1);
+                if (snap.Weight.HasValue)
+                {
+                    WppCom.TrySetProperty(line, "Weight", snap.Weight.Value);
+                }
+
+                object lineFill = null;
+                try
+                {
+                    lineFill = WppCom.GetProperty(line, "Fill");
+                }
+                catch (Exception)
+                {
+                }
+
+                if (lineFill != null && snap.Stops != null && snap.Stops.Count >= 2)
+                {
+                    TryWriteGradientStops(lineFill, snap.Stops);
+                }
+                else if (snap.Rgb.HasValue)
+                {
+                    object fc = WppCom.GetProperty(line, "ForeColor");
+                    WppCom.TrySetProperty(fc, "RGB", snap.Rgb.Value);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryCaptureMarker(object series, SeriesStyleSnap one)
+        {
+            try
+            {
+                object style = WppCom.GetProperty(series, "MarkerStyle");
+                if (style != null)
+                {
+                    one.MarkerStyle = Convert.ToInt32(style);
+                }
+
+                object size = WppCom.GetProperty(series, "MarkerSize");
+                if (size != null)
+                {
+                    one.MarkerSize = Convert.ToInt32(size);
+                }
+
+                one.MarkerForeRgb = TryReadOleColor(WppCom.GetProperty(series, "MarkerForegroundColor"));
+                one.MarkerBackRgb = TryReadOleColor(WppCom.GetProperty(series, "MarkerBackgroundColor"));
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryApplyMarker(object series, SeriesStyleSnap one)
+        {
+            if (one == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (one.MarkerStyle.HasValue)
+                {
+                    WppCom.TrySetProperty(series, "MarkerStyle", one.MarkerStyle.Value);
+                }
+
+                if (one.MarkerSize.HasValue)
+                {
+                    WppCom.TrySetProperty(series, "MarkerSize", one.MarkerSize.Value);
+                }
+
+                if (one.MarkerForeRgb.HasValue)
+                {
+                    WppCom.TrySetProperty(series, "MarkerForegroundColor", one.MarkerForeRgb.Value);
+                }
+
+                if (one.MarkerBackRgb.HasValue)
+                {
+                    WppCom.TrySetProperty(series, "MarkerBackgroundColor", one.MarkerBackRgb.Value);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryCaptureDataLabels(object series, SeriesStyleSnap one)
+        {
+            try
+            {
+                object has = WppCom.GetProperty(series, "HasDataLabels");
+                if (has != null)
+                {
+                    one.HasDataLabels = IsTruthy(has);
+                }
+
+                if (one.HasDataLabels != true)
+                {
+                    return;
+                }
+
+                object dls = TryInvoke(series, "DataLabels");
+                if (dls == null)
+                {
+                    dls = WppCom.GetProperty(series, "DataLabels");
+                }
+
+                object pos = dls == null ? null : WppCom.GetProperty(dls, "Position");
+                if (pos != null)
+                {
+                    one.DataLabelPosition = Convert.ToInt32(pos);
+                }
+
+                object font = dls == null ? null : WppCom.GetProperty(dls, "Font");
+                if (font != null)
+                {
+                    object name = WppCom.GetProperty(font, "Name");
+                    if (name != null)
+                    {
+                        one.DataLabelFontName = Convert.ToString(name);
+                    }
+
+                    object sz = WppCom.GetProperty(font, "Size");
+                    if (sz != null)
+                    {
+                        one.DataLabelFontSize = Convert.ToDouble(sz);
+                    }
+
+                    string hex = TryReadFontColorHex(font);
+                    if (!string.IsNullOrEmpty(hex) && TryParseHexToOffice(hex, out int rgb))
+                    {
+                        one.DataLabelFontColor = rgb;
+                    }
+                }
+
+                object fmt = dls == null ? null : WppCom.GetProperty(dls, "NumberFormat");
+                if (fmt != null)
+                {
+                    one.DataLabelNumberFormat = Convert.ToString(fmt);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryApplyDataLabels(object series, SeriesStyleSnap one)
+        {
+            if (one == null || !one.HasDataLabels.HasValue)
+            {
+                return;
+            }
+
+            try
+            {
+                WppCom.TrySetProperty(series, "HasDataLabels", one.HasDataLabels.Value);
+                if (!one.HasDataLabels.Value)
+                {
+                    return;
+                }
+
+                object dls = TryInvoke(series, "DataLabels");
+                if (dls == null)
+                {
+                    dls = WppCom.GetProperty(series, "DataLabels");
+                }
+
+                if (dls == null)
+                {
+                    return;
+                }
+
+                if (one.DataLabelPosition.HasValue)
+                {
+                    WppCom.TrySetProperty(dls, "Position", one.DataLabelPosition.Value);
+                }
+
+                object font = WppCom.GetProperty(dls, "Font");
+                if (font != null)
+                {
+                    if (!string.IsNullOrEmpty(one.DataLabelFontName))
+                    {
+                        WppCom.TrySetProperty(font, "Name", one.DataLabelFontName);
+                    }
+
+                    if (one.DataLabelFontSize.HasValue)
+                    {
+                        WppCom.TrySetProperty(font, "Size", one.DataLabelFontSize.Value);
+                    }
+
+                    if (one.DataLabelFontColor.HasValue)
+                    {
+                        WppCom.TrySetProperty(font, "Color", one.DataLabelFontColor.Value);
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(one.DataLabelNumberFormat))
+                {
+                    WppCom.TrySetProperty(dls, "NumberFormatLinked", false);
+                    WppCom.TrySetProperty(dls, "NumberFormat", one.DataLabelNumberFormat);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static List<GradientStopSnap> TryReadGradientStops(object fill)
+        {
+            try
+            {
+                object type = WppCom.GetProperty(fill, "Type");
+                if (type == null || Convert.ToInt32(type) != MsoFillGradient)
+                {
+                    return null;
+                }
+
+                object gs = WppCom.GetProperty(fill, "GradientStops");
+                if (gs == null)
+                {
+                    return null;
+                }
+
+                int n = Convert.ToInt32(WppCom.GetProperty(gs, "Count"));
+                var list = new List<GradientStopSnap>();
+                for (int i = 1; i <= n; i++)
+                {
+                    object stop = WppCom.GetIndexed(gs, i);
+                    if (stop == null)
+                    {
+                        continue;
+                    }
+
+                    var one = new GradientStopSnap();
+                    object pos = WppCom.GetProperty(stop, "Position");
+                    if (pos != null)
+                    {
+                        one.Position = Convert.ToDouble(pos);
+                    }
+
+                    object trans = WppCom.GetProperty(stop, "Transparency");
+                    if (trans != null)
+                    {
+                        one.Transparency = Convert.ToDouble(trans);
+                    }
+
+                    object color = WppCom.GetProperty(stop, "Color");
+                    int? rgb = TryReadExplicitRgb(color);
+                    if (!rgb.HasValue)
+                    {
+                        rgb = TryReadOleColor(color == null ? null : WppCom.GetProperty(color, "RGB"));
+                    }
+
+                    if (!rgb.HasValue)
+                    {
+                        continue;
+                    }
+
+                    one.Rgb = rgb.Value;
+                    list.Add(one);
+                }
+
+                return list.Count >= 2 ? list : null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static bool TryWriteGradientStops(object fill, List<GradientStopSnap> stops)
+        {
+            if (fill == null || stops == null || stops.Count < 2)
+            {
+                return false;
+            }
+
+            try
+            {
+                TryInvoke(fill, "TwoColorGradient", 1, 1);
+                object gs = WppCom.GetProperty(fill, "GradientStops");
+                if (gs == null)
                 {
                     return false;
                 }
-            }
-            else if (hasTextNoise)
-            {
-                warnings?.Add("忽略对 chart 的正文（请改内嵌 <table>）");
-            }
 
-            if (!TryApplyFormat(chart, format, warnings, out error))
+                int count = Convert.ToInt32(WppCom.GetProperty(gs, "Count"));
+                int use = Math.Min(count, stops.Count);
+                for (int i = 0; i < use; i++)
+                {
+                    object stop = WppCom.GetIndexed(gs, i + 1);
+                    WppCom.TrySetProperty(stop, "Position", stops[i].Position);
+                    object color = WppCom.GetProperty(stop, "Color");
+                    WppCom.TrySetProperty(color, "RGB", stops[i].Rgb);
+                    WppCom.TrySetProperty(stop, "Transparency", stops[i].Transparency);
+                }
+
+                for (int i = count; i < stops.Count; i++)
+                {
+                    TryInvoke(gs, "Insert", stops[i].Rgb, stops[i].Position, stops[i].Transparency);
+                }
+
+                int after = Convert.ToInt32(WppCom.GetProperty(gs, "Count"));
+                for (int i = after; i > stops.Count; i--)
+                {
+                    object extra = WppCom.GetIndexed(gs, i);
+                    TryInvoke(extra, "Delete");
+                }
+
+                return true;
+            }
+            catch (Exception)
             {
                 return false;
             }
+        }
 
-            // 年份类标签灌 XValues 后常被收成时间轴，刻度字会消失；只改高度时也要把轴拉回来
-            if (grid != null)
+        private static bool? TryReadHasAxis(object chart, int axisType, int group)
+        {
+            try
             {
-                EnsureCategoryAxisLabels(chart, grid);
+                object v = chart.GetType().InvokeMember(
+                    "HasAxis",
+                    BindingFlags.GetProperty | BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    chart,
+                    new object[] { axisType, group });
+                if (v != null)
+                {
+                    return IsTruthy(v);
+                }
+            }
+            catch (Exception)
+            {
             }
 
-            return true;
+            try
+            {
+                return TryInvoke(chart, "Axes", axisType, group) != null;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static void TryHideAxis(object chart, int axisType, int group)
+        {
+            try
+            {
+                chart.GetType().InvokeMember(
+                    "HasAxis",
+                    BindingFlags.SetProperty | BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    chart,
+                    new object[] { axisType, group, false });
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                object axis = TryInvoke(chart, "Axes", axisType, group);
+                if (axis == null)
+                {
+                    return;
+                }
+
+                TryInvoke(axis, "Delete");
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                object axis = TryInvoke(chart, "Axes", axisType, group);
+                if (axis == null)
+                {
+                    return;
+                }
+
+                WppCom.TrySetProperty(axis, "HasTitle", false);
+                WppCom.TrySetProperty(axis, "HasMajorGridlines", false);
+                WppCom.TrySetProperty(axis, "TickLabelPosition", XlTickLabelPositionNone);
+                WppCom.TrySetProperty(axis, "MajorTickMark", XlTickMarkNone);
+                WppCom.TrySetProperty(axis, "MinorTickMark", XlTickMarkNone);
+                object axisLine = WppCom.GetProperty(WppCom.GetProperty(axis, "Format"), "Line");
+                WppCom.TrySetProperty(axisLine, "Visible", 0);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static float? TryReadFloat(object target, string name)
+        {
+            try
+            {
+                object v = WppCom.GetProperty(target, name);
+                if (v == null)
+                {
+                    return null;
+                }
+
+                return Convert.ToSingle(v);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static int? TryReadOleColor(object raw)
+        {
+            if (raw == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                int value = Convert.ToInt32(Convert.ToDouble(raw)) & 0x00FFFFFF;
+                return value;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static int? TryReadExplicitRgb(object colorFormat)
+        {
+            if (colorFormat == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                object type = WppCom.GetProperty(colorFormat, "Type");
+                // msoColorTypeRGB = 1；主题/自动色不要写成 #000000 / #FFFFFF
+                if (type != null && Convert.ToInt32(type) != 1)
+                {
+                    return null;
+                }
+
+                object rgb = WppCom.GetProperty(colorFormat, "RGB");
+                if (rgb == null)
+                {
+                    return null;
+                }
+
+                int value = Convert.ToInt32(Convert.ToDouble(rgb)) & 0x00FFFFFF;
+                if (value == 0 && type == null)
+                {
+                    return null;
+                }
+
+                return value;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static string TryReadFontColorHex(object font)
+        {
+            if (font == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                object color = WppCom.GetProperty(font, "Color");
+                if (color == null)
+                {
+                    return null;
+                }
+
+                return OfficeRgbToHex(Convert.ToInt32(Convert.ToDouble(color)));
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static bool TryReadBox(
+            object shape,
+            out float left,
+            out float top,
+            out float width,
+            out float height)
+        {
+            left = top = width = height = 0;
+            try
+            {
+                left = Convert.ToSingle(WppCom.GetProperty(shape, "Left"));
+                top = Convert.ToSingle(WppCom.GetProperty(shape, "Top"));
+                width = Convert.ToSingle(WppCom.GetProperty(shape, "Width"));
+                height = Convert.ToSingle(WppCom.GetProperty(shape, "Height"));
+                return width > 0 && height > 0;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         public static bool TryCreateOnSlide(
@@ -699,7 +2273,9 @@ namespace WordAddIn1.PresentationHost
             PptHtmlChartFormat format,
             List<string> warnings,
             out object shape,
-            out string error)
+            out string error,
+            int chartStyle = -1,
+            bool newLayout = true)
         {
             shape = null;
             error = null;
@@ -713,11 +2289,27 @@ namespace WordAddIn1.PresentationHost
             {
                 try
                 {
-                    shape = WppCom.Invoke(shapes, "AddChart2", -1, xlType, left, top, width, height);
+                    shape = WppCom.Invoke(
+                        shapes,
+                        "AddChart2",
+                        chartStyle,
+                        xlType,
+                        left,
+                        top,
+                        width,
+                        height,
+                        newLayout);
                 }
                 catch (Exception)
                 {
-                    shape = WppCom.Invoke(shapes, "AddChart", xlType, left, top, width, height);
+                    try
+                    {
+                        shape = WppCom.Invoke(shapes, "AddChart2", chartStyle, xlType, left, top, width, height);
+                    }
+                    catch (Exception)
+                    {
+                        shape = WppCom.Invoke(shapes, "AddChart", xlType, left, top, width, height);
+                    }
                 }
             }
             catch (Exception ex)

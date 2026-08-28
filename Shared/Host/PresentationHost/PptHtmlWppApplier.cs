@@ -300,15 +300,46 @@ namespace WordAddIn1.PresentationHost
 
             if (existingType == "chart")
             {
-                if (!PptHtmlChartIo.TryApplyToShape(
+                string oldId = node.ShapeId;
+                float? left = null;
+                float? top = null;
+                float? width = null;
+                float? height = null;
+                if (node.HasGeometry)
+                {
+                    left = (float)(node.LeftPct.GetValueOrDefault() / 100.0 * slideWidth);
+                    top = (float)(node.TopPct.GetValueOrDefault() / 100.0 * slideHeight);
+                    width = (float)(node.WidthPct.GetValueOrDefault() / 100.0 * slideWidth);
+                    height = (float)(node.HeightPct.GetValueOrDefault() / 100.0 * slideHeight);
+                }
+
+                if (!PptHtmlChartIo.TryReplaceOnSlide(
+                    shapes,
                     shape,
                     node.ChartGrid,
                     node.ChartFormat,
-                    node.HasText,
+                    left,
+                    top,
+                    width,
+                    height,
                     warnings,
+                    out object created,
                     out error))
                 {
                     return false;
+                }
+
+                shape = created;
+                try
+                {
+                    string sid = Convert.ToString(WppCom.GetProperty(slide, "SlideID")) ?? "";
+                    string id = Convert.ToString(WppCom.GetProperty(shape, "Id")) ?? "";
+                    string newId = "sid" + sid + "-s" + id;
+                    RememberCreatedComId(node, newId);
+                    warnings.Add("chart 已重建 " + (oldId ?? "") + " → " + newId);
+                }
+                catch (Exception)
+                {
                 }
             }
             else if (node.TableCells != null)
