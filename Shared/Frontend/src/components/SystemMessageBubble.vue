@@ -26,7 +26,7 @@
           />
         </template>
       </div>
-      <div v-if="message.isStreaming" class="streaming-indicator">
+      <div v-if="showStreamingSpinner" class="streaming-indicator">
         <a-spin size="small" />
       </div>
     </div>
@@ -53,6 +53,19 @@ const messageSegments = computed(() => {
   }
   if (!props.message.content) return []
   return [{ type: 'text', content: props.message.content }]
+})
+
+// 工具卡已出齐后不再在卡后挂加载点（整轮仍 isStreaming 时的误导）
+const showStreamingSpinner = computed(() => {
+  if (!props.message.isStreaming) {
+    return false
+  }
+  const segs = messageSegments.value
+  const last = segs.length ? segs[segs.length - 1] : null
+  if (last && last.type === 'toolCall' && last.isComplete) {
+    return false
+  }
+  return true
 })
 
 const renderMarkdown = (text) => {

@@ -967,8 +967,28 @@ namespace EasyWriteClient.Desktop
 
                 await EnsureWsBoundAsync(_currentConversationId).ConfigureAwait(true);
 
-                bool isFirstChunk = true;
                 string lastToolFinishReason = null;
+                var streamPump = new SystemMessageStreamPump(
+                    this,
+                    (content, reasoning, toolCallsDelta, finishReason, first) =>
+                    {
+                        if (first)
+                        {
+                            ResetUploadContext();
+                        }
+
+                        _bridge.SendToJavaScript("systemMessage", new
+                        {
+                            id = messageId,
+                            content,
+                            reasoningContent = reasoning,
+                            toolCallsDelta,
+                            finishReason,
+                            timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
+                            isStreaming = true,
+                            isUpdate = !first
+                        });
+                    });
 
                 object openChannels = null;
                 try
@@ -1015,28 +1035,11 @@ namespace EasyWriteClient.Desktop
                             || !string.IsNullOrEmpty(reasoningDelta)
                             || !string.IsNullOrEmpty(finishReason))
                         {
-                            Invoke((MethodInvoker)delegate
-                            {
-                                if (isFirstChunk)
-                                {
-                                    ResetUploadContext();
-                                }
-
-                                _bridge.SendToJavaScript("systemMessage", new
-                                {
-                                    id = messageId,
-                                    content = responseBuilder.ToString(),
-                                    reasoningContent = reasoningBuilder.Length > 0
-                                        ? reasoningBuilder.ToString()
-                                        : null,
-                                    toolCallsDelta,
-                                    finishReason,
-                                    timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
-                                    isStreaming = true,
-                                    isUpdate = !isFirstChunk
-                                });
-                                isFirstChunk = false;
-                            });
+                            streamPump.Enqueue(
+                                responseBuilder.ToString(),
+                                reasoningBuilder.Length > 0 ? reasoningBuilder.ToString() : null,
+                                toolCallsDelta,
+                                finishReason);
                         }
                     },
                     maxIterations: 30,
@@ -1046,6 +1049,7 @@ namespace EasyWriteClient.Desktop
                     resetAuthoritativeUploadContext: ResetUploadContext,
                     onConversationIdKnown: OnConversationIdKnownAsync,
                     openChannels: openChannels).ConfigureAwait(true);
+                streamPump.Dispose();
 
                 if (mcpChatResult != null
                     && !string.IsNullOrEmpty(mcpChatResult.ConversationId)
