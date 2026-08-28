@@ -43,7 +43,7 @@ namespace WordAddIn1.DocumentHost
             DocumentSessionContext context,
             out Word.Document wordDoc,
             out string error,
-            bool activateDocument = true)
+            bool activateDocument = false)
         {
             wordDoc = null;
             error = null;

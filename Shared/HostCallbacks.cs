@@ -44,11 +44,16 @@ namespace WordAddIn1
         /// </summary>
         public static Action<string, object> SetDesktopInteractionSetting { get; set; }
 
-        /// <summary>Desktop：请求进入缩小版窗口形态；Plugin 不注册则为 no-op。</summary>
+        /// <summary>Desktop：请求进入缩小版窗口形态；Plugin 不注册则为 no-op。编排第 1 步 / 手动缩小复用。</summary>
         public static Action RequestCompact { get; set; }
 
         /// <summary>
-        /// Desktop：易写浏览窗可见打开后，把缩小版 Desktop 置顶（浮在浏览窗之上）。
+        /// Desktop：前台编排（缩 → 目标窗 → 易写）。Plugin 不注册则为 no-op。
+        /// </summary>
+        public static Action<ForegroundDanceRequest> RequestForegroundDance { get; set; }
+
+        /// <summary>
+        /// 已过时：可见浏览改为 <see cref="RaiseForegroundDance"/>（Kind=Open）。
         /// </summary>
         public static Action BringDesktopToFront { get; set; }
 
@@ -73,6 +78,16 @@ namespace WordAddIn1
         public static void RaiseRequestCompact()
         {
             RequestCompact?.Invoke();
+        }
+
+        public static void RaiseForegroundDance(ForegroundDanceRequest request)
+        {
+            if (request == null || request.Kind == ForegroundDanceKind.None)
+            {
+                return;
+            }
+
+            RequestForegroundDance?.Invoke(request);
         }
 
         public static void RaiseBringDesktopToFront()

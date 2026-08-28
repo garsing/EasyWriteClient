@@ -63,15 +63,7 @@ namespace WordAddIn1
                 return false;
             }
 
-            // 使 Word.Application.ActiveDocument 与渠道文档一致（供仍读 ActiveDocument 的 Helper）
-            try
-            {
-                document.Activate();
-            }
-            catch (System.Exception)
-            {
-            }
-
+            DocumentState.BindAndActivate(document);
             return true;
         }
 

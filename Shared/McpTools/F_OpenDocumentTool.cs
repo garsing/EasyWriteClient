@@ -80,6 +80,14 @@ namespace WordAddIn1
                         return errorResult ?? Fail("打开文档失败");
                     }
 
+                    HostCallbacks.RaiseForegroundDance(new ForegroundDanceRequest
+                    {
+                        Kind = ForegroundDanceKind.Open,
+                        ChannelId = result.ChannelId,
+                        TargetHwnd = ForegroundDanceHwnd.TryResolve(result.ChannelId),
+                        Source = "F_open_document",
+                    });
+
                     await Task.CompletedTask;
                     return result.ToToolResult();
                 }

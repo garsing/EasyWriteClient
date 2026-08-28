@@ -13,6 +13,32 @@ namespace WordAddIn1.BrowserHost
         private static readonly object Gate = new object();
         private static YiWriteBrowserForm _form;
 
+        internal static int TryGetVisibleFormHandle()
+        {
+            lock (Gate)
+            {
+                if (_form == null || _form.IsDisposed || !_form.Visible)
+                {
+                    return 0;
+                }
+
+                try
+                {
+                    IntPtr handle = _form.Handle;
+                    if (handle == IntPtr.Zero)
+                    {
+                        return 0;
+                    }
+
+                    return unchecked((int)handle.ToInt64());
+                }
+                catch (Exception)
+                {
+                    return 0;
+                }
+            }
+        }
+
         public static bool IsPageLive(string tabUuid)
         {
             lock (Gate)
@@ -128,7 +154,22 @@ namespace WordAddIn1.BrowserHost
 
                 if (visible)
                 {
-                    HostCallbacks.RaiseBringDesktopToFront();
+                    int hwnd = 0;
+                    try
+                    {
+                        hwnd = unchecked((int)form.Handle.ToInt64());
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    HostCallbacks.RaiseForegroundDance(new ForegroundDanceRequest
+                    {
+                        Kind = ForegroundDanceKind.Open,
+                        ChannelId = channel.ChannelId,
+                        TargetHwnd = hwnd,
+                        Source = "F_browser_navigate",
+                    });
                 }
                 else
                 {

@@ -949,12 +949,24 @@ namespace WordAddIn1
 
             try
             {
-                app.Activate();
-                if (app.ActiveWindow != null)
+                Word.Window window = null;
+                try
                 {
-                    app.ActiveWindow.Activate();
+                    window = range.Document != null ? range.Document.ActiveWindow : null;
+                }
+                catch (Exception)
+                {
+                }
+
+                if (window == null)
+                {
+                    window = app.ActiveWindow;
+                }
+
+                if (window != null)
+                {
                     object alignStart = true;
-                    app.ActiveWindow.ScrollIntoView(range, alignStart);
+                    window.ScrollIntoView(range, alignStart);
                 }
 
                 System.Diagnostics.Debug.WriteLine(

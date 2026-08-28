@@ -50,14 +50,6 @@ namespace WordAddIn1
                 throw new InvalidOperationException("没有活动的 Word 文档");
             }
 
-            try
-            {
-                target.Activate();
-            }
-            catch (Exception)
-            {
-            }
-
             DocumentViewState viewState = CaptureViewState(app, target);
 
             // 不读写 TrackRevisions（2026-08：取消审阅工具注册与默认关审阅）

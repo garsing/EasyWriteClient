@@ -102,15 +102,6 @@ namespace WordAddIn1
                         return Fail("打开/新建 Word 文档失败: " + ex.Message);
                     }
 
-                    try
-                    {
-                        doc.Activate();
-                    }
-                    catch (Exception)
-                    {
-                        // 激活失败不阻断建渠道
-                    }
-
                     DocumentState.BindAndActivate(doc);
 
                     bool indexReady = false;
@@ -161,6 +152,14 @@ namespace WordAddIn1
                     {
                         data["index_error"] = indexError;
                     }
+
+                    HostCallbacks.RaiseForegroundDance(new ForegroundDanceRequest
+                    {
+                        Kind = ForegroundDanceKind.Open,
+                        ChannelId = channel.ChannelId,
+                        TargetHwnd = ForegroundDanceHwnd.TryResolve(channel.ChannelId),
+                        Source = "F_open_word_document",
+                    });
 
                     // 满足 async lambda 签名；实际无 await
                     await Task.CompletedTask;

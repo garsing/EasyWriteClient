@@ -169,13 +169,6 @@ namespace WordAddIn1
                 }
             }
 
-            try
-            {
-                application.Activate();
-            }
-            catch (Exception)
-            {
-            }
         }
     }
 }

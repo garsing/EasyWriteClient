@@ -123,23 +123,8 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = $"未能找到指定的内容：{selectionDescription}" };
                     }
 
-                    // 激活Word窗口并执行选中
-                    bool windowActivated = false;
-                    try
-                    {
-                        Word.Application wordApp = document.Application;
-                        wordApp.Activate();
-                        if (wordApp.ActiveWindow != null)
-                        {
-                            wordApp.ActiveWindow.Activate();
-                            windowActivated = true;
-                        }
-                        System.Diagnostics.Debug.WriteLine($"[DEBUG] Word窗口激活成功");
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 激活Word窗口失败: {ex.Message}");
-                    }
+                    // 不抢 Word 窗焦点；选中仍执行
+                    const bool windowActivated = false;
 
                     // 执行选中操作
                     try

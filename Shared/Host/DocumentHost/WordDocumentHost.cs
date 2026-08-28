@@ -87,14 +87,6 @@ namespace WordAddIn1.DocumentHost
                 return false;
             }
 
-            try
-            {
-                doc.Activate();
-            }
-            catch (Exception)
-            {
-            }
-
             DocumentState.BindAndActivate(doc);
 
             bool indexReady = false;

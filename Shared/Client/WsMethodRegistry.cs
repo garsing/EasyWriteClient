@@ -142,10 +142,15 @@ namespace WordAddIn1
 
             var args = parameters ?? new Dictionary<string, object>();
 
-            // Desktop 缩小版：白名单写工具在执行前触发；list/get/extract 等只读 action 不缩
-            if (CompactLayoutTriggers.ShouldCompact(toolName, args))
+            if (ForegroundDanceTriggers.Classify(toolName, args) == ForegroundDanceKind.Operate)
             {
-                HostCallbacks.RaiseRequestCompact();
+                HostCallbacks.RaiseForegroundDance(new ForegroundDanceRequest
+                {
+                    Kind = ForegroundDanceKind.Operate,
+                    ChannelId = ChannelContext.TryGetChannelIdFromParameters(args),
+                    TargetHwnd = ForegroundDanceHwnd.TryResolveFromArgs(args),
+                    Source = toolName,
+                });
             }
 
             try

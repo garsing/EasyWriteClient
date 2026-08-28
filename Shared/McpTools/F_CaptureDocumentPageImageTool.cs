@@ -207,7 +207,8 @@ namespace WordAddIn1
                     args,
                     wordApplication,
                     out InteropDocumentHandle docHandle,
-                    out ToolResult resolveError))
+                    out ToolResult resolveError,
+                    activateDocument: false))
             {
                 return resolveError;
             }

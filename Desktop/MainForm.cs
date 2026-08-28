@@ -36,8 +36,9 @@ namespace EasyWriteClient.Desktop
         private Rectangle _expandedBounds;
         private bool _expandedWasCustomMaximized;
         private WindowLayoutMode _layoutMode = WindowLayoutMode.Expanded;
+        private readonly ForegroundDance _foregroundDance;
         private Action _requestCompactHandler;
-        private Action _bringDesktopToFrontHandler;
+        private Action<ForegroundDanceRequest> _requestForegroundDanceHandler;
         private Action _clearDesktopTopMostHandler;
         private Func<object> _getInteractionSettingsHandler;
         private Action<string, object> _setInteractionSettingHandler;
@@ -95,22 +96,17 @@ namespace EasyWriteClient.Desktop
             };
             HostCallbacks.RequestCompact = _requestCompactHandler;
 
-            _bringDesktopToFrontHandler = () =>
+            _foregroundDance = new ForegroundDance(this);
+            _requestForegroundDanceHandler = request =>
             {
                 if (IsDisposed)
                 {
                     return;
                 }
 
-                if (InvokeRequired)
-                {
-                    BeginInvoke(_bringDesktopToFrontHandler);
-                    return;
-                }
-
-                BringDesktopToFrontOverBrowser();
+                _foregroundDance.Request(request);
             };
-            HostCallbacks.BringDesktopToFront = _bringDesktopToFrontHandler;
+            HostCallbacks.RequestForegroundDance = _requestForegroundDanceHandler;
 
             _clearDesktopTopMostHandler = () =>
             {
@@ -204,14 +200,16 @@ namespace EasyWriteClient.Desktop
                     _floatBall = null;
                 }
 
+                _foregroundDance.Dispose();
+
                 if (ReferenceEquals(HostCallbacks.RequestCompact, _requestCompactHandler))
                 {
                     HostCallbacks.RequestCompact = null;
                 }
 
-                if (ReferenceEquals(HostCallbacks.BringDesktopToFront, _bringDesktopToFrontHandler))
+                if (ReferenceEquals(HostCallbacks.RequestForegroundDance, _requestForegroundDanceHandler))
                 {
-                    HostCallbacks.BringDesktopToFront = null;
+                    HostCallbacks.RequestForegroundDance = null;
                 }
 
                 if (ReferenceEquals(HostCallbacks.ClearDesktopTopMost, _clearDesktopTopMostHandler))
@@ -303,20 +301,9 @@ namespace EasyWriteClient.Desktop
             SetLayoutMode(WindowLayoutMode.Compact);
         }
 
-        /// <summary>易写浏览窗可见后：缩小版 Desktop 置顶，浮在浏览窗之上。</summary>
-        internal void BringDesktopToFrontOverBrowser()
+        /// <summary>编排第 3 步：易写再焦点；TopMost 只闪一下立刻关。</summary>
+        internal void FocusEasyWriteAfterDance()
         {
-            if (_isFloatBall)
-            {
-                LeaveFloatBall();
-            }
-
-            if (_layoutMode != WindowLayoutMode.Compact
-                && WindowLayoutStore.GetAutoCompactEnabled())
-            {
-                SetLayoutMode(WindowLayoutMode.Compact);
-            }
-
             TopMost = true;
             if (WindowState == FormWindowState.Minimized)
             {
@@ -330,6 +317,7 @@ namespace EasyWriteClient.Desktop
 
             BringToFront();
             Activate();
+            TopMost = false;
             NoteUserActivity();
         }
 

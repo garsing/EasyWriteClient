@@ -364,13 +364,6 @@ namespace WordAddIn1
                     app = null;
                 }
 
-                try
-                {
-                    activeDoc.Activate();
-                }
-                catch (Exception)
-                {
-                }
             }
 
             if (app == null)

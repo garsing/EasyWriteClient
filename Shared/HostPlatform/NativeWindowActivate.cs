@@ -64,6 +64,32 @@ namespace WordAddIn1.HostPlatform
             EnsureUsable(new[] { hwnd }, null, null);
         }
 
+        /// <summary>
+        /// 把目标窗拉到前台：最小化则 Restore，Show + SetForeground。不 Maximize、不拉大过小窗。
+        /// </summary>
+        public static void FocusWithoutMaximize(int hwnd)
+        {
+            if (hwnd == 0)
+            {
+                return;
+            }
+
+            IntPtr target = new IntPtr(hwnd);
+            try
+            {
+                if (IsIconic(target))
+                {
+                    ShowWindow(target, SwRestore);
+                }
+
+                ShowWindow(target, SwShow);
+                SetForegroundWindow(target);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         public static void EnsureUsable(IList<int> hwndHints, string titleHint, IList<string> processNames)
         {
             IntPtr target = ResolveMainWindow(hwndHints, titleHint, processNames);

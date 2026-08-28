@@ -117,30 +117,12 @@ namespace WordAddIn1.OpenFiles
 
             TrySetProperty(app, "Visible", true);
             TrySetProperty(app, "UserControl", true);
-            const int xlMaximized = -4137;
-            TrySetProperty(app, "WindowState", xlMaximized);
+            // 不 Maximize / 不抢前台：打开后由 ForegroundDance 第 2 步 FocusWithoutMaximize
+        }
 
-            var hwnds = new List<int>();
-            if (TryReadHwnd(app, out int appHwnd))
-            {
-                hwnds.Add(appHwnd);
-            }
-
-            try
-            {
-                object active = GetProperty(app, "ActiveWindow");
-                TrySetProperty(active, "Visible", true);
-                TrySetProperty(active, "WindowState", xlMaximized);
-                if (TryReadHwnd(active, out int activeHwnd))
-                {
-                    hwnds.Add(activeHwnd);
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            HostPlatform.NativeWindowActivate.EnsureUsable(hwnds, titleHint, new[] { "et", "wps" });
+        internal static bool TryGetHwnd(object target, out int hwnd)
+        {
+            return TryReadHwnd(target, out hwnd);
         }
 
         public static IEnumerable<object> EnumerateWorkbooks(object app)

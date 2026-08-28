@@ -1,6 +1,5 @@
 using System;
 using System.Runtime.InteropServices;
-using WordAddIn1.HostPlatform;
 using Excel = Microsoft.Office.Interop.Excel;
 
 namespace WordAddIn1
@@ -180,14 +179,6 @@ namespace WordAddIn1
             try
             {
                 application.UserControl = true;
-            }
-            catch (Exception)
-            {
-            }
-
-            try
-            {
-                NativeWindowActivate.BringToFront(application.Hwnd);
             }
             catch (Exception)
             {

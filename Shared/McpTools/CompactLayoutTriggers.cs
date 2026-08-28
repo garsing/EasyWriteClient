@@ -4,8 +4,8 @@ using System.Collections.Generic;
 namespace WordAddIn1
 {
     /// <summary>
-    /// Desktop 缩小版自动触发白名单（与 DocumentCheckpointMutatingTools 独立）。
-    /// 写文档/表格/演示的突变工具进名单；同一工具上的只读 action（list/get/extract）不缩。
+    /// 历史缩小白名单。编排分类已迁到 <see cref="ForegroundDanceTriggers"/>；
+    /// 本类仅保留 visible 判定供分类器复用。
     /// </summary>
     public static class CompactLayoutTriggers
     {
@@ -83,7 +83,7 @@ namespace WordAddIn1
         }
 
         /// <summary>visible 省略视为 true（与 F_browser_navigate 默认一致）。</summary>
-        private static bool IsBrowserNavigateVisible(IReadOnlyDictionary<string, object> args)
+        internal static bool IsBrowserNavigateVisible(IReadOnlyDictionary<string, object> args)
         {
             if (args == null)
             {

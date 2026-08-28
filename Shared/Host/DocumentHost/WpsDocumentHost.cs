@@ -76,14 +76,6 @@ namespace WordAddIn1.DocumentHost
                 return false;
             }
 
-            try
-            {
-                WpsCom.Invoke(doc, "Activate");
-            }
-            catch (Exception)
-            {
-            }
-
             bool indexReady = false;
             string indexError = null;
             try
