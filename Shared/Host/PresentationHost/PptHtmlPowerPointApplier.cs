@@ -292,6 +292,10 @@ namespace WordAddIn1.PresentationHost
 
                 return false;
             }
+            finally
+            {
+                PptHtmlChartIo.DismissChartExcelUi();
+            }
 
             result = new PptHtmlApplyResult
             {

@@ -185,6 +185,10 @@ namespace WordAddIn1.PresentationHost
                 error = "应用 HTML 失败: " + ex.Message;
                 return false;
             }
+            finally
+            {
+                PptHtmlChartIo.DismissChartExcelUi();
+            }
 
             int index = 0;
             try

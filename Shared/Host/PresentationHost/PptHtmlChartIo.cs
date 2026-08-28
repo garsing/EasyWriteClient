@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
+using System.Windows.Forms;
 using System.Xml.Linq;
 using WordAddIn1.OpenFiles;
 
@@ -758,6 +761,7 @@ namespace WordAddIn1.PresentationHost
             finally
             {
                 HideEmbeddedExcel(excelApp);
+                TryHideChartExcel(chart);
             }
         }
 
@@ -936,6 +940,8 @@ namespace WordAddIn1.PresentationHost
                 StyleLog(warnings, "回读新图异常: " + ex.Message);
             }
 
+            TryHideChartExcel(newChart);
+            DismissChartExcelUi();
             TryDelete(oldShape);
             warnings?.Add("已删除原图并新建（不继承外链；已套回原图样式）");
             if (!string.IsNullOrEmpty(EasyWriteLog.CurrentLogPath))
@@ -2835,22 +2841,30 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            if (!TryPourGrid(chart, grid, out error))
+            TryHideChartExcel(chart);
+            try
             {
-                TryDelete(shape);
-                shape = null;
-                return false;
-            }
+                if (!TryPourGrid(chart, grid, out error))
+                {
+                    TryDelete(shape);
+                    shape = null;
+                    return false;
+                }
 
-            if (!TryApplyFormat(chart, format, warnings, out error))
+                if (!TryApplyFormat(chart, format, warnings, out error))
+                {
+                    TryDelete(shape);
+                    shape = null;
+                    return false;
+                }
+
+                EnsureCategoryAxisLabels(chart, grid);
+                return true;
+            }
+            finally
             {
-                TryDelete(shape);
-                shape = null;
-                return false;
+                TryHideChartExcel(chart);
             }
-
-            EnsureCategoryAxisLabels(chart, grid);
-            return true;
         }
 
         private static object TryGetChart(object shape)
@@ -3381,6 +3395,31 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private const int SwHide = 0;
+        private const uint WmClose = 0x0010;
+        private const uint WmSysCommand = 0x0112;
+        private static readonly IntPtr ScClose = new IntPtr(0xF060);
+
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
         private static void SuppressExcel(object excelApp)
         {
             if (excelApp == null)
@@ -3420,6 +3459,269 @@ namespace WordAddIn1.PresentationHost
             catch (Exception)
             {
             }
+
+            TryHideExcelAppHwnd(excelApp);
+        }
+
+        /// <summary>
+        /// 藏图表拉起的内嵌 Excel，不 Quit，避免弄坏包内 embeddings。
+        /// COM Visible=false 常只藏内容，PowerPoint 会留下空白编辑框，须再关 HWND。
+        /// </summary>
+        private static void TryHideChartExcel(object chart)
+        {
+            if (chart != null)
+            {
+                try
+                {
+                    object chartData = WppCom.GetProperty(chart, "ChartData");
+                    object workbook = chartData == null ? null : WppCom.GetProperty(chartData, "Workbook");
+                    object excelApp = workbook == null ? null : WppCom.GetProperty(workbook, "Application");
+                    HideEmbeddedExcel(excelApp);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            TryHidePowerPointChartExcelWindows();
+            TryCloseChartExcelHwnds(forceClose: false);
+        }
+
+        /// <summary>
+        /// apply 整页结束后再清一次：AddChart2 常在 COM 返回后才把编辑框画出来。
+        /// </summary>
+        public static void DismissChartExcelUi()
+        {
+            for (int i = 0; i < 6; i++)
+            {
+                TryHidePowerPointChartExcelWindows();
+                TryCloseChartExcelHwnds(forceClose: i >= 2);
+                if (!HasVisibleChartExcelWindow())
+                {
+                    return;
+                }
+
+                try
+                {
+                    Application.DoEvents();
+                }
+                catch (Exception)
+                {
+                }
+
+                Thread.Sleep(80);
+            }
+        }
+
+        private static void TryHidePowerPointChartExcelWindows()
+        {
+            foreach (string progId in new[] { "Excel.Application", "Ket.Application", "et.Application" })
+            {
+                object excelApp = null;
+                try
+                {
+                    excelApp = Marshal.GetActiveObject(progId);
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+
+                if (excelApp == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    object windows = WppCom.GetProperty(excelApp, "Windows");
+                    int count = Convert.ToInt32(WppCom.GetProperty(windows, "Count"));
+                    bool hidChartWindow = false;
+                    int stillVisible = 0;
+                    for (int i = 1; i <= count; i++)
+                    {
+                        object win = WppCom.GetIndexed(windows, i);
+                        string caption = Convert.ToString(WppCom.GetProperty(win, "Caption") ?? "");
+                        if (IsPowerPointChartExcelCaption(caption))
+                        {
+                            WppCom.TrySetProperty(win, "Visible", false);
+                            hidChartWindow = true;
+                        }
+                        else if (IsTruthy(WppCom.GetProperty(win, "Visible")))
+                        {
+                            stillVisible++;
+                        }
+                    }
+
+                    if (hidChartWindow && stillVisible == 0)
+                    {
+                        SuppressExcel(excelApp);
+                    }
+
+                    TryHideExcelAppHwnd(excelApp);
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        private static void TryHideExcelAppHwnd(object excelApp)
+        {
+            if (excelApp == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object raw = WppCom.GetProperty(excelApp, "Hwnd");
+                if (raw == null)
+                {
+                    return;
+                }
+
+                IntPtr hwnd = new IntPtr(Convert.ToInt64(raw, CultureInfo.InvariantCulture));
+                if (hwnd == IntPtr.Zero)
+                {
+                    return;
+                }
+
+                string title = GetWindowTitle(hwnd);
+                if (!IsPowerPointChartExcelCaption(title))
+                {
+                    return;
+                }
+
+                ShowWindow(hwnd, SwHide);
+                PostMessage(hwnd, WmClose, IntPtr.Zero, IntPtr.Zero);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static bool TryCloseChartExcelHwnds(bool forceClose)
+        {
+            List<IntPtr> targets = FindChartExcelHwnds(visibleOnly: !forceClose);
+            if (targets.Count == 0 && forceClose)
+            {
+                targets = FindChartExcelHwnds(visibleOnly: false);
+            }
+
+            foreach (IntPtr hwnd in targets)
+            {
+                try
+                {
+                    ShowWindow(hwnd, SwHide);
+                    PostMessage(hwnd, WmClose, IntPtr.Zero, IntPtr.Zero);
+                    if (forceClose && IsWindowVisible(hwnd))
+                    {
+                        SendMessage(hwnd, WmSysCommand, ScClose, IntPtr.Zero);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return targets.Count > 0;
+        }
+
+        private static bool HasVisibleChartExcelWindow()
+        {
+            return FindChartExcelHwnds(visibleOnly: true).Count > 0;
+        }
+
+        private static List<IntPtr> FindChartExcelHwnds(bool visibleOnly)
+        {
+            var found = new List<IntPtr>();
+            try
+            {
+                EnumWindows((hWnd, _) =>
+                {
+                    if (visibleOnly && !IsWindowVisible(hWnd))
+                    {
+                        return true;
+                    }
+
+                    if (IsPowerPointChartExcelCaption(GetWindowTitle(hWnd)))
+                    {
+                        found.Add(hWnd);
+                    }
+
+                    return true;
+                }, IntPtr.Zero);
+            }
+            catch (Exception)
+            {
+            }
+
+            return found;
+        }
+
+        private static string GetWindowTitle(IntPtr hWnd)
+        {
+            try
+            {
+                var sb = new StringBuilder(512);
+                if (GetWindowText(hWnd, sb, sb.Capacity) <= 0)
+                {
+                    return "";
+                }
+
+                return sb.ToString();
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+        }
+
+        private static bool IsPowerPointChartExcelCaption(string caption)
+        {
+            if (string.IsNullOrEmpty(caption))
+            {
+                return false;
+            }
+
+            if (caption.IndexOf("PowerPoint 中的图表", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (caption.IndexOf("Chart in Microsoft PowerPoint", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (caption.IndexOf("中的图表 - Excel", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (caption.IndexOf("中的图表 - WPS", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (caption.IndexOf("Chart in WPS", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (caption.IndexOf("演示中的图表", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (caption.IndexOf("演示文稿", StringComparison.OrdinalIgnoreCase) >= 0
+                && caption.IndexOf("图表", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private static bool TryExpandViaChartData(
