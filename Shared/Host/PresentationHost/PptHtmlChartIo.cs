@@ -121,6 +121,8 @@ namespace WordAddIn1.PresentationHost
         private const int XlColumnClustered = 51;
         private const int XlBarClustered = 57;
         private const int XlLine = 4;
+        private const int XlLineMarkers = 65;
+        private const int XlDataLabelsShowValue = 2;
         private const int XlPie = 5;
         private const int Xl3DPie = -4102;
 
@@ -257,7 +259,11 @@ namespace WordAddIn1.PresentationHost
         {
             public bool? Visible { get; set; }
 
+            public int? FillType { get; set; }
+
             public int? SolidRgb { get; set; }
+
+            public double? Angle { get; set; }
 
             public List<GradientStopSnap> Stops { get; set; }
         }
@@ -880,10 +886,25 @@ namespace WordAddIn1.PresentationHost
             ChartStyleSnap snap = null;
             try
             {
-                snap = TryCaptureStyle(oldChart);
+                StyleLog(warnings, "重建开始 type=" + (useFormat.ChartType ?? "")
+                    + " xl=" + xlType
+                    + " box=" + useLeft.ToString("0.#", CultureInfo.InvariantCulture)
+                    + "," + useTop.ToString("0.#", CultureInfo.InvariantCulture)
+                    + " " + useWidth.ToString("0.#", CultureInfo.InvariantCulture)
+                    + "x" + useHeight.ToString("0.#", CultureInfo.InvariantCulture));
+                snap = TryCaptureStyle(oldChart, warnings, "旧图");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                StyleLog(warnings, "拍旧图样式异常: " + ex.Message);
+            }
+
+            if (snap != null && snap.Series != null && snap.Series.Count == 1
+                && snap.Series[0].ChartType.HasValue
+                && snap.Series[0].ChartType.Value != xlType)
+            {
+                StyleLog(warnings, "建图类型改用快照 " + xlType + " → " + snap.Series[0].ChartType.Value);
+                xlType = snap.Series[0].ChartType.Value;
             }
 
             if (!TryCreateOnSlide(
@@ -904,13 +925,28 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            TryApplyStyleSnap(TryGetChart(newShape), snap, warnings);
+            object newChart = TryGetChart(newShape);
+            TryApplyStyleSnap(newChart, snap, warnings);
+            try
+            {
+                TryCaptureStyle(newChart, warnings, "新图套回后");
+            }
+            catch (Exception ex)
+            {
+                StyleLog(warnings, "回读新图异常: " + ex.Message);
+            }
+
             TryDelete(oldShape);
             warnings?.Add("已删除原图并新建（不继承外链；已套回原图样式）");
+            if (!string.IsNullOrEmpty(EasyWriteLog.CurrentLogPath))
+            {
+                warnings?.Add("chart 样式日志: " + EasyWriteLog.CurrentLogPath);
+            }
+
             return true;
         }
 
-        private static ChartStyleSnap TryCaptureStyle(object chart)
+        private static ChartStyleSnap TryCaptureStyle(object chart, List<string> warnings = null, string tag = null)
         {
             if (chart == null)
             {
@@ -1030,17 +1066,25 @@ namespace WordAddIn1.PresentationHost
                     {
                     }
 
-                    one.Fill = TryCaptureFill(series);
-                    one.Line = TryCaptureLine(series);
+                    one.Fill = TryCaptureFill(series, warnings, (tag ?? "图") + " S" + i);
+                    one.Line = TryCaptureLine(series, warnings, (tag ?? "图") + " S" + i);
+                    if (one.Line != null && (one.Line.Stops == null || one.Line.Stops.Count < 2)
+                        && one.Fill != null && one.Fill.Stops != null && one.Fill.Stops.Count >= 2)
+                    {
+                        one.Line.Stops = one.Fill.Stops;
+                        StyleLog(warnings, (tag ?? "图") + " S" + i + " 线渐变借自 Fill stops=" + one.Fill.Stops.Count);
+                    }
                     TryCaptureMarker(series, one);
                     TryCaptureDataLabels(series, one);
                     snap.Series.Add(one);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                StyleLog(warnings, (tag ?? "图") + " 读系列失败: " + ex.Message);
             }
 
+            StyleLog(warnings, DescribeSnap(tag ?? "图", snap));
             return snap;
         }
 
@@ -1048,9 +1092,12 @@ namespace WordAddIn1.PresentationHost
         {
             if (chart == null || snap == null)
             {
+                StyleLog(warnings, "套回跳过 chart=" + (chart == null ? "null" : "ok")
+                    + " snap=" + (snap == null ? "null" : "ok"));
                 return;
             }
 
+            StyleLog(warnings, "开始套回 " + DescribeSnap("快照", snap));
             try
             {
                 if (snap.Series != null)
@@ -1148,18 +1195,31 @@ namespace WordAddIn1.PresentationHost
                         }
 
                         SeriesStyleSnap one = snap.Series[i];
-                        TryApplyFill(series, one.Fill);
-                        TryApplyLine(series, one.Line);
+                        TryApplyFill(series, one.Fill, warnings, "S" + (i + 1));
+                        TryApplyLine(series, one.Line, warnings, "S" + (i + 1));
                         TryApplyMarker(series, one);
-                        TryApplyDataLabels(series, one);
                     }
                 }
 
                 TryApplyPlotLayout(chart, snap);
+
+                if (snap.Series != null)
+                {
+                    for (int i = 0; i < snap.Series.Count; i++)
+                    {
+                        object series = GetSeries(chart, i + 1);
+                        if (series == null)
+                        {
+                            continue;
+                        }
+
+                        TryApplyDataLabels(series, snap.Series[i], warnings, "S" + (i + 1));
+                    }
+                }
             }
             catch (Exception ex)
             {
-                warnings?.Add("套回原图样式部分失败: " + ex.Message);
+                StyleLog(warnings, "套回原图样式部分失败: " + ex.Message);
             }
         }
 
@@ -1594,13 +1654,15 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static FillSnap TryCaptureFill(object series)
+        private static FillSnap TryCaptureFill(object series, List<string> warnings = null, string tag = null)
         {
+            string prefix = (tag ?? "fill");
             try
             {
                 object fill = WppCom.GetProperty(WppCom.GetProperty(series, "Format"), "Fill");
                 if (fill == null)
                 {
+                    StyleLog(warnings, prefix + " Format.Fill=null");
                     return null;
                 }
 
@@ -1611,28 +1673,45 @@ namespace WordAddIn1.PresentationHost
                     snap.Visible = Convert.ToInt32(vis) != 0;
                 }
 
-                if (snap.Visible == false)
+                object fillType = WppCom.GetProperty(fill, "Type");
+                if (fillType != null)
                 {
-                    return snap;
+                    snap.FillType = Convert.ToInt32(fillType);
                 }
 
-                snap.Stops = TryReadGradientStops(fill);
-                snap.SolidRgb = TryReadExplicitRgb(WppCom.GetProperty(fill, "ForeColor"));
-                if (!snap.SolidRgb.HasValue && snap.Stops != null && snap.Stops.Count > 0)
+                object angle = WppCom.GetProperty(fill, "GradientAngle");
+                if (angle != null)
                 {
-                    snap.SolidRgb = snap.Stops[snap.Stops.Count - 1].Rgb;
+                    snap.Angle = Convert.ToDouble(angle);
                 }
 
+                snap.Stops = TryReadGradientStops(fill, warnings, prefix);
+                if (snap.Stops == null || snap.Stops.Count < 2)
+                {
+                    snap.SolidRgb = TryReadResolvedRgb(WppCom.GetProperty(fill, "ForeColor"));
+                }
+                else
+                {
+                    snap.SolidRgb = PickSolidFromStops(snap.Stops);
+                }
+
+                StyleLog(warnings, prefix + " Fill.Visible=" + vis
+                    + " Type=" + fillType
+                    + " Angle=" + angle
+                    + " stops=" + DescribeStops(snap.Stops)
+                    + " solid=" + HexOf(snap.SolidRgb));
                 return snap;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                StyleLog(warnings, prefix + " 拍填充失败: " + ex.Message);
                 return null;
             }
         }
 
-        private static void TryApplyFill(object series, FillSnap snap)
+        private static void TryApplyFill(object series, FillSnap snap, List<string> warnings = null, string tag = null)
         {
+            string prefix = "套填充 " + (tag ?? "");
             if (snap == null)
             {
                 return;
@@ -1643,19 +1722,26 @@ namespace WordAddIn1.PresentationHost
                 object fill = WppCom.GetProperty(WppCom.GetProperty(series, "Format"), "Fill");
                 if (fill == null)
                 {
+                    StyleLog(warnings, prefix + " Format.Fill=null");
                     return;
                 }
 
-                if (snap.Visible == false)
+                if (snap.Visible == false && (snap.Stops == null || snap.Stops.Count < 2))
                 {
                     WppCom.TrySetProperty(fill, "Visible", 0);
+                    StyleLog(warnings, prefix + " 隐藏填充");
                     return;
                 }
 
                 WppCom.TrySetProperty(fill, "Visible", -1);
-                if (snap.Stops != null && snap.Stops.Count >= 2 && TryWriteGradientStops(fill, snap.Stops))
+                if (snap.Stops != null && snap.Stops.Count >= 2)
                 {
-                    return;
+                    bool ok = TryWriteGradientStops(fill, snap.Stops, snap.Angle);
+                    StyleLog(warnings, prefix + " 渐变 " + DescribeStops(snap.Stops) + " ok=" + ok);
+                    if (ok)
+                    {
+                        return;
+                    }
                 }
 
                 if (snap.SolidRgb.HasValue)
@@ -1663,20 +1749,24 @@ namespace WordAddIn1.PresentationHost
                     TryInvoke(fill, "Solid");
                     object fc = WppCom.GetProperty(fill, "ForeColor");
                     WppCom.TrySetProperty(fc, "RGB", snap.SolidRgb.Value);
+                    StyleLog(warnings, prefix + " 实色 " + HexOf(snap.SolidRgb));
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                StyleLog(warnings, prefix + " 异常: " + ex.Message);
             }
         }
 
-        private static LineSnap TryCaptureLine(object series)
+        private static LineSnap TryCaptureLine(object series, List<string> warnings = null, string tag = null)
         {
+            string prefix = tag ?? "line";
             try
             {
                 object line = WppCom.GetProperty(WppCom.GetProperty(series, "Format"), "Line");
                 if (line == null)
                 {
+                    StyleLog(warnings, prefix + " Format.Line=null");
                     return null;
                 }
 
@@ -1693,43 +1783,84 @@ namespace WordAddIn1.PresentationHost
                     snap.Weight = Convert.ToDouble(weight);
                 }
 
-                if (snap.Visible == false)
+                object fc = WppCom.GetProperty(line, "ForeColor");
+                object colorType = fc == null ? null : WppCom.GetProperty(fc, "Type");
+                object rawRgb = fc == null ? null : WppCom.GetProperty(fc, "RGB");
+                StyleLog(warnings, prefix + " Line.Visible=" + vis
+                    + " Weight=" + weight
+                    + " ForeColor.Type=" + colorType
+                    + " ForeColor.RGB=" + rawRgb);
+
+                snap.Stops = TryReadGradientStops(line, warnings, prefix + " Line");
+                if (snap.Stops == null || snap.Stops.Count < 2)
                 {
-                    return snap;
+                    object lineFill = null;
+                    try
+                    {
+                        lineFill = WppCom.GetProperty(line, "Fill");
+                    }
+                    catch (Exception ex)
+                    {
+                        StyleLog(warnings, prefix + " Line.Fill 不可用: " + ex.Message);
+                    }
+
+                    if (lineFill != null)
+                    {
+                        snap.Stops = TryReadGradientStops(lineFill, warnings, prefix + " Line.Fill");
+                    }
                 }
 
-                object lineFill = null;
-                try
+                if (snap.Stops == null || snap.Stops.Count < 2)
                 {
-                    lineFill = WppCom.GetProperty(line, "Fill");
-                }
-                catch (Exception)
-                {
-                }
-
-                if (lineFill != null)
-                {
-                    snap.Stops = TryReadGradientStops(lineFill);
+                    try
+                    {
+                        object seriesFill = WppCom.GetProperty(WppCom.GetProperty(series, "Format"), "Fill");
+                        snap.Stops = TryReadGradientStops(seriesFill, warnings, prefix + " Series.Fill");
+                    }
+                    catch (Exception)
+                    {
+                    }
                 }
 
-                snap.Rgb = TryReadExplicitRgb(WppCom.GetProperty(line, "ForeColor"));
-                if (!snap.Rgb.HasValue && snap.Stops != null && snap.Stops.Count > 0)
+                if (snap.Stops != null && snap.Stops.Count >= 2)
                 {
-                    snap.Rgb = snap.Stops[snap.Stops.Count - 1].Rgb;
+                    snap.Rgb = PickSolidFromStops(snap.Stops);
+                }
+                else
+                {
+                    snap.Rgb = TryReadResolvedRgb(fc);
+                }
+
+                if (!snap.Rgb.HasValue)
+                {
+                    try
+                    {
+                        object border = WppCom.GetProperty(series, "Border");
+                        object bColor = border == null ? null : WppCom.GetProperty(border, "Color");
+                        snap.Rgb = TryReadMarkerColor(bColor);
+                        StyleLog(warnings, prefix + " Border.Color=" + bColor + " -> " + HexOf(snap.Rgb));
+                    }
+                    catch (Exception ex)
+                    {
+                        StyleLog(warnings, prefix + " Border 失败: " + ex.Message);
+                    }
                 }
 
                 return snap;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                StyleLog(warnings, prefix + " 拍线失败: " + ex.Message);
                 return null;
             }
         }
 
-        private static void TryApplyLine(object series, LineSnap snap)
+        private static void TryApplyLine(object series, LineSnap snap, List<string> warnings = null, string tag = null)
         {
+            string prefix = "套线 " + (tag ?? "");
             if (snap == null)
             {
+                StyleLog(warnings, prefix + " snap=null 跳过");
                 return;
             }
 
@@ -1738,12 +1869,14 @@ namespace WordAddIn1.PresentationHost
                 object line = WppCom.GetProperty(WppCom.GetProperty(series, "Format"), "Line");
                 if (line == null)
                 {
+                    StyleLog(warnings, prefix + " Format.Line=null");
                     return;
                 }
 
-                if (snap.Visible == false)
+                if (snap.Visible == false && !snap.Rgb.HasValue && (snap.Stops == null || snap.Stops.Count < 2))
                 {
                     WppCom.TrySetProperty(line, "Visible", 0);
+                    StyleLog(warnings, prefix + " 按快照隐藏线");
                     return;
                 }
 
@@ -1762,18 +1895,50 @@ namespace WordAddIn1.PresentationHost
                 {
                 }
 
-                if (lineFill != null && snap.Stops != null && snap.Stops.Count >= 2)
+                bool wroteGrad = false;
+                if (snap.Stops != null && snap.Stops.Count >= 2)
                 {
-                    TryWriteGradientStops(lineFill, snap.Stops);
+                    wroteGrad = TryWriteGradientStops(line, snap.Stops);
+                    if (!wroteGrad && lineFill != null)
+                    {
+                        wroteGrad = TryWriteGradientStops(lineFill, snap.Stops);
+                    }
+
+                    if (!wroteGrad)
+                    {
+                        try
+                        {
+                            object seriesFill = WppCom.GetProperty(WppCom.GetProperty(series, "Format"), "Fill");
+                            wroteGrad = TryWriteGradientStops(seriesFill, snap.Stops);
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
                 }
-                else if (snap.Rgb.HasValue)
+
+                if (snap.Rgb.HasValue)
                 {
-                    object fc = WppCom.GetProperty(line, "ForeColor");
-                    WppCom.TrySetProperty(fc, "RGB", snap.Rgb.Value);
+                    TryWriteLineRgb(line, snap.Rgb.Value);
+                    try
+                    {
+                        object border = WppCom.GetProperty(series, "Border");
+                        WppCom.TrySetProperty(border, "Color", snap.Rgb.Value);
+                    }
+                    catch (Exception ex)
+                    {
+                        StyleLog(warnings, prefix + " 写 Border 失败: " + ex.Message);
+                    }
                 }
+
+                StyleLog(warnings, prefix + " vis=" + snap.Visible
+                    + " rgb=" + HexOf(snap.Rgb)
+                    + " stops=" + (snap.Stops == null ? 0 : snap.Stops.Count)
+                    + " grad=" + wroteGrad);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                StyleLog(warnings, prefix + " 异常: " + ex.Message);
             }
         }
 
@@ -1793,8 +1958,17 @@ namespace WordAddIn1.PresentationHost
                     one.MarkerSize = Convert.ToInt32(size);
                 }
 
-                one.MarkerForeRgb = TryReadOleColor(WppCom.GetProperty(series, "MarkerForegroundColor"));
-                one.MarkerBackRgb = TryReadOleColor(WppCom.GetProperty(series, "MarkerBackgroundColor"));
+                one.MarkerForeRgb = TryReadMarkerColor(WppCom.GetProperty(series, "MarkerForegroundColor"));
+                one.MarkerBackRgb = TryReadMarkerColor(WppCom.GetProperty(series, "MarkerBackgroundColor"));
+                if (!one.MarkerForeRgb.HasValue || !one.MarkerBackRgb.HasValue)
+                {
+                    int? lineRgb = one.Line == null ? null : one.Line.Rgb;
+                    if (lineRgb.HasValue)
+                    {
+                        one.MarkerForeRgb = one.MarkerForeRgb ?? lineRgb;
+                        one.MarkerBackRgb = one.MarkerBackRgb ?? lineRgb;
+                    }
+                }
             }
             catch (Exception)
             {
@@ -1840,92 +2014,152 @@ namespace WordAddIn1.PresentationHost
             try
             {
                 object has = WppCom.GetProperty(series, "HasDataLabels");
+                StyleLog(null, "HasDataLabels raw=" + (has == null ? "null" : has.ToString() + "/" + has.GetType().Name));
                 if (has != null)
                 {
                     one.HasDataLabels = IsTruthy(has);
-                }
-
-                if (one.HasDataLabels != true)
-                {
-                    return;
-                }
-
-                object dls = TryInvoke(series, "DataLabels");
-                if (dls == null)
-                {
-                    dls = WppCom.GetProperty(series, "DataLabels");
-                }
-
-                object pos = dls == null ? null : WppCom.GetProperty(dls, "Position");
-                if (pos != null)
-                {
-                    one.DataLabelPosition = Convert.ToInt32(pos);
-                }
-
-                object font = dls == null ? null : WppCom.GetProperty(dls, "Font");
-                if (font != null)
-                {
-                    object name = WppCom.GetProperty(font, "Name");
-                    if (name != null)
-                    {
-                        one.DataLabelFontName = Convert.ToString(name);
-                    }
-
-                    object sz = WppCom.GetProperty(font, "Size");
-                    if (sz != null)
-                    {
-                        one.DataLabelFontSize = Convert.ToDouble(sz);
-                    }
-
-                    string hex = TryReadFontColorHex(font);
-                    if (!string.IsNullOrEmpty(hex) && TryParseHexToOffice(hex, out int rgb))
-                    {
-                        one.DataLabelFontColor = rgb;
-                    }
-                }
-
-                object fmt = dls == null ? null : WppCom.GetProperty(dls, "NumberFormat");
-                if (fmt != null)
-                {
-                    one.DataLabelNumberFormat = Convert.ToString(fmt);
                 }
             }
             catch (Exception)
             {
             }
+
+            if (one.HasDataLabels != true && IsLineLike(one.ChartType))
+            {
+                bool? onPoint = TryAnyPointHasLabel(series);
+                if (onPoint == true)
+                {
+                    one.HasDataLabels = true;
+                }
+            }
+
+            object dls = one.HasDataLabels == true ? TryGetDataLabels(series) : null;
+            if (dls != null)
+            {
+                try
+                {
+                    object pos = WppCom.GetProperty(dls, "Position");
+                    if (pos != null)
+                    {
+                        one.DataLabelPosition = Convert.ToInt32(pos);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                try
+                {
+                    object font = WppCom.GetProperty(dls, "Font");
+                    if (font != null)
+                    {
+                        object name = WppCom.GetProperty(font, "Name");
+                        if (name != null)
+                        {
+                            one.DataLabelFontName = Convert.ToString(name);
+                        }
+
+                        object sz = WppCom.GetProperty(font, "Size");
+                        if (sz != null)
+                        {
+                            one.DataLabelFontSize = Convert.ToDouble(sz);
+                        }
+
+                        string hex = TryReadFontColorHex(font);
+                        if (!string.IsNullOrEmpty(hex) && TryParseHexToOffice(hex, out int rgb))
+                        {
+                            one.DataLabelFontColor = rgb;
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                try
+                {
+                    object fmt = WppCom.GetProperty(dls, "NumberFormat");
+                    if (fmt != null)
+                    {
+                        one.DataLabelNumberFormat = Convert.ToString(fmt);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
         }
 
-        private static void TryApplyDataLabels(object series, SeriesStyleSnap one)
+        private static void TryApplyDataLabels(object series, SeriesStyleSnap one, List<string> warnings = null, string tag = null)
         {
-            if (one == null || !one.HasDataLabels.HasValue)
+            string prefix = "套标签 " + (tag ?? "");
+            if (one == null)
             {
+                return;
+            }
+
+            bool want = one.HasDataLabels == true
+                || one.DataLabelPosition.HasValue
+                || one.DataLabelFontColor.HasValue
+                || !string.IsNullOrEmpty(one.DataLabelNumberFormat);
+            StyleLog(warnings, prefix + " HasDataLabels=" + one.HasDataLabels
+                + " want=" + want
+                + " pos=" + one.DataLabelPosition
+                + " fontColor=" + HexOf(one.DataLabelFontColor)
+                + " fmt=" + (one.DataLabelNumberFormat ?? ""));
+            if (!want)
+            {
+                if (one.HasDataLabels == false)
+                {
+                    WppCom.TrySetProperty(series, "HasDataLabels", false);
+                    StyleLog(warnings, prefix + " 按快照关闭标签");
+                }
+
                 return;
             }
 
             try
             {
-                WppCom.TrySetProperty(series, "HasDataLabels", one.HasDataLabels.Value);
-                if (!one.HasDataLabels.Value)
+                if (TryInvoke(series, "ApplyDataLabels", XlDataLabelsShowValue) == null)
                 {
-                    return;
+                    WppCom.TrySetProperty(series, "HasDataLabels", true);
+                    StyleLog(warnings, prefix + " ApplyDataLabels 返回 null，改设 HasDataLabels");
                 }
-
-                object dls = TryInvoke(series, "DataLabels");
-                if (dls == null)
+                else
                 {
-                    dls = WppCom.GetProperty(series, "DataLabels");
+                    StyleLog(warnings, prefix + " ApplyDataLabels(2) 已调用");
                 }
+            }
+            catch (Exception ex)
+            {
+                StyleLog(warnings, prefix + " ApplyDataLabels 异常: " + ex.Message);
+                WppCom.TrySetProperty(series, "HasDataLabels", true);
+            }
 
-                if (dls == null)
-                {
-                    return;
-                }
+            object dls = TryGetDataLabels(series);
+            if (dls == null)
+            {
+                return;
+            }
 
-                if (one.DataLabelPosition.HasValue)
-                {
-                    WppCom.TrySetProperty(dls, "Position", one.DataLabelPosition.Value);
-                }
+            WppCom.TrySetProperty(dls, "ShowValue", true);
+            WppCom.TrySetProperty(dls, "ShowCategoryName", false);
+            WppCom.TrySetProperty(dls, "ShowSeriesName", false);
+            WppCom.TrySetProperty(dls, "ShowPercentage", false);
+            WppCom.TrySetProperty(dls, "ShowLegendKey", false);
 
+            if (one.DataLabelPosition.HasValue)
+            {
+                WppCom.TrySetProperty(dls, "Position", one.DataLabelPosition.Value);
+            }
+            else if (IsLineLike(one.ChartType))
+            {
+                WppCom.TrySetProperty(dls, "Position", 0);
+            }
+
+            try
+            {
                 object font = WppCom.GetProperty(dls, "Font");
                 if (font != null)
                 {
@@ -1943,32 +2177,96 @@ namespace WordAddIn1.PresentationHost
                     {
                         WppCom.TrySetProperty(font, "Color", one.DataLabelFontColor.Value);
                     }
-                }
-
-                if (!string.IsNullOrEmpty(one.DataLabelNumberFormat))
-                {
-                    WppCom.TrySetProperty(dls, "NumberFormatLinked", false);
-                    WppCom.TrySetProperty(dls, "NumberFormat", one.DataLabelNumberFormat);
+                    else if (IsLineLike(one.ChartType))
+                    {
+                        WppCom.TrySetProperty(font, "Color", 0x00FFFFFF);
+                    }
                 }
             }
             catch (Exception)
             {
             }
+
+            if (!string.IsNullOrEmpty(one.DataLabelNumberFormat)
+                && one.DataLabelNumberFormat.IndexOf(';') < 0)
+            {
+                WppCom.TrySetProperty(dls, "NumberFormatLinked", false);
+                WppCom.TrySetProperty(dls, "NumberFormat", one.DataLabelNumberFormat);
+            }
         }
 
-        private static List<GradientStopSnap> TryReadGradientStops(object fill)
+        private static object TryGetDataLabels(object series)
+        {
+            object dls = TryInvoke(series, "DataLabels");
+            if (dls != null)
+            {
+                return dls;
+            }
+
+            try
+            {
+                return WppCom.GetProperty(series, "DataLabels");
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static bool? TryAnyPointHasLabel(object series)
         {
             try
             {
-                object type = WppCom.GetProperty(fill, "Type");
-                if (type == null || Convert.ToInt32(type) != MsoFillGradient)
+                object pts = TryInvoke(series, "Points");
+                if (pts == null)
                 {
-                    return null;
+                    pts = WppCom.GetProperty(series, "Points");
                 }
 
+                int n = Convert.ToInt32(WppCom.GetProperty(pts, "Count"));
+                int take = Math.Min(n, 8);
+                for (int i = 1; i <= take; i++)
+                {
+                    object pt = WppCom.GetIndexed(pts, i);
+                    object has = pt == null ? null : WppCom.GetProperty(pt, "HasDataLabel");
+                    if (IsTruthy(has))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return null;
+        }
+
+        private static bool IsLineLike(int? chartType)
+        {
+            if (!chartType.HasValue)
+            {
+                return false;
+            }
+
+            int t = chartType.Value;
+            return t == XlLine || t == XlLineMarkers || t == 63 || t == 64 || t == 66;
+        }
+
+        private static List<GradientStopSnap> TryReadGradientStops(object fill, List<string> warnings = null, string tag = null)
+        {
+            if (fill == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                object type = WppCom.GetProperty(fill, "Type");
                 object gs = WppCom.GetProperty(fill, "GradientStops");
                 if (gs == null)
                 {
+                    StyleLog(warnings, (tag ?? "grad") + " Type=" + type + " GradientStops=null");
                     return null;
                 }
 
@@ -1996,7 +2294,7 @@ namespace WordAddIn1.PresentationHost
                     }
 
                     object color = WppCom.GetProperty(stop, "Color");
-                    int? rgb = TryReadExplicitRgb(color);
+                    int? rgb = TryReadResolvedRgb(color);
                     if (!rgb.HasValue)
                     {
                         rgb = TryReadOleColor(color == null ? null : WppCom.GetProperty(color, "RGB"));
@@ -2011,15 +2309,17 @@ namespace WordAddIn1.PresentationHost
                     list.Add(one);
                 }
 
+                StyleLog(warnings, (tag ?? "grad") + " Type=" + type + " n=" + n + " " + DescribeStops(list));
                 return list.Count >= 2 ? list : null;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                StyleLog(warnings, (tag ?? "grad") + " 读停靠点失败: " + ex.Message);
                 return null;
             }
         }
 
-        private static bool TryWriteGradientStops(object fill, List<GradientStopSnap> stops)
+        private static bool TryWriteGradientStops(object fill, List<GradientStopSnap> stops, double? angle = null)
         {
             if (fill == null || stops == null || stops.Count < 2)
             {
@@ -2029,6 +2329,11 @@ namespace WordAddIn1.PresentationHost
             try
             {
                 TryInvoke(fill, "TwoColorGradient", 1, 1);
+                if (angle.HasValue)
+                {
+                    WppCom.TrySetProperty(fill, "GradientAngle", angle.Value);
+                }
+
                 object gs = WppCom.GetProperty(fill, "GradientStops");
                 if (gs == null)
                 {
@@ -2181,6 +2486,140 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private static void StyleLog(List<string> warnings, string message)
+        {
+            if (string.IsNullOrEmpty(message))
+            {
+                return;
+            }
+
+            string line = "[PptChartSnap] " + message;
+            try
+            {
+                EasyWriteLog.WriteLine(line);
+            }
+            catch (Exception)
+            {
+            }
+
+            warnings?.Add(line);
+        }
+
+        private static string DescribeSnap(string tag, ChartStyleSnap snap)
+        {
+            if (snap == null)
+            {
+                return tag + " snap=null";
+            }
+
+            var sb = new StringBuilder();
+            sb.Append(tag)
+                .Append(" style=").Append(snap.ChartStyle)
+                .Append(" title=").Append(snap.HasTitle)
+                .Append(" legend=").Append(snap.HasLegend)
+                .Append(" plotFill=").Append(snap.PlotFillVisible)
+                .Append(" gap=").Append(snap.GapWidth)
+                .Append(" overlap=").Append(snap.Overlap)
+                .Append(" catDel=").Append(snap.Category == null ? "null" : Convert.ToString(snap.Category.Deleted))
+                .Append(" valDel=").Append(snap.Value == null ? "null" : Convert.ToString(snap.Value.Deleted));
+            if (snap.Series != null)
+            {
+                for (int i = 0; i < snap.Series.Count; i++)
+                {
+                    sb.Append(" | ").Append(DescribeSeries(i + 1, snap.Series[i]));
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        private static string DescribeSeries(int index, SeriesStyleSnap one)
+        {
+            if (one == null)
+            {
+                return "S" + index + "=null";
+            }
+
+            return "S" + index
+                + " type=" + one.ChartType
+                + " axis=" + one.AxisGroup
+                + " line=" + DescribeLine(one.Line)
+                + " marker=" + one.MarkerStyle + "/" + one.MarkerSize
+                + " mkRgb=" + HexOf(one.MarkerForeRgb) + "/" + HexOf(one.MarkerBackRgb)
+                + " labels=" + one.HasDataLabels
+                + " lblPos=" + one.DataLabelPosition
+                + " lblColor=" + HexOf(one.DataLabelFontColor)
+                + " fillVis=" + (one.Fill == null ? "null" : Convert.ToString(one.Fill.Visible))
+                + " fillType=" + (one.Fill == null ? "-" : Convert.ToString(one.Fill.FillType))
+                + " fillRgb=" + (one.Fill == null ? "-" : HexOf(one.Fill.SolidRgb))
+                + " fillStops=" + DescribeStops(one.Fill == null ? null : one.Fill.Stops);
+        }
+
+        private static string DescribeLine(LineSnap line)
+        {
+            if (line == null)
+            {
+                return "null";
+            }
+
+            return "vis=" + line.Visible
+                + " rgb=" + HexOf(line.Rgb)
+                + " w=" + (line.Weight.HasValue ? line.Weight.Value.ToString("0.##", CultureInfo.InvariantCulture) : "-")
+                + " stops=" + (line.Stops == null ? 0 : line.Stops.Count);
+        }
+
+        private static int? PickSolidFromStops(List<GradientStopSnap> stops)
+        {
+            if (stops == null || stops.Count == 0)
+            {
+                return null;
+            }
+
+            GradientStopSnap best = stops[0];
+            for (int i = 1; i < stops.Count; i++)
+            {
+                if (stops[i].Transparency <= best.Transparency)
+                {
+                    best = stops[i];
+                }
+            }
+
+            return best.Rgb;
+        }
+
+        private static string DescribeStops(List<GradientStopSnap> stops)
+        {
+            if (stops == null || stops.Count == 0)
+            {
+                return "0";
+            }
+
+            var sb = new StringBuilder();
+            sb.Append(stops.Count);
+            foreach (GradientStopSnap s in stops)
+            {
+                sb.Append('[')
+                    .Append(s.Position.ToString("0.##", CultureInfo.InvariantCulture))
+                    .Append(':')
+                    .Append(HexOf(s.Rgb))
+                    .Append('@')
+                    .Append(s.Transparency.ToString("0.##", CultureInfo.InvariantCulture))
+                    .Append(']');
+            }
+
+            return sb.ToString();
+        }
+
+        private static string HexOf(int? rgb)
+        {
+            if (!rgb.HasValue)
+            {
+                return "-";
+            }
+
+            return OfficeRgbToHex(rgb.Value);
+        }
+
         private static int? TryReadExplicitRgb(object colorFormat)
         {
             if (colorFormat == null)
@@ -2210,6 +2649,72 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 return value;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static int? TryReadResolvedRgb(object colorFormat)
+        {
+            if (colorFormat == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                object rgb = WppCom.GetProperty(colorFormat, "RGB");
+                if (rgb == null)
+                {
+                    return TryReadOleColor(colorFormat);
+                }
+
+                int value = Convert.ToInt32(Convert.ToDouble(rgb));
+                if (value < 0)
+                {
+                    return null;
+                }
+
+                return value & 0x00FFFFFF;
+            }
+            catch (Exception)
+            {
+                return TryReadOleColor(colorFormat);
+            }
+        }
+
+        private static void TryWriteLineRgb(object line, int rgb)
+        {
+            try
+            {
+                object fc = WppCom.GetProperty(line, "ForeColor");
+                WppCom.TrySetProperty(fc, "Type", 1);
+                WppCom.TrySetProperty(fc, "RGB", rgb);
+                WppCom.TrySetProperty(line, "ForeColor", rgb);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static int? TryReadMarkerColor(object raw)
+        {
+            if (raw == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                int value = Convert.ToInt32(Convert.ToDouble(raw));
+                if (value < 0)
+                {
+                    return null;
+                }
+
+                return value & 0x00FFFFFF;
             }
             catch (Exception)
             {
