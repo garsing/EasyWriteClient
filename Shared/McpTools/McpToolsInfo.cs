@@ -17,22 +17,57 @@ namespace WordAddIn1
             public string alias { get; set; }
         }
 
+        private static readonly object Sync = new object();
         private static List<ToolInfo> _allTools = new List<ToolInfo>();
         private static bool _registryLoaded = false;
+        private static Task _loadTask;
 
-        public static async Task EnsureRegistryAliasesAsync()
+        public static Task EnsureRegistryAliasesAsync()
         {
-            if (_registryLoaded)
+            Task pending;
+            lock (Sync)
             {
-                return;
+                if (_registryLoaded)
+                {
+                    return Task.CompletedTask;
+                }
+
+                if (_loadTask == null)
+                {
+                    _loadTask = LoadRegistryOnceAsync();
+                }
+
+                pending = _loadTask;
             }
-            await LoadRegistryToolAliasesAsync();
-            _registryLoaded = true;
+
+            return pending;
         }
 
         public static List<ToolInfo> GetAllTools()
         {
-            return _allTools.ToList();
+            lock (Sync)
+            {
+                return _allTools.ToList();
+            }
+        }
+
+        public static Dictionary<string, string> GetAliasMap()
+        {
+            lock (Sync)
+            {
+                var map = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var tool in _allTools)
+                {
+                    if (string.IsNullOrEmpty(tool.name))
+                    {
+                        continue;
+                    }
+
+                    map[tool.name] = string.IsNullOrEmpty(tool.alias) ? tool.name : tool.alias;
+                }
+
+                return map;
+            }
         }
 
         public static string GetToolAlias(string toolName)
@@ -42,10 +77,13 @@ namespace WordAddIn1
                 return toolName;
             }
 
-            var tool = _allTools.FirstOrDefault(t => t.name == toolName);
-            if (tool != null && !string.IsNullOrEmpty(tool.alias))
+            lock (Sync)
             {
-                return tool.alias;
+                var tool = _allTools.FirstOrDefault(t => t.name == toolName);
+                if (tool != null && !string.IsNullOrEmpty(tool.alias))
+                {
+                    return tool.alias;
+                }
             }
 
             return toolName;
@@ -57,20 +95,26 @@ namespace WordAddIn1
             {
                 System.Diagnostics.Debug.WriteLine("[McpToolsInfo] 开始初始化工具信息...");
 
-                _allTools.Clear();
-
                 var toolRegistry = new Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>>();
                 McpTools.RegisterBuiltInTools(toolRegistry, wordApplication);
 
-                foreach (var name in toolRegistry.Keys.OrderBy(k => k))
+                lock (Sync)
                 {
-                    _allTools.Add(new ToolInfo { name = name, alias = name });
+                    foreach (var name in toolRegistry.Keys.OrderBy(k => k))
+                    {
+                        if (_allTools.Any(t => t.name == name))
+                        {
+                            continue;
+                        }
+
+                        _allTools.Add(new ToolInfo { name = name, alias = name });
+                    }
                 }
 
                 System.Diagnostics.Debug.WriteLine(
                     $"[McpToolsInfo] 本地 F_ 执行器 {toolRegistry.Count} 个（metadata 由 Backend Registry 维护）");
 
-                await LoadRegistryToolAliasesAsync();
+                await EnsureRegistryAliasesAsync();
 
                 if (EasyWriteDiagnostics.IsEnabled(DebugCategory.DocumentExtract))
                 {
@@ -86,31 +130,51 @@ namespace WordAddIn1
             }
         }
 
-        private static async Task LoadRegistryToolAliasesAsync()
+        private static async Task LoadRegistryOnceAsync()
         {
             try
             {
-                string baseUrl = ConfigManager.Config.Api.BaseUrl?.TrimEnd('/');
-                if (string.IsNullOrEmpty(baseUrl))
+                await LoadRegistryToolAliasesAsync();
+                lock (Sync)
                 {
+                    _registryLoaded = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[McpToolsInfo] 加载 Registry alias 失败: {ex.Message}");
+                lock (Sync)
+                {
+                    _loadTask = null;
+                }
+            }
+        }
+
+        private static async Task LoadRegistryToolAliasesAsync()
+        {
+            string baseUrl = ConfigManager.Config.Api.BaseUrl?.TrimEnd('/');
+            if (string.IsNullOrEmpty(baseUrl))
+            {
+                return;
+            }
+
+            string apiUrl = $"{baseUrl}/api/mcp/tool_aliases";
+            System.Diagnostics.Debug.WriteLine($"[McpToolsInfo] 请求 Registry alias: {apiUrl}");
+
+            using (var client = new System.Net.Http.HttpClient())
+            {
+                client.Timeout = TimeSpan.FromSeconds(15);
+                var body = await client.GetStringAsync(apiUrl);
+                var response = JsonConvert.DeserializeObject<RegistryAliasesResponse>(body);
+                if (response?.success != true || response.tools == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("[McpToolsInfo] Registry alias 响应无效");
                     return;
                 }
 
-                string apiUrl = $"{baseUrl}/api/mcp/tool_aliases";
-                System.Diagnostics.Debug.WriteLine($"[McpToolsInfo] 请求 Registry alias: {apiUrl}");
-
-                using (var client = new System.Net.Http.HttpClient())
+                int merged = 0;
+                lock (Sync)
                 {
-                    client.Timeout = TimeSpan.FromSeconds(15);
-                    var body = await client.GetStringAsync(apiUrl);
-                    var response = JsonConvert.DeserializeObject<RegistryAliasesResponse>(body);
-                    if (response?.success != true || response.tools == null)
-                    {
-                        System.Diagnostics.Debug.WriteLine("[McpToolsInfo] Registry alias 响应无效");
-                        return;
-                    }
-
-                    int merged = 0;
                     foreach (var item in response.tools)
                     {
                         if (string.IsNullOrEmpty(item.name))
@@ -141,10 +205,6 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine(
                         $"[McpToolsInfo] Registry alias 合并 {merged} 条，总计 {_allTools.Count} 个工具");
                 }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[McpToolsInfo] 加载 Registry alias 失败: {ex.Message}");
             }
         }
 

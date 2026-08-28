@@ -2,6 +2,36 @@ import { sendMessage } from '../composables/useWebViewBridge'
 
 // 工具别名缓存
 const aliasCache = new Map()
+let allAliasesPromise = null
+
+function applyAliasMap(aliases) {
+  if (!aliases || typeof aliases !== 'object') {
+    return
+  }
+  for (const [name, alias] of Object.entries(aliases)) {
+    if (name) {
+      aliasCache.set(name, alias || name)
+    }
+  }
+}
+
+async function ensureAllAliases() {
+  if (allAliasesPromise) {
+    return allAliasesPromise
+  }
+
+  allAliasesPromise = (async () => {
+    const response = await sendMessage('getToolAlias', { all: true })
+    if (response && response.success && response.aliases) {
+      applyAliasMap(response.aliases)
+    }
+  })().catch((error) => {
+    console.error('预加载工具别名失败:', error)
+    allAliasesPromise = null
+  })
+
+  return allAliasesPromise
+}
 
 /**
  * 获取工具别名
@@ -19,9 +49,21 @@ export async function getToolAlias(toolName) {
   }
 
   try {
+    await ensureAllAliases()
+    if (aliasCache.has(toolName)) {
+      return aliasCache.get(toolName)
+    }
+
     // 从后端查询别名
     const response = await sendMessage('getToolAlias', { toolName })
     
+    if (response && response.success && response.aliases) {
+      applyAliasMap(response.aliases)
+      if (aliasCache.has(toolName)) {
+        return aliasCache.get(toolName)
+      }
+    }
+
     if (response && response.success && response.alias) {
       const alias = response.alias
       // 缓存结果

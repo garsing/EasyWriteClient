@@ -111,13 +111,14 @@ namespace WordAddIn1
                 {
                     var result = await handler(message.data);
                     
-                    // 如果需要返回结果，发送响应消息（包含原始消息类型以便前端识别）
+                    // 回传 messageId，避免同类型并发请求把响应对串
                     if (result != null)
                     {
                         var response = new
                         {
                             type = "messageResponse",
                             originalType = message.type,
+                            messageId = message.messageId,
                             data = result,
                             timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds()
                         };
@@ -143,6 +144,7 @@ namespace WordAddIn1
             public string type { get; set; }
             public object data { get; set; }
             public long timestamp { get; set; }
+            public string messageId { get; set; }
         }
     }
 }

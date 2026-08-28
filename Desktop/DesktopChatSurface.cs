@@ -1479,14 +1479,23 @@ namespace EasyWriteClient.Desktop
             try
             {
                 string toolName = null;
+                bool all = false;
                 if (data is JObject jObj)
                 {
                     toolName = jObj["toolName"]?.ToString() ?? jObj["name"]?.ToString();
+                    all = jObj["all"]?.Value<bool>() == true;
                 }
                 else if (data != null)
                 {
                     var jo = JObject.FromObject(data);
                     toolName = jo["toolName"]?.ToString() ?? jo["name"]?.ToString();
+                    all = jo["all"]?.Value<bool>() == true;
+                }
+
+                await McpToolsInfo.EnsureRegistryAliasesAsync().ConfigureAwait(false);
+                if (all)
+                {
+                    return new { success = true, aliases = McpToolsInfo.GetAliasMap() };
                 }
 
                 if (string.IsNullOrEmpty(toolName))
@@ -1494,8 +1503,6 @@ namespace EasyWriteClient.Desktop
                     return new { success = false, message = "工具名称不能为空" };
                 }
 
-                // 与 Plugin 一致：别名来自 Backend Registry
-                await McpToolsInfo.EnsureRegistryAliasesAsync().ConfigureAwait(false);
                 string alias = McpToolsInfo.GetToolAlias(toolName);
                 return new { success = true, alias };
             }

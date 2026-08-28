@@ -14,19 +14,32 @@ const isWebView2 = () => {
 }
 
 // 处理消息响应（由全局消息监听器调用）
+const settlePending = (messageId, pending, responseData) => {
+  clearTimeout(pending.timeout)
+  pendingMessages.delete(messageId)
+
+  if (responseData.data && responseData.data.success !== undefined) {
+    pending.resolve(responseData.data)
+  } else {
+    pending.resolve(responseData.data || { success: true })
+  }
+}
+
 const handleMessageResponse = (responseData) => {
-  if (responseData.type === 'messageResponse' && responseData.originalType) {
-    // 查找匹配的待响应消息（使用消息类型匹配）
+  if (responseData.type !== 'messageResponse') {
+    return
+  }
+
+  if (responseData.messageId && pendingMessages.has(responseData.messageId)) {
+    settlePending(responseData.messageId, pendingMessages.get(responseData.messageId), responseData)
+    return
+  }
+
+  // 兼容未回传 messageId 的旧宿主；同类型并发仍可能对串
+  if (responseData.originalType) {
     for (const [messageId, pending] of pendingMessages.entries()) {
       if (pending.type === responseData.originalType) {
-        clearTimeout(pending.timeout)
-        pendingMessages.delete(messageId)
-        
-        if (responseData.data && responseData.data.success !== undefined) {
-          pending.resolve(responseData.data)
-        } else {
-          pending.resolve(responseData.data || { success: true })
-        }
+        settlePending(messageId, pending, responseData)
         return
       }
     }
@@ -117,6 +130,7 @@ export const onMessage = (handler) => {
         const responseData = {
           type: data.data.type || 'messageResponse',
           originalType: data.data.originalType,
+          messageId: data.data.messageId || data.messageId,
           data: data.data.data || data.data,
           timestamp: data.data.timestamp || data.timestamp
         }
