@@ -25,6 +25,59 @@ namespace WordAddIn1.PresentationHost
         public string AxisY { get; set; }
 
         public string ShowDataLabels { get; set; }
+
+        public string FillGradient { get; set; }
+
+        public string FillAngle { get; set; }
+
+        public string Line { get; set; }
+
+        public string LineWeight { get; set; }
+
+        public string Marker { get; set; }
+
+        public string MarkerSize { get; set; }
+
+        public string MarkerColor { get; set; }
+
+        public string MarkerFill { get; set; }
+
+        public string LabelPosition { get; set; }
+
+        public string LabelFont { get; set; }
+
+        public string LabelSize { get; set; }
+
+        public string LabelColor { get; set; }
+
+        public string LabelFormat { get; set; }
+    }
+
+    internal sealed class PptHtmlAxisExtras
+    {
+        public string Visible { get; set; }
+
+        public string TickFont { get; set; }
+
+        public string TickColor { get; set; }
+
+        public string TickSize { get; set; }
+
+        public string TickPosition { get; set; }
+
+        public string MajorTick { get; set; }
+
+        public string MinorTick { get; set; }
+
+        public string Format { get; set; }
+
+        public string Grid { get; set; }
+
+        public string GridColor { get; set; }
+
+        public string Line { get; set; }
+
+        public string LineWeight { get; set; }
     }
 
     internal sealed class PptHtmlChartGrid
@@ -106,6 +159,24 @@ namespace WordAddIn1.PresentationHost
         public string AxisY { get; set; }
 
         public string AxisYSecondary { get; set; }
+
+        public string ChartStyle { get; set; }
+
+        public string LegendFontColor { get; set; }
+
+        public string ChartAreaColor { get; set; }
+
+        public string Overlap { get; set; }
+
+        public string PlotBox { get; set; }
+
+        public string PlotInside { get; set; }
+
+        public PptHtmlAxisExtras AxisXStyle { get; set; }
+
+        public PptHtmlAxisExtras AxisYStyle { get; set; }
+
+        public PptHtmlAxisExtras AxisY2Style { get; set; }
     }
 
     internal sealed class PptHtmlChartReadModel
@@ -291,6 +362,1367 @@ namespace WordAddIn1.PresentationHost
             public double Transparency { get; set; }
         }
 
+        private static void ProjectSnapToFormat(PptHtmlChartFormat format, ChartStyleSnap snap)
+        {
+            if (format == null || snap == null)
+            {
+                return;
+            }
+
+            if (snap.ChartStyle.HasValue)
+            {
+                format.ChartStyle = snap.ChartStyle.Value.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (snap.HasLegend == false)
+            {
+                format.Legend = "none";
+            }
+            else if (snap.LegendPosition.HasValue)
+            {
+                format.Legend = LegendFromXl(snap.LegendPosition.Value);
+            }
+
+            if (!string.IsNullOrEmpty(snap.LegendFontColor))
+            {
+                format.LegendFontColor = snap.LegendFontColor;
+            }
+
+            if (!string.IsNullOrEmpty(snap.TitleFontSize))
+            {
+                format.TitleFontSize = snap.TitleFontSize;
+            }
+
+            if (snap.TitleFontBold.HasValue)
+            {
+                format.TitleFontBold = snap.TitleFontBold.Value ? "true" : "false";
+            }
+
+            if (!string.IsNullOrEmpty(snap.TitleFontColor))
+            {
+                format.TitleFontColor = snap.TitleFontColor;
+            }
+
+            format.ChartAreaColor = AreaColorFromSnap(snap.ChartAreaFillVisible, snap.ChartAreaFillRgb);
+            format.PlotColor = AreaColorFromSnap(snap.PlotFillVisible, snap.PlotFillRgb);
+            if (snap.GapWidth.HasValue)
+            {
+                format.GapWidth = snap.GapWidth.Value.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (snap.Overlap.HasValue)
+            {
+                format.Overlap = snap.Overlap.Value.ToString(CultureInfo.InvariantCulture);
+            }
+
+            format.PlotBox = BoxFromSnap(
+                snap.PlotLeft, snap.PlotTop, snap.PlotWidth, snap.PlotHeight);
+            format.PlotInside = BoxFromSnap(
+                snap.PlotInsideLeft, snap.PlotInsideTop, snap.PlotInsideWidth, snap.PlotInsideHeight);
+            format.AxisXStyle = AxisExtrasFromSnap(snap.Category);
+            format.AxisYStyle = AxisExtrasFromSnap(snap.Value);
+            format.AxisY2Style = AxisExtrasFromSnap(snap.ValueSecondary);
+            if (format.AxisXStyle != null && !string.IsNullOrEmpty(format.AxisXStyle.Format))
+            {
+                format.AxisXFormat = format.AxisXStyle.Format;
+            }
+
+            if (snap.Category != null && snap.Category.HasTitle == true
+                && !string.IsNullOrEmpty(snap.Category.Title))
+            {
+                format.AxisX = snap.Category.Title;
+            }
+
+            if (snap.Value != null && snap.Value.HasTitle == true
+                && !string.IsNullOrEmpty(snap.Value.Title))
+            {
+                format.AxisY = snap.Value.Title;
+            }
+
+            if (snap.ValueSecondary != null && snap.ValueSecondary.HasTitle == true
+                && !string.IsNullOrEmpty(snap.ValueSecondary.Title))
+            {
+                format.AxisYSecondary = snap.ValueSecondary.Title;
+            }
+
+            if (snap.Value != null && snap.Value.HasMajorGridlines.HasValue)
+            {
+                format.Gridlines = snap.Value.HasMajorGridlines.Value ? "true" : "false";
+            }
+        }
+
+        private static void ProjectSnapToColumns(PptHtmlChartGrid grid, ChartStyleSnap snap)
+        {
+            if (grid == null || grid.Columns == null || snap == null || snap.Series == null)
+            {
+                return;
+            }
+
+            int si = 0;
+            for (int i = 0; i < grid.Columns.Count && si < snap.Series.Count; i++)
+            {
+                PptHtmlChartColumn col = grid.Columns[i];
+                if (col == null || col.Role == "category")
+                {
+                    continue;
+                }
+
+                SeriesStyleSnap one = snap.Series[si++];
+                if (one.ChartType.HasValue)
+                {
+                    col.SeriesType = SeriesTypeFromXl(one.ChartType.Value);
+                }
+
+                if (one.AxisGroup == XlSecondary)
+                {
+                    col.AxisY = "secondary";
+                }
+                else if (one.AxisGroup == XlPrimary)
+                {
+                    col.AxisY = "primary";
+                }
+
+                if (one.Fill != null)
+                {
+                    if (one.Fill.Stops != null && one.Fill.Stops.Count > 0)
+                    {
+                        col.FillGradient = EncodeGradient(one.Fill.Stops);
+                        if (one.Fill.Angle.HasValue)
+                        {
+                            col.FillAngle = one.Fill.Angle.Value.ToString("0.##", CultureInfo.InvariantCulture);
+                        }
+                    }
+                    else if (one.Fill.SolidRgb.HasValue)
+                    {
+                        col.Color = OfficeRgbToHex(one.Fill.SolidRgb.Value);
+                    }
+                    else if (one.Fill.Visible == false)
+                    {
+                        col.Color = "none";
+                    }
+                }
+
+                if (one.Line != null)
+                {
+                    if (one.Line.Visible == false)
+                    {
+                        col.Line = "none";
+                    }
+                    else if (one.Line.Rgb.HasValue)
+                    {
+                        col.Line = OfficeRgbToHex(one.Line.Rgb.Value);
+                    }
+
+                    if (one.Line.Weight.HasValue && !IsPhantomWeight(one.Line.Weight.Value))
+                    {
+                        col.LineWeight = one.Line.Weight.Value.ToString("0.##", CultureInfo.InvariantCulture);
+                    }
+                }
+
+                if (one.MarkerStyle.HasValue)
+                {
+                    col.Marker = MarkerFromXl(one.MarkerStyle.Value);
+                }
+
+                if (one.MarkerSize.HasValue)
+                {
+                    col.MarkerSize = one.MarkerSize.Value.ToString(CultureInfo.InvariantCulture);
+                }
+
+                if (one.MarkerForeRgb.HasValue)
+                {
+                    col.MarkerColor = OfficeRgbToHex(one.MarkerForeRgb.Value);
+                }
+
+                if (one.MarkerBackRgb.HasValue)
+                {
+                    col.MarkerFill = OfficeRgbToHex(one.MarkerBackRgb.Value);
+                }
+
+                if (one.HasDataLabels.HasValue)
+                {
+                    col.ShowDataLabels = one.HasDataLabels.Value ? "true" : "false";
+                }
+
+                if (one.DataLabelPosition.HasValue)
+                {
+                    col.LabelPosition = LabelPosFromXl(one.DataLabelPosition.Value);
+                }
+
+                if (!string.IsNullOrEmpty(one.DataLabelFontName))
+                {
+                    col.LabelFont = one.DataLabelFontName;
+                }
+
+                if (one.DataLabelFontSize.HasValue)
+                {
+                    col.LabelSize = one.DataLabelFontSize.Value.ToString("0.##", CultureInfo.InvariantCulture);
+                }
+
+                if (one.DataLabelFontColor.HasValue)
+                {
+                    col.LabelColor = OfficeRgbToHex(one.DataLabelFontColor.Value);
+                }
+
+                if (!string.IsNullOrEmpty(one.DataLabelNumberFormat)
+                    && one.DataLabelNumberFormat != ";;;")
+                {
+                    col.LabelFormat = one.DataLabelNumberFormat;
+                }
+            }
+        }
+
+        private static ChartStyleSnap SnapFromFormat(PptHtmlChartFormat format, PptHtmlChartGrid grid)
+        {
+            var snap = new ChartStyleSnap { Series = new List<SeriesStyleSnap>() };
+            if (format != null)
+            {
+                if (int.TryParse(format.ChartStyle, NumberStyles.Integer, CultureInfo.InvariantCulture, out int style))
+                {
+                    snap.ChartStyle = style;
+                }
+
+                if (format.Legend != null)
+                {
+                    if (string.Equals(format.Legend, "none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        snap.HasLegend = false;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(format.Legend))
+                    {
+                        snap.HasLegend = true;
+                        snap.LegendPosition = LegendToXl(format.Legend);
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(format.LegendFontColor))
+                {
+                    snap.LegendFontColor = format.LegendFontColor;
+                }
+
+                if (format.Title != null)
+                {
+                    snap.HasTitle = !string.IsNullOrEmpty(format.Title);
+                }
+
+                if (!string.IsNullOrWhiteSpace(format.TitleFontSize))
+                {
+                    snap.TitleFontSize = format.TitleFontSize;
+                }
+
+                if (!string.IsNullOrWhiteSpace(format.TitleFontBold))
+                {
+                    snap.TitleFontBold = IsTrue(format.TitleFontBold);
+                }
+
+                if (!string.IsNullOrWhiteSpace(format.TitleFontColor))
+                {
+                    snap.TitleFontColor = format.TitleFontColor;
+                }
+
+                ApplyAreaColor(format.ChartAreaColor, out bool? areaVis, out int? areaRgb);
+                snap.ChartAreaFillVisible = areaVis;
+                snap.ChartAreaFillRgb = areaRgb;
+                ApplyAreaColor(format.PlotColor, out bool? plotVis, out int? plotRgb);
+                snap.PlotFillVisible = plotVis;
+                snap.PlotFillRgb = plotRgb;
+                if (int.TryParse(format.GapWidth, NumberStyles.Integer, CultureInfo.InvariantCulture, out int gap))
+                {
+                    snap.GapWidth = gap;
+                }
+
+                if (int.TryParse(format.Overlap, NumberStyles.Integer, CultureInfo.InvariantCulture, out int overlap))
+                {
+                    snap.Overlap = overlap;
+                }
+
+                ParseBox(format.PlotBox, out float? l, out float? t, out float? w, out float? h);
+                snap.PlotLeft = l;
+                snap.PlotTop = t;
+                snap.PlotWidth = w;
+                snap.PlotHeight = h;
+                ParseBox(format.PlotInside, out float? il, out float? it, out float? iw, out float? ih);
+                snap.PlotInsideLeft = il;
+                snap.PlotInsideTop = it;
+                snap.PlotInsideWidth = iw;
+                snap.PlotInsideHeight = ih;
+                snap.Category = AxisSnapFromExtras(format.AxisXStyle, format.AxisX, format.AxisXFormat);
+                snap.Value = AxisSnapFromExtras(format.AxisYStyle, format.AxisY, null);
+                snap.ValueSecondary = AxisSnapFromExtras(format.AxisY2Style, format.AxisYSecondary, null);
+                if (!string.IsNullOrWhiteSpace(format.Gridlines) && snap.Value != null
+                    && snap.Value.HasMajorGridlines == null)
+                {
+                    snap.Value.HasMajorGridlines = IsTrue(format.Gridlines);
+                }
+            }
+
+            if (grid != null && grid.Columns != null)
+            {
+                foreach (PptHtmlChartColumn col in grid.Columns)
+                {
+                    if (col == null || col.Role == "category")
+                    {
+                        continue;
+                    }
+
+                    snap.Series.Add(SeriesSnapFromColumn(col));
+                }
+            }
+
+            return snap;
+        }
+
+        private static ChartStyleSnap OverlaySnap(ChartStyleSnap oldSnap, ChartStyleSnap htmlSnap)
+        {
+            if (oldSnap == null)
+            {
+                return htmlSnap;
+            }
+
+            if (htmlSnap == null)
+            {
+                return oldSnap;
+            }
+
+            if (htmlSnap.ChartStyle.HasValue)
+            {
+                oldSnap.ChartStyle = htmlSnap.ChartStyle;
+            }
+
+            if (htmlSnap.HasTitle.HasValue)
+            {
+                oldSnap.HasTitle = htmlSnap.HasTitle;
+            }
+
+            if (!string.IsNullOrEmpty(htmlSnap.TitleFontColor))
+            {
+                oldSnap.TitleFontColor = htmlSnap.TitleFontColor;
+            }
+
+            if (!string.IsNullOrEmpty(htmlSnap.TitleFontSize))
+            {
+                oldSnap.TitleFontSize = htmlSnap.TitleFontSize;
+            }
+
+            if (htmlSnap.TitleFontBold.HasValue)
+            {
+                oldSnap.TitleFontBold = htmlSnap.TitleFontBold;
+            }
+
+            if (htmlSnap.HasLegend.HasValue)
+            {
+                oldSnap.HasLegend = htmlSnap.HasLegend;
+            }
+
+            if (htmlSnap.LegendPosition.HasValue)
+            {
+                oldSnap.LegendPosition = htmlSnap.LegendPosition;
+            }
+
+            if (!string.IsNullOrEmpty(htmlSnap.LegendFontColor))
+            {
+                oldSnap.LegendFontColor = htmlSnap.LegendFontColor;
+            }
+
+            if (htmlSnap.ChartAreaFillVisible.HasValue)
+            {
+                oldSnap.ChartAreaFillVisible = htmlSnap.ChartAreaFillVisible;
+                oldSnap.ChartAreaFillRgb = htmlSnap.ChartAreaFillRgb;
+            }
+
+            if (htmlSnap.PlotFillVisible.HasValue)
+            {
+                oldSnap.PlotFillVisible = htmlSnap.PlotFillVisible;
+                oldSnap.PlotFillRgb = htmlSnap.PlotFillRgb;
+            }
+
+            if (htmlSnap.GapWidth.HasValue)
+            {
+                oldSnap.GapWidth = htmlSnap.GapWidth;
+            }
+
+            if (htmlSnap.Overlap.HasValue)
+            {
+                oldSnap.Overlap = htmlSnap.Overlap;
+            }
+
+            OverlayBox(htmlSnap, oldSnap);
+            oldSnap.Category = OverlayAxis(oldSnap.Category, htmlSnap.Category);
+            oldSnap.Value = OverlayAxis(oldSnap.Value, htmlSnap.Value);
+            oldSnap.ValueSecondary = OverlayAxis(oldSnap.ValueSecondary, htmlSnap.ValueSecondary);
+            if (htmlSnap.Series != null && htmlSnap.Series.Count > 0)
+            {
+                if (oldSnap.Series == null)
+                {
+                    oldSnap.Series = new List<SeriesStyleSnap>();
+                }
+
+                for (int i = 0; i < htmlSnap.Series.Count; i++)
+                {
+                    if (i < oldSnap.Series.Count)
+                    {
+                        oldSnap.Series[i] = OverlaySeries(oldSnap.Series[i], htmlSnap.Series[i]);
+                    }
+                    else
+                    {
+                        oldSnap.Series.Add(htmlSnap.Series[i]);
+                    }
+                }
+            }
+
+            return oldSnap;
+        }
+
+        private static void OverlayBox(ChartStyleSnap src, ChartStyleSnap dest)
+        {
+            if (src.PlotLeft.HasValue)
+            {
+                dest.PlotLeft = src.PlotLeft;
+            }
+
+            if (src.PlotTop.HasValue)
+            {
+                dest.PlotTop = src.PlotTop;
+            }
+
+            if (src.PlotWidth.HasValue)
+            {
+                dest.PlotWidth = src.PlotWidth;
+            }
+
+            if (src.PlotHeight.HasValue)
+            {
+                dest.PlotHeight = src.PlotHeight;
+            }
+
+            if (src.PlotInsideLeft.HasValue)
+            {
+                dest.PlotInsideLeft = src.PlotInsideLeft;
+            }
+
+            if (src.PlotInsideTop.HasValue)
+            {
+                dest.PlotInsideTop = src.PlotInsideTop;
+            }
+
+            if (src.PlotInsideWidth.HasValue)
+            {
+                dest.PlotInsideWidth = src.PlotInsideWidth;
+            }
+
+            if (src.PlotInsideHeight.HasValue)
+            {
+                dest.PlotInsideHeight = src.PlotInsideHeight;
+            }
+        }
+
+        private static AxisStyleSnap OverlayAxis(AxisStyleSnap dest, AxisStyleSnap src)
+        {
+            if (src == null)
+            {
+                return dest;
+            }
+
+            if (dest == null)
+            {
+                return src;
+            }
+
+            if (src.Deleted.HasValue)
+            {
+                dest.Deleted = src.Deleted;
+            }
+
+            if (src.HasTitle.HasValue)
+            {
+                dest.HasTitle = src.HasTitle;
+            }
+
+            if (!string.IsNullOrEmpty(src.Title))
+            {
+                dest.Title = src.Title;
+            }
+
+            if (!string.IsNullOrEmpty(src.TickFontName))
+            {
+                dest.TickFontName = src.TickFontName;
+            }
+
+            if (src.TickFontColor.HasValue)
+            {
+                dest.TickFontColor = src.TickFontColor;
+            }
+
+            if (src.TickFontSize.HasValue)
+            {
+                dest.TickFontSize = src.TickFontSize;
+            }
+
+            if (src.TickLabelPosition.HasValue)
+            {
+                dest.TickLabelPosition = src.TickLabelPosition;
+            }
+
+            if (src.MajorTickMark.HasValue)
+            {
+                dest.MajorTickMark = src.MajorTickMark;
+            }
+
+            if (src.MinorTickMark.HasValue)
+            {
+                dest.MinorTickMark = src.MinorTickMark;
+            }
+
+            if (!string.IsNullOrEmpty(src.NumberFormat))
+            {
+                dest.NumberFormat = src.NumberFormat;
+            }
+
+            if (src.HasMajorGridlines.HasValue)
+            {
+                dest.HasMajorGridlines = src.HasMajorGridlines;
+            }
+
+            if (src.MajorGridlineRgb.HasValue)
+            {
+                dest.MajorGridlineRgb = src.MajorGridlineRgb;
+            }
+
+            if (src.LineVisible.HasValue)
+            {
+                dest.LineVisible = src.LineVisible;
+            }
+
+            if (src.LineRgb.HasValue)
+            {
+                dest.LineRgb = src.LineRgb;
+            }
+
+            if (src.LineWeight.HasValue)
+            {
+                dest.LineWeight = src.LineWeight;
+            }
+
+            return dest;
+        }
+
+        private static SeriesStyleSnap OverlaySeries(SeriesStyleSnap dest, SeriesStyleSnap src)
+        {
+            if (src == null)
+            {
+                return dest;
+            }
+
+            if (dest == null)
+            {
+                return src;
+            }
+
+            if (src.ChartType.HasValue)
+            {
+                dest.ChartType = src.ChartType;
+            }
+
+            if (src.AxisGroup.HasValue)
+            {
+                dest.AxisGroup = src.AxisGroup;
+            }
+
+            dest.Fill = OverlayFill(dest.Fill, src.Fill);
+            dest.Line = OverlayLine(dest.Line, src.Line);
+            if (src.MarkerStyle.HasValue)
+            {
+                dest.MarkerStyle = src.MarkerStyle;
+            }
+
+            if (src.MarkerSize.HasValue)
+            {
+                dest.MarkerSize = src.MarkerSize;
+            }
+
+            if (src.MarkerForeRgb.HasValue)
+            {
+                dest.MarkerForeRgb = src.MarkerForeRgb;
+            }
+
+            if (src.MarkerBackRgb.HasValue)
+            {
+                dest.MarkerBackRgb = src.MarkerBackRgb;
+            }
+
+            if (src.HasDataLabels.HasValue)
+            {
+                dest.HasDataLabels = src.HasDataLabels;
+            }
+
+            if (src.DataLabelPosition.HasValue)
+            {
+                dest.DataLabelPosition = src.DataLabelPosition;
+            }
+
+            if (!string.IsNullOrEmpty(src.DataLabelFontName))
+            {
+                dest.DataLabelFontName = src.DataLabelFontName;
+            }
+
+            if (src.DataLabelFontSize.HasValue)
+            {
+                dest.DataLabelFontSize = src.DataLabelFontSize;
+            }
+
+            if (src.DataLabelFontColor.HasValue)
+            {
+                dest.DataLabelFontColor = src.DataLabelFontColor;
+            }
+
+            if (!string.IsNullOrEmpty(src.DataLabelNumberFormat))
+            {
+                dest.DataLabelNumberFormat = src.DataLabelNumberFormat;
+            }
+
+            return dest;
+        }
+
+        private static FillSnap OverlayFill(FillSnap dest, FillSnap src)
+        {
+            if (src == null)
+            {
+                return dest;
+            }
+
+            if (dest == null)
+            {
+                return src;
+            }
+
+            if (src.Visible.HasValue)
+            {
+                dest.Visible = src.Visible;
+            }
+
+            if (src.FillType.HasValue)
+            {
+                dest.FillType = src.FillType;
+            }
+
+            if (src.SolidRgb.HasValue)
+            {
+                dest.SolidRgb = src.SolidRgb;
+            }
+
+            if (src.Angle.HasValue)
+            {
+                dest.Angle = src.Angle;
+            }
+
+            if (src.Stops != null && src.Stops.Count > 0)
+            {
+                dest.Stops = src.Stops;
+            }
+
+            return dest;
+        }
+
+        private static LineSnap OverlayLine(LineSnap dest, LineSnap src)
+        {
+            if (src == null)
+            {
+                return dest;
+            }
+
+            if (dest == null)
+            {
+                return src;
+            }
+
+            if (src.Visible.HasValue)
+            {
+                dest.Visible = src.Visible;
+            }
+
+            if (src.Rgb.HasValue)
+            {
+                dest.Rgb = src.Rgb;
+            }
+
+            if (src.Weight.HasValue)
+            {
+                dest.Weight = src.Weight;
+            }
+
+            if (src.Stops != null && src.Stops.Count > 0)
+            {
+                dest.Stops = src.Stops;
+            }
+
+            return dest;
+        }
+
+        private static SeriesStyleSnap SeriesSnapFromColumn(PptHtmlChartColumn col)
+        {
+            var one = new SeriesStyleSnap();
+            if (TryParseSeriesXl(col.SeriesType, col.Marker, out int xl))
+            {
+                one.ChartType = xl;
+            }
+
+            if (string.Equals(col.AxisY, "secondary", StringComparison.OrdinalIgnoreCase))
+            {
+                one.AxisGroup = XlSecondary;
+            }
+            else if (string.Equals(col.AxisY, "primary", StringComparison.OrdinalIgnoreCase))
+            {
+                one.AxisGroup = XlPrimary;
+            }
+
+            one.Fill = FillFromColumn(col);
+            one.Line = LineFromColumn(col);
+            if (!string.IsNullOrWhiteSpace(col.Marker))
+            {
+                one.MarkerStyle = MarkerToXl(col.Marker);
+            }
+
+            if (int.TryParse(col.MarkerSize, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ms))
+            {
+                one.MarkerSize = ms;
+            }
+
+            if (TryParseHexToOffice(col.MarkerColor, out int mFore))
+            {
+                one.MarkerForeRgb = mFore;
+            }
+
+            if (TryParseHexToOffice(col.MarkerFill, out int mBack))
+            {
+                one.MarkerBackRgb = mBack;
+            }
+
+            if (!string.IsNullOrWhiteSpace(col.ShowDataLabels))
+            {
+                one.HasDataLabels = IsTrue(col.ShowDataLabels);
+            }
+
+            if (!string.IsNullOrWhiteSpace(col.LabelPosition))
+            {
+                one.DataLabelPosition = LabelPosToXl(col.LabelPosition);
+            }
+
+            if (!string.IsNullOrWhiteSpace(col.LabelFont))
+            {
+                one.DataLabelFontName = col.LabelFont;
+            }
+
+            if (double.TryParse(col.LabelSize, NumberStyles.Float, CultureInfo.InvariantCulture, out double lsz))
+            {
+                one.DataLabelFontSize = lsz;
+            }
+
+            if (TryParseHexToOffice(col.LabelColor, out int lRgb))
+            {
+                one.DataLabelFontColor = lRgb;
+            }
+
+            if (!string.IsNullOrWhiteSpace(col.LabelFormat))
+            {
+                one.DataLabelNumberFormat = col.LabelFormat;
+            }
+
+            return one;
+        }
+
+        private static FillSnap FillFromColumn(PptHtmlChartColumn col)
+        {
+            List<GradientStopSnap> stops = DecodeGradient(col.FillGradient);
+            if (stops != null && stops.Count > 0)
+            {
+                var fill = new FillSnap
+                {
+                    Visible = true,
+                    FillType = MsoFillGradient,
+                    Stops = stops
+                };
+                if (double.TryParse(col.FillAngle, NumberStyles.Float, CultureInfo.InvariantCulture, out double ang))
+                {
+                    fill.Angle = ang;
+                }
+
+                return fill;
+            }
+
+            if (string.Equals(col.Color, "none", StringComparison.OrdinalIgnoreCase))
+            {
+                return new FillSnap { Visible = false };
+            }
+
+            if (TryParseHexToOffice(col.Color, out int rgb))
+            {
+                return new FillSnap { Visible = true, SolidRgb = rgb };
+            }
+
+            return null;
+        }
+
+        private static LineSnap LineFromColumn(PptHtmlChartColumn col)
+        {
+            if (string.IsNullOrWhiteSpace(col.Line) && string.IsNullOrWhiteSpace(col.LineWeight))
+            {
+                return null;
+            }
+
+            var line = new LineSnap();
+            if (string.Equals(col.Line, "none", StringComparison.OrdinalIgnoreCase))
+            {
+                line.Visible = false;
+            }
+            else if (TryParseHexToOffice(col.Line, out int rgb))
+            {
+                line.Visible = true;
+                line.Rgb = rgb;
+            }
+
+            if (double.TryParse(col.LineWeight, NumberStyles.Float, CultureInfo.InvariantCulture, out double w))
+            {
+                line.Weight = w;
+            }
+
+            return line;
+        }
+
+        private static PptHtmlAxisExtras AxisExtrasFromSnap(AxisStyleSnap ax)
+        {
+            if (ax == null)
+            {
+                return null;
+            }
+
+            var extras = new PptHtmlAxisExtras();
+            if (ax.Deleted == true)
+            {
+                extras.Visible = "false";
+            }
+            else if (ax.Deleted == false)
+            {
+                extras.Visible = "true";
+            }
+
+            extras.TickFont = ax.TickFontName;
+            if (ax.TickFontColor.HasValue)
+            {
+                extras.TickColor = OfficeRgbToHex(ax.TickFontColor.Value);
+            }
+
+            if (ax.TickFontSize.HasValue)
+            {
+                extras.TickSize = ax.TickFontSize.Value.ToString("0.##", CultureInfo.InvariantCulture);
+            }
+
+            if (ax.TickLabelPosition.HasValue)
+            {
+                extras.TickPosition = TickPosFromXl(ax.TickLabelPosition.Value);
+            }
+
+            if (ax.MajorTickMark.HasValue)
+            {
+                extras.MajorTick = TickMarkFromXl(ax.MajorTickMark.Value);
+            }
+
+            if (ax.MinorTickMark.HasValue)
+            {
+                extras.MinorTick = TickMarkFromXl(ax.MinorTickMark.Value);
+            }
+
+            extras.Format = ax.NumberFormat;
+            if (ax.HasMajorGridlines.HasValue)
+            {
+                extras.Grid = ax.HasMajorGridlines.Value ? "true" : "false";
+            }
+
+            if (ax.MajorGridlineRgb.HasValue)
+            {
+                extras.GridColor = OfficeRgbToHex(ax.MajorGridlineRgb.Value);
+            }
+
+            if (ax.LineVisible == false)
+            {
+                extras.Line = "none";
+            }
+            else if (ax.LineRgb.HasValue)
+            {
+                extras.Line = OfficeRgbToHex(ax.LineRgb.Value);
+            }
+
+            if (ax.LineWeight.HasValue && !IsPhantomWeight(ax.LineWeight.Value))
+            {
+                extras.LineWeight = ax.LineWeight.Value.ToString("0.##", CultureInfo.InvariantCulture);
+            }
+
+            return extras;
+        }
+
+        private static AxisStyleSnap AxisSnapFromExtras(PptHtmlAxisExtras extras, string title, string formatFallback)
+        {
+            if (extras == null && title == null && string.IsNullOrWhiteSpace(formatFallback))
+            {
+                return null;
+            }
+
+            extras = extras ?? new PptHtmlAxisExtras();
+            var ax = new AxisStyleSnap();
+            if (!string.IsNullOrWhiteSpace(extras.Visible))
+            {
+                ax.Deleted = !IsTrue(extras.Visible);
+            }
+
+            if (title != null)
+            {
+                ax.HasTitle = !string.IsNullOrEmpty(title);
+                ax.Title = title;
+            }
+
+            ax.TickFontName = extras.TickFont;
+            if (TryParseHexToOffice(extras.TickColor, out int tickRgb))
+            {
+                ax.TickFontColor = tickRgb;
+            }
+
+            if (double.TryParse(extras.TickSize, NumberStyles.Float, CultureInfo.InvariantCulture, out double tsz))
+            {
+                ax.TickFontSize = tsz;
+            }
+
+            if (!string.IsNullOrWhiteSpace(extras.TickPosition))
+            {
+                ax.TickLabelPosition = TickPosToXl(extras.TickPosition);
+            }
+
+            if (!string.IsNullOrWhiteSpace(extras.MajorTick))
+            {
+                ax.MajorTickMark = TickMarkToXl(extras.MajorTick);
+            }
+
+            if (!string.IsNullOrWhiteSpace(extras.MinorTick))
+            {
+                ax.MinorTickMark = TickMarkToXl(extras.MinorTick);
+            }
+
+            ax.NumberFormat = !string.IsNullOrWhiteSpace(extras.Format) ? extras.Format : formatFallback;
+            if (!string.IsNullOrWhiteSpace(extras.Grid))
+            {
+                ax.HasMajorGridlines = IsTrue(extras.Grid);
+            }
+
+            if (TryParseHexToOffice(extras.GridColor, out int gRgb))
+            {
+                ax.MajorGridlineRgb = gRgb;
+            }
+
+            if (string.Equals(extras.Line, "none", StringComparison.OrdinalIgnoreCase))
+            {
+                ax.LineVisible = false;
+            }
+            else if (TryParseHexToOffice(extras.Line, out int lRgb))
+            {
+                ax.LineVisible = true;
+                ax.LineRgb = lRgb;
+            }
+
+            if (double.TryParse(extras.LineWeight, NumberStyles.Float, CultureInfo.InvariantCulture, out double lw))
+            {
+                ax.LineWeight = lw;
+            }
+
+            return ax;
+        }
+
+        private static string AreaColorFromSnap(bool? visible, int? rgb)
+        {
+            if (visible == false)
+            {
+                return "none";
+            }
+
+            if (visible == true && rgb.HasValue)
+            {
+                return OfficeRgbToHex(rgb.Value);
+            }
+
+            return null;
+        }
+
+        private static void ApplyAreaColor(string raw, out bool? visible, out int? rgb)
+        {
+            visible = null;
+            rgb = null;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return;
+            }
+
+            if (string.Equals(raw, "none", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "transparent", StringComparison.OrdinalIgnoreCase))
+            {
+                visible = false;
+                return;
+            }
+
+            if (TryParseHexToOffice(raw, out int parsed))
+            {
+                visible = true;
+                rgb = parsed;
+            }
+        }
+
+        private static string BoxFromSnap(float? left, float? top, float? width, float? height)
+        {
+            if (!left.HasValue || !top.HasValue || !width.HasValue || !height.HasValue)
+            {
+                return null;
+            }
+
+            return left.Value.ToString("0.##", CultureInfo.InvariantCulture)
+                + "," + top.Value.ToString("0.##", CultureInfo.InvariantCulture)
+                + "," + width.Value.ToString("0.##", CultureInfo.InvariantCulture)
+                + "," + height.Value.ToString("0.##", CultureInfo.InvariantCulture);
+        }
+
+        private static void ParseBox(string raw, out float? left, out float? top, out float? width, out float? height)
+        {
+            left = top = width = height = null;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return;
+            }
+
+            string[] parts = raw.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 4)
+            {
+                return;
+            }
+
+            if (float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float l)
+                && float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float t)
+                && float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float w)
+                && float.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out float h))
+            {
+                left = l;
+                top = t;
+                width = w;
+                height = h;
+            }
+        }
+
+        private static string EncodeGradient(List<GradientStopSnap> stops)
+        {
+            if (stops == null || stops.Count == 0)
+            {
+                return null;
+            }
+
+            var sb = new StringBuilder();
+            for (int i = 0; i < stops.Count; i++)
+            {
+                if (i > 0)
+                {
+                    sb.Append(';');
+                }
+
+                GradientStopSnap s = stops[i];
+                sb.Append(s.Position.ToString("0.##", CultureInfo.InvariantCulture))
+                    .Append(':')
+                    .Append(OfficeRgbToHex(s.Rgb))
+                    .Append('@')
+                    .Append(s.Transparency.ToString("0.##", CultureInfo.InvariantCulture));
+            }
+
+            return sb.ToString();
+        }
+
+        private static List<GradientStopSnap> DecodeGradient(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+
+            var list = new List<GradientStopSnap>();
+            foreach (string part in raw.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int colon = part.IndexOf(':');
+                int at = part.LastIndexOf('@');
+                if (colon <= 0)
+                {
+                    continue;
+                }
+
+                if (!double.TryParse(part.Substring(0, colon).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double pos))
+                {
+                    continue;
+                }
+
+                string hex = at > colon
+                    ? part.Substring(colon + 1, at - colon - 1).Trim()
+                    : part.Substring(colon + 1).Trim();
+                if (!TryParseHexToOffice(hex, out int rgb))
+                {
+                    continue;
+                }
+
+                double trans = 0;
+                if (at > colon)
+                {
+                    double.TryParse(part.Substring(at + 1).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out trans);
+                }
+
+                list.Add(new GradientStopSnap { Position = pos, Rgb = rgb, Transparency = trans });
+            }
+
+            return list.Count == 0 ? null : list;
+        }
+
+        private static bool TryParseSeriesXl(string seriesType, string marker, out int xl)
+        {
+            xl = XlColumnClustered;
+            if (!string.IsNullOrWhiteSpace(seriesType))
+            {
+                if (int.TryParse(seriesType.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int raw)
+                    && raw != 0)
+                {
+                    xl = raw;
+                    return true;
+                }
+
+                if (TryParseType(seriesType, out xl, out _, out _))
+                {
+                    if (xl == XlLine && !string.IsNullOrWhiteSpace(marker)
+                        && !string.Equals(marker, "none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        xl = XlLineMarkers;
+                    }
+
+                    return true;
+                }
+
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(marker)
+                && !string.Equals(marker, "none", StringComparison.OrdinalIgnoreCase))
+            {
+                xl = XlLineMarkers;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static string SeriesTypeFromXl(int xl)
+        {
+            if (xl == XlBarClustered)
+            {
+                return "bar";
+            }
+
+            if (xl == XlLine || xl == XlLineMarkers)
+            {
+                return "line";
+            }
+
+            if (xl == XlPie || xl == Xl3DPie)
+            {
+                return "pie";
+            }
+
+            if (xl == XlColumnClustered)
+            {
+                return "column";
+            }
+
+            return xl.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static string MarkerFromXl(int style)
+        {
+            switch (style)
+            {
+                case -4142:
+                    return "none";
+                case 8:
+                    return "circle";
+                case 2:
+                    return "diamond";
+                case 1:
+                    return "square";
+                case 3:
+                    return "triangle";
+                case 5:
+                    return "star";
+                case 9:
+                    return "plus";
+                case -4168:
+                    return "x";
+                case -4118:
+                    return "dot";
+                default:
+                    return style.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
+        private static int MarkerToXl(string raw)
+        {
+            switch ((raw ?? "").Trim().ToLowerInvariant())
+            {
+                case "none":
+                    return -4142;
+                case "circle":
+                    return 8;
+                case "diamond":
+                    return 2;
+                case "square":
+                    return 1;
+                case "triangle":
+                    return 3;
+                case "star":
+                    return 5;
+                case "plus":
+                    return 9;
+                case "x":
+                    return -4168;
+                case "dot":
+                    return -4118;
+                default:
+                    return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)
+                        ? n
+                        : 8;
+            }
+        }
+
+        private static string TickPosFromXl(int pos)
+        {
+            if (pos == XlTickLabelPositionNone)
+            {
+                return "none";
+            }
+
+            if (pos == -4134)
+            {
+                return "low";
+            }
+
+            if (pos == -4127)
+            {
+                return "high";
+            }
+
+            return "next";
+        }
+
+        private static int TickPosToXl(string raw)
+        {
+            switch ((raw ?? "").Trim().ToLowerInvariant())
+            {
+                case "none":
+                    return XlTickLabelPositionNone;
+                case "low":
+                    return -4134;
+                case "high":
+                    return -4127;
+                default:
+                    return XlTickLabelPositionNextToAxis;
+            }
+        }
+
+        private static string TickMarkFromXl(int mark)
+        {
+            if (mark == XlTickMarkNone)
+            {
+                return "none";
+            }
+
+            if (mark == 2)
+            {
+                return "inside";
+            }
+
+            if (mark == 4)
+            {
+                return "cross";
+            }
+
+            return "outside";
+        }
+
+        private static int TickMarkToXl(string raw)
+        {
+            switch ((raw ?? "").Trim().ToLowerInvariant())
+            {
+                case "none":
+                    return XlTickMarkNone;
+                case "inside":
+                    return 2;
+                case "cross":
+                    return 4;
+                default:
+                    return 3;
+            }
+        }
+
+        private static string LabelPosFromXl(int pos)
+        {
+            switch (pos)
+            {
+                case -4108:
+                    return "center";
+                case 0:
+                    return "above";
+                case 1:
+                    return "below";
+                case -4131:
+                    return "left";
+                case -4152:
+                    return "right";
+                case 2:
+                    return "outside";
+                case 3:
+                    return "inside-end";
+                case 4:
+                    return "inside-base";
+                default:
+                    return pos.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
+        private static int LabelPosToXl(string raw)
+        {
+            switch ((raw ?? "").Trim().ToLowerInvariant())
+            {
+                case "center":
+                    return -4108;
+                case "above":
+                    return 0;
+                case "below":
+                    return 1;
+                case "left":
+                    return -4131;
+                case "right":
+                    return -4152;
+                case "outside":
+                    return 2;
+                case "inside-end":
+                    return 3;
+                case "inside-base":
+                    return 4;
+                default:
+                    return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)
+                        ? n
+                        : 0;
+            }
+        }
+
+        private static bool IsPhantomWeight(double weight)
+        {
+            return weight < -1000 || weight > 1000;
+        }
+
         public static bool TryParseType(string raw, out int xlType, out string canonical, out string error)
         {
             xlType = XlColumnClustered;
@@ -337,7 +1769,7 @@ namespace WordAddIn1.PresentationHost
                 return "bar";
             }
 
-            if (xlType == XlLine)
+            if (xlType == XlLine || xlType == XlLineMarkers)
             {
                 return "line";
             }
@@ -423,10 +1855,23 @@ namespace WordAddIn1.PresentationHost
                         {
                             Role = role,
                             Name = InnerText(cells[i]),
-                            Color = NormalizeHexOrNull(GetAttr(cells[i], "data-color")),
+                            Color = ParseColorOrNone(GetAttr(cells[i], "data-color")),
                             SeriesType = GetAttr(cells[i], "data-series-type"),
                             AxisY = GetAttr(cells[i], "data-axis-y"),
-                            ShowDataLabels = GetAttr(cells[i], "data-show-data-labels")
+                            ShowDataLabels = GetAttr(cells[i], "data-show-data-labels"),
+                            FillGradient = GetAttr(cells[i], "data-fill-gradient"),
+                            FillAngle = GetAttr(cells[i], "data-fill-angle"),
+                            Line = GetAttr(cells[i], "data-line"),
+                            LineWeight = GetAttr(cells[i], "data-line-weight"),
+                            Marker = GetAttr(cells[i], "data-marker"),
+                            MarkerSize = GetAttr(cells[i], "data-marker-size"),
+                            MarkerColor = GetAttr(cells[i], "data-marker-color"),
+                            MarkerFill = GetAttr(cells[i], "data-marker-fill"),
+                            LabelPosition = GetAttr(cells[i], "data-label-position"),
+                            LabelFont = GetAttr(cells[i], "data-label-font"),
+                            LabelSize = GetAttr(cells[i], "data-label-size"),
+                            LabelColor = GetAttr(cells[i], "data-label-color"),
+                            LabelFormat = GetAttr(cells[i], "data-label-format")
                         });
                     }
 
@@ -553,7 +1998,37 @@ namespace WordAddIn1.PresentationHost
                 AxisXTickSpacing = GetAttr(el, "data-axis-x-tick-spacing"),
                 AxisXBetween = GetAttr(el, "data-axis-x-between"),
                 AxisY = GetAttr(el, "data-axis-y"),
-                AxisYSecondary = GetAttr(el, "data-axis-y-secondary")
+                AxisYSecondary = GetAttr(el, "data-axis-y-secondary"),
+                ChartStyle = GetAttr(el, "data-chart-style"),
+                LegendFontColor = GetAttr(el, "data-legend-font-color"),
+                ChartAreaColor = GetAttr(el, "data-chart-area-color"),
+                Overlap = GetAttr(el, "data-overlap"),
+                PlotBox = GetAttr(el, "data-plot-box"),
+                PlotInside = GetAttr(el, "data-plot-inside"),
+                AxisXStyle = ParseAxisExtras(el, "data-axis-x"),
+                AxisYStyle = ParseAxisExtras(el, "data-axis-y"),
+                AxisY2Style = ParseAxisExtras(el, "data-axis-y2")
+            };
+        }
+
+        private static PptHtmlAxisExtras ParseAxisExtras(XElement el, string prefix)
+        {
+            return new PptHtmlAxisExtras
+            {
+                Visible = GetAttr(el, prefix + "-visible"),
+                TickFont = GetAttr(el, prefix + "-tick-font"),
+                TickColor = GetAttr(el, prefix + "-tick-color"),
+                TickSize = GetAttr(el, prefix + "-tick-size"),
+                TickPosition = GetAttr(el, prefix + "-tick-position"),
+                MajorTick = GetAttr(el, prefix + "-major-tick"),
+                MinorTick = GetAttr(el, prefix + "-minor-tick"),
+                Format = prefix == "data-axis-x"
+                    ? GetAttr(el, "data-axis-x-format")
+                    : GetAttr(el, prefix + "-format"),
+                Grid = GetAttr(el, prefix + "-grid"),
+                GridColor = GetAttr(el, prefix + "-grid-color"),
+                Line = GetAttr(el, prefix + "-line"),
+                LineWeight = GetAttr(el, prefix + "-line-weight")
             };
         }
 
@@ -588,6 +2063,20 @@ namespace WordAddIn1.PresentationHost
                 {
                     sb.Append(" data-show-data-labels=\"").Append(EscapeAttr(col.ShowDataLabels)).Append("\"");
                 }
+
+                WriteRawAttr(sb, "data-fill-gradient", col.FillGradient);
+                WriteRawAttr(sb, "data-fill-angle", col.FillAngle);
+                WriteRawAttr(sb, "data-line", col.Line);
+                WriteRawAttr(sb, "data-line-weight", col.LineWeight);
+                WriteRawAttr(sb, "data-marker", col.Marker);
+                WriteRawAttr(sb, "data-marker-size", col.MarkerSize);
+                WriteRawAttr(sb, "data-marker-color", col.MarkerColor);
+                WriteRawAttr(sb, "data-marker-fill", col.MarkerFill);
+                WriteRawAttr(sb, "data-label-position", col.LabelPosition);
+                WriteRawAttr(sb, "data-label-font", col.LabelFont);
+                WriteRawAttr(sb, "data-label-size", col.LabelSize);
+                WriteRawAttr(sb, "data-label-color", col.LabelColor);
+                WriteRawAttr(sb, "data-label-format", col.LabelFormat);
 
                 sb.Append(">").Append(EscapeText(col.Name)).AppendLine("</th>");
             }
@@ -647,6 +2136,50 @@ namespace WordAddIn1.PresentationHost
             WriteAttr(sb, "data-axis-x-between", fmt.AxisXBetween);
             WriteAttr(sb, "data-axis-y", fmt.AxisY);
             WriteAttr(sb, "data-axis-y-secondary", fmt.AxisYSecondary);
+            WriteAttr(sb, "data-chart-style", fmt.ChartStyle);
+            WriteAttr(sb, "data-legend-font-color", fmt.LegendFontColor);
+            WriteAttr(sb, "data-chart-area-color", fmt.ChartAreaColor);
+            WriteAttr(sb, "data-overlap", fmt.Overlap);
+            WriteAttr(sb, "data-plot-box", fmt.PlotBox);
+            WriteAttr(sb, "data-plot-inside", fmt.PlotInside);
+            WriteAxisExtras(sb, "data-axis-x", fmt.AxisXStyle, skipFormat: true);
+            WriteAxisExtras(sb, "data-axis-y", fmt.AxisYStyle, skipFormat: false);
+            WriteAxisExtras(sb, "data-axis-y2", fmt.AxisY2Style, skipFormat: false);
+        }
+
+        private static void WriteAxisExtras(StringBuilder sb, string prefix, PptHtmlAxisExtras ax, bool skipFormat)
+        {
+            if (ax == null)
+            {
+                return;
+            }
+
+            WriteAttr(sb, prefix + "-visible", ax.Visible);
+            WriteAttr(sb, prefix + "-tick-font", ax.TickFont);
+            WriteAttr(sb, prefix + "-tick-color", ax.TickColor);
+            WriteAttr(sb, prefix + "-tick-size", ax.TickSize);
+            WriteAttr(sb, prefix + "-tick-position", ax.TickPosition);
+            WriteAttr(sb, prefix + "-major-tick", ax.MajorTick);
+            WriteAttr(sb, prefix + "-minor-tick", ax.MinorTick);
+            if (!skipFormat)
+            {
+                WriteAttr(sb, prefix + "-format", ax.Format);
+            }
+
+            WriteAttr(sb, prefix + "-grid", ax.Grid);
+            WriteAttr(sb, prefix + "-grid-color", ax.GridColor);
+            WriteAttr(sb, prefix + "-line", ax.Line);
+            WriteAttr(sb, prefix + "-line-weight", ax.LineWeight);
+        }
+
+        private static void WriteRawAttr(StringBuilder sb, string name, string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return;
+            }
+
+            sb.Append(" ").Append(name).Append("=\"").Append(EscapeAttr(value)).Append("\"");
         }
 
         public static bool LooksLikeChart(object shape)
@@ -694,12 +2227,15 @@ namespace WordAddIn1.PresentationHost
             TryReadLegend(chart, format);
             TryReadPlotAndLabels(chart, format);
             TryReadAxes(chart, format);
+            ChartStyleSnap snap = TryCaptureStyle(chart);
 
             if (!TryReadGrid(chart, out PptHtmlChartGrid grid, out error))
             {
                 return false;
             }
 
+            ProjectSnapToFormat(format, snap);
+            ProjectSnapToColumns(grid, snap);
             model = new PptHtmlChartReadModel
             {
                 Format = format,
@@ -897,10 +2433,16 @@ namespace WordAddIn1.PresentationHost
                     + " " + useWidth.ToString("0.#", CultureInfo.InvariantCulture)
                     + "x" + useHeight.ToString("0.#", CultureInfo.InvariantCulture));
                 snap = TryCaptureStyle(oldChart, warnings, "旧图");
+                snap = OverlaySnap(snap, SnapFromFormat(useFormat, useGrid));
             }
             catch (Exception ex)
             {
                 StyleLog(warnings, "拍旧图样式异常: " + ex.Message);
+            }
+
+            if (snap == null)
+            {
+                snap = SnapFromFormat(useFormat, useGrid);
             }
 
             if (snap != null && snap.Series != null && snap.Series.Count == 1
@@ -2794,6 +4336,14 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (chartStyle < 0
+                && format != null
+                && int.TryParse(format.ChartStyle, NumberStyles.Integer, CultureInfo.InvariantCulture, out int htmlStyle)
+                && htmlStyle > 0)
+            {
+                chartStyle = htmlStyle;
+            }
+
             try
             {
                 try
@@ -2858,6 +4408,7 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                TryApplyStyleSnap(chart, SnapFromFormat(format, grid), warnings);
                 EnsureCategoryAxisLabels(chart, grid);
                 return true;
             }
@@ -3248,7 +4799,19 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(fmt.PlotColor) && TryParseHexToOffice(fmt.PlotColor, out int plotRgb))
+            if (string.Equals(fmt.PlotColor, "none", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fmt.PlotColor, "transparent", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    TryWriteAreaFill(chart, "PlotArea", false, null);
+                }
+                catch (Exception)
+                {
+                    Warn(warnings, "data-plot-color");
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(fmt.PlotColor) && TryParseHexToOffice(fmt.PlotColor, out int plotRgb))
             {
                 try
                 {
@@ -4507,6 +6070,17 @@ namespace WordAddIn1.PresentationHost
             }
 
             return null;
+        }
+
+        private static string ParseColorOrNone(string raw)
+        {
+            if (string.Equals(raw, "none", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "transparent", StringComparison.OrdinalIgnoreCase))
+            {
+                return "none";
+            }
+
+            return NormalizeHexOrNull(raw);
         }
 
         private static int LegendToXl(string pos)
