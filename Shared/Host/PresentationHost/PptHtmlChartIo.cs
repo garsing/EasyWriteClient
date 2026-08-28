@@ -1068,12 +1068,6 @@ namespace WordAddIn1.PresentationHost
 
                     one.Fill = TryCaptureFill(series, warnings, (tag ?? "图") + " S" + i);
                     one.Line = TryCaptureLine(series, warnings, (tag ?? "图") + " S" + i);
-                    if (one.Line != null && (one.Line.Stops == null || one.Line.Stops.Count < 2)
-                        && one.Fill != null && one.Fill.Stops != null && one.Fill.Stops.Count >= 2)
-                    {
-                        one.Line.Stops = one.Fill.Stops;
-                        StyleLog(warnings, (tag ?? "图") + " S" + i + " 线渐变借自 Fill stops=" + one.Fill.Stops.Count);
-                    }
                     TryCaptureMarker(series, one);
                     TryCaptureDataLabels(series, one);
                     snap.Series.Add(one);
@@ -1791,6 +1785,15 @@ namespace WordAddIn1.PresentationHost
                     + " ForeColor.Type=" + colorType
                     + " ForeColor.RGB=" + rawRgb);
 
+                if (IsPhantomStroke(snap.Weight, colorType, rawRgb))
+                {
+                    snap.Visible = false;
+                    snap.Rgb = null;
+                    snap.Stops = null;
+                    StyleLog(warnings, prefix + " 原图无线条（noFill/自动线），不描边");
+                    return snap;
+                }
+
                 snap.Stops = TryReadGradientStops(line, warnings, prefix + " Line");
                 if (snap.Stops == null || snap.Stops.Count < 2)
                 {
@@ -1810,18 +1813,6 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
 
-                if (snap.Stops == null || snap.Stops.Count < 2)
-                {
-                    try
-                    {
-                        object seriesFill = WppCom.GetProperty(WppCom.GetProperty(series, "Format"), "Fill");
-                        snap.Stops = TryReadGradientStops(seriesFill, warnings, prefix + " Series.Fill");
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-
                 if (snap.Stops != null && snap.Stops.Count >= 2)
                 {
                     snap.Rgb = PickSolidFromStops(snap.Stops);
@@ -1829,21 +1820,6 @@ namespace WordAddIn1.PresentationHost
                 else
                 {
                     snap.Rgb = TryReadResolvedRgb(fc);
-                }
-
-                if (!snap.Rgb.HasValue)
-                {
-                    try
-                    {
-                        object border = WppCom.GetProperty(series, "Border");
-                        object bColor = border == null ? null : WppCom.GetProperty(border, "Color");
-                        snap.Rgb = TryReadMarkerColor(bColor);
-                        StyleLog(warnings, prefix + " Border.Color=" + bColor + " -> " + HexOf(snap.Rgb));
-                    }
-                    catch (Exception ex)
-                    {
-                        StyleLog(warnings, prefix + " Border 失败: " + ex.Message);
-                    }
                 }
 
                 return snap;
@@ -1873,15 +1849,24 @@ namespace WordAddIn1.PresentationHost
                     return;
                 }
 
-                if (snap.Visible == false && !snap.Rgb.HasValue && (snap.Stops == null || snap.Stops.Count < 2))
+                if (snap.Visible == false || IsPhantomStroke(snap.Weight, null, snap.Rgb))
                 {
                     WppCom.TrySetProperty(line, "Visible", 0);
-                    StyleLog(warnings, prefix + " 按快照隐藏线");
+                    try
+                    {
+                        object border = WppCom.GetProperty(series, "Border");
+                        WppCom.TrySetProperty(border, "LineStyle", -4142);
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    StyleLog(warnings, prefix + " 按原图不描边");
                     return;
                 }
 
                 WppCom.TrySetProperty(line, "Visible", -1);
-                if (snap.Weight.HasValue)
+                if (snap.Weight.HasValue && snap.Weight.Value > 0 && snap.Weight.Value < 50)
                 {
                     WppCom.TrySetProperty(line, "Weight", snap.Weight.Value);
                 }
@@ -1903,32 +1888,11 @@ namespace WordAddIn1.PresentationHost
                     {
                         wroteGrad = TryWriteGradientStops(lineFill, snap.Stops);
                     }
-
-                    if (!wroteGrad)
-                    {
-                        try
-                        {
-                            object seriesFill = WppCom.GetProperty(WppCom.GetProperty(series, "Format"), "Fill");
-                            wroteGrad = TryWriteGradientStops(seriesFill, snap.Stops);
-                        }
-                        catch (Exception)
-                        {
-                        }
-                    }
                 }
 
                 if (snap.Rgb.HasValue)
                 {
                     TryWriteLineRgb(line, snap.Rgb.Value);
-                    try
-                    {
-                        object border = WppCom.GetProperty(series, "Border");
-                        WppCom.TrySetProperty(border, "Color", snap.Rgb.Value);
-                    }
-                    catch (Exception ex)
-                    {
-                        StyleLog(warnings, prefix + " 写 Border 失败: " + ex.Message);
-                    }
                 }
 
                 StyleLog(warnings, prefix + " vis=" + snap.Visible
@@ -2553,6 +2517,40 @@ namespace WordAddIn1.PresentationHost
                 + " fillType=" + (one.Fill == null ? "-" : Convert.ToString(one.Fill.FillType))
                 + " fillRgb=" + (one.Fill == null ? "-" : HexOf(one.Fill.SolidRgb))
                 + " fillStops=" + DescribeStops(one.Fill == null ? null : one.Fill.Stops);
+        }
+
+        private static bool IsPhantomStroke(double? weight, object colorType, object rawRgb)
+        {
+            if (weight.HasValue && (weight.Value <= 0 || weight.Value > 40))
+            {
+                return true;
+            }
+
+            if (colorType == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                int type = Convert.ToInt32(colorType);
+                if (type == 1)
+                {
+                    return false;
+                }
+
+                if (rawRgb == null)
+                {
+                    return true;
+                }
+
+                int rgb = Convert.ToInt32(Convert.ToDouble(rawRgb)) & 0x00FFFFFF;
+                return rgb == 0;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         private static string DescribeLine(LineSnap line)
