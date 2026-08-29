@@ -28,7 +28,7 @@ export function buildSelectedOpenFilesAppendix (selected) {
   const lines = selected.map((s, i) => {
     const name = s.displayName || '未命名文档'
     const ch = (s.channelId || '').trim()
-    // 有真实 channel_id（含 wps:）则写出；不再因 appType===wps 强制「无渠道」
+    // 助手短号 w1/x1/p1/b1（与 system open_channels / 工具 channel_id 一致）
     if (ch) return `${i + 1}. ${name} | channel_id=${ch}`
     return `${i + 1}. ${name} | 无操作渠道（渠道未建立）`
   })
@@ -57,6 +57,22 @@ export function stripSelectedOpenFilesAppendix (content) {
 }
 
 export function pruneSelectionByOpenFiles (selected, openFiles) {
-  const alive = new Set((openFiles || []).map(openFileSelectionKey))
-  return (selected || []).filter((s) => alive.has(s.id))
+  const byKey = new Map()
+  for (const item of openFiles || []) {
+    byKey.set(openFileSelectionKey(item), item)
+  }
+  const next = []
+  for (const s of selected || []) {
+    const live = byKey.get(s.id)
+    if (!live) continue
+    const fresh = toSelectedOpenFile(live)
+    next.push({
+      ...s,
+      displayName: fresh.displayName || s.displayName,
+      appType: fresh.appType || s.appType,
+      channelId: fresh.channelId,
+      fullPath: fresh.fullPath || s.fullPath
+    })
+  }
+  return next
 }

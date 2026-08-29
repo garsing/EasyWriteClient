@@ -111,6 +111,46 @@ namespace WordAddIn1.OpenFiles
             }
         }
 
+        /// <summary>侧栏 / 芯片用：channelId 为助手短号（w1/x1/p1/b1），与 system open_channels 一致。</summary>
+        public IReadOnlyList<object> GetFrontendSnapshot()
+        {
+            return ToFrontendItems(GetSnapshot());
+        }
+
+        public static IReadOnlyList<object> ToFrontendItems(IReadOnlyList<OpenFileItem> items)
+        {
+            if (items == null || items.Count == 0)
+            {
+                return Array.Empty<object>();
+            }
+
+            var list = new List<object>(items.Count);
+            for (int i = 0; i < items.Count; i++)
+            {
+                OpenFileItem item = items[i];
+                if (item == null)
+                {
+                    continue;
+                }
+
+                string raw = item.ChannelId;
+                string publicId = string.IsNullOrWhiteSpace(raw)
+                    ? ""
+                    : (ChannelRegistry.ToPublicId(raw) ?? "");
+                list.Add(new
+                {
+                    id = item.Id,
+                    appType = item.AppType,
+                    displayName = item.DisplayName,
+                    fullPath = item.FullPath,
+                    isSaved = item.IsSaved,
+                    channelId = publicId
+                });
+            }
+
+            return list;
+        }
+
         public void TryAttachNow()
         {
             if (_disposed || !_started)

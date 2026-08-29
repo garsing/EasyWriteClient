@@ -535,8 +535,8 @@ namespace EasyWriteClient.Desktop
             _bridge.RegisterHandler("getOpenFiles", _ =>
             {
                 var items = _openFilesMonitor != null
-                    ? _openFilesMonitor.GetSnapshot()
-                    : Array.Empty<OpenFileItem>();
+                    ? _openFilesMonitor.GetFrontendSnapshot()
+                    : Array.Empty<object>();
                 return Task.FromResult<object>(new { items });
             });
             _bridge.RegisterHandler("openContainingFolder", HandleOpenContainingFolderAsync);
@@ -690,7 +690,10 @@ namespace EasyWriteClient.Desktop
                             return;
                         }
 
-                        _bridge.SendToJavaScript("openFilesUpdated", new { items });
+                        _bridge.SendToJavaScript("openFilesUpdated", new
+                        {
+                            items = OpenFilesMonitor.ToFrontendItems(items)
+                        });
                     }
                     catch (Exception ex)
                     {
