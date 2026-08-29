@@ -30,7 +30,9 @@ const props = defineProps({
   }
 })
 
-/** 用户气泡 / 提示单独一项；连续助手消息合成一轮。后面已有用户消息的轮归档。 */
+/** 用户气泡 / 提示单独一项；连续助手消息合成一轮。
+ * 归档：后面已有用户消息，或从历史加载（切对话 / 重开应用）——最后一轮也收进「奋力工作」。
+ * 只有本会话刚生成完 / 刚点停止的那一轮保持展开。 */
 const displayItems = computed(() => {
   const items = []
   const list = props.messages || []
@@ -52,12 +54,13 @@ const displayItems = computed(() => {
       run.push(list[i])
       i += 1
     }
-    const archived = list.slice(i).some((x) => x.role === 'user')
+    const hasUserAfter = list.slice(i).some((x) => x.role === 'user')
+    const fromHistory = run.every((x) => x.fromHistory)
     items.push({
       kind: 'assistant',
       key: `asst-${run.map((x) => x.id).join('-')}`,
       messages: run,
-      archived
+      archived: hasUserAfter || fromHistory
     })
   }
   return items

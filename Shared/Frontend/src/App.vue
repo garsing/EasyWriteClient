@@ -783,7 +783,8 @@ function normalizeHistoryMessage(m) {
       content: '',
       segments: [],
       timestamp: new Date(),
-      isStreaming: false
+      isStreaming: false,
+      fromHistory: true
     }
   }
 
@@ -809,7 +810,9 @@ function normalizeHistoryMessage(m) {
       segments,
       timestamp,
       isStreaming: false,
-      isHint: !!m.isHint
+      isHint: !!m.isHint,
+      fromHistory: true,
+      aborted: !!m.aborted
     }
   }
 
@@ -833,7 +836,9 @@ function normalizeHistoryMessage(m) {
     segments,
     timestamp,
     isStreaming: false,
-    isHint: !!m.isHint
+    isHint: !!m.isHint,
+    fromHistory: true,
+    aborted: !!m.aborted
   }
 }
 
