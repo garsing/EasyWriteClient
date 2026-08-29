@@ -16,51 +16,98 @@ const props = defineProps({
   messages: {
     type: Array,
     default: () => []
+  },
+  /** 递增则强制钉到最新（切历史 / 切形态）；不沿用上一会话的上翻态 */
+  pinToLatestToken: {
+    type: [Number, String],
+    default: 0
   }
 })
 
 const messagesContainer = ref(null)
 const shouldAutoScroll = ref(true)
+let suppressScrollUntil = 0
+let resizeObserver = null
+const pinTimers = []
 
-// 处理滚动事件
+function clearPinTimers () {
+  while (pinTimers.length) {
+    clearTimeout(pinTimers.pop())
+  }
+}
+
+function pinNow () {
+  const el = messagesContainer.value
+  if (!el) return
+  suppressScrollUntil = performance.now() + 300
+  el.scrollTop = el.scrollHeight
+}
+
+/** 强制跟到底：恢复跟随，并多次钉底以等 WebView2 / 原生改尺寸落稳 */
+function forcePinToLatest () {
+  shouldAutoScroll.value = true
+  clearPinTimers()
+  pinNow()
+  nextTick(pinNow)
+  requestAnimationFrame(() => {
+    requestAnimationFrame(pinNow)
+  })
+  pinTimers.push(setTimeout(pinNow, 80))
+  pinTimers.push(setTimeout(pinNow, 200))
+}
+
 const handleScroll = () => {
   if (!messagesContainer.value) return
+  if (performance.now() < suppressScrollUntil) return
 
   const container = messagesContainer.value
   const scrollTop = container.scrollTop
   const scrollHeight = container.scrollHeight
   const clientHeight = container.clientHeight
 
-  // 检查是否接近底部（距离底部50px以内）
   const isNearBottom = scrollHeight - scrollTop - clientHeight < 50
   shouldAutoScroll.value = isNearBottom
 }
 
-// 自动滚动到底部
 const scrollToBottom = () => {
   if (shouldAutoScroll.value) {
     nextTick(() => {
-      if (messagesContainer.value) {
+      if (messagesContainer.value && shouldAutoScroll.value) {
         messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
       }
     })
   }
 }
 
-// 组件挂载时添加滚动监听器
 onMounted(() => {
   nextTick(() => {
     if (messagesContainer.value) {
       messagesContainer.value.addEventListener('scroll', handleScroll, { passive: true })
+      if (typeof ResizeObserver !== 'undefined') {
+        resizeObserver = new ResizeObserver(() => {
+          if (shouldAutoScroll.value) pinNow()
+        })
+        resizeObserver.observe(messagesContainer.value)
+      }
     }
+    forcePinToLatest()
   })
 })
 
-// 组件卸载时移除滚动监听器
 onUnmounted(() => {
+  clearPinTimers()
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
   if (messagesContainer.value) {
     messagesContainer.value.removeEventListener('scroll', handleScroll)
   }
+})
+
+watch(() => props.pinToLatestToken, (next, prev) => {
+  if (next === prev) return
+  forcePinToLatest()
 })
 
 watch(() => props.messages.length, (newLength, oldLength) => {

@@ -1,6 +1,9 @@
 /** Desktop「打开文件」选中集合：拼接 / 剥离 / prune（见实现文档 I15） */
+import { ref } from 'vue'
 
 export const MAX_SELECTED_OPEN_FILES = 15
+/** 模块级选中，避免 App 重挂载时被 ref([]) 冲掉；切会话不重置 */
+export const selectedOpenFilesState = ref([])
 export const SELECTED_OPEN_FILES_MARKER = '【用户已选中的打开文件 / 渠道】'
 
 export function openFileSelectionKey (item) {

@@ -57,7 +57,11 @@
           @load-more="loadMoreTasks"
         />
       </div>
-      <ChatMessages v-if="messages.length > 0" :messages="messages" />
+      <ChatMessages
+        v-if="messages.length > 0"
+        :messages="messages"
+        :pin-to-latest-token="pinToLatestToken"
+      />
       <ChatEmptyState
         v-else
         :operation-guide="emptyGuide"
@@ -105,6 +109,7 @@ import { listConversations, CONVERSATION_PAGE_SIZE } from './services/conversati
 import { clearApiConfigCache } from './services/knowledgeBaseApi.js'
 import {
   MAX_SELECTED_OPEN_FILES,
+  selectedOpenFilesState,
   toSelectedOpenFile,
   appendToUserContent,
   stripSelectedOpenFilesAppendix,
@@ -134,6 +139,8 @@ const isDesktopHost = detectDesktopHost()
 /** Desktop 窗口形态：完整版 expanded / 缩小版 compact（由 C# layoutModeChanged 驱动） */
 const layoutMode = ref('expanded')
 const sidebarCollapsed = ref(false)
+/** 递增后 ChatMessages 强制钉到最新（切历史 / 切形态） */
+const pinToLatestToken = ref(0)
 
 const historyPopoverOpen = ref(false)
 
@@ -144,6 +151,7 @@ function reportCompactUiBusy (busy) {
 
 function applyLayoutMode (mode) {
   if (mode !== 'compact' && mode !== 'expanded') return
+  const changed = layoutMode.value !== mode
   const wasCompact = layoutMode.value === 'compact'
   layoutMode.value = mode
   if (historyPopoverOpen.value) {
@@ -153,6 +161,11 @@ function applyLayoutMode (mode) {
   }
   // 缩小版无侧栏；完整版默认展开侧栏
   sidebarCollapsed.value = mode !== 'expanded'
+  if (!changed) return
+  // 形态一变容器高度先抖：立刻重新钉底，避免 scroll 把跟随打掉后流式不再贴最新
+  nextTick(() => {
+    pinToLatestToken.value++
+  })
 }
 
 watch(historyPopoverOpen, (open) => {
@@ -212,17 +225,15 @@ function restoreInputBox (value) {
   restoreInputValue(value == null ? '' : String(value))
 }
 const openFiles = ref([])
-/** Desktop：已选打开文件（芯片 / 发送附加段）；不落库 */
-const selectedOpenFiles = ref([])
+/** Desktop：已选打开文件（芯片 / 发送附加段）；不落库、不跟会话走 */
+const selectedOpenFiles = selectedOpenFilesState
 const selectedOpenFileIds = computed(() => selectedOpenFiles.value.map((x) => x.id))
 
 watch(openFiles, (list) => {
+  // 仅在拿到真实列表时 prune；缺字段/非数组不碰选中，避免切会话误清芯片
+  if (!Array.isArray(list)) return
   selectedOpenFiles.value = pruneSelectionByOpenFiles(selectedOpenFiles.value, list)
 })
-
-function clearSelectedOpenFiles () {
-  selectedOpenFiles.value = []
-}
 
 function handleSelectOpenFile (item) {
   if (!isDesktopHost) return
@@ -304,7 +315,6 @@ async function handleDesktopNewTask () {
     clearInputBox()
     await sendMessage('addConversation', {})
     activeTaskId.value = DRAFT_TASK_ID
-    clearSelectedOpenFiles()
     await refreshTaskList()
   } catch (e) {
     console.error('[App] 新建任务失败:', e)
@@ -322,7 +332,6 @@ async function handleDesktopSelectTask (item) {
       await sendMessage('addConversation', {})
       activeTaskId.value = DRAFT_TASK_ID
       draftSlotVisible.value = false
-      clearSelectedOpenFiles()
       await refreshTaskList()
       // 若宿主未推 clearMessages，仍兜底还原
       await nextTick()
@@ -350,7 +359,6 @@ async function handleDesktopSelectTask (item) {
       console.error('[App] 打开任务失败:', res?.message)
       return
     }
-    clearSelectedOpenFiles()
   } catch (e) {
     console.error('[App] 打开任务失败:', e)
   }
@@ -988,7 +996,9 @@ onMounted(() => {
     } else if (data.type === 'openFilesUpdated') {
       const payload = data.data || data
       const items = payload?.items
-      openFiles.value = Array.isArray(items) ? items : []
+      if (Array.isArray(items)) {
+        openFiles.value = items
+      }
     } else if (data.type === 'todoListRevert') {
       handleTodoListRevert(data.data || data)
     } else if (data.type === 'conversationHistory') {
@@ -1005,6 +1015,8 @@ onMounted(() => {
       }
       if (!messages.value.length) {
         loadEmptyState()
+      } else {
+        pinToLatestToken.value++
       }
     } else if (data.type === 'conversationIdChanged') {
       const payload = data.data || data
