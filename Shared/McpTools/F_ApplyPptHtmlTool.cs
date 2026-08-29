@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -15,6 +16,8 @@ namespace WordAddIn1
         {
             toolRegistry["F_apply_ppt_html"] = async (args) =>
             {
+                var totalSw = Stopwatch.StartNew();
+                var stepSw = Stopwatch.StartNew();
                 try
                 {
                     AgentRunCancellation.ThrowIfCancelled();
@@ -41,6 +44,9 @@ namespace WordAddIn1
                     {
                         return new ToolResult { Success = false, Error = resolveError };
                     }
+
+                    PptHtmlApplyTiming.Step("resolve_channel", stepSw.ElapsedMilliseconds);
+                    stepSw.Restart();
 
                     string slideId = GetStringArg(args, "slide_id")?.Trim() ?? "";
                     if (string.IsNullOrWhiteSpace(slideId))
@@ -73,6 +79,12 @@ namespace WordAddIn1
                     }
 
                     string html = htmlRead.Text;
+                    PptHtmlApplyTiming.Step(
+                        "read_html",
+                        stepSw.ElapsedMilliseconds,
+                        "bytes=" + (html == null ? 0 : Encoding.UTF8.GetByteCount(html))
+                        + " file=" + htmlFilename);
+                    stepSw.Restart();
 
                     if (string.IsNullOrWhiteSpace(html))
                     {
@@ -84,11 +96,21 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = parseError };
                     }
 
+                    PptHtmlApplyTiming.Step(
+                        "parse",
+                        stepSw.ElapsedMilliseconds,
+                        "nodes=" + (plan?.Nodes == null ? 0 : plan.Nodes.Count)
+                        + " slide_id=" + slideId);
+                    stepSw.Restart();
+
                     string resolveErr = await ResolveFileSourcesAsync(plan).ConfigureAwait(false);
                     if (!string.IsNullOrEmpty(resolveErr))
                     {
                         return new ToolResult { Success = false, Error = resolveErr };
                     }
+
+                    PptHtmlApplyTiming.Step("resolve_file_sources", stepSw.ElapsedMilliseconds);
+                    stepSw.Restart();
 
                     if (!PresentationHostAdapter.TryApplyPptHtml(
                             channel,
@@ -98,6 +120,16 @@ namespace WordAddIn1
                     {
                         return errorResult;
                     }
+
+                    PptHtmlApplyTiming.Step(
+                        "com_apply",
+                        stepSw.ElapsedMilliseconds,
+                        "updated=" + hostResult.UpdatedCount
+                        + " created=" + hostResult.CreatedCount);
+                    PptHtmlApplyTiming.Step(
+                        "total",
+                        totalSw.ElapsedMilliseconds,
+                        "slide_id=" + slideId + " file=" + htmlFilename);
 
                     var data = new Dictionary<string, object>
                     {

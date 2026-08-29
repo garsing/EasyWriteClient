@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -77,6 +78,14 @@ namespace WordAddIn1.PresentationHost
             var createdShapes = new List<Dictionary<string, object>>();
             var zTargets = new List<KeyValuePair<object, int>>();
             object shapes = WppCom.GetProperty(slide, "Shapes");
+            var applySw = Stopwatch.StartNew();
+            var phaseSw = Stopwatch.StartNew();
+            var nodeTimings = new List<KeyValuePair<long, string>>();
+            PptHtmlApplyTiming.Step(
+                "find_slide",
+                phaseSw.ElapsedMilliseconds,
+                "host=wpp slide_id=" + plan.SlideId + " nodes=" + (plan.Nodes == null ? 0 : plan.Nodes.Count));
+            phaseSw.Restart();
 
             try
             {
@@ -85,6 +94,9 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                PptHtmlApplyTiming.Step("preflight", phaseSw.ElapsedMilliseconds);
+                phaseSw.Restart();
+
                 foreach (PptHtmlApplyNode node in plan.Nodes)
                 {
                     if (node == null)
@@ -92,6 +104,10 @@ namespace WordAddIn1.PresentationHost
                         continue;
                     }
 
+                    var nodeSw = Stopwatch.StartNew();
+                    string nodeOp = node.IsCreate ? "create" : "update";
+                    try
+                    {
                     if (node.IsCreate)
                     {
                         if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
@@ -175,10 +191,31 @@ namespace WordAddIn1.PresentationHost
                             updated++;
                         }
                     }
+                    }
+                    finally
+                    {
+                        nodeSw.Stop();
+                        string label = nodeOp + " type=" + (node.ShapeType ?? "?") + " id=" + (node.ShapeId ?? "");
+                        nodeTimings.Add(new KeyValuePair<long, string>(nodeSw.ElapsedMilliseconds, label));
+                        if (nodeSw.ElapsedMilliseconds >= 50)
+                        {
+                            PptHtmlApplyTiming.Step("node", nodeSw.ElapsedMilliseconds, label);
+                        }
+                    }
                 }
 
+                PptHtmlApplyTiming.Step(
+                    "nodes",
+                    phaseSw.ElapsedMilliseconds,
+                    "updated=" + updated + " created=" + created + " skipped=" + skipped);
+                PptHtmlApplyTiming.NoteTopNodes(nodeTimings);
+                phaseSw.Restart();
+
                 ApplyZOrder(zTargets);
+                PptHtmlApplyTiming.Step("zorder", phaseSw.ElapsedMilliseconds);
+                phaseSw.Restart();
                 RelockAllGeometries(shapes, plan.Nodes, slideWidth, slideHeight);
+                PptHtmlApplyTiming.Step("relock", phaseSw.ElapsedMilliseconds);
             }
             catch (Exception ex)
             {
@@ -215,6 +252,10 @@ namespace WordAddIn1.PresentationHost
                 warnings.Add("skipped_uncreatable=" + skipped);
             }
 
+            PptHtmlApplyTiming.Step(
+                "com_total",
+                applySw.ElapsedMilliseconds,
+                "host=wpp updated=" + updated + " created=" + created + " skipped=" + skipped);
             return true;
         }
 

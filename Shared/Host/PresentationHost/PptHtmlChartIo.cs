@@ -825,22 +825,18 @@ namespace WordAddIn1.PresentationHost
 
             if (dest == null)
             {
-                return src;
+                return null;
             }
 
-            if (src.Deleted.HasValue)
+            // 有无轴、有无标题、标题文案以旧图为准，不跟 HTML 增删
+            if (dest.Deleted == true)
             {
-                dest.Deleted = src.Deleted;
+                return dest;
             }
 
-            if (src.HasTitle.HasValue)
+            if (src.Deleted == true)
             {
-                dest.HasTitle = src.HasTitle;
-            }
-
-            if (!string.IsNullOrEmpty(src.Title))
-            {
-                dest.Title = src.Title;
+                return dest;
             }
 
             if (!string.IsNullOrEmpty(src.TickFontName))
@@ -2433,7 +2429,6 @@ namespace WordAddIn1.PresentationHost
                     + " " + useWidth.ToString("0.#", CultureInfo.InvariantCulture)
                     + "x" + useHeight.ToString("0.#", CultureInfo.InvariantCulture));
                 snap = TryCaptureStyle(oldChart, warnings, "旧图");
-                snap = OverlaySnap(snap, SnapFromFormat(useFormat, useGrid));
             }
             catch (Exception ex)
             {
@@ -2453,6 +2448,9 @@ namespace WordAddIn1.PresentationHost
                 xlType = snap.Series[0].ChartType.Value;
             }
 
+            // 改已有图：数据来自 HTML 表，版式/轴/标题/系列样式按旧图快照原样写回。
+            SyncFormatToOldSnap(useFormat, xlType, warnings);
+
             if (!TryCreateOnSlide(
                 shapes,
                 useLeft,
@@ -2466,13 +2464,17 @@ namespace WordAddIn1.PresentationHost
                 out newShape,
                 out error,
                 snap == null || !snap.ChartStyle.HasValue ? -1 : snap.ChartStyle.Value,
-                newLayout: false))
+                newLayout: false,
+                applyHtmlChrome: false))
             {
                 return false;
             }
 
             object newChart = TryGetChart(newShape);
             TryApplyStyleSnap(newChart, snap, warnings);
+            FinishLineChartLayout(newChart, xlType, useFormat, warnings);
+            HideDeletedAxes(newChart, snap);
+            RestoreCategoryAxisAfterSnap(newChart, useGrid, snap);
             try
             {
                 TryCaptureStyle(newChart, warnings, "新图套回后");
@@ -2932,6 +2934,11 @@ namespace WordAddIn1.PresentationHost
                         object at = WppCom.GetProperty(axis, "AxisTitle");
                         WppCom.TrySetProperty(at, "Text", snap.Title);
                     }
+                    else if (snap.HasTitle.Value == false)
+                    {
+                        object at = WppCom.GetProperty(axis, "AxisTitle");
+                        TryInvoke(at, "Delete");
+                    }
                 }
 
                 if (snap.TickLabelPosition.HasValue)
@@ -2950,28 +2957,20 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 object ticks = WppCom.GetProperty(axis, "TickLabels");
-                object font = ticks == null ? null : WppCom.GetProperty(ticks, "Font");
-                if (font != null)
+                TryWriteTickFont(ticks, snap);
+
+                // 分类轴 2019/2021 会被收成时间轴，再套快照里的日期格式会把前几年变成主题灰字。
+                // 分类轴固定文本格式；数值轴才写回旧图 NumberFormat。
+                if (ticks != null)
                 {
-                    if (!string.IsNullOrEmpty(snap.TickFontName))
+                    if (axisType == XlCategory)
                     {
-                        WppCom.TrySetProperty(font, "Name", snap.TickFontName);
+                        WppCom.TrySetProperty(ticks, "NumberFormat", "@");
                     }
-
-                    if (snap.TickFontColor.HasValue)
+                    else if (!string.IsNullOrEmpty(snap.NumberFormat))
                     {
-                        WppCom.TrySetProperty(font, "Color", snap.TickFontColor.Value);
+                        WppCom.TrySetProperty(ticks, "NumberFormat", snap.NumberFormat);
                     }
-
-                    if (snap.TickFontSize.HasValue)
-                    {
-                        WppCom.TrySetProperty(font, "Size", snap.TickFontSize.Value);
-                    }
-                }
-
-                if (!string.IsNullOrEmpty(snap.NumberFormat) && ticks != null)
-                {
-                    WppCom.TrySetProperty(ticks, "NumberFormat", snap.NumberFormat);
                 }
 
                 if (snap.HasMajorGridlines.HasValue)
@@ -3765,6 +3764,174 @@ namespace WordAddIn1.PresentationHost
             return t == XlLine || t == XlLineMarkers || t == 63 || t == 64 || t == 66;
         }
 
+        /// <summary>
+        /// 改已有图时 HTML 只负责灌数。类型/轴/标题以旧图快照为准，避免 HTML 多写或少写。
+        /// </summary>
+        private static void SyncFormatToOldSnap(
+            PptHtmlChartFormat format,
+            int xlType,
+            List<string> warnings)
+        {
+            if (format == null)
+            {
+                return;
+            }
+
+            string canon = CanonicalTypeFromXl(xlType);
+            if (!string.Equals(format.ChartType, canon, StringComparison.OrdinalIgnoreCase))
+            {
+                StyleLog(warnings, "format.ChartType 按旧图 " + (format.ChartType ?? "") + " → " + canon);
+                format.ChartType = canon;
+            }
+
+            format.AxisX = null;
+            format.AxisY = null;
+            format.AxisYSecondary = null;
+            format.Title = null;
+        }
+
+        private static void TryWriteTickFont(object ticks, AxisStyleSnap snap)
+        {
+            if (ticks == null || snap == null)
+            {
+                return;
+            }
+
+            object font = WppCom.GetProperty(ticks, "Font");
+            if (font == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(snap.TickFontName))
+            {
+                WppCom.TrySetProperty(font, "Name", snap.TickFontName);
+            }
+
+            if (snap.TickFontColor.HasValue)
+            {
+                WppCom.TrySetProperty(font, "Color", snap.TickFontColor.Value);
+                object color = WppCom.GetProperty(font, "Color");
+                WppCom.TrySetProperty(color, "RGB", snap.TickFontColor.Value);
+            }
+
+            if (snap.TickFontSize.HasValue)
+            {
+                WppCom.TrySetProperty(font, "Size", snap.TickFontSize.Value);
+            }
+        }
+
+        /// <summary>
+        /// 套完快照后再钉分类轴：先文本类目，再写回旧图刻度字体，避免 2019 等被当成日期后变灰。
+        /// </summary>
+        private static void RestoreCategoryAxisAfterSnap(
+            object chart,
+            PptHtmlChartGrid grid,
+            ChartStyleSnap snap)
+        {
+            if (chart == null || snap == null || snap.Category == null || snap.Category.Deleted == true)
+            {
+                return;
+            }
+
+            EnsureCategoryAxisLabels(chart, grid);
+            try
+            {
+                object axis = TryInvoke(chart, "Axes", XlCategory, XlPrimary);
+                object ticks = axis == null ? null : WppCom.GetProperty(axis, "TickLabels");
+                TryWriteTickFont(ticks, snap.Category);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void HideDeletedAxes(object chart, ChartStyleSnap snap)
+        {
+            if (chart == null || snap == null)
+            {
+                return;
+            }
+
+            if (snap.Category == null || snap.Category.Deleted == true)
+            {
+                TryHideAxis(chart, XlCategory, XlPrimary);
+            }
+
+            if (snap.Value == null || snap.Value.Deleted == true)
+            {
+                TryHideAxis(chart, XlValue, XlPrimary);
+            }
+
+            if (snap.ValueSecondary == null || snap.ValueSecondary.Deleted == true)
+            {
+                TryHideAxis(chart, XlValue, XlSecondary);
+            }
+        }
+
+        /// <summary>
+        /// 折线灌数/改类型后 COM 偶发不重算坐标，点贴在基线像没应用完。强制 Refresh + 自动刻度。
+        /// </summary>
+        private static void FinishLineChartLayout(
+            object chart,
+            int xlType,
+            PptHtmlChartFormat format,
+            List<string> warnings)
+        {
+            if (chart == null || !IsLineLike(xlType))
+            {
+                TryInvoke(chart, "Refresh");
+                return;
+            }
+
+            try
+            {
+                object current = WppCom.GetProperty(chart, "ChartType");
+                if (current != null
+                    && !string.Equals(
+                        CanonicalTypeFromXl(Convert.ToInt32(current)),
+                        CanonicalTypeFromXl(xlType),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    StyleLog(warnings, "收尾改回折线 ChartType=" + current + " → " + xlType);
+                    WppCom.TrySetProperty(chart, "ChartType", xlType);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            TryInvoke(chart, "Refresh");
+
+            bool pinScale = format != null
+                && (!string.IsNullOrWhiteSpace(format.AxisYMin)
+                    || !string.IsNullOrWhiteSpace(format.AxisYMax));
+            if (pinScale)
+            {
+                return;
+            }
+
+            foreach (int group in new[] { XlPrimary, XlSecondary })
+            {
+                try
+                {
+                    object y = TryInvoke(chart, "Axes", XlValue, group);
+                    if (y == null)
+                    {
+                        continue;
+                    }
+
+                    WppCom.TrySetProperty(y, "MinimumScaleIsAuto", true);
+                    WppCom.TrySetProperty(y, "MaximumScaleIsAuto", true);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            TryInvoke(chart, "Refresh");
+        }
+
         private static List<GradientStopSnap> TryReadGradientStops(object fill, List<string> warnings = null, string tag = null)
         {
             if (fill == null)
@@ -3914,6 +4081,20 @@ namespace WordAddIn1.PresentationHost
 
         private static void TryHideAxis(object chart, int axisType, int group)
         {
+            try
+            {
+                object axis = TryInvoke(chart, "Axes", axisType, group);
+                if (axis != null)
+                {
+                    WppCom.TrySetProperty(axis, "HasTitle", false);
+                    object title = WppCom.GetProperty(axis, "AxisTitle");
+                    TryInvoke(title, "Delete");
+                }
+            }
+            catch (Exception)
+            {
+            }
+
             try
             {
                 chart.GetType().InvokeMember(
@@ -4326,7 +4507,8 @@ namespace WordAddIn1.PresentationHost
             out object shape,
             out string error,
             int chartStyle = -1,
-            bool newLayout = true)
+            bool newLayout = true,
+            bool applyHtmlChrome = true)
         {
             shape = null;
             error = null;
@@ -4401,15 +4583,24 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                if (!TryApplyFormat(chart, format, warnings, out error))
+                if (applyHtmlChrome)
                 {
-                    TryDelete(shape);
-                    shape = null;
-                    return false;
+                    if (!TryApplyFormat(chart, format, warnings, out error))
+                    {
+                        TryDelete(shape);
+                        shape = null;
+                        return false;
+                    }
+
+                    TryApplyStyleSnap(chart, SnapFromFormat(format, grid), warnings);
+                    EnsureCategoryAxisLabels(chart, grid);
+                    FinishLineChartLayout(chart, xlType, format, warnings);
+                }
+                else
+                {
+                    EnsureCategoryAxisLabels(chart, grid);
                 }
 
-                TryApplyStyleSnap(chart, SnapFromFormat(format, grid), warnings);
-                EnsureCategoryAxisLabels(chart, grid);
                 return true;
             }
             finally

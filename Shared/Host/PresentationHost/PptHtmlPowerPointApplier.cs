@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
@@ -89,6 +90,9 @@ namespace WordAddIn1.PresentationHost
             int skipped = 0;
             var createdShapes = new List<Dictionary<string, object>>();
             var zTargets = new List<KeyValuePair<PowerPoint.Shape, int>>();
+            var applySw = Stopwatch.StartNew();
+            var phaseSw = Stopwatch.StartNew();
+            var nodeTimings = new List<KeyValuePair<long, string>>();
             bool debugOn = EasyWriteDiagnostics.IsEnabled(DebugCategory.PptHtml);
             PptHtmlApplyDebug dbg = debugOn ? new PptHtmlApplyDebug() : null;
             if (dbg != null)
@@ -100,6 +104,12 @@ namespace WordAddIn1.PresentationHost
                     + " nodes=" + (plan.Nodes == null ? 0 : plan.Nodes.Count)
                     + " shapesOnSlideBefore=" + CountShapes(slide));
             }
+
+            PptHtmlApplyTiming.Step(
+                "find_slide",
+                phaseSw.ElapsedMilliseconds,
+                "slide_id=" + plan.SlideId + " nodes=" + (plan.Nodes == null ? 0 : plan.Nodes.Count));
+            phaseSw.Restart();
 
             try
             {
@@ -123,6 +133,8 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 dbg?.Line("preflight ok");
+                PptHtmlApplyTiming.Step("preflight", phaseSw.ElapsedMilliseconds);
+                phaseSw.Restart();
 
                 foreach (PptHtmlApplyNode node in plan.Nodes)
                 {
@@ -131,6 +143,10 @@ namespace WordAddIn1.PresentationHost
                         continue;
                     }
 
+                    var nodeSw = Stopwatch.StartNew();
+                    string nodeOp = node.IsCreate ? "create" : "update";
+                    try
+                    {
                     if (node.IsCreate)
                     {
                         if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
@@ -254,7 +270,19 @@ namespace WordAddIn1.PresentationHost
                             updated++;
                         }
                     }
+                    }
+                    finally
+                    {
+                        RecordNodeTiming(nodeTimings, nodeSw, nodeOp, node);
+                    }
                 }
+
+                PptHtmlApplyTiming.Step(
+                    "nodes",
+                    phaseSw.ElapsedMilliseconds,
+                    "updated=" + updated + " created=" + created + " skipped=" + skipped);
+                PptHtmlApplyTiming.NoteTopNodes(nodeTimings);
+                phaseSw.Restart();
 
                 if (dbg != null)
                 {
@@ -263,15 +291,20 @@ namespace WordAddIn1.PresentationHost
 
                 ApplyZOrder(zTargets);
                 dbg?.Line("after_zorder");
+                PptHtmlApplyTiming.Step("zorder", phaseSw.ElapsedMilliseconds, "targets=" + zTargets.Count);
+                phaseSw.Restart();
 
                 // ZOrder 后再次钉死几何，防止个别 AutoShape 在叠放调整后位置漂移
                 RelockAllGeometries(slide, plan.Nodes, slideWidth, slideHeight);
                 dbg?.Line("after_relock");
+                PptHtmlApplyTiming.Step("relock", phaseSw.ElapsedMilliseconds);
+                phaseSw.Restart();
 
                 if (dbg != null)
                 {
                     SnapshotSlide(slide, slideWidth, slideHeight, dbg);
                     VerifyNodesStillPresent(slide, plan.Nodes, slideWidth, slideHeight, dbg);
+                    PptHtmlApplyTiming.Step("debug_snapshot", phaseSw.ElapsedMilliseconds);
                 }
             }
             catch (Exception ex)
@@ -314,7 +347,33 @@ namespace WordAddIn1.PresentationHost
             }
 
             AttachDebug(result, dbg, plan.SlideId);
+            PptHtmlApplyTiming.Step(
+                "com_total",
+                applySw.ElapsedMilliseconds,
+                "updated=" + updated + " created=" + created + " skipped=" + skipped);
             return true;
+        }
+
+        private static void RecordNodeTiming(
+            List<KeyValuePair<long, string>> timings,
+            Stopwatch nodeSw,
+            string op,
+            PptHtmlApplyNode node)
+        {
+            if (timings == null || nodeSw == null || node == null)
+            {
+                return;
+            }
+
+            nodeSw.Stop();
+            string label = (op ?? "?")
+                + " type=" + (node.ShapeType ?? "?")
+                + " id=" + (node.ShapeId ?? "");
+            timings.Add(new KeyValuePair<long, string>(nodeSw.ElapsedMilliseconds, label));
+            if (nodeSw.ElapsedMilliseconds >= 50)
+            {
+                PptHtmlApplyTiming.Step("node", nodeSw.ElapsedMilliseconds, label);
+            }
         }
 
         private static PptHtmlApplyResult FailResult(
@@ -746,6 +805,7 @@ namespace WordAddIn1.PresentationHost
                     height = (float)(node.HeightPct.GetValueOrDefault() / 100.0 * slideHeight);
                 }
 
+                var chartSw = Stopwatch.StartNew();
                 if (!PptHtmlChartIo.TryReplaceOnSlide(
                     slide.Shapes,
                     shape,
@@ -759,8 +819,11 @@ namespace WordAddIn1.PresentationHost
                     out object created,
                     out error))
                 {
+                    PptHtmlApplyTiming.Step("chart_replace", chartSw.ElapsedMilliseconds, "fail id=" + (node.ShapeId ?? ""));
                     return false;
                 }
+
+                PptHtmlApplyTiming.Step("chart_replace", chartSw.ElapsedMilliseconds, "id=" + (node.ShapeId ?? ""));
 
                 shape = (PowerPoint.Shape)created;
                 try
@@ -974,6 +1037,7 @@ namespace WordAddIn1.PresentationHost
                         return false;
                     }
 
+                    var chartSw = Stopwatch.StartNew();
                     if (!PptHtmlChartIo.TryCreateOnSlide(
                         slide.Shapes,
                         left,
@@ -987,8 +1051,11 @@ namespace WordAddIn1.PresentationHost
                         out object created,
                         out error))
                     {
+                        PptHtmlApplyTiming.Step("chart_create", chartSw.ElapsedMilliseconds, "fail");
                         return false;
                     }
+
+                    PptHtmlApplyTiming.Step("chart_create", chartSw.ElapsedMilliseconds);
 
                     shape = (PowerPoint.Shape)created;
                 }
