@@ -539,7 +539,7 @@ namespace WordAddIn1
                     return;
                 }
 
-                ToolResult toolResult = await RunOnUiThreadAsync(() =>
+                ToolResult toolResult = await RunInvokeOnAffinityAsync(method, () =>
                     _registry.InvokeRawAsync(method, parameters));
 
                 if (ShouldCancelInvoke(requestId))
@@ -600,6 +600,26 @@ namespace WordAddIn1
             }
         }
 
+        /// <summary>
+        /// Desktop：Office COM 走专属 STA；browser.* 走主窗 UI。
+        /// Plugin：专属 STA 未启动，整段仍走任务窗格线程（Word 主 STA）。
+        /// </summary>
+        private Task<T> RunInvokeOnAffinityAsync<T>(string method, Func<Task<T>> action)
+        {
+            if (OfficeStaScheduler.IsEnabled && !NeedsUiThread(method))
+            {
+                return OfficeStaScheduler.InvokeAsync(action);
+            }
+
+            return RunOnUiThreadAsync(action);
+        }
+
+        private static bool NeedsUiThread(string method)
+        {
+            return !string.IsNullOrEmpty(method)
+                && method.StartsWith("browser.", StringComparison.OrdinalIgnoreCase);
+        }
+
         private Task<T> RunOnUiThreadAsync<T>(Func<Task<T>> action)
         {
             if (!_syncControl.InvokeRequired)
@@ -607,16 +627,16 @@ namespace WordAddIn1
                 return action();
             }
 
-            var tcs = new TaskCompletionSource<T>();
+            var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
             _syncControl.BeginInvoke(new Action(async () =>
             {
                 try
                 {
-                    tcs.SetResult(await action());
+                    tcs.TrySetResult(await action().ConfigureAwait(true));
                 }
                 catch (Exception ex)
                 {
-                    tcs.SetException(ex);
+                    tcs.TrySetException(ex);
                 }
             }));
             return tcs.Task;

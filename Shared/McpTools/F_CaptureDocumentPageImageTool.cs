@@ -56,7 +56,9 @@ namespace WordAddIn1
                     }
                     else if (channel.Kind == ChannelKind.Browser)
                     {
-                        captured = await CaptureBrowserAsync(channel).ConfigureAwait(false);
+                        captured = await OfficeStaScheduler
+                            .InvokeOnUiAsync(() => CaptureBrowserAsync(channel))
+                            .ConfigureAwait(false);
                     }
                     else
                     {

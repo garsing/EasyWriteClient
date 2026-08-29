@@ -75,6 +75,9 @@ namespace EasyWriteClient.Desktop
             _restoreBounds = Bounds;
             _expandedBounds = Bounds;
 
+            OfficeStaScheduler.Start();
+            OfficeStaScheduler.UiControl = this;
+
             HostCallbacks.NotifyUserLoggedInAllAsync = async () =>
             {
                 await Task.CompletedTask;
@@ -246,6 +249,7 @@ namespace EasyWriteClient.Desktop
 
                 WordHost.Shutdown();
                 ExcelHost.Shutdown();
+                OfficeStaScheduler.Shutdown();
             };
             ApplyWindowRegion();
         }

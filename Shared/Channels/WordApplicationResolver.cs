@@ -16,6 +16,17 @@ namespace WordAddIn1
             out string error,
             bool createIfMissing = false)
         {
+            if (OfficeStaScheduler.ShouldHop)
+            {
+                Word.Application app = null;
+                string err = null;
+                bool ok = OfficeStaScheduler.Invoke(() =>
+                    TryResolve(wordApplication, out app, out err, createIfMissing));
+                application = app;
+                error = err;
+                return ok;
+            }
+
             application = null;
             error = null;
 

@@ -46,6 +46,17 @@ namespace WordAddIn1
             bool createIfMissing = false,
             bool makeVisible = true)
         {
+            if (OfficeStaScheduler.ShouldHop)
+            {
+                object app = null;
+                string err = null;
+                bool ok = OfficeStaScheduler.Invoke(() =>
+                    TryResolve(out app, out err, createIfMissing, makeVisible));
+                application = app;
+                error = err;
+                return ok;
+            }
+
             application = null;
             error = null;
             if (!TryResolveCore(out PowerPoint.Application typed, out error, createIfMissing, makeVisible))
@@ -63,6 +74,17 @@ namespace WordAddIn1
             bool createIfMissing = false,
             bool makeVisible = true)
         {
+            if (OfficeStaScheduler.ShouldHop)
+            {
+                PowerPoint.Application app = null;
+                string err = null;
+                bool ok = OfficeStaScheduler.Invoke(() =>
+                    TryResolveTyped(out app, out err, createIfMissing, makeVisible));
+                application = app;
+                error = err;
+                return ok;
+            }
+
             return TryResolveCore(out application, out error, createIfMissing, makeVisible);
         }
 

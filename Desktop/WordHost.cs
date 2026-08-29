@@ -20,6 +20,11 @@ namespace EasyWriteClient.Desktop
         /// </param>
         public static Word.Application GetOrAttach(bool createIfMissing = false)
         {
+            if (OfficeStaScheduler.ShouldHop)
+            {
+                return OfficeStaScheduler.Invoke(() => GetOrAttach(createIfMissing));
+            }
+
             lock (Gate)
             {
                 if (_app != null)
@@ -111,6 +116,12 @@ namespace EasyWriteClient.Desktop
         /// </summary>
         public static void Shutdown()
         {
+            if (OfficeStaScheduler.ShouldHop)
+            {
+                OfficeStaScheduler.Invoke(Shutdown);
+                return;
+            }
+
             lock (Gate)
             {
                 ChannelRegistry.ClearAll();

@@ -679,26 +679,38 @@ namespace EasyWriteClient.Desktop
                 _openFilesMonitor = new OpenFilesMonitor(
                     resolveWordApp: () => WordHost.GetOrAttach(createIfMissing: false),
                     resolveExcelApp: () => ExcelHost.GetOrAttach(createIfMissing: false),
-                    syncContext: _uiSync);
+                    syncContext: OfficeStaScheduler.Context ?? _uiSync);
 
                 _openFilesMonitor.Changed += items =>
                 {
-                    try
+                    void Send()
                     {
-                        if (_bridge == null)
+                        try
                         {
-                            return;
-                        }
+                            if (_bridge == null)
+                            {
+                                return;
+                            }
 
-                        _bridge.SendToJavaScript("openFilesUpdated", new
+                            _bridge.SendToJavaScript("openFilesUpdated", new
+                            {
+                                items = OpenFilesMonitor.ToFrontendItems(items)
+                            });
+                        }
+                        catch (Exception ex)
                         {
-                            items = OpenFilesMonitor.ToFrontendItems(items)
-                        });
+                            System.Diagnostics.Debug.WriteLine(
+                                "[DesktopChatSurface] openFilesUpdated: " + ex.Message);
+                        }
                     }
-                    catch (Exception ex)
+
+                    if (InvokeRequired)
                     {
-                        System.Diagnostics.Debug.WriteLine(
-                            "[DesktopChatSurface] openFilesUpdated: " + ex.Message);
+                        BeginInvoke((MethodInvoker)Send);
+                    }
+                    else
+                    {
+                        Send();
                     }
                 };
 

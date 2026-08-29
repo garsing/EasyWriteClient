@@ -92,7 +92,11 @@ namespace WordAddIn1.OpenFiles
                 CreateDetectorsUnlocked();
             }
 
-            TryAttachAndSnapshot();
+            InvokeDetectorOnSync(() =>
+            {
+                TryAttachAndSnapshot();
+                return true;
+            });
             StartProcessWatch();
             StartPresentationWatch();
             UpdateLateBindReconcileTimer();
@@ -158,7 +162,11 @@ namespace WordAddIn1.OpenFiles
                 return;
             }
 
-            TryAttachAndSnapshot();
+            InvokeDetectorOnSync(() =>
+            {
+                TryAttachAndSnapshot();
+                return true;
+            });
             UpdateLateBindReconcileTimer();
         }
 

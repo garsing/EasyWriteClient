@@ -18,6 +18,11 @@ namespace EasyWriteClient.Desktop
         /// </param>
         public static object GetOrAttach(bool createIfMissing = false)
         {
+            if (OfficeStaScheduler.ShouldHop)
+            {
+                return OfficeStaScheduler.Invoke(() => GetOrAttach(createIfMissing));
+            }
+
             lock (Gate)
             {
                 if (ExcelApplicationResolver.TryResolve(
@@ -54,6 +59,12 @@ namespace EasyWriteClient.Desktop
         /// <summary>关闭 Desktop：不 Quit 用户 Excel。</summary>
         public static void Shutdown()
         {
+            if (OfficeStaScheduler.ShouldHop)
+            {
+                OfficeStaScheduler.Invoke(Shutdown);
+                return;
+            }
+
             lock (Gate)
             {
                 _app = null;
