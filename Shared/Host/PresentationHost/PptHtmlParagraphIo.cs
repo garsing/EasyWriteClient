@@ -334,6 +334,115 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        /// <summary>现场段落已与 HTML 一致。未指定的字段不比。</summary>
+        public static bool LiveMatches(
+            Snapshot snap,
+            string align,
+            string lineSpacing,
+            double? spaceBeforePt,
+            double? spaceAfterPt,
+            double? indentLeftPt,
+            double? indentFirstPt,
+            string bullet)
+        {
+            bool any = !string.IsNullOrEmpty(align)
+                || !string.IsNullOrEmpty(lineSpacing)
+                || spaceBeforePt.HasValue
+                || spaceAfterPt.HasValue
+                || indentLeftPt.HasValue
+                || indentFirstPt.HasValue
+                || !string.IsNullOrEmpty(bullet);
+            if (!any)
+            {
+                return true;
+            }
+
+            if (snap == null)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(align)
+                && !string.Equals(snap.Align, align, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(lineSpacing)
+                && !SameLineSpacing(snap.LineSpacing, lineSpacing))
+            {
+                return false;
+            }
+
+            if (spaceBeforePt.HasValue && !NearPt(snap.SpaceBeforePt, spaceBeforePt.Value))
+            {
+                return false;
+            }
+
+            if (spaceAfterPt.HasValue && !NearPt(snap.SpaceAfterPt, spaceAfterPt.Value))
+            {
+                return false;
+            }
+
+            if (indentLeftPt.HasValue && !NearPt(snap.IndentLeftPt, indentLeftPt.Value))
+            {
+                return false;
+            }
+
+            if (indentFirstPt.HasValue && !NearPt(snap.IndentFirstPt, indentFirstPt.Value))
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(bullet)
+                && !string.Equals(snap.Bullet ?? BulletNone, bullet, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool SameLineSpacing(string live, string want)
+        {
+            if (string.Equals(live, want, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (string.IsNullOrEmpty(live) || string.IsNullOrEmpty(want))
+            {
+                return false;
+            }
+
+            bool liveExact = live.StartsWith("exact:", StringComparison.OrdinalIgnoreCase);
+            bool wantExact = want.StartsWith("exact:", StringComparison.OrdinalIgnoreCase);
+            if (liveExact != wantExact)
+            {
+                return false;
+            }
+
+            string a = liveExact ? live.Substring(6) : live;
+            string b = wantExact ? want.Substring(6) : want;
+            if (!double.TryParse(a, NumberStyles.Float, CultureInfo.InvariantCulture, out double va)
+                || !double.TryParse(b, NumberStyles.Float, CultureInfo.InvariantCulture, out double vb))
+            {
+                return false;
+            }
+
+            return Math.Abs(va - vb) <= 0.05;
+        }
+
+        private static bool NearPt(double? live, double want)
+        {
+            if (!live.HasValue)
+            {
+                return false;
+            }
+
+            return Math.Abs(live.Value - want) <= 0.2;
+        }
+
         public static bool TryApplyToShape(
             PowerPoint.Shape shape,
             string align,

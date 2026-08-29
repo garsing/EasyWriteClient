@@ -88,6 +88,7 @@ namespace WordAddIn1.PresentationHost
             int updated = 0;
             int created = 0;
             int skipped = 0;
+            int unchanged = 0;
             var createdShapes = new List<Dictionary<string, object>>();
             var zTargets = new List<KeyValuePair<PowerPoint.Shape, int>>();
             var applySw = Stopwatch.StartNew();
@@ -242,6 +243,12 @@ namespace WordAddIn1.PresentationHost
                                 ["shape_id"] = newId
                             });
                         }
+                        else if (LiveMatchesHtml(existing, node, slideWidth, slideHeight))
+                        {
+                            TryCollectZ(slide, node, zTargets);
+                            dbg?.Step("SKIP_UNCHANGED", node);
+                            unchanged++;
+                        }
                         else if (!TryUpdate(
                                 slide,
                                 node,
@@ -280,7 +287,8 @@ namespace WordAddIn1.PresentationHost
                 PptHtmlApplyTiming.Step(
                     "nodes",
                     phaseSw.ElapsedMilliseconds,
-                    "updated=" + updated + " created=" + created + " skipped=" + skipped);
+                    "updated=" + updated + " created=" + created + " skipped=" + skipped
+                    + " unchanged=" + unchanged);
                 PptHtmlApplyTiming.NoteTopNodes(nodeTimings);
                 phaseSw.Restart();
 
@@ -289,15 +297,19 @@ namespace WordAddIn1.PresentationHost
                     dbg.Line("before_zorder zTargets=" + zTargets.Count + " shapesOnSlide=" + CountShapes(slide));
                 }
 
-                ApplyZOrder(zTargets);
-                dbg?.Line("after_zorder");
-                PptHtmlApplyTiming.Step("zorder", phaseSw.ElapsedMilliseconds, "targets=" + zTargets.Count);
+                bool zMoved = ApplyZOrderIfNeeded(zTargets);
+                dbg?.Line("after_zorder moved=" + zMoved);
+                PptHtmlApplyTiming.Step("zorder", phaseSw.ElapsedMilliseconds, "targets=" + zTargets.Count + " moved=" + zMoved);
                 phaseSw.Restart();
 
-                // ZOrder 后再次钉死几何，防止个别 AutoShape 在叠放调整后位置漂移
-                RelockAllGeometries(slide, plan.Nodes, slideWidth, slideHeight);
-                dbg?.Line("after_relock");
-                PptHtmlApplyTiming.Step("relock", phaseSw.ElapsedMilliseconds);
+                // 只钉这次真正调过叠放的形状，避免整页再写一遍几何
+                if (zMoved)
+                {
+                    RelockZTargetGeometries(slide, zTargets, plan.Nodes, slideWidth, slideHeight);
+                }
+
+                dbg?.Line("after_relock moved=" + zMoved);
+                PptHtmlApplyTiming.Step("relock", phaseSw.ElapsedMilliseconds, "moved=" + zMoved);
                 phaseSw.Restart();
 
                 if (dbg != null)
@@ -350,7 +362,8 @@ namespace WordAddIn1.PresentationHost
             PptHtmlApplyTiming.Step(
                 "com_total",
                 applySw.ElapsedMilliseconds,
-                "updated=" + updated + " created=" + created + " skipped=" + skipped);
+                "updated=" + updated + " created=" + created + " skipped=" + skipped
+                + " unchanged=" + unchanged);
             return true;
         }
 
@@ -1468,15 +1481,42 @@ namespace WordAddIn1.PresentationHost
             targets.Add(new KeyValuePair<PowerPoint.Shape, int>(shape, node.Z.Value));
         }
 
-        /// <summary>数值越大越靠上：按 z 升序依次 BringToFront。</summary>
-        private static void ApplyZOrder(List<KeyValuePair<PowerPoint.Shape, int>> targets)
+        /// <summary>数值越大越靠上：按 z 升序依次 BringToFront。相对顺序已对则不调。</summary>
+        private static bool ApplyZOrderIfNeeded(List<KeyValuePair<PowerPoint.Shape, int>> targets)
         {
             if (targets == null || targets.Count == 0)
             {
-                return;
+                return false;
             }
 
             targets.Sort((a, b) => a.Value.CompareTo(b.Value));
+            int prev = -1;
+            bool already = true;
+            foreach (KeyValuePair<PowerPoint.Shape, int> item in targets)
+            {
+                try
+                {
+                    int pos = item.Key.ZOrderPosition;
+                    if (pos <= prev)
+                    {
+                        already = false;
+                        break;
+                    }
+
+                    prev = pos;
+                }
+                catch (Exception)
+                {
+                    already = false;
+                    break;
+                }
+            }
+
+            if (already)
+            {
+                return false;
+            }
+
             foreach (KeyValuePair<PowerPoint.Shape, int> item in targets)
             {
                 try
@@ -1487,22 +1527,38 @@ namespace WordAddIn1.PresentationHost
                 {
                 }
             }
+
+            return true;
         }
 
-        private static void RelockAllGeometries(
+        private static void RelockZTargetGeometries(
             PowerPoint.Slide slide,
+            List<KeyValuePair<PowerPoint.Shape, int>> zTargets,
             List<PptHtmlApplyNode> nodes,
             float slideWidth,
             float slideHeight)
         {
-            if (slide == null || nodes == null)
+            if (slide == null || zTargets == null || zTargets.Count == 0 || nodes == null)
             {
                 return;
             }
 
+            var ids = new HashSet<int>();
+            foreach (KeyValuePair<PowerPoint.Shape, int> item in zTargets)
+            {
+                try
+                {
+                    ids.Add(item.Key.Id);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
             foreach (PptHtmlApplyNode node in nodes)
             {
-                if (node == null || !node.HasGeometry || !node.ShapeComId.HasValue)
+                if (node == null || !node.HasGeometry || !node.ShapeComId.HasValue
+                    || !ids.Contains(node.ShapeComId.Value))
                 {
                     continue;
                 }
@@ -1514,6 +1570,253 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
+            }
+        }
+
+        /// <summary>现场 COM 已与本次 HTML 一致则跳过写入。图/表/换图不跳。</summary>
+        private static bool LiveMatchesHtml(
+            PowerPoint.Shape shape,
+            PptHtmlApplyNode node,
+            float slideWidth,
+            float slideHeight)
+        {
+            if (shape == null || node == null)
+            {
+                return false;
+            }
+
+            if (node.ChartGrid != null || node.ChartFormat != null || node.TableCells != null)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(node.DataSrc))
+            {
+                return false;
+            }
+
+            try
+            {
+                int st = (int)shape.Type;
+                int? auto = null;
+                try
+                {
+                    auto = Convert.ToInt32(shape.AutoShapeType);
+                }
+                catch (Exception)
+                {
+                }
+
+                string existingType = PptShapeTypeMap.FromShapeType(st, auto, null);
+                if (existingType == "chart" || existingType == "table")
+                {
+                    return false;
+                }
+
+                if (node.HasGeometry)
+                {
+                    float left = (float)(node.LeftPct.GetValueOrDefault() / 100.0 * slideWidth);
+                    float top = (float)(node.TopPct.GetValueOrDefault() / 100.0 * slideHeight);
+                    float width = (float)(node.WidthPct.GetValueOrDefault() / 100.0 * slideWidth);
+                    float height = (float)(node.HeightPct.GetValueOrDefault() / 100.0 * slideHeight);
+                    if (!Near(shape.Left, left) || !Near(shape.Top, top)
+                        || !Near(shape.Width, width) || !Near(shape.Height, height))
+                    {
+                        return false;
+                    }
+                }
+
+                if (node.Rotation.HasValue && !Near(shape.Rotation, (float)node.Rotation.Value))
+                {
+                    return false;
+                }
+
+                if (node.HasText && existingType != "picture" && existingType != "media")
+                {
+                    if (shape.HasTextFrame != Office.MsoTriState.msoTrue)
+                    {
+                        return false;
+                    }
+
+                    if (!SamePptText(shape.TextFrame.TextRange.Text, node.Text))
+                    {
+                        return false;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(node.Fill))
+                {
+                    if (string.Equals(node.Fill, "none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (shape.Fill.Visible != Office.MsoTriState.msoFalse)
+                        {
+                            return false;
+                        }
+                    }
+                    else if (PptHtmlStyleIo.TryParseHexToOfficeRgb(node.Fill, out int fillRgb, out _))
+                    {
+                        if (!FillRgbAlreadyMatches(shape, fillRgb))
+                        {
+                            return false;
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(node.FontColor)
+                    && PptHtmlStyleIo.TryParseHexToOfficeRgb(node.FontColor, out int fontRgb, out _))
+                {
+                    if (!FontRgbAlreadyMatches(shape, fontRgb))
+                    {
+                        return false;
+                    }
+                }
+
+                if (node.FontSizePt.HasValue && shape.HasTextFrame == Office.MsoTriState.msoTrue)
+                {
+                    if (!Near(shape.TextFrame.TextRange.Font.Size, (float)node.FontSizePt.Value, 0.2f))
+                    {
+                        return false;
+                    }
+                }
+
+                if (node.FontBold.HasValue && shape.HasTextFrame == Office.MsoTriState.msoTrue)
+                {
+                    bool live = shape.TextFrame.TextRange.Font.Bold == Office.MsoTriState.msoTrue;
+                    if (live != node.FontBold.Value)
+                    {
+                        return false;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(node.FontName) && shape.HasTextFrame == Office.MsoTriState.msoTrue)
+                {
+                    string liveName = Convert.ToString(shape.TextFrame.TextRange.Font.Name) ?? "";
+                    string liveEast = "";
+                    try
+                    {
+                        liveEast = Convert.ToString(shape.TextFrame.TextRange.Font.NameFarEast) ?? "";
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    if (!string.Equals(liveName, node.FontName, StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(liveEast, node.FontName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return false;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(node.LineColor))
+                {
+                    if (string.Equals(node.LineColor, "none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (shape.Line.Visible != Office.MsoTriState.msoFalse)
+                        {
+                            return false;
+                        }
+                    }
+                    else if (PptHtmlStyleIo.TryParseHexToOfficeRgb(node.LineColor, out int lineRgb, out _))
+                    {
+                        if (!LineRgbAlreadyMatches(shape, lineRgb))
+                        {
+                            return false;
+                        }
+                    }
+                }
+
+                if (node.LineWidthPt.HasValue
+                    && !Near(shape.Line.Weight, (float)node.LineWidthPt.Value, 0.15f))
+                {
+                    return false;
+                }
+
+                if (node.MarginLeftPt.HasValue || node.MarginRightPt.HasValue
+                    || node.MarginTopPt.HasValue || node.MarginBottomPt.HasValue)
+                {
+                    if (shape.HasTextFrame != Office.MsoTriState.msoTrue)
+                    {
+                        return false;
+                    }
+
+                    PowerPoint.TextFrame tf = shape.TextFrame;
+                    if (node.MarginLeftPt.HasValue && !Near(tf.MarginLeft, (float)node.MarginLeftPt.Value, 0.2f))
+                    {
+                        return false;
+                    }
+
+                    if (node.MarginRightPt.HasValue && !Near(tf.MarginRight, (float)node.MarginRightPt.Value, 0.2f))
+                    {
+                        return false;
+                    }
+
+                    if (node.MarginTopPt.HasValue && !Near(tf.MarginTop, (float)node.MarginTopPt.Value, 0.2f))
+                    {
+                        return false;
+                    }
+
+                    if (node.MarginBottomPt.HasValue && !Near(tf.MarginBottom, (float)node.MarginBottomPt.Value, 0.2f))
+                    {
+                        return false;
+                    }
+                }
+
+                if (!PptHtmlParagraphIo.LiveMatches(
+                    PptHtmlParagraphIo.TryReadFromShape(shape),
+                    node.Align,
+                    node.LineSpacing,
+                    node.SpaceBeforePt,
+                    node.SpaceAfterPt,
+                    node.IndentLeftPt,
+                    node.IndentFirstPt,
+                    node.Bullet))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool Near(float live, float want, float tol = 0.6f)
+        {
+            return Math.Abs(live - want) <= tol;
+        }
+
+        private static bool SamePptText(string live, string want)
+        {
+            return NormalizePptText(live) == NormalizePptText(want);
+        }
+
+        private static string NormalizePptText(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            return text.Replace("\r\n", "\n").Replace('\r', '\n').TrimEnd();
+        }
+
+        private static bool FontRgbAlreadyMatches(PowerPoint.Shape shape, int rgb)
+        {
+            try
+            {
+                if (shape.HasTextFrame != Office.MsoTriState.msoTrue)
+                {
+                    return false;
+                }
+
+                int live = shape.TextFrame.TextRange.Font.Color.RGB & 0x00FFFFFF;
+                return live == (rgb & 0x00FFFFFF);
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
 

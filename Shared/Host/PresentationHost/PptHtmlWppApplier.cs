@@ -75,6 +75,7 @@ namespace WordAddIn1.PresentationHost
             int updated = 0;
             int created = 0;
             int skipped = 0;
+            int unchanged = 0;
             var createdShapes = new List<Dictionary<string, object>>();
             var zTargets = new List<KeyValuePair<object, int>>();
             object shapes = WppCom.GetProperty(slide, "Shapes");
@@ -173,6 +174,11 @@ namespace WordAddIn1.PresentationHost
                                 ["shape_id"] = newId
                             });
                         }
+                        else if (LiveMatchesHtml(existing, node, slideWidth, slideHeight))
+                        {
+                            TryCollectZ(shapes, node, zTargets);
+                            unchanged++;
+                        }
                         else if (!TryUpdate(
                             shapes,
                             slide,
@@ -207,15 +213,20 @@ namespace WordAddIn1.PresentationHost
                 PptHtmlApplyTiming.Step(
                     "nodes",
                     phaseSw.ElapsedMilliseconds,
-                    "updated=" + updated + " created=" + created + " skipped=" + skipped);
+                    "updated=" + updated + " created=" + created + " skipped=" + skipped
+                    + " unchanged=" + unchanged);
                 PptHtmlApplyTiming.NoteTopNodes(nodeTimings);
                 phaseSw.Restart();
 
-                ApplyZOrder(zTargets);
-                PptHtmlApplyTiming.Step("zorder", phaseSw.ElapsedMilliseconds);
+                bool zMoved = ApplyZOrderIfNeeded(zTargets);
+                PptHtmlApplyTiming.Step("zorder", phaseSw.ElapsedMilliseconds, "moved=" + zMoved);
                 phaseSw.Restart();
-                RelockAllGeometries(shapes, plan.Nodes, slideWidth, slideHeight);
-                PptHtmlApplyTiming.Step("relock", phaseSw.ElapsedMilliseconds);
+                if (zMoved)
+                {
+                    RelockZTargetGeometries(shapes, zTargets, plan.Nodes, slideWidth, slideHeight);
+                }
+
+                PptHtmlApplyTiming.Step("relock", phaseSw.ElapsedMilliseconds, "moved=" + zMoved);
             }
             catch (Exception ex)
             {
@@ -255,7 +266,8 @@ namespace WordAddIn1.PresentationHost
             PptHtmlApplyTiming.Step(
                 "com_total",
                 applySw.ElapsedMilliseconds,
-                "host=wpp updated=" + updated + " created=" + created + " skipped=" + skipped);
+                "host=wpp updated=" + updated + " created=" + created + " skipped=" + skipped
+                + " unchanged=" + unchanged);
             return true;
         }
 
@@ -987,15 +999,41 @@ namespace WordAddIn1.PresentationHost
             targets.Add(new KeyValuePair<object, int>(shape, node.Z.Value));
         }
 
-        private static void ApplyZOrder(List<KeyValuePair<object, int>> targets)
+        private static bool ApplyZOrderIfNeeded(List<KeyValuePair<object, int>> targets)
         {
             if (targets == null || targets.Count == 0)
             {
-                return;
+                return false;
             }
 
-            // msoBringToFront = 0
             targets.Sort((a, b) => a.Value.CompareTo(b.Value));
+            int prev = -1;
+            bool already = true;
+            foreach (KeyValuePair<object, int> item in targets)
+            {
+                try
+                {
+                    int pos = Convert.ToInt32(WppCom.GetProperty(item.Key, "ZOrderPosition"));
+                    if (pos <= prev)
+                    {
+                        already = false;
+                        break;
+                    }
+
+                    prev = pos;
+                }
+                catch (Exception)
+                {
+                    already = false;
+                    break;
+                }
+            }
+
+            if (already)
+            {
+                return false;
+            }
+
             foreach (KeyValuePair<object, int> item in targets)
             {
                 try
@@ -1006,22 +1044,38 @@ namespace WordAddIn1.PresentationHost
                 {
                 }
             }
+
+            return true;
         }
 
-        private static void RelockAllGeometries(
+        private static void RelockZTargetGeometries(
             object shapes,
+            List<KeyValuePair<object, int>> zTargets,
             List<PptHtmlApplyNode> nodes,
             double slideWidth,
             double slideHeight)
         {
-            if (shapes == null || nodes == null)
+            if (shapes == null || zTargets == null || zTargets.Count == 0 || nodes == null)
             {
                 return;
             }
 
+            var ids = new HashSet<int>();
+            foreach (KeyValuePair<object, int> item in zTargets)
+            {
+                try
+                {
+                    ids.Add(Convert.ToInt32(WppCom.GetProperty(item.Key, "Id")));
+                }
+                catch (Exception)
+                {
+                }
+            }
+
             foreach (PptHtmlApplyNode node in nodes)
             {
-                if (node == null || !node.HasGeometry || !node.ShapeComId.HasValue)
+                if (node == null || !node.HasGeometry || !node.ShapeComId.HasValue
+                    || !ids.Contains(node.ShapeComId.Value))
                 {
                     continue;
                 }
@@ -1034,6 +1088,277 @@ namespace WordAddIn1.PresentationHost
 
                 LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
             }
+        }
+
+        /// <summary>现场 COM 已与本次 HTML 一致则跳过写入。图/表/换图不跳。</summary>
+        private static bool LiveMatchesHtml(object shape, PptHtmlApplyNode node, double slideWidth, double slideHeight)
+        {
+            if (shape == null || node == null)
+            {
+                return false;
+            }
+
+            if (node.ChartGrid != null || node.ChartFormat != null || node.TableCells != null)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(node.DataSrc))
+            {
+                return false;
+            }
+
+            try
+            {
+                string existingType = ResolveExistingType(shape);
+                if (existingType == "chart" || existingType == "table")
+                {
+                    return false;
+                }
+
+                if (node.HasGeometry)
+                {
+                    double left = node.LeftPct.GetValueOrDefault() / 100.0 * slideWidth;
+                    double top = node.TopPct.GetValueOrDefault() / 100.0 * slideHeight;
+                    double width = node.WidthPct.GetValueOrDefault() / 100.0 * slideWidth;
+                    double height = node.HeightPct.GetValueOrDefault() / 100.0 * slideHeight;
+                    if (!Near(Convert.ToDouble(WppCom.GetProperty(shape, "Left") ?? 0.0), left)
+                        || !Near(Convert.ToDouble(WppCom.GetProperty(shape, "Top") ?? 0.0), top)
+                        || !Near(Convert.ToDouble(WppCom.GetProperty(shape, "Width") ?? 0.0), width)
+                        || !Near(Convert.ToDouble(WppCom.GetProperty(shape, "Height") ?? 0.0), height))
+                    {
+                        return false;
+                    }
+                }
+
+                if (node.Rotation.HasValue
+                    && !Near(Convert.ToDouble(WppCom.GetProperty(shape, "Rotation") ?? 0.0), node.Rotation.Value))
+                {
+                    return false;
+                }
+
+                if (node.HasText && existingType != "picture" && existingType != "media")
+                {
+                    if (!HasTextFrame(shape))
+                    {
+                        return false;
+                    }
+
+                    object tf = WppCom.GetProperty(shape, "TextFrame");
+                    object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                    string live = tr == null ? "" : Convert.ToString(WppCom.GetProperty(tr, "Text")) ?? "";
+                    if (!SamePptText(live, node.Text))
+                    {
+                        return false;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(node.Fill))
+                {
+                    object fill = WppCom.GetProperty(shape, "Fill");
+                    if (string.Equals(node.Fill, "none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (IsVisibleTrue(fill))
+                        {
+                            return false;
+                        }
+                    }
+                    else if (PptHtmlStyleIo.TryParseHexToOfficeRgb(node.Fill, out int fillRgb, out _))
+                    {
+                        if (!ForeRgbAlreadyMatches(fill, fillRgb))
+                        {
+                            return false;
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(node.FontColor)
+                    && PptHtmlStyleIo.TryParseHexToOfficeRgb(node.FontColor, out int fontRgb, out _))
+                {
+                    if (!HasTextFrame(shape))
+                    {
+                        return false;
+                    }
+
+                    object tf = WppCom.GetProperty(shape, "TextFrame");
+                    object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                    object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                    object color = font == null ? null : WppCom.GetProperty(font, "Color");
+                    object rgbObj = color == null ? null : WppCom.GetProperty(color, "RGB");
+                    if (rgbObj == null || ((Convert.ToInt32(rgbObj) & 0x00FFFFFF) != (fontRgb & 0x00FFFFFF)))
+                    {
+                        return false;
+                    }
+                }
+
+                if (node.FontSizePt.HasValue && HasTextFrame(shape))
+                {
+                    object tf = WppCom.GetProperty(shape, "TextFrame");
+                    object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                    object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                    double liveSize = font == null ? 0.0 : Convert.ToDouble(WppCom.GetProperty(font, "Size") ?? 0.0);
+                    if (!Near(liveSize, node.FontSizePt.Value, 0.2))
+                    {
+                        return false;
+                    }
+                }
+
+                if (node.FontBold.HasValue && HasTextFrame(shape))
+                {
+                    object tf = WppCom.GetProperty(shape, "TextFrame");
+                    object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                    object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                    int bold = font == null ? 0 : Convert.ToInt32(WppCom.GetProperty(font, "Bold") ?? 0);
+                    bool live = bold == -1 || bold == 1;
+                    if (live != node.FontBold.Value)
+                    {
+                        return false;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(node.FontName) && HasTextFrame(shape))
+                {
+                    object tf = WppCom.GetProperty(shape, "TextFrame");
+                    object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                    object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                    string liveName = font == null ? "" : Convert.ToString(WppCom.GetProperty(font, "Name")) ?? "";
+                    string liveEast = "";
+                    try
+                    {
+                        liveEast = font == null ? "" : Convert.ToString(WppCom.GetProperty(font, "NameFarEast")) ?? "";
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    if (!string.Equals(liveName, node.FontName, StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(liveEast, node.FontName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return false;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(node.LineColor))
+                {
+                    object line = WppCom.GetProperty(shape, "Line");
+                    if (string.Equals(node.LineColor, "none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (IsVisibleTrue(line))
+                        {
+                            return false;
+                        }
+                    }
+                    else if (PptHtmlStyleIo.TryParseHexToOfficeRgb(node.LineColor, out int lineRgb, out _))
+                    {
+                        if (!ForeRgbAlreadyMatches(line, lineRgb))
+                        {
+                            return false;
+                        }
+                    }
+                }
+
+                if (node.LineWidthPt.HasValue)
+                {
+                    object line = WppCom.GetProperty(shape, "Line");
+                    double liveW = line == null ? 0.0 : Convert.ToDouble(WppCom.GetProperty(line, "Weight") ?? 0.0);
+                    if (!Near(liveW, node.LineWidthPt.Value, 0.15))
+                    {
+                        return false;
+                    }
+                }
+
+                if (node.MarginLeftPt.HasValue || node.MarginRightPt.HasValue
+                    || node.MarginTopPt.HasValue || node.MarginBottomPt.HasValue)
+                {
+                    if (!HasTextFrame(shape))
+                    {
+                        return false;
+                    }
+
+                    object tf = WppCom.GetProperty(shape, "TextFrame");
+                    if (node.MarginLeftPt.HasValue
+                        && !Near(Convert.ToDouble(WppCom.GetProperty(tf, "MarginLeft") ?? 0.0), node.MarginLeftPt.Value, 0.2))
+                    {
+                        return false;
+                    }
+
+                    if (node.MarginRightPt.HasValue
+                        && !Near(Convert.ToDouble(WppCom.GetProperty(tf, "MarginRight") ?? 0.0), node.MarginRightPt.Value, 0.2))
+                    {
+                        return false;
+                    }
+
+                    if (node.MarginTopPt.HasValue
+                        && !Near(Convert.ToDouble(WppCom.GetProperty(tf, "MarginTop") ?? 0.0), node.MarginTopPt.Value, 0.2))
+                    {
+                        return false;
+                    }
+
+                    if (node.MarginBottomPt.HasValue
+                        && !Near(Convert.ToDouble(WppCom.GetProperty(tf, "MarginBottom") ?? 0.0), node.MarginBottomPt.Value, 0.2))
+                    {
+                        return false;
+                    }
+                }
+
+                if (!PptHtmlParagraphIo.LiveMatches(
+                    PptHtmlParagraphIo.TryReadFromWppShape(shape),
+                    node.Align,
+                    node.LineSpacing,
+                    node.SpaceBeforePt,
+                    node.SpaceAfterPt,
+                    node.IndentLeftPt,
+                    node.IndentFirstPt,
+                    node.Bullet))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool HasTextFrame(object shape)
+        {
+            try
+            {
+                object has = WppCom.GetProperty(shape, "HasTextFrame");
+                if (has == null)
+                {
+                    return false;
+                }
+
+                int v = Convert.ToInt32(has);
+                return v == -1 || v == 1;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool Near(double live, double want, double tol = 0.6)
+        {
+            return Math.Abs(live - want) <= tol;
+        }
+
+        private static bool SamePptText(string live, string want)
+        {
+            return NormalizePptText(live) == NormalizePptText(want);
+        }
+
+        private static string NormalizePptText(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            return text.Replace("\r\n", "\n").Replace('\r', '\n').TrimEnd();
         }
 
         private static bool TryApplyColors(object shape, PptHtmlApplyNode node, string shapeType, out string error)
