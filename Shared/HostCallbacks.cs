@@ -53,6 +53,11 @@ namespace WordAddIn1
         public static Action<ForegroundDanceRequest> RequestForegroundDance { get; set; }
 
         /// <summary>
+        /// Operate 写页结束：关掉编排期间的短暂 TopMost。未开编排则为 no-op。
+        /// </summary>
+        public static Action RequestForegroundDanceComplete { get; set; }
+
+        /// <summary>
         /// 已过时：可见浏览改为 <see cref="RaiseForegroundDance"/>（Kind=Open）。
         /// </summary>
         public static Action BringDesktopToFront { get; set; }
@@ -88,6 +93,11 @@ namespace WordAddIn1
             }
 
             RequestForegroundDance?.Invoke(request);
+        }
+
+        public static void RaiseForegroundDanceComplete()
+        {
+            RequestForegroundDanceComplete?.Invoke();
         }
 
         public static void RaiseBringDesktopToFront()

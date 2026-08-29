@@ -141,8 +141,10 @@ namespace WordAddIn1
             }
 
             var args = parameters ?? new Dictionary<string, object>();
+            bool operateDance = ForegroundDanceTriggers.Classify(toolName, args)
+                == ForegroundDanceKind.Operate;
 
-            if (ForegroundDanceTriggers.Classify(toolName, args) == ForegroundDanceKind.Operate)
+            if (operateDance)
             {
                 HostCallbacks.RaiseForegroundDance(new ForegroundDanceRequest
                 {
@@ -155,22 +157,32 @@ namespace WordAddIn1
 
             try
             {
-                AgentRunCancellation.ThrowIfCancelled();
-            }
-            catch (OperationCanceledException)
-            {
-                return new ToolResult { Success = false, Error = "cancelled by user" };
-            }
+                try
+                {
+                    AgentRunCancellation.ThrowIfCancelled();
+                }
+                catch (OperationCanceledException)
+                {
+                    return new ToolResult { Success = false, Error = "cancelled by user" };
+                }
 
-            if (WorkspaceReconcile.ShouldWrapFrontendWrite(toolName, args))
-            {
-                int ttl = WorkspaceReconcile.TtlSecForTool(toolName, args);
-                return await WorkspaceReconcile
-                    .AroundFrontendWriteAsync(ttl, () => InvokeHandlerCoreAsync(toolName, handler, args))
-                    .ConfigureAwait(false);
-            }
+                if (WorkspaceReconcile.ShouldWrapFrontendWrite(toolName, args))
+                {
+                    int ttl = WorkspaceReconcile.TtlSecForTool(toolName, args);
+                    return await WorkspaceReconcile
+                        .AroundFrontendWriteAsync(ttl, () => InvokeHandlerCoreAsync(toolName, handler, args))
+                        .ConfigureAwait(false);
+                }
 
-            return await InvokeHandlerCoreAsync(toolName, handler, args).ConfigureAwait(false);
+                return await InvokeHandlerCoreAsync(toolName, handler, args).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (operateDance)
+                {
+                    HostCallbacks.RaiseForegroundDanceComplete();
+                }
+            }
         }
 
         private static async Task<ToolResult> InvokeHandlerCoreAsync(

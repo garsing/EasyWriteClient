@@ -1,5 +1,4 @@
 using System;
-using System.Windows.Forms;
 using WordAddIn1;
 using WordAddIn1.HostPlatform;
 
@@ -7,16 +6,15 @@ namespace EasyWriteClient.Desktop
 {
     /// <summary>
     /// Desktop 前台编排：缩 → 目标窗焦点（不 Maximize）→ 易写再焦点。
+    /// 第 3 步必须同步：WinForms Timer 走消息泵，COM 写页占住 UI 时 Tick 到不了。
     /// 计数仅内存；关进程清零。Plugin 不持有本类型。
     /// </summary>
     internal sealed class ForegroundDance : IDisposable
     {
-        private const int StepDelayMs = 150;
-
         private readonly MainForm _form;
         private readonly object _gate = new object();
         private int _count;
-        private Timer _step3Timer;
+        private bool _operateHold;
 
         public ForegroundDance(MainForm form)
         {
@@ -78,48 +76,36 @@ namespace EasyWriteClient.Desktop
                 NativeWindowActivate.FocusWithoutMaximize(hwnd);
             }
 
-            ScheduleFocusEasyWrite();
+            // 一开始就叠好：文档第二层、易写第一层。Operate 写页期间保持 TopMost，
+            // 避免 COM 把文档重新盖上来；handler 结束立刻关掉。
+            _operateHold = request.Kind == ForegroundDanceKind.Operate;
+            _form.FocusEasyWriteAfterDance(keepTopMost: _operateHold);
         }
 
-        private void ScheduleFocusEasyWrite()
+        public void CompletePending()
         {
-            if (_step3Timer != null)
+            if (_form.IsDisposed)
             {
-                _step3Timer.Stop();
-                _step3Timer.Dispose();
+                return;
             }
 
-            _step3Timer = new Timer { Interval = StepDelayMs };
-            Timer timer = _step3Timer;
-            timer.Tick += (_, __) =>
+            if (_form.InvokeRequired)
             {
-                timer.Stop();
-                if (ReferenceEquals(_step3Timer, timer))
-                {
-                    _step3Timer.Dispose();
-                    _step3Timer = null;
-                }
-                else
-                {
-                    timer.Dispose();
-                }
+                _form.BeginInvoke(new Action(CompletePending));
+                return;
+            }
 
-                if (!_form.IsDisposed)
-                {
-                    _form.FocusEasyWriteAfterDance();
-                }
-            };
-            timer.Start();
+            if (!_operateHold)
+            {
+                return;
+            }
+
+            _form.ReleaseDanceTopMost();
+            _operateHold = false;
         }
 
         public void Dispose()
         {
-            if (_step3Timer != null)
-            {
-                _step3Timer.Stop();
-                _step3Timer.Dispose();
-                _step3Timer = null;
-            }
         }
     }
 }

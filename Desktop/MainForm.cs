@@ -39,6 +39,7 @@ namespace EasyWriteClient.Desktop
         private readonly ForegroundDance _foregroundDance;
         private Action _requestCompactHandler;
         private Action<ForegroundDanceRequest> _requestForegroundDanceHandler;
+        private Action _requestForegroundDanceCompleteHandler;
         private Action _clearDesktopTopMostHandler;
         private Func<object> _getInteractionSettingsHandler;
         private Action<string, object> _setInteractionSettingHandler;
@@ -107,6 +108,17 @@ namespace EasyWriteClient.Desktop
                 _foregroundDance.Request(request);
             };
             HostCallbacks.RequestForegroundDance = _requestForegroundDanceHandler;
+
+            _requestForegroundDanceCompleteHandler = () =>
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                _foregroundDance.CompletePending();
+            };
+            HostCallbacks.RequestForegroundDanceComplete = _requestForegroundDanceCompleteHandler;
 
             _clearDesktopTopMostHandler = () =>
             {
@@ -212,6 +224,11 @@ namespace EasyWriteClient.Desktop
                     HostCallbacks.RequestForegroundDance = null;
                 }
 
+                if (ReferenceEquals(HostCallbacks.RequestForegroundDanceComplete, _requestForegroundDanceCompleteHandler))
+                {
+                    HostCallbacks.RequestForegroundDanceComplete = null;
+                }
+
                 if (ReferenceEquals(HostCallbacks.ClearDesktopTopMost, _clearDesktopTopMostHandler))
                 {
                     HostCallbacks.ClearDesktopTopMost = null;
@@ -301,8 +318,11 @@ namespace EasyWriteClient.Desktop
             SetLayoutMode(WindowLayoutMode.Compact);
         }
 
-        /// <summary>编排第 3 步：易写再焦点；TopMost 只闪一下立刻关。</summary>
-        internal void FocusEasyWriteAfterDance()
+        /// <summary>
+        /// 编排第 3 步：易写再焦点。默认 TopMost 只闪一下。
+        /// Operate 写入期间 keepTopMost=true，防止 COM 把文档盖回第一层。
+        /// </summary>
+        internal void FocusEasyWriteAfterDance(bool keepTopMost = false)
         {
             TopMost = true;
             if (WindowState == FormWindowState.Minimized)
@@ -317,7 +337,19 @@ namespace EasyWriteClient.Desktop
 
             BringToFront();
             Activate();
+            if (!keepTopMost)
+            {
+                TopMost = false;
+            }
+
+            NoteUserActivity();
+        }
+
+        internal void ReleaseDanceTopMost()
+        {
             TopMost = false;
+            BringToFront();
+            Activate();
             NoteUserActivity();
         }
 
