@@ -129,10 +129,40 @@ watch(() => props.messages, (newMessages, oldMessages) => {
   padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
   background-color: #f7f7f5;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* 旧 Edge */
+}
+
+/* 用户气泡 / 提示与助手之间留缝；连续助手气泡（多轮工具拆成多条消息）贴在一起 */
+.message-wrapper + .message-wrapper {
+  margin-top: 12px;
+}
+
+.message-wrapper:has(.system-message:not(.system-message--hint))
+  + .message-wrapper:has(.system-message:not(.system-message--hint)) {
+  margin-top: 0;
+}
+
+.message-wrapper:has(.system-message:not(.system-message--hint))
+  + .message-wrapper:has(.system-message:not(.system-message--hint))
+  :deep(.message-content) {
+  padding-top: 0;
+}
+
+.message-wrapper:has(.system-message:not(.system-message--hint)):has(
+    + .message-wrapper .system-message:not(.system-message--hint)
+  )
+  :deep(.message-content) {
+  padding-bottom: 0;
+}
+
+.message-wrapper:has(.system-message:not(.system-message--hint)):has(
+    + .message-wrapper .system-message:not(.system-message--hint)
+  )
+  :deep(.system-message) {
+  margin-bottom: 0;
 }
 
 .chat-messages::-webkit-scrollbar {

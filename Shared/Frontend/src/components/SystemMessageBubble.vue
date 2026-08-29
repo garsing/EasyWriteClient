@@ -18,10 +18,9 @@
           />
           <div
             v-else-if="segment.type === 'text'"
-            :ref="(el) => bindTextRef(index, el)"
             class="text-segment"
             :class="{ 'text-segment--clamped': isClampedText(index) }"
-            v-html="renderMarkdown(segment.content)"
+            v-html="renderMarkdown(normalizeTextContent(segment.content))"
           ></div>
           <ToolCallBoxDisplayRule
             v-else-if="segment.type === 'toolCall'"
@@ -40,7 +39,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, nextTick } from 'vue'
+import { computed } from 'vue'
 import { marked } from 'marked'
 import ToolCallBoxDisplayRule from './ToolCallBoxDisplayRule.vue'
 import ThinkingBox from './ThinkingBox.vue'
@@ -52,10 +51,22 @@ const props = defineProps({
   }
 })
 
+function isBlankText (content) {
+  return !content || !String(content).replace(/\s/g, '')
+}
+
+function normalizeTextContent (text) {
+  if (!text) return ''
+  return String(text).replace(/^\s+|\s+$/g, '').replace(/\n{3,}/g, '\n\n')
+}
+
 const messageSegments = computed(() => {
   if (props.message.segments && props.message.segments.length > 0) {
-    // 忽略历史遗留的 todoList segment（改由底部进度条展示）
-    return props.message.segments.filter((s) => s && s.type !== 'todoList')
+    return props.message.segments.filter((s) => {
+      if (!s || s.type === 'todoList') return false
+      if (s.type === 'text' && isBlankText(s.content)) return false
+      return true
+    })
   }
   if (!props.message.content) return []
   return [{ type: 'text', content: props.message.content }]
@@ -75,26 +86,6 @@ function isClampedText (index) {
   // 流式中还不能确认自然结束，尾段也先限高；整轮结束后再展开
   return !!props.message.isStreaming
 }
-
-const lastTextEl = ref(null)
-
-function bindTextRef (index, el) {
-  const segs = messageSegments.value
-  const lastTextIndex = segs.reduce((acc, s, i) => (s.type === 'text' ? i : acc), -1)
-  if (index === lastTextIndex) {
-    lastTextEl.value = el
-  }
-}
-
-watch(
-  () => [props.message.isStreaming, props.message.content, lastTextEl.value],
-  async () => {
-    if (!props.message.isStreaming) return
-    await nextTick()
-    const el = lastTextEl.value
-    if (el) el.scrollTop = el.scrollHeight
-  }
-)
 
 // 工具卡已出齐后不再在卡后挂加载点（整轮仍 isStreaming 时的误导）
 const showStreamingSpinner = computed(() => {
@@ -155,7 +146,18 @@ const renderMarkdown = (text) => {
   margin: 0 0 8px 0;
 }
 
-.message-text :deep(p:last-child) {
+.text-segment :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.message-text :deep(p:empty),
+.message-text :deep(p:has(> br:only-child)) {
+  display: none;
+}
+
+/* 工具卡与限高盒紧贴，避免 4px margin 叠出缝 */
+.message-text :deep(.tool-call-box) {
+  margin-top: 0;
   margin-bottom: 0;
 }
 
