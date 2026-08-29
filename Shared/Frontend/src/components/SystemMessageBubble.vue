@@ -16,7 +16,13 @@
             :content="segment.content"
             :is-complete="segment.isComplete"
           />
-          <div v-else-if="segment.type === 'text'" v-html="renderMarkdown(segment.content)"></div>
+          <div
+            v-else-if="segment.type === 'text'"
+            :ref="(el) => bindTextRef(index, el)"
+            class="text-segment"
+            :class="{ 'text-segment--clamped': isClampedText(index) }"
+            v-html="renderMarkdown(segment.content)"
+          ></div>
           <ToolCallBoxDisplayRule
             v-else-if="segment.type === 'toolCall'"
             :tool-name="segment.toolName"
@@ -34,7 +40,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import { marked } from 'marked'
 import ToolCallBoxDisplayRule from './ToolCallBoxDisplayRule.vue'
 import ThinkingBox from './ThinkingBox.vue'
@@ -54,6 +60,41 @@ const messageSegments = computed(() => {
   if (!props.message.content) return []
   return [{ type: 'text', content: props.message.content }]
 })
+
+/** 最后一个工具卡下标；没有工具则为 -1。其前的正文都限高 */
+const lastToolIndex = computed(() => {
+  const segs = messageSegments.value
+  for (let i = segs.length - 1; i >= 0; i--) {
+    if (segs[i].type === 'toolCall') return i
+  }
+  return -1
+})
+
+function isClampedText (index) {
+  if (lastToolIndex.value > index) return true
+  // 流式中还不能确认自然结束，尾段也先限高；整轮结束后再展开
+  return !!props.message.isStreaming
+}
+
+const lastTextEl = ref(null)
+
+function bindTextRef (index, el) {
+  const segs = messageSegments.value
+  const lastTextIndex = segs.reduce((acc, s, i) => (s.type === 'text' ? i : acc), -1)
+  if (index === lastTextIndex) {
+    lastTextEl.value = el
+  }
+}
+
+watch(
+  () => [props.message.isStreaming, props.message.content, lastTextEl.value],
+  async () => {
+    if (!props.message.isStreaming) return
+    await nextTick()
+    const el = lastTextEl.value
+    if (el) el.scrollTop = el.scrollHeight
+  }
+)
 
 // 工具卡已出齐后不再在卡后挂加载点（整轮仍 isStreaming 时的误导）
 const showStreamingSpinner = computed(() => {
@@ -116,6 +157,25 @@ const renderMarkdown = (text) => {
 
 .message-text :deep(p:last-child) {
   margin-bottom: 0;
+}
+
+.text-segment--clamped {
+  max-height: 160px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  color: #999;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.text-segment--clamped :deep(*) {
+  color: inherit;
+}
+
+.text-segment--clamped::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .message-text :deep(code) {
