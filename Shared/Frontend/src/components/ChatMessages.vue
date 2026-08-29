@@ -1,16 +1,22 @@
 <template>
   <div class="chat-messages" ref="messagesContainer">
-    <div v-for="message in messages" :key="`${message.role}-${message.id}`" class="message-wrapper">
-      <UserMessageBubble v-if="message.role === 'user'" :message="message" />
-      <SystemMessageBubble v-else :message="message" />
+    <div v-for="item in displayItems" :key="item.key" class="message-wrapper">
+      <UserMessageBubble v-if="item.kind === 'user'" :message="item.message" />
+      <SystemMessageBubble v-else-if="item.kind === 'hint'" :message="item.message" />
+      <AssistantTurnBlock
+        v-else
+        :messages="item.messages"
+        :archived="item.archived"
+      />
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import UserMessageBubble from './UserMessageBubble.vue'
 import SystemMessageBubble from './SystemMessageBubble.vue'
+import AssistantTurnBlock from './AssistantTurnBlock.vue'
 
 const props = defineProps({
   messages: {
@@ -22,6 +28,39 @@ const props = defineProps({
     type: [Number, String],
     default: 0
   }
+})
+
+/** 用户气泡 / 提示单独一项；连续助手消息合成一轮。后面已有用户消息的轮归档。 */
+const displayItems = computed(() => {
+  const items = []
+  const list = props.messages || []
+  let i = 0
+  while (i < list.length) {
+    const m = list[i]
+    if (m.role === 'user') {
+      items.push({ kind: 'user', key: `user-${m.id}`, message: m })
+      i += 1
+      continue
+    }
+    if (m.isHint) {
+      items.push({ kind: 'hint', key: `hint-${m.id}`, message: m })
+      i += 1
+      continue
+    }
+    const run = []
+    while (i < list.length && list[i].role !== 'user' && !list[i].isHint) {
+      run.push(list[i])
+      i += 1
+    }
+    const archived = list.slice(i).some((x) => x.role === 'user')
+    items.push({
+      kind: 'assistant',
+      key: `asst-${run.map((x) => x.id).join('-')}`,
+      messages: run,
+      archived
+    })
+  }
+  return items
 })
 
 const messagesContainer = ref(null)

@@ -78,6 +78,7 @@
       />
       <ChatInput
         @send="handleSend"
+        @stop="handleUserStop"
         @clear-attachment="clearChatAttachment"
         @dropped-file="onInputAreaFileDrop"
         @remove-selected-open-file="handleRemoveSelectedOpenFile"
@@ -459,6 +460,17 @@ const receivedBackendMessages = ref(new Set()) // 保存已收到后端消息的
 const clearInput = () => {
   const event = new CustomEvent('clearInput')
   window.dispatchEvent(event)
+}
+
+/** 用户点停止：当前助手轮没有自然收尾，下一问时整轮收进「奋力工作」 */
+function handleUserStop () {
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i]
+    if (m.role === 'user') break
+    if (m.role === 'system' && !m.isHint) {
+      m.aborted = true
+    }
+  }
 }
 
 // 处理发送消息

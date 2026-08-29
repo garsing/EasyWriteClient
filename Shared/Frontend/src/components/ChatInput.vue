@@ -119,7 +119,7 @@ const autoSize = computed(() =>
   props.desktop ? { minRows: 3, maxRows: 8 } : { minRows: 1, maxRows: 4 }
 )
 
-const emit = defineEmits(['send', 'clear-attachment', 'dropped-file', 'remove-selected-open-file'])
+const emit = defineEmits(['send', 'stop', 'clear-attachment', 'dropped-file', 'remove-selected-open-file'])
 
 const showSelectedOpenFiles = computed(
   () =>
@@ -255,6 +255,7 @@ const handleSend = () => {
 }
 
 const handleStop = async () => {
+  emit('stop')
   try {
     await sendMessage('stopRequest', {})
   } catch (error) {

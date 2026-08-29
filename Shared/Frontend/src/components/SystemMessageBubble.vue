@@ -1,5 +1,5 @@
 <template>
-  <div class="system-message" :class="{ 'system-message--hint': message.isHint }">
+  <div class="system-message" :class="{ 'system-message--hint': message.isHint, 'system-message--compact': compact }">
     <div v-if="message.isHint" class="hint-text">{{ message.content }}</div>
     <div v-else class="message-content">
       <div class="message-text">
@@ -48,6 +48,16 @@ const props = defineProps({
   message: {
     type: Object,
     required: true
+  },
+  /** 嵌在「奋力工作」里：去掉外层左右 padding */
+  compact: {
+    type: Boolean,
+    default: false
+  },
+  /** 归档过程正文：全部按未确认收尾（限高 + 灰字） */
+  forceProcess: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -82,6 +92,7 @@ const lastToolIndex = computed(() => {
 })
 
 function isClampedText (index) {
+  if (props.forceProcess) return true
   if (lastToolIndex.value > index) return true
   // 流式中还不能确认自然结束，尾段也先限高；整轮结束后再展开
   return !!props.message.isStreaming
@@ -119,6 +130,10 @@ const renderMarkdown = (text) => {
 
 .system-message--hint {
   justify-content: center;
+}
+
+.system-message--compact .message-content {
+  padding: 0;
 }
 
 .hint-text {
