@@ -69,4 +69,9 @@ const toggleExpand = () => {
   font-weight: 500;
   color: #999;
 }
+
+.work-fold-body {
+  /* 比标题再缩一档，展开后是子级，不要和「奋力工作」齐平 */
+  padding: 0 10px 8px 28px;
+}
 </style>
