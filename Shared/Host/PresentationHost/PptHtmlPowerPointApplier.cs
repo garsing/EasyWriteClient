@@ -793,12 +793,12 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
-            if (node.HasGeometry)
+            if (ShouldWriteGeometry(shape, node, existingType))
             {
                 ApplyGeometry(shape, node, slideWidth, slideHeight);
             }
 
-            if (node.Rotation.HasValue)
+            if (node.Rotation.HasValue && ShouldWriteGeometry(shape, node, existingType))
             {
                 try
                 {
@@ -833,11 +833,9 @@ namespace WordAddIn1.PresentationHost
             // 字号/AutoSize 可能撑破形状：写完样式后重锁几何
             LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
 
-            // 换图，或 B2：页上仍是 freeform/smartart/group/unknown 时删旧 + AddPicture
+            // 只换真正的 picture/media。组合/自由形状保持原形，禁止删组再贴 PNG。
             if (!string.IsNullOrWhiteSpace(node.DataSrc)
-                && (existingType == "picture"
-                    || existingType == "media"
-                    || PptShapeTypeMap.ShouldRasterizeAsPicture(existingType)))
+                && (existingType == "picture" || existingType == "media"))
             {
                 if (string.IsNullOrEmpty(node.ResolvedLocalPath) || !File.Exists(node.ResolvedLocalPath))
                 {
@@ -1129,7 +1127,7 @@ namespace WordAddIn1.PresentationHost
             {
             }
 
-            if (node != null && node.HasGeometry)
+            if (node != null && ShouldWriteGeometry(shape, node, node.ShapeType))
             {
                 ApplyGeometry(shape, node, slideWidth, slideHeight);
             }
@@ -1575,6 +1573,31 @@ namespace WordAddIn1.PresentationHost
                 default:
                     return XlColumnClustered;
             }
+        }
+
+        private static bool ShouldWriteGeometry(
+            PowerPoint.Shape shape,
+            PptHtmlApplyNode node,
+            string existingType)
+        {
+            if (node == null || !node.HasGeometry)
+            {
+                return false;
+            }
+
+            double? rotation = node.Rotation;
+            if (!rotation.HasValue && shape != null)
+            {
+                try
+                {
+                    rotation = shape.Rotation;
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return PptShapeTypeMap.ShouldApplyHtmlGeometry(existingType ?? node.ShapeType, rotation);
         }
 
         private static void ApplyGeometry(

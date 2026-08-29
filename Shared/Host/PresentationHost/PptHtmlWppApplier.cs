@@ -368,7 +368,7 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
-            if (node.HasGeometry)
+            if (ShouldWriteGeometry(shape, node, existingType))
             {
                 TrySet(shape, "Left", node.LeftPct.GetValueOrDefault() / 100.0 * slideWidth);
                 TrySet(shape, "Top", node.TopPct.GetValueOrDefault() / 100.0 * slideHeight);
@@ -376,7 +376,7 @@ namespace WordAddIn1.PresentationHost
                 TrySet(shape, "Height", node.HeightPct.GetValueOrDefault() / 100.0 * slideHeight);
             }
 
-            if (node.Rotation.HasValue)
+            if (node.Rotation.HasValue && ShouldWriteGeometry(shape, node, existingType))
             {
                 TrySet(shape, "Rotation", node.Rotation.Value);
             }
@@ -405,9 +405,7 @@ namespace WordAddIn1.PresentationHost
             LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
 
             if (!string.IsNullOrWhiteSpace(node.DataSrc)
-                && (existingType == "picture"
-                    || existingType == "media"
-                    || PptShapeTypeMap.ShouldRasterizeAsPicture(existingType)))
+                && (existingType == "picture" || existingType == "media"))
             {
                 if (string.IsNullOrEmpty(node.ResolvedLocalPath) || !File.Exists(node.ResolvedLocalPath))
                 {
@@ -700,7 +698,7 @@ namespace WordAddIn1.PresentationHost
             {
             }
 
-            if (node != null && node.HasGeometry)
+            if (node != null && ShouldWriteGeometry(shape, node, node.ShapeType))
             {
                 TrySet(shape, "Left", node.LeftPct.GetValueOrDefault() / 100.0 * slideWidth);
                 TrySet(shape, "Top", node.TopPct.GetValueOrDefault() / 100.0 * slideHeight);
@@ -1279,6 +1277,32 @@ namespace WordAddIn1.PresentationHost
             {
                 return false;
             }
+        }
+
+        private static bool ShouldWriteGeometry(object shape, PptHtmlApplyNode node, string existingType)
+        {
+            if (node == null || !node.HasGeometry)
+            {
+                return false;
+            }
+
+            double? rotation = node.Rotation;
+            if (!rotation.HasValue && shape != null)
+            {
+                try
+                {
+                    object rot = WppCom.GetProperty(shape, "Rotation");
+                    if (rot != null)
+                    {
+                        rotation = Convert.ToDouble(rot);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return PptShapeTypeMap.ShouldApplyHtmlGeometry(existingType ?? node.ShapeType, rotation);
         }
     }
 }

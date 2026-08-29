@@ -134,6 +134,29 @@ namespace WordAddIn1.PresentationHost
                 || shapeType == "unknown";
         }
 
+        /// <summary>
+        /// 已有形状能不能按 HTML style 回写 Left/Top/Width/Height。
+        /// 旋转形状的 COM Width/Height 是未旋转尺寸，当视觉框套回去会压扁。
+        /// picture/group/freeform 也不该被约定 HTML 挪位。
+        /// 新建仍按 HTML 几何创建。
+        /// </summary>
+        public static bool ShouldApplyHtmlGeometry(string shapeType, double? rotation)
+        {
+            if (shapeType == "picture"
+                || shapeType == "media"
+                || ShouldRasterizeAsPicture(shapeType))
+            {
+                return false;
+            }
+
+            if (rotation.HasValue && System.Math.Abs(rotation.Value) > 0.5)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         public static bool TryGetAutoShapeType(string shapeType, out int autoShapeType)
         {
             autoShapeType = 0;
