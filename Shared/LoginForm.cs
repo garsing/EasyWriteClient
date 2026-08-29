@@ -284,7 +284,7 @@ namespace WordAddIn1
                 core.Settings.AreDefaultScriptDialogsEnabled = true;
                 core.Settings.IsScriptEnabled = true;
                 core.Settings.IsWebMessageEnabled = true;
-                webView2.ZoomFactor = 1.0;
+                WebView2VueHost.DisableUserZoom(webView2);
 
                 core.SetVirtualHostNameToFolderMapping(
                     "appassets.local",

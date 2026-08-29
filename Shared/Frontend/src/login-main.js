@@ -1,4 +1,5 @@
 import { createApp } from 'vue'
+import './utils/disableUserZoom.js'
 import './styles/login.css'
 import LoginPanel from './components/LoginPanel.vue'
 import { onMessage } from './composables/useWebViewBridge'

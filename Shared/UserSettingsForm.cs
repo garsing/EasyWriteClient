@@ -261,6 +261,7 @@ namespace WordAddIn1
                 webView2.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = true;
                 webView2.CoreWebView2.Settings.IsScriptEnabled = true;
                 webView2.CoreWebView2.Settings.IsWebMessageEnabled = true;
+                WebView2VueHost.DisableUserZoom(webView2);
 
                 bridge = new WebView2Bridge(webView2);
                 RegisterMessageHandlers();

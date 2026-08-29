@@ -306,6 +306,7 @@ namespace EasyWriteClient.Desktop
             core.Settings.IsScriptEnabled = true;
             core.Settings.IsWebMessageEnabled = true;
             core.Settings.AreDefaultContextMenusEnabled = true;
+            WebView2VueHost.DisableUserZoom(_webView);
 
             core.SetVirtualHostNameToFolderMapping(
                 "appassets.local",

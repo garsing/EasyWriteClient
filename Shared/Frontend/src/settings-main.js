@@ -1,4 +1,5 @@
 import { createApp } from 'vue'
+import './utils/disableUserZoom.js'
 import UserSettingsPanel from './components/UserSettingsPanel.vue'
 import { onMessage } from './composables/useWebViewBridge'
 import './styles/settings.css'

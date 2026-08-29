@@ -226,7 +226,7 @@ namespace WordAddIn1
                 }
 
                 webView2.CoreWebView2.Settings.AreDevToolsEnabled = true;
-                webView2.ZoomFactor = 1.0;
+                WebView2VueHost.DisableUserZoom(webView2);
 
                 await NavigateToKindAsync(_documentKind).ConfigureAwait(true);
                 btnClose.BringToFront();

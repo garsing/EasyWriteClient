@@ -1,4 +1,5 @@
 import { createApp } from 'vue'
+import './utils/disableUserZoom.js'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import Antd from 'ant-design-vue'
