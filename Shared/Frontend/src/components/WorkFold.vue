@@ -67,7 +67,7 @@ const toggleExpand = () => {
   flex: 1;
   font-size: 13px;
   font-weight: 500;
-  color: #999;
+  color: #666;
 }
 
 .work-fold-body {
