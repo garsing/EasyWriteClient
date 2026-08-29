@@ -177,7 +177,7 @@ const renderMarkdown = (text) => {
 }
 
 .text-segment--clamped {
-  max-height: 160px;
+  max-height: 80px;
   overflow-y: auto;
   overflow-x: hidden;
   color: #999;
