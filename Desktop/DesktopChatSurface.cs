@@ -534,8 +534,25 @@ namespace EasyWriteClient.Desktop
             });
             _bridge.RegisterHandler("openKnowledgeBase", async _ =>
             {
-                await Task.CompletedTask;
-                return new { success = true, message = "桌面版知识库入口后续接入" };
+                try
+                {
+                    if (!UserService.Instance.IsLoggedIn)
+                    {
+                        await LoginForm.ShowDialogAsync(FindForm() ?? (IWin32Window)this, logoutFirst: false)
+                            .ConfigureAwait(true);
+                        if (!UserService.Instance.CheckLoginStatus())
+                        {
+                            return new { success = false, message = "请先登录" };
+                        }
+                    }
+
+                    await KnowledgeBaseForm.ShowAsync(FindForm() ?? (IWin32Window)this).ConfigureAwait(true);
+                    return new { success = true };
+                }
+                catch (Exception ex)
+                {
+                    return new { success = false, message = ex.Message };
+                }
             });
             _bridge.RegisterHandler("todoListReply", HandleTodoListReplyAsync);
             _bridge.RegisterHandler("getOpenFiles", _ =>

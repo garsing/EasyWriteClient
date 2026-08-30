@@ -19,7 +19,7 @@
       </button>
     </div>
 
-    <!-- 上部：仅新建任务；图标与插件 ChatHeader 同一 add.png -->
+    <!-- 上部：新建任务、知识库；图标与插件 ChatHeader 同一套 -->
     <button
       v-if="!collapsed"
       type="button"
@@ -30,7 +30,16 @@
       新建任务
     </button>
     <button
-      v-else
+      v-if="!collapsed"
+      type="button"
+      class="new-task-btn"
+      @click="handleOpenKnowledgeBase"
+    >
+      <img :src="knowledgeBaseIcon" alt="" class="new-task-icon-img" aria-hidden="true" />
+      知识库
+    </button>
+    <button
+      v-if="collapsed"
       type="button"
       class="icon-btn new-task-icon"
       title="新建任务"
@@ -38,6 +47,16 @@
       @click="$emit('new-task')"
     >
       <img :src="addIcon" alt="新建任务" class="new-task-icon-img" />
+    </button>
+    <button
+      v-if="collapsed"
+      type="button"
+      class="icon-btn new-task-icon"
+      title="知识库"
+      aria-label="知识库"
+      @click="handleOpenKnowledgeBase"
+    >
+      <img :src="knowledgeBaseIcon" alt="知识库" class="new-task-icon-img" />
     </button>
 
     <!-- 新建任务与历史任务之间：打开文件（只读列表） -->
@@ -193,6 +212,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { formatRelativeTime } from '../services/conversationsApi.js'
 import { useWebViewBridge } from '../composables/useWebViewBridge'
 import addIcon from '../assets/images/add.png'
+import knowledgeBaseIcon from '../assets/images/knowledge_base.png'
 import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
 import userIcon from '../assets/images/avatar.png'
 import { openFileSelectionKey } from '../utils/selectedOpenFiles.js'
@@ -437,6 +457,18 @@ onUnmounted(() => {
   window.removeEventListener('scroll', closeFileContextMenu, true)
   if (typeof offAuthChanged === 'function') offAuthChanged()
 })
+
+async function handleOpenKnowledgeBase () {
+  try {
+    const res = await sendMessage('openKnowledgeBase', {})
+    if (res && res.success === false) {
+      console.warn('[TaskSidebar] 打开知识库失败:', res.message || res)
+    }
+    await refreshUsername()
+  } catch (e) {
+    console.error('[TaskSidebar] 打开知识库失败:', e)
+  }
+}
 
 async function handleOpenSettings () {
   try {
