@@ -1,13 +1,21 @@
 <template>
   <div class="chat-messages" ref="messagesContainer">
-    <div v-for="item in displayItems" :key="item.key" class="message-wrapper">
-      <UserMessageBubble v-if="item.kind === 'user'" :message="item.message" />
-      <SystemMessageBubble v-else-if="item.kind === 'hint'" :message="item.message" />
-      <AssistantTurnBlock
-        v-else
-        :messages="item.messages"
-        :archived="item.archived"
-      />
+    <div v-for="turn in displayTurns" :key="turn.key" class="chat-turn">
+      <div v-if="turn.user" class="chat-turn-user">
+        <UserMessageBubble :message="turn.user" />
+      </div>
+      <div
+        v-for="item in turn.rest"
+        :key="item.key"
+        class="message-wrapper"
+      >
+        <SystemMessageBubble v-if="item.kind === 'hint'" :message="item.message" />
+        <AssistantTurnBlock
+          v-else
+          :messages="item.messages"
+          :archived="item.archived"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -64,6 +72,23 @@ const displayItems = computed(() => {
     })
   }
   return items
+})
+
+/** 一轮 = 一条用户消息 + 其后的助手/提示；用户气泡在轮内 sticky，滚过本轮才离开顶部 */
+const displayTurns = computed(() => {
+  const turns = []
+  for (const item of displayItems.value) {
+    if (item.kind === 'user') {
+      turns.push({ key: item.key, user: item.message, rest: [] })
+      continue
+    }
+    if (!turns.length) {
+      turns.push({ key: `lead-${item.key}`, user: null, rest: [item] })
+    } else {
+      turns[turns.length - 1].rest.push(item)
+    }
+  }
+  return turns
 })
 
 const messagesContainer = ref(null)
@@ -169,12 +194,34 @@ watch(() => props.messages, (newMessages, oldMessages) => {
   min-height: 0;
   overflow-y: auto;
   padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+  display: block;
   background-color: #f7f7f5;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* 旧 Edge */
+}
+
+.chat-turn {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chat-turn + .chat-turn {
+  margin-top: 16px;
+}
+
+/* 用户气泡贴在滚动区顶部，只在本轮还在视口内时吸顶 */
+.chat-turn-user {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 0 -16px;
+  padding: 8px 16px 6px;
+  background: #f7f7f5;
+}
+
+.chat-turn-user + .message-wrapper {
+  margin-top: 12px;
 }
 
 /* 用户气泡 / 提示与助手之间留缝；连续助手气泡（多轮工具拆成多条消息）贴在一起 */
