@@ -193,7 +193,8 @@ watch(() => props.messages, (newMessages, oldMessages) => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px;
+  /* 顶 padding 会在吸顶条上方留出一条可透视缝，改由吸顶条自己垫 */
+  padding: 0 16px 16px;
   display: block;
   background-color: #f7f7f5;
   scrollbar-width: none; /* Firefox */
@@ -214,10 +215,29 @@ watch(() => props.messages, (newMessages, oldMessages) => {
 .chat-turn-user {
   position: sticky;
   top: 0;
-  z-index: 3;
+  z-index: 5;
   margin: 0 -16px;
-  padding: 8px 16px 6px;
+  padding: 8px 16px 10px;
   background: #f7f7f5;
+}
+
+/* 盖住滚动容器边缘 / 圆角处可能露出的正文 */
+.chat-turn-user::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -20px;
+  height: 20px;
+  background: #f7f7f5;
+}
+
+.chat-turn-user :deep(.user-message) {
+  margin-bottom: 0;
+}
+
+.chat-turn:first-child:not(:has(.chat-turn-user)) {
+  padding-top: 16px;
 }
 
 .chat-turn-user + .message-wrapper {
