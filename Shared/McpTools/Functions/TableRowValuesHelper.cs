@@ -482,12 +482,49 @@ namespace WordAddIn1
             var writeCellSw = new System.Diagnostics.Stopwatch();
             var applyFormatSw = new System.Diagnostics.Stopwatch();
 
-            foreach (TableRowWriteSpec spec in specs)
+            Word.Application app = TryGetWordApplication(table);
+            bool prevScreenUpdating = true;
+            if (app != null)
             {
-                List<TableRowSlot> slots = EnumerateRowSlots(spec.Row, colCount, merge);
-                if (!ApplyEmptySlotWrite(table, spec, slots, result, writeCellSw, applyFormatSw))
+                try
                 {
-                    return result;
+                    prevScreenUpdating = app.ScreenUpdating;
+                    app.ScreenUpdating = false;
+                }
+                catch (Exception ex)
+                {
+                    EasyWriteDiagnostics.LogTableRowValues(
+                        $"[ApplyTableRowValues] ScreenUpdating 关闭失败: {ex.Message}");
+                    app = null;
+                }
+            }
+
+            try
+            {
+                foreach (TableRowWriteSpec spec in specs)
+                {
+                    List<TableRowSlot> slots = EnumerateRowSlots(spec.Row, colCount, merge);
+                    if (!ApplyEmptySlotWrite(table, spec, slots, result, writeCellSw, applyFormatSw))
+                    {
+                        return result;
+                    }
+
+                    TryRefreshScreen(app);
+                }
+            }
+            finally
+            {
+                if (app != null)
+                {
+                    try
+                    {
+                        app.ScreenUpdating = prevScreenUpdating;
+                    }
+                    catch (Exception ex)
+                    {
+                        EasyWriteDiagnostics.LogTableRowValues(
+                            $"[ApplyTableRowValues] ScreenUpdating 恢复失败: {ex.Message}");
+                    }
                 }
             }
 
@@ -501,6 +538,36 @@ namespace WordAddIn1
                 $"cells={result.CellsWritten}");
 
             return result;
+        }
+
+        private static Word.Application TryGetWordApplication(Word.Table table)
+        {
+            try
+            {
+                return table.Range.Document.Application;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void TryRefreshScreen(Word.Application app)
+        {
+            if (app == null)
+            {
+                return;
+            }
+
+            try
+            {
+                app.ScreenRefresh();
+            }
+            catch (Exception ex)
+            {
+                EasyWriteDiagnostics.LogTableRowValues(
+                    $"[ApplyTableRowValues] ScreenRefresh 失败: {ex.Message}");
+            }
         }
 
         public static int? FindAnchorSlotIndexInTexts(

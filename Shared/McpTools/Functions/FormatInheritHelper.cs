@@ -297,6 +297,11 @@ namespace WordAddIn1
 
         public static void DbgLogRangeFonts(string tag, Word.Range range)
         {
+            if (!EnableDbg)
+            {
+                return;
+            }
+
             if (range == null)
             {
                 DbgLog($"{tag} range=null");
