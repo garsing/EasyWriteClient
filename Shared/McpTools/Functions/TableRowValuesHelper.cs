@@ -509,7 +509,7 @@ namespace WordAddIn1
                         return result;
                     }
 
-                    TryRefreshScreen(app);
+                    TryFlashScreen(app);
                 }
             }
             finally
@@ -552,7 +552,8 @@ namespace WordAddIn1
             }
         }
 
-        private static void TryRefreshScreen(Word.Application app)
+        /// <summary>行末短暂打开 ScreenUpdating，让 Word 画出本行，再关掉继续下一行。</summary>
+        private static void TryFlashScreen(Word.Application app)
         {
             if (app == null)
             {
@@ -561,12 +562,13 @@ namespace WordAddIn1
 
             try
             {
-                app.ScreenRefresh();
+                app.ScreenUpdating = true;
+                app.ScreenUpdating = false;
             }
             catch (Exception ex)
             {
                 EasyWriteDiagnostics.LogTableRowValues(
-                    $"[ApplyTableRowValues] ScreenRefresh 失败: {ex.Message}");
+                    $"[ApplyTableRowValues] 行末刷新失败: {ex.Message}");
             }
         }
 
