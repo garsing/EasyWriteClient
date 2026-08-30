@@ -564,10 +564,9 @@ async function handleOpenSettings () {
   height: 22px;
 }
 
-/* 打开文件区约 28%；折叠只藏列表，flex-basis 不塌 */
+/* 打开文件吃掉顶栏/历史任务/用户按钮之外的剩余高度 */
 .open-files-section {
-  flex: 0 0 28%;
-  max-height: 28%;
+  flex: 1 1 auto;
   min-height: 36px;
   display: flex;
   flex-direction: column;
@@ -575,10 +574,11 @@ async function handleOpenSettings () {
   min-width: 0;
 }
 
-/* 历史任务吃掉顶栏/打开文件/用户按钮之外的剩余高度 */
+/* 历史任务区约 42%；折叠只藏列表，flex-basis 不塌 */
 .tasks-section {
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 0 0 42%;
+  max-height: 42%;
+  min-height: 36px;
   display: flex;
   flex-direction: column;
   padding: 0 8px 4px;
@@ -887,6 +887,9 @@ async function handleOpenSettings () {
   max-height: 100%;
   min-height: 0;
   padding-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -902,10 +905,10 @@ async function handleOpenSettings () {
   border: none;
   background: transparent;
   text-align: left;
-  padding: 8px 10px;
+  padding: 9px 10px;
   border-radius: 8px;
   cursor: pointer;
-  margin-bottom: 1px;
+  margin-bottom: 0;
   display: flex;
   align-items: center;
   gap: 8px;
