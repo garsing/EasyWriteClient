@@ -122,22 +122,39 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = $"配置验证失败: {validationResult.Error}" };
                     }
 
-                    // 获取位置参数
-                    int? position = null;
-                    if (args.ContainsKey("position"))
+                    if (args.ContainsKey("position") && args["position"] != null
+                        && !string.IsNullOrWhiteSpace(args["position"].ToString()))
                     {
-                        if (int.TryParse(args["position"]?.ToString(), out int pos))
+                        return new ToolResult
                         {
-                            position = pos;
-                        }
+                            Success = false,
+                            Error = "已不再支持 position，请改用 target（codes / table / chart / image）在对象之后建表；省略 target 则在当前光标处建表。"
+                        };
                     }
 
-                    // 创建表格
-                    var createResult = CreateTableAtLocation(document, parseResult.Config, position);
+                    RefreshDocumentForCreateTable(document, args);
+
+                    var locate = InsertTargetLocatorHelper.TryResolveInsertRange(document, args);
+                    if (!locate.Success)
+                    {
+                        return new ToolResult { Success = false, Error = locate.Error };
+                    }
+
+                    var createResult = CreateTableAtLocation(document, parseResult.Config, locate.Range);
                     LogPhase($"CreateTableAtLocation success={createResult.Success}");
                     if (!createResult.Success)
                     {
                         return new ToolResult { Success = false, Error = $"表格创建失败: {createResult.Error}" };
+                    }
+
+                    var occupied = new HashSet<string>(DocumentState.GetTableIdOrder() ?? new List<string>());
+                    string stampedId = TableTitleStampHelper.NewRandomTableId(occupied);
+                    if (!string.IsNullOrEmpty(stampedId))
+                    {
+                        if (!TableTitleStampHelper.TryWriteStamp(createResult.Table, stampedId))
+                        {
+                            System.Diagnostics.Debug.WriteLine("[CreateTable] 立刻写 Title 失败，将由 ReadWord O7 兜底");
+                        }
                     }
 
                     var warnings = new List<string>();
@@ -193,7 +210,7 @@ namespace WordAddIn1
                         int tableStart = createResult.Table.Range.Start;
                         WordReader.ReadWord(document);
 
-                        List<Word.Table> allTables = GetAllTablesInOrder(document);
+                        List<Word.Table> allTables = TableResolveHelper.GetAllTablesInOrder(document);
                         int tableIndex = allTables.FindIndex(t => t.Range.Start == tableStart);
 
                         var idOrder = DocumentState.GetTableIdOrder();
@@ -781,48 +798,41 @@ namespace WordAddIn1
         /// <summary>
         /// 创建表格
         /// </summary>
-        private static CreateResult CreateTableAtLocation(Word.Document document, TableConfig config, int? position = null)
+        private static void RefreshDocumentForCreateTable(Word.Document document, Dictionary<string, object> args)
         {
+            Dictionary<string, object> targetDict = InsertTargetLocatorHelper.TryGetTargetDict(args);
+            if (targetDict == null)
+            {
+                return;
+            }
+
+            bool hasCodes = targetDict.ContainsKey("codes") && targetDict["codes"] != null
+                && !string.IsNullOrWhiteSpace(targetDict["codes"].ToString());
             try
             {
-                Word.Range insertRange;
-
-                if (position.HasValue)
+                if (hasCodes)
                 {
-                    // 在指定位置创建表格
-                    try
-                    {
-                        if (position.Value < 0)
-                        {
-                            return new CreateResult { Success = false, Error = $"位置参数无效: {position.Value}，必须大于等于0" };
-                        }
-
-                        if (position.Value > document.Content.End)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 位置 {position.Value} 超出文档范围（文档长度: {document.Content.End}），将在文档末尾创建");
-                            insertRange = document.Content;
-                            insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
-                        }
-                        else
-                        {
-                            insertRange = document.Range(position.Value, position.Value);
-                            insertRange.Collapse(Word.WdCollapseDirection.wdCollapseStart);
-                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 在位置 {position.Value} 创建表格");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        string errorMsg = $"无法在指定位置创建表格: {ex.Message}，将使用文档末尾";
-                        System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
-                        insertRange = document.Content;
-                        insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
-                    }
+                    WordDocumentExtractor.ProcessDocument(
+                        document, ProcessDocumentOptions.ForProcessActions("create_table"));
                 }
                 else
                 {
-                    // 默认在当前光标处插入表格
-                    insertRange = document.Application.Selection.Range;
-                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 在当前光标处创建表格");
+                    WordReader.ReadWord(document);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[CreateTable] 定位前刷新失败: " + ex.Message);
+            }
+        }
+
+        private static CreateResult CreateTableAtLocation(Word.Document document, TableConfig config, Word.Range insertRange)
+        {
+            try
+            {
+                if (insertRange == null)
+                {
+                    return new CreateResult { Success = false, Table = null, Error = "插入位置无效" };
                 }
 
                 Word.Table newTable = document.Tables.Add(insertRange, config.Table.Rows, config.Table.Cols);
@@ -1334,51 +1344,5 @@ namespace WordAddIn1
             }
         }
 
-        private static List<Word.Table> GetAllTablesInOrder(Word.Document document)
-        {
-            var allTables = new List<Word.Table>();
-
-            try
-            {
-                foreach (Word.Table table in document.Tables)
-                {
-                    CollectTablesRecursive(table, allTables);
-                }
-
-                allTables.Sort((t1, t2) => t1.Range.Start.CompareTo(t2.Range.Start));
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[DEBUG] 收集表格失败：{ex.Message}");
-            }
-
-            return allTables;
-        }
-
-        private static void CollectTablesRecursive(Word.Table table, List<Word.Table> allTables)
-        {
-            if (table == null)
-                return;
-
-            try
-            {
-                allTables.Add(table);
-
-                foreach (Word.Row row in table.Rows)
-                {
-                    foreach (Word.Cell cell in row.Cells)
-                    {
-                        foreach (Word.Table nestedTable in cell.Tables)
-                        {
-                            CollectTablesRecursive(nestedTable, allTables);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[DEBUG] 递归收集表格失败：{ex.Message}");
-            }
-        }
     }
 }

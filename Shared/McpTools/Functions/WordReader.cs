@@ -41,6 +41,10 @@ namespace WordAddIn1
         private static List<ChartOrderedEntry> _chartOrderedEntries;
         private static int _chartConsumeIndex;
 
+        private static HashSet<string> _readOccupiedTableIds;
+        private static List<string> _readAssignedTableIds;
+        private static List<string> _readTableContents;
+
         private static void LogExtractVerbose(string message)
         {
             EasyWriteDiagnostics.LogDocumentExtractVerbose(message);
@@ -115,6 +119,9 @@ namespace WordAddIn1
                 DocumentState.ClearChartIdOrder();
                 DocumentState.ClearImageIdOrder();
                 DocumentState.ClearImageIdMapping(); // 图片按实例唯一，每次读文重建
+                _readOccupiedTableIds = new HashSet<string>(StringComparer.Ordinal);
+                _readAssignedTableIds = new List<string>();
+                _readTableContents = new List<string>();
                 _placeholderImageCounter = 0;
                 
                 // 直接从文档的 XML 提取段落和表格，避免重复
@@ -175,6 +182,8 @@ namespace WordAddIn1
                 {
                     EndReadImageContext();
                 }
+
+                result = ApplyTableStampsAfterRead(document, result);
                 
                 BuildTableIdOrderFromText(result);
                 BuildChartIdOrderFromText(result);
@@ -186,6 +195,45 @@ namespace WordAddIn1
             {
                 throw new Exception($"Word文本提取失败: {ex.Message}", ex);
             }
+        }
+
+        private static string ReadTblCaption(XElement tbl, XNamespace w)
+        {
+            if (tbl == null)
+            {
+                return "";
+            }
+
+            XElement tblPr = tbl.Element(w + "tblPr");
+            XElement caption = tblPr?.Element(w + "tblCaption");
+            if (caption == null)
+            {
+                return "";
+            }
+
+            XAttribute val = caption.Attribute(w + "val") ?? caption.Attribute("val");
+            return val != null ? (val.Value ?? "") : "";
+        }
+
+        private static string ApplyTableStampsAfterRead(Word.Document document, string result)
+        {
+            if (_readAssignedTableIds == null || _readAssignedTableIds.Count == 0)
+            {
+                return result;
+            }
+
+            var before = new List<string>(_readAssignedTableIds);
+            TableTitleStampHelper.ApplyAssignedIds(document, _readAssignedTableIds, _readTableContents);
+            for (int i = 0; i < _readAssignedTableIds.Count; i++)
+            {
+                if (i < before.Count && _readAssignedTableIds[i] != before[i])
+                {
+                    result = TableTitleStampHelper.ReplaceTableIdAtOccurrence(
+                        result, i, _readAssignedTableIds[i]);
+                }
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -1416,12 +1464,35 @@ namespace WordAddIn1
                     {
                         // 创建表格级别的合并信息跟踪
                         var mergeContext = new TableMergeContext();
-                        
-                        // 先处理表格内容（<table>和</table>之间的内容）
+
+                        // 必须先占 assigned 槽再递归单元格：嵌套表会在 ProcessTableRecursive
+                        // 里再次进入本分支。若先扫内容再登记，Apply 序会变成「内表、外表」，
+                        // 与 ReadText / Range.Start 的「外表、内表」对不上。
+                        string caption = ReadTblCaption(child, w);
+                        string tableId = TableTitleStampHelper.DecideTableId(caption, _readOccupiedTableIds);
+                        int assignedSlot = -1;
+                        if (_readAssignedTableIds != null)
+                        {
+                            assignedSlot = _readAssignedTableIds.Count;
+                            _readAssignedTableIds.Add(tableId ?? "");
+                            _readTableContents.Add("");
+                        }
+
                         string tableContent = ProcessTableRecursive(child, w, document, mergeContext, docPath, imageSaveDir, fileHash);
-                        
-                        // 根据表格内容查找或创建表格编号（如果内容相同则复用编号）
-                        string tableId = DocumentState.FindOrCreateTableId(tableContent);
+                        if (string.IsNullOrEmpty(tableId))
+                        {
+                            tableId = DocumentState.FindOrCreateTableId(tableContent);
+                            if (_readOccupiedTableIds != null)
+                            {
+                                _readOccupiedTableIds.Add(tableId);
+                            }
+                        }
+
+                        if (assignedSlot >= 0)
+                        {
+                            _readAssignedTableIds[assignedSlot] = tableId;
+                            _readTableContents[assignedSlot] = tableContent;
+                        }
                         
                         // 生成带编号的表格标签
                         // 注意：表格ID的顺序映射将在 ReadWord 方法最后通过解析文本建立

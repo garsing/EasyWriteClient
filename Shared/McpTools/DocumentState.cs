@@ -11,7 +11,7 @@ namespace WordAddIn1
     /// 句子级别的文档状态管理（按 doc_uuid 分片，活动窗口读写当前分片）。
     /// 使用S_前缀 + 5位编码名称（S_00000, S_00001, ..., S_00009, S_0000a, ..., S_0000z, S_0000A, ..., S_ZZZZZ）来跟踪句子
     /// 编码顺序：数字(0-9) -> 小写字母(a-z) -> 大写字母(A-Z)
-    /// 使用T_前缀 + 哈希值前8位（如T_eStyRRUe）来跟踪表格，如果冲突则使用更长的哈希值
+        /// 使用T_前缀跟踪表格。主路径为 Title 戳 ew:T_+8 位随机；FindOrCreateTableId 仅作写 Title 失败时的内容哈希兜底。
     /// </summary>
     public static class DocumentState
     {
@@ -22,7 +22,7 @@ namespace WordAddIn1
         private static string _activeDocUuid = "";
 
         /// <summary>递增后清空 ProcessDocument 会话缓存（指纹算法或缓存条目结构变更时）。</summary>
-        public const int FingerprintVersion = 6;
+        public const int FingerprintVersion = 7;
 
         /// <summary>当前活动文档分片；无绑定时为临时空分片（不写回 SessionsByUuid）。</summary>
         private static DocumentSessionState Session

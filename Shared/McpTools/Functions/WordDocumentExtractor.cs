@@ -1795,6 +1795,29 @@ namespace WordAddIn1
             return string.Join("", displayParts);
         }
 
+        private static void ApplyBackendTableStamps(Word.Document document)
+        {
+            if (document == null)
+            {
+                return;
+            }
+
+            List<string> ids = DocumentState.GetTableIdOrder();
+            if (ids == null || ids.Count == 0)
+            {
+                return;
+            }
+
+            TableTitleStampHelper.ApplyAssignedIds(document, ids, tableContents: null);
+            var map = new Dictionary<int, string>();
+            for (int i = 0; i < ids.Count; i++)
+            {
+                map[i + 1] = ids[i];
+            }
+
+            DocumentState.SetTableIndexToIdMap(map);
+        }
+
         /// <summary>
         /// 解析 API 响应并更新 DocumentState（须在 Word STA 线程调用，不可在 async 续延线程中访问 COM）。
         /// </summary>
@@ -1937,6 +1960,7 @@ namespace WordAddIn1
                                     {
                                         DocumentState.SetTableIndexToIdMap(tableIndexToIdMapFromApi);
                                         System.Diagnostics.Debug.WriteLine($"[API] 已设置表格序号到编号映射，共 {tableIndexToIdMapFromApi.Count} 个表格");
+                                        ApplyBackendTableStamps(document);
                                     }
                                 }
 

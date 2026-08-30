@@ -163,57 +163,7 @@ namespace WordAddIn1
         /// <returns>按位置排序的所有表格列表</returns>
         private static List<Word.Table> GetAllTablesInOrder(Word.Document document)
         {
-            List<Word.Table> allTables = new List<Word.Table>();
-            
-            try
-            {
-                // 收集所有顶级表格
-                foreach (Word.Table table in document.Tables)
-                {
-                    CollectTablesRecursive(table, allTables);
-                }
-                
-                // 按照 Range.Start 排序
-                allTables.Sort((t1, t2) => t1.Range.Start.CompareTo(t2.Range.Start));
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[DEBUG] 收集表格失败：{ex.Message}");
-            }
-            
-            return allTables;
-        }
-
-        /// <summary>
-        /// 递归收集表格及其嵌套表格
-        /// </summary>
-        /// <param name="table">当前表格</param>
-        /// <param name="allTables">收集到的表格列表</param>
-        private static void CollectTablesRecursive(Word.Table table, List<Word.Table> allTables)
-        {
-            if (table == null)
-            {
-                return;
-            }
-            
-            try
-            {
-                // 添加当前表格
-                allTables.Add(table);
-                
-                // 遍历表格的所有单元格，查找嵌套表格（用 Range.Cells 避免纵向合并表 Rows 遍历失败）
-                foreach (Word.Cell cell in table.Range.Cells)
-                {
-                    foreach (Word.Table nestedTable in cell.Tables)
-                    {
-                        CollectTablesRecursive(nestedTable, allTables);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[DEBUG] 递归收集表格失败：{ex.Message}");
-            }
+            return TableResolveHelper.GetAllTablesInOrder(document);
         }
 
         /// <summary>

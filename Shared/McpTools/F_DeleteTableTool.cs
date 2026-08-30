@@ -153,7 +153,7 @@ namespace WordAddIn1
             var sb = new StringBuilder();
             sb.Append($"表格 {tableId} 已删除（原 {rows} 行 × {columns} 列）。");
             sb.Append("光标已停留在被删表格原后沿处。");
-            sb.Append("请在此位置调用 F_create_table_from_xml 重建新表（无需传入 position 参数）。");
+            sb.Append("请在此位置调用 F_create_table_from_xml 重建新表（无需传入 target）。");
             if (hadNestedTables)
             {
                 sb.Append("（该表内曾含嵌套子表，已随本表一并删除。）");
