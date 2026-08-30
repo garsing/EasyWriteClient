@@ -223,24 +223,16 @@ namespace WordAddIn1
                     return false;
                 }
 
-                string anchor = item.ContainsKey("anchor") ? item["anchor"]?.ToString() : null;
-                int? anchorIndex = null;
-                if (item.ContainsKey("index") && item["index"] != null)
+                if ((item.ContainsKey("anchor") && !string.IsNullOrWhiteSpace(item["anchor"]?.ToString()))
+                    || (item.ContainsKey("index") && item["index"] != null))
                 {
-                    if (!TryParseInt(item["index"], out int parsedIndex))
-                    {
-                        error = $"writes[{itemIndex}] index 无效";
-                        return false;
-                    }
-
-                    anchorIndex = parsedIndex;
+                    error = TableRowValuesHelper.BuildAnchorRemovedError(row);
+                    return false;
                 }
 
                 specs.Add(new TableRowWriteSpec
                 {
                     Row = row,
-                    Anchor = anchor,
-                    AnchorIndex = anchorIndex,
                     Values = values,
                 });
             }

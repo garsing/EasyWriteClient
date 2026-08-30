@@ -70,12 +70,12 @@ namespace WordAddIn1
 
                     string message =
                         $"已读取 {readResult.RowCount} 行；column_count={readResult.ColumnCount}。"
-                        + "填空布局 ONLY 用 rows[].values + rows[].slots；"
+                        + "apply 的 values 只填该行 empty=true 的槽，长度须等于 empty_count；不想填传 \"\"。"
                         + "禁止参考 getContent 的 <table><cell> HTML。";
 
                     const string layoutWarning =
                         "表格填空：勿看 getContent 的 <table>/<cell> HTML；"
-                        + "本返回的 rows[].values 与 rows[].slots 是 apply 的唯一布局依据。";
+                        + "本返回的 empty_count / slots[].empty 决定 apply values 个数。";
 
                     return new ToolResult
                     {
