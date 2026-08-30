@@ -54,30 +54,45 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = parseError };
                     }
 
+                    using (EasyWriteDiagnostics.Time("table_row_values.apply.total"))
+                    {
                     try
                     {
-                        WordReader.ReadWord(document);
+                        using (EasyWriteDiagnostics.Time("table_row_values.apply.process_document_before"))
+                        {
+                            TableRowValuesHelper.EnsureDocumentMapping(
+                                document, "table_row_values.apply_before");
+                        }
                     }
                     catch (Exception ex)
                     {
                         return new ToolResult { Success = false, Error = $"生成表格映射表失败：{ex.Message}" };
                     }
 
-                    Word.Table table = TableConfigApplyHelper.ResolveTableById(document, tableId, out string resolveError);
-                    if (table == null)
+                    Word.Table table;
+                    using (EasyWriteDiagnostics.Time("table_row_values.apply.resolve"))
                     {
-                        return new ToolResult { Success = false, Error = resolveError };
+                        table = TableConfigApplyHelper.ResolveTableById(document, tableId, out string resolveError);
+                        if (table == null)
+                        {
+                            return new ToolResult { Success = false, Error = resolveError };
+                        }
                     }
 
-                    if (!ActionFormatHelper.TryBuildSnapshot(
-                            document,
-                            callFormat,
-                            tableScope: null,
-                            out Dictionary<string, object> formatSnapshot,
-                            out string formatMode,
-                            out string formatError))
+                    Dictionary<string, object> formatSnapshot;
+                    string formatMode;
+                    using (EasyWriteDiagnostics.Time("table_row_values.apply.format_snapshot"))
                     {
-                        return new ToolResult { Success = false, Error = formatError };
+                        if (!ActionFormatHelper.TryBuildSnapshot(
+                                document,
+                                callFormat,
+                                tableScope: null,
+                                out formatSnapshot,
+                                out formatMode,
+                                out string formatError))
+                        {
+                            return new ToolResult { Success = false, Error = formatError };
+                        }
                     }
 
                     foreach (TableRowWriteSpec spec in specs)
@@ -85,35 +100,49 @@ namespace WordAddIn1
                         spec.FormatSnapshot = formatSnapshot;
                     }
 
-                    TableFormatExtractCore.ExtractStructure(
-                        table,
-                        out int rowCount,
-                        out int colCount,
-                        out List<List<int>> merge);
+                    int rowCount;
+                    int colCount;
+                    List<List<int>> merge;
+                    using (EasyWriteDiagnostics.Time("table_row_values.apply.extract_structure"))
+                    {
+                        TableFormatExtractCore.ExtractStructure(
+                            table,
+                            out rowCount,
+                            out colCount,
+                            out merge);
+                    }
 
                     EasyWriteDiagnostics.LogTableRowValues(
                         $"[ApplyTableRowValues] table_id={tableId}, writes={specs.Count}, " +
                         $"rows×cols={rowCount}×{colCount}, format_mode={formatMode}");
                     TableRowValuesHelper.LogWriteSpecs(specs, verboseOnly: true);
 
-                    if (!TableRowValuesHelper.PreflightWrites(
-                            table,
-                            specs,
-                            rowCount,
-                            colCount,
-                            merge,
-                            out string preflightError))
+                    using (EasyWriteDiagnostics.Time("table_row_values.apply.preflight"))
                     {
-                        EasyWriteDiagnostics.LogTableRowValues(
-                            $"[ApplyTableRowValues] Preflight 失败: {preflightError}");
-                        return new ToolResult { Success = false, Error = preflightError };
+                        if (!TableRowValuesHelper.PreflightWrites(
+                                table,
+                                specs,
+                                rowCount,
+                                colCount,
+                                merge,
+                                out string preflightError))
+                        {
+                            EasyWriteDiagnostics.LogTableRowValues(
+                                $"[ApplyTableRowValues] Preflight 失败: {preflightError}");
+                            return new ToolResult { Success = false, Error = preflightError };
+                        }
                     }
 
-                    TableRowValuesApplyResult applyResult = TableRowValuesHelper.ApplyWrites(
-                        table,
-                        specs,
-                        colCount,
-                        merge);
+                    TableRowValuesApplyResult applyResult;
+                    using (EasyWriteDiagnostics.Time("table_row_values.apply.write"))
+                    {
+                        applyResult = TableRowValuesHelper.ApplyWrites(
+                            table,
+                            specs,
+                            colCount,
+                            merge);
+                    }
+
                     if (!applyResult.Success)
                     {
                         EasyWriteDiagnostics.LogTableRowValues(
@@ -129,19 +158,26 @@ namespace WordAddIn1
 
                     try
                     {
-                        WordReader.ReadWord(document);
+                        using (EasyWriteDiagnostics.Time("table_row_values.apply.process_document_after"))
+                        {
+                            TableRowValuesHelper.EnsureDocumentMapping(
+                                document, "table_row_values.apply_after");
+                        }
                     }
                     catch (Exception ex)
                     {
                         return new ToolResult { Success = false, Error = $"写后刷新映射失败：{ex.Message}" };
                     }
 
-                    Word.Application app = wordApplication as Word.Application;
-                    Word.Table tableAfter = TableConfigApplyHelper.ResolveTableById(document, tableId, out _);
-                    if (app != null && tableAfter != null)
+                    using (EasyWriteDiagnostics.Time("table_row_values.apply.navigate"))
                     {
-                        PostModifyNavigateHelper.NavigateAfterEnd(
-                            app, tableAfter.Range, $"apply_table_row_values:{tableId}");
+                        Word.Application app = wordApplication as Word.Application;
+                        Word.Table tableAfter = TableConfigApplyHelper.ResolveTableById(document, tableId, out _);
+                        if (app != null && tableAfter != null)
+                        {
+                            PostModifyNavigateHelper.NavigateAfterEnd(
+                                app, tableAfter.Range, $"apply_table_row_values:{tableId}");
+                        }
                     }
 
                     await Task.CompletedTask;
@@ -155,9 +191,10 @@ namespace WordAddIn1
                             warnings = applyResult.Warnings,
                             format_mode = formatMode,
                             message =
-                                "行值写入成功（仅空槽，已套显式字符格式）；已 ReadWord；改已有内容请用 F_process_document_actions",
+                                "行值写入成功（仅空槽，已套显式字符格式）；已刷新文档映射；改已有内容请用 F_process_document_actions",
                         },
                     };
+                    }
                 }
                 catch (Exception ex)
                 {

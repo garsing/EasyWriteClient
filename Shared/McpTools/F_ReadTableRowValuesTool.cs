@@ -39,58 +39,74 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = "未提供 table_id" };
                     }
 
-                    try
+                    using (EasyWriteDiagnostics.Time("table_row_values.read.total"))
                     {
-                        WordReader.ReadWord(document);
-                    }
-                    catch (Exception ex)
-                    {
-                        return new ToolResult { Success = false, Error = $"生成表格映射表失败：{ex.Message}" };
-                    }
-
-                    Word.Table table = TableConfigApplyHelper.ResolveTableById(document, tableId, out string resolveError);
-                    if (table == null)
-                    {
-                        return new ToolResult { Success = false, Error = resolveError };
-                    }
-
-                    EasyWriteDiagnostics.LogTableRowValues(
-                        $"[ReadTableRowValues] 开始读取 table_id={tableId}");
-                    TableRowValuesReadResult readResult = TableRowValuesHelper.ReadAllRows(table);
-                    if (!readResult.Success)
-                    {
-                        EasyWriteDiagnostics.LogTableRowValues(
-                            $"[ReadTableRowValues] 读取失败: {readResult.Error}");
-                        return new ToolResult { Success = false, Error = readResult.Error };
-                    }
-
-                    TableRowValuesHelper.LogReadSummary(tableId, readResult, verboseOnly: true);
-
-                    await Task.CompletedTask;
-
-                    string message =
-                        $"已读取 {readResult.RowCount} 行；column_count={readResult.ColumnCount}。"
-                        + "apply 的 values 只填该行 empty=true 的槽，长度须等于 empty_count；不想填传 \"\"。"
-                        + "禁止参考 getContent 的 <table><cell> HTML。";
-
-                    const string layoutWarning =
-                        "表格填空：勿看 getContent 的 <table>/<cell> HTML；"
-                        + "本返回的 empty_count / slots[].empty 决定 apply values 个数。";
-
-                    return new ToolResult
-                    {
-                        Success = true,
-                        Data = new
+                        try
                         {
-                            table_id = tableId,
-                            row_count = readResult.RowCount,
-                            column_count = readResult.ColumnCount,
-                            rows = readResult.Rows,
-                            message,
-                            layout_warning = layoutWarning,
-                            do_not_use_getcontent_table_html = true,
-                        },
-                    };
+                            using (EasyWriteDiagnostics.Time("table_row_values.read.process_document"))
+                            {
+                                TableRowValuesHelper.EnsureDocumentMapping(
+                                    document, "table_row_values.read");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            return new ToolResult { Success = false, Error = $"生成表格映射表失败：{ex.Message}" };
+                        }
+
+                        Word.Table table;
+                        using (EasyWriteDiagnostics.Time("table_row_values.read.resolve"))
+                        {
+                            table = TableConfigApplyHelper.ResolveTableById(document, tableId, out string resolveError);
+                            if (table == null)
+                            {
+                                return new ToolResult { Success = false, Error = resolveError };
+                            }
+                        }
+
+                        EasyWriteDiagnostics.LogTableRowValues(
+                            $"[ReadTableRowValues] 开始读取 table_id={tableId}");
+                        TableRowValuesReadResult readResult;
+                        using (EasyWriteDiagnostics.Time("table_row_values.read.slots"))
+                        {
+                            readResult = TableRowValuesHelper.ReadAllRows(table);
+                        }
+
+                        if (!readResult.Success)
+                        {
+                            EasyWriteDiagnostics.LogTableRowValues(
+                                $"[ReadTableRowValues] 读取失败: {readResult.Error}");
+                            return new ToolResult { Success = false, Error = readResult.Error };
+                        }
+
+                        TableRowValuesHelper.LogReadSummary(tableId, readResult, verboseOnly: true);
+
+                        await Task.CompletedTask;
+
+                        string message =
+                            $"已读取 {readResult.RowCount} 行；column_count={readResult.ColumnCount}。"
+                            + "apply 的 values 只填该行 empty=true 的槽，长度须等于 empty_count；不想填传 \"\"。"
+                            + "禁止参考 getContent 的 <table><cell> HTML。";
+
+                        const string layoutWarning =
+                            "表格填空：勿看 getContent 的 <table>/<cell> HTML；"
+                            + "本返回的 empty_count / slots[].empty 决定 apply values 个数。";
+
+                        return new ToolResult
+                        {
+                            Success = true,
+                            Data = new
+                            {
+                                table_id = tableId,
+                                row_count = readResult.RowCount,
+                                column_count = readResult.ColumnCount,
+                                rows = readResult.Rows,
+                                message,
+                                layout_warning = layoutWarning,
+                                do_not_use_getcontent_table_html = true,
+                            },
+                        };
+                    }
                 }
                 catch (Exception ex)
                 {

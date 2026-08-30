@@ -46,6 +46,17 @@ namespace WordAddIn1
         private static Dictionary<(int Row, int Col), Word.Cell> _logicalCellMap;
         private static Word.Table _logicalCellMapTable;
 
+        /// <summary>
+        /// 刷 T_ 序表：走轻量 ProcessDocument（与 getContent 同一套 bodyFp 缓存）。
+        /// HIT 则还原 TableIdOrder，不进 ReadWord。
+        /// </summary>
+        public static void EnsureDocumentMapping(Word.Document document, string snapshotSource)
+        {
+            WordDocumentExtractor.ProcessDocument(
+                document,
+                ProcessDocumentOptions.ForGetDocumentContent(snapshotSource));
+        }
+
         public static List<TableRowSlot> EnumerateRowSlots(
             int row,
             int colCount,
@@ -78,46 +89,60 @@ namespace WordAddIn1
             ResetCellResolutionCache();
             try
             {
-                TableFormatExtractCore.ExtractStructure(table, out int rows, out int cols, out List<List<int>> merge);
-                EnsureLogicalCellMap(table);
+                int rows;
+                int cols;
+                List<List<int>> merge;
+                using (EasyWriteDiagnostics.Time("table_row_values.read.extract_structure"))
+                {
+                    TableFormatExtractCore.ExtractStructure(table, out rows, out cols, out merge);
+                }
+
+                using (EasyWriteDiagnostics.Time("table_row_values.read.cell_map"))
+                {
+                    EnsureLogicalCellMap(table);
+                }
+
                 result.RowCount = rows;
                 result.ColumnCount = cols;
 
-                for (int row = 1; row <= rows; row++)
+                using (EasyWriteDiagnostics.Time("table_row_values.read.cells"))
                 {
-                    List<TableRowSlot> slots = EnumerateRowSlots(row, cols, merge);
-                    var values = new List<string>();
-                    var slotMeta = new List<Dictionary<string, object>>();
-                    int slotIndex = 0;
-                    int emptyCount = 0;
-                    foreach (TableRowSlot slot in slots)
+                    for (int row = 1; row <= rows; row++)
                     {
-                        Word.Cell cell = TryResolveCell(table, slot.Row, slot.Col);
-                        string plainText = cell == null ? "" : TableCellContentWriter.GetCellPlainText(cell);
-                        bool empty = IsSlotEmpty(plainText);
-                        if (empty)
+                        List<TableRowSlot> slots = EnumerateRowSlots(row, cols, merge);
+                        var values = new List<string>();
+                        var slotMeta = new List<Dictionary<string, object>>();
+                        int slotIndex = 0;
+                        int emptyCount = 0;
+                        foreach (TableRowSlot slot in slots)
                         {
-                            emptyCount++;
+                            Word.Cell cell = TryResolveCell(table, slot.Row, slot.Col);
+                            string plainText = cell == null ? "" : TableCellContentWriter.GetCellPlainText(cell);
+                            bool empty = IsSlotEmpty(plainText);
+                            if (empty)
+                            {
+                                emptyCount++;
+                            }
+
+                            values.Add(plainText);
+                            slotMeta.Add(new Dictionary<string, object>
+                            {
+                                ["index"] = slotIndex,
+                                ["col"] = slot.Col,
+                                ["text"] = plainText,
+                                ["empty"] = empty,
+                            });
+                            slotIndex++;
                         }
 
-                        values.Add(plainText);
-                        slotMeta.Add(new Dictionary<string, object>
+                        result.Rows.Add(new Dictionary<string, object>
                         {
-                            ["index"] = slotIndex,
-                            ["col"] = slot.Col,
-                            ["text"] = plainText,
-                            ["empty"] = empty,
+                            ["row"] = row,
+                            ["empty_count"] = emptyCount,
+                            ["values"] = values,
+                            ["slots"] = slotMeta,
                         });
-                        slotIndex++;
                     }
-
-                    result.Rows.Add(new Dictionary<string, object>
-                    {
-                        ["row"] = row,
-                        ["empty_count"] = emptyCount,
-                        ["values"] = values,
-                        ["slots"] = slotMeta,
-                    });
                 }
 
                 result.Success = true;
@@ -449,15 +474,31 @@ namespace WordAddIn1
             }
 
             ResetCellResolutionCache();
-            EnsureLogicalCellMap(table);
+            using (EasyWriteDiagnostics.Time("table_row_values.apply.cell_map"))
+            {
+                EnsureLogicalCellMap(table);
+            }
+
+            var writeCellSw = new System.Diagnostics.Stopwatch();
+            var applyFormatSw = new System.Diagnostics.Stopwatch();
+
             foreach (TableRowWriteSpec spec in specs)
             {
                 List<TableRowSlot> slots = EnumerateRowSlots(spec.Row, colCount, merge);
-                if (!ApplyEmptySlotWrite(table, spec, slots, result))
+                if (!ApplyEmptySlotWrite(table, spec, slots, result, writeCellSw, applyFormatSw))
                 {
                     return result;
                 }
             }
+
+            EasyWriteDiagnostics.LogTiming(
+                "table_row_values.apply.write_cells",
+                writeCellSw.ElapsedMilliseconds,
+                $"cells={result.CellsWritten}");
+            EasyWriteDiagnostics.LogTiming(
+                "table_row_values.apply.apply_format",
+                applyFormatSw.ElapsedMilliseconds,
+                $"cells={result.CellsWritten}");
 
             return result;
         }
@@ -528,7 +569,9 @@ namespace WordAddIn1
             Word.Table table,
             TableRowWriteSpec spec,
             List<TableRowSlot> slots,
-            TableRowValuesApplyResult result)
+            TableRowValuesApplyResult result,
+            System.Diagnostics.Stopwatch writeCellSw,
+            System.Diagnostics.Stopwatch applyFormatSw)
         {
             var rowSlotTexts = ReadRowSlotTexts(table, slots);
             List<int> emptyIndices = GetEmptySlotIndices(rowSlotTexts);
@@ -548,6 +591,8 @@ namespace WordAddIn1
                         null,
                         j,
                         spec.FormatSnapshot,
+                        writeCellSw,
+                        applyFormatSw,
                         out string writeError,
                         out bool written))
                 {
@@ -575,6 +620,8 @@ namespace WordAddIn1
             int? anchorSlotIndex,
             int? valuesIndex,
             Dictionary<string, object> formatSnapshot,
+            System.Diagnostics.Stopwatch writeCellSw,
+            System.Diagnostics.Stopwatch applyFormatSw,
             out string error,
             out bool written)
         {
@@ -621,7 +668,17 @@ namespace WordAddIn1
                 return false;
             }
 
+            if (writeCellSw != null)
+            {
+                writeCellSw.Start();
+            }
+
             CellWriteResult writeResult = TableCellContentWriter.WriteCell(cell, value ?? "");
+            if (writeCellSw != null)
+            {
+                writeCellSw.Stop();
+            }
+
             if (!writeResult.Success)
             {
                 error = writeResult.Error ?? "写入失败";
@@ -636,10 +693,24 @@ namespace WordAddIn1
 
             try
             {
+                if (applyFormatSw != null)
+                {
+                    applyFormatSw.Start();
+                }
+
                 FormatInheritHelper.ApplySnapshot(cell.Range, formatSnapshot, charFormatOnly: true);
+                if (applyFormatSw != null)
+                {
+                    applyFormatSw.Stop();
+                }
             }
             catch (Exception ex)
             {
+                if (applyFormatSw != null)
+                {
+                    applyFormatSw.Stop();
+                }
+
                 error = $"单元格已写入，但字符格式套用失败: {ex.Message}";
                 return false;
             }
