@@ -381,7 +381,7 @@ namespace WordAddIn1
                         try
                         {
                             using (var stream = await response.Content.ReadAsStreamAsync())
-                            using (var reader = new StreamReader(stream))
+                            using (var reader = new StreamReader(stream, Encoding.UTF8, false, 128))
                             {
                                 string line;
                                 while ((line = await reader.ReadLineAsync()) != null)
