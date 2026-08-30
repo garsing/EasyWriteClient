@@ -80,6 +80,10 @@ const props = defineProps({
   outputText: {
     type: String,
     default: ''
+  },
+  outputDone: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -117,7 +121,9 @@ function handleOutputScroll () {
 watch(outputText, (next, prev) => {
   const had = !!(prev && String(prev).length)
   const has = !!(next && String(next).length)
-  if (!had && has && !props.isComplete) {
+  // isComplete 只表示调用参数已齐，进程往往还没开跑。第一段字必须展开。
+  // 无 immediate：历史一上来就有字，不会走空→有，保持折着。
+  if (!had && has) {
     outputExpanded.value = true
   }
   if (has && outputExpanded.value && shouldAutoScroll.value) {
@@ -125,8 +131,8 @@ watch(outputText, (next, prev) => {
   }
 })
 
-watch(() => props.isComplete, (next, prev) => {
-  if (next && !prev && hasOutputText.value) {
+watch(() => props.outputDone, (done, was) => {
+  if (done && !was && hasOutputText.value) {
     outputExpanded.value = false
   }
 })

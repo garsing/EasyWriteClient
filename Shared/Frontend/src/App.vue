@@ -777,16 +777,23 @@ function handleTodoListRevert(payload) {
 /** 侧栏历史 → Vue 消息；C# 已带 segments 时直接用，否则从扁平字段补 thinking */
 function mergeToolOutputText (oldSegs, newSegs) {
   if (!newSegs || !newSegs.length) return newSegs
-  const map = new Map()
+  const textMap = new Map()
+  const doneSet = new Set()
   for (const s of oldSegs || []) {
-    if (s && s.type === 'toolCall' && s.toolCallId && s.outputText) {
-      map.set(s.toolCallId, s.outputText)
+    if (s && s.type === 'toolCall' && s.toolCallId) {
+      if (s.outputText) textMap.set(s.toolCallId, s.outputText)
+      if (s.outputDone) doneSet.add(s.toolCallId)
     }
   }
-  if (map.size === 0) return newSegs
+  if (textMap.size === 0 && doneSet.size === 0) return newSegs
   for (const s of newSegs) {
-    if (s && s.type === 'toolCall' && s.toolCallId && map.has(s.toolCallId) && !s.outputText) {
-      s.outputText = map.get(s.toolCallId)
+    if (s && s.type === 'toolCall' && s.toolCallId) {
+      if (textMap.has(s.toolCallId) && !s.outputText) {
+        s.outputText = textMap.get(s.toolCallId)
+      }
+      if (doneSet.has(s.toolCallId)) {
+        s.outputDone = true
+      }
     }
   }
   return newSegs
@@ -1106,6 +1113,21 @@ onMounted(() => {
           )
           if (seg) {
             seg.outputText = (seg.outputText || '') + text
+            break
+          }
+        }
+      }
+    } else if (data.type === 'toolOutputDone') {
+      const payload = data.data || data
+      const toolCallId = payload.tool_call_id || payload.toolCallId
+      if (toolCallId) {
+        for (const msg of messages.value) {
+          if (!msg.segments) continue
+          const seg = msg.segments.find(
+            (s) => s && s.type === 'toolCall' && s.toolCallId === toolCallId
+          )
+          if (seg) {
+            seg.outputDone = true
             break
           }
         }

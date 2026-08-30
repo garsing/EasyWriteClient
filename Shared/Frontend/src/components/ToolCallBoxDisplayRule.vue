@@ -10,6 +10,7 @@
     :icon="toolIcon"
     :result="result"
     :output-text="outputText"
+    :output-done="outputDone"
   />
 </template>
 
@@ -39,6 +40,10 @@ const props = defineProps({
   outputText: {
     type: String,
     default: ''
+  },
+  outputDone: {
+    type: Boolean,
+    default: false
   }
 })
 

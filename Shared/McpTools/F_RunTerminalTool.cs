@@ -102,6 +102,10 @@ namespace WordAddIn1
                     finally
                     {
                         session.OnHumanOutput = null;
+                        if (!string.IsNullOrEmpty(toolCallId))
+                        {
+                            ToolOutputBridge.Current?.EmitDone(toolCallId);
+                        }
                     }
 
                     var data = new Dictionary<string, object>

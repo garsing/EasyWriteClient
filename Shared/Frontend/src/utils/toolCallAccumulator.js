@@ -141,6 +141,7 @@ export class ToolCallAccumulator {
         toolCallId: partial.id || '',
         content: args,
         outputText: '',
+        outputDone: false,
         isComplete: complete,
         startIndex: this._toolSeq++
       })

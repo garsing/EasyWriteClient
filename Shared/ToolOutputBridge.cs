@@ -30,13 +30,41 @@ namespace WordAddIn1
 
         public bool TryHandleMeta(EasyWriteStreamMeta meta)
         {
-            if (meta == null || meta.@event != "tool_output")
+            if (meta == null)
             {
                 return false;
             }
 
-            Emit(meta.tool_call_id, meta.text);
-            return true;
+            if (meta.@event == "tool_output")
+            {
+                Emit(meta.tool_call_id, meta.text);
+                return true;
+            }
+
+            if (meta.@event == "tool_output_done")
+            {
+                EmitDone(meta.tool_call_id);
+                return true;
+            }
+
+            return false;
+        }
+
+        public void EmitDone(string toolCallId)
+        {
+            if (_disposed || string.IsNullOrEmpty(toolCallId) || _bridge == null)
+            {
+                return;
+            }
+
+            lock (_gate)
+            {
+                FlushOne(toolCallId);
+                _bridge.SendToJavaScript("toolOutputDone", new
+                {
+                    tool_call_id = toolCallId
+                });
+            }
         }
 
         public void Emit(string toolCallId, string text)
