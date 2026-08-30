@@ -188,7 +188,7 @@
       }"
     >{{ hoverTip.text }}</div>
 
-    <!-- 打开文件右键菜单（目前仅「打开文件夹」） -->
+    <!-- 打开文件右键菜单：文档可「打开文件夹」；均可「复制名称」 -->
     <div
       v-if="ctxMenu.visible"
       class="open-file-ctx-menu"
@@ -196,12 +196,20 @@
       @mousedown.stop
     >
       <button
+        v-if="ctxMenu.canOpenFolder"
         type="button"
         class="open-file-ctx-item"
         :disabled="!ctxMenu.hasPath"
         @click="handleOpenContainingFolder"
       >
         打开文件夹
+      </button>
+      <button
+        type="button"
+        class="open-file-ctx-item"
+        @click="handleCopyOpenFileName"
+      >
+        复制名称
       </button>
     </div>
   </aside>
@@ -216,7 +224,13 @@ import knowledgeBaseIcon from '../assets/images/knowledge_base.png'
 import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
 import userIcon from '../assets/images/avatar.png'
 import { openFileSelectionKey } from '../utils/selectedOpenFiles.js'
-import { groupOpenFilesByApp } from '../utils/openFileAppIcon.js'
+import { groupOpenFilesByApp, resolveOpenFileAppGroupKey } from '../utils/openFileAppIcon.js'
+
+const BROWSER_OPEN_FILE_GROUPS = new Set(['chrome', 'edge', 'yiwrite'])
+
+function isBrowserOpenFile (item) {
+  return BROWSER_OPEN_FILE_GROUPS.has(resolveOpenFileAppGroupKey(item))
+}
 
 const props = defineProps({
   collapsed: { type: Boolean, default: false },
@@ -295,7 +309,9 @@ const ctxMenu = ref({
   top: 0,
   left: 0,
   path: '',
-  hasPath: false
+  hasPath: false,
+  canOpenFolder: false,
+  displayName: ''
 })
 
 function onTaskListScroll (e) {
@@ -378,15 +394,19 @@ function closeFileContextMenu () {
     ...ctxMenu.value,
     visible: false,
     path: '',
-    hasPath: false
+    hasPath: false,
+    canOpenFolder: false,
+    displayName: ''
   }
 }
 
 function openFileContextMenu (event, item) {
   hideHoverTip()
   const path = (item?.fullPath || item?.full_path || '').trim()
+  const canOpenFolder = !isBrowserOpenFile(item)
+  const displayName = (item?.displayName || '未命名文档').trim()
   const menuW = 140
-  const menuH = 40
+  const menuH = 8 + 36 * (canOpenFolder ? 2 : 1)
   let left = event.clientX
   let top = event.clientY
   if (left + menuW > window.innerWidth - 8) {
@@ -400,7 +420,43 @@ function openFileContextMenu (event, item) {
     top,
     left,
     path,
-    hasPath: !!path
+    hasPath: !!path,
+    canOpenFolder,
+    displayName
+  }
+}
+
+function fallbackCopyText (text) {
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.setAttribute('readonly', '')
+  ta.style.position = 'fixed'
+  ta.style.left = '-9999px'
+  document.body.appendChild(ta)
+  ta.select()
+  try {
+    document.execCommand('copy')
+  } finally {
+    document.body.removeChild(ta)
+  }
+}
+
+async function handleCopyOpenFileName () {
+  const name = (ctxMenu.value.displayName || '').trim()
+  closeFileContextMenu()
+  if (!name) return
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(name)
+    } else {
+      fallbackCopyText(name)
+    }
+  } catch (e) {
+    try {
+      fallbackCopyText(name)
+    } catch (err) {
+      console.warn('[TaskSidebar] 复制名称失败:', err?.message || e)
+    }
   }
 }
 
