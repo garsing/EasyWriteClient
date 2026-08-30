@@ -127,6 +127,48 @@ namespace WordAddIn1
             return NewRandomTableId(occupied);
         }
 
+        /// <summary>
+        /// 以 Word Title 为真源：按 GetAllTablesInOrder 下标认号。
+        /// 合法且本遍未占用则沿用；空或撞号则新发（写回仍走 Apply）。
+        /// </summary>
+        public static List<string> CollectIdsFromWord(Word.Document document, ISet<string> occupied)
+        {
+            var ids = new List<string>();
+            if (document == null)
+            {
+                return ids;
+            }
+
+            if (occupied == null)
+            {
+                throw new ArgumentNullException(nameof(occupied));
+            }
+
+            List<Word.Table> tables = TableResolveHelper.GetAllTablesInOrder(document);
+            for (int i = 0; i < tables.Count; i++)
+            {
+                string id = null;
+                bool reused = false;
+                if (TryReadTitle(tables[i], out string title)
+                    && TryParse(title, out string existing, out _)
+                    && occupied.Add(existing))
+                {
+                    id = existing;
+                    reused = true;
+                }
+                else
+                {
+                    id = NewRandomTableId(occupied);
+                }
+
+                ids.Add(id);
+                System.Diagnostics.Debug.WriteLine(
+                    $"[TableStamp] Word真源 i={i} {(reused ? "沿用" : "新发")} {id ?? "(空)"}");
+            }
+
+            return ids;
+        }
+
         public static bool TryReadTitle(Word.Table table, out string title)
         {
             title = "";
