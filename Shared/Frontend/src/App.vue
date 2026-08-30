@@ -462,7 +462,7 @@ const clearInput = () => {
   window.dispatchEvent(event)
 }
 
-/** 用户点停止：当前助手轮没有自然收尾，下一问时整轮收进「奋力工作」 */
+/** 用户点停止：当前助手轮没有自然收尾，下一问时整轮收进「奋力工作的记录」 */
 function handleUserStop () {
   for (let i = messages.value.length - 1; i >= 0; i--) {
     const m = messages.value[i]

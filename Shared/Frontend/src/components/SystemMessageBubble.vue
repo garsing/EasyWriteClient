@@ -51,7 +51,7 @@ const props = defineProps({
     type: Object,
     required: true
   },
-  /** 嵌在「奋力工作」里：去掉外层左右 padding */
+  /** 嵌在「奋力工作的记录」里：去掉外层左右 padding */
   compact: {
     type: Boolean,
     default: false

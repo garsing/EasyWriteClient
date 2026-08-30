@@ -7,7 +7,7 @@
         aria-hidden="true"
       />
       <span class="work-fold-icon-spacer" aria-hidden="true" />
-      <span class="work-fold-title">奋力工作</span>
+      <span class="work-fold-title">奋力工作的记录</span>
     </div>
     <div v-if="isExpanded" class="work-fold-body">
       <slot />
@@ -71,7 +71,7 @@ const toggleExpand = () => {
 }
 
 .work-fold-body {
-  /* 比标题再缩一档，展开后是子级，不要和「奋力工作」齐平 */
+  /* 比标题再缩一档，展开后是子级，不要和「奋力工作的记录」齐平 */
   padding: 0 10px 8px 28px;
 }
 </style>
