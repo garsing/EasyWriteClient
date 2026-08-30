@@ -11,16 +11,32 @@
     </div>
     <div v-if="isExpanded && allowExpand" class="tool-call-content">
       <pre :class="['code-content', `language-${language}`]"><code ref="codeElement" v-html="highlightedContent"></code></pre>
-      <div v-if="resultText" class="tool-output">
+      <div v-if="resultText && !hideNestedResult" class="tool-output">
         <div class="tool-output-label">输出</div>
         <pre class="tool-output-body">{{ resultText }}</pre>
       </div>
+    </div>
+    <div v-if="hasOutputText" class="tool-process-output">
+      <div class="tool-process-output-header" @click="toggleOutput">
+        <span
+          class="chevron"
+          :class="outputExpanded ? 'chevron-down' : 'chevron-right'"
+          aria-hidden="true"
+        />
+        <span class="tool-process-output-label">输出</span>
+      </div>
+      <div
+        v-show="outputExpanded"
+        ref="outputBody"
+        class="tool-process-output-body"
+        @scroll="handleOutputScroll"
+      >{{ outputText }}</div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { getToolAlias } from '../utils/toolAlias'
 import {
   escapeHtml,
@@ -60,6 +76,58 @@ const props = defineProps({
   result: {
     type: Object,
     default: null
+  },
+  outputText: {
+    type: String,
+    default: ''
+  }
+})
+
+const hideNestedResult = computed(() => {
+  return props.toolName === 'B_run_python' || props.toolName === 'F_run_terminal'
+})
+
+const outputText = computed(() => String(props.outputText || ''))
+const hasOutputText = computed(() => outputText.value.length > 0)
+const outputExpanded = ref(false)
+const outputBody = ref(null)
+const shouldAutoScroll = ref(true)
+let suppressScrollUntil = 0
+
+function toggleOutput () {
+  outputExpanded.value = !outputExpanded.value
+  if (outputExpanded.value && shouldAutoScroll.value) {
+    nextTick(pinOutput)
+  }
+}
+
+function pinOutput () {
+  const el = outputBody.value
+  if (!el) return
+  suppressScrollUntil = performance.now() + 300
+  el.scrollTop = el.scrollHeight
+}
+
+function handleOutputScroll () {
+  const el = outputBody.value
+  if (!el || performance.now() < suppressScrollUntil) return
+  shouldAutoScroll.value = el.scrollHeight - el.scrollTop - el.clientHeight < 50
+}
+
+watch(outputText, (next, prev) => {
+  const had = !!(prev && String(prev).length)
+  const has = !!(next && String(next).length)
+  if (!had && has && !props.isComplete) {
+    outputExpanded.value = true
+  }
+  if (has && outputExpanded.value && shouldAutoScroll.value) {
+    nextTick(pinOutput)
+  }
+})
+
+watch(() => props.isComplete, (next, prev) => {
+  if (next && !prev && hasOutputText.value) {
+    outputExpanded.value = false
   }
 })
 
@@ -302,6 +370,36 @@ const toggleExpand = () => {
 }
 
 .tool-output-body {
+  margin: 0;
+  font-family: 'Courier New', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #555;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.tool-process-output {
+  padding: 0 10px 10px 24px;
+}
+
+.tool-process-output-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tool-process-output-label {
+  font-size: 12px;
+  color: #999;
+}
+
+.tool-process-output-body {
+  max-height: 100px;
+  overflow: auto;
   margin: 0;
   font-family: 'Courier New', 'Consolas', monospace;
   font-size: 12px;

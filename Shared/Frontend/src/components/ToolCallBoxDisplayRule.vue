@@ -9,6 +9,7 @@
     :language="languageType"
     :icon="toolIcon"
     :result="result"
+    :output-text="outputText"
   />
 </template>
 
@@ -34,6 +35,10 @@ const props = defineProps({
   result: {
     type: Object,
     default: null
+  },
+  outputText: {
+    type: String,
+    default: ''
   }
 })
 
@@ -86,7 +91,8 @@ const toolsWithDetails = [
   'F_read_file',
   'F_run_terminal',
   'F_close_terminal',
-  'F_close_document'
+  'F_close_document',
+  'B_run_python'
 ]
 
 const shouldRenderBox = computed(() => {
@@ -173,6 +179,15 @@ const formattedContent = computed(() => {
       case 'F_run_terminal':
         if (parsed.command !== undefined && parsed.command !== null) {
           return String(parsed.command)
+        }
+        return JSON.stringify(parsed, null, 2)
+
+      case 'B_run_python':
+        if (parsed.file_path !== undefined && parsed.file_path !== null) {
+          return String(parsed.file_path)
+        }
+        if (parsed.path !== undefined && parsed.path !== null) {
+          return String(parsed.path)
         }
         return JSON.stringify(parsed, null, 2)
 

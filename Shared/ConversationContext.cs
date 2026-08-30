@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 
 namespace WordAddIn1
 {
@@ -8,6 +9,14 @@ namespace WordAddIn1
     public static class ConversationContext
     {
         private static string _currentId = "-1";
+        private static readonly AsyncLocal<string> CurrentToolCallIdLocal = new AsyncLocal<string>();
+
+        /// <summary>当前 WS invoke 的 tool_call_id，供终端等人看通道挂接。</summary>
+        public static string CurrentToolCallId
+        {
+            get => CurrentToolCallIdLocal.Value;
+            set => CurrentToolCallIdLocal.Value = value;
+        }
 
         public static string CurrentId
         {

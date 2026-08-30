@@ -26,6 +26,7 @@ namespace EasyWriteClient.Desktop
 
         private WebView2 _webView;
         private WebView2Bridge _bridge;
+        private ToolOutputBridge _toolOutput;
         private McpClient _mcpClient;
         private WsClient _wsClient;
         private readonly List<ChatMessage> _conversationHistory = new List<ChatMessage>();
@@ -77,6 +78,8 @@ namespace EasyWriteClient.Desktop
                 catch (Exception)
                 {
                 }
+                _toolOutput?.Dispose();
+                _toolOutput = null;
                 if (_wsClient != null)
                 {
                     _wsClient.ServerUiMessage -= OnWsServerUiMessage;
@@ -337,6 +340,8 @@ namespace EasyWriteClient.Desktop
 })();").ConfigureAwait(true);
 
             _bridge = new WebView2Bridge(_webView);
+            _toolOutput?.Dispose();
+            _toolOutput = new ToolOutputBridge(_bridge);
             RegisterHandlers();
             // OpenFilesMonitor 由 MainForm 在恢复窗口形态后再 Start，避免启动时建渠缩窗被「记忆完整版」覆盖
 
@@ -1022,6 +1027,11 @@ namespace EasyWriteClient.Desktop
                     null,
                     chunk =>
                     {
+                        if (_toolOutput != null && _toolOutput.TryHandleMeta(chunk?.easywrite_meta))
+                        {
+                            return;
+                        }
+
                         if (chunk?.choices == null || chunk.choices.Count == 0)
                         {
                             return;

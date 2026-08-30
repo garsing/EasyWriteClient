@@ -28,6 +28,7 @@
             :content="segment.content"
             :is-complete="segment.isComplete"
             :result="segment.result"
+            :output-text="segment.outputText"
           />
         </template>
       </div>

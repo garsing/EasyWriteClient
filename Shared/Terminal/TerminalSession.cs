@@ -35,6 +35,9 @@ namespace WordAddIn1.Terminal
 
         public bool ManagedPythonPathPrepended { get; set; }
 
+        /// <summary>执行中 stdout/stderr 增量（不含结束标记行）。</summary>
+        public Action<string> OnHumanOutput { get; set; }
+
         public static TerminalSession Start(string cwd)
         {
             Directory.CreateDirectory(cwd);
@@ -146,12 +149,15 @@ namespace WordAddIn1.Terminal
             var sw = Stopwatch.StartNew();
             int timeoutMs = Math.Max(1, timeoutSec) * 1000;
             string markerLine = null;
+            int outChars = 0;
+            int errChars = 0;
 
             try
             {
                 while (sw.ElapsedMilliseconds < timeoutMs)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    TailHumanOutput(outFile, errFile, ref outChars, ref errChars);
                     markerLine = FindMarker(marker);
                     if (markerLine != null)
                     {
@@ -167,6 +173,8 @@ namespace WordAddIn1.Terminal
                 result.Cancelled = true;
                 result.ExitCode = -1;
             }
+
+            TailHumanOutput(outFile, errFile, ref outChars, ref errChars);
 
             if (result.Cancelled)
             {
@@ -239,6 +247,29 @@ namespace WordAddIn1.Terminal
 
             int.TryParse(markerLine.Substring(idx + 1), out int code);
             return code;
+        }
+
+        private void TailHumanOutput(string outFile, string errFile, ref int outChars, ref int errChars)
+        {
+            Action<string> emit = OnHumanOutput;
+            if (emit == null)
+            {
+                return;
+            }
+
+            string rawOut = ReadCapturedFile(outFile);
+            if (rawOut.Length > outChars)
+            {
+                emit(rawOut.Substring(outChars));
+                outChars = rawOut.Length;
+            }
+
+            string rawErr = ReadCapturedFile(errFile);
+            if (rawErr.Length > errChars)
+            {
+                emit(rawErr.Substring(errChars));
+                errChars = rawErr.Length;
+            }
         }
 
         private static void FillOutputFromFiles(TerminalCommandResult result, string outFile, string errFile)

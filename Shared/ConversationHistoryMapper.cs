@@ -19,11 +19,22 @@ namespace WordAddIn1
                 return result;
             }
 
+            var messageList = new List<JObject>();
+            foreach (JObject message in messages)
+            {
+                if (message != null)
+                {
+                    messageList.Add(message);
+                }
+            }
+
+            Dictionary<string, string> toolOutputs = IndexToolProcessOutputs(messageList);
+
             long idBase = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             int seq = 0;
             int toolSeq = 0;
 
-            foreach (JObject message in messages)
+            foreach (JObject message in messageList)
             {
                 if (message == null)
                 {
@@ -83,7 +94,7 @@ namespace WordAddIn1
                     });
                 }
 
-                AppendToolCallSegments(message["tool_calls"] as JArray, segments, ref toolSeq);
+                AppendToolCallSegments(message["tool_calls"] as JArray, segments, ref toolSeq, toolOutputs);
 
                 if (segments.Count == 0)
                 {
@@ -107,7 +118,8 @@ namespace WordAddIn1
         private static void AppendToolCallSegments(
             JArray toolCalls,
             List<object> segments,
-            ref int toolSeq)
+            ref int toolSeq,
+            Dictionary<string, string> toolOutputs)
         {
             if (toolCalls == null || toolCalls.Count == 0)
             {
@@ -126,6 +138,15 @@ namespace WordAddIn1
                     ?? tc["name"]?.ToString()
                     ?? string.Empty;
                 string args = ExtractToolArguments(function?["arguments"] ?? tc["arguments"]);
+                string toolCallId = tc["id"]?.ToString() ?? string.Empty;
+                string outputText = "";
+                if (!string.IsNullOrEmpty(toolCallId)
+                    && toolOutputs != null
+                    && toolOutputs.TryGetValue(toolCallId, out string stored)
+                    && !string.IsNullOrEmpty(stored))
+                {
+                    outputText = stored;
+                }
 
                 if (string.IsNullOrEmpty(name) && string.IsNullOrEmpty(args))
                 {
@@ -136,11 +157,115 @@ namespace WordAddIn1
                 {
                     type = "toolCall",
                     toolName = name,
+                    toolCallId,
                     content = args ?? string.Empty,
+                    outputText,
                     isComplete = true,
                     startIndex = toolSeq++
                 });
             }
+        }
+
+        /// <summary>
+        /// 回放只抽 stdout/stderr；交错顺序回不来，stdout 接 stderr、不加分隔线。
+        /// </summary>
+        private static Dictionary<string, string> IndexToolProcessOutputs(IList<JObject> messages)
+        {
+            var map = new Dictionary<string, string>();
+            if (messages == null)
+            {
+                return map;
+            }
+
+            foreach (JObject message in messages)
+            {
+                if (message == null || message["role"]?.ToString() != "tool")
+                {
+                    continue;
+                }
+
+                string id = message["tool_call_id"]?.ToString();
+                if (string.IsNullOrEmpty(id))
+                {
+                    continue;
+                }
+
+                string text = ExtractProcessOutput(message["content"]);
+                if (!string.IsNullOrEmpty(text))
+                {
+                    map[id] = text;
+                }
+            }
+
+            return map;
+        }
+
+        private static string ExtractProcessOutput(JToken content)
+        {
+            if (content == null || content.Type == JTokenType.Null)
+            {
+                return "";
+            }
+
+            string raw = content.Type == JTokenType.String
+                ? content.ToString()
+                : content.ToString(Formatting.None);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return "";
+            }
+
+            try
+            {
+                JToken parsed = JToken.Parse(raw);
+                if (parsed is JObject obj)
+                {
+                    return JoinStdoutStderr(obj);
+                }
+            }
+            catch (JsonException)
+            {
+            }
+
+            return "";
+        }
+
+        private static string JoinStdoutStderr(JObject obj)
+        {
+            if (obj == null)
+            {
+                return "";
+            }
+
+            string stdout = TokenString(obj["stdout"]);
+            string stderr = TokenString(obj["stderr"]);
+            if (string.IsNullOrEmpty(stdout) && string.IsNullOrEmpty(stderr) && obj["data"] is JObject data)
+            {
+                stdout = TokenString(data["stdout"]);
+                stderr = TokenString(data["stderr"]);
+            }
+
+            if (string.IsNullOrEmpty(stdout))
+            {
+                return stderr ?? "";
+            }
+
+            if (string.IsNullOrEmpty(stderr))
+            {
+                return stdout;
+            }
+
+            return stdout + stderr;
+        }
+
+        private static string TokenString(JToken token)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                return "";
+            }
+
+            return token.Type == JTokenType.String ? token.ToString() : token.ToString(Formatting.None);
         }
 
         private static string ExtractToolArguments(JToken argumentsToken)

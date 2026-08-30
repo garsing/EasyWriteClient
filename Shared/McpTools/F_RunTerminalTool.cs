@@ -80,11 +80,29 @@ namespace WordAddIn1
                     session.ManagedPythonPathPrepended = true;
                 }
 
+                string toolCallId = OpenDocumentPath.TryGetString(args, "__ew_tool_call_id");
+                if (string.IsNullOrEmpty(toolCallId))
+                {
+                    toolCallId = ConversationContext.CurrentToolCallId;
+                }
+
+                session.OnHumanOutput = string.IsNullOrEmpty(toolCallId)
+                    ? (Action<string>)null
+                    : text => ToolOutputBridge.Current?.Emit(toolCallId, text);
+
                 using (var linked = CancellationTokenSource.CreateLinkedTokenSource(AgentRunCancellation.Token))
                 {
                     linked.Token.Register(() => session.KillCurrentCommand());
-                    TerminalCommandResult result = await session.RunCommandAsync(
-                        command, cwdArg, timeoutSec, useManaged, linked.Token).ConfigureAwait(false);
+                    TerminalCommandResult result;
+                    try
+                    {
+                        result = await session.RunCommandAsync(
+                            command, cwdArg, timeoutSec, useManaged, linked.Token).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        session.OnHumanOutput = null;
+                    }
 
                     var data = new Dictionary<string, object>
                     {

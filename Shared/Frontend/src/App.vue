@@ -775,6 +775,23 @@ function handleTodoListRevert(payload) {
 }
 
 /** 侧栏历史 → Vue 消息；C# 已带 segments 时直接用，否则从扁平字段补 thinking */
+function mergeToolOutputText (oldSegs, newSegs) {
+  if (!newSegs || !newSegs.length) return newSegs
+  const map = new Map()
+  for (const s of oldSegs || []) {
+    if (s && s.type === 'toolCall' && s.toolCallId && s.outputText) {
+      map.set(s.toolCallId, s.outputText)
+    }
+  }
+  if (map.size === 0) return newSegs
+  for (const s of newSegs) {
+    if (s && s.type === 'toolCall' && s.toolCallId && map.has(s.toolCallId) && !s.outputText) {
+      s.outputText = map.get(s.toolCallId)
+    }
+  }
+  return newSegs
+}
+
 function normalizeHistoryMessage(m) {
   if (!m || typeof m !== 'object') {
     return {
@@ -910,8 +927,7 @@ onMounted(() => {
       if (!isStreaming) {
         acc.markStreamComplete()
       }
-      const segments = acc.buildSegments(messageContent)
-      
+
       // 标记已收到后端消息（系统消息说明后端已经处理了用户消息）
       // 找到最后一条用户消息并标记
       const lastUserMessage = messages.value.filter(m => m.role === 'user').pop()
@@ -931,6 +947,10 @@ onMounted(() => {
       // 查找现有消息（确保ID类型一致，且角色是system）
       console.log('[App] 查找系统消息，ID:', messageId, '当前消息列表:', messages.value.map(m => ({ id: m.id, role: m.role, content: m.content?.substring(0, 20) })))
       const index = messages.value.findIndex(m => Number(m.id) === messageId && m.role === 'system')
+      const segments = mergeToolOutputText(
+        index >= 0 ? messages.value[index].segments : null,
+        acc.buildSegments(messageContent)
+      )
       
       if (index >= 0) {
         // 更新现有消息（流式更新）
@@ -1074,6 +1094,22 @@ onMounted(() => {
       chatFile.reset()
       chatFile.phase.value = 'error'
       chatFile.errorMessage.value = msg
+    } else if (data.type === 'toolOutput') {
+      const payload = data.data || data
+      const toolCallId = payload.tool_call_id || payload.toolCallId
+      const text = payload.text
+      if (toolCallId && text) {
+        for (const msg of messages.value) {
+          if (!msg.segments) continue
+          const seg = msg.segments.find(
+            (s) => s && s.type === 'toolCall' && s.toolCallId === toolCallId
+          )
+          if (seg) {
+            seg.outputText = (seg.outputText || '') + text
+            break
+          }
+        }
+      }
     } else if (data.type === 'clientToolResult') {
       const payload = data.data || data
       const toolCallId = payload.tool_call_id || payload.toolCallId

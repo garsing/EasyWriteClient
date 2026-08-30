@@ -512,6 +512,14 @@ namespace WordAddIn1
             var toolCallId = msg.ContainsKey("tool_call_id") ? msg["tool_call_id"]?.ToString() : null;
             var method = msg.ContainsKey("method") ? msg["method"]?.ToString() : null;
             var parameters = ExtractParams(msg);
+            if (parameters == null)
+            {
+                parameters = new Dictionary<string, object>();
+            }
+            if (!string.IsNullOrEmpty(toolCallId))
+            {
+                parameters["__ew_tool_call_id"] = toolCallId;
+            }
 
             if (string.IsNullOrEmpty(requestId) || string.IsNullOrEmpty(toolCallId))
             {
@@ -520,6 +528,7 @@ namespace WordAddIn1
 
             BeginInvokeTracking(requestId);
             var invokeSw = Stopwatch.StartNew();
+            ConversationContext.CurrentToolCallId = toolCallId;
             SyncConversationContextFromBound();
             EasyWriteDiagnostics.Log(DebugCategory.Ws, 
                 $"[WsClient] invoke START method={method} request_id={requestId} thread={Environment.CurrentManagedThreadId} conv={ConversationContext.CurrentId}");
@@ -596,6 +605,7 @@ namespace WordAddIn1
             }
             finally
             {
+                ConversationContext.CurrentToolCallId = null;
                 EndInvokeTracking(requestId);
             }
         }

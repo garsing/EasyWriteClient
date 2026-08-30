@@ -585,6 +585,11 @@ namespace WordAddIn1
     {
         public string @event { get; set; }
         public int? max_rounds { get; set; }
+
+        [JsonProperty("tool_call_id")]
+        public string tool_call_id { get; set; }
+
+        public string text { get; set; }
     }
 
     /// <summary>
