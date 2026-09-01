@@ -34,11 +34,12 @@ namespace WordAddIn1.PresentationHost
             {
                 string focusId = "";
                 int? focusIndex = null;
+                List<ClearedPlaceholderInfo> cleared = null;
 
                 switch (action)
                 {
                     case "add":
-                        if (!TryAdd(presentation, request, out focusId, out focusIndex, out error))
+                        if (!TryAdd(presentation, request, out focusId, out focusIndex, out cleared, out error))
                         {
                             return false;
                         }
@@ -77,7 +78,7 @@ namespace WordAddIn1.PresentationHost
                         return false;
                 }
 
-                result = BuildResult(channelId, "ppt", action, focusId, focusIndex, presentation);
+                result = BuildResult(channelId, "ppt", action, focusId, focusIndex, presentation, cleared);
                 return true;
             }
             catch (Exception ex)
@@ -92,10 +93,12 @@ namespace WordAddIn1.PresentationHost
             PresentationManageSlideRequest request,
             out string focusId,
             out int? focusIndex,
+            out List<ClearedPlaceholderInfo> cleared,
             out string error)
         {
             focusId = "";
             focusIndex = null;
+            cleared = new List<ClearedPlaceholderInfo>();
             error = null;
 
             int count = presentation.Slides.Count;
@@ -114,7 +117,62 @@ namespace WordAddIn1.PresentationHost
             PowerPoint.Slide created = presentation.Slides.AddSlide(toIndex, layout);
             focusId = Convert.ToString(created.SlideID) ?? "";
             focusIndex = created.SlideIndex;
+            ClearEmptyPlaceholders(created, cleared);
             return true;
+        }
+
+        private static void ClearEmptyPlaceholders(PowerPoint.Slide slide, List<ClearedPlaceholderInfo> cleared)
+        {
+            if (slide == null)
+            {
+                return;
+            }
+
+            var toDelete = new List<PowerPoint.Shape>();
+            foreach (PowerPoint.Shape shape in slide.Shapes)
+            {
+                try
+                {
+                    if (shape.Type != Office.MsoShapeType.msoPlaceholder)
+                    {
+                        continue;
+                    }
+
+                    int ph = Convert.ToInt32(shape.PlaceholderFormat.Type);
+                    if (!PptEmptyPlaceholderClear.IsClearableType(ph))
+                    {
+                        continue;
+                    }
+
+                    string text = "";
+                    if (shape.HasTextFrame == Office.MsoTriState.msoTrue)
+                    {
+                        text = shape.TextFrame.TextRange.Text;
+                    }
+
+                    if (!PptEmptyPlaceholderClear.IsEmptyText(text))
+                    {
+                        continue;
+                    }
+
+                    PptEmptyPlaceholderClear.Remember(cleared, ph, shape.Id);
+                    toDelete.Add(shape);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            foreach (PowerPoint.Shape shape in toDelete)
+            {
+                try
+                {
+                    shape.Delete();
+                }
+                catch (Exception)
+                {
+                }
+            }
         }
 
         private static bool TryDuplicate(
@@ -461,7 +519,8 @@ namespace WordAddIn1.PresentationHost
             string action,
             string focusId,
             int? focusIndex,
-            PowerPoint.Presentation presentation)
+            PowerPoint.Presentation presentation,
+            List<ClearedPlaceholderInfo> cleared)
         {
             var slides = new List<PresentationSlideInfo>();
             int count = 0;
@@ -487,7 +546,8 @@ namespace WordAddIn1.PresentationHost
                 FocusSlideId = focusId ?? "",
                 FocusIndex = focusIndex,
                 SlideCount = count,
-                Slides = slides
+                Slides = slides,
+                ClearedPlaceholders = cleared
             };
         }
 

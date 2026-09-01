@@ -96,6 +96,8 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = parseError };
                     }
 
+                    plan.AllowCreate = GetBoolArg(args, "allow_create", false);
+
                     PptHtmlApplyTiming.Step(
                         "parse",
                         stepSw.ElapsedMilliseconds,
@@ -306,6 +308,38 @@ namespace WordAddIn1
 
             fullPath = Path.GetFullPath(resolved.LocalPath);
             return true;
+        }
+
+        private static bool GetBoolArg(Dictionary<string, object> args, string key, bool defaultValue)
+        {
+            if (args == null || !args.ContainsKey(key) || args[key] == null)
+            {
+                return defaultValue;
+            }
+
+            object raw = args[key];
+            if (raw is bool b)
+            {
+                return b;
+            }
+
+            string s = Convert.ToString(raw)?.Trim();
+            if (bool.TryParse(s, out bool parsed))
+            {
+                return parsed;
+            }
+
+            if (s == "1")
+            {
+                return true;
+            }
+
+            if (s == "0")
+            {
+                return false;
+            }
+
+            return defaultValue;
         }
 
         private static string GetStringArg(Dictionary<string, object> args, string key)

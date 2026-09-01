@@ -179,6 +179,18 @@ namespace WordAddIn1.PresentationHost
                 Truncated = truncated,
                 TruncatedReason = truncatedReason
             };
+            try
+            {
+                PptPaletteCollectResult palette = PptPaletteIo.CollectWpp(presentation);
+                result.Palette = palette.Palette;
+                result.PaletteSampled = palette.Sampled;
+                result.PaletteScannedCount = palette.ScannedCount;
+            }
+            catch (Exception)
+            {
+                result.Palette = new List<string> { "#000000", "#FFFFFF", "none" };
+            }
+
             return true;
         }
 
@@ -394,6 +406,28 @@ namespace WordAddIn1.PresentationHost
             }
 
             return PptSlideWppManager.TryManage(
+                presentation,
+                channel.ChannelId,
+                request,
+                out result,
+                out error);
+        }
+
+        public static bool TryManageShape(
+            WppChannel channel,
+            PresentationManageShapeRequest request,
+            out PresentationManageShapeResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLivePresentation(out object presentation))
+            {
+                error = "渠道对应的演示文稿已关闭";
+                return false;
+            }
+
+            return PptShapeWppManager.TryManage(
                 presentation,
                 channel.ChannelId,
                 request,

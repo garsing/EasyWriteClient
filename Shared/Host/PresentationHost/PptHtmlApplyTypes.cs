@@ -55,6 +55,12 @@ namespace WordAddIn1.PresentationHost
         /// <summary>B4：null=不改</summary>
         public string Align { get; set; }
 
+        /// <summary>I6：null=不改；top/middle/bottom</summary>
+        public string Valign { get; set; }
+
+        /// <summary>I7：宽度跟该 ShapeId 的字走；null=不自动改宽</summary>
+        public string WidthFromShapeId { get; set; }
+
         /// <summary>B4：null=不改；倍数或 exact:N</summary>
         public string LineSpacing { get; set; }
 
@@ -104,6 +110,9 @@ namespace WordAddIn1.PresentationHost
         public List<PptHtmlApplyNode> Nodes { get; set; }
 
         public List<string> Warnings { get; set; }
+
+        /// <summary>I4：默认 false，本次是否允许新建。</summary>
+        public bool AllowCreate { get; set; }
     }
 
     public sealed class PptHtmlApplyResult
@@ -413,6 +422,30 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 item.Align = al;
+            }
+
+            string valignRaw = GetAttr(el, "data-valign");
+            if (!string.IsNullOrEmpty(valignRaw))
+            {
+                if (!PptHtmlValignIo.TryParse(valignRaw, out string va, out string vaErr))
+                {
+                    error = vaErr;
+                    return false;
+                }
+
+                item.Valign = va;
+            }
+
+            string widthFrom = GetAttr(el, "data-width-from");
+            if (!string.IsNullOrWhiteSpace(widthFrom))
+            {
+                if (!PptShapeId.TryParseShapeComId(widthFrom, out _))
+                {
+                    error = "非法 data-width-from ShapeId: " + widthFrom;
+                    return false;
+                }
+
+                item.WidthFromShapeId = widthFrom.Trim();
             }
 
             string lineSpRaw = GetAttr(el, "data-line-spacing");

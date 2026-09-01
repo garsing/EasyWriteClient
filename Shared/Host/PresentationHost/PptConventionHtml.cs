@@ -252,6 +252,18 @@ namespace WordAddIn1.PresentationHost
                 sb.Append(" data-align=\"").Append(EscapeAttr(node.Align)).Append("\"");
             }
 
+            if (!string.IsNullOrEmpty(node.Valign))
+            {
+                sb.Append(" data-valign=\"").Append(EscapeAttr(node.Valign)).Append("\"");
+            }
+
+            if (node.TextWidthPct.HasValue)
+            {
+                sb.Append(" data-text-width=\"")
+                    .Append(PptHtmlTextWidthIo.FormatPct(node.TextWidthPct.Value))
+                    .Append("\"");
+            }
+
             if (!string.IsNullOrEmpty(node.LineSpacing))
             {
                 sb.Append(" data-line-spacing=\"").Append(EscapeAttr(node.LineSpacing)).Append("\"");

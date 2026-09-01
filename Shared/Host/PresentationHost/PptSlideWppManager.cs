@@ -40,11 +40,12 @@ namespace WordAddIn1.PresentationHost
 
                 string focusId = "";
                 int? focusIndex = null;
+                List<ClearedPlaceholderInfo> cleared = null;
 
                 switch (action)
                 {
                     case "add":
-                        if (!TryAdd(presentation, slides, request, out focusId, out focusIndex, out error))
+                        if (!TryAdd(presentation, slides, request, out focusId, out focusIndex, out cleared, out error))
                         {
                             return false;
                         }
@@ -83,7 +84,7 @@ namespace WordAddIn1.PresentationHost
                         return false;
                 }
 
-                result = BuildResult(channelId, "wpp", action, focusId, focusIndex, slides);
+                result = BuildResult(channelId, "wpp", action, focusId, focusIndex, slides, cleared);
                 return true;
             }
             catch (Exception ex)
@@ -99,10 +100,12 @@ namespace WordAddIn1.PresentationHost
             PresentationManageSlideRequest request,
             out string focusId,
             out int? focusIndex,
+            out List<ClearedPlaceholderInfo> cleared,
             out string error)
         {
             focusId = "";
             focusIndex = null;
+            cleared = new List<ClearedPlaceholderInfo>();
             error = null;
 
             int count = Convert.ToInt32(WppCom.GetProperty(slides, "Count"));
@@ -127,7 +130,98 @@ namespace WordAddIn1.PresentationHost
 
             focusId = Convert.ToString(WppCom.GetProperty(created, "SlideID")) ?? "";
             focusIndex = TryGetIndex(created);
+            ClearEmptyPlaceholders(created, cleared);
             return true;
+        }
+
+        private const int MsoPlaceholder = 14;
+
+        private static void ClearEmptyPlaceholders(object slide, List<ClearedPlaceholderInfo> cleared)
+        {
+            if (slide == null)
+            {
+                return;
+            }
+
+            object shapes = WppCom.GetProperty(slide, "Shapes");
+            if (shapes == null)
+            {
+                return;
+            }
+
+            var toDelete = new List<object>();
+            int count;
+            try
+            {
+                count = Convert.ToInt32(WppCom.GetProperty(shapes, "Count"));
+            }
+            catch (Exception)
+            {
+                return;
+            }
+
+            for (int i = 1; i <= count; i++)
+            {
+                object shape = WppCom.GetIndexed(shapes, i);
+                try
+                {
+                    object typeObj = WppCom.GetProperty(shape, "Type");
+                    if (typeObj == null || Convert.ToInt32(typeObj) != MsoPlaceholder)
+                    {
+                        continue;
+                    }
+
+                    object pf = WppCom.GetProperty(shape, "PlaceholderFormat");
+                    object phObj = pf == null ? null : WppCom.GetProperty(pf, "Type");
+                    if (phObj == null)
+                    {
+                        continue;
+                    }
+
+                    int ph = Convert.ToInt32(phObj);
+                    if (!PptEmptyPlaceholderClear.IsClearableType(ph))
+                    {
+                        continue;
+                    }
+
+                    string text = "";
+                    object tf = WppCom.GetProperty(shape, "TextFrame");
+                    object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                    if (tr != null)
+                    {
+                        text = Convert.ToString(WppCom.GetProperty(tr, "Text")) ?? "";
+                    }
+
+                    if (!PptEmptyPlaceholderClear.IsEmptyText(text))
+                    {
+                        continue;
+                    }
+
+                    int comId = 0;
+                    object idObj = WppCom.GetProperty(shape, "Id");
+                    if (idObj != null)
+                    {
+                        comId = Convert.ToInt32(idObj);
+                    }
+
+                    PptEmptyPlaceholderClear.Remember(cleared, ph, comId);
+                    toDelete.Add(shape);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            foreach (object shape in toDelete)
+            {
+                try
+                {
+                    WppCom.Invoke(shape, "Delete");
+                }
+                catch (Exception)
+                {
+                }
+            }
         }
 
         private static bool TryDuplicate(
@@ -519,7 +613,8 @@ namespace WordAddIn1.PresentationHost
             string action,
             string focusId,
             int? focusIndex,
-            object slides)
+            object slides,
+            List<ClearedPlaceholderInfo> cleared)
         {
             var list = new List<PresentationSlideInfo>();
             int count = 0;
@@ -545,7 +640,8 @@ namespace WordAddIn1.PresentationHost
                 FocusSlideId = focusId ?? "",
                 FocusIndex = focusIndex,
                 SlideCount = count,
-                Slides = list
+                Slides = list,
+                ClearedPlaceholders = cleared
             };
         }
 

@@ -33,5 +33,7 @@ namespace WordAddIn1.PresentationHost
         public int SlideCount { get; set; }
 
         public List<PresentationSlideInfo> Slides { get; set; }
+
+        public List<ClearedPlaceholderInfo> ClearedPlaceholders { get; set; }
     }
 }

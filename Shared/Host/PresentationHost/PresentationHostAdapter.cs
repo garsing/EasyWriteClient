@@ -357,6 +357,64 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
+        public static bool TryManageShape(
+            IOperationChannel channel,
+            PresentationManageShapeRequest request,
+            out PresentationManageShapeResult result,
+            out ToolResult errorResult)
+        {
+            result = null;
+            errorResult = null;
+            if (channel == null)
+            {
+                errorResult = new ToolResult { Success = false, Error = "未知 channel_id" };
+                return false;
+            }
+
+            if (channel.Kind == ChannelKind.Word
+                || channel.Kind == ChannelKind.Wps
+                || channel.Kind == ChannelKind.Excel
+                || channel.Kind == ChannelKind.Et)
+            {
+                string host = channel.Kind.ToString().ToLowerInvariant();
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "unsupported: 当前渠道是 " + host
+                        + "，请先打开/切换到演示文稿渠道（ppt: / wpp:），再用 F_manage_ppt_shape"
+                };
+                return false;
+            }
+
+            bool ok;
+            string error;
+            if (channel is PptChannel ppt)
+            {
+                ok = PowerPointPresentationHost.TryManageShape(ppt, request, out result, out error);
+            }
+            else if (channel is WppChannel wpp)
+            {
+                ok = WppPresentationHost.TryManageShape(wpp, request, out result, out error);
+            }
+            else
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "unsupported: 当前渠道不是 ppt/wpp"
+                };
+                return false;
+            }
+
+            if (!ok)
+            {
+                errorResult = new ToolResult { Success = false, Error = error };
+                return false;
+            }
+
+            return true;
+        }
+
         public static bool TryPptAnimation(
             IOperationChannel channel,
             PresentationAnimationRequest request,

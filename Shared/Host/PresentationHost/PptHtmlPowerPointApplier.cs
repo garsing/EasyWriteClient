@@ -115,7 +115,7 @@ namespace WordAddIn1.PresentationHost
             try
             {
                 // 先预检：避免写到一半因 freeform 等失败留下半成品
-                if (!TryPreflight(slide, plan.Nodes, warnings, out error))
+                if (!TryPreflight(slide, plan, warnings, out error))
                 {
                     if (dbg != null)
                     {
@@ -137,6 +137,16 @@ namespace WordAddIn1.PresentationHost
                 PptHtmlApplyTiming.Step("preflight", phaseSw.ElapsedMilliseconds);
                 phaseSw.Restart();
 
+                List<string> palette = null;
+                try
+                {
+                    palette = PptPaletteIo.CollectPowerPoint(presentation).Palette;
+                }
+                catch (Exception)
+                {
+                    palette = new List<string>();
+                }
+
                 foreach (PptHtmlApplyNode node in plan.Nodes)
                 {
                     if (node == null)
@@ -150,6 +160,12 @@ namespace WordAddIn1.PresentationHost
                     {
                     if (node.IsCreate)
                     {
+                        if (!plan.AllowCreate && !PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                        {
+                            error = PptHtmlApplyUpsert.DenyCreateMessage;
+                            return false;
+                        }
+
                         if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
                         {
                             PptHtmlApplyUpsert.AddSkipWarning(node, node.ShapeType, warnings);
@@ -181,6 +197,7 @@ namespace WordAddIn1.PresentationHost
                             ["shape_type"] = node.ShapeType ?? "",
                             ["shape_id"] = newId
                         });
+                        WarnIfNewColors(node, palette, warnings);
                     }
                     else
                     {
@@ -215,6 +232,12 @@ namespace WordAddIn1.PresentationHost
                                 continue;
                             }
 
+                            if (!plan.AllowCreate)
+                            {
+                                error = PptHtmlApplyUpsert.DenyCreateMessage;
+                                return false;
+                            }
+
                             PptHtmlApplyUpsert.MutateNodeForCreate(node, plannedType, warnings);
                             if (!TryCreate(slide, node, slideWidth, slideHeight, warnings, out string newId, out string createError))
                             {
@@ -242,6 +265,7 @@ namespace WordAddIn1.PresentationHost
                                 ["shape_type"] = node.ShapeType ?? "",
                                 ["shape_id"] = newId
                             });
+                            WarnIfNewColors(node, palette, warnings);
                         }
                         else if (LiveMatchesHtml(existing, node, slideWidth, slideHeight))
                         {
@@ -275,6 +299,7 @@ namespace WordAddIn1.PresentationHost
                                 node,
                                 dbg != null ? DescribeShape(slide, node, slideWidth, slideHeight) : null);
                             updated++;
+                            WarnIfNewColors(node, palette, warnings);
                         }
                     }
                     }
@@ -689,11 +714,12 @@ namespace WordAddIn1.PresentationHost
 
         private static bool TryPreflight(
             PowerPoint.Slide slide,
-            List<PptHtmlApplyNode> nodes,
+            PptHtmlApplyPlan plan,
             List<string> warnings,
             out string error)
         {
             error = null;
+            List<PptHtmlApplyNode> nodes = plan == null ? null : plan.Nodes;
             if (nodes == null)
             {
                 return true;
@@ -707,8 +733,23 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
+                if (!string.IsNullOrEmpty(node.WidthFromShapeId))
+                {
+                    if (!PptShapeId.TryParseShapeComId(node.WidthFromShapeId, out int fromId)
+                        || FindShapeById(slide.Shapes, fromId) == null)
+                    {
+                        hard.Add("data-width-from 找不到 ShapeId=" + node.WidthFromShapeId);
+                    }
+                }
+
                 if (node.IsCreate)
                 {
+                    if (!plan.AllowCreate && !PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                    {
+                        hard.Add(PptHtmlApplyUpsert.DenyCreateMessage);
+                        continue;
+                    }
+
                     if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
                     {
                         continue;
@@ -733,6 +774,12 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
+                if (!plan.AllowCreate)
+                {
+                    hard.Add(PptHtmlApplyUpsert.DenyCreateMessage);
+                    continue;
+                }
+
                 PptHtmlMissingShapeAction action = PptHtmlApplyUpsert.PlanMissingShape(
                     node, out _, out string planError);
                 if (action == PptHtmlMissingShapeAction.Fail)
@@ -748,6 +795,63 @@ namespace WordAddIn1.PresentationHost
 
             error = "应用前预检失败（未写入任何形状）：" + string.Join("；", hard);
             return false;
+        }
+
+        private static bool TryApplyWidthFrom(
+            PowerPoint.Slide slide,
+            PptHtmlApplyNode node,
+            float slideWidth,
+            out string error)
+        {
+            error = null;
+            if (node == null || string.IsNullOrEmpty(node.WidthFromShapeId))
+            {
+                return true;
+            }
+
+            if (!PptShapeId.TryParseShapeComId(node.WidthFromShapeId, out int fromId))
+            {
+                error = "非法 data-width-from ShapeId: " + node.WidthFromShapeId;
+                return false;
+            }
+
+            PowerPoint.Shape source = FindShapeById(slide.Shapes, fromId);
+            if (source == null)
+            {
+                error = "data-width-from 找不到 ShapeId=" + node.WidthFromShapeId;
+                return false;
+            }
+
+            if (!PptHtmlTextWidthIo.TryMeasurePowerPoint(source, slideWidth, out double pct))
+            {
+                error = "无法量取 data-width-from=" + node.WidthFromShapeId + " 的文字宽度";
+                return false;
+            }
+
+            node.WidthPct = pct;
+            node.HasGeometry = true;
+            return true;
+        }
+
+        private static void WarnIfNewColors(PptHtmlApplyNode node, List<string> palette, List<string> warnings)
+        {
+            if (node == null || warnings == null)
+            {
+                return;
+            }
+
+            string id = node.ShapeId;
+            if (!string.IsNullOrEmpty(node.Fill)
+                && !PptPaletteIo.IsInPalette(palette, node.Fill))
+            {
+                warnings.Add(PptPaletteIo.NewColorWarning(id, node.Fill));
+            }
+
+            if (!string.IsNullOrEmpty(node.FontColor)
+                && !PptPaletteIo.IsInPalette(palette, node.FontColor))
+            {
+                warnings.Add(PptPaletteIo.NewColorWarning(id, node.FontColor));
+            }
         }
 
         private static bool TryUpdate(
@@ -769,6 +873,11 @@ namespace WordAddIn1.PresentationHost
             if (shape == null)
             {
                 error = "ShapeId 找不到: " + (node.ShapeId ?? "");
+                return false;
+            }
+
+            if (!TryApplyWidthFrom(slide, node, slideWidth, out error))
+            {
                 return false;
             }
 
@@ -896,6 +1005,15 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (!string.IsNullOrEmpty(node.Valign))
+            {
+                if (!PptHtmlValignIo.TryWritePowerPoint(shape, node.Valign, out string valignWarn)
+                    && !string.IsNullOrEmpty(valignWarn))
+                {
+                    warnings.Add(valignWarn);
+                }
+            }
+
             if (!TryApplyLine(shape, node, existingType, out error))
             {
                 return false;
@@ -964,6 +1082,11 @@ namespace WordAddIn1.PresentationHost
         {
             newShapeId = null;
             error = null;
+            if (!TryApplyWidthFrom(slide, node, slideWidth, out error))
+            {
+                return false;
+            }
+
             float left = (float)(node.LeftPct.GetValueOrDefault() / 100.0 * slideWidth);
             float top = (float)(node.TopPct.GetValueOrDefault() / 100.0 * slideHeight);
             float width = (float)(node.WidthPct.GetValueOrDefault() / 100.0 * slideWidth);
@@ -1143,6 +1266,15 @@ namespace WordAddIn1.PresentationHost
             if (!TryApplyParagraph(shape, node, type, out error))
             {
                 return false;
+            }
+
+            if (!string.IsNullOrEmpty(node.Valign))
+            {
+                if (!PptHtmlValignIo.TryWritePowerPoint(shape, node.Valign, out string valignWarn)
+                    && !string.IsNullOrEmpty(valignWarn))
+                {
+                    warnings.Add(valignWarn);
+                }
             }
 
             if (!TryApplyLine(shape, node, type, out error))

@@ -17,6 +17,9 @@ namespace WordAddIn1.PresentationHost
     /// </summary>
     internal static class PptHtmlApplyUpsert
     {
+        public const string DenyCreateMessage =
+            "未允许新建：节点缺少本页 ShapeId（或目标页找不到）。要铺新形状请传 allow_create=true。";
+
         public static PptHtmlMissingShapeAction PlanMissingShape(
             PptHtmlApplyNode node,
             out string plannedType,

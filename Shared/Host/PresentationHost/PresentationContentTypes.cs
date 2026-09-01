@@ -39,6 +39,12 @@ namespace WordAddIn1.PresentationHost
         public bool Truncated { get; set; }
 
         public string TruncatedReason { get; set; }
+
+        public List<string> Palette { get; set; }
+
+        public bool PaletteSampled { get; set; }
+
+        public int PaletteScannedCount { get; set; }
     }
 
     internal sealed class PresentationCaptureResult

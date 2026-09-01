@@ -387,6 +387,8 @@ namespace WordAddIn1.PresentationHost
             string lineColor = null;
             double? lineWidth = null;
             string align = null;
+            string valign = null;
+            double? textWidth = null;
             string lineSpacing = null;
             double? spaceBefore = null;
             double? spaceAfter = null;
@@ -416,6 +418,12 @@ namespace WordAddIn1.PresentationHost
                         indentLeft = para.IndentLeftPt;
                         indentFirst = para.IndentFirstPt;
                         bullet = para.Bullet;
+                    }
+
+                    valign = PptHtmlValignIo.TryReadWpp(shape);
+                    if (PptHtmlTextWidthIo.TryMeasureWpp(shape, (float)slideWidth, out double tw))
+                    {
+                        textWidth = tw;
                     }
 
                     TryReadTextMargins(
@@ -450,6 +458,8 @@ namespace WordAddIn1.PresentationHost
                 LineColor = lineColor,
                 LineWidthPt = lineWidth,
                 Align = align,
+                Valign = valign,
+                TextWidthPct = textWidth,
                 LineSpacing = lineSpacing,
                 SpaceBeforePt = spaceBefore,
                 SpaceAfterPt = spaceAfter,

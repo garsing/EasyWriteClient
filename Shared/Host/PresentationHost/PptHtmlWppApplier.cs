@@ -90,13 +90,23 @@ namespace WordAddIn1.PresentationHost
 
             try
             {
-                if (!TryPreflight(shapes, plan.Nodes, out error))
+                if (!TryPreflight(shapes, plan, out error))
                 {
                     return false;
                 }
 
                 PptHtmlApplyTiming.Step("preflight", phaseSw.ElapsedMilliseconds);
                 phaseSw.Restart();
+
+                List<string> palette = null;
+                try
+                {
+                    palette = PptPaletteIo.CollectWpp(presentation).Palette;
+                }
+                catch (Exception)
+                {
+                    palette = new List<string>();
+                }
 
                 foreach (PptHtmlApplyNode node in plan.Nodes)
                 {
@@ -111,6 +121,12 @@ namespace WordAddIn1.PresentationHost
                     {
                     if (node.IsCreate)
                     {
+                        if (!plan.AllowCreate && !PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                        {
+                            error = PptHtmlApplyUpsert.DenyCreateMessage;
+                            return false;
+                        }
+
                         if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
                         {
                             PptHtmlApplyUpsert.AddSkipWarning(node, node.ShapeType, warnings);
@@ -132,6 +148,7 @@ namespace WordAddIn1.PresentationHost
                             ["shape_type"] = node.ShapeType ?? "",
                             ["shape_id"] = newId
                         });
+                        WarnIfNewColors(node, palette, warnings);
                     }
                     else
                     {
@@ -158,6 +175,12 @@ namespace WordAddIn1.PresentationHost
                                 continue;
                             }
 
+                            if (!plan.AllowCreate)
+                            {
+                                error = PptHtmlApplyUpsert.DenyCreateMessage;
+                                return false;
+                            }
+
                             PptHtmlApplyUpsert.MutateNodeForCreate(node, plannedType, warnings);
                             if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, warnings, out string newId, out string createError))
                             {
@@ -173,6 +196,7 @@ namespace WordAddIn1.PresentationHost
                                 ["shape_type"] = node.ShapeType ?? "",
                                 ["shape_id"] = newId
                             });
+                            WarnIfNewColors(node, palette, warnings);
                         }
                         else if (LiveMatchesHtml(existing, node, slideWidth, slideHeight))
                         {
@@ -195,6 +219,7 @@ namespace WordAddIn1.PresentationHost
                         {
                             TryCollectZ(shapes, node, zTargets);
                             updated++;
+                            WarnIfNewColors(node, palette, warnings);
                         }
                     }
                     }
@@ -271,9 +296,10 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
-        private static bool TryPreflight(object shapes, List<PptHtmlApplyNode> nodes, out string error)
+        private static bool TryPreflight(object shapes, PptHtmlApplyPlan plan, out string error)
         {
             error = null;
+            List<PptHtmlApplyNode> nodes = plan == null ? null : plan.Nodes;
             if (nodes == null)
             {
                 return true;
@@ -287,8 +313,23 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
+                if (!string.IsNullOrEmpty(node.WidthFromShapeId))
+                {
+                    if (!PptShapeId.TryParseShapeComId(node.WidthFromShapeId, out int fromId)
+                        || FindShapeById(shapes, fromId) == null)
+                    {
+                        hard.Add("data-width-from 找不到 ShapeId=" + node.WidthFromShapeId);
+                    }
+                }
+
                 if (node.IsCreate)
                 {
+                    if (!plan.AllowCreate && !PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                    {
+                        hard.Add(PptHtmlApplyUpsert.DenyCreateMessage);
+                        continue;
+                    }
+
                     if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
                     {
                         continue;
@@ -310,6 +351,12 @@ namespace WordAddIn1.PresentationHost
 
                 if (existing != null)
                 {
+                    continue;
+                }
+
+                if (!plan.AllowCreate)
+                {
+                    hard.Add(PptHtmlApplyUpsert.DenyCreateMessage);
                     continue;
                 }
 
@@ -350,6 +397,11 @@ namespace WordAddIn1.PresentationHost
             if (shape == null)
             {
                 error = "ShapeId 找不到: " + (node.ShapeId ?? "");
+                return false;
+            }
+
+            if (!TryApplyWidthFrom(shapes, node, slideWidth, out error))
+            {
                 return false;
             }
 
@@ -443,6 +495,15 @@ namespace WordAddIn1.PresentationHost
             if (!TryApplyParagraph(shape, node, existingType, out error))
             {
                 return false;
+            }
+
+            if (!string.IsNullOrEmpty(node.Valign))
+            {
+                if (!PptHtmlValignIo.TryWriteWpp(shape, node.Valign, out string valignWarn)
+                    && !string.IsNullOrEmpty(valignWarn))
+                {
+                    warnings.Add(valignWarn);
+                }
             }
 
             if (!TryApplyLine(shape, node, existingType, out error))
@@ -554,6 +615,11 @@ namespace WordAddIn1.PresentationHost
         {
             newShapeId = null;
             error = null;
+            if (!TryApplyWidthFrom(shapes, node, slideWidth, out error))
+            {
+                return false;
+            }
+
             double left = node.LeftPct.GetValueOrDefault() / 100.0 * slideWidth;
             double top = node.TopPct.GetValueOrDefault() / 100.0 * slideHeight;
             double width = node.WidthPct.GetValueOrDefault() / 100.0 * slideWidth;
@@ -690,6 +756,15 @@ namespace WordAddIn1.PresentationHost
             if (!TryApplyParagraph(shape, node, type, out error))
             {
                 return false;
+            }
+
+            if (!string.IsNullOrEmpty(node.Valign))
+            {
+                if (!PptHtmlValignIo.TryWriteWpp(shape, node.Valign, out string valignWarn)
+                    && !string.IsNullOrEmpty(valignWarn))
+                {
+                    warnings.Add(valignWarn);
+                }
             }
 
             if (!TryApplyLine(shape, node, type, out error))
@@ -1669,6 +1744,63 @@ namespace WordAddIn1.PresentationHost
             }
 
             return PptShapeTypeMap.ShouldApplyHtmlGeometry(existingType ?? node.ShapeType, rotation);
+        }
+
+        private static bool TryApplyWidthFrom(
+            object shapes,
+            PptHtmlApplyNode node,
+            double slideWidth,
+            out string error)
+        {
+            error = null;
+            if (node == null || string.IsNullOrEmpty(node.WidthFromShapeId))
+            {
+                return true;
+            }
+
+            if (!PptShapeId.TryParseShapeComId(node.WidthFromShapeId, out int fromId))
+            {
+                error = "非法 data-width-from ShapeId: " + node.WidthFromShapeId;
+                return false;
+            }
+
+            object source = FindShapeById(shapes, fromId);
+            if (source == null)
+            {
+                error = "data-width-from 找不到 ShapeId=" + node.WidthFromShapeId;
+                return false;
+            }
+
+            if (!PptHtmlTextWidthIo.TryMeasureWpp(source, (float)slideWidth, out double pct))
+            {
+                error = "无法量取 data-width-from=" + node.WidthFromShapeId + " 的文字宽度";
+                return false;
+            }
+
+            node.WidthPct = pct;
+            node.HasGeometry = true;
+            return true;
+        }
+
+        private static void WarnIfNewColors(PptHtmlApplyNode node, List<string> palette, List<string> warnings)
+        {
+            if (node == null || warnings == null)
+            {
+                return;
+            }
+
+            string id = string.IsNullOrEmpty(node.ShapeId) ? "new" : node.ShapeId;
+            if (!string.IsNullOrEmpty(node.Fill)
+                && !PptPaletteIo.IsInPalette(palette, node.Fill))
+            {
+                warnings.Add(PptPaletteIo.NewColorWarning(id, node.Fill));
+            }
+
+            if (!string.IsNullOrEmpty(node.FontColor)
+                && !PptPaletteIo.IsInPalette(palette, node.FontColor))
+            {
+                warnings.Add(PptPaletteIo.NewColorWarning(id, node.FontColor));
+            }
         }
     }
 }

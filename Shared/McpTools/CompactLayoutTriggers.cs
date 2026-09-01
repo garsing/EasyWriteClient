@@ -42,6 +42,7 @@ namespace WordAddIn1
             "F_excel_chart",
             "F_apply_ppt_html",
             "F_manage_ppt_slide",
+            "F_manage_ppt_shape",
             "F_ppt_animation",
             "F_ppt_transition",
             "F_browser_navigate",

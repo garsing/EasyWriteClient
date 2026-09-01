@@ -93,6 +93,26 @@ namespace WordAddIn1
                         data["to_index"] = hostResult.FocusIndex.Value;
                     }
 
+                    if (hostResult.ClearedPlaceholders != null && hostResult.ClearedPlaceholders.Count > 0)
+                    {
+                        var cleared = new List<Dictionary<string, object>>();
+                        foreach (ClearedPlaceholderInfo one in hostResult.ClearedPlaceholders)
+                        {
+                            if (one == null)
+                            {
+                                continue;
+                            }
+
+                            cleared.Add(new Dictionary<string, object>
+                            {
+                                ["placeholder_type"] = one.PlaceholderType ?? "",
+                                ["shape_com_id"] = one.ShapeComId
+                            });
+                        }
+
+                        data["cleared_placeholders"] = cleared;
+                    }
+
                     await Task.CompletedTask;
                     return new ToolResult
                     {

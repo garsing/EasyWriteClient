@@ -53,6 +53,12 @@ namespace WordAddIn1.PresentationHost
         /// <summary>B4：left/center/right/justify</summary>
         public string Align { get; set; }
 
+        /// <summary>I6：top/middle/bottom；null=未读到</summary>
+        public string Valign { get; set; }
+
+        /// <summary>I7：可见文字实测宽，相对幻灯片宽度百分比</summary>
+        public double? TextWidthPct { get; set; }
+
         /// <summary>B4：行距倍数或 exact:N（pt）</summary>
         public string LineSpacing { get; set; }
 
