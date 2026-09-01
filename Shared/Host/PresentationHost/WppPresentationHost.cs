@@ -268,7 +268,39 @@ namespace WordAddIn1.PresentationHost
             try
             {
                 Directory.CreateDirectory(tempDir);
-                WppCom.Invoke(slide, "Export", pngPath, "PNG");
+                float slideWidth = 0f;
+                float slideHeight = 0f;
+                try
+                {
+                    object setup = WppCom.GetProperty(presentation, "PageSetup");
+                    if (setup != null)
+                    {
+                        object w = WppCom.GetProperty(setup, "SlideWidth");
+                        object h = WppCom.GetProperty(setup, "SlideHeight");
+                        if (w != null)
+                        {
+                            slideWidth = Convert.ToSingle(w);
+                        }
+
+                        if (h != null)
+                        {
+                            slideHeight = Convert.ToSingle(h);
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                ImageCaptureCompressor.FitExportPixelSize(slideWidth, slideHeight, out int exportW, out int exportH);
+                try
+                {
+                    WppCom.Invoke(slide, "Export", pngPath, "PNG", exportW, exportH);
+                }
+                catch (Exception)
+                {
+                    WppCom.Invoke(slide, "Export", pngPath, "PNG");
+                }
                 if (!File.Exists(pngPath) || new FileInfo(pngPath).Length == 0)
                 {
                     error = "unsupported: WPS 演示导出图片为空";

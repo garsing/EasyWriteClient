@@ -165,9 +165,49 @@ namespace WordAddIn1.PresentationHost
                         {
                             return shape;
                         }
+
+                        if ((int)shape.Type == 6)
+                        {
+                            PowerPoint.Shape found = FindInGroup(shape, id);
+                            if (found != null)
+                            {
+                                return found;
+                            }
+                        }
                     }
                     catch (Exception)
                     {
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return null;
+        }
+
+        private static PowerPoint.Shape FindInGroup(PowerPoint.Shape group, int id)
+        {
+            try
+            {
+                PowerPoint.GroupShapes items = group.GroupItems;
+                int count = items.Count;
+                for (int i = 1; i <= count; i++)
+                {
+                    PowerPoint.Shape child = items[i];
+                    if (child.Id == id)
+                    {
+                        return child;
+                    }
+
+                    if ((int)child.Type == 6)
+                    {
+                        PowerPoint.Shape nested = FindInGroup(child, id);
+                        if (nested != null)
+                        {
+                            return nested;
+                        }
                     }
                 }
             }

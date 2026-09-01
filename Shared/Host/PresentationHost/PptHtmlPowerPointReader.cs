@@ -220,7 +220,6 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
-                // B2：整组栅格为一张 picture，不再展开子项
                 if (!AppendNode(
                     shape,
                     slideId,
@@ -233,6 +232,66 @@ namespace WordAddIn1.PresentationHost
                     out error))
                 {
                     return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>I17：展开 GroupItems。成功展开（含子项失败）返回 true；无法取组则 false，由 B2 整组栅格。</summary>
+        private static bool TryExpandGroup(
+            PowerPoint.Shape group,
+            string slideId,
+            float slideWidth,
+            float slideHeight,
+            List<PptHtmlShapeNode> output,
+            ref bool pageTextTruncated,
+            ref string truncatedReason,
+            PptHtmlReadDebug fontDbg,
+            out string error)
+        {
+            error = null;
+            PowerPoint.GroupShapes items;
+            int count;
+            try
+            {
+                items = group.GroupItems;
+                count = items.Count;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            if (count <= 0)
+            {
+                return false;
+            }
+
+            for (int i = 1; i <= count; i++)
+            {
+                PowerPoint.Shape child;
+                try
+                {
+                    child = items[i];
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+
+                if (!AppendNode(
+                    child,
+                    slideId,
+                    slideWidth,
+                    slideHeight,
+                    output,
+                    ref pageTextTruncated,
+                    ref truncatedReason,
+                    fontDbg,
+                    out error))
+                {
+                    return true;
                 }
             }
 
@@ -313,6 +372,26 @@ namespace WordAddIn1.PresentationHost
             else if (PptHtmlChartIo.LooksLikeChart(shape))
             {
                 typeName = "chart";
+            }
+
+            if (typeName == "group"
+                && TryExpandGroup(
+                    shape,
+                    slideId,
+                    slideWidth,
+                    slideHeight,
+                    output,
+                    ref pageTextTruncated,
+                    ref truncatedReason,
+                    fontDbg,
+                    out error))
+            {
+                return error == null;
+            }
+
+            if (error != null)
+            {
+                return false;
             }
 
             string rasterizedFrom = null;

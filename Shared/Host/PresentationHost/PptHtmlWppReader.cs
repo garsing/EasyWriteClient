@@ -238,7 +238,6 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
-                // B2：整组栅格为一张 picture，不再展开子项
                 if (!AppendNode(
                     shape,
                     slideId,
@@ -251,6 +250,61 @@ namespace WordAddIn1.PresentationHost
                     out error))
                 {
                     return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TryExpandGroup(
+            object group,
+            string slideId,
+            double slideWidth,
+            double slideHeight,
+            List<PptHtmlShapeNode> output,
+            ref bool pageTextTruncated,
+            ref string truncatedReason,
+            PptHtmlReadDebug fontDbg,
+            out string error)
+        {
+            error = null;
+            object items;
+            int count;
+            try
+            {
+                items = WppCom.GetProperty(group, "GroupItems");
+                count = Convert.ToInt32(WppCom.GetProperty(items, "Count"));
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            if (items == null || count <= 0)
+            {
+                return false;
+            }
+
+            for (int i = 1; i <= count; i++)
+            {
+                object child = WppCom.GetIndexed(items, i);
+                if (child == null)
+                {
+                    continue;
+                }
+
+                if (!AppendNode(
+                    child,
+                    slideId,
+                    slideWidth,
+                    slideHeight,
+                    output,
+                    ref pageTextTruncated,
+                    ref truncatedReason,
+                    fontDbg,
+                    out error))
+                {
+                    return true;
                 }
             }
 
@@ -307,6 +361,26 @@ namespace WordAddIn1.PresentationHost
             else if (PptHtmlChartIo.LooksLikeChart(shape))
             {
                 typeName = "chart";
+            }
+
+            if (typeName == "group"
+                && TryExpandGroup(
+                    shape,
+                    slideId,
+                    slideWidth,
+                    slideHeight,
+                    output,
+                    ref pageTextTruncated,
+                    ref truncatedReason,
+                    fontDbg,
+                    out error))
+            {
+                return error == null;
+            }
+
+            if (error != null)
+            {
+                return false;
             }
 
             string rasterizedFrom = null;

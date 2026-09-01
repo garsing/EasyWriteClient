@@ -118,7 +118,7 @@ namespace WordAddIn1.PresentationHost
         public static bool IsNonEditable(string shapeType)
         {
             // picture 与标题/正文/普通形状同级：默认可编辑（可换 data-src）
-            // smartart/group 在 B2 读侧会栅格成 picture，此处仅覆盖未栅格残留
+            // smartart 在 B2 读侧会栅格成 picture；group 优先展开，失败才栅格
             return shapeType == "smartart"
                 || shapeType == "media";
         }

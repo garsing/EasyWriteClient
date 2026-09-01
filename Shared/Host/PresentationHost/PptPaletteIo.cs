@@ -16,10 +16,14 @@ namespace WordAddIn1.PresentationHost
         public int ScannedCount { get; set; }
     }
 
-    /// <summary>本演示文稿允许色表（仅概览对外返回；apply 内部对照新色）。</summary>
+    /// <summary>本演示文稿允许色表。只允许概览 Collect；其它工具 Peek 缓存，禁止再扫页。</summary>
     internal static class PptPaletteIo
     {
         public const int UsedSlideCap = 50;
+
+        private static readonly object CacheSync = new object();
+        private static readonly Dictionary<string, List<string>> Cache =
+            new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
         public static PptPaletteCollectResult CollectPowerPoint(PowerPoint.Presentation presentation)
         {
@@ -48,7 +52,9 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
-            return Finish(colors, slideCount, indexes.Count);
+            PptPaletteCollectResult result = Finish(colors, slideCount, indexes.Count);
+            Remember(KeyPowerPoint(presentation), result.Palette);
+            return result;
         }
 
         public static PptPaletteCollectResult CollectWpp(object presentation)
@@ -83,7 +89,21 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
-            return Finish(colors, slideCount, indexes.Count);
+            PptPaletteCollectResult result = Finish(colors, slideCount, indexes.Count);
+            Remember(KeyWpp(presentation), result.Palette);
+            return result;
+        }
+
+        /// <summary>上次概览扫过的色表；从未概览则 null。不碰 COM。</summary>
+        public static List<string> PeekCachedPowerPoint(PowerPoint.Presentation presentation)
+        {
+            return Peek(KeyPowerPoint(presentation));
+        }
+
+        /// <summary>上次概览扫过的色表；从未概览则 null。不碰 COM。</summary>
+        public static List<string> PeekCachedWpp(object presentation)
+        {
+            return Peek(KeyWpp(presentation));
         }
 
         public static bool IsAlwaysLegal(string normalized)
@@ -383,6 +403,106 @@ namespace WordAddIn1.PresentationHost
         {
             string id = string.IsNullOrEmpty(shapeId) ? "new" : shapeId;
             return id + " 用了新的颜色 " + (hex ?? "");
+        }
+
+        private static void Remember(string key, List<string> palette)
+        {
+            if (string.IsNullOrEmpty(key) || palette == null)
+            {
+                return;
+            }
+
+            var copy = new List<string>(palette);
+            lock (CacheSync)
+            {
+                Cache[key] = copy;
+            }
+        }
+
+        private static List<string> Peek(string key)
+        {
+            if (string.IsNullOrEmpty(key))
+            {
+                return null;
+            }
+
+            lock (CacheSync)
+            {
+                if (!Cache.TryGetValue(key, out List<string> cached) || cached == null)
+                {
+                    return null;
+                }
+
+                return new List<string>(cached);
+            }
+        }
+
+        private static string KeyPowerPoint(PowerPoint.Presentation presentation)
+        {
+            if (presentation == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                string full = presentation.FullName;
+                if (!string.IsNullOrWhiteSpace(full))
+                {
+                    return "ppt:" + full;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                string name = presentation.Name;
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    return "ppt:" + name;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return "ppt:unknown";
+        }
+
+        private static string KeyWpp(object presentation)
+        {
+            if (presentation == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                object full = WppCom.GetProperty(presentation, "FullName");
+                if (full != null && !string.IsNullOrWhiteSpace(Convert.ToString(full)))
+                {
+                    return "wpp:" + Convert.ToString(full);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                object name = WppCom.GetProperty(presentation, "Name");
+                if (name != null && !string.IsNullOrWhiteSpace(Convert.ToString(name)))
+                {
+                    return "wpp:" + Convert.ToString(name);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return "wpp:unknown";
         }
     }
 }

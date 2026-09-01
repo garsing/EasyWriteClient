@@ -98,15 +98,12 @@ namespace WordAddIn1.PresentationHost
                 PptHtmlApplyTiming.Step("preflight", phaseSw.ElapsedMilliseconds);
                 phaseSw.Restart();
 
-                List<string> palette = null;
-                try
-                {
-                    palette = PptPaletteIo.CollectWpp(presentation).Palette;
-                }
-                catch (Exception)
-                {
-                    palette = new List<string>();
-                }
+                List<string> palette = PptPaletteIo.PeekCachedWpp(presentation);
+                PptHtmlApplyTiming.Step(
+                    "palette_cache",
+                    phaseSw.ElapsedMilliseconds,
+                    palette == null ? "miss" : "hit n=" + palette.Count);
+                phaseSw.Restart();
 
                 foreach (PptHtmlApplyNode node in plan.Nodes)
                 {
@@ -1784,7 +1781,7 @@ namespace WordAddIn1.PresentationHost
 
         private static void WarnIfNewColors(PptHtmlApplyNode node, List<string> palette, List<string> warnings)
         {
-            if (node == null || warnings == null)
+            if (node == null || warnings == null || palette == null)
             {
                 return;
             }

@@ -255,7 +255,19 @@ namespace WordAddIn1.PresentationHost
             try
             {
                 Directory.CreateDirectory(tempDir);
-                slide.Export(pngPath, "PNG");
+                float slideWidth = 0f;
+                float slideHeight = 0f;
+                try
+                {
+                    slideWidth = presentation.PageSetup.SlideWidth;
+                    slideHeight = presentation.PageSetup.SlideHeight;
+                }
+                catch (Exception)
+                {
+                }
+
+                ImageCaptureCompressor.FitExportPixelSize(slideWidth, slideHeight, out int exportW, out int exportH);
+                slide.Export(pngPath, "PNG", exportW, exportH);
                 if (!File.Exists(pngPath) || new FileInfo(pngPath).Length == 0)
                 {
                     error = "幻灯片导出图片为空";

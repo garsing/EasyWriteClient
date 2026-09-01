@@ -181,6 +181,54 @@ namespace WordAddIn1.PresentationHost
                     {
                         return shape;
                     }
+
+                    object type = WppCom.GetProperty(shape, "Type");
+                    if (type != null && Convert.ToInt32(type) == 6)
+                    {
+                        object found = FindInGroup(shape, id);
+                        if (found != null)
+                        {
+                            return found;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return null;
+        }
+
+        private static object FindInGroup(object group, int id)
+        {
+            try
+            {
+                object items = WppCom.GetProperty(group, "GroupItems");
+                if (items == null)
+                {
+                    return null;
+                }
+
+                int count = Convert.ToInt32(WppCom.GetProperty(items, "Count"));
+                for (int i = 1; i <= count; i++)
+                {
+                    object child = WppCom.GetIndexed(items, i);
+                    object raw = child == null ? null : WppCom.GetProperty(child, "Id");
+                    if (raw != null && Convert.ToInt32(raw) == id)
+                    {
+                        return child;
+                    }
+
+                    object type = child == null ? null : WppCom.GetProperty(child, "Type");
+                    if (type != null && Convert.ToInt32(type) == 6)
+                    {
+                        object nested = FindInGroup(child, id);
+                        if (nested != null)
+                        {
+                            return nested;
+                        }
+                    }
                 }
             }
             catch (Exception)

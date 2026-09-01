@@ -10,9 +10,30 @@ namespace WordAddIn1
     /// </summary>
     internal static class ImageCaptureCompressor
     {
-        public const int MaxImageBytes = 4194304;
-        public const int MaxImageDimension = 2048;
+        /// <summary>视觉轮按 base64 计 token，必须先缩小。200KB / 长边 800 足够看版式。</summary>
+        public const int MaxImageBytes = 204800;
+        public const int MaxImageDimension = 800;
         private const int JpegQualityStart = 85;
+
+        public static void FitExportPixelSize(float slideWidth, float slideHeight, out int width, out int height)
+        {
+            if (slideWidth <= 0f || slideHeight <= 0f)
+            {
+                width = MaxImageDimension;
+                height = Math.Max(1, MaxImageDimension * 9 / 16);
+                return;
+            }
+
+            if (slideWidth >= slideHeight)
+            {
+                width = MaxImageDimension;
+                height = Math.Max(1, (int)Math.Round(MaxImageDimension * (double)slideHeight / slideWidth));
+                return;
+            }
+
+            height = MaxImageDimension;
+            width = Math.Max(1, (int)Math.Round(MaxImageDimension * (double)slideWidth / slideHeight));
+        }
 
         internal sealed class CompressedImage
         {
