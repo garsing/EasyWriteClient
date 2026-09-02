@@ -75,9 +75,10 @@ namespace WordAddIn1
                         }
                     }
 
-                    data["palette"] = hostResult.Palette ?? new List<string>();
-                    data["palette_sampled"] = hostResult.PaletteSampled;
-                    data["palette_scanned_count"] = hostResult.PaletteScannedCount;
+                    // 临时关闭：概览不返回 palette。
+                    // data["palette"] = hostResult.Palette ?? new List<string>();
+                    // data["palette_sampled"] = hostResult.PaletteSampled;
+                    // data["palette_scanned_count"] = hostResult.PaletteScannedCount;
 
                     await Task.CompletedTask;
                     return new ToolResult

@@ -179,17 +179,18 @@ namespace WordAddIn1.PresentationHost
                 Truncated = truncated,
                 TruncatedReason = truncatedReason
             };
-            try
-            {
-                PptPaletteCollectResult palette = PptPaletteIo.CollectWpp(presentation);
-                result.Palette = palette.Palette;
-                result.PaletteSampled = palette.Sampled;
-                result.PaletteScannedCount = palette.ScannedCount;
-            }
-            catch (Exception)
-            {
-                result.Palette = new List<string> { "#000000", "#FFFFFF", "none" };
-            }
+            // 临时关闭：概览扫全稿颜色太慢，需要时再打开。
+            // try
+            // {
+            //     PptPaletteCollectResult palette = PptPaletteIo.CollectWpp(presentation);
+            //     result.Palette = palette.Palette;
+            //     result.PaletteSampled = palette.Sampled;
+            //     result.PaletteScannedCount = palette.ScannedCount;
+            // }
+            // catch (Exception)
+            // {
+            //     result.Palette = new List<string> { "#000000", "#FFFFFF", "none" };
+            // }
 
             return true;
         }
