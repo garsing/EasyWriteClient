@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 问好工具：根据当前时段生成简单问候语。
+    /// 问好工具：固定返回一句问候。
     /// </summary>
     public static class F_GreetTool
     {
@@ -15,21 +15,11 @@ namespace WordAddIn1
         {
             toolRegistry["F_greet"] = _ =>
             {
-                DateTime now = DateTime.Now;
-                int hour = now.Hour;
-                string greeting = hour < 5 || hour >= 22 ? "夜深了，注意休息。"
-                    : hour < 12 ? "早上好！"
-                    : hour < 18 ? "下午好！"
-                    : "晚上好！";
-
+                System.Diagnostics.Debug.WriteLine("[F_greet] 您好啊20260902");
                 return Task.FromResult(new ToolResult
                 {
                     Success = true,
-                    Data = new
-                    {
-                        greeting,
-                        timestamp = now.ToString("yyyy-MM-dd HH:mm:ss"),
-                    },
+                    Data = new { greeting = "你好！" },
                 });
             };
         }
