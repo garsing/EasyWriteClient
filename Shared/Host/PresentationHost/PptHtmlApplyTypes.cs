@@ -713,6 +713,16 @@ namespace WordAddIn1.PresentationHost
             return string.Concat(el.DescendantNodes().OfType<XText>().Select(t => t.Value)).TrimEnd();
         }
 
+        internal static bool TryParseGeometry(
+            string style,
+            out double left,
+            out double top,
+            out double width,
+            out double height)
+        {
+            return TryParseStyle(style, out left, out top, out width, out height);
+        }
+
         private static bool TryParseStyle(
             string style,
             out double left,

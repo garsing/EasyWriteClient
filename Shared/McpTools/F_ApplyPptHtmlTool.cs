@@ -91,6 +91,11 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = "html 文件内容为空" };
                     }
 
+                    if (!PptHtmlExtendsExpander.TryExpand(html, out html, out string expandError))
+                    {
+                        return new ToolResult { Success = false, Error = expandError };
+                    }
+
                     if (!PptHtmlApplyParser.TryParse(html, slideId, out PptHtmlApplyPlan plan, out string parseError))
                     {
                         return new ToolResult { Success = false, Error = parseError };

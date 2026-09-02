@@ -121,6 +121,45 @@ namespace WordAddIn1
             }
         }
 
+        public static CompressedImage CompressThumb(Bitmap source, int maxLongEdge = 320, int quality = 80)
+        {
+            if (source == null)
+            {
+                throw new ArgumentNullException(nameof(source));
+            }
+
+            int longEdge = Math.Max(source.Width, source.Height);
+            int width = source.Width;
+            int height = source.Height;
+            if (longEdge > maxLongEdge)
+            {
+                double scale = (double)maxLongEdge / longEdge;
+                width = Math.Max(1, (int)Math.Round(source.Width * scale));
+                height = Math.Max(1, (int)Math.Round(source.Height * scale));
+            }
+
+            using (var resized = (width == source.Width && height == source.Height)
+                ? new Bitmap(source)
+                : ResizeBitmap(source, width, height))
+            {
+                int q = quality;
+                byte[] payload = EncodeJpeg(resized, q);
+                while (payload.Length > MaxImageBytes && q > 40)
+                {
+                    q -= 10;
+                    payload = EncodeJpeg(resized, q);
+                }
+
+                return new CompressedImage
+                {
+                    Bytes = payload,
+                    Format = "jpeg",
+                    Width = resized.Width,
+                    Height = resized.Height
+                };
+            }
+        }
+
         public static CompressedImage CompressFile(string imagePath)
         {
             using (var bitmap = new Bitmap(imagePath))

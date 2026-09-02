@@ -91,6 +91,23 @@ namespace WordAddIn1.PresentationHost
             return sb.ToString();
         }
 
+        public static string BuildFragment(IList<PptHtmlShapeNode> nodes)
+        {
+            var sb = new StringBuilder();
+            if (nodes != null)
+            {
+                foreach (PptHtmlShapeNode node in nodes)
+                {
+                    if (node != null)
+                    {
+                        AppendShape(sb, node);
+                    }
+                }
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+
         public static string BuildStyle(double leftPct, double topPct, double widthPct, double heightPct)
         {
             return "left:" + FormatPct(leftPct)
@@ -122,7 +139,8 @@ namespace WordAddIn1.PresentationHost
             string tag = string.IsNullOrEmpty(node.Tag) ? "div" : node.Tag;
             if (tag == "img")
             {
-                sb.Append("  <img ShapeId=\"").Append(EscapeAttr(node.ShapeId)).Append("\"");
+                sb.Append("  <img");
+                AppendShapeId(sb, node);
                 AppendCommonAttrs(sb, node);
                 sb.AppendLine(" />");
                 return;
@@ -130,7 +148,8 @@ namespace WordAddIn1.PresentationHost
 
             if (tag == "table")
             {
-                sb.Append("  <table ShapeId=\"").Append(EscapeAttr(node.ShapeId)).Append("\"");
+                sb.Append("  <table");
+                AppendShapeId(sb, node);
                 AppendCommonAttrs(sb, node);
                 sb.AppendLine(">");
                 if (!string.IsNullOrEmpty(node.InnerHtml))
@@ -148,7 +167,8 @@ namespace WordAddIn1.PresentationHost
 
             if (node.ShapeType == "chart")
             {
-                sb.Append("  <div ShapeId=\"").Append(EscapeAttr(node.ShapeId)).Append("\"");
+                sb.Append("  <div");
+                AppendShapeId(sb, node);
                 AppendCommonAttrs(sb, node);
                 PptHtmlChartIo.AppendFormatAttrs(sb, node.ChartFormat);
                 sb.AppendLine(">");
@@ -167,12 +187,20 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            sb.Append("  <").Append(tag)
-                .Append(" ShapeId=\"").Append(EscapeAttr(node.ShapeId)).Append("\"");
+            sb.Append("  <").Append(tag);
+            AppendShapeId(sb, node);
             AppendCommonAttrs(sb, node);
             sb.Append(">");
             sb.Append(EscapeText(node.Text));
             sb.Append("</").Append(tag).AppendLine(">");
+        }
+
+        private static void AppendShapeId(StringBuilder sb, PptHtmlShapeNode node)
+        {
+            if (!string.IsNullOrEmpty(node.ShapeId))
+            {
+                sb.Append(" ShapeId=\"").Append(EscapeAttr(node.ShapeId)).Append("\"");
+            }
         }
 
         private static void AppendCommonAttrs(StringBuilder sb, PptHtmlShapeNode node)
