@@ -20,6 +20,18 @@ namespace WordAddIn1.PresentationHost
             out PptHtmlReadResult result,
             out string error)
         {
+            return TryRead(presentation, slideId, channelId, kind, null, out result, out error);
+        }
+
+        public static bool TryRead(
+            object presentation,
+            string slideId,
+            string channelId,
+            string kind,
+            string shapeId,
+            out PptHtmlReadResult result,
+            out string error)
+        {
             result = null;
             error = null;
             if (presentation == null)
@@ -90,11 +102,34 @@ namespace WordAddIn1.PresentationHost
             try
             {
                 object shapesObj = WppCom.GetProperty(slide, "Shapes");
-                if (!CollectShapes(
+                if (!string.IsNullOrWhiteSpace(shapeId))
+                {
+                    if (!TryReadFocused(
+                        slide,
+                        trimmed,
+                        shapeId.Trim(),
+                        slideWidth,
+                        slideHeight,
+                        shapes,
+                        ref truncated,
+                        ref truncatedReason,
+                        fontDbg,
+                        out string focusError))
+                    {
+                        error = focusError;
+                        return false;
+                    }
+                }
+                else if (!CollectShapes(
                     shapesObj,
                     trimmed,
                     slideWidth,
                     slideHeight,
+                    0,
+                    0,
+                    slideWidth,
+                    slideHeight,
+                    GroupReadMode.ShellOnly,
                     shapes,
                     ref truncated,
                     ref truncatedReason,
@@ -139,7 +174,7 @@ namespace WordAddIn1.PresentationHost
                 Shapes = shapes,
                 Truncated = truncated,
                 TruncatedReason = truncatedReason,
-                ShapeCount = shapes.Count,
+                ShapeCount = PptHtmlGeom.CountNodes(shapes),
                 DebugFilename = debugFile,
                 DebugTrace = new List<string>(fontDbg.Lines)
             };
@@ -196,11 +231,23 @@ namespace WordAddIn1.PresentationHost
             return null;
         }
 
+        private enum GroupReadMode
+        {
+            ShellOnly,
+            OneLevel,
+            FullTree
+        }
+
         private static bool CollectShapes(
             object shapes,
             string slideId,
             double slideWidth,
             double slideHeight,
+            double parentLeft,
+            double parentTop,
+            double parentWidth,
+            double parentHeight,
+            GroupReadMode mode,
             List<PptHtmlShapeNode> output,
             ref bool truncated,
             ref string truncatedReason,
@@ -225,7 +272,7 @@ namespace WordAddIn1.PresentationHost
 
             for (int i = 1; i <= count; i++)
             {
-                if (output.Count >= PptHtmlReadResult.MaxShapes)
+                if (PptHtmlGeom.CountNodes(output) >= PptHtmlReadResult.MaxShapes)
                 {
                     truncated = true;
                     truncatedReason = "单页形状超过 " + PptHtmlReadResult.MaxShapes + "，已截断";
@@ -243,6 +290,11 @@ namespace WordAddIn1.PresentationHost
                     slideId,
                     slideWidth,
                     slideHeight,
+                    parentLeft,
+                    parentTop,
+                    parentWidth,
+                    parentHeight,
+                    mode,
                     output,
                     ref truncated,
                     ref truncatedReason,
@@ -256,11 +308,227 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
-        private static bool TryExpandGroup(
+        private static bool TryReadFocused(
+            object slide,
+            string slideId,
+            string shapeId,
+            double slideWidth,
+            double slideHeight,
+            List<PptHtmlShapeNode> output,
+            ref bool truncated,
+            ref string truncatedReason,
+            PptHtmlReadDebug fontDbg,
+            out string error)
+        {
+            error = null;
+            string sidIn = null;
+            int comId;
+            if (PptShapeId.TryParseShape(shapeId, out sidIn, out comId))
+            {
+            }
+            else if (!PptShapeId.TryParseShapeComId(shapeId, out comId))
+            {
+                error = "非法 ShapeId: " + shapeId;
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(sidIn) && !string.Equals(sidIn, slideId, StringComparison.Ordinal))
+            {
+                error = "shape_id 与 slide_id 不在同一页";
+                return false;
+            }
+
+            var path = new List<object>();
+            object shapesObj = WppCom.GetProperty(slide, "Shapes");
+            if (!TryFindShapePath(shapesObj, comId, path))
+            {
+                error = "页上找不到 ShapeId: " + shapeId;
+                return false;
+            }
+
+            object target = path[path.Count - 1];
+            string typeName = PeekTypeName(target);
+            GroupReadMode mode = typeName == "group" ? GroupReadMode.OneLevel : GroupReadMode.ShellOnly;
+            var built = new List<PptHtmlShapeNode>();
+            double pL = 0;
+            double pT = 0;
+            double pW = slideWidth;
+            double pH = slideHeight;
+            if (path.Count >= 2)
+            {
+                TryReadBox(path[path.Count - 2], out pL, out pT, out pW, out pH);
+            }
+
+            if (!AppendNode(
+                target,
+                slideId,
+                slideWidth,
+                slideHeight,
+                pL,
+                pT,
+                pW,
+                pH,
+                mode,
+                built,
+                ref truncated,
+                ref truncatedReason,
+                fontDbg,
+                out error))
+            {
+                return false;
+            }
+
+            if (built.Count == 0)
+            {
+                error = "无法读取 ShapeId: " + shapeId;
+                return false;
+            }
+
+            PptHtmlShapeNode current = built[0];
+            for (int i = path.Count - 2; i >= 0; i--)
+            {
+                double aL = 0;
+                double aT = 0;
+                double aW = slideWidth;
+                double aH = slideHeight;
+                if (i >= 1)
+                {
+                    TryReadBox(path[i - 1], out aL, out aT, out aW, out aH);
+                }
+
+                if (!AppendNode(
+                    path[i],
+                    slideId,
+                    slideWidth,
+                    slideHeight,
+                    aL,
+                    aT,
+                    aW,
+                    aH,
+                    GroupReadMode.ShellOnly,
+                    new List<PptHtmlShapeNode>(),
+                    ref truncated,
+                    ref truncatedReason,
+                    fontDbg,
+                    out error,
+                    out PptHtmlShapeNode ancestor))
+                {
+                    return false;
+                }
+
+                if (ancestor == null)
+                {
+                    error = "无法读取祖先组";
+                    return false;
+                }
+
+                ancestor.Children = new List<PptHtmlShapeNode> { current };
+                current = ancestor;
+            }
+
+            output.Add(current);
+            return true;
+        }
+
+        private static bool TryFindShapePath(object shapes, int id, List<object> path)
+        {
+            if (shapes == null)
+            {
+                return false;
+            }
+
+            int count;
+            try
+            {
+                count = Convert.ToInt32(WppCom.GetProperty(shapes, "Count"));
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            for (int i = 1; i <= count; i++)
+            {
+                object shape = WppCom.GetIndexed(shapes, i);
+                if (shape != null && TryFindShapePathFrom(shape, id, path))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryFindShapePathFrom(object shape, int id, List<object> path)
+        {
+            try
+            {
+                path.Add(shape);
+                if (Convert.ToInt32(WppCom.GetProperty(shape, "Id")) == id)
+                {
+                    return true;
+                }
+
+                if (TryGetInt(shape, "Type") == 6)
+                {
+                    object items = WppCom.GetProperty(shape, "GroupItems");
+                    int n = Convert.ToInt32(WppCom.GetProperty(items, "Count"));
+                    for (int i = 1; i <= n; i++)
+                    {
+                        object child = WppCom.GetIndexed(items, i);
+                        if (child != null && TryFindShapePathFrom(child, id, path))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            if (path.Count > 0)
+            {
+                path.RemoveAt(path.Count - 1);
+            }
+
+            return false;
+        }
+
+        private static string PeekTypeName(object shape)
+        {
+            int shapeType = TryGetInt(shape, "Type");
+            int? autoType = TryGetNullableInt(shape, "AutoShapeType");
+            return PptShapeTypeMap.FromShapeType(shapeType, autoType, null);
+        }
+
+        private static void TryReadBox(
+            object shape,
+            out double left,
+            out double top,
+            out double width,
+            out double height)
+        {
+            left = top = 0;
+            width = height = 1;
+            try
+            {
+                left = Convert.ToDouble(WppCom.GetProperty(shape, "Left"));
+                top = Convert.ToDouble(WppCom.GetProperty(shape, "Top"));
+                width = Convert.ToDouble(WppCom.GetProperty(shape, "Width"));
+                height = Convert.ToDouble(WppCom.GetProperty(shape, "Height"));
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static bool TryReadGroupChildren(
             object group,
             string slideId,
             double slideWidth,
             double slideHeight,
+            GroupReadMode childMode,
             List<PptHtmlShapeNode> output,
             ref bool pageTextTruncated,
             ref string truncatedReason,
@@ -285,6 +553,7 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            TryReadBox(group, out double gL, out double gT, out double gW, out double gH);
             for (int i = 1; i <= count; i++)
             {
                 object child = WppCom.GetIndexed(items, i);
@@ -298,13 +567,18 @@ namespace WordAddIn1.PresentationHost
                     slideId,
                     slideWidth,
                     slideHeight,
+                    gL,
+                    gT,
+                    gW,
+                    gH,
+                    childMode,
                     output,
                     ref pageTextTruncated,
                     ref truncatedReason,
                     fontDbg,
                     out error))
                 {
-                    return true;
+                    return error == null;
                 }
             }
 
@@ -316,14 +590,55 @@ namespace WordAddIn1.PresentationHost
             string slideId,
             double slideWidth,
             double slideHeight,
+            double parentLeft,
+            double parentTop,
+            double parentWidth,
+            double parentHeight,
+            GroupReadMode mode,
             List<PptHtmlShapeNode> output,
             ref bool pageTextTruncated,
             ref string truncatedReason,
             PptHtmlReadDebug fontDbg,
             out string error)
         {
+            return AppendNode(
+                shape,
+                slideId,
+                slideWidth,
+                slideHeight,
+                parentLeft,
+                parentTop,
+                parentWidth,
+                parentHeight,
+                mode,
+                output,
+                ref pageTextTruncated,
+                ref truncatedReason,
+                fontDbg,
+                out error,
+                out _);
+        }
+
+        private static bool AppendNode(
+            object shape,
+            string slideId,
+            double slideWidth,
+            double slideHeight,
+            double parentLeft,
+            double parentTop,
+            double parentWidth,
+            double parentHeight,
+            GroupReadMode mode,
+            List<PptHtmlShapeNode> output,
+            ref bool pageTextTruncated,
+            ref string truncatedReason,
+            PptHtmlReadDebug fontDbg,
+            out string error,
+            out PptHtmlShapeNode built)
+        {
             error = null;
-            if (output.Count >= PptHtmlReadResult.MaxShapes)
+            built = null;
+            if (output != null && PptHtmlGeom.CountNodes(output) >= PptHtmlReadResult.MaxShapes)
             {
                 return true;
             }
@@ -363,19 +678,35 @@ namespace WordAddIn1.PresentationHost
                 typeName = "chart";
             }
 
-            if (typeName == "group"
-                && TryExpandGroup(
-                    shape,
-                    slideId,
-                    slideWidth,
-                    slideHeight,
-                    output,
-                    ref pageTextTruncated,
-                    ref truncatedReason,
-                    fontDbg,
-                    out error))
+            List<PptHtmlShapeNode> groupKids = null;
+            if (typeName == "group")
             {
-                return error == null;
+                if (mode == GroupReadMode.OneLevel || mode == GroupReadMode.FullTree)
+                {
+                    groupKids = new List<PptHtmlShapeNode>();
+                    GroupReadMode childMode = mode == GroupReadMode.FullTree
+                        ? GroupReadMode.FullTree
+                        : GroupReadMode.ShellOnly;
+                    if (!TryReadGroupChildren(
+                        shape,
+                        slideId,
+                        slideWidth,
+                        slideHeight,
+                        childMode,
+                        groupKids,
+                        ref pageTextTruncated,
+                        ref truncatedReason,
+                        fontDbg,
+                        out error))
+                    {
+                        if (error != null)
+                        {
+                            return false;
+                        }
+
+                        typeName = "picture";
+                    }
+                }
             }
 
             if (error != null)
@@ -384,7 +715,11 @@ namespace WordAddIn1.PresentationHost
             }
 
             string rasterizedFrom = null;
-            if (PptShapeTypeMap.ShouldRasterizeAsPicture(typeName))
+            if (typeName == "picture" && PeekTypeName(shape) == "group")
+            {
+                rasterizedFrom = "group";
+            }
+            else if (PptShapeTypeMap.ShouldRasterizeAsPicture(typeName))
             {
                 rasterizedFrom = typeName;
                 typeName = "picture";
@@ -427,7 +762,7 @@ namespace WordAddIn1.PresentationHost
                 pageTextTruncated = true;
             }
 
-            string style = TryBuildStyle(shape, slideWidth, slideHeight);
+            string style = TryBuildStyle(shape, parentLeft, parentTop, parentWidth, parentHeight);
             double? rotation = null;
             try
             {
@@ -514,23 +849,23 @@ namespace WordAddIn1.PresentationHost
 
             int? z = TryReadZ(shape);
 
-            output.Add(new PptHtmlShapeNode
+            built = new PptHtmlShapeNode
             {
                 ShapeId = "sid" + slideId + "-s" + comId.ToString(CultureInfo.InvariantCulture),
                 ShapeType = typeName,
-                Tag = tag,
+                Tag = typeName == "group" ? "div" : tag,
                 Style = style,
-                Text = text,
+                Text = typeName == "group" ? "" : text,
                 InnerHtml = innerHtml,
                 Editable = editable,
-                Fill = fill,
+                Fill = typeName == "group" ? null : fill,
                 FontColor = fontColor,
                 FontSizePt = fontSize,
                 FontBold = fontBold,
                 FontName = fontName,
                 Z = z,
-                LineColor = lineColor,
-                LineWidthPt = lineWidth,
+                LineColor = typeName == "group" ? null : lineColor,
+                LineWidthPt = typeName == "group" ? null : lineWidth,
                 Align = align,
                 Valign = valign,
                 TextWidthPct = textWidth,
@@ -548,8 +883,14 @@ namespace WordAddIn1.PresentationHost
                 Name = typeName == "picture" ? name : null,
                 Rotation = rotation,
                 TextTruncated = textTruncated,
-                ChartFormat = chartFormat
-            });
+                ChartFormat = chartFormat,
+                Children = groupKids
+            };
+            if (output != null)
+            {
+                output.Add(built);
+            }
+
             return true;
         }
 
@@ -1258,7 +1599,12 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static string TryBuildStyle(object shape, double slideWidth, double slideHeight)
+        private static string TryBuildStyle(
+            object shape,
+            double parentLeft,
+            double parentTop,
+            double parentWidth,
+            double parentHeight)
         {
             try
             {
@@ -1266,16 +1612,96 @@ namespace WordAddIn1.PresentationHost
                 double top = Convert.ToDouble(WppCom.GetProperty(shape, "Top"));
                 double width = Convert.ToDouble(WppCom.GetProperty(shape, "Width"));
                 double height = Convert.ToDouble(WppCom.GetProperty(shape, "Height"));
-                return PptConventionHtml.BuildStyle(
-                    left / slideWidth * 100.0,
-                    top / slideHeight * 100.0,
-                    width / slideWidth * 100.0,
-                    height / slideHeight * 100.0);
+                return PptHtmlGeom.StyleFromSlideBox(
+                    left,
+                    top,
+                    width,
+                    height,
+                    parentLeft,
+                    parentTop,
+                    parentWidth,
+                    parentHeight);
             }
             catch (Exception)
             {
                 return null;
             }
+        }
+
+        public static bool TryReadExtractTree(
+            object presentation,
+            string slideId,
+            int comId,
+            out PptHtmlShapeNode node,
+            out string error)
+        {
+            node = null;
+            error = null;
+            if (string.IsNullOrWhiteSpace(slideId)
+                || !int.TryParse(slideId.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int slideIdInt))
+            {
+                error = "slide_id 非法";
+                return false;
+            }
+
+            object slidesCollection = WppCom.GetProperty(presentation, "Slides");
+            object slide = FindSlideById(slidesCollection, slideIdInt);
+            if (slide == null)
+            {
+                error = "幻灯片不存在";
+                return false;
+            }
+
+            var path = new List<object>();
+            if (!TryFindShapePath(WppCom.GetProperty(slide, "Shapes"), comId, path))
+            {
+                error = "页上找不到可抽节点";
+                return false;
+            }
+
+            object target = path[path.Count - 1];
+            object pageSetup = WppCom.GetProperty(presentation, "PageSetup");
+            double slideWidth = Convert.ToDouble(WppCom.GetProperty(pageSetup, "SlideWidth"));
+            double slideHeight = Convert.ToDouble(WppCom.GetProperty(pageSetup, "SlideHeight"));
+            TryReadBox(target, out double boxL, out double boxT, out double boxW, out double boxH);
+            string typeName = PeekTypeName(target);
+            var built = new List<PptHtmlShapeNode>();
+            bool truncated = false;
+            string truncatedReason = null;
+            var fontDbg = new PptHtmlReadDebug();
+            GroupReadMode mode = typeName == "group" ? GroupReadMode.FullTree : GroupReadMode.ShellOnly;
+            if (!AppendNode(
+                target,
+                slideId.Trim(),
+                slideWidth,
+                slideHeight,
+                boxL,
+                boxT,
+                boxW,
+                boxH,
+                mode,
+                built,
+                ref truncated,
+                ref truncatedReason,
+                fontDbg,
+                out error))
+            {
+                return false;
+            }
+
+            if (built.Count == 0)
+            {
+                error = "无法抽出节点";
+                return false;
+            }
+
+            node = built[0];
+            if (typeName != "group")
+            {
+                node.Style = PptConventionHtml.BuildStyle(0, 0, 100, 100);
+            }
+
+            return true;
         }
 
         private static string TryReadText(object shape)

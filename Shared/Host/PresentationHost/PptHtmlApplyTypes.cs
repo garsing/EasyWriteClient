@@ -96,6 +96,8 @@ namespace WordAddIn1.PresentationHost
 
         public bool HasGeometry { get; set; }
 
+        public List<PptHtmlApplyNode> Children { get; set; }
+
         public List<List<string>> TableCells { get; set; }
 
         internal PptHtmlChartGrid ChartGrid { get; set; }
@@ -233,7 +235,7 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
-            if (nodes.Count > PptHtmlReadResult.MaxShapes)
+            if (PptHtmlGeom.CountApplyNodes(nodes) > PptHtmlReadResult.MaxShapes)
             {
                 error = "单页可定位节点超过 " + PptHtmlReadResult.MaxShapes;
                 return false;
@@ -280,7 +282,7 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                if (!PptShapeTypeMap.IsCreatable(shapeType))
+                if (shapeType != "group" && !PptShapeTypeMap.IsCreatable(shapeType))
                 {
                     error = "不允许新建 data-shape-type=" + shapeType
                         + "。标题请用 textbox，不要用 placeholder_title";
@@ -616,7 +618,7 @@ namespace WordAddIn1.PresentationHost
             {
                 item.ShapeType = string.IsNullOrEmpty(item.ShapeType) ? "picture" : item.ShapeType;
             }
-            else
+            else if (!string.Equals(shapeType, "group", StringComparison.OrdinalIgnoreCase))
             {
                 string text = GetElementText(el);
                 item.Text = text;
@@ -624,6 +626,45 @@ namespace WordAddIn1.PresentationHost
                 if (text != null && text.Length > PptHtmlReadResult.MaxTextChars)
                 {
                     error = "单形状文本超过 " + PptHtmlReadResult.MaxTextChars + " 字符";
+                    return false;
+                }
+            }
+
+            if (string.Equals(item.ShapeType, "group", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(shapeType, "group", StringComparison.OrdinalIgnoreCase))
+            {
+                item.ShapeType = "group";
+                item.Text = "";
+                item.HasText = false;
+                item.Children = new List<PptHtmlApplyNode>();
+                foreach (XElement childEl in el.Elements())
+                {
+                    if (!AllowedTags.Contains(childEl.Name.LocalName))
+                    {
+                        error = "不支持的标签: " + childEl.Name.LocalName;
+                        return false;
+                    }
+
+                    if (!TryParseNode(childEl, targetSlideId, out PptHtmlApplyNode childNode, out error))
+                    {
+                        return false;
+                    }
+
+                    if (childNode != null)
+                    {
+                        item.Children.Add(childNode);
+                    }
+                }
+
+                if (isCreate && item.Children.Count == 0)
+                {
+                    error = "不能新建空 group，请手写可建子节点或 data-extends";
+                    return false;
+                }
+
+                if (isCreate && GroupTreeHasShapeId(item))
+                {
+                    error = "新建 group 的子节点不能带 ShapeId";
                     return false;
                 }
             }
@@ -756,6 +797,34 @@ namespace WordAddIn1.PresentationHost
             }
 
             return double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        }
+
+        internal static bool GroupTreeHasShapeId(PptHtmlApplyNode node)
+        {
+            if (node == null || node.Children == null)
+            {
+                return false;
+            }
+
+            foreach (PptHtmlApplyNode child in node.Children)
+            {
+                if (child == null)
+                {
+                    continue;
+                }
+
+                if (child.ShapeComId.HasValue || !string.IsNullOrEmpty(child.ShapeId))
+                {
+                    return true;
+                }
+
+                if (GroupTreeHasShapeId(child))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static string GetAttr(XElement el, string name)

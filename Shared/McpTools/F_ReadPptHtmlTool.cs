@@ -50,9 +50,22 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = exportError };
                     }
 
+                    string shapeId = GetStringArg(args, "shape_id");
+                    if (!string.IsNullOrWhiteSpace(shapeId)
+                        && PptShapeId.TryParseShape(shapeId.Trim(), out string sidIn, out _)
+                        && !string.Equals(sidIn, slideId.Trim(), StringComparison.Ordinal))
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "shape_id 与 slide_id 不在同一页"
+                        };
+                    }
+
                     if (!PresentationHostAdapter.TryReadPptHtml(
                             channel,
                             slideId.Trim(),
+                            string.IsNullOrWhiteSpace(shapeId) ? null : shapeId.Trim(),
                             out PptHtmlReadResult hostResult,
                             out ToolResult errorResult))
                     {

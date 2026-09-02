@@ -116,108 +116,28 @@ namespace WordAddIn1.PresentationHost
                     string nodeOp = node.IsCreate ? "create" : "update";
                     try
                     {
-                    if (node.IsCreate)
-                    {
-                        if (!plan.AllowCreate && !PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
-                        {
-                            error = PptHtmlApplyUpsert.DenyCreateMessage;
-                            return false;
-                        }
-
-                        if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
-                        {
-                            PptHtmlApplyUpsert.AddSkipWarning(node, node.ShapeType, warnings);
-                            skipped++;
-                            continue;
-                        }
-
-                        if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, warnings, out string newId, out string createError))
-                        {
-                            error = createError;
-                            return false;
-                        }
-
-                        RememberCreatedComId(node, newId);
-                        TryCollectZ(shapes, node, zTargets);
-                        created++;
-                        createdShapes.Add(new Dictionary<string, object>
-                        {
-                            ["shape_type"] = node.ShapeType ?? "",
-                            ["shape_id"] = newId
-                        });
-                        WarnIfNewColors(node, palette, warnings);
-                    }
-                    else
-                    {
-                        object existing = null;
-                        if (node.ShapeComId.HasValue)
-                        {
-                            existing = FindShapeById(shapes, node.ShapeComId.Value);
-                        }
-
-                        if (existing == null)
-                        {
-                            PptHtmlMissingShapeAction action = PptHtmlApplyUpsert.PlanMissingShape(
-                                node, out string plannedType, out string planError);
-                            if (action == PptHtmlMissingShapeAction.Fail)
-                            {
-                                error = planError;
-                                return false;
-                            }
-
-                            if (action == PptHtmlMissingShapeAction.Skip)
-                            {
-                                PptHtmlApplyUpsert.AddSkipWarning(node, plannedType, warnings);
-                                skipped++;
-                                continue;
-                            }
-
-                            if (!plan.AllowCreate)
-                            {
-                                error = PptHtmlApplyUpsert.DenyCreateMessage;
-                                return false;
-                            }
-
-                            PptHtmlApplyUpsert.MutateNodeForCreate(node, plannedType, warnings);
-                            if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, warnings, out string newId, out string createError))
-                            {
-                                error = createError;
-                                return false;
-                            }
-
-                            RememberCreatedComId(node, newId);
-                            TryCollectZ(shapes, node, zTargets);
-                            created++;
-                            createdShapes.Add(new Dictionary<string, object>
-                            {
-                                ["shape_type"] = node.ShapeType ?? "",
-                                ["shape_id"] = newId
-                            });
-                            WarnIfNewColors(node, palette, warnings);
-                        }
-                        else if (LiveMatchesHtml(existing, node, slideWidth, slideHeight))
-                        {
-                            TryCollectZ(shapes, node, zTargets);
-                            unchanged++;
-                        }
-                        else if (!TryUpdate(
+                    if (!TryApplyOne(
                             shapes,
                             slide,
                             node,
+                            0,
+                            0,
+                            100,
+                            100,
                             slideWidth,
                             slideHeight,
+                            plan,
                             warnings,
-                            out string updateError))
-                        {
-                            error = updateError;
-                            return false;
-                        }
-                        else
-                        {
-                            TryCollectZ(shapes, node, zTargets);
-                            updated++;
-                            WarnIfNewColors(node, palette, warnings);
-                        }
+                            palette,
+                            zTargets,
+                            createdShapes,
+                            ref updated,
+                            ref created,
+                            ref skipped,
+                            ref unchanged,
+                            out error))
+                    {
+                        return false;
                     }
                     }
                     finally
@@ -293,6 +213,531 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
+        private static bool TryApplyOne(
+            object shapes,
+            object slide,
+            PptHtmlApplyNode node,
+            double parentLeft,
+            double parentTop,
+            double parentWidth,
+            double parentHeight,
+            double slideWidth,
+            double slideHeight,
+            PptHtmlApplyPlan plan,
+            List<string> warnings,
+            List<string> palette,
+            List<KeyValuePair<object, int>> zTargets,
+            List<Dictionary<string, object>> createdShapes,
+            ref int updated,
+            ref int created,
+            ref int skipped,
+            ref int unchanged,
+            out string error)
+        {
+            error = null;
+            if (node == null)
+            {
+                return true;
+            }
+
+            ResolveToSlidePct(node, parentLeft, parentTop, parentWidth, parentHeight);
+            if (IsGroupType(node.ShapeType))
+            {
+                return TryApplyGroup(
+                    shapes,
+                    slide,
+                    node,
+                    slideWidth,
+                    slideHeight,
+                    plan,
+                    warnings,
+                    palette,
+                    zTargets,
+                    createdShapes,
+                    ref updated,
+                    ref created,
+                    ref skipped,
+                    ref unchanged,
+                    out error);
+            }
+
+            return TryApplyLeaf(
+                shapes,
+                slide,
+                node,
+                slideWidth,
+                slideHeight,
+                plan,
+                warnings,
+                palette,
+                zTargets,
+                createdShapes,
+                ref updated,
+                ref created,
+                ref skipped,
+                ref unchanged,
+                out error);
+        }
+
+        private static bool TryApplyGroup(
+            object shapes,
+            object slide,
+            PptHtmlApplyNode node,
+            double slideWidth,
+            double slideHeight,
+            PptHtmlApplyPlan plan,
+            List<string> warnings,
+            List<string> palette,
+            List<KeyValuePair<object, int>> zTargets,
+            List<Dictionary<string, object>> createdShapes,
+            ref int updated,
+            ref int created,
+            ref int skipped,
+            ref int unchanged,
+            out string error)
+        {
+            error = null;
+            bool creating = node.IsCreate;
+            object existing = null;
+            if (!creating && node.ShapeComId.HasValue)
+            {
+                existing = FindShapeById(shapes, node.ShapeComId.Value);
+            }
+
+            if (!creating && existing == null)
+            {
+                PptHtmlMissingShapeAction action = PptHtmlApplyUpsert.PlanMissingShape(
+                    node, out string plannedType, out string planError);
+                if (action == PptHtmlMissingShapeAction.Fail)
+                {
+                    error = planError;
+                    return false;
+                }
+
+                if (action == PptHtmlMissingShapeAction.Skip)
+                {
+                    PptHtmlApplyUpsert.AddSkipWarning(node, plannedType, warnings);
+                    skipped++;
+                    return true;
+                }
+
+                if (!plan.AllowCreate)
+                {
+                    error = PptHtmlApplyUpsert.DenyCreateMessage;
+                    return false;
+                }
+
+                PptHtmlApplyUpsert.MutateNodeForCreate(node, plannedType, warnings);
+                creating = true;
+            }
+
+            if (creating)
+            {
+                return TryCreateGroup(
+                    shapes,
+                    slide,
+                    node,
+                    slideWidth,
+                    slideHeight,
+                    plan,
+                    warnings,
+                    palette,
+                    zTargets,
+                    createdShapes,
+                    ref created,
+                    ref skipped,
+                    ref updated,
+                    ref unchanged,
+                    out error);
+            }
+
+            double boxL;
+            double boxT;
+            double boxW;
+            double boxH;
+            ReadParentBox(node, existing, slideWidth, slideHeight, out boxL, out boxT, out boxW, out boxH);
+
+            bool hasKids = node.Children != null && node.Children.Count > 0;
+            if (hasKids || !LiveMatchesHtml(existing, node, slideWidth, slideHeight))
+            {
+                if (!TryUpdate(shapes, slide, node, slideWidth, slideHeight, warnings, out error))
+                {
+                    return false;
+                }
+
+                if (node.HasGeometry)
+                {
+                    boxL = node.LeftPct.GetValueOrDefault();
+                    boxT = node.TopPct.GetValueOrDefault();
+                    boxW = node.WidthPct.GetValueOrDefault();
+                    boxH = node.HeightPct.GetValueOrDefault();
+                }
+
+                TryCollectZ(shapes, node, zTargets);
+                updated++;
+                WarnIfNewColors(node, palette, warnings);
+            }
+            else
+            {
+                TryCollectZ(shapes, node, zTargets);
+                unchanged++;
+            }
+
+            if (!hasKids)
+            {
+                return true;
+            }
+
+            foreach (PptHtmlApplyNode child in node.Children)
+            {
+                if (!TryApplyOne(
+                        shapes,
+                        slide,
+                        child,
+                        boxL,
+                        boxT,
+                        boxW,
+                        boxH,
+                        slideWidth,
+                        slideHeight,
+                        plan,
+                        warnings,
+                        palette,
+                        zTargets,
+                        createdShapes,
+                        ref updated,
+                        ref created,
+                        ref skipped,
+                        ref unchanged,
+                        out error))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TryCreateGroup(
+            object shapes,
+            object slide,
+            PptHtmlApplyNode node,
+            double slideWidth,
+            double slideHeight,
+            PptHtmlApplyPlan plan,
+            List<string> warnings,
+            List<string> palette,
+            List<KeyValuePair<object, int>> zTargets,
+            List<Dictionary<string, object>> createdShapes,
+            ref int created,
+            ref int skipped,
+            ref int updated,
+            ref int unchanged,
+            out string error)
+        {
+            error = null;
+            if (!plan.AllowCreate && !PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+            {
+                error = PptHtmlApplyUpsert.DenyCreateMessage;
+                return false;
+            }
+
+            if (node.Children == null || node.Children.Count == 0)
+            {
+                error = "不能新建空 group，请手写可建子节点或 data-extends";
+                return false;
+            }
+
+            if (PptHtmlApplyParser.GroupTreeHasShapeId(node))
+            {
+                error = "新建 group 的子节点不能带 ShapeId";
+                return false;
+            }
+
+            if (!node.HasGeometry)
+            {
+                error = "新建节点必须提供 style 几何（left/top/width/height %）";
+                return false;
+            }
+
+            double boxL = node.LeftPct.GetValueOrDefault();
+            double boxT = node.TopPct.GetValueOrDefault();
+            double boxW = node.WidthPct.GetValueOrDefault();
+            double boxH = node.HeightPct.GetValueOrDefault();
+            var members = new List<object>();
+            foreach (PptHtmlApplyNode child in node.Children)
+            {
+                if (child == null)
+                {
+                    continue;
+                }
+
+                if (!TryApplyOne(
+                        shapes,
+                        slide,
+                        child,
+                        boxL,
+                        boxT,
+                        boxW,
+                        boxH,
+                        slideWidth,
+                        slideHeight,
+                        plan,
+                        warnings,
+                        palette,
+                        zTargets,
+                        createdShapes,
+                        ref updated,
+                        ref created,
+                        ref skipped,
+                        ref unchanged,
+                        out error))
+                {
+                    return false;
+                }
+
+                if (!child.ShapeComId.HasValue)
+                {
+                    continue;
+                }
+
+                object member = FindShapeById(shapes, child.ShapeComId.Value);
+                if (member != null)
+                {
+                    members.Add(member);
+                }
+            }
+
+            if (members.Count == 0)
+            {
+                error = "新建 group 没有可编组的子形状";
+                return false;
+            }
+
+            if (!PptHtmlGroupIo.TryGroupWpp(slide, members, out object group, out error))
+            {
+                return false;
+            }
+
+            string newId = "";
+            try
+            {
+                string sid = Convert.ToString(WppCom.GetProperty(slide, "SlideID")) ?? "";
+                string id = Convert.ToString(WppCom.GetProperty(group, "Id")) ?? "";
+                newId = "sid" + sid + "-s" + id;
+            }
+            catch (Exception)
+            {
+            }
+
+            RememberCreatedComId(node, newId);
+            TryCollectZ(shapes, node, zTargets);
+            created++;
+            createdShapes.Add(new Dictionary<string, object>
+            {
+                ["shape_type"] = "group",
+                ["shape_id"] = newId
+            });
+            WarnIfNewColors(node, palette, warnings);
+            return true;
+        }
+
+        private static bool TryApplyLeaf(
+            object shapes,
+            object slide,
+            PptHtmlApplyNode node,
+            double slideWidth,
+            double slideHeight,
+            PptHtmlApplyPlan plan,
+            List<string> warnings,
+            List<string> palette,
+            List<KeyValuePair<object, int>> zTargets,
+            List<Dictionary<string, object>> createdShapes,
+            ref int updated,
+            ref int created,
+            ref int skipped,
+            ref int unchanged,
+            out string error)
+        {
+            error = null;
+            if (node.IsCreate)
+            {
+                if (!plan.AllowCreate && !PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                {
+                    error = PptHtmlApplyUpsert.DenyCreateMessage;
+                    return false;
+                }
+
+                if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                {
+                    PptHtmlApplyUpsert.AddSkipWarning(node, node.ShapeType, warnings);
+                    skipped++;
+                    return true;
+                }
+
+                if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, warnings, out string newId, out error))
+                {
+                    return false;
+                }
+
+                RememberCreatedComId(node, newId);
+                TryCollectZ(shapes, node, zTargets);
+                created++;
+                createdShapes.Add(new Dictionary<string, object>
+                {
+                    ["shape_type"] = node.ShapeType ?? "",
+                    ["shape_id"] = newId
+                });
+                WarnIfNewColors(node, palette, warnings);
+                return true;
+            }
+
+            object existing = null;
+            if (node.ShapeComId.HasValue)
+            {
+                existing = FindShapeById(shapes, node.ShapeComId.Value);
+            }
+
+            if (existing == null)
+            {
+                PptHtmlMissingShapeAction action = PptHtmlApplyUpsert.PlanMissingShape(
+                    node, out string plannedType, out string planError);
+                if (action == PptHtmlMissingShapeAction.Fail)
+                {
+                    error = planError;
+                    return false;
+                }
+
+                if (action == PptHtmlMissingShapeAction.Skip)
+                {
+                    PptHtmlApplyUpsert.AddSkipWarning(node, plannedType, warnings);
+                    skipped++;
+                    return true;
+                }
+
+                if (!plan.AllowCreate)
+                {
+                    error = PptHtmlApplyUpsert.DenyCreateMessage;
+                    return false;
+                }
+
+                PptHtmlApplyUpsert.MutateNodeForCreate(node, plannedType, warnings);
+                if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, warnings, out string newId, out error))
+                {
+                    return false;
+                }
+
+                RememberCreatedComId(node, newId);
+                TryCollectZ(shapes, node, zTargets);
+                created++;
+                createdShapes.Add(new Dictionary<string, object>
+                {
+                    ["shape_type"] = node.ShapeType ?? "",
+                    ["shape_id"] = newId
+                });
+                WarnIfNewColors(node, palette, warnings);
+                return true;
+            }
+
+            if (LiveMatchesHtml(existing, node, slideWidth, slideHeight))
+            {
+                TryCollectZ(shapes, node, zTargets);
+                unchanged++;
+                return true;
+            }
+
+            if (!TryUpdate(shapes, slide, node, slideWidth, slideHeight, warnings, out error))
+            {
+                return false;
+            }
+
+            TryCollectZ(shapes, node, zTargets);
+            updated++;
+            WarnIfNewColors(node, palette, warnings);
+            return true;
+        }
+
+        private static bool IsGroupType(string type)
+        {
+            return string.Equals(type, "group", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void ResolveToSlidePct(
+            PptHtmlApplyNode node,
+            double parentLeft,
+            double parentTop,
+            double parentWidth,
+            double parentHeight)
+        {
+            if (node == null || !node.HasGeometry)
+            {
+                return;
+            }
+
+            if (parentLeft == 0 && parentTop == 0 && parentWidth == 100 && parentHeight == 100)
+            {
+                return;
+            }
+
+            PptHtmlGeom.ChildPctToParentPct(
+                node.LeftPct.GetValueOrDefault(),
+                node.TopPct.GetValueOrDefault(),
+                node.WidthPct.GetValueOrDefault(),
+                node.HeightPct.GetValueOrDefault(),
+                parentLeft,
+                parentTop,
+                parentWidth,
+                parentHeight,
+                out double sl,
+                out double st,
+                out double sw,
+                out double sh);
+            node.LeftPct = sl;
+            node.TopPct = st;
+            node.WidthPct = sw;
+            node.HeightPct = sh;
+        }
+
+        private static void ReadParentBox(
+            PptHtmlApplyNode node,
+            object existing,
+            double slideWidth,
+            double slideHeight,
+            out double left,
+            out double top,
+            out double width,
+            out double height)
+        {
+            if (node != null && node.HasGeometry)
+            {
+                left = node.LeftPct.GetValueOrDefault();
+                top = node.TopPct.GetValueOrDefault();
+                width = node.WidthPct.GetValueOrDefault();
+                height = node.HeightPct.GetValueOrDefault();
+                return;
+            }
+
+            if (existing != null && slideWidth > 0 && slideHeight > 0)
+            {
+                try
+                {
+                    left = Convert.ToDouble(WppCom.GetProperty(existing, "Left")) / slideWidth * 100.0;
+                    top = Convert.ToDouble(WppCom.GetProperty(existing, "Top")) / slideHeight * 100.0;
+                    width = Convert.ToDouble(WppCom.GetProperty(existing, "Width")) / slideWidth * 100.0;
+                    height = Convert.ToDouble(WppCom.GetProperty(existing, "Height")) / slideHeight * 100.0;
+                    return;
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            left = 0;
+            top = 0;
+            width = 100;
+            height = 100;
+        }
+
         private static bool TryPreflight(object shapes, PptHtmlApplyPlan plan, out string error)
         {
             error = null;
@@ -305,64 +750,7 @@ namespace WordAddIn1.PresentationHost
             var hard = new List<string>();
             foreach (PptHtmlApplyNode node in nodes)
             {
-                if (node == null)
-                {
-                    continue;
-                }
-
-                if (!string.IsNullOrEmpty(node.WidthFromShapeId))
-                {
-                    if (!PptShapeId.TryParseShapeComId(node.WidthFromShapeId, out int fromId)
-                        || FindShapeById(shapes, fromId) == null)
-                    {
-                        hard.Add("data-width-from 找不到 ShapeId=" + node.WidthFromShapeId);
-                    }
-                }
-
-                if (node.IsCreate)
-                {
-                    if (!plan.AllowCreate && !PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
-                    {
-                        hard.Add(PptHtmlApplyUpsert.DenyCreateMessage);
-                        continue;
-                    }
-
-                    if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
-                    {
-                        continue;
-                    }
-
-                    if (!PptHtmlApplyUpsert.TryValidateExplicitCreate(node, out string ve))
-                    {
-                        hard.Add(ve);
-                    }
-
-                    continue;
-                }
-
-                object existing = null;
-                if (node.ShapeComId.HasValue)
-                {
-                    existing = FindShapeById(shapes, node.ShapeComId.Value);
-                }
-
-                if (existing != null)
-                {
-                    continue;
-                }
-
-                if (!plan.AllowCreate)
-                {
-                    hard.Add(PptHtmlApplyUpsert.DenyCreateMessage);
-                    continue;
-                }
-
-                PptHtmlMissingShapeAction action = PptHtmlApplyUpsert.PlanMissingShape(
-                    node, out _, out string planError);
-                if (action == PptHtmlMissingShapeAction.Fail)
-                {
-                    hard.Add(planError);
-                }
+                PreflightWalk(shapes, plan, node, hard);
             }
 
             if (hard.Count == 0)
@@ -372,6 +760,82 @@ namespace WordAddIn1.PresentationHost
 
             error = "应用前预检失败（未写入任何形状）：" + string.Join("；", hard);
             return false;
+        }
+
+        private static void PreflightWalk(
+            object shapes,
+            PptHtmlApplyPlan plan,
+            PptHtmlApplyNode node,
+            List<string> hard)
+        {
+            if (node == null || hard == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(node.WidthFromShapeId))
+            {
+                if (!PptShapeId.TryParseShapeComId(node.WidthFromShapeId, out int fromId)
+                    || FindShapeById(shapes, fromId) == null)
+                {
+                    hard.Add("data-width-from 找不到 ShapeId=" + node.WidthFromShapeId);
+                }
+            }
+
+            if (node.IsCreate)
+            {
+                if (!plan.AllowCreate && !PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                {
+                    hard.Add(PptHtmlApplyUpsert.DenyCreateMessage);
+                    return;
+                }
+
+                if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                {
+                    return;
+                }
+
+                if (!PptHtmlApplyUpsert.TryValidateExplicitCreate(node, out string ve))
+                {
+                    hard.Add(ve);
+                    return;
+                }
+            }
+            else
+            {
+                object existing = null;
+                if (node.ShapeComId.HasValue)
+                {
+                    existing = FindShapeById(shapes, node.ShapeComId.Value);
+                }
+
+                if (existing == null)
+                {
+                    if (!plan.AllowCreate)
+                    {
+                        hard.Add(PptHtmlApplyUpsert.DenyCreateMessage);
+                        return;
+                    }
+
+                    PptHtmlMissingShapeAction action = PptHtmlApplyUpsert.PlanMissingShape(
+                        node, out _, out string planError);
+                    if (action == PptHtmlMissingShapeAction.Fail)
+                    {
+                        hard.Add(planError);
+                        return;
+                    }
+                }
+            }
+
+            if (node.Children == null)
+            {
+                return;
+            }
+
+            foreach (PptHtmlApplyNode child in node.Children)
+            {
+                PreflightWalk(shapes, plan, child, hard);
+            }
         }
 
         private static bool TryUpdate(
@@ -612,6 +1076,12 @@ namespace WordAddIn1.PresentationHost
         {
             newShapeId = null;
             error = null;
+            if (IsGroupType(node.ShapeType))
+            {
+                error = "group 不能走 AddShape，须先建子再 Group";
+                return false;
+            }
+
             if (!TryApplyWidthFrom(shapes, node, slideWidth, out error))
             {
                 return false;
@@ -1144,21 +1614,38 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
+            RelockWalk(shapes, nodes, ids, slideWidth, slideHeight);
+        }
+
+        private static void RelockWalk(
+            object shapes,
+            List<PptHtmlApplyNode> nodes,
+            HashSet<int> ids,
+            double slideWidth,
+            double slideHeight)
+        {
+            if (nodes == null)
+            {
+                return;
+            }
+
             foreach (PptHtmlApplyNode node in nodes)
             {
-                if (node == null || !node.HasGeometry || !node.ShapeComId.HasValue
-                    || !ids.Contains(node.ShapeComId.Value))
+                if (node == null)
                 {
                     continue;
                 }
 
-                object shape = FindShapeById(shapes, node.ShapeComId.Value);
-                if (shape == null)
+                if (node.HasGeometry && node.ShapeComId.HasValue && ids.Contains(node.ShapeComId.Value))
                 {
-                    continue;
+                    object shape = FindShapeById(shapes, node.ShapeComId.Value);
+                    if (shape != null)
+                    {
+                        LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
+                    }
                 }
 
-                LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
+                RelockWalk(shapes, node.Children, ids, slideWidth, slideHeight);
             }
         }
 
@@ -1630,20 +2117,79 @@ namespace WordAddIn1.PresentationHost
 
         private static object FindShapeById(object shapes, int id)
         {
-            int count = Convert.ToInt32(WppCom.GetProperty(shapes, "Count"));
-            for (int i = 1; i <= count; i++)
+            if (shapes == null)
             {
-                object shape = WppCom.GetIndexed(shapes, i);
-                try
+                return null;
+            }
+
+            try
+            {
+                int count = Convert.ToInt32(WppCom.GetProperty(shapes, "Count"));
+                for (int i = 1; i <= count; i++)
                 {
-                    if (Convert.ToInt32(WppCom.GetProperty(shape, "Id")) == id)
+                    object shape = WppCom.GetIndexed(shapes, i);
+                    try
                     {
-                        return shape;
+                        if (Convert.ToInt32(WppCom.GetProperty(shape, "Id")) == id)
+                        {
+                            return shape;
+                        }
+
+                        object type = WppCom.GetProperty(shape, "Type");
+                        if (type != null && Convert.ToInt32(type) == 6)
+                        {
+                            object found = FindInGroup(shape, id);
+                            if (found != null)
+                            {
+                                return found;
+                            }
+                        }
+                    }
+                    catch (Exception)
+                    {
                     }
                 }
-                catch (Exception)
+            }
+            catch (Exception)
+            {
+            }
+
+            return null;
+        }
+
+        private static object FindInGroup(object group, int id)
+        {
+            try
+            {
+                object items = WppCom.GetProperty(group, "GroupItems");
+                if (items == null)
                 {
+                    return null;
                 }
+
+                int count = Convert.ToInt32(WppCom.GetProperty(items, "Count"));
+                for (int i = 1; i <= count; i++)
+                {
+                    object child = WppCom.GetIndexed(items, i);
+                    object raw = child == null ? null : WppCom.GetProperty(child, "Id");
+                    if (raw != null && Convert.ToInt32(raw) == id)
+                    {
+                        return child;
+                    }
+
+                    object type = child == null ? null : WppCom.GetProperty(child, "Type");
+                    if (type != null && Convert.ToInt32(type) == 6)
+                    {
+                        object nested = FindInGroup(child, id);
+                        if (nested != null)
+                        {
+                            return nested;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
             }
 
             return null;

@@ -136,19 +136,25 @@ namespace WordAddIn1.PresentationHost
 
         private static void AppendShape(StringBuilder sb, PptHtmlShapeNode node)
         {
+            AppendShape(sb, node, "  ");
+        }
+
+        private static void AppendShape(StringBuilder sb, PptHtmlShapeNode node, string indent)
+        {
             string tag = string.IsNullOrEmpty(node.Tag) ? "div" : node.Tag;
-            if (tag == "img")
+            bool hasKids = node.Children != null && node.Children.Count > 0;
+            if (tag == "img" && !hasKids)
             {
-                sb.Append("  <img");
+                sb.Append(indent).Append("<img");
                 AppendShapeId(sb, node);
                 AppendCommonAttrs(sb, node);
                 sb.AppendLine(" />");
                 return;
             }
 
-            if (tag == "table")
+            if (tag == "table" && !hasKids)
             {
-                sb.Append("  <table");
+                sb.Append(indent).Append("<table");
                 AppendShapeId(sb, node);
                 AppendCommonAttrs(sb, node);
                 sb.AppendLine(">");
@@ -161,18 +167,18 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
 
-                sb.AppendLine("  </table>");
+                sb.Append(indent).AppendLine("</table>");
                 return;
             }
 
-            if (node.ShapeType == "chart")
+            if (node.ShapeType == "chart" && !hasKids)
             {
-                sb.Append("  <div");
+                sb.Append(indent).Append("<div");
                 AppendShapeId(sb, node);
                 AppendCommonAttrs(sb, node);
                 PptHtmlChartIo.AppendFormatAttrs(sb, node.ChartFormat);
                 sb.AppendLine(">");
-                sb.AppendLine("    <table>");
+                sb.Append(indent).AppendLine("  <table>");
                 if (!string.IsNullOrEmpty(node.InnerHtml))
                 {
                     sb.Append(node.InnerHtml);
@@ -182,15 +188,38 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
 
-                sb.AppendLine("    </table>");
-                sb.AppendLine("  </div>");
+                sb.Append(indent).AppendLine("  </table>");
+                sb.Append(indent).AppendLine("</div>");
                 return;
             }
 
-            sb.Append("  <").Append(tag);
+            sb.Append(indent).Append("<").Append(tag);
             AppendShapeId(sb, node);
             AppendCommonAttrs(sb, node);
             sb.Append(">");
+            if (hasKids || node.ShapeType == "group")
+            {
+                sb.AppendLine();
+                if (!string.IsNullOrEmpty(node.Text))
+                {
+                    sb.Append(indent).Append("  ").Append(EscapeText(node.Text)).AppendLine();
+                }
+
+                if (hasKids)
+                {
+                    foreach (PptHtmlShapeNode child in node.Children)
+                    {
+                        if (child != null)
+                        {
+                            AppendShape(sb, child, indent + "  ");
+                        }
+                    }
+                }
+
+                sb.Append(indent).Append("</").Append(tag).AppendLine(">");
+                return;
+            }
+
             sb.Append(EscapeText(node.Text));
             sb.Append("</").Append(tag).AppendLine(">");
         }

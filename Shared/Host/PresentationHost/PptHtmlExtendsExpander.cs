@@ -12,7 +12,7 @@ namespace WordAddIn1.PresentationHost
     {
         private static readonly HashSet<string> ForbiddenTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "group", "smartart", "unknown", "freeform"
+            "smartart", "unknown", "freeform"
         };
 
         private static readonly Regex SlotRe = new Regex(
@@ -201,11 +201,8 @@ namespace WordAddIn1.PresentationHost
             nodes = new List<XElement>();
             foreach (XElement child in root.Elements())
             {
-                string shapeType = GetAttr(child, "data-shape-type");
-                if (ForbiddenTypes.Contains(shapeType) || !PptShapeTypeMap.IsCreatable(
-                        PptShapeTypeMap.NormalizeForCreate(shapeType, child.Name.LocalName)))
+                if (!TryValidateComponentNode(child, out error))
                 {
-                    error = "组件含不可建类型: " + (shapeType ?? "");
                     return false;
                 }
 
@@ -221,21 +218,25 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 XElement clone = new XElement(child);
-                clone.SetAttributeValue(
-                    "style",
-                    PptConventionHtml.BuildStyle(
-                        instL + cL / 100.0 * instW,
-                        instT + cT / 100.0 * instH,
-                        cW / 100.0 * instW,
-                        cH / 100.0 * instH));
-                clone.Attribute("ShapeId")?.Remove();
-
-                string slot = GetAttr(clone, "data-slot");
-                if (!string.IsNullOrEmpty(slot) && instanceSlots.TryGetValue(slot, out XElement overrideEl))
+                string shapeType = GetAttr(clone, "data-shape-type");
+                bool isGroup = string.Equals(shapeType, "group", StringComparison.OrdinalIgnoreCase);
+                if (isGroup)
                 {
-                    ApplySlotOverride(clone, overrideEl);
+                    clone.SetAttributeValue("style", PptConventionHtml.BuildStyle(instL, instT, instW, instH));
+                }
+                else
+                {
+                    clone.SetAttributeValue(
+                        "style",
+                        PptConventionHtml.BuildStyle(
+                            instL + cL / 100.0 * instW,
+                            instT + cT / 100.0 * instH,
+                            cW / 100.0 * instW,
+                            cH / 100.0 * instH));
                 }
 
+                StripShapeIds(clone);
+                ApplySlotsRecursive(clone, instanceSlots);
                 if (instZ.HasValue)
                 {
                     int childZ = TryParseInt(GetAttr(clone, "data-z")) ?? 0;
@@ -252,6 +253,79 @@ namespace WordAddIn1.PresentationHost
             }
 
             return true;
+        }
+
+        private static bool TryValidateComponentNode(XElement el, out string error)
+        {
+            error = null;
+            if (el == null)
+            {
+                return true;
+            }
+
+            string shapeType = GetAttr(el, "data-shape-type");
+            bool isGroup = string.Equals(shapeType, "group", StringComparison.OrdinalIgnoreCase);
+            if (ForbiddenTypes.Contains(shapeType)
+                || (!isGroup && !PptShapeTypeMap.IsCreatable(
+                    PptShapeTypeMap.NormalizeForCreate(shapeType, el.Name.LocalName))))
+            {
+                error = "组件含不可建类型: " + (shapeType ?? "");
+                return false;
+            }
+
+            if (isGroup)
+            {
+                foreach (XElement child in el.Elements())
+                {
+                    if (!TryValidateComponentNode(child, out error))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        private static void StripShapeIds(XElement el)
+        {
+            if (el == null)
+            {
+                return;
+            }
+
+            foreach (XAttribute attr in el.Attributes()
+                .Where(a => string.Equals(a.Name.LocalName, "ShapeId", StringComparison.OrdinalIgnoreCase))
+                .ToList())
+            {
+                attr.Remove();
+            }
+
+            foreach (XElement child in el.Elements())
+            {
+                StripShapeIds(child);
+            }
+        }
+
+        private static void ApplySlotsRecursive(
+            XElement el,
+            Dictionary<string, XElement> instanceSlots)
+        {
+            if (el == null || instanceSlots == null)
+            {
+                return;
+            }
+
+            string slot = GetAttr(el, "data-slot");
+            if (!string.IsNullOrEmpty(slot) && instanceSlots.TryGetValue(slot, out XElement overrideEl))
+            {
+                ApplySlotOverride(el, overrideEl);
+            }
+
+            foreach (XElement child in el.Elements())
+            {
+                ApplySlotsRecursive(child, instanceSlots);
+            }
         }
 
         private static void ApplySlotOverride(XElement target, XElement source)

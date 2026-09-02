@@ -155,149 +155,34 @@ namespace WordAddIn1.PresentationHost
                     string nodeOp = node.IsCreate ? "create" : "update";
                     try
                     {
-                    if (node.IsCreate)
+                    if (!TryApplyOne(
+                            slide,
+                            node,
+                            0,
+                            0,
+                            100,
+                            100,
+                            slideWidth,
+                            slideHeight,
+                            plan,
+                            warnings,
+                            palette,
+                            zTargets,
+                            createdShapes,
+                            dbg,
+                            ref updated,
+                            ref created,
+                            ref skipped,
+                            ref unchanged,
+                            out error))
                     {
-                        if (!plan.AllowCreate && !PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                        if (dbg != null)
                         {
-                            error = PptHtmlApplyUpsert.DenyCreateMessage;
-                            return false;
+                            result = FailResult(channelId, plan, warnings);
+                            AttachDebug(result, dbg, plan.SlideId);
                         }
 
-                        if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
-                        {
-                            PptHtmlApplyUpsert.AddSkipWarning(node, node.ShapeType, warnings);
-                            dbg?.Step("SKIP_CREATE", node);
-                            skipped++;
-                            continue;
-                        }
-
-                        if (!TryCreate(slide, node, slideWidth, slideHeight, warnings, out string newId, out string createError))
-                        {
-                            error = createError;
-                            if (dbg != null)
-                            {
-                                dbg.Step("CREATE_FAIL", node, createError);
-                                result = FailResult(channelId, plan, warnings);
-                                AttachDebug(result, dbg, plan.SlideId);
-                            }
-
-                            return false;
-                        }
-
-                        RememberCreatedComId(node, newId);
-                        TryCollectZ(slide, node, zTargets);
-                        dbg?.Step("CREATE", node, "newId=" + newId
-                            + (dbg != null ? " " + DescribeShape(slide, node, slideWidth, slideHeight) : ""));
-                        created++;
-                        createdShapes.Add(new Dictionary<string, object>
-                        {
-                            ["shape_type"] = node.ShapeType ?? "",
-                            ["shape_id"] = newId
-                        });
-                        WarnIfNewColors(node, palette, warnings);
-                    }
-                    else
-                    {
-                        PowerPoint.Shape existing = null;
-                        if (node.ShapeComId.HasValue)
-                        {
-                            existing = FindShapeById(slide.Shapes, node.ShapeComId.Value);
-                        }
-
-                        if (existing == null)
-                        {
-                            PptHtmlMissingShapeAction action = PptHtmlApplyUpsert.PlanMissingShape(
-                                node, out string plannedType, out string planError);
-                            if (action == PptHtmlMissingShapeAction.Fail)
-                            {
-                                error = planError;
-                                if (dbg != null)
-                                {
-                                    dbg.Step("UPSERT_FAIL", node, planError);
-                                    result = FailResult(channelId, plan, warnings);
-                                    AttachDebug(result, dbg, plan.SlideId);
-                                }
-
-                                return false;
-                            }
-
-                            if (action == PptHtmlMissingShapeAction.Skip)
-                            {
-                                PptHtmlApplyUpsert.AddSkipWarning(node, plannedType, warnings);
-                                dbg?.Step("UPSERT_SKIP", node, "planned=" + plannedType);
-                                skipped++;
-                                continue;
-                            }
-
-                            if (!plan.AllowCreate)
-                            {
-                                error = PptHtmlApplyUpsert.DenyCreateMessage;
-                                return false;
-                            }
-
-                            PptHtmlApplyUpsert.MutateNodeForCreate(node, plannedType, warnings);
-                            if (!TryCreate(slide, node, slideWidth, slideHeight, warnings, out string newId, out string createError))
-                            {
-                                error = createError;
-                                if (dbg != null)
-                                {
-                                    dbg.Step("UPSERT_CREATE_FAIL", node, createError);
-                                    result = FailResult(channelId, plan, warnings);
-                                    AttachDebug(result, dbg, plan.SlideId);
-                                }
-
-                                return false;
-                            }
-
-                            RememberCreatedComId(node, newId);
-                            TryCollectZ(slide, node, zTargets);
-                            dbg?.Step(
-                                "UPSERT_CREATE",
-                                node,
-                                "newId=" + newId
-                                + (dbg != null ? " " + DescribeShape(slide, node, slideWidth, slideHeight) : ""));
-                            created++;
-                            createdShapes.Add(new Dictionary<string, object>
-                            {
-                                ["shape_type"] = node.ShapeType ?? "",
-                                ["shape_id"] = newId
-                            });
-                            WarnIfNewColors(node, palette, warnings);
-                        }
-                        else if (LiveMatchesHtml(existing, node, slideWidth, slideHeight))
-                        {
-                            TryCollectZ(slide, node, zTargets);
-                            dbg?.Step("SKIP_UNCHANGED", node);
-                            unchanged++;
-                        }
-                        else if (!TryUpdate(
-                                slide,
-                                node,
-                                slideWidth,
-                                slideHeight,
-                                warnings,
-                                out string updateError))
-                        {
-                            error = updateError;
-                            if (dbg != null)
-                            {
-                                dbg.Step("UPDATE_FAIL", node, updateError);
-                                result = FailResult(channelId, plan, warnings);
-                                AttachDebug(result, dbg, plan.SlideId);
-                            }
-
-                            return false;
-                        }
-                        else
-                        {
-                            TryCollectZ(slide, node, zTargets);
-                            dbg?.Step(
-                                "UPDATE",
-                                node,
-                                dbg != null ? DescribeShape(slide, node, slideWidth, slideHeight) : null);
-                            updated++;
-                            WarnIfNewColors(node, palette, warnings);
-                        }
+                        return false;
                     }
                     }
                     finally
@@ -709,6 +594,555 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private static bool TryApplyOne(
+            PowerPoint.Slide slide,
+            PptHtmlApplyNode node,
+            double parentLeft,
+            double parentTop,
+            double parentWidth,
+            double parentHeight,
+            float slideWidth,
+            float slideHeight,
+            PptHtmlApplyPlan plan,
+            List<string> warnings,
+            List<string> palette,
+            List<KeyValuePair<PowerPoint.Shape, int>> zTargets,
+            List<Dictionary<string, object>> createdShapes,
+            PptHtmlApplyDebug dbg,
+            ref int updated,
+            ref int created,
+            ref int skipped,
+            ref int unchanged,
+            out string error)
+        {
+            error = null;
+            if (node == null)
+            {
+                return true;
+            }
+
+            ResolveToSlidePct(node, parentLeft, parentTop, parentWidth, parentHeight);
+            if (IsGroupType(node.ShapeType))
+            {
+                return TryApplyGroup(
+                    slide,
+                    node,
+                    slideWidth,
+                    slideHeight,
+                    plan,
+                    warnings,
+                    palette,
+                    zTargets,
+                    createdShapes,
+                    dbg,
+                    ref updated,
+                    ref created,
+                    ref skipped,
+                    ref unchanged,
+                    out error);
+            }
+
+            return TryApplyLeaf(
+                slide,
+                node,
+                slideWidth,
+                slideHeight,
+                plan,
+                warnings,
+                palette,
+                zTargets,
+                createdShapes,
+                dbg,
+                ref updated,
+                ref created,
+                ref skipped,
+                ref unchanged,
+                out error);
+        }
+
+        private static bool TryApplyGroup(
+            PowerPoint.Slide slide,
+            PptHtmlApplyNode node,
+            float slideWidth,
+            float slideHeight,
+            PptHtmlApplyPlan plan,
+            List<string> warnings,
+            List<string> palette,
+            List<KeyValuePair<PowerPoint.Shape, int>> zTargets,
+            List<Dictionary<string, object>> createdShapes,
+            PptHtmlApplyDebug dbg,
+            ref int updated,
+            ref int created,
+            ref int skipped,
+            ref int unchanged,
+            out string error)
+        {
+            error = null;
+            bool creating = node.IsCreate;
+            PowerPoint.Shape existing = null;
+            if (!creating && node.ShapeComId.HasValue)
+            {
+                existing = FindShapeById(slide.Shapes, node.ShapeComId.Value);
+            }
+
+            if (!creating && existing == null)
+            {
+                PptHtmlMissingShapeAction action = PptHtmlApplyUpsert.PlanMissingShape(
+                    node, out string plannedType, out string planError);
+                if (action == PptHtmlMissingShapeAction.Fail)
+                {
+                    error = planError;
+                    dbg?.Step("UPSERT_FAIL", node, planError);
+                    return false;
+                }
+
+                if (action == PptHtmlMissingShapeAction.Skip)
+                {
+                    PptHtmlApplyUpsert.AddSkipWarning(node, plannedType, warnings);
+                    dbg?.Step("UPSERT_SKIP", node, "planned=" + plannedType);
+                    skipped++;
+                    return true;
+                }
+
+                if (!plan.AllowCreate)
+                {
+                    error = PptHtmlApplyUpsert.DenyCreateMessage;
+                    return false;
+                }
+
+                PptHtmlApplyUpsert.MutateNodeForCreate(node, plannedType, warnings);
+                creating = true;
+            }
+
+            if (creating)
+            {
+                return TryCreateGroup(
+                    slide,
+                    node,
+                    slideWidth,
+                    slideHeight,
+                    plan,
+                    warnings,
+                    palette,
+                    zTargets,
+                    createdShapes,
+                    dbg,
+                    ref created,
+                    ref skipped,
+                    ref updated,
+                    ref unchanged,
+                    out error);
+            }
+
+            double boxL;
+            double boxT;
+            double boxW;
+            double boxH;
+            ReadParentBox(node, existing, slideWidth, slideHeight, out boxL, out boxT, out boxW, out boxH);
+
+            bool hasKids = node.Children != null && node.Children.Count > 0;
+            if (hasKids || !LiveMatchesHtml(existing, node, slideWidth, slideHeight))
+            {
+                if (!TryUpdate(slide, node, slideWidth, slideHeight, warnings, out error))
+                {
+                    dbg?.Step("UPDATE_FAIL", node, error);
+                    return false;
+                }
+
+                if (node.HasGeometry)
+                {
+                    boxL = node.LeftPct.GetValueOrDefault();
+                    boxT = node.TopPct.GetValueOrDefault();
+                    boxW = node.WidthPct.GetValueOrDefault();
+                    boxH = node.HeightPct.GetValueOrDefault();
+                }
+
+                TryCollectZ(slide, node, zTargets);
+                dbg?.Step("UPDATE", node, dbg != null ? DescribeShape(slide, node, slideWidth, slideHeight) : null);
+                updated++;
+                WarnIfNewColors(node, palette, warnings);
+            }
+            else
+            {
+                TryCollectZ(slide, node, zTargets);
+                dbg?.Step("SKIP_UNCHANGED", node);
+                unchanged++;
+            }
+
+            if (!hasKids)
+            {
+                return true;
+            }
+
+            foreach (PptHtmlApplyNode child in node.Children)
+            {
+                if (!TryApplyOne(
+                        slide,
+                        child,
+                        boxL,
+                        boxT,
+                        boxW,
+                        boxH,
+                        slideWidth,
+                        slideHeight,
+                        plan,
+                        warnings,
+                        palette,
+                        zTargets,
+                        createdShapes,
+                        dbg,
+                        ref updated,
+                        ref created,
+                        ref skipped,
+                        ref unchanged,
+                        out error))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TryCreateGroup(
+            PowerPoint.Slide slide,
+            PptHtmlApplyNode node,
+            float slideWidth,
+            float slideHeight,
+            PptHtmlApplyPlan plan,
+            List<string> warnings,
+            List<string> palette,
+            List<KeyValuePair<PowerPoint.Shape, int>> zTargets,
+            List<Dictionary<string, object>> createdShapes,
+            PptHtmlApplyDebug dbg,
+            ref int created,
+            ref int skipped,
+            ref int updated,
+            ref int unchanged,
+            out string error)
+        {
+            error = null;
+            if (!plan.AllowCreate && !PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+            {
+                error = PptHtmlApplyUpsert.DenyCreateMessage;
+                return false;
+            }
+
+            if (node.Children == null || node.Children.Count == 0)
+            {
+                error = "不能新建空 group，请手写可建子节点或 data-extends";
+                return false;
+            }
+
+            if (PptHtmlApplyParser.GroupTreeHasShapeId(node))
+            {
+                error = "新建 group 的子节点不能带 ShapeId";
+                return false;
+            }
+
+            if (!node.HasGeometry)
+            {
+                error = "新建节点必须提供 style 几何（left/top/width/height %）";
+                return false;
+            }
+
+            double boxL = node.LeftPct.GetValueOrDefault();
+            double boxT = node.TopPct.GetValueOrDefault();
+            double boxW = node.WidthPct.GetValueOrDefault();
+            double boxH = node.HeightPct.GetValueOrDefault();
+            var members = new List<PowerPoint.Shape>();
+            foreach (PptHtmlApplyNode child in node.Children)
+            {
+                if (child == null)
+                {
+                    continue;
+                }
+
+                if (!TryApplyOne(
+                        slide,
+                        child,
+                        boxL,
+                        boxT,
+                        boxW,
+                        boxH,
+                        slideWidth,
+                        slideHeight,
+                        plan,
+                        warnings,
+                        palette,
+                        zTargets,
+                        createdShapes,
+                        dbg,
+                        ref updated,
+                        ref created,
+                        ref skipped,
+                        ref unchanged,
+                        out error))
+                {
+                    return false;
+                }
+
+                if (!child.ShapeComId.HasValue)
+                {
+                    continue;
+                }
+
+                PowerPoint.Shape member = FindShapeById(slide.Shapes, child.ShapeComId.Value);
+                if (member != null)
+                {
+                    members.Add(member);
+                }
+            }
+
+            if (members.Count == 0)
+            {
+                error = "新建 group 没有可编组的子形状";
+                return false;
+            }
+
+            if (!PptHtmlGroupIo.TryGroupPowerPoint(slide, members, out PowerPoint.Shape group, out error))
+            {
+                dbg?.Step("CREATE_GROUP_FAIL", node, error);
+                return false;
+            }
+
+            string newId = "";
+            try
+            {
+                newId = "sid" + planSlideId(slide) + "-s"
+                    + group.Id.ToString(CultureInfo.InvariantCulture);
+            }
+            catch (Exception)
+            {
+            }
+
+            RememberCreatedComId(node, newId);
+            TryCollectZ(slide, node, zTargets);
+            dbg?.Step("CREATE_GROUP", node, "newId=" + newId);
+            created++;
+            createdShapes.Add(new Dictionary<string, object>
+            {
+                ["shape_type"] = "group",
+                ["shape_id"] = newId
+            });
+            WarnIfNewColors(node, palette, warnings);
+            return true;
+        }
+
+        private static bool TryApplyLeaf(
+            PowerPoint.Slide slide,
+            PptHtmlApplyNode node,
+            float slideWidth,
+            float slideHeight,
+            PptHtmlApplyPlan plan,
+            List<string> warnings,
+            List<string> palette,
+            List<KeyValuePair<PowerPoint.Shape, int>> zTargets,
+            List<Dictionary<string, object>> createdShapes,
+            PptHtmlApplyDebug dbg,
+            ref int updated,
+            ref int created,
+            ref int skipped,
+            ref int unchanged,
+            out string error)
+        {
+            error = null;
+            if (node.IsCreate)
+            {
+                if (!plan.AllowCreate && !PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                {
+                    error = PptHtmlApplyUpsert.DenyCreateMessage;
+                    return false;
+                }
+
+                if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                {
+                    PptHtmlApplyUpsert.AddSkipWarning(node, node.ShapeType, warnings);
+                    dbg?.Step("SKIP_CREATE", node);
+                    skipped++;
+                    return true;
+                }
+
+                if (!TryCreate(slide, node, slideWidth, slideHeight, warnings, out string newId, out error))
+                {
+                    dbg?.Step("CREATE_FAIL", node, error);
+                    return false;
+                }
+
+                RememberCreatedComId(node, newId);
+                TryCollectZ(slide, node, zTargets);
+                dbg?.Step("CREATE", node, "newId=" + newId
+                    + (dbg != null ? " " + DescribeShape(slide, node, slideWidth, slideHeight) : ""));
+                created++;
+                createdShapes.Add(new Dictionary<string, object>
+                {
+                    ["shape_type"] = node.ShapeType ?? "",
+                    ["shape_id"] = newId
+                });
+                WarnIfNewColors(node, palette, warnings);
+                return true;
+            }
+
+            PowerPoint.Shape existing = null;
+            if (node.ShapeComId.HasValue)
+            {
+                existing = FindShapeById(slide.Shapes, node.ShapeComId.Value);
+            }
+
+            if (existing == null)
+            {
+                PptHtmlMissingShapeAction action = PptHtmlApplyUpsert.PlanMissingShape(
+                    node, out string plannedType, out string planError);
+                if (action == PptHtmlMissingShapeAction.Fail)
+                {
+                    error = planError;
+                    dbg?.Step("UPSERT_FAIL", node, planError);
+                    return false;
+                }
+
+                if (action == PptHtmlMissingShapeAction.Skip)
+                {
+                    PptHtmlApplyUpsert.AddSkipWarning(node, plannedType, warnings);
+                    dbg?.Step("UPSERT_SKIP", node, "planned=" + plannedType);
+                    skipped++;
+                    return true;
+                }
+
+                if (!plan.AllowCreate)
+                {
+                    error = PptHtmlApplyUpsert.DenyCreateMessage;
+                    return false;
+                }
+
+                PptHtmlApplyUpsert.MutateNodeForCreate(node, plannedType, warnings);
+                if (!TryCreate(slide, node, slideWidth, slideHeight, warnings, out string newId, out error))
+                {
+                    dbg?.Step("UPSERT_CREATE_FAIL", node, error);
+                    return false;
+                }
+
+                RememberCreatedComId(node, newId);
+                TryCollectZ(slide, node, zTargets);
+                dbg?.Step(
+                    "UPSERT_CREATE",
+                    node,
+                    "newId=" + newId
+                    + (dbg != null ? " " + DescribeShape(slide, node, slideWidth, slideHeight) : ""));
+                created++;
+                createdShapes.Add(new Dictionary<string, object>
+                {
+                    ["shape_type"] = node.ShapeType ?? "",
+                    ["shape_id"] = newId
+                });
+                WarnIfNewColors(node, palette, warnings);
+                return true;
+            }
+
+            if (LiveMatchesHtml(existing, node, slideWidth, slideHeight))
+            {
+                TryCollectZ(slide, node, zTargets);
+                dbg?.Step("SKIP_UNCHANGED", node);
+                unchanged++;
+                return true;
+            }
+
+            if (!TryUpdate(slide, node, slideWidth, slideHeight, warnings, out error))
+            {
+                dbg?.Step("UPDATE_FAIL", node, error);
+                return false;
+            }
+
+            TryCollectZ(slide, node, zTargets);
+            dbg?.Step(
+                "UPDATE",
+                node,
+                dbg != null ? DescribeShape(slide, node, slideWidth, slideHeight) : null);
+            updated++;
+            WarnIfNewColors(node, palette, warnings);
+            return true;
+        }
+
+        private static bool IsGroupType(string type)
+        {
+            return string.Equals(type, "group", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void ResolveToSlidePct(
+            PptHtmlApplyNode node,
+            double parentLeft,
+            double parentTop,
+            double parentWidth,
+            double parentHeight)
+        {
+            if (node == null || !node.HasGeometry)
+            {
+                return;
+            }
+
+            if (parentLeft == 0 && parentTop == 0 && parentWidth == 100 && parentHeight == 100)
+            {
+                return;
+            }
+
+            PptHtmlGeom.ChildPctToParentPct(
+                node.LeftPct.GetValueOrDefault(),
+                node.TopPct.GetValueOrDefault(),
+                node.WidthPct.GetValueOrDefault(),
+                node.HeightPct.GetValueOrDefault(),
+                parentLeft,
+                parentTop,
+                parentWidth,
+                parentHeight,
+                out double sl,
+                out double st,
+                out double sw,
+                out double sh);
+            node.LeftPct = sl;
+            node.TopPct = st;
+            node.WidthPct = sw;
+            node.HeightPct = sh;
+        }
+
+        private static void ReadParentBox(
+            PptHtmlApplyNode node,
+            PowerPoint.Shape existing,
+            float slideWidth,
+            float slideHeight,
+            out double left,
+            out double top,
+            out double width,
+            out double height)
+        {
+            if (node != null && node.HasGeometry)
+            {
+                left = node.LeftPct.GetValueOrDefault();
+                top = node.TopPct.GetValueOrDefault();
+                width = node.WidthPct.GetValueOrDefault();
+                height = node.HeightPct.GetValueOrDefault();
+                return;
+            }
+
+            if (existing != null && slideWidth > 0 && slideHeight > 0)
+            {
+                try
+                {
+                    left = existing.Left / slideWidth * 100.0;
+                    top = existing.Top / slideHeight * 100.0;
+                    width = existing.Width / slideWidth * 100.0;
+                    height = existing.Height / slideHeight * 100.0;
+                    return;
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            left = 0;
+            top = 0;
+            width = 100;
+            height = 100;
+        }
+
         private static bool TryPreflight(
             PowerPoint.Slide slide,
             PptHtmlApplyPlan plan,
@@ -725,64 +1159,7 @@ namespace WordAddIn1.PresentationHost
             var hard = new List<string>();
             foreach (PptHtmlApplyNode node in nodes)
             {
-                if (node == null)
-                {
-                    continue;
-                }
-
-                if (!string.IsNullOrEmpty(node.WidthFromShapeId))
-                {
-                    if (!PptShapeId.TryParseShapeComId(node.WidthFromShapeId, out int fromId)
-                        || FindShapeById(slide.Shapes, fromId) == null)
-                    {
-                        hard.Add("data-width-from 找不到 ShapeId=" + node.WidthFromShapeId);
-                    }
-                }
-
-                if (node.IsCreate)
-                {
-                    if (!plan.AllowCreate && !PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
-                    {
-                        hard.Add(PptHtmlApplyUpsert.DenyCreateMessage);
-                        continue;
-                    }
-
-                    if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
-                    {
-                        continue;
-                    }
-
-                    if (!PptHtmlApplyUpsert.TryValidateExplicitCreate(node, out string ve))
-                    {
-                        hard.Add(ve);
-                    }
-
-                    continue;
-                }
-
-                PowerPoint.Shape existing = null;
-                if (node.ShapeComId.HasValue)
-                {
-                    existing = FindShapeById(slide.Shapes, node.ShapeComId.Value);
-                }
-
-                if (existing != null)
-                {
-                    continue;
-                }
-
-                if (!plan.AllowCreate)
-                {
-                    hard.Add(PptHtmlApplyUpsert.DenyCreateMessage);
-                    continue;
-                }
-
-                PptHtmlMissingShapeAction action = PptHtmlApplyUpsert.PlanMissingShape(
-                    node, out _, out string planError);
-                if (action == PptHtmlMissingShapeAction.Fail)
-                {
-                    hard.Add(planError);
-                }
+                PreflightWalk(slide, plan, node, hard);
             }
 
             if (hard.Count == 0)
@@ -792,6 +1169,82 @@ namespace WordAddIn1.PresentationHost
 
             error = "应用前预检失败（未写入任何形状）：" + string.Join("；", hard);
             return false;
+        }
+
+        private static void PreflightWalk(
+            PowerPoint.Slide slide,
+            PptHtmlApplyPlan plan,
+            PptHtmlApplyNode node,
+            List<string> hard)
+        {
+            if (node == null || hard == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(node.WidthFromShapeId))
+            {
+                if (!PptShapeId.TryParseShapeComId(node.WidthFromShapeId, out int fromId)
+                    || FindShapeById(slide.Shapes, fromId) == null)
+                {
+                    hard.Add("data-width-from 找不到 ShapeId=" + node.WidthFromShapeId);
+                }
+            }
+
+            if (node.IsCreate)
+            {
+                if (!plan.AllowCreate && !PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                {
+                    hard.Add(PptHtmlApplyUpsert.DenyCreateMessage);
+                    return;
+                }
+
+                if (PptHtmlApplyUpsert.ShouldSkipExplicitCreate(node))
+                {
+                    return;
+                }
+
+                if (!PptHtmlApplyUpsert.TryValidateExplicitCreate(node, out string ve))
+                {
+                    hard.Add(ve);
+                    return;
+                }
+            }
+            else
+            {
+                PowerPoint.Shape existing = null;
+                if (node.ShapeComId.HasValue)
+                {
+                    existing = FindShapeById(slide.Shapes, node.ShapeComId.Value);
+                }
+
+                if (existing == null)
+                {
+                    if (!plan.AllowCreate)
+                    {
+                        hard.Add(PptHtmlApplyUpsert.DenyCreateMessage);
+                        return;
+                    }
+
+                    PptHtmlMissingShapeAction action = PptHtmlApplyUpsert.PlanMissingShape(
+                        node, out _, out string planError);
+                    if (action == PptHtmlMissingShapeAction.Fail)
+                    {
+                        hard.Add(planError);
+                        return;
+                    }
+                }
+            }
+
+            if (node.Children == null)
+            {
+                return;
+            }
+
+            foreach (PptHtmlApplyNode child in node.Children)
+            {
+                PreflightWalk(slide, plan, child, hard);
+            }
         }
 
         private static bool TryApplyWidthFrom(
@@ -1079,6 +1532,12 @@ namespace WordAddIn1.PresentationHost
         {
             newShapeId = null;
             error = null;
+            if (IsGroupType(node.ShapeType))
+            {
+                error = "group 不能走 AddShape，须先建子再 Group";
+                return false;
+            }
+
             if (!TryApplyWidthFrom(slide, node, slideWidth, out error))
             {
                 return false;
@@ -1684,21 +2143,38 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
+            RelockWalk(slide, nodes, ids, slideWidth, slideHeight);
+        }
+
+        private static void RelockWalk(
+            PowerPoint.Slide slide,
+            List<PptHtmlApplyNode> nodes,
+            HashSet<int> ids,
+            float slideWidth,
+            float slideHeight)
+        {
+            if (nodes == null)
+            {
+                return;
+            }
+
             foreach (PptHtmlApplyNode node in nodes)
             {
-                if (node == null || !node.HasGeometry || !node.ShapeComId.HasValue
-                    || !ids.Contains(node.ShapeComId.Value))
+                if (node == null)
                 {
                     continue;
                 }
 
-                PowerPoint.Shape shape = FindShapeById(slide.Shapes, node.ShapeComId.Value);
-                if (shape == null)
+                if (node.HasGeometry && node.ShapeComId.HasValue && ids.Contains(node.ShapeComId.Value))
                 {
-                    continue;
+                    PowerPoint.Shape shape = FindShapeById(slide.Shapes, node.ShapeComId.Value);
+                    if (shape != null)
+                    {
+                        LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
+                    }
                 }
 
-                LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
+                RelockWalk(slide, node.Children, ids, slideWidth, slideHeight);
             }
         }
 

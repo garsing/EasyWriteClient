@@ -118,7 +118,7 @@ namespace WordAddIn1.PresentationHost
         public static bool IsNonEditable(string shapeType)
         {
             // picture 与标题/正文/普通形状同级：默认可编辑（可换 data-src）
-            // smartart 在 B2 读侧会栅格成 picture；group 优先展开，失败才栅格
+            // smartart 在 B2 读侧会栅格成 picture；group 默认空壳，展开失败才栅格
             return shapeType == "smartart"
                 || shapeType == "media";
         }
@@ -130,21 +130,20 @@ namespace WordAddIn1.PresentationHost
         {
             return shapeType == "freeform"
                 || shapeType == "smartart"
-                || shapeType == "group"
                 || shapeType == "unknown";
         }
 
         /// <summary>
         /// 已有形状能不能按 HTML style 回写 Left/Top/Width/Height。
         /// 旋转形状的 COM Width/Height 是未旋转尺寸，当视觉框套回去会压扁。
-        /// picture/group/freeform 也不该被约定 HTML 挪位。
+        /// picture/freeform 不该被约定 HTML 挪位。group 允许改框。
         /// 新建仍按 HTML 几何创建。
         /// </summary>
         public static bool ShouldApplyHtmlGeometry(string shapeType, double? rotation)
         {
             if (shapeType == "picture"
                 || shapeType == "media"
-                || ShouldRasterizeAsPicture(shapeType))
+                || (ShouldRasterizeAsPicture(shapeType) && shapeType != "group"))
             {
                 return false;
             }

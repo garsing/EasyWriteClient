@@ -93,6 +93,8 @@ namespace WordAddIn1.PresentationHost
         public bool TextTruncated { get; set; }
 
         internal PptHtmlChartFormat ChartFormat { get; set; }
+
+        public List<PptHtmlShapeNode> Children { get; set; }
     }
 
     public sealed class PptHtmlReadResult

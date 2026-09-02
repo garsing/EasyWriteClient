@@ -104,6 +104,16 @@ namespace WordAddIn1.PresentationHost
             out PptHtmlReadResult result,
             out ToolResult errorResult)
         {
+            return TryReadPptHtml(channel, slideId, null, out result, out errorResult);
+        }
+
+        public static bool TryReadPptHtml(
+            IOperationChannel channel,
+            string slideId,
+            string shapeId,
+            out PptHtmlReadResult result,
+            out ToolResult errorResult)
+        {
             result = null;
             errorResult = null;
             if (channel == null)
@@ -141,11 +151,11 @@ namespace WordAddIn1.PresentationHost
             string error;
             if (channel is PptChannel ppt)
             {
-                ok = PowerPointPresentationHost.TryReadPptHtml(ppt, slideId, out result, out error);
+                ok = PowerPointPresentationHost.TryReadPptHtml(ppt, slideId, shapeId, out result, out error);
             }
             else if (channel is WppChannel wpp)
             {
-                ok = WppPresentationHost.TryReadPptHtml(wpp, slideId, out result, out error);
+                ok = WppPresentationHost.TryReadPptHtml(wpp, slideId, shapeId, out result, out error);
             }
             else
             {

@@ -25,99 +25,34 @@ namespace WordAddIn1.PresentationHost
         {
             data = null;
             errorResult = null;
-            if (!PresentationHostAdapter.TryReadPptHtml(
-                    channel,
-                    slideId,
-                    out PptHtmlReadResult read,
-                    out errorResult))
-            {
-                return false;
-            }
-
             if (!PptShapeId.TryParseShapeComId(shapeId, out int comId))
             {
                 errorResult = new ToolResult { Success = false, Error = "非法 ShapeId: " + (shapeId ?? "") };
                 return false;
             }
 
-            if (!TryCollectIds(channel, slideId, comId, out HashSet<int> ids, out object foundShape, out string collectError))
+            if (!TryCollectIds(
+                    channel,
+                    slideId,
+                    comId,
+                    out _,
+                    out object foundShape,
+                    out int pageIndex,
+                    out string collectError))
             {
                 errorResult = new ToolResult { Success = false, Error = collectError };
                 return false;
             }
 
-            var picked = new List<PptHtmlShapeNode>();
-            if (read.Shapes != null)
+            if (!TryReadExtractTree(channel, slideId, comId, out PptHtmlShapeNode tree, out string readError))
             {
-                foreach (PptHtmlShapeNode node in read.Shapes)
-                {
-                    if (node != null
-                        && PptShapeId.TryParseShapeComId(node.ShapeId, out int nodeId)
-                        && ids.Contains(nodeId))
-                    {
-                        picked.Add(node);
-                    }
-                }
-            }
-
-            if (picked.Count == 0)
-            {
-                errorResult = new ToolResult
-                {
-                    Success = false,
-                    Error = "页内找不到可抽节点: " + shapeId
-                };
+                errorResult = new ToolResult { Success = false, Error = readError };
                 return false;
             }
 
-            if (!TryUnionBox(picked, out double boxL, out double boxT, out double boxW, out double boxH, out string geoErr))
-            {
-                errorResult = new ToolResult { Success = false, Error = geoErr };
-                return false;
-            }
-
-            var remapped = new List<PptHtmlShapeNode>();
-            foreach (PptHtmlShapeNode node in picked)
-            {
-                PptHtmlApplyParser.TryParseGeometry(node.Style, out double l, out double t, out double w, out double h);
-                remapped.Add(new PptHtmlShapeNode
-                {
-                    Tag = string.IsNullOrEmpty(node.Tag) ? "div" : node.Tag,
-                    ShapeType = node.ShapeType,
-                    Style = PptConventionHtml.BuildStyle(
-                        (l - boxL) / boxW * 100.0,
-                        (t - boxT) / boxH * 100.0,
-                        w / boxW * 100.0,
-                        h / boxH * 100.0),
-                    Text = node.Text,
-                    InnerHtml = node.InnerHtml,
-                    Editable = node.Editable,
-                    DataSrc = node.DataSrc,
-                    Fill = node.Fill,
-                    FontColor = node.FontColor,
-                    FontSizePt = node.FontSizePt,
-                    FontBold = node.FontBold,
-                    FontName = node.FontName,
-                    LineColor = node.LineColor,
-                    LineWidthPt = node.LineWidthPt,
-                    Align = node.Align,
-                    Valign = node.Valign,
-                    LineSpacing = node.LineSpacing,
-                    SpaceBeforePt = node.SpaceBeforePt,
-                    SpaceAfterPt = node.SpaceAfterPt,
-                    IndentLeftPt = node.IndentLeftPt,
-                    IndentFirstPt = node.IndentFirstPt,
-                    Bullet = node.Bullet,
-                    MarginLeftPt = node.MarginLeftPt,
-                    MarginRightPt = node.MarginRightPt,
-                    MarginTopPt = node.MarginTopPt,
-                    MarginBottomPt = node.MarginBottomPt,
-                    Name = node.Name,
-                    Rotation = node.Rotation
-                });
-            }
-
-            string fragment = PptConventionHtml.BuildFragment(remapped);
+            StripShapeIds(tree);
+            string fragment = PptConventionHtml.BuildFragment(new List<PptHtmlShapeNode> { tree });
+            TryReadComSlideBox(channel, slideId, foundShape, out double boxL, out double boxT, out double boxW, out double boxH);
             var slots = new List<string>();
             var meta = new JObject
             {
@@ -129,7 +64,7 @@ namespace WordAddIn1.PresentationHost
                 ["slots"] = new JArray(slots)
             };
 
-            byte[] thumb = TryMakeThumb(channel, foundShape, read.Index, boxL, boxT, boxW, boxH);
+            byte[] thumb = TryMakeThumb(channel, foundShape, pageIndex, boxL, boxT, boxW, boxH);
             if (!PptLibStore.TryWriteUser(
                     userId,
                     category,
@@ -155,45 +90,112 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
-        private static bool TryUnionBox(
-            List<PptHtmlShapeNode> nodes,
-            out double left,
-            out double top,
-            out double width,
-            out double height,
+        private static bool TryReadExtractTree(
+            IOperationChannel channel,
+            string slideId,
+            int comId,
+            out PptHtmlShapeNode node,
             out string error)
         {
-            left = top = width = height = 0;
+            node = null;
             error = null;
-            double minL = double.MaxValue;
-            double minT = double.MaxValue;
-            double maxR = double.MinValue;
-            double maxB = double.MinValue;
-            foreach (PptHtmlShapeNode node in nodes)
+            if (channel is PptChannel ppt)
             {
-                if (!PptHtmlApplyParser.TryParseGeometry(node.Style, out double l, out double t, out double w, out double h))
+                if (ppt == null || !ppt.TryGetLivePresentation(out PowerPoint.Presentation presentation))
                 {
-                    error = "抽到的节点缺几何";
+                    error = "渠道对应的演示文稿已关闭";
                     return false;
                 }
 
-                minL = Math.Min(minL, l);
-                minT = Math.Min(minT, t);
-                maxR = Math.Max(maxR, l + w);
-                maxB = Math.Max(maxB, t + h);
+                return PptHtmlPowerPointReader.TryReadExtractTree(presentation, slideId, comId, out node, out error);
             }
 
-            width = maxR - minL;
-            height = maxB - minT;
-            if (width <= 0.0001 || height <= 0.0001)
+            if (channel is WppChannel wpp)
             {
-                error = "抽出区域宽高无效";
-                return false;
+                if (wpp == null || !wpp.TryGetLivePresentation(out object presentation))
+                {
+                    error = "渠道对应的演示文稿已关闭";
+                    return false;
+                }
+
+                return PptHtmlWppReader.TryReadExtractTree(presentation, slideId, comId, out node, out error);
             }
 
-            left = minL;
-            top = minT;
-            return true;
+            error = "unsupported: 当前渠道不是 ppt/wpp";
+            return false;
+        }
+
+        private static void StripShapeIds(PptHtmlShapeNode node)
+        {
+            if (node == null)
+            {
+                return;
+            }
+
+            node.ShapeId = null;
+            if (node.Children == null)
+            {
+                return;
+            }
+
+            foreach (PptHtmlShapeNode child in node.Children)
+            {
+                StripShapeIds(child);
+            }
+        }
+
+        private static void TryReadComSlideBox(
+            IOperationChannel channel,
+            string slideId,
+            object foundShape,
+            out double left,
+            out double top,
+            out double width,
+            out double height)
+        {
+            left = top = 0;
+            width = height = 100;
+            if (foundShape == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (foundShape is PowerPoint.Shape pptShape && channel is PptChannel ppt
+                    && ppt.TryGetLivePresentation(out PowerPoint.Presentation presentation)
+                    && int.TryParse(slideId, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                {
+                    float sw = presentation.PageSetup.SlideWidth;
+                    float sh = presentation.PageSetup.SlideHeight;
+                    if (sw > 0 && sh > 0)
+                    {
+                        left = pptShape.Left / sw * 100.0;
+                        top = pptShape.Top / sh * 100.0;
+                        width = pptShape.Width / sw * 100.0;
+                        height = pptShape.Height / sh * 100.0;
+                    }
+
+                    return;
+                }
+
+                if (channel is WppChannel wpp && wpp.TryGetLivePresentation(out object wppPres))
+                {
+                    object pageSetup = WppCom.GetProperty(wppPres, "PageSetup");
+                    double sw = Convert.ToDouble(WppCom.GetProperty(pageSetup, "SlideWidth"));
+                    double sh = Convert.ToDouble(WppCom.GetProperty(pageSetup, "SlideHeight"));
+                    if (sw > 0 && sh > 0)
+                    {
+                        left = Convert.ToDouble(WppCom.GetProperty(foundShape, "Left")) / sw * 100.0;
+                        top = Convert.ToDouble(WppCom.GetProperty(foundShape, "Top")) / sh * 100.0;
+                        width = Convert.ToDouble(WppCom.GetProperty(foundShape, "Width")) / sw * 100.0;
+                        height = Convert.ToDouble(WppCom.GetProperty(foundShape, "Height")) / sh * 100.0;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private static bool TryCollectIds(
@@ -202,19 +204,21 @@ namespace WordAddIn1.PresentationHost
             int comId,
             out HashSet<int> ids,
             out object foundShape,
+            out int pageIndex,
             out string error)
         {
             ids = new HashSet<int>();
             foundShape = null;
+            pageIndex = 0;
             error = null;
             if (channel is PptChannel ppt)
             {
-                return TryCollectPowerPoint(ppt, slideId, comId, ids, out foundShape, out error);
+                return TryCollectPowerPoint(ppt, slideId, comId, ids, out foundShape, out pageIndex, out error);
             }
 
             if (channel is WppChannel wpp)
             {
-                return TryCollectWpp(wpp, slideId, comId, ids, out foundShape, out error);
+                return TryCollectWpp(wpp, slideId, comId, ids, out foundShape, out pageIndex, out error);
             }
 
             error = "unsupported: 当前渠道不是 ppt/wpp";
@@ -227,9 +231,11 @@ namespace WordAddIn1.PresentationHost
             int comId,
             HashSet<int> ids,
             out object foundShape,
+            out int pageIndex,
             out string error)
         {
             foundShape = null;
+            pageIndex = 0;
             error = null;
             if (ppt == null || !ppt.TryGetLivePresentation(out PowerPoint.Presentation presentation))
             {
@@ -276,6 +282,14 @@ namespace WordAddIn1.PresentationHost
             }
 
             foundShape = shape;
+            try
+            {
+                pageIndex = slide.SlideIndex;
+            }
+            catch (Exception)
+            {
+            }
+
             CollectPowerPointIds(shape, ids);
             return true;
         }
@@ -378,9 +392,11 @@ namespace WordAddIn1.PresentationHost
             int comId,
             HashSet<int> ids,
             out object foundShape,
+            out int pageIndex,
             out string error)
         {
             foundShape = null;
+            pageIndex = 0;
             error = null;
             if (wpp == null || !wpp.TryGetLivePresentation(out object presentation))
             {
@@ -437,6 +453,14 @@ namespace WordAddIn1.PresentationHost
             }
 
             foundShape = shape;
+            try
+            {
+                pageIndex = Convert.ToInt32(WppCom.GetProperty(slide, "SlideIndex"));
+            }
+            catch (Exception)
+            {
+            }
+
             CollectWppIds(shape, ids);
             return true;
         }

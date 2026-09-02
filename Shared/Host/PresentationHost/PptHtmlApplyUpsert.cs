@@ -56,6 +56,18 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
+            if (type == "group")
+            {
+                if (node.Children == null || node.Children.Count == 0)
+                {
+                    plannedType = type;
+                    return PptHtmlMissingShapeAction.Skip;
+                }
+
+                plannedType = type;
+                return PptHtmlMissingShapeAction.Create;
+            }
+
             if (IsSkipOnCreate(type) || !PptShapeTypeMap.IsCreatable(type))
             {
                 plannedType = type;
@@ -104,6 +116,20 @@ namespace WordAddIn1.PresentationHost
                 "目标页无形状 " + originalId
                 + (string.IsNullOrEmpty(originalType) ? "" : "（" + originalType + "）")
                 + "，已按 " + node.ShapeType + " 新建还原");
+            if (node.Children == null)
+            {
+                return;
+            }
+
+            foreach (PptHtmlApplyNode child in node.Children)
+            {
+                if (child == null)
+                {
+                    continue;
+                }
+
+                MutateNodeForCreate(child, child.ShapeType, warnings: null);
+            }
         }
 
         public static void AddSkipWarning(PptHtmlApplyNode node, string plannedType, List<string> warnings)
@@ -118,7 +144,6 @@ namespace WordAddIn1.PresentationHost
         {
             return type == "freeform"
                 || type == "smartart"
-                || type == "group"
                 || type == "unknown";
         }
 
@@ -133,6 +158,23 @@ namespace WordAddIn1.PresentationHost
             }
 
             string type = node.ShapeType ?? "";
+            if (type == "group")
+            {
+                if (node.Children == null || node.Children.Count == 0)
+                {
+                    error = "不能新建空 group";
+                    return false;
+                }
+
+                if (!node.HasGeometry)
+                {
+                    error = "新建节点必须提供 style 几何";
+                    return false;
+                }
+
+                return true;
+            }
+
             if (IsSkipOnCreate(type) || !PptShapeTypeMap.IsCreatable(type))
             {
                 // 显式新建不可建类型：跳过由调用方处理；这里标为可 Skip
@@ -176,6 +218,11 @@ namespace WordAddIn1.PresentationHost
         public static bool ShouldSkipExplicitCreate(PptHtmlApplyNode node)
         {
             string type = node?.ShapeType ?? "";
+            if (type == "group")
+            {
+                return false;
+            }
+
             return IsSkipOnCreate(type) || !PptShapeTypeMap.IsCreatable(type);
         }
     }
