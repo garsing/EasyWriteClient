@@ -544,6 +544,26 @@ export async function getDocumentPreview(storageDocUuid) {
  * @param {string} knowledgeBaseUuid - 知识库UUID
  * @returns {Promise<string>} 图片的 Blob URL
  */
+/**
+ * 按 storage 文档取压缩预览（不依赖 knowledge_base_uuid；侧车缺失时后端现压）。
+ * @returns {Promise<string>} Blob URL
+ */
+export async function getStorageVisionImageUrl(storageDocUuid) {
+  if (!storageDocUuid) {
+    throw new Error('storage 文档 UUID 不能为空')
+  }
+  const { headers, baseUrl } = await buildHeaders(false)
+  const response = await fetch(`${baseUrl}/knowledge/document/${storageDocUuid}/vision`, {
+    method: 'GET',
+    headers
+  })
+  if (!response.ok) {
+    throw new Error(`获取图片预览失败: ${response.status} ${response.statusText}`)
+  }
+  const blob = await response.blob()
+  return URL.createObjectURL(blob)
+}
+
 export async function getImageUrl(imagePath, knowledgeBaseUuid) {
   try {
     if (!imagePath) {

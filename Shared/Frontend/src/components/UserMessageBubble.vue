@@ -68,7 +68,7 @@ async function loadThumbs (attachments) {
   revokeThumbs()
   const next = {}
   await Promise.all((attachments || []).map(async (att) => {
-    if (!isImageAtt(att) || !att.storage_doc_uuid || !att.knowledge_base_uuid) return
+    if (!isImageAtt(att) || !att.storage_doc_uuid) return
     try {
       const url = await loadKbImageThumbUrl(att.storage_doc_uuid, att.knowledge_base_uuid)
       blobUrls.push(url)

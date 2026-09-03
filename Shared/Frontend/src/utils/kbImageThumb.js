@@ -1,4 +1,4 @@
-import { getImageUrl } from '../services/knowledgeBaseApi.js'
+import { getImageUrl, getStorageVisionImageUrl } from '../services/knowledgeBaseApi.js'
 
 export const IMAGE_DOCUMENT_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif']
 
@@ -14,8 +14,13 @@ export function visionSidecarRelPath (storageDocUuid) {
 }
 
 export async function loadKbImageThumbUrl (storageDocUuid, knowledgeBaseUuid) {
-  if (!storageDocUuid || !knowledgeBaseUuid) {
-    throw new Error('缺少 storage_doc_uuid 或 knowledge_base_uuid')
+  if (!storageDocUuid) {
+    throw new Error('缺少 storage_doc_uuid')
   }
-  return getImageUrl(visionSidecarRelPath(storageDocUuid), knowledgeBaseUuid)
+  try {
+    return await getStorageVisionImageUrl(storageDocUuid)
+  } catch (e) {
+    if (!knowledgeBaseUuid) throw e
+    return getImageUrl(visionSidecarRelPath(storageDocUuid), knowledgeBaseUuid)
+  }
 }
