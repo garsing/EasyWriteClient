@@ -1290,10 +1290,11 @@ const restoreInputValue = (value) => {
 
 .chat-drop-hint {
   position: absolute;
-  left: 12px;
-  right: 12px;
-  top: 48px;
-  z-index: 5;
+  inset: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 14px;
   text-align: center;
   font-size: 14px;
