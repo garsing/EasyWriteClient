@@ -72,6 +72,7 @@ namespace WordAddIn1.PresentationHost
                 sb.Append(" data-truncated=\"true\"");
             }
 
+            sb.Append(" style=\"position:relative;width:100%;height:100%\"");
             sb.AppendLine(">");
 
             if (result.Shapes != null)
@@ -110,7 +111,7 @@ namespace WordAddIn1.PresentationHost
 
         public static string BuildStyle(double leftPct, double topPct, double widthPct, double heightPct)
         {
-            return "left:" + FormatPct(leftPct)
+            return "position:absolute;left:" + FormatPct(leftPct)
                 + "%;top:" + FormatPct(topPct)
                 + "%;width:" + FormatPct(widthPct)
                 + "%;height:" + FormatPct(heightPct) + "%";

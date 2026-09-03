@@ -211,6 +211,11 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (!TryAcceptPosition(GetAttr(section, "style"), forSection: true, out error))
+            {
+                return false;
+            }
+
             // section 上若仍带旧版 ShapeId=\"sid…\"，忽略，不参与定页
             var nodes = new List<PptHtmlApplyNode>();
             var warnings = new List<string>();
@@ -303,6 +308,11 @@ namespace WordAddIn1.PresentationHost
             };
 
             string styleAttr = GetAttr(el, "style");
+            if (!TryAcceptPosition(styleAttr, forSection: false, out error))
+            {
+                return false;
+            }
+
             if (TryParseStyle(styleAttr, out double l, out double t, out double w, out double h))
             {
                 item.HasGeometry = true;
@@ -762,6 +772,51 @@ namespace WordAddIn1.PresentationHost
             out double height)
         {
             return TryParseStyle(style, out left, out top, out width, out height);
+        }
+
+        private static bool TryAcceptPosition(string style, bool forSection, out string error)
+        {
+            error = null;
+            string pos = ReadCssPosition(style);
+            if (string.IsNullOrEmpty(pos))
+            {
+                return true;
+            }
+
+            if (forSection)
+            {
+                if (pos == "relative")
+                {
+                    return true;
+                }
+
+                error = "section 只支持 position:relative（可省略）。形状用 position:absolute。不支持 "
+                    + pos + "。";
+                return false;
+            }
+
+            if (pos == "absolute")
+            {
+                return true;
+            }
+
+            error = "形状只支持 position:absolute（可省略）。section 用 position:relative。不支持 "
+                + pos + "。";
+            return false;
+        }
+
+        private static string ReadCssPosition(string style)
+        {
+            if (string.IsNullOrWhiteSpace(style))
+            {
+                return "";
+            }
+
+            Match m = Regex.Match(
+                style,
+                @"position\s*:\s*([a-z]+)",
+                RegexOptions.IgnoreCase);
+            return m.Success ? m.Groups[1].Value.Trim().ToLowerInvariant() : "";
         }
 
         private static bool TryParseStyle(

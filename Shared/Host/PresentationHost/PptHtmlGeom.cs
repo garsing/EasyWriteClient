@@ -2,7 +2,7 @@ using System;
 
 namespace WordAddIn1.PresentationHost
 {
-    /// <summary>约定 HTML 几何：每一层相对上一层（%），COM 用幻灯片点。</summary>
+    /// <summary>约定 HTML 几何：% 相对最近定位祖先（CSS 包含块），COM 用幻灯片点。</summary>
     internal static class PptHtmlGeom
     {
         public static void ChildPctToParentPct(
