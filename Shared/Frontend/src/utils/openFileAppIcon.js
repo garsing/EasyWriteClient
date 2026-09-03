@@ -110,3 +110,36 @@ export function groupOpenFilesByApp (items) {
 export function resolveOpenFileAppIcon (item) {
   return resolveOpenFileAppGroupIcon(resolveOpenFileAppGroupKey(item))
 }
+
+const EXT_TO_GROUP = {
+  doc: 'word',
+  docx: 'word',
+  docm: 'word',
+  dot: 'word',
+  dotx: 'word',
+  rtf: 'word',
+  odt: 'word',
+  wps: 'wps',
+  xls: 'excel',
+  xlsx: 'excel',
+  xlsm: 'excel',
+  xlsb: 'excel',
+  csv: 'excel',
+  et: 'et',
+  ppt: 'ppt',
+  pptx: 'ppt',
+  pptm: 'ppt',
+  pps: 'ppt',
+  ppsx: 'ppt',
+  dps: 'wpp',
+  wpp: 'wpp'
+}
+
+/** 对话附件：按文件名 / 扩展名对齐侧栏打开文件的 Word / Excel / PPT 图标。 */
+export function resolveFileAppIconByName (fileName, ext) {
+  const fromExt = String(ext || '').replace(/^\./, '').toLowerCase()
+  const name = String(fileName || '')
+  const fromName = name.includes('.') ? name.split('.').pop().toLowerCase() : ''
+  const group = EXT_TO_GROUP[fromExt || fromName] || 'other'
+  return resolveOpenFileAppGroupIcon(group)
+}

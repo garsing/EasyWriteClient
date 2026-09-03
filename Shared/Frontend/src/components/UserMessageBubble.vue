@@ -1,7 +1,12 @@
 <template>
   <div class="user-message">
     <div v-if="message.attachment" class="attachment-bubble">
-      <span class="doc-icon" aria-hidden="true">📄</span>
+      <img
+        :src="attachmentIcon(message.attachment)"
+        alt=""
+        class="doc-icon"
+        aria-hidden="true"
+      />
       <div class="attach-text">
         <div class="attach-title" :title="message.attachment.fileName">
           {{ truncate(message.attachment.fileName) }}
@@ -18,12 +23,18 @@
 </template>
 
 <script setup>
+import { resolveFileAppIconByName } from '../utils/openFileAppIcon.js'
+
 defineProps({
   message: {
     type: Object,
     required: true
   }
 })
+
+function attachmentIcon (att) {
+  return resolveFileAppIconByName(att?.fileName, att?.ext)
+}
 
 function truncate (name) {
   if (!name) return ''
@@ -60,8 +71,12 @@ function formatSub (att) {
 }
 
 .doc-icon {
-  font-size: 18px;
-  line-height: 1.2;
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  flex-shrink: 0;
+  display: block;
+  margin-top: 1px;
 }
 
 .attach-text {

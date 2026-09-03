@@ -7,7 +7,12 @@
   >
     <div v-if="showAttachmentStrip" class="attachment-strip">
       <div class="attachment-card">
-        <span class="attach-icon" aria-hidden="true">📄</span>
+        <img
+          :src="attachmentIcon"
+          alt=""
+          class="attach-icon"
+          aria-hidden="true"
+        />
         <div class="attach-meta">
           <div class="attach-name" :title="attachment.fileLabel?.name">{{ truncateName(attachment.fileLabel?.name) }}</div>
           <div v-if="isAttachmentBusy" class="attach-progress">
@@ -78,7 +83,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import submitIcon from '../assets/images/submit.png'
 import stopIcon from '../assets/images/stop.png'
-import { resolveOpenFileAppIcon } from '../utils/openFileAppIcon.js'
+import { resolveFileAppIconByName, resolveOpenFileAppIcon } from '../utils/openFileAppIcon.js'
 import { useWebViewBridge } from '../composables/useWebViewBridge'
 import { syncLiveDraftInput } from '../utils/draftChatInput.js'
 
@@ -131,6 +136,10 @@ const showSelectedOpenFiles = computed(
 function chipAppIcon (f) {
   return resolveOpenFileAppIcon(f)
 }
+
+const attachmentIcon = computed(() =>
+  resolveFileAppIconByName(props.attachment?.fileLabel?.name, props.attachment?.fileLabel?.ext)
+)
 
 function dataTransferHasFiles (dt) {
   if (!dt) return false
@@ -371,8 +380,12 @@ const handleShiftEnter = () => {}
 }
 
 .attach-icon {
-  font-size: 18px;
-  line-height: 1.2;
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  flex-shrink: 0;
+  display: block;
+  margin-top: 1px;
 }
 
 .attach-meta {
