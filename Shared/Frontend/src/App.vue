@@ -519,6 +519,8 @@ const handleSend = async (content) => {
     : raw
   apiContent = appendChatAttachmentsToUserContent(apiContent, chatAttachmentItems.value)
   const sendPayload = { content: apiContent }
+  // 附件已写入气泡与请求体，输入区立刻清空，不等模型回完
+  chatFile.reset()
 
   // 发送到 C# 后端
   try {
@@ -540,7 +542,6 @@ const handleSend = async (content) => {
       console.log('[App] 消息发送成功，清除输入框')
       clearInput()
       pendingInput.value = ''
-      chatFile.reset()
     }
   } catch (error) {
     console.error('发送消息失败:', error)
