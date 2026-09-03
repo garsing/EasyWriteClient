@@ -86,7 +86,7 @@
         :isProcessing="isProcessing"
         :desktop="isDesktopHost && layoutMode === 'expanded'"
         :show-open-file-chips="isDesktopHost"
-        :attachments="chatFile.items"
+        :attachments="chatAttachmentItems"
         :selected-open-files="selectedOpenFiles"
       />
     </div>
@@ -133,6 +133,8 @@ import {
 
 const { sendMessage, onMessage } = useWebViewBridge()
 const chatFile = useChatFileUpload()
+/** 须为 setup 顶层 ref，模板才能解包并驱动输入区附件条 */
+const chatAttachmentItems = chatFile.items
 
 function detectDesktopHost () {
   try {
@@ -498,7 +500,7 @@ const handleSend = async (content) => {
   isProcessing.value = true
   console.log('[App] 开始发送消息，设置 isProcessing = true')
 
-  const attachmentsSnap = snapshotAttachments(chatFile.items.value)
+  const attachmentsSnap = snapshotAttachments(chatAttachmentItems.value)
 
   // 气泡仅原文 + 附件卡片；附加段只进 sendPayload
   const userMessage = {
@@ -515,7 +517,7 @@ const handleSend = async (content) => {
   let apiContent = isDesktopHost
     ? appendToUserContent(raw, selectedOpenFiles.value)
     : raw
-  apiContent = appendChatAttachmentsToUserContent(apiContent, chatFile.items.value)
+  apiContent = appendChatAttachmentsToUserContent(apiContent, chatAttachmentItems.value)
   const sendPayload = { content: apiContent }
 
   // 发送到 C# 后端
