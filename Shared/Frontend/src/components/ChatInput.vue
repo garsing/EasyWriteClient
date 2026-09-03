@@ -6,27 +6,31 @@
     @drop.capture="onFileDropCapture"
   >
     <div v-if="showAttachmentStrip" class="attachment-strip">
-      <div class="attachment-card">
+      <div
+        v-for="item in pendingAttachments"
+        :key="item.id"
+        class="attachment-card"
+      >
         <img
-          :src="attachmentIcon"
+          :src="itemIcon(item)"
           alt=""
           class="attach-icon"
           aria-hidden="true"
         />
         <div class="attach-meta">
-          <div class="attach-name" :title="attachment.fileLabel?.name">{{ truncateName(attachment.fileLabel?.name) }}</div>
-          <div v-if="isAttachmentBusy" class="attach-progress">
+          <div class="attach-name" :title="item.fileLabel?.name">{{ truncateName(item.fileLabel?.name) }}</div>
+          <div v-if="isItemBusy(item)" class="attach-progress">
             <span class="spin" />
-            <span>{{ progressLabel }}</span>
+            <span>{{ itemProgressLabel(item) }}</span>
           </div>
-          <div v-else-if="attachment.phase === 'ready'" class="attach-ready">就绪</div>
-          <div v-else-if="attachment.phase === 'error'" class="attach-error">{{ attachment.errorMessage || '失败' }}</div>
+          <div v-else-if="item.phase === 'ready'" class="attach-ready">就绪</div>
+          <div v-else-if="item.phase === 'error'" class="attach-error">{{ item.errorMessage || '失败' }}</div>
         </div>
         <button
-          v-if="attachment.phase !== 'uploading' && attachment.phase !== 'processing' && attachment.phase !== 'registering'"
+          v-if="!isItemBusy(item)"
           type="button"
           class="attach-remove"
-          @click="$emit('clear-attachment')"
+          @click="$emit('remove-attachment', item.id)"
         >
           ×
         </button>
@@ -103,10 +107,10 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
-  /** 来自 App attachmentView：phase, progress, fileLabel, errorMessage, uploadId（ready 时与展示一一对应） */
-  attachment: {
-    type: Object,
-    default: null
+  /** 输入区待发送附件 items[] */
+  attachments: {
+    type: Array,
+    default: () => []
   },
   /** Desktop 已选打开文件芯片 */
   selectedOpenFiles: {
@@ -124,7 +128,7 @@ const autoSize = computed(() =>
   props.desktop ? { minRows: 3, maxRows: 8 } : { minRows: 1, maxRows: 4 }
 )
 
-const emit = defineEmits(['send', 'stop', 'clear-attachment', 'dropped-file', 'remove-selected-open-file'])
+const emit = defineEmits(['send', 'stop', 'remove-attachment', 'dropped-files', 'remove-selected-open-file'])
 
 const showSelectedOpenFiles = computed(
   () =>
@@ -137,9 +141,25 @@ function chipAppIcon (f) {
   return resolveOpenFileAppIcon(f)
 }
 
-const attachmentIcon = computed(() =>
-  resolveFileAppIconByName(props.attachment?.fileLabel?.name, props.attachment?.fileLabel?.ext)
+const pendingAttachments = computed(() =>
+  Array.isArray(props.attachments) ? props.attachments : []
 )
+
+function itemIcon (item) {
+  return resolveFileAppIconByName(item?.fileLabel?.name, item?.fileLabel?.ext)
+}
+
+function isItemBusy (item) {
+  return item && (item.phase === 'uploading' || item.phase === 'processing')
+}
+
+function itemProgressLabel (item) {
+  const p = item?.progress
+  if (typeof p === 'number' && !Number.isNaN(p)) {
+    return `${Math.min(100, Math.round(p))}%`
+  }
+  return '处理中…'
+}
 
 function dataTransferHasFiles (dt) {
   if (!dt) return false
@@ -177,9 +197,9 @@ function onFileDropCapture (e) {
   if (!dataTransferHasFiles(e.dataTransfer)) return
   e.preventDefault()
   e.stopPropagation()
-  const file = e.dataTransfer?.files?.[0]
-  if (file) {
-    emit('dropped-file', file)
+  const files = Array.from(e.dataTransfer?.files || []).filter(Boolean)
+  if (files.length) {
+    emit('dropped-files', files)
   }
 }
 
@@ -190,43 +210,20 @@ watch(inputValue, (v) => {
   syncLiveDraftInput(v)
 }, { immediate: true })
 
-/** 上传中/处理中/失败：可显示；就绪：仅当有 upload_id 时显示，与丢弃 upload_id 后必须消失一致 */
-const showAttachmentStrip = computed(() => {
-  const a = props.attachment
-  if (!a || a.phase === 'idle') return false
-  if (a.phase === 'ready') return !!a.uploadId
-  return true
-})
-
-const isAttachmentBusy = computed(() =>
-  props.attachment &&
-  ['uploading', 'processing', 'registering'].includes(props.attachment.phase)
-)
-
-const progressLabel = computed(() => {
-  if (!props.attachment) return ''
-  const p = props.attachment.progress
-  if (typeof p === 'number' && !Number.isNaN(p)) {
-    return `${Math.min(100, Math.round(p))}%`
-  }
-  return '处理中…'
-})
+const showAttachmentStrip = computed(() => pendingAttachments.value.length > 0)
 
 const sendDisabled = computed(() => {
   if (props.isProcessing) return false
   if (props.loading && !props.isProcessing) return true
   const text = inputValue.value.trim()
   if (!text) return true
-  const a = props.attachment
-  if (!a || a.phase === 'idle' || !showAttachmentStrip.value) {
+  if (!showAttachmentStrip.value) {
     return props.loading
   }
-  if (isAttachmentBusy.value) return true
-  if (a.phase === 'error') return true
-  if (a.phase === 'ready') {
-    return props.loading
+  if (pendingAttachments.value.some((x) => isItemBusy(x) || x.phase === 'error')) {
+    return true
   }
-  return true
+  return props.loading
 })
 
 const canSend = computed(() => !sendDisabled.value && inputValue.value.trim().length > 0)
@@ -299,6 +296,9 @@ const handleShiftEnter = () => {}
 }
 
 .attachment-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 8px;
 }
 

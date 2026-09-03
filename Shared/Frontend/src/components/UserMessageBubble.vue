@@ -1,18 +1,22 @@
 <template>
   <div class="user-message">
-    <div v-if="message.attachment" class="attachment-bubble">
+    <div
+      v-for="(att, i) in (message.attachments || [])"
+      :key="att.storage_doc_uuid || att.fileName || i"
+      class="attachment-bubble"
+    >
       <img
-        :src="attachmentIcon(message.attachment)"
+        :src="attachmentIcon(att)"
         alt=""
         class="doc-icon"
         aria-hidden="true"
       />
       <div class="attach-text">
-        <div class="attach-title" :title="message.attachment.fileName">
-          {{ truncate(message.attachment.fileName) }}
+        <div class="attach-title" :title="att.fileName">
+          {{ truncate(att.fileName) }}
         </div>
         <div class="attach-sub">
-          {{ formatSub(message.attachment) }}
+          {{ formatSub(att) }}
         </div>
       </div>
     </div>

@@ -32,8 +32,6 @@ namespace EasyWriteClient.Desktop
         private readonly List<ChatMessage> _conversationHistory = new List<ChatMessage>();
         private string _currentConversationId = "-1";
         private System.Threading.CancellationTokenSource _cts;
-        private string _authoritativeUploadId;
-        private bool _uploadUiNotified;
         private bool _isProcessing;
         private volatile bool _newSessionResetPending;
         private bool _webReady;
@@ -973,15 +971,6 @@ namespace EasyWriteClient.Desktop
                     timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds()
                 });
 
-                string uploadId = messageData["uploadId"]?.ToString()
-                    ?? messageData["upload_id"]?.ToString();
-                if (string.IsNullOrWhiteSpace(uploadId))
-                {
-                    uploadId = null;
-                }
-
-                _authoritativeUploadId = uploadId;
-                _uploadUiNotified = false;
                 await ProcessChatRequestAsync(content).ConfigureAwait(true);
                 return new { success = true };
             }
@@ -1236,7 +1225,6 @@ namespace EasyWriteClient.Desktop
                 DisposeTerminalFor(_currentConversationId);
                 _currentConversationId = "-1";
                 SyncConversationContext();
-                _authoritativeUploadId = null;
                 if (_wsClient != null)
                 {
                     await _wsClient.UnbindAsync().ConfigureAwait(false);
@@ -1399,28 +1387,12 @@ namespace EasyWriteClient.Desktop
             headers["X-Conversation-Id"] = !string.IsNullOrEmpty(xConversationId)
                 ? xConversationId
                 : _currentConversationId;
-            if (!string.IsNullOrWhiteSpace(_authoritativeUploadId))
-            {
-                headers["X-Upload-Id"] = _authoritativeUploadId.Trim();
-            }
 
             return headers;
         }
 
         private void ResetUploadContext()
         {
-            bool had = !string.IsNullOrWhiteSpace(_authoritativeUploadId);
-            _authoritativeUploadId = null;
-            if (!had || _uploadUiNotified)
-            {
-                return;
-            }
-
-            _uploadUiNotified = true;
-            Invoke((MethodInvoker)delegate
-            {
-                _bridge.SendToJavaScript("uploadAttachmentContextConsumed", new { });
-            });
         }
 
         private void CleanupRequestState()

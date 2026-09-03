@@ -79,14 +79,14 @@
       <ChatInput
         @send="handleSend"
         @stop="handleUserStop"
-        @clear-attachment="clearChatAttachment"
-        @dropped-file="onInputAreaFileDrop"
+        @remove-attachment="removeChatAttachment"
+        @dropped-files="onInputAreaFilesDrop"
         @remove-selected-open-file="handleRemoveSelectedOpenFile"
         :loading="isProcessing"
         :isProcessing="isProcessing"
         :desktop="isDesktopHost && layoutMode === 'expanded'"
         :show-open-file-chips="isDesktopHost"
-        :attachment="attachmentView"
+        :attachments="chatFile.items"
         :selected-open-files="selectedOpenFiles"
       />
     </div>
@@ -116,6 +116,12 @@ import {
   stripSelectedOpenFilesAppendix,
   pruneSelectionByOpenFiles
 } from './utils/selectedOpenFiles.js'
+import {
+  appendChatAttachmentsToUserContent,
+  snapshotAttachments,
+  stripChatAttachmentsAppendix,
+  normalizeHistoryAttachments
+} from './utils/chatAttachments.js'
 import {
   DRAFT_TASK_ID,
   makeDraftTaskItem,
@@ -392,14 +398,12 @@ async function loadEmptyState () {
 const chatDragOver = ref(false)
 let chatDragDepth = 0
 
-const attachmentView = computed(() => ({
-  phase: chatFile.phase.value,
-  progress: chatFile.progress.value,
-  fileLabel: chatFile.fileLabel.value,
-  errorMessage: chatFile.errorMessage.value,
-  /** 与输入区附件条展示绑定：ready 态仅在有 upload_id 时显示 */
-  uploadId: chatFile.uploadId.value
-}))
+function showAttachLimitHint () {
+  panelHint.value = '一次最多 10 个附件'
+  setTimeout(() => {
+    if (panelHint.value === '一次最多 10 个附件') panelHint.value = ''
+  }, 2000)
+}
 
 function onChatDragEnter () {
   chatDragDepth++
@@ -430,23 +434,25 @@ function onChatDrop (e) {
   e.preventDefault()
   chatDragDepth = 0
   chatDragOver.value = false
-  const file = e.dataTransfer?.files?.[0]
-  if (file) {
-    chatFile.startUpload(file)
+  const files = Array.from(e.dataTransfer?.files || []).filter(Boolean)
+  if (files.length) {
+    onInputAreaFilesDrop(files)
   }
 }
 
 /** 输入区在捕获阶段已拦截文件拖放并上报，与消息区拖放共用上传逻辑 */
-function onInputAreaFileDrop (file) {
+async function onInputAreaFilesDrop (files) {
   chatDragDepth = 0
   chatDragOver.value = false
-  if (file) {
-    chatFile.startUpload(file)
+  if (!files || !files.length) return
+  const result = await chatFile.startUploadMany(files)
+  if (result === 'limit') {
+    showAttachLimitHint()
   }
 }
 
-function clearChatAttachment () {
-  chatFile.reset()
+function removeChatAttachment (id) {
+  chatFile.remove(id)
 }
 
 const messages = ref([])
@@ -477,7 +483,7 @@ function handleUserStop () {
 const handleSend = async (content) => {
   if (!content.trim() || isProcessing.value) return
 
-  if (chatFile.uploadId.value && chatFile.phase.value !== 'ready') {
+  if (chatFile.hasBusy.value || chatFile.hasError.value) {
     console.warn('[App] 附件未就绪，跳过发送')
     return
   }
@@ -492,35 +498,25 @@ const handleSend = async (content) => {
   isProcessing.value = true
   console.log('[App] 开始发送消息，设置 isProcessing = true')
 
-  const uploadIdSnapshot = chatFile.uploadId.value
-  const attachmentSnap =
-    uploadIdSnapshot && chatFile.fileLabel.value?.name
-      ? {
-          fileName: chatFile.fileLabel.value.name,
-          ext: chatFile.fileLabel.value.ext,
-          sizeText: chatFile.fileLabel.value.sizeText
-        }
-      : null
+  const attachmentsSnap = snapshotAttachments(chatFile.items.value)
 
-  // 气泡仅原文；附加段只进 sendPayload（选中保留，不在发送后清空）
+  // 气泡仅原文 + 附件卡片；附加段只进 sendPayload
   const userMessage = {
     id: Date.now(),
     role: 'user',
     content: raw,
     timestamp: new Date(),
-    attachment: attachmentSnap || undefined
+    attachments: attachmentsSnap.length ? attachmentsSnap : undefined
   }
   console.log('[App] 添加用户消息:', { id: userMessage.id, content: userMessage.content.substring(0, 20), messageCount: messages.value.length })
   messages.value.push(userMessage)
   console.log('[App] 用户消息已添加，当前消息数量:', messages.value.length)
 
-  const apiContent = isDesktopHost
+  let apiContent = isDesktopHost
     ? appendToUserContent(raw, selectedOpenFiles.value)
     : raw
+  apiContent = appendChatAttachmentsToUserContent(apiContent, chatFile.items.value)
   const sendPayload = { content: apiContent }
-  if (uploadIdSnapshot) {
-    sendPayload.uploadId = uploadIdSnapshot
-  }
 
   // 发送到 C# 后端
   try {
@@ -542,7 +538,7 @@ const handleSend = async (content) => {
       console.log('[App] 消息发送成功，清除输入框')
       clearInput()
       pendingInput.value = ''
-      // C# 与 Web 同步：首个带正文的流式 chunk 时发 uploadAttachmentContextConsumed（清空 upload_id）；首轮结束仍会兜底调用，无 upload 时不重复通知
+      chatFile.reset()
     }
   } catch (error) {
     console.error('发送消息失败:', error)
@@ -817,13 +813,17 @@ function normalizeHistoryMessage(m) {
   const role = m.role || 'system'
   let content = m.content || ''
   if (role === 'user') {
+    content = stripChatAttachmentsAppendix(content)
     content = stripSelectedOpenFilesAppendix(content)
   }
 
   if (Array.isArray(m.segments) && m.segments.length > 0) {
     const segments = m.segments.map((seg) => {
       if (role === 'user' && seg?.type === 'text' && typeof seg.content === 'string') {
-        return { ...seg, content: stripSelectedOpenFilesAppendix(seg.content) }
+        return {
+          ...seg,
+          content: stripSelectedOpenFilesAppendix(stripChatAttachmentsAppendix(seg.content))
+        }
       }
       return seg
     })
@@ -831,6 +831,7 @@ function normalizeHistoryMessage(m) {
       id,
       role,
       content,
+      attachments: normalizeHistoryAttachments(m.attachments),
       segments,
       timestamp,
       isStreaming: false,
@@ -857,6 +858,7 @@ function normalizeHistoryMessage(m) {
     id,
     role,
     content,
+    attachments: normalizeHistoryAttachments(m.attachments),
     segments,
     timestamp,
     isStreaming: false,
@@ -1010,8 +1012,6 @@ onMounted(() => {
       })
       isProcessing.value = newState
       console.log('[App] 状态已改变，当前isProcessing:', isProcessing.value)
-    } else if (data.type === 'uploadAttachmentContextConsumed') {
-      chatFile.reset()
     } else if (data.type === 'orchestratorMaxRoundsReached') {
       const payload = data.data || data
       const maxRounds = payload.maxRounds
@@ -1092,15 +1092,18 @@ onMounted(() => {
       const fileSize = typeof payload.fileSize === 'number' ? payload.fileSize : payload.file_size
       const skipProcess = payload.skipProcess === true || payload.skip_process === true
       if (uuid) {
-        chatFile.startFromHostUploadedDocument(uuid, fileName, fileSize, skipProcess)
+        chatFile.startFromHostUploadedDocument(uuid, fileName, fileSize, skipProcess).then((result) => {
+          if (result === 'limit') showAttachLimitHint()
+        })
       }
     } else if (data.type === 'hostFileDropError') {
       const payload = data.data || data
       const msg = payload.message || '拖放上传失败'
       console.warn('[App] hostFileDropError:', msg)
-      chatFile.reset()
-      chatFile.phase.value = 'error'
-      chatFile.errorMessage.value = msg
+      panelHint.value = msg
+      setTimeout(() => {
+        if (panelHint.value === msg) panelHint.value = ''
+      }, 2000)
     } else if (data.type === 'toolOutput') {
       const payload = data.data || data
       const toolCallId = payload.tool_call_id || payload.toolCallId
