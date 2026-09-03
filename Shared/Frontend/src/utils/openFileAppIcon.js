@@ -5,6 +5,7 @@ import pptAppIcon from '../assets/images/ppt.png'
 import yiWriteLogoIcon from '../assets/images/yi-write_logo1.png'
 import chromeAppIcon from '../assets/images/chrome.png'
 import edgeAppIcon from '../assets/images/edge.png'
+import imageAppIcon from '../assets/images/image.png'
 
 const GROUP_ORDER = [
   'word',
@@ -13,6 +14,7 @@ const GROUP_ORDER = [
   'et',
   'ppt',
   'wpp',
+  'image',
   'chrome',
   'edge',
   'yiwrite',
@@ -26,6 +28,7 @@ const GROUP_LABELS = {
   et: 'WPS 表格',
   ppt: 'PowerPoint',
   wpp: 'WPS 演示',
+  image: '图片',
   chrome: 'Chrome',
   edge: 'Edge',
   yiwrite: '易写浏览器',
@@ -39,6 +42,7 @@ const GROUP_ICONS = {
   et: wpsAppIcon,
   ppt: pptAppIcon,
   wpp: wpsAppIcon,
+  image: imageAppIcon,
   chrome: chromeAppIcon,
   edge: edgeAppIcon,
   yiwrite: yiWriteLogoIcon,
@@ -132,7 +136,13 @@ const EXT_TO_GROUP = {
   pps: 'ppt',
   ppsx: 'ppt',
   dps: 'wpp',
-  wpp: 'wpp'
+  wpp: 'wpp',
+  png: 'image',
+  jpg: 'image',
+  jpeg: 'image',
+  webp: 'image',
+  bmp: 'image',
+  gif: 'image'
 }
 
 /** 对话附件：按文件名 / 扩展名对齐侧栏打开文件的 Word / Excel / PPT 图标。 */

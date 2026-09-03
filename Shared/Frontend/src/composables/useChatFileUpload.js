@@ -117,6 +117,7 @@ export function useChatFileUpload () {
       id: makeId(),
       phase: 'uploading',
       storageDocUuid: null,
+      knowledgeBaseUuid: null,
       progress: 3,
       fileLabel: fileLabelFrom(file.name, file.size),
       errorMessage: ''
@@ -133,6 +134,9 @@ export function useChatFileUpload () {
         return 'dup'
       }
       const skipProcess = Number(data.processing_status) === 2
+      patchItem(item.id, {
+        knowledgeBaseUuid: data.knowledge_base_uuid || data.knowledgeBaseUuid || null
+      })
       await runItemPipeline(item.id, uuid, skipProcess)
       return 'ok'
     } catch (e) {

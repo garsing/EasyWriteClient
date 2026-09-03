@@ -6,6 +6,14 @@
       class="attachment-bubble"
     >
       <img
+        v-if="isImageAtt(att) && thumbUrls[att.storage_doc_uuid]"
+        :src="thumbUrls[att.storage_doc_uuid]"
+        alt=""
+        class="doc-icon doc-thumb"
+        @error="onThumbError(att)"
+      />
+      <img
+        v-else
         :src="attachmentIcon(att)"
         alt=""
         class="doc-icon"
@@ -27,18 +35,65 @@
 </template>
 
 <script setup>
+import { onUnmounted, ref, watch } from 'vue'
 import { resolveFileAppIconByName } from '../utils/openFileAppIcon.js'
+import { isImageFileName, loadKbImageThumbUrl } from '../utils/kbImageThumb.js'
 
-defineProps({
+const props = defineProps({
   message: {
     type: Object,
     required: true
   }
 })
 
+const thumbUrls = ref({})
+let blobUrls = []
+
+function isImageAtt (att) {
+  return isImageFileName(att?.fileName, att?.ext)
+}
+
 function attachmentIcon (att) {
   return resolveFileAppIconByName(att?.fileName, att?.ext)
 }
+
+function revokeThumbs () {
+  blobUrls.forEach((u) => {
+    try { URL.revokeObjectURL(u) } catch (_) { /* ignore */ }
+  })
+  blobUrls = []
+}
+
+async function loadThumbs (attachments) {
+  revokeThumbs()
+  const next = {}
+  await Promise.all((attachments || []).map(async (att) => {
+    if (!isImageAtt(att) || !att.storage_doc_uuid || !att.knowledge_base_uuid) return
+    try {
+      const url = await loadKbImageThumbUrl(att.storage_doc_uuid, att.knowledge_base_uuid)
+      blobUrls.push(url)
+      next[att.storage_doc_uuid] = url
+    } catch (e) {
+      console.warn('[UserMessageBubble] 缩略图加载失败', att.fileName, e?.message || e)
+    }
+  }))
+  thumbUrls.value = next
+}
+
+function onThumbError (att) {
+  if (!att?.storage_doc_uuid) return
+  const copy = { ...thumbUrls.value }
+  delete copy[att.storage_doc_uuid]
+  thumbUrls.value = copy
+}
+
+watch(
+  () => props.message?.attachments,
+  (atts) => { loadThumbs(atts) },
+  { immediate: true, deep: true }
+)
+
+onUnmounted(revokeThumbs)
 
 function truncate (name) {
   if (!name) return ''
@@ -81,6 +136,13 @@ function formatSub (att) {
   flex-shrink: 0;
   display: block;
   margin-top: 1px;
+}
+
+.doc-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 4px;
 }
 
 .attach-text {

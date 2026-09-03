@@ -28,12 +28,18 @@ export function stripChatAttachmentsAppendix (content) {
 export function snapshotAttachments (items) {
   return (items || [])
     .filter((x) => x.phase === 'ready' && x.storageDocUuid)
-    .map((x) => ({
-      storage_doc_uuid: x.storageDocUuid,
-      fileName: x.fileLabel?.name || '文件',
-      ext: x.fileLabel?.ext || '',
-      sizeText: x.fileLabel?.sizeText || ''
-    }))
+    .map((x) => {
+      const out = {
+        storage_doc_uuid: x.storageDocUuid,
+        fileName: x.fileLabel?.name || '文件',
+        ext: x.fileLabel?.ext || '',
+        sizeText: x.fileLabel?.sizeText || ''
+      }
+      if (x.knowledgeBaseUuid) {
+        out.knowledge_base_uuid = x.knowledgeBaseUuid
+      }
+      return out
+    })
 }
 
 export function normalizeHistoryAttachments (raw) {

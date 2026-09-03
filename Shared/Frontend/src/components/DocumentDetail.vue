@@ -6,7 +6,10 @@
         <el-icon class="back-icon" @click="handleBack">
           <ArrowLeft />
         </el-icon>
-        <div class="doc-icon-header" :class="getDocumentIconClass(documentName)">
+        <div v-if="headerThumbUrl" class="doc-icon-header doc-icon-thumb">
+          <img :src="headerThumbUrl" alt="" @error="headerThumbUrl = ''" />
+        </div>
+        <div v-else class="doc-icon-header" :class="getDocumentIconClass(documentName)">
           {{ getDocumentIcon(documentName) }}
         </div>
         <h1 class="doc-title">{{ documentName }}</h1>
@@ -113,13 +116,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   ArrowLeft,
   Search
 } from '@element-plus/icons-vue'
 import { getDocumentChunks, getImageUrl, getMyKbCapabilities } from '../services/knowledgeBaseApi'
+import { isImageFileName, loadKbImageThumbUrl } from '../utils/kbImageThumb'
 import DocumentOriginalPreview from './DocumentOriginalPreview.vue'
 
 // Props
@@ -181,6 +185,7 @@ const currentPageChunks = computed(() => {
  */
 function getDocumentIcon(fileName) {
   if (!fileName) return 'W'
+  if (isImageFileName(fileName)) return 'IMG'
   const lowerName = fileName.toLowerCase()
   if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
     return 'X'
@@ -199,6 +204,7 @@ function getDocumentIcon(fileName) {
  */
 function getDocumentIconClass(fileName) {
   if (!fileName) return 'doc-icon-word'
+  if (isImageFileName(fileName)) return 'doc-icon-image'
   const lowerName = fileName.toLowerCase()
   if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
     return 'doc-icon-excel'
@@ -211,6 +217,38 @@ function getDocumentIconClass(fileName) {
   }
   return 'doc-icon-word'
 }
+
+const headerThumbUrl = ref('')
+let headerThumbBlob = ''
+
+function revokeHeaderThumb () {
+  if (headerThumbBlob) {
+    try { URL.revokeObjectURL(headerThumbBlob) } catch (_) { /* ignore */ }
+    headerThumbBlob = ''
+  }
+  headerThumbUrl.value = ''
+}
+
+async function loadHeaderThumb () {
+  revokeHeaderThumb()
+  if (!isImageFileName(props.documentName) || !props.storageDocId || !props.knowledgeBaseUuid) {
+    return
+  }
+  try {
+    const url = await loadKbImageThumbUrl(props.storageDocId, props.knowledgeBaseUuid)
+    headerThumbBlob = url
+    headerThumbUrl.value = url
+  } catch (e) {
+    console.warn('[DocumentDetail] 缩略图加载失败', e?.message || e)
+  }
+}
+
+watch(
+  () => [props.storageDocId, props.knowledgeBaseUuid, props.documentName],
+  () => { loadHeaderThumb() },
+  { immediate: true }
+)
+onUnmounted(revokeHeaderThumb)
 
 // 获取chunk在整个文档中的编号
 const getChunkNumber = (index) => {
@@ -589,6 +627,24 @@ const handlePageChange = (newPage) => {
   max-width: none;
   padding: 0 4px;
   font-size: 11px;
+}
+
+.doc-icon-image {
+  background-color: #7B61FF;
+  font-size: 9px;
+}
+
+.doc-icon-thumb {
+  background: #f0f0f0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.doc-icon-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .doc-title {

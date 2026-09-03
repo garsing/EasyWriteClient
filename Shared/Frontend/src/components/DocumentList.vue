@@ -79,7 +79,17 @@
         <el-table-column prop="name" label="文档" min-width="250">
           <template #default="{ row }">
             <div class="doc-name-cell" @click.stop="handleOpenDocumentDetail(row)">
-              <div class="doc-icon" :class="getDocumentIconClass(row.name)">
+              <div
+                v-if="isImageFileName(row.name) && thumbUrls[row.storageDocUuid]"
+                class="doc-icon doc-icon-thumb"
+              >
+                <img
+                  :src="thumbUrls[row.storageDocUuid]"
+                  alt=""
+                  @error="onThumbError(row)"
+                />
+              </div>
+              <div v-else class="doc-icon" :class="getDocumentIconClass(row.name)">
                 {{ getDocumentIcon(row.name) }}
               </div>
               <span class="doc-name">{{ row.name }}</span>
@@ -222,7 +232,7 @@
         </div>
         <template #tip>
           <div class="el-upload__tip">
-            支持拖拽上传，文件选择后会自动上传
+            支持文档与图片拖拽上传，文件选择后会自动上传
           </div>
         </template>
       </el-upload>
@@ -269,7 +279,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
@@ -282,6 +292,7 @@ import {
 } from '@element-plus/icons-vue'
 import DocumentDetail from './DocumentDetail.vue'
 import { getDocumentList, uploadDocument, processDocument, createDocumentProcessWebSocket, deleteDocuments, setDocumentEnableStatus } from '../services/knowledgeBaseApi'
+import { isImageFileName, loadKbImageThumbUrl } from '../utils/kbImageThumb'
 
 // Props
 const props = defineProps({
@@ -332,11 +343,54 @@ const uploadRef = ref(null)
 const tableRef = ref(null)
 const selectedDocuments = ref([])
 
+const thumbUrls = ref({})
+let thumbBlobUrls = []
+
+function revokeThumbs () {
+  thumbBlobUrls.forEach((u) => {
+    try { URL.revokeObjectURL(u) } catch (_) { /* ignore */ }
+  })
+  thumbBlobUrls = []
+}
+
+async function loadThumbs (docs) {
+  revokeThumbs()
+  thumbUrls.value = {}
+  const kb = props.knowledgeBaseUuid
+  if (!kb) return
+  const next = {}
+  await Promise.all((docs || []).map(async (row) => {
+    if (!isImageFileName(row.name) || !row.storageDocUuid) return
+    try {
+      const url = await loadKbImageThumbUrl(row.storageDocUuid, kb)
+      thumbBlobUrls.push(url)
+      next[row.storageDocUuid] = url
+    } catch (e) {
+      console.warn('[DocumentList] 缩略图加载失败', row.name, e?.message || e)
+    }
+  }))
+  thumbUrls.value = next
+}
+
+function onThumbError (row) {
+  if (!row?.storageDocUuid) return
+  const copy = { ...thumbUrls.value }
+  delete copy[row.storageDocUuid]
+  thumbUrls.value = copy
+}
+
+watch(documentList, (docs) => {
+  loadThumbs(docs)
+})
+
+onUnmounted(revokeThumbs)
+
 /**
  * 获取文档图标文字（W、X、PDF、PPT 等）
  */
 function getDocumentIcon(fileName) {
   if (!fileName) return 'W'
+  if (isImageFileName(fileName)) return 'IMG'
   const lowerName = fileName.toLowerCase()
   if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
     return 'X'
@@ -355,6 +409,7 @@ function getDocumentIcon(fileName) {
  */
 function getDocumentIconClass(fileName) {
   if (!fileName) return 'doc-icon-word'
+  if (isImageFileName(fileName)) return 'doc-icon-image'
   const lowerName = fileName.toLowerCase()
   if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
     return 'doc-icon-excel'
@@ -1243,6 +1298,24 @@ const handleDeleteClick = async () => {
   max-width: none;
   padding: 0 4px;
   font-size: 10px;
+}
+
+.doc-icon-image {
+  background-color: #7B61FF;
+  font-size: 9px;
+}
+
+.doc-icon-thumb {
+  background: #f0f0f0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.doc-icon-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .doc-name {
