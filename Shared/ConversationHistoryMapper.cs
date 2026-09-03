@@ -58,11 +58,14 @@ namespace WordAddIn1
                         continue;
                     }
 
+                    var attachments = MapUserAttachments(message["attachments"]);
+
                     result.Add(new
                     {
                         id = idBase + seq++,
                         role = "user",
                         content = text,
+                        attachments,
                         timestamp = idBase + seq,
                         isStreaming = false
                     });
@@ -113,6 +116,38 @@ namespace WordAddIn1
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// 将落库 user.attachments 传给 Vue（storage_doc_uuid / fileName / ext）。
+        /// </summary>
+        private static List<object> MapUserAttachments(JToken token)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                return null;
+            }
+
+            if (token.Type != JTokenType.Array)
+            {
+                return null;
+            }
+
+            var arr = (JArray)token;
+            if (arr.Count == 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                var list = JsonConvert.DeserializeObject<List<object>>(arr.ToString());
+                return list != null && list.Count > 0 ? list : null;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
 
         private static void AppendToolCallSegments(
