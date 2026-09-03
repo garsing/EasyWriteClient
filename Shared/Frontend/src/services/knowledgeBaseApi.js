@@ -528,7 +528,8 @@ export async function getDocumentPreview(storageDocUuid) {
   const contentType = (response.headers.get('Content-Type') || '').toLowerCase()
   let previewKind = previewKindHeader
   if (!previewKind) {
-    if (contentType.includes('pdf')) previewKind = 'pdf'
+    if (contentType.startsWith('image/')) previewKind = 'image'
+    else if (contentType.includes('pdf')) previewKind = 'pdf'
     else if (contentType.includes('wordprocessingml') || contentType.includes('officedocument.word')) previewKind = 'docx'
     else if (contentType.includes('sheet') || contentType.includes('excel')) previewKind = 'xlsx'
     else if (contentType.startsWith('text/') || contentType.includes('xml')) previewKind = 'text'

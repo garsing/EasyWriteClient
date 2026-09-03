@@ -21,6 +21,9 @@
       </div>
       <div class="sheet-table-wrap" v-html="sheetHtml"></div>
     </div>
+    <div v-else-if="previewKind === 'image'" class="preview-image">
+      <img :src="imageUrl" :alt="documentName" />
+    </div>
     <div v-else-if="previewKind === 'pdf'" class="preview-pdf" ref="pdfContainerRef"></div>
     <div v-else-if="previewKind === 'docx'" class="preview-docx" ref="docxContainerRef"></div>
     <div v-else-if="!loading" class="preview-error">
@@ -52,9 +55,19 @@ const sheetNames = ref([])
 const activeSheet = ref('')
 const sheetHtml = ref('')
 const workbookRef = ref(null)
+const imageUrl = ref('')
 const docxContainerRef = ref(null)
 const pdfContainerRef = ref(null)
 let pdfDoc = null
+let imageBlobUrl = ''
+
+function revokeImageUrl () {
+  if (imageBlobUrl) {
+    try { URL.revokeObjectURL(imageBlobUrl) } catch (_) { /* ignore */ }
+    imageBlobUrl = ''
+  }
+  imageUrl.value = ''
+}
 
 async function renderPdf(arrayBuffer) {
   await nextTick()
@@ -110,12 +123,20 @@ async function loadPreview() {
   sheetHtml.value = ''
   sheetNames.value = []
   workbookRef.value = null
+  revokeImageUrl()
   if (pdfContainerRef.value) pdfContainerRef.value.innerHTML = ''
   if (docxContainerRef.value) docxContainerRef.value.innerHTML = ''
 
   try {
     const { blob, previewKind: kind } = await getDocumentPreview(props.storageDocId)
     previewKind.value = kind
+
+    if (kind === 'image') {
+      imageBlobUrl = URL.createObjectURL(blob)
+      imageUrl.value = imageBlobUrl
+      return
+    }
+
     const buffer = await blob.arrayBuffer()
 
     if (kind === 'text') {
@@ -158,6 +179,7 @@ watch(
 
 onBeforeUnmount(() => {
   pdfDoc = null
+  revokeImageUrl()
 })
 </script>
 
@@ -243,6 +265,23 @@ onBeforeUnmount(() => {
   border: 1px solid #ddd;
   padding: 4px 8px;
   white-space: pre-wrap;
+}
+
+.preview-image {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow: auto;
+  max-height: calc(100vh - 180px);
+  padding: 8px 0;
+}
+
+.preview-image img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+  background: #fff;
 }
 
 .preview-pdf {

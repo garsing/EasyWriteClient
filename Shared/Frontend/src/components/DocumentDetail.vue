@@ -464,7 +464,9 @@ async function loadCapabilitiesAndInit() {
     console.warn('[DocumentDetail] capabilities 失败，按普通用户处理:', e)
     canViewChunks.value = false
   }
-  viewMode.value = canViewChunks.value ? 'chunks' : 'preview'
+  viewMode.value = (canViewChunks.value && !isImageFileName(props.documentName))
+    ? 'chunks'
+    : 'preview'
   capabilitiesLoaded.value = true
   if (props.storageDocId && viewMode.value === 'chunks') {
     isInitialized.value = true
