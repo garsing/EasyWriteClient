@@ -574,6 +574,28 @@ namespace EasyWriteClient.Desktop
             });
             _bridge.RegisterHandler("adjustCompactWidthForSidebar", HandleAdjustCompactWidthForSidebarAsync);
             _bridge.RegisterHandler("compactUiBusy", HandleCompactUiBusyAsync);
+            _bridge.RegisterHandler("readClipboardImage", _ =>
+                Task.FromResult(ReadClipboardImageOnUiThread()));
+        }
+
+        private object ReadClipboardImageOnUiThread()
+        {
+            if (IsDisposed)
+            {
+                return new { success = false };
+            }
+
+            if (InvokeRequired)
+            {
+                object boxed = null;
+                Invoke(new MethodInvoker(delegate
+                {
+                    boxed = ClipboardChatImageHelper.TryRead();
+                }));
+                return boxed ?? new { success = false };
+            }
+
+            return ClipboardChatImageHelper.TryRead();
         }
 
         /// <summary>是否正在处理对话/流式（供主窗闲置收球门闩）。</summary>

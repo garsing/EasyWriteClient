@@ -4,6 +4,7 @@
     :class="{ 'chat-input-container--desktop': desktop }"
     @dragover.capture="onFileDragOverCapture"
     @drop.capture="onFileDropCapture"
+    @paste.capture="onPasteCapture"
   >
     <div v-if="showAttachmentStrip" class="attachment-strip">
       <div
@@ -90,6 +91,7 @@ import stopIcon from '../assets/images/stop.png'
 import { resolveFileAppIconByName, resolveOpenFileAppIcon } from '../utils/openFileAppIcon.js'
 import { useWebViewBridge } from '../composables/useWebViewBridge'
 import { syncLiveDraftInput } from '../utils/draftChatInput.js'
+import { collectClipboardImageFiles } from '../utils/clipboardChatImages.js'
 
 const { sendMessage } = useWebViewBridge()
 
@@ -201,6 +203,15 @@ function onFileDropCapture (e) {
   if (files.length) {
     emit('dropped-files', files)
   }
+}
+
+/** QQ 截图等：剪贴板图片走与拖放相同的上传链路；纯文本粘贴不拦截 */
+function onPasteCapture (e) {
+  const files = collectClipboardImageFiles(e.clipboardData)
+  if (!files.length) return
+  e.preventDefault()
+  e.stopPropagation()
+  emit('dropped-files', files)
 }
 
 const inputValue = ref('')

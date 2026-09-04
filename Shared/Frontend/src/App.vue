@@ -30,6 +30,7 @@
       @dragleave.prevent="onChatDragLeave"
       @dragover.prevent="onChatDragOver"
       @drop.prevent="onChatDrop"
+      @paste.capture="onChatPaste"
     >
       <div v-if="chatDragOver" class="chat-drop-hint">拖放到此处以上传为对话附件</div>
       <!-- 插件顶栏；缩小版顶栏：历史 / 新建 / 设置 -->
@@ -123,6 +124,11 @@ import {
   normalizeHistoryAttachments
 } from './utils/chatAttachments.js'
 import {
+  collectClipboardImageFiles,
+  fileFromHostClipboardPayload,
+  shouldTryHostClipboardImage
+} from './utils/clipboardChatImages.js'
+import {
   DRAFT_TASK_ID,
   makeDraftTaskItem,
   stashDraftInputFromLive,
@@ -131,7 +137,7 @@ import {
   clearAllDraftInput
 } from './utils/draftChatInput.js'
 
-const { sendMessage, onMessage } = useWebViewBridge()
+const { sendMessage, onMessage, isWebView2 } = useWebViewBridge()
 const chatFile = useChatFileUpload()
 /** 须为 setup 顶层 ref，模板才能解包并驱动输入区附件条 */
 const chatAttachmentItems = chatFile.items
@@ -439,6 +445,33 @@ function onChatDrop (e) {
   const files = Array.from(e.dataTransfer?.files || []).filter(Boolean)
   if (files.length) {
     onInputAreaFilesDrop(files)
+  }
+}
+
+async function readClipboardImagesFromHost () {
+  try {
+    const res = await sendMessage('readClipboardImage', {})
+    const file = fileFromHostClipboardPayload(res)
+    return file ? [file] : []
+  } catch (e) {
+    console.warn('[App] readClipboardImage 失败', e?.message || e)
+    return []
+  }
+}
+
+/** 对话框粘贴图片：JS clipboard 优先；WebView2 读不到时问宿主（QQ 截图） */
+async function onChatPaste (e) {
+  const files = collectClipboardImageFiles(e.clipboardData)
+  if (files.length) {
+    e.preventDefault()
+    e.stopPropagation()
+    onInputAreaFilesDrop(files)
+    return
+  }
+  if (!isWebView2 || !shouldTryHostClipboardImage(e.clipboardData)) return
+  const hosted = await readClipboardImagesFromHost()
+  if (hosted.length) {
+    onInputAreaFilesDrop(hosted)
   }
 }
 
