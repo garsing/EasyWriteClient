@@ -1073,7 +1073,7 @@ onMounted(() => {
       messages.value = []
       toolCallAccumulators.clear()
       panelHint.value = ''
-      chatFile.reset()
+      // 待发送附件与打开文件芯片一样：切会话 / 新建不清除，只在发送后 reset
       resetTodoProgressBar()
       loadEmptyState()
       if (pendingRestoreDraftInput != null) {
