@@ -25,7 +25,7 @@ function formatStamp () {
   )
 }
 
-function isAllowedImage (file) {
+function isImageFile (file) {
   if (!file) return false
   const mimeExt = extFromMime(file.type)
   if (mimeExt && IMAGE_DOCUMENT_EXTS.includes(mimeExt)) return true
@@ -40,13 +40,13 @@ function isGenericClipboardName (name) {
 }
 
 function namedClipboardFile (file, index) {
+  if (!isImageFile(file) || !isGenericClipboardName(file.name)) {
+    return file
+  }
   const ext =
     extFromMime(file.type) ||
     (file.name && file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : 'png')
-  const rawName = (file.name || '').trim()
-  const name = isGenericClipboardName(rawName)
-    ? `截图-${formatStamp()}${index > 0 ? `-${index + 1}` : ''}.${ext}`
-    : rawName
+  const name = `截图-${formatStamp()}${index > 0 ? `-${index + 1}` : ''}.${ext}`
   return new File([file], name, {
     type: file.type || `image/${ext}`,
     lastModified: file.lastModified || Date.now()
@@ -63,43 +63,60 @@ export function clipboardHasPlainText (clipboardData) {
   }
 }
 
-export function clipboardHasImageHint (clipboardData) {
+/** 资源管理器「复制文件」后，文本里常常是一条 Windows 路径 */
+export function looksLikeWindowsFilePath (text) {
+  const t = String(text || '').trim()
+  if (!t || /\r|\n/.test(t)) return false
+  return /^[a-zA-Z]:[\\/]/.test(t) || t.startsWith('\\\\')
+}
+
+export function clipboardPlainText (clipboardData) {
+  if (!clipboardData) return ''
+  try {
+    return String(clipboardData.getData('text/plain') || clipboardData.getData('text') || '')
+  } catch (_) {
+    return ''
+  }
+}
+
+export function clipboardHasFileHint (clipboardData) {
   if (!clipboardData) return false
   try {
-    if (clipboardData.files && clipboardData.files.length) {
-      for (const f of clipboardData.files) {
-        if (isAllowedImage(f)) return true
-      }
-    }
+    if (clipboardData.files && clipboardData.files.length) return true
     const types = clipboardData.types
     if (types) {
       for (let i = 0; i < types.length; i++) {
         const t = String(types[i]).toLowerCase()
-        if (t.startsWith('image/') || t === 'files') return true
+        if (t === 'files' || t.startsWith('image/')) return true
       }
     }
     if (clipboardData.items) {
       for (let i = 0; i < clipboardData.items.length; i++) {
-        const item = clipboardData.items[i]
-        if (item.kind === 'file' && String(item.type || '').startsWith('image/')) return true
+        if (clipboardData.items[i].kind === 'file') return true
       }
     }
+    if (looksLikeWindowsFilePath(clipboardPlainText(clipboardData))) return true
   } catch (_) {
     /* ignore */
   }
   return false
 }
 
+/** @deprecated 用 clipboardHasFileHint */
+export function clipboardHasImageHint (clipboardData) {
+  return clipboardHasFileHint(clipboardData)
+}
+
 /**
- * 从 paste 事件取出图片 File[]（QQ 截图常见 image/png）。
+ * 从 paste 事件取出 File[]：截图、复制的图片、资源管理器复制的文件。
  */
-export function collectClipboardImageFiles (clipboardData) {
+export function collectClipboardFiles (clipboardData) {
   if (!clipboardData) return []
   const seen = new Set()
   const out = []
 
   const push = (file) => {
-    if (!isAllowedImage(file)) return
+    if (!file) return
     const key = `${file.size}:${file.type}:${file.name}`
     if (seen.has(key)) return
     seen.add(key)
@@ -109,10 +126,9 @@ export function collectClipboardImageFiles (clipboardData) {
   if (clipboardData.items && clipboardData.items.length) {
     for (let i = 0; i < clipboardData.items.length; i++) {
       const item = clipboardData.items[i]
-      if (item.kind === 'file' && String(item.type || '').startsWith('image/')) {
-        const f = item.getAsFile()
-        if (f) push(f)
-      }
+      if (item.kind !== 'file') continue
+      const f = item.getAsFile()
+      if (f) push(f)
     }
   }
 
@@ -123,10 +139,26 @@ export function collectClipboardImageFiles (clipboardData) {
   return out
 }
 
-export function shouldTryHostClipboardImage (clipboardData) {
-  if (collectClipboardImageFiles(clipboardData).length) return false
-  if (clipboardHasPlainText(clipboardData) && !clipboardHasImageHint(clipboardData)) return false
+/** @deprecated 用 collectClipboardFiles */
+export function collectClipboardImageFiles (clipboardData) {
+  return collectClipboardFiles(clipboardData)
+}
+
+export function shouldTryHostClipboard (clipboardData) {
+  if (collectClipboardFiles(clipboardData).length) return false
+  if (clipboardHasFileHint(clipboardData)) return true
+  if (clipboardHasPlainText(clipboardData)) return false
   return true
+}
+
+/** @deprecated 用 shouldTryHostClipboard */
+export function shouldTryHostClipboardImage (clipboardData) {
+  return shouldTryHostClipboard(clipboardData)
+}
+
+export function shouldBlockPasteForHost (clipboardData) {
+  if (clipboardHasFileHint(clipboardData)) return true
+  return !clipboardHasPlainText(clipboardData)
 }
 
 export function fileFromHostClipboardPayload (payload) {

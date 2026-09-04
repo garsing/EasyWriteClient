@@ -91,7 +91,7 @@ import stopIcon from '../assets/images/stop.png'
 import { resolveFileAppIconByName, resolveOpenFileAppIcon } from '../utils/openFileAppIcon.js'
 import { useWebViewBridge } from '../composables/useWebViewBridge'
 import { syncLiveDraftInput } from '../utils/draftChatInput.js'
-import { collectClipboardImageFiles } from '../utils/clipboardChatImages.js'
+import { collectClipboardFiles } from '../utils/clipboardChatImages.js'
 
 const { sendMessage } = useWebViewBridge()
 
@@ -205,9 +205,9 @@ function onFileDropCapture (e) {
   }
 }
 
-/** QQ 截图等：剪贴板图片走与拖放相同的上传链路；纯文本粘贴不拦截 */
+/** 剪贴板图片或文件走与拖放相同的上传链路；纯文本粘贴不拦截 */
 function onPasteCapture (e) {
-  const files = collectClipboardImageFiles(e.clipboardData)
+  const files = collectClipboardFiles(e.clipboardData)
   if (!files.length) return
   e.preventDefault()
   e.stopPropagation()

@@ -124,9 +124,10 @@ import {
   normalizeHistoryAttachments
 } from './utils/chatAttachments.js'
 import {
-  collectClipboardImageFiles,
+  collectClipboardFiles,
   fileFromHostClipboardPayload,
-  shouldTryHostClipboardImage
+  shouldBlockPasteForHost,
+  shouldTryHostClipboard
 } from './utils/clipboardChatImages.js'
 import {
   DRAFT_TASK_ID,
@@ -448,30 +449,40 @@ function onChatDrop (e) {
   }
 }
 
-async function readClipboardImagesFromHost () {
+async function readClipboardFromHost () {
   try {
-    const res = await sendMessage('readClipboardImage', {})
-    const file = fileFromHostClipboardPayload(res)
-    return file ? [file] : []
+    return await sendMessage('readClipboardImage', {})
   } catch (e) {
     console.warn('[App] readClipboardImage 失败', e?.message || e)
-    return []
+    return null
   }
 }
 
-/** 对话框粘贴图片：JS clipboard 优先；WebView2 读不到时问宿主（QQ 截图） */
+/** 对话框粘贴：JS clipboard 优先；WebView2 读不到时问宿主（截图 / 资源管理器复制文件） */
 async function onChatPaste (e) {
-  const files = collectClipboardImageFiles(e.clipboardData)
+  const files = collectClipboardFiles(e.clipboardData)
   if (files.length) {
     e.preventDefault()
     e.stopPropagation()
     onInputAreaFilesDrop(files)
     return
   }
-  if (!isWebView2 || !shouldTryHostClipboardImage(e.clipboardData)) return
-  const hosted = await readClipboardImagesFromHost()
-  if (hosted.length) {
-    onInputAreaFilesDrop(hosted)
+  if (!isWebView2 || !shouldTryHostClipboard(e.clipboardData)) return
+  if (shouldBlockPasteForHost(e.clipboardData)) {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+  const res = await readClipboardFromHost()
+  if (!res || res.success === false) return
+  if (res.kind === 'files') {
+    if (res.limitHit === true || res.limitHit === 1) {
+      showAttachLimitHint()
+    }
+    return
+  }
+  const file = fileFromHostClipboardPayload(res)
+  if (file) {
+    onInputAreaFilesDrop([file])
   }
 }
 

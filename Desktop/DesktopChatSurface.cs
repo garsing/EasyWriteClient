@@ -37,6 +37,9 @@ namespace EasyWriteClient.Desktop
         private bool _webReady;
         private OpenFilesMonitor _openFilesMonitor;
         private readonly SynchronizationContext _uiSync;
+        private readonly object _hostDropUploadLock = new object();
+        private string _lastHostDropUploadPath;
+        private DateTime _lastHostDropUploadUtc;
 
         public DesktopChatSurface()
         {
@@ -575,27 +578,146 @@ namespace EasyWriteClient.Desktop
             _bridge.RegisterHandler("adjustCompactWidthForSidebar", HandleAdjustCompactWidthForSidebarAsync);
             _bridge.RegisterHandler("compactUiBusy", HandleCompactUiBusyAsync);
             _bridge.RegisterHandler("readClipboardImage", _ =>
-                Task.FromResult(ReadClipboardImageOnUiThread()));
+                Task.FromResult(HandleReadClipboardForChat()));
         }
 
-        private object ReadClipboardImageOnUiThread()
+        private object HandleReadClipboardForChat()
+        {
+            ClipboardChatReadResult read = ReadClipboardOnUiThread();
+            if (read == null || !read.success)
+            {
+                return read ?? new { success = false };
+            }
+
+            if (string.Equals(read.kind, "files", StringComparison.OrdinalIgnoreCase)
+                && read.files != null && read.files.Count > 0)
+            {
+                foreach (ClipboardChatFileRef f in read.files)
+                {
+                    if (f == null || string.IsNullOrWhiteSpace(f.path))
+                    {
+                        continue;
+                    }
+
+                    _ = HostUploadDroppedChatFileAsync(f.path);
+                }
+
+                return new { success = true, kind = "files", count = read.files.Count, limitHit = read.limitHit };
+            }
+
+            return read;
+        }
+
+        private ClipboardChatReadResult ReadClipboardOnUiThread()
         {
             if (IsDisposed)
             {
-                return new { success = false };
+                return ClipboardChatReadResult.Fail();
             }
 
             if (InvokeRequired)
             {
-                object boxed = null;
+                ClipboardChatReadResult boxed = null;
                 Invoke(new MethodInvoker(delegate
                 {
                     boxed = ClipboardChatImageHelper.TryRead();
                 }));
-                return boxed ?? new { success = false };
+                return boxed ?? ClipboardChatReadResult.Fail();
             }
 
             return ClipboardChatImageHelper.TryRead();
+        }
+
+        private async Task HostUploadDroppedChatFileAsync(string localPath)
+        {
+            if (string.IsNullOrWhiteSpace(localPath))
+            {
+                return;
+            }
+
+            lock (_hostDropUploadLock)
+            {
+                if (string.Equals(localPath, _lastHostDropUploadPath, StringComparison.OrdinalIgnoreCase) &&
+                    (DateTime.UtcNow - _lastHostDropUploadUtc).TotalSeconds < 2.5)
+                {
+                    return;
+                }
+
+                _lastHostDropUploadPath = localPath;
+                _lastHostDropUploadUtc = DateTime.UtcNow;
+            }
+
+            HostChatUploadResult uploadResult;
+            try
+            {
+                uploadResult = await KnowledgeBaseService.UploadDocumentForChatFromPathAsync(localPath)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[DesktopChatSurface] HostUpload: " + ex.Message);
+                uploadResult = new HostChatUploadResult { Success = false, Message = ex.Message };
+            }
+
+            long fileSize = 0;
+            string fileName = Path.GetFileName(localPath ?? "");
+            try
+            {
+                if (!string.IsNullOrEmpty(localPath) && File.Exists(localPath))
+                {
+                    fileSize = new FileInfo(localPath).Length;
+                }
+            }
+            catch
+            {
+                /* ignore */
+            }
+
+            var finalResult = uploadResult ?? new HostChatUploadResult { Success = false, Message = "未知错误" };
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            try
+            {
+                BeginInvoke((MethodInvoker)delegate
+                {
+                    try
+                    {
+                        if (IsDisposed || _bridge == null)
+                        {
+                            return;
+                        }
+
+                        if (finalResult.Success && !string.IsNullOrEmpty(finalResult.StorageDocUuid))
+                        {
+                            _bridge.SendToJavaScript("hostChatDocumentUploaded", new
+                            {
+                                storageDocUuid = finalResult.StorageDocUuid,
+                                fileName,
+                                fileSize,
+                                skipProcess = finalResult.SkipProcess
+                            });
+                        }
+                        else
+                        {
+                            _bridge.SendToJavaScript("hostFileDropError", new
+                            {
+                                message = string.IsNullOrEmpty(finalResult.Message) ? "上传失败" : finalResult.Message
+                            });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine("[DesktopChatSurface] HostUpload UI: " + ex.Message);
+                    }
+                });
+            }
+            catch (ObjectDisposedException)
+            {
+                /* 已释放 */
+            }
         }
 
         /// <summary>是否正在处理对话/流式（供主窗闲置收球门闩）。</summary>
