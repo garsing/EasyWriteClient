@@ -39,8 +39,40 @@ namespace WordAddIn1.PresentationHost
             }
 
             sb.AppendLine();
+            if (result.IsSkeleton)
+            {
+                AppendSkeletonPreface(sb, result);
+                sb.AppendLine();
+            }
+
             sb.Append(BuildSectionHtml(result));
             return sb.ToString().TrimEnd();
+        }
+
+        public static List<string> CollectDepthCappedIds(IList<PptHtmlShapeNode> nodes)
+        {
+            var ids = new List<string>();
+            CollectDepthCappedIds(nodes, ids);
+            return ids;
+        }
+
+        public static string TruncateText(string text, int maxChars, out bool truncated)
+        {
+            truncated = false;
+            if (string.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            string normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
+            int limit = maxChars < 0 ? 0 : maxChars;
+            if (normalized.Length <= limit)
+            {
+                return normalized;
+            }
+
+            truncated = true;
+            return normalized.Substring(0, limit);
         }
 
         public static string BuildSectionHtml(PptHtmlReadResult result)
@@ -119,20 +151,12 @@ namespace WordAddIn1.PresentationHost
 
         public static string TruncateText(string text, out bool truncated)
         {
-            truncated = false;
-            if (string.IsNullOrEmpty(text))
-            {
-                return "";
-            }
+            return TruncateText(text, PptHtmlReadResult.MaxTextChars, out truncated);
+        }
 
-            string normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
-            if (normalized.Length <= PptHtmlReadResult.MaxTextChars)
-            {
-                return normalized;
-            }
-
-            truncated = true;
-            return normalized.Substring(0, PptHtmlReadResult.MaxTextChars);
+        public static string TruncateSkeletonText(string text, out bool truncated)
+        {
+            return TruncateText(text, PptHtmlReadResult.SkeletonTextMaxChars, out truncated);
         }
 
         private static void AppendShape(StringBuilder sb, PptHtmlShapeNode node)
@@ -167,12 +191,16 @@ namespace WordAddIn1.PresentationHost
                         sb.AppendLine();
                     }
                 }
+                else if (!string.IsNullOrEmpty(node.Text))
+                {
+                    sb.Append(indent).Append("  ").Append(EscapeText(node.Text)).AppendLine();
+                }
 
                 sb.Append(indent).AppendLine("</table>");
                 return;
             }
 
-            if (node.ShapeType == "chart" && !hasKids)
+            if (node.ShapeType == "chart" && !hasKids && node.ChartFormat != null)
             {
                 sb.Append(indent).Append("<div");
                 AppendShapeId(sb, node);
@@ -408,6 +436,56 @@ namespace WordAddIn1.PresentationHost
             if (node.TextTruncated)
             {
                 sb.Append(" data-truncated=\"true\"");
+            }
+
+            if (node.DepthCapped)
+            {
+                sb.Append(" data-depth-capped=\"true\"");
+            }
+        }
+
+        private static void AppendSkeletonPreface(StringBuilder sb, PptHtmlReadResult result)
+        {
+            sb.AppendLine("骨架：本窗只展开 3 层（根不算层，从孩子起数；max_depth=3）。");
+            List<string> ids = result.DepthCappedShapeIds;
+            if (ids != null && ids.Count > 0)
+            {
+                sb.AppendLine("下列 group 还有更深子节点，本窗未写出。要继续展开请再调 F_read_ppt_html，传入该 shape_id：");
+                for (int i = 0; i < ids.Count; i++)
+                {
+                    if (!string.IsNullOrEmpty(ids[i]))
+                    {
+                        sb.Append("  ").AppendLine(ids[i]);
+                    }
+                }
+
+                return;
+            }
+
+            sb.AppendLine("本窗已写完，没有因深度截断的组。");
+        }
+
+        private static void CollectDepthCappedIds(IList<PptHtmlShapeNode> nodes, List<string> ids)
+        {
+            if (nodes == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                PptHtmlShapeNode node = nodes[i];
+                if (node == null)
+                {
+                    continue;
+                }
+
+                if (node.DepthCapped && !string.IsNullOrEmpty(node.ShapeId))
+                {
+                    ids.Add(node.ShapeId);
+                }
+
+                CollectDepthCappedIds(node.Children, ids);
             }
         }
 

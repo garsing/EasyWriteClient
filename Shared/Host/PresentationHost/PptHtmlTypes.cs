@@ -92,6 +92,9 @@ namespace WordAddIn1.PresentationHost
 
         public bool TextTruncated { get; set; }
 
+        /// <summary>骨架到层空壳：本组还有更深子节点未写出</summary>
+        public bool DepthCapped { get; set; }
+
         internal PptHtmlChartFormat ChartFormat { get; set; }
 
         public List<PptHtmlShapeNode> Children { get; set; }
@@ -102,6 +105,10 @@ namespace WordAddIn1.PresentationHost
         public const int MaxShapes = 200;
 
         public const int MaxTextChars = 4000;
+
+        public const int SkeletonMaxDepth = 3;
+
+        public const int SkeletonTextMaxChars = 40;
 
         public string ChannelId { get; set; }
 
@@ -126,6 +133,12 @@ namespace WordAddIn1.PresentationHost
         public string TruncatedReason { get; set; }
 
         public int ShapeCount { get; set; }
+
+        /// <summary>默认页 / 组 shape_id 的骨架窗。叶子详细读为 false。</summary>
+        public bool IsSkeleton { get; set; }
+
+        /// <summary>本窗因深度截断的 group ShapeId，树上遇见顺序。</summary>
+        public List<string> DepthCappedShapeIds { get; set; }
 
         /// <summary>字色诊断文件（会话目录相对名，如 read_font_color_slide_439.txt）</summary>
         public string DebugFilename { get; set; }

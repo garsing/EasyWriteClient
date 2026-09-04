@@ -105,26 +105,28 @@ namespace WordAddIn1
 
                     if (exportResolved != null)
                     {
-                        // 扁平公共图库，便于跨页引用同一文件
+                        List<string> exportedRels = null;
                         const string assetsFolder = "ppt_images";
                         string assetsLocalDir = Path.Combine(
                             WorkspacePathResolver.GetSessionDirectory(),
                             assetsFolder);
 
-                        if (!PresentationHostAdapter.TryExportPptHtmlPictures(
-                                channel,
-                                hostResult,
-                                assetsFolder,
-                                assetsLocalDir,
-                                out List<string> exportedRels,
-                                out ToolResult exportPicError))
+                        if (!hostResult.IsSkeleton)
                         {
-                            return exportPicError;
-                        }
+                            if (!PresentationHostAdapter.TryExportPptHtmlPictures(
+                                    channel,
+                                    hostResult,
+                                    assetsFolder,
+                                    assetsLocalDir,
+                                    out exportedRels,
+                                    out ToolResult exportPicError))
+                            {
+                                return exportPicError;
+                            }
 
-                        // 含 data-src 的 HTML（须在导出图片回填后重建）
-                        display = PptConventionHtml.BuildDisplayContents(hostResult);
-                        data["display_contents"] = display;
+                            display = PptConventionHtml.BuildDisplayContents(hostResult);
+                            data["display_contents"] = display;
+                        }
 
                         var htmlWritten = await FilePathResolver
                             .WriteAsync(exportResolved, display ?? "", new UTF8Encoding(encoderShouldEmitUTF8Identifier: true))

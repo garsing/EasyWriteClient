@@ -98,6 +98,7 @@ namespace WordAddIn1.PresentationHost
             bool truncated = false;
             string truncatedReason = null;
             var fontDbg = new PptHtmlReadDebug();
+            bool isSkeleton = true;
             fontDbg.Line("begin slide_id=" + trimmed + " host=wpp");
             try
             {
@@ -114,7 +115,8 @@ namespace WordAddIn1.PresentationHost
                         ref truncated,
                         ref truncatedReason,
                         fontDbg,
-                        out string focusError))
+                        out string focusError,
+                        out isSkeleton))
                     {
                         error = focusError;
                         return false;
@@ -129,7 +131,8 @@ namespace WordAddIn1.PresentationHost
                     0,
                     slideWidth,
                     slideHeight,
-                    GroupReadMode.ShellOnly,
+                    GroupReadMode.Skeleton,
+                    1,
                     shapes,
                     ref truncated,
                     ref truncatedReason,
@@ -175,6 +178,10 @@ namespace WordAddIn1.PresentationHost
                 Truncated = truncated,
                 TruncatedReason = truncatedReason,
                 ShapeCount = PptHtmlGeom.CountNodes(shapes),
+                IsSkeleton = isSkeleton,
+                DepthCappedShapeIds = isSkeleton
+                    ? PptConventionHtml.CollectDepthCappedIds(shapes)
+                    : null,
                 DebugFilename = debugFile,
                 DebugTrace = new List<string>(fontDbg.Lines)
             };
@@ -234,7 +241,7 @@ namespace WordAddIn1.PresentationHost
         private enum GroupReadMode
         {
             ShellOnly,
-            OneLevel,
+            Skeleton,
             FullTree
         }
 
@@ -248,6 +255,7 @@ namespace WordAddIn1.PresentationHost
             double parentWidth,
             double parentHeight,
             GroupReadMode mode,
+            int expandLayer,
             List<PptHtmlShapeNode> output,
             ref bool truncated,
             ref string truncatedReason,
@@ -295,6 +303,7 @@ namespace WordAddIn1.PresentationHost
                     parentWidth,
                     parentHeight,
                     mode,
+                    expandLayer,
                     output,
                     ref truncated,
                     ref truncatedReason,
@@ -318,9 +327,11 @@ namespace WordAddIn1.PresentationHost
             ref bool truncated,
             ref string truncatedReason,
             PptHtmlReadDebug fontDbg,
-            out string error)
+            out string error,
+            out bool isSkeleton)
         {
             error = null;
+            isSkeleton = false;
             string sidIn = null;
             int comId;
             if (PptShapeId.TryParseShape(shapeId, out sidIn, out comId))
@@ -348,7 +359,8 @@ namespace WordAddIn1.PresentationHost
 
             object target = path[path.Count - 1];
             string typeName = PeekTypeName(target);
-            GroupReadMode mode = typeName == "group" ? GroupReadMode.OneLevel : GroupReadMode.ShellOnly;
+            isSkeleton = typeName == "group";
+            GroupReadMode mode = isSkeleton ? GroupReadMode.Skeleton : GroupReadMode.ShellOnly;
             var built = new List<PptHtmlShapeNode>();
             double pL = 0;
             double pT = 0;
@@ -369,6 +381,7 @@ namespace WordAddIn1.PresentationHost
                 pW,
                 pH,
                 mode,
+                0,
                 built,
                 ref truncated,
                 ref truncatedReason,
@@ -406,6 +419,7 @@ namespace WordAddIn1.PresentationHost
                     aW,
                     aH,
                     GroupReadMode.ShellOnly,
+                    0,
                     new List<PptHtmlShapeNode>(),
                     ref truncated,
                     ref truncatedReason,
@@ -529,6 +543,7 @@ namespace WordAddIn1.PresentationHost
             double slideWidth,
             double slideHeight,
             GroupReadMode childMode,
+            int childExpandLayer,
             List<PptHtmlShapeNode> output,
             ref bool pageTextTruncated,
             ref string truncatedReason,
@@ -572,6 +587,7 @@ namespace WordAddIn1.PresentationHost
                     gW,
                     gH,
                     childMode,
+                    childExpandLayer,
                     output,
                     ref pageTextTruncated,
                     ref truncatedReason,
@@ -595,6 +611,7 @@ namespace WordAddIn1.PresentationHost
             double parentWidth,
             double parentHeight,
             GroupReadMode mode,
+            int expandLayer,
             List<PptHtmlShapeNode> output,
             ref bool pageTextTruncated,
             ref string truncatedReason,
@@ -611,6 +628,7 @@ namespace WordAddIn1.PresentationHost
                 parentWidth,
                 parentHeight,
                 mode,
+                expandLayer,
                 output,
                 ref pageTextTruncated,
                 ref truncatedReason,
@@ -629,6 +647,7 @@ namespace WordAddIn1.PresentationHost
             double parentWidth,
             double parentHeight,
             GroupReadMode mode,
+            int expandLayer,
             List<PptHtmlShapeNode> output,
             ref bool pageTextTruncated,
             ref string truncatedReason,
@@ -679,20 +698,22 @@ namespace WordAddIn1.PresentationHost
             }
 
             List<PptHtmlShapeNode> groupKids = null;
+            bool depthCapped = false;
             if (typeName == "group")
             {
-                if (mode == GroupReadMode.OneLevel || mode == GroupReadMode.FullTree)
+                if (mode == GroupReadMode.FullTree
+                    || (mode == GroupReadMode.Skeleton
+                        && expandLayer < PptHtmlReadResult.SkeletonMaxDepth))
                 {
                     groupKids = new List<PptHtmlShapeNode>();
-                    GroupReadMode childMode = mode == GroupReadMode.FullTree
-                        ? GroupReadMode.FullTree
-                        : GroupReadMode.ShellOnly;
+                    int childLayer = mode == GroupReadMode.Skeleton ? expandLayer + 1 : 0;
                     if (!TryReadGroupChildren(
                         shape,
                         slideId,
                         slideWidth,
                         slideHeight,
-                        childMode,
+                        mode,
+                        childLayer,
                         groupKids,
                         ref pageTextTruncated,
                         ref truncatedReason,
@@ -705,7 +726,12 @@ namespace WordAddIn1.PresentationHost
                         }
 
                         typeName = "picture";
+                        groupKids = null;
                     }
+                }
+                else if (mode == GroupReadMode.Skeleton)
+                {
+                    depthCapped = TryPeekGroupHasChildren(shape);
                 }
             }
 
@@ -725,11 +751,20 @@ namespace WordAddIn1.PresentationHost
                 typeName = "picture";
             }
 
+            bool slim = mode == GroupReadMode.Skeleton;
             string text = "";
             bool textTruncated = false;
             string innerHtml = null;
             PptHtmlChartFormat chartFormat = null;
-            if (typeName == "chart")
+            if (slim)
+            {
+                if (typeName != "picture" && typeName != "group" && !PptShapeTypeMap.IsNonEditable(typeName))
+                {
+                    text = TryReadText(shape);
+                    text = PptConventionHtml.TruncateSkeletonText(text, out textTruncated);
+                }
+            }
+            else if (typeName == "chart")
             {
                 if (!PptHtmlChartIo.TryRead(shape, out PptHtmlChartReadModel model, out error))
                 {
@@ -757,7 +792,7 @@ namespace WordAddIn1.PresentationHost
                 text = PptConventionHtml.TruncateText(text, out textTruncated);
             }
 
-            if (textTruncated)
+            if (textTruncated && !slim)
             {
                 pageTextTruncated = true;
             }
@@ -786,7 +821,7 @@ namespace WordAddIn1.PresentationHost
             {
             }
 
-            bool editable = !PptShapeTypeMap.IsNonEditable(typeName);
+            bool editable = slim || !PptShapeTypeMap.IsNonEditable(typeName);
             string tag = PptShapeTypeMap.PreferTag(typeName, !string.IsNullOrEmpty(text));
             string fill = null;
             string fontColor = null;
@@ -808,7 +843,7 @@ namespace WordAddIn1.PresentationHost
             double? marginRight = null;
             double? marginTop = null;
             double? marginBottom = null;
-            if (typeName != "picture" && typeName != "media" && typeName != "chart")
+            if (!slim && typeName != "picture" && typeName != "media" && typeName != "chart")
             {
                 fill = TryReadFill(shape);
                 if (typeName != "table")
@@ -880,9 +915,10 @@ namespace WordAddIn1.PresentationHost
                 MarginTopPt = marginTop,
                 MarginBottomPt = marginBottom,
                 RasterizedFrom = rasterizedFrom,
-                Name = typeName == "picture" ? name : null,
+                Name = slim ? null : (typeName == "picture" ? name : null),
                 Rotation = rotation,
                 TextTruncated = textTruncated,
+                DepthCapped = depthCapped,
                 ChartFormat = chartFormat,
                 Children = groupKids
             };
@@ -892,6 +928,20 @@ namespace WordAddIn1.PresentationHost
             }
 
             return true;
+        }
+
+        private static bool TryPeekGroupHasChildren(object group)
+        {
+            try
+            {
+                object items = WppCom.GetProperty(group, "GroupItems");
+                int count = Convert.ToInt32(WppCom.GetProperty(items, "Count"));
+                return count > 0;
+            }
+            catch (Exception)
+            {
+                return true;
+            }
         }
 
         private static void TryReadTextMargins(
@@ -1680,6 +1730,7 @@ namespace WordAddIn1.PresentationHost
                 boxW,
                 boxH,
                 mode,
+                0,
                 built,
                 ref truncated,
                 ref truncatedReason,
