@@ -586,7 +586,7 @@ namespace EasyWriteClient.Desktop
             ClipboardChatReadResult read = ReadClipboardOnUiThread();
             if (read == null || !read.success)
             {
-                return read ?? new { success = false };
+                return read ?? ClipboardChatReadResult.Fail();
             }
 
             if (string.Equals(read.kind, "files", StringComparison.OrdinalIgnoreCase)
