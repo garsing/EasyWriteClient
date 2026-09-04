@@ -18,8 +18,10 @@
           />
           <div
             v-else-if="segment.type === 'text'"
+            :ref="(el) => setTextSegmentRef(index, el)"
             class="text-segment"
             :class="{ 'text-segment--clamped': isClampedText(index) }"
+            @scroll.passive="(e) => handleClampedScroll(index, e)"
             v-html="renderMarkdown(normalizeTextContent(segment.content))"
           ></div>
           <ToolCallBoxDisplayRule
@@ -41,7 +43,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, nextTick, onUnmounted, watch } from 'vue'
 import { marked } from 'marked'
 import ToolCallBoxDisplayRule from './ToolCallBoxDisplayRule.vue'
 import ThinkingBox from './ThinkingBox.vue'
@@ -99,6 +101,68 @@ function isClampedText (index) {
   // 流式中还不能确认自然结束，尾段也先限高；整轮结束后再展开
   return !!props.message.isStreaming
 }
+
+const textSegmentEls = new Map()
+const shouldAutoScrollByIndex = new Map()
+let suppressScrollUntil = 0
+
+function setTextSegmentRef (index, el) {
+  if (el) textSegmentEls.set(index, el)
+  else textSegmentEls.delete(index)
+}
+
+function pinTextSegment (el) {
+  if (!el) return
+  suppressScrollUntil = performance.now() + 300
+  el.scrollTop = el.scrollHeight
+}
+
+function pinLatestClampedText () {
+  const segs = messageSegments.value
+  for (let i = segs.length - 1; i >= 0; i--) {
+    if (segs[i].type !== 'text' || !isClampedText(i)) continue
+    if (shouldAutoScrollByIndex.get(i) === false) return
+    const el = textSegmentEls.get(i)
+    if (el) pinTextSegment(el)
+    return
+  }
+}
+
+function handleClampedScroll (index, e) {
+  const el = e.currentTarget
+  if (!el || !el.classList.contains('text-segment--clamped')) return
+  if (performance.now() < suppressScrollUntil) return
+  shouldAutoScrollByIndex.set(
+    index,
+    el.scrollHeight - el.scrollTop - el.clientHeight < 50
+  )
+}
+
+watch(
+  () => {
+    const segs = messageSegments.value
+    let last = ''
+    for (let i = segs.length - 1; i >= 0; i--) {
+      if (segs[i].type === 'text') {
+        last = segs[i].content || ''
+        break
+      }
+    }
+    return `${props.message.isStreaming ? 1 : 0}:${last}`
+  },
+  () => {
+    if (!props.message.isStreaming) return
+    nextTick(() => {
+      pinLatestClampedText()
+      requestAnimationFrame(pinLatestClampedText)
+    })
+  }
+)
+
+onUnmounted(() => {
+  textSegmentEls.clear()
+  shouldAutoScrollByIndex.clear()
+})
 
 // 工具卡已出齐后不再在卡后挂加载点（整轮仍 isStreaming 时的误导）
 const showStreamingSpinner = computed(() => {
