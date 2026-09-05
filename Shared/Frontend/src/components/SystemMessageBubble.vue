@@ -16,14 +16,11 @@
             :content="segment.content"
             :is-complete="segment.isComplete"
           />
-          <div
+          <ClampedTextSegment
             v-else-if="segment.type === 'text'"
-            :ref="(el) => setTextSegmentRef(index, el)"
-            class="text-segment"
-            :class="{ 'text-segment--clamped': isClampedText(index) }"
-            @scroll.passive="(e) => handleClampedScroll(index, e)"
-            v-html="renderMarkdown(normalizeTextContent(segment.content))"
-          ></div>
+            :content="segment.content"
+            :clamped="isClampedText(index)"
+          />
           <ToolCallBoxDisplayRule
             v-else-if="segment.type === 'toolCall'"
             :tool-name="segment.toolName"
@@ -43,10 +40,10 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onUnmounted, watch } from 'vue'
-import { marked } from 'marked'
+import { computed } from 'vue'
 import ToolCallBoxDisplayRule from './ToolCallBoxDisplayRule.vue'
 import ThinkingBox from './ThinkingBox.vue'
+import ClampedTextSegment from './ClampedTextSegment.vue'
 
 const props = defineProps({
   message: {
@@ -67,11 +64,6 @@ const props = defineProps({
 
 function isBlankText (content) {
   return !content || !String(content).replace(/\s/g, '')
-}
-
-function normalizeTextContent (text) {
-  if (!text) return ''
-  return String(text).replace(/^\s+|\s+$/g, '').replace(/\n{3,}/g, '\n\n')
 }
 
 const messageSegments = computed(() => {
@@ -102,68 +94,6 @@ function isClampedText (index) {
   return !!props.message.isStreaming
 }
 
-const textSegmentEls = new Map()
-const shouldAutoScrollByIndex = new Map()
-let suppressScrollUntil = 0
-
-function setTextSegmentRef (index, el) {
-  if (el) textSegmentEls.set(index, el)
-  else textSegmentEls.delete(index)
-}
-
-function pinTextSegment (el) {
-  if (!el) return
-  suppressScrollUntil = performance.now() + 300
-  el.scrollTop = el.scrollHeight
-}
-
-function pinLatestClampedText () {
-  const segs = messageSegments.value
-  for (let i = segs.length - 1; i >= 0; i--) {
-    if (segs[i].type !== 'text' || !isClampedText(i)) continue
-    if (shouldAutoScrollByIndex.get(i) === false) return
-    const el = textSegmentEls.get(i)
-    if (el) pinTextSegment(el)
-    return
-  }
-}
-
-function handleClampedScroll (index, e) {
-  const el = e.currentTarget
-  if (!el || !el.classList.contains('text-segment--clamped')) return
-  if (performance.now() < suppressScrollUntil) return
-  shouldAutoScrollByIndex.set(
-    index,
-    el.scrollHeight - el.scrollTop - el.clientHeight < 50
-  )
-}
-
-watch(
-  () => {
-    const segs = messageSegments.value
-    let last = ''
-    for (let i = segs.length - 1; i >= 0; i--) {
-      if (segs[i].type === 'text') {
-        last = segs[i].content || ''
-        break
-      }
-    }
-    return `${props.message.isStreaming ? 1 : 0}:${last}`
-  },
-  () => {
-    if (!props.message.isStreaming) return
-    nextTick(() => {
-      pinLatestClampedText()
-      requestAnimationFrame(pinLatestClampedText)
-    })
-  }
-)
-
-onUnmounted(() => {
-  textSegmentEls.clear()
-  shouldAutoScrollByIndex.clear()
-})
-
 // 工具卡已出齐后不再在卡后挂加载点（整轮仍 isStreaming 时的误导）
 const showStreamingSpinner = computed(() => {
   if (!props.message.isStreaming) {
@@ -176,15 +106,6 @@ const showStreamingSpinner = computed(() => {
   }
   return true
 })
-
-const renderMarkdown = (text) => {
-  if (!text) return ''
-  try {
-    return marked.parse(text)
-  } catch (error) {
-    return text
-  }
-}
 </script>
 
 <style scoped>
@@ -227,7 +148,7 @@ const renderMarkdown = (text) => {
   margin: 0 0 8px 0;
 }
 
-.text-segment :deep(p:last-child) {
+.message-text :deep(.text-segment-inner p:last-child) {
   margin-bottom: 0;
 }
 
@@ -240,25 +161,6 @@ const renderMarkdown = (text) => {
 .message-text :deep(.tool-call-box) {
   margin-top: 0;
   margin-bottom: 0;
-}
-
-.text-segment--clamped {
-  max-height: 80px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  color: #999;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.text-segment--clamped :deep(*) {
-  color: inherit;
-}
-
-.text-segment--clamped::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
 }
 
 .message-text :deep(code) {
