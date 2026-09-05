@@ -5,6 +5,7 @@ import {
   createDocumentProcessWebSocket
 } from '../services/knowledgeBaseApi.js'
 import { MAX_CHAT_ATTACHMENTS } from '../utils/chatAttachments.js'
+import { isImageFileName } from '../utils/kbImageThumb.js'
 
 function formatSize (bytes) {
   if (!bytes && bytes !== 0) return ''
@@ -23,6 +24,24 @@ function fileLabelFrom (name, sizeBytes) {
   const sizeText =
     typeof sizeBytes === 'number' && sizeBytes >= 0 ? formatSize(sizeBytes) : ''
   return { name: display, sizeText, ext }
+}
+
+function localPreviewFromFile (file) {
+  if (!file || !isImageFileName(file.name)) return null
+  try {
+    return URL.createObjectURL(file)
+  } catch (_) {
+    return null
+  }
+}
+
+function revokePreviewUrl (url) {
+  if (!url) return
+  try {
+    URL.revokeObjectURL(url)
+  } catch (_) {
+    /* ignore */
+  }
 }
 
 /**
@@ -65,11 +84,14 @@ export function useChatFileUpload () {
 
   function reset () {
     clearAllWs()
+    items.value.forEach((x) => revokePreviewUrl(x.localPreviewUrl))
     items.value = []
   }
 
   function remove (id) {
     clearItemWs(id)
+    const doomed = items.value.find((x) => x.id === id)
+    revokePreviewUrl(doomed?.localPreviewUrl)
     items.value = items.value.filter((x) => x.id !== id)
   }
 
@@ -118,6 +140,7 @@ export function useChatFileUpload () {
       phase: 'uploading',
       storageDocUuid: null,
       knowledgeBaseUuid: null,
+      localPreviewUrl: localPreviewFromFile(file),
       progress: 3,
       fileLabel: fileLabelFrom(file.name, file.size),
       errorMessage: ''

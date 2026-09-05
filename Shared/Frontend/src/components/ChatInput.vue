@@ -11,8 +11,23 @@
         v-for="item in pendingAttachments"
         :key="item.id"
         class="attachment-card"
+        :class="{ 'attachment-card--image': canPreview(item) }"
+        :role="canPreview(item) ? 'button' : undefined"
+        :tabindex="canPreview(item) ? 0 : undefined"
+        :title="canPreview(item) ? '点击查看大图' : undefined"
+        @click="openPreview(item)"
+        @keydown.enter.prevent="openPreview(item)"
+        @keydown.space.prevent="openPreview(item)"
       >
         <img
+          v-if="thumbSrc(item)"
+          :src="thumbSrc(item)"
+          alt=""
+          class="attach-icon attach-thumb"
+          @error="onThumbError(item)"
+        />
+        <img
+          v-else
           :src="itemIcon(item)"
           alt=""
           class="attach-icon"
@@ -31,12 +46,18 @@
           v-if="!isItemBusy(item)"
           type="button"
           class="attach-remove"
-          @click="$emit('remove-attachment', item.id)"
+          @click.stop="$emit('remove-attachment', item.id)"
         >
           ×
         </button>
       </div>
     </div>
+    <ImageLightbox
+      v-if="preview"
+      :src="preview.src"
+      :title="preview.title"
+      @close="preview = null"
+    />
 
     <!-- Desktop：外框与内框之间 — 已选打开文件芯片 -->
     <div v-if="showSelectedOpenFiles" class="selected-open-files-strip">
@@ -92,6 +113,8 @@ import { resolveFileAppIconByName, resolveOpenFileAppIcon } from '../utils/openF
 import { useWebViewBridge } from '../composables/useWebViewBridge'
 import { syncLiveDraftInput } from '../utils/draftChatInput.js'
 import { collectClipboardFiles } from '../utils/clipboardChatImages.js'
+import { isImageFileName, loadKbImageThumbUrl } from '../utils/kbImageThumb.js'
+import ImageLightbox from './ImageLightbox.vue'
 
 const { sendMessage } = useWebViewBridge()
 
@@ -150,6 +173,74 @@ const pendingAttachments = computed(() =>
 function itemIcon (item) {
   return resolveFileAppIconByName(item?.fileLabel?.name, item?.fileLabel?.ext)
 }
+
+function isImageItem (item) {
+  return isImageFileName(item?.fileLabel?.name, item?.fileLabel?.ext)
+}
+
+const kbThumbUrls = ref({})
+const thumbFailed = ref({})
+const preview = ref(null)
+let kbBlobUrls = []
+
+function revokeKbThumbs () {
+  kbBlobUrls.forEach((u) => {
+    try { URL.revokeObjectURL(u) } catch (_) { /* ignore */ }
+  })
+  kbBlobUrls = []
+}
+
+function thumbSrc (item) {
+  if (!item || thumbFailed.value[item.id]) return ''
+  if (item.localPreviewUrl) return item.localPreviewUrl
+  if (item.storageDocUuid && kbThumbUrls.value[item.storageDocUuid]) {
+    return kbThumbUrls.value[item.storageDocUuid]
+  }
+  return ''
+}
+
+function canPreview (item) {
+  return !!(isImageItem(item) && thumbSrc(item))
+}
+
+function openPreview (item) {
+  if (!canPreview(item)) return
+  preview.value = {
+    src: thumbSrc(item),
+    title: item.fileLabel?.name || '图片'
+  }
+}
+
+function onThumbError (item) {
+  if (!item?.id) return
+  thumbFailed.value = { ...thumbFailed.value, [item.id]: true }
+}
+
+async function loadKbThumbs (list) {
+  const next = { ...kbThumbUrls.value }
+  await Promise.all((list || []).map(async (item) => {
+    if (!isImageItem(item) || item.localPreviewUrl || !item.storageDocUuid) return
+    if (item.phase !== 'ready') return
+    if (next[item.storageDocUuid]) return
+    try {
+      const url = await loadKbImageThumbUrl(item.storageDocUuid, item.knowledgeBaseUuid)
+      kbBlobUrls.push(url)
+      next[item.storageDocUuid] = url
+    } catch (e) {
+      console.warn('[ChatInput] 附件缩略图加载失败', item.fileLabel?.name, e?.message || e)
+    }
+  }))
+  kbThumbUrls.value = next
+}
+
+watch(
+  () => pendingAttachments.value.map((x) => `${x.id}:${x.phase}:${x.storageDocUuid || ''}:${x.localPreviewUrl || ''}`).join('|'),
+  () => { loadKbThumbs(pendingAttachments.value) }
+)
+
+onUnmounted(() => {
+  revokeKbThumbs()
+})
 
 function isItemBusy (item) {
   return item && (item.phase === 'uploading' || item.phase === 'processing')
@@ -260,7 +351,6 @@ onMounted(() => {
   })
 })
 
-onUnmounted(() => {})
 
 const handleSend = () => {
   if (!canSend.value) return
@@ -390,6 +480,14 @@ const handleShiftEnter = () => {}
   max-width: 100%;
 }
 
+.attachment-card--image {
+  cursor: zoom-in;
+}
+
+.attachment-card--image:hover {
+  background: #ececec;
+}
+
 .attach-icon {
   width: 18px;
   height: 18px;
@@ -397,6 +495,13 @@ const handleShiftEnter = () => {}
   flex-shrink: 0;
   display: block;
   margin-top: 1px;
+}
+
+.attach-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 4px;
 }
 
 .attach-meta {
