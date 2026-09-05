@@ -4,6 +4,13 @@
       v-for="(att, i) in (message.attachments || [])"
       :key="att.storage_doc_uuid || att.fileName || i"
       class="attachment-bubble"
+      :class="{ 'attachment-bubble--image': canPreview(att) }"
+      :role="canPreview(att) ? 'button' : undefined"
+      :tabindex="canPreview(att) ? 0 : undefined"
+      :title="canPreview(att) ? '点击查看大图' : undefined"
+      @click="openPreview(att)"
+      @keydown.enter.prevent="openPreview(att)"
+      @keydown.space.prevent="openPreview(att)"
     >
       <img
         v-if="isImageAtt(att) && thumbUrls[att.storage_doc_uuid]"
@@ -31,6 +38,12 @@
     <div class="message-content">
       <div class="message-text">{{ message.content }}</div>
     </div>
+    <ImageLightbox
+      v-if="preview"
+      :src="preview.src"
+      :title="preview.title"
+      @close="preview = null"
+    />
   </div>
 </template>
 
@@ -38,6 +51,7 @@
 import { onUnmounted, ref, watch } from 'vue'
 import { resolveFileAppIconByName } from '../utils/openFileAppIcon.js'
 import { isImageFileName, loadKbImageThumbUrl } from '../utils/kbImageThumb.js'
+import ImageLightbox from './ImageLightbox.vue'
 
 const props = defineProps({
   message: {
@@ -47,10 +61,23 @@ const props = defineProps({
 })
 
 const thumbUrls = ref({})
+const preview = ref(null)
 let blobUrls = []
 
 function isImageAtt (att) {
   return isImageFileName(att?.fileName, att?.ext)
+}
+
+function canPreview (att) {
+  return !!(isImageAtt(att) && att?.storage_doc_uuid && thumbUrls.value[att.storage_doc_uuid])
+}
+
+function openPreview (att) {
+  if (!canPreview(att)) return
+  preview.value = {
+    src: thumbUrls.value[att.storage_doc_uuid],
+    title: att.fileName || '图片'
+  }
 }
 
 function attachmentIcon (att) {
@@ -127,6 +154,14 @@ function formatSub (att) {
   color: #333;
   border-radius: 10px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.attachment-bubble--image {
+  cursor: zoom-in;
+}
+
+.attachment-bubble--image:hover {
+  background-color: #e8e8e8;
 }
 
 .doc-icon {
