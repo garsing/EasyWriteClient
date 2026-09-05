@@ -13,12 +13,6 @@ namespace WordAddIn1.PresentationHost
         private const int PpSaveAsOpenXmlPresentation = 24;
         private const int PpSaveAsOpenXmlPresentationMacroEnabled = 25;
 
-        private const int PpPlaceholderTitle = 1;
-        private const int PpPlaceholderCenterTitle = 3;
-        private const int PpPlaceholderVerticalTitle = 16;
-        private const int PpPlaceholderBody = 2;
-        private const int PpPlaceholderVerticalBody = 17;
-
         public static bool TryOpen(
             string fullPath,
             bool createBlank,
@@ -503,11 +497,7 @@ namespace WordAddIn1.PresentationHost
             var info = new PresentationSlideInfo
             {
                 Index = fallbackIndex,
-                SlideId = "",
-                Title = "",
-                Layout = "",
-                Hidden = false,
-                HasNotes = null
+                SlideId = ""
             };
 
             try
@@ -526,132 +516,7 @@ namespace WordAddIn1.PresentationHost
             {
             }
 
-            try
-            {
-                info.Hidden = slide.SlideShowTransition.Hidden == Office.MsoTriState.msoTrue;
-            }
-            catch (Exception)
-            {
-            }
-
-            try
-            {
-                info.Layout = slide.CustomLayout != null ? (slide.CustomLayout.Name ?? "") : "";
-            }
-            catch (Exception)
-            {
-                try
-                {
-                    info.Layout = Convert.ToString(slide.Layout) ?? "";
-                }
-                catch (Exception)
-                {
-                }
-            }
-
-            info.Title = TryReadTitle(slide) ?? "";
-            info.HasNotes = TryDetectHasNotes(slide);
             return info;
-        }
-
-        private static string TryReadTitle(PowerPoint.Slide slide)
-        {
-            if (slide == null)
-            {
-                return "";
-            }
-
-            try
-            {
-                foreach (PowerPoint.Shape shape in slide.Shapes)
-                {
-                    try
-                    {
-                        if (shape.Type != Office.MsoShapeType.msoPlaceholder)
-                        {
-                            continue;
-                        }
-
-                        int ph = Convert.ToInt32(shape.PlaceholderFormat.Type);
-                        if (ph != PpPlaceholderTitle
-                            && ph != PpPlaceholderCenterTitle
-                            && ph != PpPlaceholderVerticalTitle)
-                        {
-                            continue;
-                        }
-
-                        if (shape.HasTextFrame != Office.MsoTriState.msoTrue)
-                        {
-                            continue;
-                        }
-
-                        string text = shape.TextFrame.TextRange.Text;
-                        if (!string.IsNullOrWhiteSpace(text))
-                        {
-                            return text.Replace("\r", "\n").Trim();
-                        }
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            return "";
-        }
-
-        private static bool? TryDetectHasNotes(PowerPoint.Slide slide)
-        {
-            try
-            {
-                PowerPoint.SlideRange notes = slide.NotesPage;
-                if (notes == null)
-                {
-                    return false;
-                }
-
-                foreach (PowerPoint.Shape shape in notes.Shapes)
-                {
-                    try
-                    {
-                        if (shape.Type == Office.MsoShapeType.msoPlaceholder)
-                        {
-                            int ph = Convert.ToInt32(shape.PlaceholderFormat.Type);
-                            if (ph != PpPlaceholderBody && ph != PpPlaceholderVerticalBody)
-                            {
-                                continue;
-                            }
-                        }
-                        else
-                        {
-                            continue;
-                        }
-
-                        if (shape.HasTextFrame != Office.MsoTriState.msoTrue)
-                        {
-                            continue;
-                        }
-
-                        string text = shape.TextFrame.TextRange.Text;
-                        if (!string.IsNullOrWhiteSpace(text))
-                        {
-                            return true;
-                        }
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-
-                return false;
-            }
-            catch (Exception)
-            {
-                return null;
-            }
         }
 
         private static string NormalizeSavedPath(string fullName)

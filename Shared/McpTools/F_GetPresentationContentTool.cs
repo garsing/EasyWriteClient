@@ -39,20 +39,11 @@ namespace WordAddIn1
                                 continue;
                             }
 
-                            var item = new Dictionary<string, object>
+                            slides.Add(new Dictionary<string, object>
                             {
                                 ["index"] = slide.Index,
-                                ["slide_id"] = slide.SlideId ?? "",
-                                ["title"] = slide.Title ?? "",
-                                ["layout"] = slide.Layout ?? "",
-                                ["hidden"] = slide.Hidden
-                            };
-                            if (slide.HasNotes.HasValue)
-                            {
-                                item["has_notes"] = slide.HasNotes.Value;
-                            }
-
-                            slides.Add(item);
+                                ["slide_id"] = slide.SlideId ?? ""
+                            });
                         }
                     }
 

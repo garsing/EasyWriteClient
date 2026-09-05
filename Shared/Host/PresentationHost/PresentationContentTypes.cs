@@ -9,13 +9,16 @@ namespace WordAddIn1.PresentationHost
         /// <summary>COM Slide.SlideID；字符串避免 JSON 大数问题。</summary>
         public string SlideId { get; set; }
 
+        /// <summary>仅管页回包使用；概览不读。</summary>
         public string Title { get; set; }
 
+        /// <summary>仅管页回包使用；概览不读。</summary>
         public string Layout { get; set; }
 
+        /// <summary>仅管页回包使用；概览不读。</summary>
         public bool Hidden { get; set; }
 
-        /// <summary>null = 未探测；true/false = 已判断。</summary>
+        /// <summary>概览不探测；细读页走 HTML。</summary>
         public bool? HasNotes { get; set; }
     }
 

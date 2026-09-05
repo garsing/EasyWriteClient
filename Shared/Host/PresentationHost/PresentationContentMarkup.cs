@@ -36,8 +36,8 @@ namespace WordAddIn1.PresentationHost
                 return sb.ToString().TrimEnd();
             }
 
-            sb.AppendLine("| index | slide_id | title | layout | hidden | has_notes |");
-            sb.AppendLine("|------:|---------:|-------|--------|--------|----------|");
+            sb.AppendLine("| index | slide_id |");
+            sb.AppendLine("|------:|---------:|");
             foreach (PresentationSlideInfo slide in result.Slides)
             {
                 if (slide == null)
@@ -45,21 +45,10 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
-                string notes = slide.HasNotes.HasValue
-                    ? (slide.HasNotes.Value ? "true" : "false")
-                    : "";
                 sb.Append("| ")
                     .Append(slide.Index)
                     .Append(" | ")
                     .Append(EscapeCell(slide.SlideId))
-                    .Append(" | ")
-                    .Append(EscapeCell(slide.Title))
-                    .Append(" | ")
-                    .Append(EscapeCell(slide.Layout))
-                    .Append(" | ")
-                    .Append(slide.Hidden ? "true" : "false")
-                    .Append(" | ")
-                    .Append(notes)
                     .AppendLine(" |");
             }
 
