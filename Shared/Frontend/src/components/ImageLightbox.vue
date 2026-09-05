@@ -208,6 +208,5 @@ onUnmounted(() => {
   object-fit: contain;
   user-select: none;
   transform-origin: center center;
-  pointer-events: none;
 }
 </style>
