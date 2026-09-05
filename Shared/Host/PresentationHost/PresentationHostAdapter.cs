@@ -310,25 +310,28 @@ namespace WordAddIn1.PresentationHost
         }
 
         public static bool TryManageSlide(
-            IOperationChannel channel,
+            IOperationChannel dest,
+            IOperationChannel source,
             PresentationManageSlideRequest request,
             out PresentationManageSlideResult result,
             out ToolResult errorResult)
         {
             result = null;
             errorResult = null;
-            if (channel == null)
+            if (dest == null)
             {
                 errorResult = new ToolResult { Success = false, Error = "未知 channel_id" };
                 return false;
             }
 
-            if (channel.Kind == ChannelKind.Word
-                || channel.Kind == ChannelKind.Wps
-                || channel.Kind == ChannelKind.Excel
-                || channel.Kind == ChannelKind.Et)
+            if (source == null)
             {
-                string host = channel.Kind.ToString().ToLowerInvariant();
+                source = dest;
+            }
+
+            if (!IsPresentationKind(dest.Kind))
+            {
+                string host = dest.Kind.ToString().ToLowerInvariant();
                 errorResult = new ToolResult
                 {
                     Success = false,
@@ -338,15 +341,35 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (!IsPresentationKind(source.Kind))
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "源头须为演示文稿渠道（ppt: / wpp:）"
+                };
+                return false;
+            }
+
+            if (dest.Kind != source.Kind)
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "源头与目标须同为 ppt 或同为 wpp"
+                };
+                return false;
+            }
+
             bool ok;
             string error;
-            if (channel is PptChannel ppt)
+            if (dest is PptChannel pptDest && source is PptChannel pptSource)
             {
-                ok = PowerPointPresentationHost.TryManageSlide(ppt, request, out result, out error);
+                ok = PowerPointPresentationHost.TryManageSlide(pptDest, pptSource, request, out result, out error);
             }
-            else if (channel is WppChannel wpp)
+            else if (dest is WppChannel wppDest && source is WppChannel wppSource)
             {
-                ok = WppPresentationHost.TryManageSlide(wpp, request, out result, out error);
+                ok = WppPresentationHost.TryManageSlide(wppDest, wppSource, request, out result, out error);
             }
             else
             {
@@ -360,11 +383,63 @@ namespace WordAddIn1.PresentationHost
 
             if (!ok)
             {
-                errorResult = new ToolResult { Success = false, Error = error };
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = error,
+                    Data = result == null ? null : AttachPartialData(result)
+                };
                 return false;
             }
 
             return true;
+        }
+
+        private static bool IsPresentationKind(ChannelKind kind)
+        {
+            return kind == ChannelKind.Ppt || kind == ChannelKind.Wpp;
+        }
+
+        private static Dictionary<string, object> AttachPartialData(PresentationManageSlideResult result)
+        {
+            var data = new Dictionary<string, object>();
+            if (result.Created != null && result.Created.Count > 0)
+            {
+                data["created"] = SerializeCreated(result.Created);
+            }
+
+            if (result.Deleted != null && result.Deleted.Count > 0)
+            {
+                data["deleted"] = new List<string>(result.Deleted);
+            }
+
+            return data.Count > 0 ? data : null;
+        }
+
+        internal static List<Dictionary<string, object>> SerializeCreated(List<CreatedSlideInfo> created)
+        {
+            var list = new List<Dictionary<string, object>>();
+            if (created == null)
+            {
+                return list;
+            }
+
+            foreach (CreatedSlideInfo one in created)
+            {
+                if (one == null)
+                {
+                    continue;
+                }
+
+                list.Add(new Dictionary<string, object>
+                {
+                    ["source_slide_id"] = one.SourceSlideId ?? "",
+                    ["slide_id"] = one.SlideId ?? "",
+                    ["index"] = one.Index
+                });
+            }
+
+            return list;
         }
 
         public static bool TryManageShape(

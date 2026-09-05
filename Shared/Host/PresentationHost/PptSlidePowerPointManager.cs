@@ -9,18 +9,25 @@ namespace WordAddIn1.PresentationHost
     internal static class PptSlidePowerPointManager
     {
         public static bool TryManage(
-            PowerPoint.Presentation presentation,
-            string channelId,
+            PowerPoint.Presentation dest,
+            PowerPoint.Presentation source,
+            string destChannelId,
+            string sourceChannelId,
             PresentationManageSlideRequest request,
             out PresentationManageSlideResult result,
             out string error)
         {
             result = null;
             error = null;
-            if (presentation == null)
+            if (dest == null)
             {
                 error = "渠道对应的演示文稿已关闭";
                 return false;
+            }
+
+            if (source == null)
+            {
+                source = dest;
             }
 
             if (request == null || string.IsNullOrWhiteSpace(request.Action))
@@ -30,6 +37,8 @@ namespace WordAddIn1.PresentationHost
             }
 
             string action = request.Action.Trim().ToLowerInvariant();
+            var created = new List<CreatedSlideInfo>();
+            var deleted = new List<string>();
             try
             {
                 string focusId = "";
@@ -39,35 +48,49 @@ namespace WordAddIn1.PresentationHost
                 switch (action)
                 {
                     case "add":
-                        if (!TryAdd(presentation, request, out focusId, out focusIndex, out cleared, out error))
+                        if (!TryAdd(dest, request, out focusId, out focusIndex, out cleared, out error))
                         {
                             return false;
                         }
 
                         break;
                     case "duplicate":
-                        if (!TryDuplicate(presentation, request, out focusId, out focusIndex, out error))
+                        if (!TryDuplicate(
+                                dest,
+                                source,
+                                string.Equals(destChannelId, sourceChannelId, StringComparison.Ordinal),
+                                request,
+                                created,
+                                out focusId,
+                                out focusIndex,
+                                out error))
                         {
+                            result = BuildResult(
+                                destChannelId, sourceChannelId, "ppt", action,
+                                focusId, focusIndex, dest, cleared, created, deleted);
                             return false;
                         }
 
                         break;
                     case "delete":
-                        if (!TryDelete(presentation, request, out focusId, out error))
+                        if (!TryDelete(dest, request, deleted, out focusId, out error))
                         {
+                            result = BuildResult(
+                                destChannelId, sourceChannelId, "ppt", action,
+                                focusId, focusIndex, dest, cleared, created, deleted);
                             return false;
                         }
 
                         break;
                     case "move":
-                        if (!TryMove(presentation, request, out focusId, out focusIndex, out error))
+                        if (!TryMove(dest, request, out focusId, out focusIndex, out error))
                         {
                             return false;
                         }
 
                         break;
                     case "reorder":
-                        if (!TryReorder(presentation, request, out error))
+                        if (!TryReorder(dest, request, out error))
                         {
                             return false;
                         }
@@ -78,12 +101,17 @@ namespace WordAddIn1.PresentationHost
                         return false;
                 }
 
-                result = BuildResult(channelId, "ppt", action, focusId, focusIndex, presentation, cleared);
+                result = BuildResult(
+                    destChannelId, sourceChannelId, "ppt", action,
+                    focusId, focusIndex, dest, cleared, created, deleted);
                 return true;
             }
             catch (Exception ex)
             {
                 error = "管理幻灯片失败: " + ex.Message;
+                result = BuildResult(
+                    destChannelId, sourceChannelId, "ppt", action,
+                    "", null, dest, null, created, deleted);
                 return false;
             }
         }
@@ -176,8 +204,11 @@ namespace WordAddIn1.PresentationHost
         }
 
         private static bool TryDuplicate(
-            PowerPoint.Presentation presentation,
+            PowerPoint.Presentation dest,
+            PowerPoint.Presentation source,
+            bool sameDoc,
             PresentationManageSlideRequest request,
+            List<CreatedSlideInfo> created,
             out string focusId,
             out int? focusIndex,
             out string error)
@@ -186,26 +217,74 @@ namespace WordAddIn1.PresentationHost
             focusIndex = null;
             error = null;
 
-            if (string.IsNullOrWhiteSpace(request.SlideId))
-            {
-                error = "duplicate 须提供 slide_id";
-                return false;
-            }
-
-            if (!TryFindSlideById(presentation, request.SlideId.Trim(), out PowerPoint.Slide source, out error))
+            if (!request.TryResolveSlideSequence(out string[] sequence, out error))
             {
                 return false;
             }
 
-            int sourceIndex = source.SlideIndex;
-            int countBefore = presentation.Slides.Count;
-            int toIndex = request.ToIndex ?? (sourceIndex + 1);
-            if (toIndex < 1 || toIndex > countBefore + 1)
+            if (!AreSameApplication(dest, source, out error))
             {
-                error = "to_index 越界（duplicate 允许 1.." + (countBefore + 1) + "）";
                 return false;
             }
 
+            var sourceSlides = new List<PowerPoint.Slide>(sequence.Length);
+            foreach (string id in sequence)
+            {
+                if (!TryFindSlideById(source, id, out PowerPoint.Slide slide, out error))
+                {
+                    return false;
+                }
+
+                sourceSlides.Add(slide);
+            }
+
+            int destCount = dest.Slides.Count;
+            int toIndex = request.ToIndex ?? (destCount + 1);
+            if (toIndex < 1 || toIndex > destCount + 1)
+            {
+                error = "to_index 越界（duplicate 允许 1.." + (destCount + 1) + "）";
+                return false;
+            }
+
+            for (int i = 0; i < sourceSlides.Count; i++)
+            {
+                PowerPoint.Slide createdSlide;
+                if (sameDoc)
+                {
+                    if (!TryDuplicateOne(sourceSlides[i], toIndex, out createdSlide, out error))
+                    {
+                        return false;
+                    }
+                }
+                else if (!TryCopyFromOne(sourceSlides[i], dest, toIndex, out createdSlide, out error))
+                {
+                    return false;
+                }
+
+                string newId = Convert.ToString(createdSlide.SlideID) ?? "";
+                int newIndex = createdSlide.SlideIndex;
+                created.Add(new CreatedSlideInfo
+                {
+                    SourceSlideId = sequence[i],
+                    SlideId = newId,
+                    Index = newIndex
+                });
+                focusId = newId;
+                focusIndex = newIndex;
+                toIndex++;
+            }
+
+            return true;
+        }
+
+        private static bool TryDuplicateOne(
+            PowerPoint.Slide source,
+            int toIndex,
+            out PowerPoint.Slide created,
+            out string error)
+        {
+            created = null;
+            error = null;
             PowerPoint.SlideRange dup = source.Duplicate();
             if (dup == null || dup.Count < 1)
             {
@@ -213,58 +292,58 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            PowerPoint.Slide created = dup[1];
+            created = dup[1];
             if (created.SlideIndex != toIndex)
             {
                 created.MoveTo(toIndex);
             }
 
-            focusId = Convert.ToString(created.SlideID) ?? "";
-            focusIndex = created.SlideIndex;
             return true;
         }
 
-        private static bool TryDelete(
-            PowerPoint.Presentation presentation,
-            PresentationManageSlideRequest request,
-            out string focusId,
+        private static bool TryCopyFromOne(
+            PowerPoint.Slide source,
+            PowerPoint.Presentation dest,
+            int toIndex,
+            out PowerPoint.Slide created,
             out string error)
         {
-            focusId = "";
+            created = null;
             error = null;
-
-            if (string.IsNullOrWhiteSpace(request.SlideId))
-            {
-                error = "delete 须提供 slide_id";
-                return false;
-            }
-
-            if (!request.Confirm)
-            {
-                error = "删除须 confirm=true";
-                return false;
-            }
-
-            if (presentation.Slides.Count <= 1)
-            {
-                error = "不能删除演示文稿中唯一的幻灯片";
-                return false;
-            }
-
-            if (!TryFindSlideById(presentation, request.SlideId.Trim(), out PowerPoint.Slide slide, out error))
-            {
-                return false;
-            }
-
-            focusId = Convert.ToString(slide.SlideID) ?? request.SlideId.Trim();
-
-            PowerPoint.Application app = presentation.Application;
+            PowerPoint.Application app = dest.Application;
             PowerPoint.PpAlertLevel prevAlerts = PowerPoint.PpAlertLevel.ppAlertsAll;
             try
             {
-                prevAlerts = app.DisplayAlerts;
-                app.DisplayAlerts = PowerPoint.PpAlertLevel.ppAlertsNone;
-                slide.Delete();
+                try
+                {
+                    prevAlerts = app.DisplayAlerts;
+                    app.DisplayAlerts = PowerPoint.PpAlertLevel.ppAlertsNone;
+                }
+                catch (Exception)
+                {
+                }
+
+                source.Copy();
+                PowerPoint.SlideRange pasted = dest.Slides.Paste(toIndex);
+                if (pasted == null || pasted.Count < 1)
+                {
+                    error = "跨文档粘贴幻灯片失败";
+                    return false;
+                }
+
+                created = pasted[1];
+                ApplyKeepSourceFormatting(source, created);
+                if (created.SlideIndex != toIndex)
+                {
+                    created.MoveTo(toIndex);
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "跨文档复制幻灯片失败: " + ex.Message;
+                return false;
             }
             finally
             {
@@ -276,8 +355,140 @@ namespace WordAddIn1.PresentationHost
                 {
                 }
             }
+        }
+
+        private static void ApplyKeepSourceFormatting(PowerPoint.Slide source, PowerPoint.Slide dest)
+        {
+            try
+            {
+                dest.Design = source.Design;
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                dest.FollowMasterBackground = source.FollowMasterBackground;
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                dest.ColorScheme = source.ColorScheme;
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static bool AreSameApplication(
+            PowerPoint.Presentation dest,
+            PowerPoint.Presentation source,
+            out string error)
+        {
+            error = null;
+            try
+            {
+                int destHwnd = dest.Application.HWND;
+                int sourceHwnd = source.Application.HWND;
+                if (destHwnd != sourceHwnd)
+                {
+                    error = "源头与目标不在同一演示文稿应用内";
+                    return false;
+                }
+            }
+            catch (Exception)
+            {
+            }
 
             return true;
+        }
+
+        private static bool TryDelete(
+            PowerPoint.Presentation presentation,
+            PresentationManageSlideRequest request,
+            List<string> deleted,
+            out string focusId,
+            out string error)
+        {
+            focusId = "";
+            error = null;
+
+            if (!request.Confirm)
+            {
+                error = "删除须 confirm=true";
+                return false;
+            }
+
+            if (!request.TryResolveSlideSequence(out string[] sequence, out error))
+            {
+                return false;
+            }
+
+            if (PresentationManageSlideRequest.SequenceHasDuplicate(sequence, out string dupId))
+            {
+                error = "slide_ids 含重复 slide_id: " + dupId;
+                return false;
+            }
+
+            var slides = new List<PowerPoint.Slide>(sequence.Length);
+            foreach (string id in sequence)
+            {
+                if (!TryFindSlideById(presentation, id, out PowerPoint.Slide slide, out error))
+                {
+                    return false;
+                }
+
+                slides.Add(slide);
+            }
+
+            if (sequence.Length >= presentation.Slides.Count)
+            {
+                error = "不能删除演示文稿中唯一的幻灯片";
+                return false;
+            }
+
+            PowerPoint.Application app = presentation.Application;
+            PowerPoint.PpAlertLevel prevAlerts = PowerPoint.PpAlertLevel.ppAlertsAll;
+            try
+            {
+                try
+                {
+                    prevAlerts = app.DisplayAlerts;
+                    app.DisplayAlerts = PowerPoint.PpAlertLevel.ppAlertsNone;
+                }
+                catch (Exception)
+                {
+                }
+
+                for (int i = 0; i < slides.Count; i++)
+                {
+                    string id = sequence[i];
+                    slides[i].Delete();
+                    deleted.Add(id);
+                    focusId = id;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "删除幻灯片失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    app.DisplayAlerts = prevAlerts;
+                }
+                catch (Exception)
+                {
+                }
+            }
         }
 
         private static bool TryMove(
@@ -515,12 +726,15 @@ namespace WordAddIn1.PresentationHost
 
         private static PresentationManageSlideResult BuildResult(
             string channelId,
+            string sourceChannelId,
             string kind,
             string action,
             string focusId,
             int? focusIndex,
             PowerPoint.Presentation presentation,
-            List<ClearedPlaceholderInfo> cleared)
+            List<ClearedPlaceholderInfo> cleared,
+            List<CreatedSlideInfo> created,
+            List<string> deleted)
         {
             var slides = new List<PresentationSlideInfo>();
             int count = 0;
@@ -541,13 +755,16 @@ namespace WordAddIn1.PresentationHost
             return new PresentationManageSlideResult
             {
                 ChannelId = channelId ?? "",
+                SourceChannelId = sourceChannelId ?? "",
                 Kind = kind,
                 Action = action,
                 FocusSlideId = focusId ?? "",
                 FocusIndex = focusIndex,
                 SlideCount = count,
                 Slides = slides,
-                ClearedPlaceholders = cleared
+                ClearedPlaceholders = cleared,
+                Created = created,
+                Deleted = deleted
             };
         }
 

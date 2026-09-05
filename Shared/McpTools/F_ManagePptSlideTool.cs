@@ -19,7 +19,7 @@ namespace WordAddIn1
                 try
                 {
                     AgentRunCancellation.ThrowIfCancelled();
-                    if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string resolveError))
+                    if (!ChannelContext.TryResolveChannel(args, out IOperationChannel dest, out string resolveError))
                     {
                         return new ToolResult { Success = false, Error = resolveError };
                     }
@@ -34,6 +34,17 @@ namespace WordAddIn1
                         };
                     }
 
+                    action = action.Trim().ToLowerInvariant();
+                    if (!TryRejectForeignArgs(action, args, out string foreignError))
+                    {
+                        return new ToolResult { Success = false, Error = foreignError };
+                    }
+
+                    if (!TryResolveSourceChannel(action, dest, args, out IOperationChannel source, out string sourceError))
+                    {
+                        return new ToolResult { Success = false, Error = sourceError };
+                    }
+
                     bool confirm = args != null
                         && args.ContainsKey("confirm")
                         && Convert.ToBoolean(args["confirm"]);
@@ -45,11 +56,14 @@ namespace WordAddIn1
                         Layout = GetStringArg(args, "layout"),
                         Confirm = confirm,
                         ToIndex = TryGetOptionalInt(args, "to_index"),
-                        Order = TryGetStringArray(args, "order")
+                        Order = TryGetStringArray(args, "order"),
+                        SlideIds = TryGetStringArray(args, "slide_ids"),
+                        SourceChannelId = source.ChannelId
                     };
 
                     if (!PresentationHostAdapter.TryManageSlide(
-                            channel,
+                            dest,
+                            source,
                             request,
                             out PresentationManageSlideResult hostResult,
                             out ToolResult errorResult))
@@ -88,9 +102,25 @@ namespace WordAddIn1
                         ["slides"] = slides,
                         ["display_contents"] = BuildDisplayContents(hostResult)
                     };
+                    if (!string.IsNullOrEmpty(hostResult.SourceChannelId)
+                        && string.Equals(hostResult.Action, "duplicate", StringComparison.Ordinal))
+                    {
+                        data["source_channel_id"] = ChannelRegistry.ToPublicId(hostResult.SourceChannelId) ?? "";
+                    }
+
                     if (hostResult.FocusIndex.HasValue)
                     {
                         data["to_index"] = hostResult.FocusIndex.Value;
+                    }
+
+                    if (hostResult.Created != null && hostResult.Created.Count > 0)
+                    {
+                        data["created"] = PresentationHostAdapter.SerializeCreated(hostResult.Created);
+                    }
+
+                    if (hostResult.Deleted != null && hostResult.Deleted.Count > 0)
+                    {
+                        data["deleted"] = new List<string>(hostResult.Deleted);
                     }
 
                     if (hostResult.ClearedPlaceholders != null && hostResult.ClearedPlaceholders.Count > 0)
@@ -131,6 +161,87 @@ namespace WordAddIn1
             };
         }
 
+        private static bool TryRejectForeignArgs(
+            string action,
+            Dictionary<string, object> args,
+            out string error)
+        {
+            error = null;
+            bool hasSource = HasExplicitArg(args, "source_channel_id");
+            bool hasSlideIds = HasExplicitArg(args, "slide_ids");
+            switch (action)
+            {
+                case "duplicate":
+                    return true;
+                case "delete":
+                    if (hasSource)
+                    {
+                        error = "delete 不接受 source_channel_id";
+                        return false;
+                    }
+
+                    return true;
+                case "add":
+                case "move":
+                case "reorder":
+                    if (hasSource)
+                    {
+                        error = action + " 不接受 source_channel_id";
+                        return false;
+                    }
+
+                    if (hasSlideIds)
+                    {
+                        error = action + " 不接受 slide_ids";
+                        return false;
+                    }
+
+                    return true;
+                default:
+                    return true;
+            }
+        }
+
+        private static bool TryResolveSourceChannel(
+            string action,
+            IOperationChannel dest,
+            Dictionary<string, object> args,
+            out IOperationChannel source,
+            out string error)
+        {
+            source = dest;
+            error = null;
+            if (!string.Equals(action, "duplicate", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (!HasExplicitArg(args, "source_channel_id"))
+            {
+                return true;
+            }
+
+            string raw = GetStringArg(args, "source_channel_id");
+            if (string.IsNullOrEmpty(raw))
+            {
+                error = "未知 source_channel_id: ";
+                return false;
+            }
+
+            if (!ChannelRegistry.TryGet(raw, out source) || source == null)
+            {
+                error = "未知 source_channel_id: " + raw;
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool HasExplicitArg(Dictionary<string, object> args, string key)
+        {
+            return args != null && args.ContainsKey(key) && args[key] != null;
+        }
+
         private static string BuildDisplayContents(PresentationManageSlideResult result)
         {
             var sb = new StringBuilder();
@@ -147,6 +258,31 @@ namespace WordAddIn1
             }
 
             sb.AppendLine("slide_count=" + (result?.SlideCount ?? 0));
+            if (result?.Created != null && result.Created.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("| source_slide_id | slide_id | index |");
+                sb.AppendLine("|----------------:|---------:|------:|");
+                foreach (CreatedSlideInfo one in result.Created)
+                {
+                    if (one == null)
+                    {
+                        continue;
+                    }
+
+                    sb.Append("| ").Append(one.SourceSlideId ?? "")
+                        .Append(" | ").Append(one.SlideId ?? "")
+                        .Append(" | ").Append(one.Index)
+                        .AppendLine(" |");
+                }
+            }
+
+            if (result?.Deleted != null && result.Deleted.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("deleted=" + string.Join(",", result.Deleted.ToArray()));
+            }
+
             sb.AppendLine();
             sb.AppendLine("| index | slide_id | layout | hidden |");
             sb.AppendLine("|------:|---------:|--------|--------|");

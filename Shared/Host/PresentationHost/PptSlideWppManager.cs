@@ -8,18 +8,25 @@ namespace WordAddIn1.PresentationHost
     internal static class PptSlideWppManager
     {
         public static bool TryManage(
-            object presentation,
-            string channelId,
+            object dest,
+            object source,
+            string destChannelId,
+            string sourceChannelId,
             PresentationManageSlideRequest request,
             out PresentationManageSlideResult result,
             out string error)
         {
             result = null;
             error = null;
-            if (presentation == null)
+            if (dest == null)
             {
                 error = "渠道对应的演示文稿已关闭";
                 return false;
+            }
+
+            if (source == null)
+            {
+                source = dest;
             }
 
             if (request == null || string.IsNullOrWhiteSpace(request.Action))
@@ -29,13 +36,27 @@ namespace WordAddIn1.PresentationHost
             }
 
             string action = request.Action.Trim().ToLowerInvariant();
+            var created = new List<CreatedSlideInfo>();
+            var deleted = new List<string>();
+            object destSlides = null;
             try
             {
-                object slides = WppCom.GetProperty(presentation, "Slides");
-                if (slides == null)
+                destSlides = WppCom.GetProperty(dest, "Slides");
+                if (destSlides == null)
                 {
                     error = "无法读取 Slides";
                     return false;
+                }
+
+                object sourceSlides = destSlides;
+                if (!ReferenceEquals(dest, source))
+                {
+                    sourceSlides = WppCom.GetProperty(source, "Slides");
+                    if (sourceSlides == null)
+                    {
+                        error = "无法读取源头 Slides";
+                        return false;
+                    }
                 }
 
                 string focusId = "";
@@ -45,35 +66,51 @@ namespace WordAddIn1.PresentationHost
                 switch (action)
                 {
                     case "add":
-                        if (!TryAdd(presentation, slides, request, out focusId, out focusIndex, out cleared, out error))
+                        if (!TryAdd(dest, destSlides, request, out focusId, out focusIndex, out cleared, out error))
                         {
                             return false;
                         }
 
                         break;
                     case "duplicate":
-                        if (!TryDuplicate(slides, request, out focusId, out focusIndex, out error))
+                        if (!TryDuplicate(
+                                dest,
+                                source,
+                                destSlides,
+                                sourceSlides,
+                                string.Equals(destChannelId, sourceChannelId, StringComparison.Ordinal),
+                                request,
+                                created,
+                                out focusId,
+                                out focusIndex,
+                                out error))
                         {
+                            result = BuildResult(
+                                destChannelId, sourceChannelId, "wpp", action,
+                                focusId, focusIndex, destSlides, cleared, created, deleted);
                             return false;
                         }
 
                         break;
                     case "delete":
-                        if (!TryDelete(presentation, slides, request, out focusId, out error))
+                        if (!TryDelete(dest, destSlides, request, deleted, out focusId, out error))
                         {
+                            result = BuildResult(
+                                destChannelId, sourceChannelId, "wpp", action,
+                                focusId, focusIndex, destSlides, cleared, created, deleted);
                             return false;
                         }
 
                         break;
                     case "move":
-                        if (!TryMove(slides, request, out focusId, out focusIndex, out error))
+                        if (!TryMove(destSlides, request, out focusId, out focusIndex, out error))
                         {
                             return false;
                         }
 
                         break;
                     case "reorder":
-                        if (!TryReorder(slides, request, out error))
+                        if (!TryReorder(destSlides, request, out error))
                         {
                             return false;
                         }
@@ -84,12 +121,19 @@ namespace WordAddIn1.PresentationHost
                         return false;
                 }
 
-                result = BuildResult(channelId, "wpp", action, focusId, focusIndex, slides, cleared);
+                result = BuildResult(
+                    destChannelId, sourceChannelId, "wpp", action,
+                    focusId, focusIndex, destSlides, cleared, created, deleted);
                 return true;
             }
             catch (Exception ex)
             {
                 error = "管理幻灯片失败: " + ex.Message;
+                result = destSlides == null
+                    ? null
+                    : BuildResult(
+                        destChannelId, sourceChannelId, "wpp", action,
+                        "", null, destSlides, null, created, deleted);
                 return false;
             }
         }
@@ -225,8 +269,13 @@ namespace WordAddIn1.PresentationHost
         }
 
         private static bool TryDuplicate(
-            object slides,
+            object dest,
+            object sourcePres,
+            object destSlides,
+            object sourceSlides,
+            bool sameDoc,
             PresentationManageSlideRequest request,
+            List<CreatedSlideInfo> created,
             out string focusId,
             out int? focusIndex,
             out string error)
@@ -235,28 +284,76 @@ namespace WordAddIn1.PresentationHost
             focusIndex = null;
             error = null;
 
-            if (string.IsNullOrWhiteSpace(request.SlideId))
-            {
-                error = "duplicate 须提供 slide_id";
-                return false;
-            }
-
-            if (!TryFindSlideById(slides, request.SlideId.Trim(), out object source, out error))
+            if (!request.TryResolveSlideSequence(out string[] sequence, out error))
             {
                 return false;
             }
 
-            int sourceIndex = TryGetIndex(source);
-            int countBefore = Convert.ToInt32(WppCom.GetProperty(slides, "Count"));
-            int toIndex = request.ToIndex ?? (sourceIndex + 1);
-            if (toIndex < 1 || toIndex > countBefore + 1)
+            if (!AreSameApplication(dest, sourcePres, out error))
             {
-                error = "to_index 越界（duplicate 允许 1.." + (countBefore + 1) + "）";
                 return false;
             }
 
+            var sourceList = new List<object>(sequence.Length);
+            foreach (string id in sequence)
+            {
+                if (!TryFindSlideById(sourceSlides, id, out object slide, out error))
+                {
+                    return false;
+                }
+
+                sourceList.Add(slide);
+            }
+
+            int destCount = Convert.ToInt32(WppCom.GetProperty(destSlides, "Count"));
+            int toIndex = request.ToIndex ?? (destCount + 1);
+            if (toIndex < 1 || toIndex > destCount + 1)
+            {
+                error = "to_index 越界（duplicate 允许 1.." + (destCount + 1) + "）";
+                return false;
+            }
+
+            for (int i = 0; i < sourceList.Count; i++)
+            {
+                object createdSlide;
+                if (sameDoc)
+                {
+                    if (!TryDuplicateOne(sourceList[i], toIndex, out createdSlide, out error))
+                    {
+                        return false;
+                    }
+                }
+                else if (!TryCopyFromOne(sourceList[i], dest, destSlides, toIndex, out createdSlide, out error))
+                {
+                    return false;
+                }
+
+                string newId = Convert.ToString(WppCom.GetProperty(createdSlide, "SlideID")) ?? "";
+                int newIndex = TryGetIndex(createdSlide);
+                created.Add(new CreatedSlideInfo
+                {
+                    SourceSlideId = sequence[i],
+                    SlideId = newId,
+                    Index = newIndex
+                });
+                focusId = newId;
+                focusIndex = newIndex;
+                toIndex++;
+            }
+
+            return true;
+        }
+
+        private static bool TryDuplicateOne(
+            object source,
+            int toIndex,
+            out object created,
+            out string error)
+        {
+            created = null;
+            error = null;
             object dup = WppCom.Invoke(source, "Duplicate");
-            object created = ExtractFirstSlide(dup) ?? dup;
+            created = ExtractFirstSlide(dup) ?? dup;
             if (created == null)
             {
                 error = "复制幻灯片失败";
@@ -268,59 +365,51 @@ namespace WordAddIn1.PresentationHost
                 WppCom.Invoke(created, "MoveTo", toIndex);
             }
 
-            focusId = Convert.ToString(WppCom.GetProperty(created, "SlideID")) ?? "";
-            focusIndex = TryGetIndex(created);
             return true;
         }
 
-        private static bool TryDelete(
-            object presentation,
-            object slides,
-            PresentationManageSlideRequest request,
-            out string focusId,
+        private static bool TryCopyFromOne(
+            object source,
+            object dest,
+            object destSlides,
+            int toIndex,
+            out object created,
             out string error)
         {
-            focusId = "";
+            created = null;
             error = null;
-
-            if (string.IsNullOrWhiteSpace(request.SlideId))
-            {
-                error = "delete 须提供 slide_id";
-                return false;
-            }
-
-            if (!request.Confirm)
-            {
-                error = "删除须 confirm=true";
-                return false;
-            }
-
-            int count = Convert.ToInt32(WppCom.GetProperty(slides, "Count"));
-            if (count <= 1)
-            {
-                error = "不能删除演示文稿中唯一的幻灯片";
-                return false;
-            }
-
-            if (!TryFindSlideById(slides, request.SlideId.Trim(), out object slide, out error))
-            {
-                return false;
-            }
-
-            focusId = Convert.ToString(WppCom.GetProperty(slide, "SlideID")) ?? request.SlideId.Trim();
-
             object app = null;
             object prevAlerts = null;
             try
             {
-                app = WppCom.GetProperty(presentation, "Application");
+                app = WppCom.GetProperty(dest, "Application");
                 if (app != null)
                 {
                     prevAlerts = WppCom.GetProperty(app, "DisplayAlerts");
                     WppCom.TrySetProperty(app, "DisplayAlerts", false);
                 }
 
-                WppCom.Invoke(slide, "Delete");
+                WppCom.Invoke(source, "Copy");
+                object pasted = WppCom.Invoke(destSlides, "Paste", toIndex);
+                created = ExtractFirstSlide(pasted) ?? pasted;
+                if (created == null)
+                {
+                    error = "跨文档粘贴幻灯片失败";
+                    return false;
+                }
+
+                ApplyKeepSourceFormatting(source, created);
+                if (TryGetIndex(created) != toIndex)
+                {
+                    WppCom.Invoke(created, "MoveTo", toIndex);
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "跨文档复制幻灯片失败: " + ex.Message;
+                return false;
             }
             finally
             {
@@ -335,8 +424,154 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
             }
+        }
+
+        private static void ApplyKeepSourceFormatting(object source, object dest)
+        {
+            try
+            {
+                object design = WppCom.GetProperty(source, "Design");
+                if (design != null)
+                {
+                    WppCom.TrySetProperty(dest, "Design", design);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                object follow = WppCom.GetProperty(source, "FollowMasterBackground");
+                if (follow != null)
+                {
+                    WppCom.TrySetProperty(dest, "FollowMasterBackground", follow);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                object scheme = WppCom.GetProperty(source, "ColorScheme");
+                if (scheme != null)
+                {
+                    WppCom.TrySetProperty(dest, "ColorScheme", scheme);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static bool AreSameApplication(object dest, object source, out string error)
+        {
+            error = null;
+            try
+            {
+                object destApp = WppCom.GetProperty(dest, "Application");
+                object sourceApp = WppCom.GetProperty(source, "Application");
+                object destHwnd = destApp == null ? null : WppCom.GetProperty(destApp, "HWND");
+                object sourceHwnd = sourceApp == null ? null : WppCom.GetProperty(sourceApp, "HWND");
+                if (destHwnd != null && sourceHwnd != null
+                    && Convert.ToInt32(destHwnd) != Convert.ToInt32(sourceHwnd))
+                {
+                    error = "源头与目标不在同一演示文稿应用内";
+                    return false;
+                }
+            }
+            catch (Exception)
+            {
+            }
 
             return true;
+        }
+
+        private static bool TryDelete(
+            object presentation,
+            object slides,
+            PresentationManageSlideRequest request,
+            List<string> deleted,
+            out string focusId,
+            out string error)
+        {
+            focusId = "";
+            error = null;
+
+            if (!request.Confirm)
+            {
+                error = "删除须 confirm=true";
+                return false;
+            }
+
+            if (!request.TryResolveSlideSequence(out string[] sequence, out error))
+            {
+                return false;
+            }
+
+            if (PresentationManageSlideRequest.SequenceHasDuplicate(sequence, out string dupId))
+            {
+                error = "slide_ids 含重复 slide_id: " + dupId;
+                return false;
+            }
+
+            var slideList = new List<object>(sequence.Length);
+            foreach (string id in sequence)
+            {
+                if (!TryFindSlideById(slides, id, out object slide, out error))
+                {
+                    return false;
+                }
+
+                slideList.Add(slide);
+            }
+
+            int count = Convert.ToInt32(WppCom.GetProperty(slides, "Count"));
+            if (sequence.Length >= count)
+            {
+                error = "不能删除演示文稿中唯一的幻灯片";
+                return false;
+            }
+
+            object app = null;
+            object prevAlerts = null;
+            try
+            {
+                app = WppCom.GetProperty(presentation, "Application");
+                if (app != null)
+                {
+                    prevAlerts = WppCom.GetProperty(app, "DisplayAlerts");
+                    WppCom.TrySetProperty(app, "DisplayAlerts", false);
+                }
+
+                for (int i = 0; i < slideList.Count; i++)
+                {
+                    WppCom.Invoke(slideList[i], "Delete");
+                    deleted.Add(sequence[i]);
+                    focusId = sequence[i];
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "删除幻灯片失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                if (app != null && prevAlerts != null)
+                {
+                    try
+                    {
+                        WppCom.TrySetProperty(app, "DisplayAlerts", prevAlerts);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
         }
 
         private static bool TryMove(
@@ -609,12 +844,15 @@ namespace WordAddIn1.PresentationHost
 
         private static PresentationManageSlideResult BuildResult(
             string channelId,
+            string sourceChannelId,
             string kind,
             string action,
             string focusId,
             int? focusIndex,
             object slides,
-            List<ClearedPlaceholderInfo> cleared)
+            List<ClearedPlaceholderInfo> cleared,
+            List<CreatedSlideInfo> created,
+            List<string> deleted)
         {
             var list = new List<PresentationSlideInfo>();
             int count = 0;
@@ -635,13 +873,16 @@ namespace WordAddIn1.PresentationHost
             return new PresentationManageSlideResult
             {
                 ChannelId = channelId ?? "",
+                SourceChannelId = sourceChannelId ?? "",
                 Kind = kind,
                 Action = action,
                 FocusSlideId = focusId ?? "",
                 FocusIndex = focusIndex,
                 SlideCount = count,
                 Slides = list,
-                ClearedPlaceholders = cleared
+                ClearedPlaceholders = cleared,
+                Created = created,
+                Deleted = deleted
             };
         }
 
