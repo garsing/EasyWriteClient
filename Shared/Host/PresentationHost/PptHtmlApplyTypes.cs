@@ -240,12 +240,6 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
-            if (PptHtmlGeom.CountApplyNodes(nodes) > PptHtmlReadResult.MaxShapes)
-            {
-                error = "单页可定位节点超过 " + PptHtmlReadResult.MaxShapes;
-                return false;
-            }
-
             plan = new PptHtmlApplyPlan
             {
                 SlideId = slideId,

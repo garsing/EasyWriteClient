@@ -33,6 +33,19 @@ namespace WordAddIn1.PresentationHost
             out PptHtmlReadResult result,
             out string error)
         {
+            return TryRead(presentation, slideId, channelId, kind, shapeId, false, out result, out error);
+        }
+
+        public static bool TryRead(
+            PowerPoint.Presentation presentation,
+            string slideId,
+            string channelId,
+            string kind,
+            string shapeId,
+            bool fullPage,
+            out PptHtmlReadResult result,
+            out string error)
+        {
             result = null;
             error = null;
             if (presentation == null)
@@ -102,10 +115,36 @@ namespace WordAddIn1.PresentationHost
                 "begin slide_id=" + trimmed
                 + " slideSize=" + slideWidth.ToString("0.#", CultureInfo.InvariantCulture)
                 + "x" + slideHeight.ToString("0.#", CultureInfo.InvariantCulture)
-                + (string.IsNullOrWhiteSpace(shapeId) ? "" : " shape_id=" + shapeId));
+                + (string.IsNullOrWhiteSpace(shapeId) ? "" : " shape_id=" + shapeId)
+                + (fullPage ? " fullPage=true" : ""));
             try
             {
-                if (!string.IsNullOrWhiteSpace(shapeId))
+                if (fullPage)
+                {
+                    if (!CollectShapes(
+                        slide.Shapes,
+                        trimmed,
+                        slideWidth,
+                        slideHeight,
+                        0,
+                        0,
+                        slideWidth,
+                        slideHeight,
+                        GroupReadMode.FullPage,
+                        1,
+                        shapes,
+                        ref truncated,
+                        ref truncatedReason,
+                        fontDbg,
+                        out string collectFullError))
+                    {
+                        error = collectFullError;
+                        return false;
+                    }
+
+                    isSkeleton = false;
+                }
+                else if (!string.IsNullOrWhiteSpace(shapeId))
                 {
                     if (!TryReadFocused(
                         slide,
@@ -300,7 +339,8 @@ namespace WordAddIn1.PresentationHost
         {
             ShellOnly,
             Skeleton,
-            FullTree
+            FullTree,
+            FullPage
         }
 
         private static bool CollectShapes(
@@ -338,7 +378,8 @@ namespace WordAddIn1.PresentationHost
 
             for (int i = 1; i <= count; i++)
             {
-                if (PptHtmlGeom.CountNodes(output) >= PptHtmlReadResult.MaxShapes)
+                if (mode != GroupReadMode.FullPage
+                    && PptHtmlGeom.CountNodes(output) >= PptHtmlReadResult.MaxShapes)
                 {
                     truncated = true;
                     truncatedReason = "单页形状超过 " + PptHtmlReadResult.MaxShapes + "，已截断";
@@ -743,7 +784,9 @@ namespace WordAddIn1.PresentationHost
         {
             error = null;
             built = null;
-            if (output != null && PptHtmlGeom.CountNodes(output) >= PptHtmlReadResult.MaxShapes)
+            if (output != null
+                && mode != GroupReadMode.FullPage
+                && PptHtmlGeom.CountNodes(output) >= PptHtmlReadResult.MaxShapes)
             {
                 return true;
             }
@@ -812,6 +855,7 @@ namespace WordAddIn1.PresentationHost
             if (typeName == "group")
             {
                 if (mode == GroupReadMode.FullTree
+                    || mode == GroupReadMode.FullPage
                     || (mode == GroupReadMode.Skeleton
                         && expandLayer < PptHtmlReadResult.SkeletonMaxDepth))
                 {

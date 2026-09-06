@@ -102,6 +102,7 @@ namespace WordAddIn1.PresentationHost
 
     public sealed class PptHtmlReadResult
     {
+        /// <summary>进模型的窗（骨架 / 叶子详细 / 抽组件）形状顶。全量导出与 apply 不套此数。</summary>
         public const int MaxShapes = 200;
 
         public const int MaxTextChars = 4000;

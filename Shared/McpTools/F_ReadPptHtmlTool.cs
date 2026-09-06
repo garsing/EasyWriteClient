@@ -43,6 +43,27 @@ namespace WordAddIn1
                     }
 
                     string exportHtml = FilePathResolver.TryGetArg(args, "path", "export_html");
+                    bool full = GetBoolArg(args, "full", false);
+                    string shapeId = GetStringArg(args, "shape_id");
+
+                    if (full && string.IsNullOrEmpty(exportHtml))
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "全量导出必须带 path（工作区文件路径）"
+                        };
+                    }
+
+                    if (full && !string.IsNullOrWhiteSpace(shapeId))
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "全量导出是整页，不要同时传 shape_id"
+                        };
+                    }
+
                     ResolvedFilePath exportResolved = null;
                     if (!string.IsNullOrEmpty(exportHtml)
                         && !FilePathResolver.TryResolve(exportHtml, out exportResolved, out string exportError))
@@ -50,7 +71,6 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = exportError };
                     }
 
-                    string shapeId = GetStringArg(args, "shape_id");
                     if (!string.IsNullOrWhiteSpace(shapeId)
                         && PptShapeId.TryParseShape(shapeId.Trim(), out string sidIn, out _)
                         && !string.Equals(sidIn, slideId.Trim(), StringComparison.Ordinal))
@@ -66,6 +86,7 @@ namespace WordAddIn1
                             channel,
                             slideId.Trim(),
                             string.IsNullOrWhiteSpace(shapeId) ? null : shapeId.Trim(),
+                            full,
                             out PptHtmlReadResult hostResult,
                             out ToolResult errorResult))
                     {
@@ -181,6 +202,14 @@ namespace WordAddIn1
                         data["html_filename"] = exportResolved.Display;
                     }
 
+                    if (full)
+                    {
+                        data["full"] = true;
+                        data["display_contents"] = BuildFullExportSummary(
+                            exportResolved != null ? exportResolved.Display : "",
+                            hostResult);
+                    }
+
                     return new ToolResult
                     {
                         Success = true,
@@ -221,6 +250,56 @@ namespace WordAddIn1
             }
 
             return Convert.ToString(raw)?.Trim() ?? "";
+        }
+
+        private static bool GetBoolArg(Dictionary<string, object> args, string key, bool defaultValue)
+        {
+            if (args == null || !args.ContainsKey(key) || args[key] == null)
+            {
+                return defaultValue;
+            }
+
+            object raw = args[key];
+            if (raw is bool b)
+            {
+                return b;
+            }
+
+            string s = Convert.ToString(raw)?.Trim();
+            if (bool.TryParse(s, out bool parsed))
+            {
+                return parsed;
+            }
+
+            if (s == "1")
+            {
+                return true;
+            }
+
+            if (s == "0")
+            {
+                return false;
+            }
+
+            return defaultValue;
+        }
+
+        private static string BuildFullExportSummary(string path, PptHtmlReadResult hostResult)
+        {
+            int n = hostResult != null ? hostResult.ShapeCount : 0;
+            string slideId = hostResult != null ? hostResult.SlideId ?? "" : "";
+            var sb = new StringBuilder();
+            sb.Append("已全量导出到 ").Append(path)
+                .Append("，本页 slide_id=").Append(slideId)
+                .Append("，共 ").Append(n).Append(" 个可定位节点。\n")
+                .Append("用工作区 Python 改文件后再 F_apply_ppt_html（同一 path + slide_id）。\n")
+                .Append("不要把本回包当 HTML；不要用 F_read_file 一次读完全文（单窗最多 8000 字，用 offset 接龙）。");
+            if (hostResult != null && hostResult.Truncated && !string.IsNullOrEmpty(hostResult.TruncatedReason))
+            {
+                sb.Append('\n').Append(hostResult.TruncatedReason);
+            }
+
+            return sb.ToString();
         }
     }
 }

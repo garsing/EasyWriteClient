@@ -11,6 +11,8 @@ namespace WordAddIn1
     /// </summary>
     public static class F_ReadFileTool
     {
+        public const int TextWindowChars = 8000;
+
         public static void Register(
             Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
             object wordApplication)
@@ -198,11 +200,14 @@ namespace WordAddIn1
             }
 
             int actualOffset = Math.Max(0, Math.Min(offset, content.Length));
-            int actualMaxLength = maxLength < 0
-                ? content.Length - actualOffset
-                : Math.Min(maxLength, content.Length - actualOffset);
+            int window = maxLength <= 0 || maxLength > TextWindowChars
+                ? TextWindowChars
+                : maxLength;
+            int actualMaxLength = Math.Min(window, content.Length - actualOffset);
             string resultContent = content.Substring(actualOffset, actualMaxLength);
-            bool isPartial = actualOffset > 0 || actualMaxLength < content.Length;
+            int rangeEnd = actualOffset + actualMaxLength;
+            bool hasMore = rangeEnd < content.Length;
+            bool isPartial = actualOffset > 0 || hasMore;
 
             return new ToolResult
             {
@@ -216,13 +221,17 @@ namespace WordAddIn1
                     total_characters = content.Length,
                     read_characters = resultContent.Length,
                     offset = actualOffset,
-                    max_length = maxLength,
+                    range_start = actualOffset,
+                    range_end = rangeEnd,
+                    has_more = hasMore,
+                    max_length = window,
                     is_partial = isPartial,
                     content = resultContent,
                     created = fileInfo.CreationTime.ToString("yyyy-MM-dd HH:mm:ss"),
                     modified = fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"),
                     message = isPartial
-                        ? $"成功读取 {filename} 部分内容（{actualOffset}-{actualOffset + actualMaxLength}），共 {resultContent.Length} 个字符"
+                        ? $"成功读取 {filename} 第 {actualOffset}-{rangeEnd} 字，全文 {content.Length}；"
+                            + (hasMore ? $"还有后面请把 offset 接到 {rangeEnd}" : "本窗已到文末")
                         : $"成功读取 {filename} 全部内容，共 {resultContent.Length} 个字符"
                 }
             };
