@@ -2396,10 +2396,33 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            float useLeft = left ?? oldLeft;
-            float useTop = top ?? oldTop;
-            float useWidth = width ?? oldWidth;
-            float useHeight = height ?? oldHeight;
+            // 组内 chart 的 HTML style 是相对组的 %；瘦稿平铺到 section 后会当成整页坐标
+            //（常见 top:0% → 飞到页顶）。换数沿用原图幻灯片盒，不听稿上的几何。
+            float useLeft;
+            float useTop;
+            float useWidth;
+            float useHeight;
+            if (IsInsideGroup(oldShape))
+            {
+                if (left.HasValue || top.HasValue || width.HasValue || height.HasValue)
+                {
+                    StyleLog(warnings, "组内 chart 忽略稿上 style，沿用原图幻灯片坐标 "
+                        + oldLeft.ToString("0.#", CultureInfo.InvariantCulture) + ","
+                        + oldTop.ToString("0.#", CultureInfo.InvariantCulture));
+                }
+
+                useLeft = oldLeft;
+                useTop = oldTop;
+                useWidth = oldWidth;
+                useHeight = oldHeight;
+            }
+            else
+            {
+                useLeft = left ?? oldLeft;
+                useTop = top ?? oldTop;
+                useWidth = width ?? oldWidth;
+                useHeight = height ?? oldHeight;
+            }
 
             PptHtmlChartFormat useFormat = format ?? new PptHtmlChartFormat();
             PptHtmlChartGrid useGrid = grid != null && grid.IsPourable ? grid : null;
@@ -2478,6 +2501,7 @@ namespace WordAddIn1.PresentationHost
 
             // 改已有图：数据来自 HTML 表，版式/轴/标题/系列样式按旧图快照原样写回。
             SyncFormatToOldSnap(useFormat, xlType, warnings);
+            MergeGridlinesFromFormat(snap, useFormat);
 
             if (!TryCreateOnSlide(
                 shapes,
@@ -2503,6 +2527,8 @@ namespace WordAddIn1.PresentationHost
             FinishLineChartLayout(newChart, xlType, useFormat, warnings);
             HideDeletedAxes(newChart, snap);
             RestoreCategoryAxisAfterSnap(newChart, useGrid, snap);
+            // Refresh / ChartStyle 会把默认白网格画回来；原图或稿要求关则再关一次。
+            EnsureGridlinesMatchSnap(newChart, snap, useFormat, warnings);
             try
             {
                 TryCaptureStyle(newChart, warnings, "新图套回后");
@@ -3918,6 +3944,91 @@ namespace WordAddIn1.PresentationHost
         /// <summary>
         /// 改已有图时 HTML 只负责灌数。类型/轴/标题以旧图快照为准，避免 HTML 多写或少写。
         /// </summary>
+        private static bool IsInsideGroup(object shape)
+        {
+            if (shape == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return WppCom.GetProperty(shape, "ParentGroup") != null;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static void MergeGridlinesFromFormat(ChartStyleSnap snap, PptHtmlChartFormat format)
+        {
+            if (snap == null || format == null || string.IsNullOrWhiteSpace(format.Gridlines))
+            {
+                return;
+            }
+
+            if (snap.Value == null)
+            {
+                snap.Value = new AxisStyleSnap();
+            }
+
+            snap.Value.HasMajorGridlines = IsTrue(format.Gridlines);
+        }
+
+        private static void EnsureGridlinesMatchSnap(
+            object chart,
+            ChartStyleSnap snap,
+            PptHtmlChartFormat format,
+            List<string> warnings)
+        {
+            bool formatOff = format != null
+                && !string.IsNullOrWhiteSpace(format.Gridlines)
+                && !IsTrue(format.Gridlines);
+            bool snapOff = snap != null && snap.Value != null
+                && (snap.Value.HasMajorGridlines == false
+                    || snap.Value.GridlineVisible == false);
+            if (!formatOff && !snapOff)
+            {
+                return;
+            }
+
+            ForceAxisGridlinesOff(chart, XlValue, XlPrimary);
+            ForceAxisGridlinesOff(chart, XlValue, XlSecondary);
+            StyleLog(warnings, "按原图/稿关闭网格线");
+        }
+
+        private static void ForceAxisGridlinesOff(object chart, int axisType, int group)
+        {
+            if (chart == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object axis = TryInvoke(chart, "Axes", axisType, group);
+                if (axis == null)
+                {
+                    return;
+                }
+
+                WppCom.TrySetProperty(axis, "HasMajorGridlines", false);
+                object gl = WppCom.GetProperty(axis, "MajorGridlines");
+                object glLine = gl == null
+                    ? null
+                    : WppCom.GetProperty(WppCom.GetProperty(gl, "Format"), "Line");
+                if (glLine != null)
+                {
+                    WppCom.TrySetProperty(glLine, "Visible", 0);
+                    WppCom.TrySetProperty(glLine, "Transparency", 1.0);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         private static void SyncFormatToOldSnap(
             PptHtmlChartFormat format,
             int xlType,
