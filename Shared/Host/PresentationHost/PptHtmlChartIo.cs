@@ -291,6 +291,12 @@ namespace WordAddIn1.PresentationHost
 
             public int? MajorGridlineRgb { get; set; }
 
+            public bool? GridlineVisible { get; set; }
+
+            public double? GridlineWeight { get; set; }
+
+            public double? GridlineTransparency { get; set; }
+
             public bool? LineVisible { get; set; }
 
             public int? LineRgb { get; set; }
@@ -327,6 +333,9 @@ namespace WordAddIn1.PresentationHost
             public int? DataLabelFontColor { get; set; }
 
             public string DataLabelNumberFormat { get; set; }
+
+            /// <summary>饼图等扇区色在 Point 上；Series.Fill 常拍失败。</summary>
+            public List<FillSnap> PointFills { get; set; }
         }
 
         private sealed class FillSnap
@@ -884,6 +893,21 @@ namespace WordAddIn1.PresentationHost
                 dest.MajorGridlineRgb = src.MajorGridlineRgb;
             }
 
+            if (src.GridlineVisible.HasValue)
+            {
+                dest.GridlineVisible = src.GridlineVisible;
+            }
+
+            if (src.GridlineWeight.HasValue)
+            {
+                dest.GridlineWeight = src.GridlineWeight;
+            }
+
+            if (src.GridlineTransparency.HasValue)
+            {
+                dest.GridlineTransparency = src.GridlineTransparency;
+            }
+
             if (src.LineVisible.HasValue)
             {
                 dest.LineVisible = src.LineVisible;
@@ -926,6 +950,10 @@ namespace WordAddIn1.PresentationHost
 
             dest.Fill = OverlayFill(dest.Fill, src.Fill);
             dest.Line = OverlayLine(dest.Line, src.Line);
+            if (src.PointFills != null && src.PointFills.Count > 0)
+            {
+                dest.PointFills = src.PointFills;
+            }
             if (src.MarkerStyle.HasValue)
             {
                 dest.MarkerStyle = src.MarkerStyle;
@@ -2617,6 +2645,7 @@ namespace WordAddIn1.PresentationHost
                     }
 
                     one.Fill = TryCaptureFill(series, warnings, (tag ?? "图") + " S" + i);
+                    one.PointFills = TryCapturePointFills(series, warnings, (tag ?? "图") + " S" + i);
                     one.Line = TryCaptureLine(series, warnings, (tag ?? "图") + " S" + i);
                     TryCaptureMarker(series, one);
                     TryCaptureDataLabels(series, one);
@@ -2740,6 +2769,7 @@ namespace WordAddIn1.PresentationHost
 
                         SeriesStyleSnap one = snap.Series[i];
                         TryApplyFill(series, one.Fill, warnings, "S" + (i + 1));
+                        TryApplyPointFills(series, one.PointFills, warnings, "S" + (i + 1));
                         TryApplyLine(series, one.Line, warnings, "S" + (i + 1));
                         TryApplyMarker(series, one);
                     }
@@ -2858,10 +2888,11 @@ namespace WordAddIn1.PresentationHost
                     snap.HasMajorGridlines = IsTruthy(WppCom.GetProperty(axis, "HasMajorGridlines"));
                     if (snap.HasMajorGridlines == true)
                     {
-                        object gl = WppCom.GetProperty(axis, "MajorGridlines");
-                        object glLine = gl == null ? null : WppCom.GetProperty(WppCom.GetProperty(gl, "Format"), "Line");
-                        object glColor = glLine == null ? null : WppCom.GetProperty(glLine, "ForeColor");
-                        snap.MajorGridlineRgb = TryReadExplicitRgb(glColor);
+                        TryCaptureGridlineLine(axis, snap);
+                        if (!GridlinesVisuallyOn(snap))
+                        {
+                            snap.HasMajorGridlines = false;
+                        }
                     }
                 }
                 catch (Exception)
@@ -2973,15 +3004,13 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
 
-                if (snap.HasMajorGridlines.HasValue)
+                if (snap.HasMajorGridlines.HasValue || snap.GridlineVisible.HasValue)
                 {
-                    WppCom.TrySetProperty(axis, "HasMajorGridlines", snap.HasMajorGridlines.Value);
-                    if (snap.HasMajorGridlines.Value && snap.MajorGridlineRgb.HasValue)
+                    bool visualOn = GridlinesVisuallyOn(snap);
+                    WppCom.TrySetProperty(axis, "HasMajorGridlines", visualOn);
+                    if (visualOn)
                     {
-                        object gl = WppCom.GetProperty(axis, "MajorGridlines");
-                        object glLine = gl == null ? null : WppCom.GetProperty(WppCom.GetProperty(gl, "Format"), "Line");
-                        object glColor = glLine == null ? null : WppCom.GetProperty(glLine, "ForeColor");
-                        WppCom.TrySetProperty(glColor, "RGB", snap.MajorGridlineRgb.Value);
+                        TryApplyGridlineLine(axis, snap);
                     }
                 }
 
@@ -3296,6 +3325,128 @@ namespace WordAddIn1.PresentationHost
             catch (Exception ex)
             {
                 StyleLog(warnings, prefix + " 异常: " + ex.Message);
+            }
+        }
+
+        private static List<FillSnap> TryCapturePointFills(
+            object series,
+            List<string> warnings,
+            string tag)
+        {
+            object pts = TryGetPoints(series);
+            if (pts == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                int n = Convert.ToInt32(WppCom.GetProperty(pts, "Count"));
+                if (n <= 0)
+                {
+                    return null;
+                }
+
+                if (n > 30)
+                {
+                    n = 30;
+                }
+
+                var list = new List<FillSnap>();
+                int got = 0;
+                for (int i = 1; i <= n; i++)
+                {
+                    object pt = WppCom.GetIndexed(pts, i);
+                    FillSnap fill = pt == null
+                        ? null
+                        : TryCaptureFill(pt, warnings, (tag ?? "S") + " P" + i);
+                    list.Add(fill);
+                    if (fill != null)
+                    {
+                        got++;
+                    }
+                }
+
+                if (got == 0)
+                {
+                    StyleLog(warnings, (tag ?? "S") + " 点填充 0/" + n);
+                    return null;
+                }
+
+                StyleLog(warnings, (tag ?? "S") + " 点填充 " + got + "/" + n);
+                return list;
+            }
+            catch (Exception ex)
+            {
+                StyleLog(warnings, (tag ?? "S") + " 拍点填充失败: " + ex.Message);
+                return null;
+            }
+        }
+
+        private static void TryApplyPointFills(
+            object series,
+            List<FillSnap> fills,
+            List<string> warnings,
+            string tag)
+        {
+            if (fills == null || fills.Count == 0)
+            {
+                return;
+            }
+
+            object pts = TryGetPoints(series);
+            if (pts == null)
+            {
+                return;
+            }
+
+            try
+            {
+                int live = Convert.ToInt32(WppCom.GetProperty(pts, "Count"));
+                int n = Math.Min(live, fills.Count);
+                for (int i = 1; i <= n; i++)
+                {
+                    FillSnap fill = fills[i - 1];
+                    if (fill == null)
+                    {
+                        continue;
+                    }
+
+                    object pt = WppCom.GetIndexed(pts, i);
+                    if (pt == null)
+                    {
+                        continue;
+                    }
+
+                    TryApplyFill(pt, fill, warnings, (tag ?? "S") + " P" + i);
+                }
+            }
+            catch (Exception ex)
+            {
+                StyleLog(warnings, "套点填充 " + (tag ?? "") + " 异常: " + ex.Message);
+            }
+        }
+
+        private static object TryGetPoints(object series)
+        {
+            if (series == null)
+            {
+                return null;
+            }
+
+            object pts = TryInvoke(series, "Points");
+            if (pts != null)
+            {
+                return pts;
+            }
+
+            try
+            {
+                return WppCom.GetProperty(series, "Points");
+            }
+            catch (Exception)
+            {
+                return null;
             }
         }
 
@@ -3728,10 +3879,10 @@ namespace WordAddIn1.PresentationHost
         {
             try
             {
-                object pts = TryInvoke(series, "Points");
+                object pts = TryGetPoints(series);
                 if (pts == null)
                 {
-                    pts = WppCom.GetProperty(series, "Points");
+                    return null;
                 }
 
                 int n = Convert.ToInt32(WppCom.GetProperty(pts, "Count"));
@@ -4079,6 +4230,127 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private static bool GridlinesVisuallyOn(AxisStyleSnap snap)
+        {
+            if (snap == null)
+            {
+                return false;
+            }
+
+            if (snap.HasMajorGridlines == false)
+            {
+                return false;
+            }
+
+            if (snap.GridlineVisible == false)
+            {
+                return false;
+            }
+
+            if (snap.GridlineTransparency.HasValue && IsFullyTransparent(snap.GridlineTransparency.Value))
+            {
+                return false;
+            }
+
+            return snap.HasMajorGridlines == true;
+        }
+
+        private static bool IsFullyTransparent(double transparency)
+        {
+            if (transparency > 1.0)
+            {
+                return transparency >= 95.0;
+            }
+
+            return transparency >= 0.95;
+        }
+
+        private static void TryCaptureGridlineLine(object axis, AxisStyleSnap snap)
+        {
+            if (axis == null || snap == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object gl = WppCom.GetProperty(axis, "MajorGridlines");
+                object glLine = gl == null ? null : WppCom.GetProperty(WppCom.GetProperty(gl, "Format"), "Line");
+                if (glLine == null)
+                {
+                    return;
+                }
+
+                object vis = WppCom.GetProperty(glLine, "Visible");
+                if (vis != null)
+                {
+                    snap.GridlineVisible = Convert.ToInt32(vis) != 0;
+                }
+
+                object weight = WppCom.GetProperty(glLine, "Weight");
+                if (weight != null)
+                {
+                    snap.GridlineWeight = Convert.ToDouble(weight);
+                }
+
+                object trans = WppCom.GetProperty(glLine, "Transparency");
+                if (trans != null)
+                {
+                    snap.GridlineTransparency = Convert.ToDouble(trans);
+                }
+
+                object glColor = WppCom.GetProperty(glLine, "ForeColor");
+                snap.MajorGridlineRgb = TryReadExplicitRgb(glColor);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryApplyGridlineLine(object axis, AxisStyleSnap snap)
+        {
+            if (axis == null || snap == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object gl = WppCom.GetProperty(axis, "MajorGridlines");
+                object glLine = gl == null ? null : WppCom.GetProperty(WppCom.GetProperty(gl, "Format"), "Line");
+                if (glLine == null)
+                {
+                    return;
+                }
+
+                if (snap.GridlineVisible.HasValue)
+                {
+                    WppCom.TrySetProperty(glLine, "Visible", snap.GridlineVisible.Value ? -1 : 0);
+                }
+
+                if (snap.MajorGridlineRgb.HasValue)
+                {
+                    object glColor = WppCom.GetProperty(glLine, "ForeColor");
+                    WppCom.TrySetProperty(glColor, "RGB", snap.MajorGridlineRgb.Value);
+                }
+
+                if (snap.GridlineWeight.HasValue
+                    && snap.GridlineWeight.Value > 0
+                    && snap.GridlineWeight.Value <= 40)
+                {
+                    WppCom.TrySetProperty(glLine, "Weight", snap.GridlineWeight.Value);
+                }
+
+                if (snap.GridlineTransparency.HasValue)
+                {
+                    WppCom.TrySetProperty(glLine, "Transparency", snap.GridlineTransparency.Value);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         private static void TryHideAxis(object chart, int axisType, int group)
         {
             try
@@ -4245,7 +4517,8 @@ namespace WordAddIn1.PresentationHost
                 + " fillVis=" + (one.Fill == null ? "null" : Convert.ToString(one.Fill.Visible))
                 + " fillType=" + (one.Fill == null ? "-" : Convert.ToString(one.Fill.FillType))
                 + " fillRgb=" + (one.Fill == null ? "-" : HexOf(one.Fill.SolidRgb))
-                + " fillStops=" + DescribeStops(one.Fill == null ? null : one.Fill.Stops);
+                + " fillStops=" + DescribeStops(one.Fill == null ? null : one.Fill.Stops)
+                + " points=" + (one.PointFills == null ? 0 : one.PointFills.Count);
         }
 
         private static bool IsPhantomStroke(double? weight, object colorType, object rawRgb)
