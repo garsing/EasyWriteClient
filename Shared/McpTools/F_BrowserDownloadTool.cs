@@ -51,7 +51,7 @@ namespace WordAddIn1
                     }
                     else if (!(def is BrowserChannel browser))
                     {
-                        return Fail("默认渠道不是浏览器渠道；请传入 browser:agent: / browser:attach: channel_id");
+                        return Fail("默认渠道不是浏览器渠道；请传入浏览器 channel_id（如 b1）");
                     }
                     else
                     {

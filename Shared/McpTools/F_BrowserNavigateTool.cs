@@ -70,7 +70,7 @@ namespace WordAddIn1
                         {
                             if (!visible)
                             {
-                                return Fail("visible=false 不可用于附着 Chrome/Edge；请用易写浏览窗（browser:agent:）");
+                                return Fail("visible=false 不可用于附着 Chrome/Edge；请用易写浏览窗");
                             }
 
                             if (!existing.IsLive())

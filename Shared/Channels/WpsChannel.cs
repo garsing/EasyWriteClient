@@ -4,7 +4,7 @@ using WordAddIn1.OpenFiles;
 namespace WordAddIn1
 {
     /// <summary>
-    /// WPS 文字操作渠道：绑定晚绑定 Document RCW；channel_id 形如 <c>wps:{doc_uuid}</c>。
+    /// WPS 文字操作渠道：绑定晚绑定 Document RCW；channel_id 形如 <c>w1</c>。
     /// </summary>
     public sealed class WpsChannel : IOperationChannel
     {

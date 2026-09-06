@@ -3,7 +3,7 @@ using System;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 浏览器页渠道：一条逻辑页一条；track = agent（易写窗）| attach（Chrome/Edge 扩展）。
+    /// 浏览器页渠道：一条逻辑页一条；channel_id 如 b1。track = agent（易写窗）| attach（Chrome/Edge 扩展）。
     /// </summary>
     public sealed class BrowserChannel : IOperationChannel
     {

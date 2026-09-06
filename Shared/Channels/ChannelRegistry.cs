@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using WordAddIn1.OpenFiles;
 using Word = Microsoft.Office.Interop.Word;
 using Excel = Microsoft.Office.Interop.Excel;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
@@ -7,18 +9,19 @@ using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 进程级操作渠道注册表。与 conversation 不强绑定（D15）。
+    /// 进程级操作渠道注册表。channel_id 就是对外那一个号（w1/x1/p1/b1）。
+    /// 已开稿按 (Kind, 路径/未保存键) 复用，不因 COM 包装更换而新发号。
     /// </summary>
     public static class ChannelRegistry
     {
         private static readonly object Gate = new object();
         private static readonly Dictionary<string, IOperationChannel> Channels =
-            new Dictionary<string, IOperationChannel>(StringComparer.Ordinal);
+            new Dictionary<string, IOperationChannel>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, string> KeyToChannelId =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, string> DocUuidToChannelId =
             new Dictionary<string, string>(StringComparer.Ordinal);
-        private static readonly Dictionary<string, string> InternalToPublic =
-            new Dictionary<string, string>(StringComparer.Ordinal);
-        private static readonly Dictionary<string, string> PublicToInternal =
+        private static readonly Dictionary<string, string> ChannelIdToDocUuid =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private static int _nextW;
         private static int _nextX;
@@ -37,166 +40,24 @@ namespace WordAddIn1
             }
         }
 
-        /// <summary>
-        /// 助手可见短号（w1/x1/p1/b1）。底层仍用 word:{uuid} 等。
-        /// </summary>
+        /// <summary>默认渠道的 channel_id（w1/x1/p1/b1）。</summary>
         public static string PublicDefaultChannelId
         {
             get
             {
                 lock (Gate)
                 {
-                    if (string.IsNullOrEmpty(_defaultChannelId))
-                    {
-                        return null;
-                    }
-
-                    return ToPublicUnlocked(_defaultChannelId);
+                    return string.IsNullOrEmpty(_defaultChannelId) ? null : _defaultChannelId;
                 }
             }
         }
 
+        /// <summary>恒等：ChannelId 已是对外号。</summary>
         public static string ToPublicId(string channelId)
         {
-            if (string.IsNullOrWhiteSpace(channelId))
-            {
-                return channelId;
-            }
-
-            lock (Gate)
-            {
-                string resolved = ResolveUnlocked(channelId);
-                if (!InternalToPublic.ContainsKey(resolved) && Channels.ContainsKey(resolved))
-                {
-                    AssignAliasUnlocked(resolved);
-                }
-
-                return ToPublicUnlocked(resolved);
-            }
+            return string.IsNullOrWhiteSpace(channelId) ? channelId : channelId.Trim();
         }
 
-        private static string ResolveUnlocked(string channelId)
-        {
-            if (string.IsNullOrWhiteSpace(channelId))
-            {
-                return channelId;
-            }
-
-            string key = channelId.Trim();
-            if (PublicToInternal.TryGetValue(key, out string intern))
-            {
-                return intern;
-            }
-
-            return key;
-        }
-
-        private static string ToPublicUnlocked(string internalId)
-        {
-            if (string.IsNullOrEmpty(internalId))
-            {
-                return internalId;
-            }
-
-            if (InternalToPublic.TryGetValue(internalId, out string pub))
-            {
-                return pub;
-            }
-
-            if (PublicToInternal.ContainsKey(internalId))
-            {
-                return internalId.Trim().ToLowerInvariant();
-            }
-
-            return internalId;
-        }
-
-        private static char FamilyPrefixUnlocked(string internalId)
-        {
-            if (internalId.StartsWith("word:", StringComparison.OrdinalIgnoreCase)
-                || internalId.StartsWith("wps:", StringComparison.OrdinalIgnoreCase))
-            {
-                return 'w';
-            }
-
-            if (internalId.StartsWith("excel:", StringComparison.OrdinalIgnoreCase)
-                || internalId.StartsWith("et:", StringComparison.OrdinalIgnoreCase))
-            {
-                return 'x';
-            }
-
-            if (internalId.StartsWith("ppt:", StringComparison.OrdinalIgnoreCase)
-                || internalId.StartsWith("wpp:", StringComparison.OrdinalIgnoreCase))
-            {
-                return 'p';
-            }
-
-            if (internalId.StartsWith("browser:", StringComparison.OrdinalIgnoreCase))
-            {
-                return 'b';
-            }
-
-            return '\0';
-        }
-
-        private static void AssignAliasUnlocked(string internalId)
-        {
-            if (string.IsNullOrEmpty(internalId) || InternalToPublic.ContainsKey(internalId))
-            {
-                return;
-            }
-
-            char family = FamilyPrefixUnlocked(internalId);
-            if (family == '\0')
-            {
-                return;
-            }
-
-            int n;
-            switch (family)
-            {
-                case 'w':
-                    n = ++_nextW;
-                    break;
-                case 'x':
-                    n = ++_nextX;
-                    break;
-                case 'p':
-                    n = ++_nextP;
-                    break;
-                default:
-                    n = ++_nextB;
-                    break;
-            }
-
-            string pub = family + n.ToString();
-            InternalToPublic[internalId] = pub;
-            PublicToInternal[pub] = internalId;
-        }
-
-        private static void UnassignAliasUnlocked(string internalId)
-        {
-            if (string.IsNullOrEmpty(internalId))
-            {
-                return;
-            }
-
-            if (!InternalToPublic.TryGetValue(internalId, out string pub))
-            {
-                return;
-            }
-
-            InternalToPublic.Remove(internalId);
-            PublicToInternal.Remove(pub);
-        }
-
-        /// <summary>
-        /// 为 Word 文档查找或创建渠道；底层 <c>word:{doc_uuid}</c>，对外短号 <c>w1</c>。
-        /// </summary>
-        /// <param name="claimDefaultIfEmpty">
-        /// 默认渠道为空时是否自动占用（默认 true，保持 Plugin / 旧工具行为）。
-        /// 「打开文件」探测路径须传 false，避免抢默认渠道。
-        /// </param>
         public static WordChannel CreateOrGetWord(
             Word.Document doc,
             string filePath = null,
@@ -209,39 +70,32 @@ namespace WordAddIn1
 
             string uuid = DocumentIdentity.EnsureUuid(doc);
             DocumentIdentity.EnsureCloseHandler(doc);
+            string path = NormalizeDocumentPath(filePath) ?? NormalizeDocumentPath(WordChannel.TryReadFullName(doc));
+            string unsavedName = TryReadComName(() => doc.Name) ?? "文档1";
 
             lock (Gate)
             {
-                if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
-                    && Channels.TryGetValue(existingId, out IOperationChannel existing)
+                if (TryFindExistingUnlocked(
+                        ChannelKind.Word,
+                        path,
+                        unsavedName,
+                        LivePathOfWord,
+                        out IOperationChannel existing)
                     && existing is WordChannel wordChannel)
                 {
-                    wordChannel.UpdateDocument(doc, filePath);
+                    wordChannel.UpdateDocument(doc, path ?? filePath);
+                    BindAfterUpdateUnlocked(wordChannel, path, unsavedName, uuid);
+                    ClaimDefaultIfNeededUnlocked(wordChannel.ChannelId, claimDefaultIfEmpty);
                     return wordChannel;
                 }
 
-                string channelId = "word:" + uuid;
-                var created = new WordChannel(channelId, uuid, doc, filePath);
-                Channels[channelId] = created;
-                DocUuidToChannelId[uuid] = channelId;
-                AssignAliasUnlocked(channelId);
-
-                if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
-                {
-                    _defaultChannelId = channelId;
-                }
-
+                string channelId = NextChannelIdUnlocked(ChannelKind.Word);
+                var created = new WordChannel(channelId, uuid, doc, path ?? filePath);
+                RegisterNewUnlocked(created, path, unsavedName, uuid, claimDefaultIfEmpty);
                 return created;
             }
         }
 
-        /// <summary>
-        /// 为 WPS 文字文档查找或创建渠道；channel_id 形如 <c>wps:{doc_uuid}</c>。
-        /// 禁止把 WPS 登记为 <c>word:</c> 渠道。
-        /// </summary>
-        /// <param name="claimDefaultIfEmpty">
-        /// 默认渠道为空时是否自动占用。「打开文件」探测路径须传 false。
-        /// </param>
         public static WpsChannel CreateOrGetWps(
             object wpsDocument,
             string filePath = null,
@@ -253,28 +107,29 @@ namespace WordAddIn1
             }
 
             string uuid = WpsDocumentIdentity.EnsureUuid(wpsDocument);
+            string path = NormalizeDocumentPath(filePath)
+                ?? NormalizeDocumentPath(WpsCom.TryReadFullName(wpsDocument));
+            string unsavedName = TryReadComName(() => WpsCom.TryReadName(wpsDocument)) ?? "文档1";
 
             lock (Gate)
             {
-                if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
-                    && Channels.TryGetValue(existingId, out IOperationChannel existing)
+                if (TryFindExistingUnlocked(
+                        ChannelKind.Wps,
+                        path,
+                        unsavedName,
+                        LivePathOfWps,
+                        out IOperationChannel existing)
                     && existing is WpsChannel wpsChannel)
                 {
-                    wpsChannel.UpdateDocument(wpsDocument, filePath);
+                    wpsChannel.UpdateDocument(wpsDocument, path ?? filePath);
+                    BindAfterUpdateUnlocked(wpsChannel, path, unsavedName, uuid);
+                    ClaimDefaultIfNeededUnlocked(wpsChannel.ChannelId, claimDefaultIfEmpty);
                     return wpsChannel;
                 }
 
-                string channelId = "wps:" + uuid;
-                var created = new WpsChannel(channelId, uuid, wpsDocument, filePath);
-                Channels[channelId] = created;
-                DocUuidToChannelId[uuid] = channelId;
-                AssignAliasUnlocked(channelId);
-
-                if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
-                {
-                    _defaultChannelId = channelId;
-                }
-
+                string channelId = NextChannelIdUnlocked(ChannelKind.Wps);
+                var created = new WpsChannel(channelId, uuid, wpsDocument, path ?? filePath);
+                RegisterNewUnlocked(created, path, unsavedName, uuid, claimDefaultIfEmpty);
                 return created;
             }
         }
@@ -290,26 +145,29 @@ namespace WordAddIn1
             }
 
             string uuid = ExcelWorkbookIdentity.EnsureUuid(workbook);
+            string path = NormalizeDocumentPath(filePath)
+                ?? NormalizeDocumentPath(ExcelChannel.TryReadFullName(workbook));
+            string unsavedName = TryReadComName(() => workbook.Name) ?? "工作簿1";
+
             lock (Gate)
             {
-                if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
-                    && Channels.TryGetValue(existingId, out IOperationChannel existing)
+                if (TryFindExistingUnlocked(
+                        ChannelKind.Excel,
+                        path,
+                        unsavedName,
+                        LivePathOfExcel,
+                        out IOperationChannel existing)
                     && existing is ExcelChannel excelChannel)
                 {
-                    excelChannel.UpdateWorkbook(workbook, filePath);
+                    excelChannel.UpdateWorkbook(workbook, path ?? filePath);
+                    BindAfterUpdateUnlocked(excelChannel, path, unsavedName, uuid);
+                    ClaimDefaultIfNeededUnlocked(excelChannel.ChannelId, claimDefaultIfEmpty);
                     return excelChannel;
                 }
 
-                string channelId = "excel:" + uuid;
-                var created = new ExcelChannel(channelId, uuid, workbook, filePath);
-                Channels[channelId] = created;
-                DocUuidToChannelId[uuid] = channelId;
-                AssignAliasUnlocked(channelId);
-                if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
-                {
-                    _defaultChannelId = channelId;
-                }
-
+                string channelId = NextChannelIdUnlocked(ChannelKind.Excel);
+                var created = new ExcelChannel(channelId, uuid, workbook, path ?? filePath);
+                RegisterNewUnlocked(created, path, unsavedName, uuid, claimDefaultIfEmpty);
                 return created;
             }
         }
@@ -325,26 +183,29 @@ namespace WordAddIn1
             }
 
             string uuid = EtWorkbookIdentity.EnsureUuid(workbook);
+            string path = NormalizeDocumentPath(filePath)
+                ?? NormalizeDocumentPath(EtCom.TryReadFullName(workbook));
+            string unsavedName = TryReadComName(() => EtCom.TryReadName(workbook)) ?? "工作簿1";
+
             lock (Gate)
             {
-                if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
-                    && Channels.TryGetValue(existingId, out IOperationChannel existing)
+                if (TryFindExistingUnlocked(
+                        ChannelKind.Et,
+                        path,
+                        unsavedName,
+                        LivePathOfEt,
+                        out IOperationChannel existing)
                     && existing is EtChannel etChannel)
                 {
-                    etChannel.UpdateWorkbook(workbook, filePath);
+                    etChannel.UpdateWorkbook(workbook, path ?? filePath);
+                    BindAfterUpdateUnlocked(etChannel, path, unsavedName, uuid);
+                    ClaimDefaultIfNeededUnlocked(etChannel.ChannelId, claimDefaultIfEmpty);
                     return etChannel;
                 }
 
-                string channelId = "et:" + uuid;
-                var created = new EtChannel(channelId, uuid, workbook, filePath);
-                Channels[channelId] = created;
-                DocUuidToChannelId[uuid] = channelId;
-                AssignAliasUnlocked(channelId);
-                if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
-                {
-                    _defaultChannelId = channelId;
-                }
-
+                string channelId = NextChannelIdUnlocked(ChannelKind.Et);
+                var created = new EtChannel(channelId, uuid, workbook, path ?? filePath);
+                RegisterNewUnlocked(created, path, unsavedName, uuid, claimDefaultIfEmpty);
                 return created;
             }
         }
@@ -360,26 +221,29 @@ namespace WordAddIn1
             }
 
             string uuid = PptPresentationIdentity.EnsureUuid(presentation);
+            string path = NormalizeDocumentPath(filePath)
+                ?? NormalizeDocumentPath(PptChannel.TryReadFullName(presentation));
+            string unsavedName = TryReadComName(() => presentation.Name) ?? "演示文稿1";
+
             lock (Gate)
             {
-                if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
-                    && Channels.TryGetValue(existingId, out IOperationChannel existing)
+                if (TryFindExistingUnlocked(
+                        ChannelKind.Ppt,
+                        path,
+                        unsavedName,
+                        LivePathOfPpt,
+                        out IOperationChannel existing)
                     && existing is PptChannel pptChannel)
                 {
-                    pptChannel.UpdatePresentation(presentation, filePath);
+                    pptChannel.UpdatePresentation(presentation, path ?? filePath);
+                    BindAfterUpdateUnlocked(pptChannel, path, unsavedName, uuid);
+                    ClaimDefaultIfNeededUnlocked(pptChannel.ChannelId, claimDefaultIfEmpty);
                     return pptChannel;
                 }
 
-                string channelId = "ppt:" + uuid;
-                var created = new PptChannel(channelId, uuid, presentation, filePath);
-                Channels[channelId] = created;
-                DocUuidToChannelId[uuid] = channelId;
-                AssignAliasUnlocked(channelId);
-                if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
-                {
-                    _defaultChannelId = channelId;
-                }
-
+                string channelId = NextChannelIdUnlocked(ChannelKind.Ppt);
+                var created = new PptChannel(channelId, uuid, presentation, path ?? filePath);
+                RegisterNewUnlocked(created, path, unsavedName, uuid, claimDefaultIfEmpty);
                 return created;
             }
         }
@@ -395,54 +259,52 @@ namespace WordAddIn1
             }
 
             string uuid = WppPresentationIdentity.EnsureUuid(presentation);
+            string path = NormalizeDocumentPath(filePath)
+                ?? NormalizeDocumentPath(WppCom.TryReadFullName(presentation));
+            string unsavedName = TryReadComName(() => WppCom.TryReadName(presentation)) ?? "演示文稿1";
+
             lock (Gate)
             {
-                if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
-                    && Channels.TryGetValue(existingId, out IOperationChannel existing)
+                if (TryFindExistingUnlocked(
+                        ChannelKind.Wpp,
+                        path,
+                        unsavedName,
+                        LivePathOfWpp,
+                        out IOperationChannel existing)
                     && existing is WppChannel wppChannel)
                 {
-                    wppChannel.UpdatePresentation(presentation, filePath);
+                    wppChannel.UpdatePresentation(presentation, path ?? filePath);
+                    BindAfterUpdateUnlocked(wppChannel, path, unsavedName, uuid);
+                    ClaimDefaultIfNeededUnlocked(wppChannel.ChannelId, claimDefaultIfEmpty);
                     return wppChannel;
                 }
 
-                string channelId = "wpp:" + uuid;
-                var created = new WppChannel(channelId, uuid, presentation, filePath);
-                Channels[channelId] = created;
-                DocUuidToChannelId[uuid] = channelId;
-                AssignAliasUnlocked(channelId);
-                if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
-                {
-                    _defaultChannelId = channelId;
-                }
-
+                string channelId = NextChannelIdUnlocked(ChannelKind.Wpp);
+                var created = new WppChannel(channelId, uuid, presentation, path ?? filePath);
+                RegisterNewUnlocked(created, path, unsavedName, uuid, claimDefaultIfEmpty);
                 return created;
             }
         }
 
-        /// <summary>
-        /// 为易写浏览器页查找或创建渠道；channel_id 形如 <c>browser:agent:{tab_uuid}</c>。
-        /// </summary>
+        /// <summary>为易写浏览器页查找或创建渠道；channel_id 形如 <c>b1</c>。</summary>
         public static BrowserChannel CreateOrGetBrowserAgent(
             string tabUuid,
             bool setAsDefault = true)
         {
-            return CreateOrGetBrowser(tabUuid, "agent", BrowserChannel.AgentPrefix, setAsDefault);
+            return CreateOrGetBrowser(tabUuid, "agent", setAsDefault);
         }
 
-        /// <summary>
-        /// 扩展附着页渠道；channel_id 形如 <c>browser:attach:{tab_uuid}</c>。
-        /// </summary>
+        /// <summary>扩展附着页渠道；channel_id 形如 <c>b1</c>。</summary>
         public static BrowserChannel CreateOrGetBrowserAttach(
             string tabUuid,
             bool setAsDefault = true)
         {
-            return CreateOrGetBrowser(tabUuid, "attach", BrowserChannel.AttachPrefix, setAsDefault);
+            return CreateOrGetBrowser(tabUuid, "attach", setAsDefault);
         }
 
         private static BrowserChannel CreateOrGetBrowser(
             string tabUuid,
             string track,
-            string prefix,
             bool setAsDefault)
         {
             if (string.IsNullOrWhiteSpace(tabUuid))
@@ -452,10 +314,10 @@ namespace WordAddIn1
 
             string uuid = tabUuid.Trim();
             string trackNorm = string.IsNullOrWhiteSpace(track) ? "agent" : track.Trim();
+            string docKey = BrowserDocumentKey(trackNorm, uuid);
             lock (Gate)
             {
-                if (DocUuidToChannelId.TryGetValue(uuid, out string existingId)
-                    && Channels.TryGetValue(existingId, out IOperationChannel existing)
+                if (TryGetByDocumentKeyUnlocked(ChannelKind.Browser, docKey, out IOperationChannel existing)
                     && existing is BrowserChannel browserChannel
                     && string.Equals(browserChannel.Track, trackNorm, StringComparison.OrdinalIgnoreCase))
                 {
@@ -464,15 +326,15 @@ namespace WordAddIn1
                         _defaultChannelId = browserChannel.ChannelId;
                     }
 
+                    RemapDocUuidUnlocked(browserChannel.ChannelId, uuid);
                     return browserChannel;
                 }
 
-                string channelId = prefix + uuid;
+                string channelId = NextChannelIdUnlocked(ChannelKind.Browser);
                 var created = new BrowserChannel(channelId, uuid, trackNorm);
                 Channels[channelId] = created;
-                DocUuidToChannelId[uuid] = channelId;
-                AssignAliasUnlocked(channelId);
-
+                BindDocumentKeyUnlocked(channelId, ChannelKind.Browser, docKey);
+                RemapDocUuidUnlocked(channelId, uuid);
                 if (setAsDefault || string.IsNullOrEmpty(_defaultChannelId))
                 {
                     _defaultChannelId = channelId;
@@ -494,6 +356,31 @@ namespace WordAddIn1
             return true;
         }
 
+        public static bool TryGetBrowserByTab(string tabUuid, string track, out BrowserChannel channel)
+        {
+            channel = null;
+            if (string.IsNullOrWhiteSpace(tabUuid))
+            {
+                return false;
+            }
+
+            string trackNorm = string.IsNullOrWhiteSpace(track) ? "agent" : track.Trim();
+            lock (Gate)
+            {
+                if (!TryGetByDocumentKeyUnlocked(
+                        ChannelKind.Browser,
+                        BrowserDocumentKey(trackNorm, tabUuid.Trim()),
+                        out IOperationChannel ch)
+                    || !(ch is BrowserChannel bc))
+                {
+                    return false;
+                }
+
+                channel = bc;
+                return true;
+            }
+        }
+
         public static void Register(IOperationChannel channel, bool setAsDefault = false)
         {
             if (channel == null)
@@ -509,41 +396,32 @@ namespace WordAddIn1
             lock (Gate)
             {
                 Channels[channel.ChannelId] = channel;
-                if (channel is WordChannel wc && !string.IsNullOrEmpty(wc.DocUuid))
+                string path = NormalizeDocumentPath(TryGetChannelFilePath(channel));
+                string unsaved = string.IsNullOrEmpty(path)
+                    ? (channel.TryGetDisplayNameSafe() ?? "未命名")
+                    : null;
+                if (channel is BrowserChannel browser)
                 {
-                    DocUuidToChannelId[wc.DocUuid] = channel.ChannelId;
+                    BindDocumentKeyUnlocked(
+                        channel.ChannelId,
+                        ChannelKind.Browser,
+                        BrowserDocumentKey(browser.Track, browser.TabUuid));
+                    RemapDocUuidUnlocked(channel.ChannelId, browser.TabUuid);
                 }
-                else if (channel is WpsChannel wps && !string.IsNullOrEmpty(wps.DocUuid))
+                else
                 {
-                    DocUuidToChannelId[wps.DocUuid] = channel.ChannelId;
-                }
-                else if (channel is ExcelChannel excel && !string.IsNullOrEmpty(excel.DocUuid))
-                {
-                    DocUuidToChannelId[excel.DocUuid] = channel.ChannelId;
-                }
-                else if (channel is EtChannel et && !string.IsNullOrEmpty(et.DocUuid))
-                {
-                    DocUuidToChannelId[et.DocUuid] = channel.ChannelId;
-                }
-                else if (channel is PptChannel ppt && !string.IsNullOrEmpty(ppt.DocUuid))
-                {
-                    DocUuidToChannelId[ppt.DocUuid] = channel.ChannelId;
-                }
-                else if (channel is WppChannel wpp && !string.IsNullOrEmpty(wpp.DocUuid))
-                {
-                    DocUuidToChannelId[wpp.DocUuid] = channel.ChannelId;
-                }
-                else if (channel is BrowserChannel browser && !string.IsNullOrEmpty(browser.TabUuid))
-                {
-                    DocUuidToChannelId[browser.TabUuid] = channel.ChannelId;
+                    RebindDocumentKeyUnlocked(channel.ChannelId, channel.Kind, path, unsaved);
+                    string uuid = TryGetChannelDocUuid(channel);
+                    if (!string.IsNullOrEmpty(uuid))
+                    {
+                        RemapDocUuidUnlocked(channel.ChannelId, uuid);
+                    }
                 }
 
                 if (setAsDefault || string.IsNullOrEmpty(_defaultChannelId))
                 {
                     _defaultChannelId = channel.ChannelId;
                 }
-
-                AssignAliasUnlocked(channel.ChannelId);
             }
         }
 
@@ -557,7 +435,7 @@ namespace WordAddIn1
 
             lock (Gate)
             {
-                return Channels.TryGetValue(ResolveUnlocked(channelId), out channel);
+                return Channels.TryGetValue(channelId.Trim(), out channel);
             }
         }
 
@@ -631,13 +509,13 @@ namespace WordAddIn1
 
             lock (Gate)
             {
-                string resolved = ResolveUnlocked(channelId);
-                if (!Channels.ContainsKey(resolved))
+                string key = channelId.Trim();
+                if (!Channels.ContainsKey(key))
                 {
                     return false;
                 }
 
-                _defaultChannelId = resolved;
+                _defaultChannelId = key;
                 return true;
             }
         }
@@ -673,9 +551,6 @@ namespace WordAddIn1
             return true;
         }
 
-        /// <summary>
-        /// Plugin：活动文档变化时查找/创建 Word 渠道并设为默认（§4.3）。
-        /// </summary>
         public static WordChannel SyncDefaultFromActiveDocument(Word.Document document)
         {
             if (document == null)
@@ -698,51 +573,22 @@ namespace WordAddIn1
             IOperationChannel ch;
             lock (Gate)
             {
-                string resolved = ResolveUnlocked(channelId);
-                if (!Channels.TryGetValue(resolved, out ch))
+                string key = channelId.Trim();
+                if (!Channels.TryGetValue(key, out ch))
                 {
                     return false;
                 }
 
-                channelId = resolved;
+                channelId = ch.ChannelId;
                 Channels.Remove(channelId);
-                UnassignAliasUnlocked(channelId);
-                if (ch is WordChannel wc && !string.IsNullOrEmpty(wc.DocUuid))
-                {
-                    DocUuidToChannelId.Remove(wc.DocUuid);
-                }
-                else if (ch is WpsChannel wps && !string.IsNullOrEmpty(wps.DocUuid))
-                {
-                    DocUuidToChannelId.Remove(wps.DocUuid);
-                }
-                else if (ch is ExcelChannel excel && !string.IsNullOrEmpty(excel.DocUuid))
-                {
-                    DocUuidToChannelId.Remove(excel.DocUuid);
-                }
-                else if (ch is EtChannel et && !string.IsNullOrEmpty(et.DocUuid))
-                {
-                    DocUuidToChannelId.Remove(et.DocUuid);
-                }
-                else if (ch is PptChannel ppt && !string.IsNullOrEmpty(ppt.DocUuid))
-                {
-                    DocUuidToChannelId.Remove(ppt.DocUuid);
-                }
-                else if (ch is WppChannel wpp && !string.IsNullOrEmpty(wpp.DocUuid))
-                {
-                    DocUuidToChannelId.Remove(wpp.DocUuid);
-                }
-                else if (ch is BrowserChannel browser && !string.IsNullOrEmpty(browser.TabUuid))
-                {
-                    DocUuidToChannelId.Remove(browser.TabUuid);
-                }
-
-                if (string.Equals(_defaultChannelId, channelId, StringComparison.Ordinal))
+                UnbindDocumentKeysUnlocked(channelId);
+                UnmapDocUuidUnlocked(channelId);
+                if (string.Equals(_defaultChannelId, channelId, StringComparison.OrdinalIgnoreCase))
                 {
                     _defaultChannelId = null;
                 }
             }
 
-            // 锁外释放 COM，避免 FinalRelease 回调再进 Registry
             if (ch is EtChannel etRelease)
             {
                 etRelease.ReleaseCom();
@@ -782,21 +628,470 @@ namespace WordAddIn1
             }
         }
 
-        /// <summary>测试/进程退出用。</summary>
         public static void ClearAll()
         {
             lock (Gate)
             {
                 Channels.Clear();
+                KeyToChannelId.Clear();
                 DocUuidToChannelId.Clear();
-                InternalToPublic.Clear();
-                PublicToInternal.Clear();
+                ChannelIdToDocUuid.Clear();
                 _nextW = 0;
                 _nextX = 0;
                 _nextP = 0;
                 _nextB = 0;
                 _defaultChannelId = null;
             }
+        }
+
+        internal static string NormalizeDocumentPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !IsSavedDocumentPath(path))
+            {
+                return null;
+            }
+
+            try
+            {
+                return Path.GetFullPath(path.Trim());
+            }
+            catch (Exception)
+            {
+                return path.Trim();
+            }
+        }
+
+        private static bool IsSavedDocumentPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                return Path.IsPathRooted(path) && !string.IsNullOrEmpty(Path.GetDirectoryName(path));
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool TryFindExistingUnlocked(
+            ChannelKind kind,
+            string path,
+            string unsavedName,
+            Func<IOperationChannel, string> livePathOf,
+            out IOperationChannel existing)
+        {
+            existing = null;
+            if (!string.IsNullOrEmpty(path)
+                && TryGetByDocumentKeyUnlocked(kind, path, out existing)
+                && existing != null
+                && existing.Kind == kind)
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(path))
+            {
+                foreach (IOperationChannel ch in Channels.Values)
+                {
+                    if (ch == null || ch.Kind != kind)
+                    {
+                        continue;
+                    }
+
+                    string stored = NormalizeDocumentPath(TryGetChannelFilePath(ch));
+                    if (string.Equals(stored, path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        existing = ch;
+                        return true;
+                    }
+
+                    string live = livePathOf != null ? livePathOf(ch) : null;
+                    if (string.Equals(live, path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        existing = ch;
+                        return true;
+                    }
+                }
+            }
+
+            if (string.IsNullOrEmpty(path) && !string.IsNullOrWhiteSpace(unsavedName)
+                && TryGetByDocumentKeyUnlocked(kind, UnsavedDocumentKey(unsavedName), out existing)
+                && existing != null
+                && existing.Kind == kind)
+            {
+                return true;
+            }
+
+            existing = null;
+            return false;
+        }
+
+        private static bool TryGetByDocumentKeyUnlocked(
+            ChannelKind kind,
+            string documentKey,
+            out IOperationChannel channel)
+        {
+            channel = null;
+            if (string.IsNullOrWhiteSpace(documentKey))
+            {
+                return false;
+            }
+
+            if (!KeyToChannelId.TryGetValue(ComposeKey(kind, documentKey), out string channelId))
+            {
+                return false;
+            }
+
+            return Channels.TryGetValue(channelId, out channel);
+        }
+
+        private static void RegisterNewUnlocked(
+            IOperationChannel created,
+            string path,
+            string unsavedName,
+            string docUuid,
+            bool claimDefaultIfEmpty)
+        {
+            Channels[created.ChannelId] = created;
+            RebindDocumentKeyUnlocked(created.ChannelId, created.Kind, path, unsavedName);
+            RemapDocUuidUnlocked(created.ChannelId, docUuid);
+            ClaimDefaultIfNeededUnlocked(created.ChannelId, claimDefaultIfEmpty);
+        }
+
+        private static void BindAfterUpdateUnlocked(
+            IOperationChannel channel,
+            string path,
+            string unsavedName,
+            string docUuid)
+        {
+            RebindDocumentKeyUnlocked(channel.ChannelId, channel.Kind, path, unsavedName);
+            RemapDocUuidUnlocked(channel.ChannelId, docUuid);
+        }
+
+        private static void ClaimDefaultIfNeededUnlocked(string channelId, bool claimDefaultIfEmpty)
+        {
+            if (claimDefaultIfEmpty && string.IsNullOrEmpty(_defaultChannelId))
+            {
+                _defaultChannelId = channelId;
+            }
+        }
+
+        private static void RebindDocumentKeyUnlocked(
+            string channelId,
+            ChannelKind kind,
+            string path,
+            string unsavedName)
+        {
+            string key = !string.IsNullOrEmpty(path)
+                ? path
+                : UnsavedDocumentKey(string.IsNullOrWhiteSpace(unsavedName) ? "未命名" : unsavedName);
+            BindDocumentKeyUnlocked(channelId, kind, key);
+        }
+
+        private static void BindDocumentKeyUnlocked(string channelId, ChannelKind kind, string documentKey)
+        {
+            UnbindDocumentKeysUnlocked(channelId);
+            if (string.IsNullOrWhiteSpace(documentKey))
+            {
+                return;
+            }
+
+            KeyToChannelId[ComposeKey(kind, documentKey)] = channelId;
+        }
+
+        private static void UnbindDocumentKeysUnlocked(string channelId)
+        {
+            if (string.IsNullOrEmpty(channelId))
+            {
+                return;
+            }
+
+            var stale = new List<string>();
+            foreach (KeyValuePair<string, string> kv in KeyToChannelId)
+            {
+                if (string.Equals(kv.Value, channelId, StringComparison.OrdinalIgnoreCase))
+                {
+                    stale.Add(kv.Key);
+                }
+            }
+
+            for (int i = 0; i < stale.Count; i++)
+            {
+                KeyToChannelId.Remove(stale[i]);
+            }
+        }
+
+        private static void RemapDocUuidUnlocked(string channelId, string docUuid)
+        {
+            UnmapDocUuidUnlocked(channelId);
+            if (string.IsNullOrEmpty(channelId) || string.IsNullOrEmpty(docUuid))
+            {
+                return;
+            }
+
+            DocUuidToChannelId[docUuid] = channelId;
+            ChannelIdToDocUuid[channelId] = docUuid;
+        }
+
+        private static void UnmapDocUuidUnlocked(string channelId)
+        {
+            if (string.IsNullOrEmpty(channelId))
+            {
+                return;
+            }
+
+            if (ChannelIdToDocUuid.TryGetValue(channelId, out string old)
+                && !string.IsNullOrEmpty(old))
+            {
+                DocUuidToChannelId.Remove(old);
+            }
+
+            ChannelIdToDocUuid.Remove(channelId);
+        }
+
+        private static string NextChannelIdUnlocked(ChannelKind kind)
+        {
+            char family = FamilyPrefix(kind);
+            int n;
+            switch (family)
+            {
+                case 'w':
+                    n = ++_nextW;
+                    break;
+                case 'x':
+                    n = ++_nextX;
+                    break;
+                case 'p':
+                    n = ++_nextP;
+                    break;
+                default:
+                    n = ++_nextB;
+                    break;
+            }
+
+            return family + n.ToString();
+        }
+
+        private static char FamilyPrefix(ChannelKind kind)
+        {
+            switch (kind)
+            {
+                case ChannelKind.Word:
+                case ChannelKind.Wps:
+                    return 'w';
+                case ChannelKind.Excel:
+                case ChannelKind.Et:
+                    return 'x';
+                case ChannelKind.Ppt:
+                case ChannelKind.Wpp:
+                    return 'p';
+                default:
+                    return 'b';
+            }
+        }
+
+        private static string ComposeKey(ChannelKind kind, string documentKey)
+        {
+            return kind.ToString() + "\n" + documentKey;
+        }
+
+        private static string UnsavedDocumentKey(string name)
+        {
+            return "unsaved:" + (name ?? "").Trim();
+        }
+
+        private static string BrowserDocumentKey(string track, string tabUuid)
+        {
+            return "browser:" + track + ":" + tabUuid;
+        }
+
+        private static string TryGetChannelFilePath(IOperationChannel channel)
+        {
+            if (channel is WordChannel word)
+            {
+                return word.FilePath;
+            }
+
+            if (channel is WpsChannel wps)
+            {
+                return wps.FilePath;
+            }
+
+            if (channel is ExcelChannel excel)
+            {
+                return excel.FilePath;
+            }
+
+            if (channel is EtChannel et)
+            {
+                return et.FilePath;
+            }
+
+            if (channel is PptChannel ppt)
+            {
+                return ppt.FilePath;
+            }
+
+            if (channel is WppChannel wpp)
+            {
+                return wpp.FilePath;
+            }
+
+            return null;
+        }
+
+        private static string TryGetChannelDocUuid(IOperationChannel channel)
+        {
+            if (channel is WordChannel word)
+            {
+                return word.DocUuid;
+            }
+
+            if (channel is WpsChannel wps)
+            {
+                return wps.DocUuid;
+            }
+
+            if (channel is ExcelChannel excel)
+            {
+                return excel.DocUuid;
+            }
+
+            if (channel is EtChannel et)
+            {
+                return et.DocUuid;
+            }
+
+            if (channel is PptChannel ppt)
+            {
+                return ppt.DocUuid;
+            }
+
+            if (channel is WppChannel wpp)
+            {
+                return wpp.DocUuid;
+            }
+
+            return null;
+        }
+
+        private static string TryReadComName(Func<string> read)
+        {
+            if (read == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                string name = read();
+                return string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static string LivePathOfWord(IOperationChannel channel)
+        {
+            return channel is WordChannel word && word.TryGetLiveDocument(out Word.Document doc)
+                ? NormalizeDocumentPath(WordChannel.TryReadFullName(doc))
+                : null;
+        }
+
+        private static string LivePathOfWps(IOperationChannel channel)
+        {
+            return channel is WpsChannel wps && wps.TryGetLiveDocument(out object doc)
+                ? NormalizeDocumentPath(WpsCom.TryReadFullName(doc))
+                : null;
+        }
+
+        private static string LivePathOfExcel(IOperationChannel channel)
+        {
+            return channel is ExcelChannel excel && excel.TryGetLiveWorkbook(out Excel.Workbook book)
+                ? NormalizeDocumentPath(ExcelChannel.TryReadFullName(book))
+                : null;
+        }
+
+        private static string LivePathOfEt(IOperationChannel channel)
+        {
+            return channel is EtChannel et && et.TryGetLiveWorkbook(out object book)
+                ? NormalizeDocumentPath(EtCom.TryReadFullName(book))
+                : null;
+        }
+
+        private static string LivePathOfPpt(IOperationChannel channel)
+        {
+            return channel is PptChannel ppt && ppt.TryGetLivePresentation(out PowerPoint.Presentation pres)
+                ? NormalizeDocumentPath(PptChannel.TryReadFullName(pres))
+                : null;
+        }
+
+        private static string LivePathOfWpp(IOperationChannel channel)
+        {
+            return channel is WppChannel wpp && wpp.TryGetLivePresentation(out object pres)
+                ? NormalizeDocumentPath(WppCom.TryReadFullName(pres))
+                : null;
+        }
+    }
+
+    internal static class ChannelDisplayNameExtensions
+    {
+        public static string TryGetDisplayNameSafe(this IOperationChannel channel)
+        {
+            if (channel == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (channel is WordChannel word)
+                {
+                    return word.TryGetDisplayName();
+                }
+
+                if (channel is WpsChannel wps)
+                {
+                    return wps.TryGetDisplayName();
+                }
+
+                if (channel is ExcelChannel excel)
+                {
+                    return excel.TryGetDisplayName();
+                }
+
+                if (channel is EtChannel et)
+                {
+                    return et.TryGetDisplayName();
+                }
+
+                if (channel is PptChannel ppt)
+                {
+                    return ppt.TryGetDisplayName();
+                }
+
+                if (channel is WppChannel wpp)
+                {
+                    return wpp.TryGetDisplayName();
+                }
+
+                if (channel is BrowserChannel browser)
+                {
+                    return browser.TryGetDisplayName();
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return null;
         }
     }
 }

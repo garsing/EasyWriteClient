@@ -81,15 +81,12 @@ namespace WordAddIn1.BrowserHost
 
             HostCallbacks.RaiseClearDesktopTopMost();
 
-            if (!string.IsNullOrWhiteSpace(tabUuid))
+            if (!string.IsNullOrWhiteSpace(tabUuid)
+                && ChannelRegistry.TryGetBrowserByTab(tabUuid.Trim(), "agent", out BrowserChannel closed))
             {
-                string channelId = BrowserChannel.AgentPrefix + tabUuid.Trim();
-                BrowserRefStore.Clear(channelId);
-                HostCallbacks.RaiseBrowserOpenFileRemove(channelId);
-                if (ChannelRegistry.TryGet(channelId, out _))
-                {
-                    ChannelRegistry.Remove(channelId);
-                }
+                BrowserRefStore.Clear(closed.ChannelId);
+                HostCallbacks.RaiseBrowserOpenFileRemove(closed.ChannelId);
+                ChannelRegistry.Remove(closed.ChannelId);
             }
         }
 

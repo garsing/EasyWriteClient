@@ -226,18 +226,6 @@ namespace WordAddIn1.OpenFiles
                     id = MapPresentation(presentation, new HashSet<string>(StringComparer.OrdinalIgnoreCase))?.Id;
                 }
 
-                try
-                {
-                    string uuid = PptPresentationIdentity.TryResolveUuid(presentation);
-                    if (!string.IsNullOrEmpty(uuid))
-                    {
-                        ChannelRegistry.RemoveByDocUuid(uuid);
-                    }
-                }
-                catch (Exception)
-                {
-                }
-
                 if (!string.IsNullOrEmpty(id))
                 {
                     DocumentClosed?.Invoke(id);

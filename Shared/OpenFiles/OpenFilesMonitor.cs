@@ -1051,7 +1051,11 @@ namespace WordAddIn1.OpenFiles
                     {
                         if (!newById.ContainsKey(kv.Key))
                         {
-                            TryRemoveChannel(kv.Value);
+                            if (!ChannelStillHeld(kv.Value, newById.Values))
+                            {
+                                TryRemoveChannel(kv.Value);
+                            }
+
                             _items.Remove(kv.Key);
                             changed = true;
                         }
@@ -1292,12 +1296,14 @@ namespace WordAddIn1.OpenFiles
 
             OpenFileItem removedItem = null;
             bool removed;
+            bool stillHeld = false;
             lock (_gate)
             {
                 if (_items.TryGetValue(id, out removedItem))
                 {
                     _items.Remove(id);
                     removed = true;
+                    stillHeld = ChannelStillHeld(removedItem, _items.Values);
                 }
                 else
                 {
@@ -1305,7 +1311,11 @@ namespace WordAddIn1.OpenFiles
                 }
             }
 
-            TryRemoveChannel(removedItem);
+            if (removedItem != null && !stillHeld)
+            {
+                TryRemoveChannel(removedItem);
+            }
+
             if (removed)
             {
                 RaiseChanged();
@@ -1378,6 +1388,30 @@ namespace WordAddIn1.OpenFiles
             }
 
             return toRemove.Count > 0;
+        }
+
+        private static bool ChannelStillHeld(OpenFileItem leaving, IEnumerable<OpenFileItem> remaining)
+        {
+            if (leaving == null || string.IsNullOrEmpty(leaving.ChannelId) || remaining == null)
+            {
+                return false;
+            }
+
+            foreach (OpenFileItem item in remaining)
+            {
+                if (item == null || string.IsNullOrEmpty(item.ChannelId))
+                {
+                    continue;
+                }
+
+                if (string.Equals(item.ChannelId, leaving.ChannelId, StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(item.Id, leaving.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static void TryRemoveChannel(OpenFileItem item)

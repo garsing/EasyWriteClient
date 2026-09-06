@@ -118,10 +118,14 @@ namespace WordAddIn1.BrowserHost
 
             foreach (string tabUuid in removed)
             {
-                string channelId = BrowserChannel.AttachPrefix + tabUuid;
+                if (!ChannelRegistry.TryGetBrowserByTab(tabUuid, "attach", out BrowserChannel closed))
+                {
+                    continue;
+                }
+
                 try
                 {
-                    BrowserRefStore.Clear(channelId);
+                    BrowserRefStore.Clear(closed.ChannelId);
                 }
                 catch
                 {
@@ -130,7 +134,7 @@ namespace WordAddIn1.BrowserHost
 
                 try
                 {
-                    HostCallbacks.RaiseBrowserOpenFileRemove(channelId);
+                    HostCallbacks.RaiseBrowserOpenFileRemove(closed.ChannelId);
                 }
                 catch
                 {
@@ -139,7 +143,7 @@ namespace WordAddIn1.BrowserHost
 
                 lock (Gate)
                 {
-                    SidebarChannelIds.Remove(channelId);
+                    SidebarChannelIds.Remove(closed.ChannelId);
                 }
             }
         }
@@ -249,21 +253,18 @@ namespace WordAddIn1.BrowserHost
 
             foreach (AttachTabInfo info in upserts)
             {
-                string channelId = BrowserChannel.AttachPrefix + info.TabUuid;
                 string display = string.IsNullOrWhiteSpace(info.Title) ? info.Url : info.Title;
-
-                HostCallbacks.RaiseBrowserOpenFileUpsert(channelId, display, info.Url);
-                lock (Gate)
-                {
-                    SidebarChannelIds.Add(channelId);
-                }
-
                 try
                 {
                     bool setDefault = info.Active;
                     BrowserChannel ch = ChannelRegistry.CreateOrGetBrowserAttach(
                         info.TabUuid, setAsDefault: setDefault);
                     ch.UpdatePage(info.Url, info.Title, visible: true);
+                    HostCallbacks.RaiseBrowserOpenFileUpsert(ch.ChannelId, display, info.Url);
+                    lock (Gate)
+                    {
+                        SidebarChannelIds.Add(ch.ChannelId);
+                    }
                 }
                 catch
                 {
@@ -273,11 +274,15 @@ namespace WordAddIn1.BrowserHost
 
             foreach (string tabUuid in gone)
             {
-                string channelId = BrowserChannel.AttachPrefix + tabUuid;
-                HostCallbacks.RaiseBrowserOpenFileRemove(channelId);
+                if (!ChannelRegistry.TryGetBrowserByTab(tabUuid, "attach", out BrowserChannel closed))
+                {
+                    continue;
+                }
+
+                HostCallbacks.RaiseBrowserOpenFileRemove(closed.ChannelId);
                 lock (Gate)
                 {
-                    SidebarChannelIds.Remove(channelId);
+                    SidebarChannelIds.Remove(closed.ChannelId);
                 }
             }
         }

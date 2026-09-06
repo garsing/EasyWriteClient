@@ -10,9 +10,9 @@ namespace WordAddIn1
         Excel = 2,
         Wps = 3,
         Et = 4,
-        /// <summary>WPS 演示（渠道前缀 wpp:；与文字 Wps 区分）。</summary>
+        /// <summary>WPS 演示。channel_id 族 p（与 PowerPoint 共用）；与文字 Wps 区分。</summary>
         Wpp = 5,
-        /// <summary>浏览器页（渠道前缀 browser:agent: / browser:attach:）。</summary>
+        /// <summary>浏览器页。channel_id 族 b；track=agent 易写窗 / attach 为 Chrome/Edge。</summary>
         Browser = 6,
     }
 }

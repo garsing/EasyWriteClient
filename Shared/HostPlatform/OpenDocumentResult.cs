@@ -28,7 +28,6 @@ namespace WordAddIn1.HostPlatform
             {
                 ["channel_id"] = ChannelRegistry.ToPublicId(ChannelId) ?? "",
                 ["kind"] = Kind ?? "",
-                ["doc_uuid"] = DocUuid ?? "",
                 ["path"] = Path ?? "",
                 ["name"] = Name ?? "",
                 ["created"] = Created,

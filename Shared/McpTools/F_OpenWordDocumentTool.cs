@@ -142,7 +142,6 @@ namespace WordAddIn1
                     {
                         ["channel_id"] = ChannelRegistry.ToPublicId(channel.ChannelId),
                         ["kind"] = "word",
-                        ["doc_uuid"] = channel.DocUuid,
                         ["path"] = fullPath,
                         ["name"] = name ?? "",
                         ["created"] = created,
