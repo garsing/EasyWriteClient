@@ -170,15 +170,15 @@ namespace WordAddIn1.OpenFiles
             UpdateLateBindReconcileTimer();
         }
 
-        /// <summary>易写浏览页：按网页粒度写入侧栏（不经 COM 探测）。</summary>
-        public void UpsertBrowserItem(string channelId, string displayName, string url)
+        /// <summary>浏览页：按网页粒度写入侧栏（不经 COM 探测）。itemId 只给展示/分组，channelId 才是 b1。</summary>
+        public void UpsertBrowserItem(string itemId, string channelId, string displayName, string url)
         {
-            if (_disposed || string.IsNullOrWhiteSpace(channelId))
+            if (_disposed || string.IsNullOrWhiteSpace(itemId) || string.IsNullOrWhiteSpace(channelId))
             {
                 return;
             }
 
-            string id = channelId.Trim();
+            string id = itemId.Trim();
             string name = !string.IsNullOrWhiteSpace(displayName)
                 ? displayName.Trim()
                 : (!string.IsNullOrWhiteSpace(url) ? url.Trim() : "易写浏览器");
@@ -190,21 +190,21 @@ namespace WordAddIn1.OpenFiles
                 DisplayName = name,
                 FullPath = string.IsNullOrWhiteSpace(url) ? null : url.Trim(),
                 IsSaved = true,
-                ChannelId = id
+                ChannelId = channelId.Trim()
             };
 
             OnDocumentOpened(item);
         }
 
-        /// <summary>易写浏览窗关闭：仅从侧栏移除；渠道由 Host 自行 Remove。</summary>
-        public void RemoveBrowserItem(string channelId)
+        /// <summary>浏览页关闭：仅从侧栏移除；渠道由 Host 自行 Remove。参数为侧栏行键。</summary>
+        public void RemoveBrowserItem(string itemId)
         {
-            if (_disposed || string.IsNullOrWhiteSpace(channelId))
+            if (_disposed || string.IsNullOrWhiteSpace(itemId))
             {
                 return;
             }
 
-            string id = channelId.Trim();
+            string id = itemId.Trim();
             bool removed;
             lock (_gate)
             {

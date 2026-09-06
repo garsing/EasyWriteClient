@@ -10,6 +10,23 @@ namespace WordAddIn1
         public const string AgentPrefix = "browser:agent:";
         public const string AttachPrefix = "browser:attach:";
 
+        /// <summary>侧栏行键（展示/分组/点击），不是 channel_id。附着页形如 browser:attach:chrome:12。</summary>
+        public static string SidebarItemId(string track, string tabUuid)
+        {
+            string uuid = (tabUuid ?? "").Trim();
+            if (string.Equals(track, "attach", StringComparison.OrdinalIgnoreCase))
+            {
+                return AttachPrefix + uuid;
+            }
+
+            return AgentPrefix + uuid;
+        }
+
+        public string SidebarItemId()
+        {
+            return SidebarItemId(Track, TabUuid);
+        }
+
         public BrowserChannel(string channelId, string tabUuid, string track)
         {
             if (string.IsNullOrWhiteSpace(channelId))

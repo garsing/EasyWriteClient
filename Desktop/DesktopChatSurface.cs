@@ -105,7 +105,7 @@ namespace EasyWriteClient.Desktop
                     HostCallbacks.OpenFilesRefresh = null;
                 }
 
-                if (ReferenceEquals(HostCallbacks.BrowserOpenFileUpsert, (Action<string, string, string>)OnBrowserOpenFileUpsert))
+                if (ReferenceEquals(HostCallbacks.BrowserOpenFileUpsert, (Action<string, string, string, string>)OnBrowserOpenFileUpsert))
                 {
                     HostCallbacks.BrowserOpenFileUpsert = null;
                 }
@@ -140,12 +140,12 @@ namespace EasyWriteClient.Desktop
             }
         }
 
-        private void OnBrowserOpenFileUpsert(string channelId, string displayName, string url)
+        private void OnBrowserOpenFileUpsert(string itemId, string channelId, string displayName, string url)
         {
             try
             {
                 StartOpenFilesMonitorIfNeeded();
-                _openFilesMonitor?.UpsertBrowserItem(channelId, displayName, url);
+                _openFilesMonitor?.UpsertBrowserItem(itemId, channelId, displayName, url);
             }
             catch (Exception ex)
             {

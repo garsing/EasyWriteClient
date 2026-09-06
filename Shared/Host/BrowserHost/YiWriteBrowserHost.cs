@@ -85,7 +85,7 @@ namespace WordAddIn1.BrowserHost
                 && ChannelRegistry.TryGetBrowserByTab(tabUuid.Trim(), "agent", out BrowserChannel closed))
             {
                 BrowserRefStore.Clear(closed.ChannelId);
-                HostCallbacks.RaiseBrowserOpenFileRemove(closed.ChannelId);
+                HostCallbacks.RaiseBrowserOpenFileRemove(closed.SidebarItemId());
                 ChannelRegistry.Remove(closed.ChannelId);
             }
         }
@@ -145,6 +145,7 @@ namespace WordAddIn1.BrowserHost
                 BrowserRefStore.Clear(channel.ChannelId);
 
                 HostCallbacks.RaiseBrowserOpenFileUpsert(
+                    channel.SidebarItemId(),
                     channel.ChannelId,
                     channel.TryGetDisplayName() ?? channel.Url,
                     channel.Url);

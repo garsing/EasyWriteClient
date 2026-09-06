@@ -22,12 +22,12 @@ namespace WordAddIn1
         public static Action OpenFilesRefresh { get; set; }
 
         /// <summary>
-        /// Desktop：易写浏览页建/更新后写入侧栏「打开文件」。
-        /// 参数：channelId, displayName, url。
+        /// Desktop：浏览页建/更新后写入侧栏「打开文件」。
+        /// 参数：itemId（侧栏行键）, channelId（b1）, displayName, url。
         /// </summary>
-        public static Action<string, string, string> BrowserOpenFileUpsert { get; set; }
+        public static Action<string, string, string, string> BrowserOpenFileUpsert { get; set; }
 
-        /// <summary>Desktop：易写浏览窗关闭后从侧栏移除对应项（参数为 channelId）。</summary>
+        /// <summary>Desktop：浏览页关闭后从侧栏移除对应项（参数为侧栏行键 itemId）。</summary>
         public static Action<string> BrowserOpenFileRemove { get; set; }
 
         /// <summary>用户登录成功后通知各任务窗格/桌面 UI 刷新。</summary>
@@ -115,14 +115,18 @@ namespace WordAddIn1
             OpenFilesRefresh?.Invoke();
         }
 
-        public static void RaiseBrowserOpenFileUpsert(string channelId, string displayName, string url)
+        public static void RaiseBrowserOpenFileUpsert(
+            string itemId,
+            string channelId,
+            string displayName,
+            string url)
         {
-            BrowserOpenFileUpsert?.Invoke(channelId, displayName, url);
+            BrowserOpenFileUpsert?.Invoke(itemId, channelId, displayName, url);
         }
 
-        public static void RaiseBrowserOpenFileRemove(string channelId)
+        public static void RaiseBrowserOpenFileRemove(string itemId)
         {
-            BrowserOpenFileRemove?.Invoke(channelId);
+            BrowserOpenFileRemove?.Invoke(itemId);
         }
 
         public static Task RaiseNotifyUserLoggedInAllAsync()

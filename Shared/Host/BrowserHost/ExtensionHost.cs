@@ -134,7 +134,7 @@ namespace WordAddIn1.BrowserHost
 
                 try
                 {
-                    HostCallbacks.RaiseBrowserOpenFileRemove(closed.ChannelId);
+                    HostCallbacks.RaiseBrowserOpenFileRemove(closed.SidebarItemId());
                 }
                 catch
                 {
@@ -143,7 +143,7 @@ namespace WordAddIn1.BrowserHost
 
                 lock (Gate)
                 {
-                    SidebarChannelIds.Remove(closed.ChannelId);
+                    SidebarChannelIds.Remove(closed.SidebarItemId());
                 }
             }
         }
@@ -260,10 +260,11 @@ namespace WordAddIn1.BrowserHost
                     BrowserChannel ch = ChannelRegistry.CreateOrGetBrowserAttach(
                         info.TabUuid, setAsDefault: setDefault);
                     ch.UpdatePage(info.Url, info.Title, visible: true);
-                    HostCallbacks.RaiseBrowserOpenFileUpsert(ch.ChannelId, display, info.Url);
+                    HostCallbacks.RaiseBrowserOpenFileUpsert(
+                        ch.SidebarItemId(), ch.ChannelId, display, info.Url);
                     lock (Gate)
                     {
-                        SidebarChannelIds.Add(ch.ChannelId);
+                        SidebarChannelIds.Add(ch.SidebarItemId());
                     }
                 }
                 catch
@@ -279,10 +280,10 @@ namespace WordAddIn1.BrowserHost
                     continue;
                 }
 
-                HostCallbacks.RaiseBrowserOpenFileRemove(closed.ChannelId);
+                HostCallbacks.RaiseBrowserOpenFileRemove(closed.SidebarItemId());
                 lock (Gate)
                 {
-                    SidebarChannelIds.Remove(closed.ChannelId);
+                    SidebarChannelIds.Remove(closed.SidebarItemId());
                 }
             }
         }
@@ -341,6 +342,7 @@ namespace WordAddIn1.BrowserHost
                 channel.UpdatePage(pageUrl, title, true);
                 BrowserRefStore.Clear(channel.ChannelId);
                 HostCallbacks.RaiseBrowserOpenFileUpsert(
+                    channel.SidebarItemId(),
                     channel.ChannelId,
                     FormatDisplay(channel.TabUuid, title, pageUrl),
                     pageUrl);
@@ -417,6 +419,7 @@ namespace WordAddIn1.BrowserHost
                 matched.TabUuid, setAsDefault: true);
             channel.UpdatePage(matched.Url, matched.Title, true);
             HostCallbacks.RaiseBrowserOpenFileUpsert(
+                channel.SidebarItemId(),
                 channel.ChannelId,
                 FormatDisplay(matched.TabUuid, matched.Title, matched.Url),
                 matched.Url);
