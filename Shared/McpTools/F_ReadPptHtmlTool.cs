@@ -292,7 +292,8 @@ namespace WordAddIn1
             sb.Append("已全量导出到 ").Append(path)
                 .Append("，本页 slide_id=").Append(slideId)
                 .Append("，共 ").Append(n).Append(" 个可定位节点。\n")
-                .Append("用工作区 Python 改文件后再 F_apply_ppt_html（同一 path + slide_id）。\n")
+                .Append("用工作区 Python 按 ShapeId 改字后，抽出只要改的节点写成另一份瘦稿（只写 ShapeId+正文，不要抄组内 style），再 F_apply_ppt_html 那份瘦稿。\n")
+                .Append("禁止把本全量文件直接 apply（装饰线会把 COM 卡死）。\n")
                 .Append("不要把本回包当 HTML；不要用 F_read_file 一次读完全文（单窗最多 8000 字，用 offset 接龙）。");
             if (hostResult != null && hostResult.Truncated && !string.IsNullOrEmpty(hostResult.TruncatedReason))
             {
