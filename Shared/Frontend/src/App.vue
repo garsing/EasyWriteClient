@@ -556,6 +556,7 @@ const handleSend = async (content) => {
   }
   console.log('[App] 添加用户消息:', { id: userMessage.id, content: userMessage.content.substring(0, 20), messageCount: messages.value.length })
   messages.value.push(userMessage)
+  receivedBackendMessages.value.add(userMessage.id)
   console.log('[App] 用户消息已添加，当前消息数量:', messages.value.length)
 
   let apiContent = isDesktopHost
@@ -589,28 +590,19 @@ const handleSend = async (content) => {
     }
   } catch (error) {
     console.error('发送消息失败:', error)
-    // 不设置 isProcessing = false，等待后端的 requestStateChanged 消息
-    // isProcessing 状态应该完全由后端的 requestStateChanged 消息控制
-
-    // 检查是否已经收到后端消息（userMessage 或 systemMessage）
-    const hasReceivedBackendMessage = receivedBackendMessages.value.has(userMessage.id)
-
-    if (!hasReceivedBackendMessage) {
-      // 如果没有收到任何后端消息，说明消息确实发送失败，移除消息
-      console.log('[App] 未收到后端消息，移除用户消息:', userMessage.id)
-      const index = messages.value.findIndex(m => m.id === userMessage.id)
-      if (index >= 0) {
-        messages.value.splice(index, 1)
-      }
-      // 只有在确认没有收到后端消息时才设置 isProcessing = false
-      isProcessing.value = false
+    // 整轮对话常超过桥接 30s 超时；气泡已上屏，宿主仍在跑，不要撤消息、不要清 isProcessing
+    const timedOut = String(error?.message || '').includes('超时')
+    if (timedOut || receivedBackendMessages.value.has(userMessage.id)) {
+      console.log('[App] 发送等待结束但本轮仍在进行，保留气泡:', userMessage.id, error?.message)
       pendingInput.value = ''
-    } else {
-      console.log('[App] 已收到后端消息，不移除用户消息:', userMessage.id)
-      // 已收到后端消息，说明后端正在处理，不设置 isProcessing = false
-      // 等待后端的 requestStateChanged 消息来更新状态
-      pendingInput.value = ''
+      return
     }
+    const index = messages.value.findIndex(m => m.id === userMessage.id)
+    if (index >= 0) {
+      messages.value.splice(index, 1)
+    }
+    isProcessing.value = false
+    pendingInput.value = ''
   }
 }
 
@@ -935,12 +927,10 @@ onMounted(() => {
         receivedBackendMessages.value.add(Number(messageData.id))
       } else if (data.id) {
         receivedBackendMessages.value.add(Number(data.id))
-      } else {
-        // 如果找不到ID，标记最后一条用户消息
-        const lastUserMessage = messages.value.filter(m => m.role === 'user').pop()
-        if (lastUserMessage) {
-          receivedBackendMessages.value.add(lastUserMessage.id)
-        }
+      }
+      const lastUserMessage = messages.value.filter(m => m.role === 'user').pop()
+      if (lastUserMessage) {
+        receivedBackendMessages.value.add(lastUserMessage.id)
       }
       console.log('[App] 收到用户消息确认，已标记为收到后端消息:', Array.from(receivedBackendMessages.value))
       // 不清除输入框和isProcessing状态，等待后端的requestStateChanged消息来管理
@@ -1020,24 +1010,19 @@ onMounted(() => {
           console.log('[App] 消息已更新，segments:', segments.length, 'content长度:', messageContent.length)
         }
       } else {
-        // 找不到现有消息，创建新消息
+        // 空正文也要占位：调工具时首包常为空，丢掉则后续增量对不上，切会话才能从库里看到
         console.log('[App] 创建新消息，内容长度:', messageContent.length)
-        // 只有当内容不为空时才创建（避免创建空的消息气泡）
-        if (messageContent || segments.length > 0) {
-          const newMessage = {
-            id: messageId,
-            role: 'system',
-            content: messageContent,
-            segments,
-            timestamp: new Date(messageData.timestamp || data.timestamp || Date.now()),
-            isStreaming: isStreaming,
-            isHint: !!messageData.isHint
-          }
-          messages.value.push(newMessage)
-          console.log('[App] 消息已添加，当前消息数量:', messages.value.length, '添加后消息列表:', messages.value.map(m => ({ id: m.id, role: m.role, content: m.content?.substring(0, 20) })))
-        } else {
-          console.log('[App] 跳过空消息')
+        const newMessage = {
+          id: messageId,
+          role: 'system',
+          content: messageContent,
+          segments,
+          timestamp: new Date(messageData.timestamp || data.timestamp || Date.now()),
+          isStreaming: isStreaming,
+          isHint: !!messageData.isHint
         }
+        messages.value.push(newMessage)
+        console.log('[App] 消息已添加，当前消息数量:', messages.value.length, '添加后消息列表:', messages.value.map(m => ({ id: m.id, role: m.role, content: m.content?.substring(0, 20) })))
       }
       
       // 定期检查消息列表，确保用户消息没有被意外删除

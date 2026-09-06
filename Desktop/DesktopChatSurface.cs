@@ -1115,7 +1115,9 @@ namespace EasyWriteClient.Desktop
                     timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds()
                 });
 
-                await ProcessChatRequestAsync(content).ConfigureAwait(true);
+                // 整轮 SSE 可能远超前端 sendMessage 超时；在 WebMessageReceived 里等完
+                // 会卡住桥、拖死 PostWebMessage，界面只剩用户气泡，切会话才能从库里看到回复。
+                _ = ProcessChatRequestAsync(content);
                 return new { success = true };
             }
             catch (Exception ex)
