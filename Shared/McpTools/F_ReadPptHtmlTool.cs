@@ -27,6 +27,15 @@ namespace WordAddIn1
                         };
                     }
 
+                    if (PptHtmlNodeSearch.HasFieldsKey(args))
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "搜索不接受 fields，结果是约定 HTML"
+                        };
+                    }
+
                     if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string resolveError))
                     {
                         return new ToolResult { Success = false, Error = resolveError };
@@ -40,6 +49,20 @@ namespace WordAddIn1
                             Success = false,
                             Error = "必须提供 slide_id（先 F_get_presentation_content）"
                         };
+                    }
+
+                    if (PptHtmlNodeSearch.HasIncompleteSearchArgs(args))
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "搜索必须提供 query，或 attr + pattern"
+                        };
+                    }
+
+                    if (PptHtmlNodeSearch.IsSearchArgs(args))
+                    {
+                        return HandleSearch(args, channel, slideId.Trim());
                     }
 
                     string exportHtml = FilePathResolver.TryGetArg(args, "path", "export_html");
@@ -224,6 +247,98 @@ namespace WordAddIn1
                 {
                     return new ToolResult { Success = false, Error = "读取演示文稿 HTML 失败: " + ex.Message };
                 }
+            };
+        }
+
+        private static ToolResult HandleSearch(
+            Dictionary<string, object> args,
+            IOperationChannel channel,
+            string slideId)
+        {
+            if (channel == null
+                || (channel.Kind != ChannelKind.Ppt && channel.Kind != ChannelKind.Wpp))
+            {
+                return new ToolResult
+                {
+                    Success = false,
+                    Error = "只有 PPT/WPP 渠道支持按属性搜索"
+                };
+            }
+
+            bool full = GetBoolArg(args, "full", false);
+            string shapeId = GetStringArg(args, "shape_id");
+            if (full)
+            {
+                return new ToolResult { Success = false, Error = "搜索不要同时传 full" };
+            }
+
+            if (!string.IsNullOrWhiteSpace(shapeId))
+            {
+                return new ToolResult { Success = false, Error = "搜索不要同时传 shape_id" };
+            }
+
+            if ((args != null && (args.ContainsKey("path") || args.ContainsKey("export_html")))
+                || !string.IsNullOrEmpty(FilePathResolver.TryGetArg(args, "path", "export_html")))
+            {
+                return new ToolResult
+                {
+                    Success = false,
+                    Error = "搜索不写 path，结果在 display_contents"
+                };
+            }
+
+            if (!PptHtmlNodeSearch.TryParseRequest(args, out PptHtmlSearchRequest request, out string parseError))
+            {
+                return new ToolResult { Success = false, Error = parseError };
+            }
+
+            if (!PresentationHostAdapter.TrySearchPptHtml(
+                    channel,
+                    slideId,
+                    out PptHtmlReadResult hostResult,
+                    out ToolResult errorResult))
+            {
+                return errorResult;
+            }
+
+            if (!PptHtmlNodeSearch.TryMatch(
+                    hostResult != null ? hostResult.Shapes : null,
+                    request,
+                    out List<PptHtmlShapeNode> forest,
+                    out int leafCount,
+                    out string matchError))
+            {
+                var fail = new Dictionary<string, object>
+                {
+                    ["slide_id"] = hostResult != null ? hostResult.SlideId ?? slideId : slideId
+                };
+                if (leafCount > PptHtmlNodeSearch.MaxHits)
+                {
+                    fail["match_count"] = leafCount;
+                }
+
+                return new ToolResult
+                {
+                    Success = false,
+                    Error = matchError,
+                    Data = fail
+                };
+            }
+
+            string display = PptHtmlNodeSearch.BuildDisplayContents(forest, leafCount);
+            var data = new Dictionary<string, object>
+            {
+                ["channel_id"] = ChannelRegistry.ToPublicId(hostResult.ChannelId) ?? "",
+                ["kind"] = hostResult.Kind ?? "",
+                ["slide_id"] = hostResult.SlideId ?? slideId,
+                ["index"] = hostResult.Index,
+                ["match_count"] = leafCount,
+                ["display_contents"] = display
+            };
+            return new ToolResult
+            {
+                Success = true,
+                Data = data
             };
         }
 

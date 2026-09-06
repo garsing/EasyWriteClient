@@ -366,6 +366,32 @@ namespace WordAddIn1.PresentationHost
                 out error);
         }
 
+        public static bool TrySearchPptHtml(
+            PptChannel channel,
+            string slideId,
+            out PptHtmlReadResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLivePresentation(out PowerPoint.Presentation presentation))
+            {
+                error = "渠道对应的演示文稿已关闭";
+                return false;
+            }
+
+            return PptHtmlPowerPointReader.TryRead(
+                presentation,
+                slideId,
+                channel.ChannelId,
+                "ppt",
+                null,
+                false,
+                true,
+                out result,
+                out error);
+        }
+
         public static bool TryExportPptHtmlPictures(
             PptChannel channel,
             PptHtmlReadResult result,

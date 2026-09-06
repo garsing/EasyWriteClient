@@ -46,6 +46,20 @@ namespace WordAddIn1.PresentationHost
             out PptHtmlReadResult result,
             out string error)
         {
+            return TryRead(presentation, slideId, channelId, kind, shapeId, fullPage, false, out result, out error);
+        }
+
+        public static bool TryRead(
+            PowerPoint.Presentation presentation,
+            string slideId,
+            string channelId,
+            string kind,
+            string shapeId,
+            bool fullPage,
+            bool searchPage,
+            out PptHtmlReadResult result,
+            out string error)
+        {
             result = null;
             error = null;
             if (presentation == null)
@@ -116,10 +130,36 @@ namespace WordAddIn1.PresentationHost
                 + " slideSize=" + slideWidth.ToString("0.#", CultureInfo.InvariantCulture)
                 + "x" + slideHeight.ToString("0.#", CultureInfo.InvariantCulture)
                 + (string.IsNullOrWhiteSpace(shapeId) ? "" : " shape_id=" + shapeId)
-                + (fullPage ? " fullPage=true" : ""));
+                + (fullPage ? " fullPage=true" : "")
+                + (searchPage ? " searchPage=true" : ""));
             try
             {
-                if (fullPage)
+                if (searchPage)
+                {
+                    if (!CollectShapes(
+                        slide.Shapes,
+                        trimmed,
+                        slideWidth,
+                        slideHeight,
+                        0,
+                        0,
+                        slideWidth,
+                        slideHeight,
+                        GroupReadMode.SearchPage,
+                        1,
+                        shapes,
+                        ref truncated,
+                        ref truncatedReason,
+                        fontDbg,
+                        out string collectSearchError))
+                    {
+                        error = collectSearchError;
+                        return false;
+                    }
+
+                    isSkeleton = false;
+                }
+                else if (fullPage)
                 {
                     if (!CollectShapes(
                         slide.Shapes,
@@ -340,7 +380,18 @@ namespace WordAddIn1.PresentationHost
             ShellOnly,
             Skeleton,
             FullTree,
-            FullPage
+            FullPage,
+            SearchPage
+        }
+
+        private static bool IsUnlimited(GroupReadMode mode)
+        {
+            return mode == GroupReadMode.FullPage || mode == GroupReadMode.SearchPage;
+        }
+
+        private static bool IsSlim(GroupReadMode mode)
+        {
+            return mode == GroupReadMode.Skeleton || mode == GroupReadMode.SearchPage;
         }
 
         private static bool CollectShapes(
@@ -378,7 +429,7 @@ namespace WordAddIn1.PresentationHost
 
             for (int i = 1; i <= count; i++)
             {
-                if (mode != GroupReadMode.FullPage
+                if (!IsUnlimited(mode)
                     && PptHtmlGeom.CountNodes(output) >= PptHtmlReadResult.MaxShapes)
                 {
                     truncated = true;
@@ -785,7 +836,7 @@ namespace WordAddIn1.PresentationHost
             error = null;
             built = null;
             if (output != null
-                && mode != GroupReadMode.FullPage
+                && !IsUnlimited(mode)
                 && PptHtmlGeom.CountNodes(output) >= PptHtmlReadResult.MaxShapes)
             {
                 return true;
@@ -855,7 +906,7 @@ namespace WordAddIn1.PresentationHost
             if (typeName == "group")
             {
                 if (mode == GroupReadMode.FullTree
-                    || mode == GroupReadMode.FullPage
+                    || IsUnlimited(mode)
                     || (mode == GroupReadMode.Skeleton
                         && expandLayer < PptHtmlReadResult.SkeletonMaxDepth))
                 {
@@ -905,7 +956,7 @@ namespace WordAddIn1.PresentationHost
                 typeName = "picture";
             }
 
-            bool slim = mode == GroupReadMode.Skeleton;
+            bool slim = IsSlim(mode);
             string text = "";
             bool textTruncated = false;
             string innerHtml = null;
@@ -915,7 +966,10 @@ namespace WordAddIn1.PresentationHost
                 if (typeName != "picture" && typeName != "group" && !PptShapeTypeMap.IsNonEditable(typeName))
                 {
                     text = TryReadText(shape);
-                    text = PptConventionHtml.TruncateSkeletonText(text, out textTruncated);
+                    if (mode != GroupReadMode.SearchPage)
+                    {
+                        text = PptConventionHtml.TruncateSkeletonText(text, out textTruncated);
+                    }
                 }
             }
             else if (typeName == "chart")

@@ -187,6 +187,69 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
+        public static bool TrySearchPptHtml(
+            IOperationChannel channel,
+            string slideId,
+            out PptHtmlReadResult result,
+            out ToolResult errorResult)
+        {
+            result = null;
+            errorResult = null;
+            if (channel == null)
+            {
+                errorResult = new ToolResult { Success = false, Error = "未知 channel_id" };
+                return false;
+            }
+
+            if (channel.Kind != ChannelKind.Ppt && channel.Kind != ChannelKind.Wpp)
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "只有 PPT/WPP 渠道支持按属性搜索"
+                };
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(slideId))
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "必须提供 slide_id（先 F_get_presentation_content）"
+                };
+                return false;
+            }
+
+            bool ok;
+            string error;
+            if (channel is PptChannel ppt)
+            {
+                ok = PowerPointPresentationHost.TrySearchPptHtml(ppt, slideId, out result, out error);
+            }
+            else if (channel is WppChannel wpp)
+            {
+                ok = WppPresentationHost.TrySearchPptHtml(wpp, slideId, out result, out error);
+            }
+            else
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "只有 PPT/WPP 渠道支持按属性搜索"
+                };
+                return false;
+            }
+
+            if (!ok)
+            {
+                errorResult = new ToolResult { Success = false, Error = error };
+                return false;
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// 将页内图片导出到 assets 本地目录，并写入 result 中 picture 节点的 DataSrc（workspace:…）。
         /// </summary>
