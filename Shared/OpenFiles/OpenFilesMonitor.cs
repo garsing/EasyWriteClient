@@ -577,7 +577,9 @@ namespace WordAddIn1.OpenFiles
                 var snapshot = detector.Snapshot();
                 lock (_gate)
                 {
-                    RemoveByAppTypeUnlocked(appType, removeChannels: true);
+                    // 只换侧栏行。禁止清渠道表：Snapshot 里 EnsureChannel 刚复用的 p34
+                    // 若这里 Remove，下一拍 TryGet(p34) 就未知，再开同一份只能发 p41。
+                    RemoveByAppTypeUnlocked(appType, removeChannels: false);
                     foreach (var item in snapshot)
                     {
                         if (item != null && !string.IsNullOrEmpty(item.Id))
@@ -1051,6 +1053,12 @@ namespace WordAddIn1.OpenFiles
                     {
                         if (!newById.ContainsKey(kv.Key))
                         {
+                            // COM 枚举不全时不要当关掉。渠还活着就留行，避免短号被刷掉后一直涨。
+                            if (ChannelRegistry.IsLive(kv.Value != null ? kv.Value.ChannelId : null))
+                            {
+                                continue;
+                            }
+
                             if (!ChannelStillHeld(kv.Value, newById.Values))
                             {
                                 TryRemoveChannel(kv.Value);

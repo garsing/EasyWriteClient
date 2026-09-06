@@ -439,6 +439,47 @@ namespace WordAddIn1
             }
         }
 
+        /// <summary>注册表里还有且 COM 仍活。侧栏漏扫时用这个决定能不能删渠。</summary>
+        public static bool IsLive(string channelId)
+        {
+            if (!TryGet(channelId, out IOperationChannel ch) || ch == null)
+            {
+                return false;
+            }
+
+            if (ch is PptChannel ppt)
+            {
+                return ppt.TryGetLivePresentation(out _);
+            }
+
+            if (ch is WppChannel wpp)
+            {
+                return wpp.TryGetLivePresentation(out _);
+            }
+
+            if (ch is WordChannel word)
+            {
+                return word.TryGetLiveDocument(out _);
+            }
+
+            if (ch is WpsChannel wps)
+            {
+                return wps.TryGetLiveDocument(out _);
+            }
+
+            if (ch is ExcelChannel excel)
+            {
+                return excel.TryGetLiveWorkbook(out _);
+            }
+
+            if (ch is EtChannel et)
+            {
+                return et.TryGetLiveWorkbook(out _);
+            }
+
+            return ch is BrowserChannel;
+        }
+
         public static bool TryGetWord(string channelId, out WordChannel channel)
         {
             channel = null;
