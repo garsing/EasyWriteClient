@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.IO;
 
 namespace WordAddIn1
@@ -13,26 +16,46 @@ namespace WordAddIn1
         /// <summary>视觉轮按 base64 计 token，必须先缩小。200KB / 长边 800 足够看版式。</summary>
         public const int MaxImageBytes = 204800;
         public const int MaxImageDimension = 800;
+        public const int ContactSheetMaxPages = 9;
+        public const int ContactSheetCellLongEdge = 320;
         private const int JpegQualityStart = 85;
+
+        internal sealed class ContactSheetTile
+        {
+            public int Index { get; set; }
+            public string SlideId { get; set; }
+            public byte[] ImageBytes { get; set; }
+        }
 
         public static void FitExportPixelSize(float slideWidth, float slideHeight, out int width, out int height)
         {
+            FitExportPixelSize(slideWidth, slideHeight, MaxImageDimension, out width, out height);
+        }
+
+        public static void FitExportPixelSize(
+            float slideWidth,
+            float slideHeight,
+            int maxLongEdge,
+            out int width,
+            out int height)
+        {
+            int cap = maxLongEdge > 0 ? maxLongEdge : MaxImageDimension;
             if (slideWidth <= 0f || slideHeight <= 0f)
             {
-                width = MaxImageDimension;
-                height = Math.Max(1, MaxImageDimension * 9 / 16);
+                width = cap;
+                height = Math.Max(1, cap * 9 / 16);
                 return;
             }
 
             if (slideWidth >= slideHeight)
             {
-                width = MaxImageDimension;
-                height = Math.Max(1, (int)Math.Round(MaxImageDimension * (double)slideHeight / slideWidth));
+                width = cap;
+                height = Math.Max(1, (int)Math.Round(cap * (double)slideHeight / slideWidth));
                 return;
             }
 
-            height = MaxImageDimension;
-            width = Math.Max(1, (int)Math.Round(MaxImageDimension * (double)slideWidth / slideHeight));
+            height = cap;
+            width = Math.Max(1, (int)Math.Round(cap * (double)slideWidth / slideHeight));
         }
 
         internal sealed class CompressedImage
@@ -118,6 +141,103 @@ namespace WordAddIn1
             finally
             {
                 working.Dispose();
+            }
+        }
+
+        public static CompressedImage ComposeContactSheet(IReadOnlyList<ContactSheetTile> tiles)
+        {
+            if (tiles == null || tiles.Count == 0)
+            {
+                throw new ArgumentException("宫格没有页");
+            }
+
+            if (tiles.Count > ContactSheetMaxPages)
+            {
+                throw new ArgumentException("一次最多 " + ContactSheetMaxPages + " 页");
+            }
+
+            const int colsMax = 3;
+            const int gap = 8;
+            const int labelH = 22;
+            const int margin = 8;
+            const int cellW = ContactSheetCellLongEdge;
+
+            int n = tiles.Count;
+            int cols = Math.Min(colsMax, n);
+            int rows = (n + cols - 1) / cols;
+            int cellImgH = cellW * 9 / 16;
+            var decoded = new List<Bitmap>(n);
+            try
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    Bitmap bmp = DecodeBitmap(tiles[i] == null ? null : tiles[i].ImageBytes);
+                    decoded.Add(bmp);
+                    if (i == 0 && bmp != null && bmp.Width > 0)
+                    {
+                        cellImgH = Math.Max(1, (int)Math.Round(cellW * (double)bmp.Height / bmp.Width));
+                    }
+                }
+
+                int cellH = labelH + cellImgH;
+                int width = margin * 2 + cols * cellW + (cols - 1) * gap;
+                int height = margin * 2 + rows * cellH + (rows - 1) * gap;
+                using (var canvas = new Bitmap(width, height))
+                using (var graphics = Graphics.FromImage(canvas))
+                using (var font = CreateLabelFont())
+                using (var imgBg = new SolidBrush(Color.FromArgb(32, 36, 42)))
+                using (var bar = new SolidBrush(Color.FromArgb(27, 58, 75)))
+                using (var white = new SolidBrush(Color.White))
+                {
+                    graphics.Clear(Color.FromArgb(236, 236, 236));
+                    graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+                    graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    graphics.CompositingQuality = CompositingQuality.HighQuality;
+                    for (int i = 0; i < n; i++)
+                    {
+                        int row = i / cols;
+                        int col = i % cols;
+                        int x = margin + col * (cellW + gap);
+                        int y = margin + row * (cellH + gap);
+                        graphics.FillRectangle(bar, x, y, cellW, labelH);
+                        string slideId = tiles[i] == null ? "" : (tiles[i].SlideId ?? "");
+                        int index = tiles[i] == null ? i + 1 : tiles[i].Index;
+                        string label = string.IsNullOrEmpty(slideId)
+                            ? index.ToString()
+                            : index + " · " + slideId;
+                        graphics.DrawString(
+                            label,
+                            font,
+                            white,
+                            new RectangleF(x + 4, y + 2, cellW - 8, labelH - 2));
+                        int imgY = y + labelH;
+                        graphics.FillRectangle(imgBg, x, imgY, cellW, cellImgH);
+                        Bitmap src = decoded[i];
+                        if (src != null && src.Width > 0 && src.Height > 0)
+                        {
+                            double scale = Math.Min(
+                                (double)cellW / src.Width,
+                                (double)cellImgH / src.Height);
+                            int dw = Math.Max(1, (int)Math.Round(src.Width * scale));
+                            int dh = Math.Max(1, (int)Math.Round(src.Height * scale));
+                            int dx = x + (cellW - dw) / 2;
+                            int dy = imgY + (cellImgH - dh) / 2;
+                            graphics.DrawImage(src, dx, dy, dw, dh);
+                        }
+                    }
+
+                    return Compress(canvas);
+                }
+            }
+            finally
+            {
+                for (int i = 0; i < decoded.Count; i++)
+                {
+                    if (decoded[i] != null)
+                    {
+                        decoded[i].Dispose();
+                    }
+                }
             }
         }
 
@@ -212,6 +332,32 @@ namespace WordAddIn1
                 }
 
                 return total == 0 || (dark * 200) < total;
+            }
+        }
+
+        private static Bitmap DecodeBitmap(byte[] bytes)
+        {
+            if (bytes == null || bytes.Length == 0)
+            {
+                return null;
+            }
+
+            using (var stream = new MemoryStream(bytes, writable: false))
+            using (var loaded = new Bitmap(stream))
+            {
+                return new Bitmap(loaded);
+            }
+        }
+
+        private static Font CreateLabelFont()
+        {
+            try
+            {
+                return new Font("Microsoft YaHei", 11f, FontStyle.Bold, GraphicsUnit.Pixel);
+            }
+            catch (Exception)
+            {
+                return new Font(FontFamily.GenericSansSerif, 11f, FontStyle.Bold, GraphicsUnit.Pixel);
             }
         }
 

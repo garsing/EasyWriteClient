@@ -631,7 +631,8 @@ namespace WordAddIn1.PresentationHost
             IOperationChannel channel,
             int pageNumber,
             out PresentationCaptureResult result,
-            out ToolResult errorResult)
+            out ToolResult errorResult,
+            int maxLongEdge = 0)
         {
             result = null;
             errorResult = null;
@@ -645,11 +646,13 @@ namespace WordAddIn1.PresentationHost
             string error;
             if (channel is PptChannel ppt)
             {
-                ok = PowerPointPresentationHost.TryCaptureSlide(ppt, pageNumber, out result, out error);
+                ok = PowerPointPresentationHost.TryCaptureSlide(
+                    ppt, pageNumber, out result, out error, maxLongEdge);
             }
             else if (channel is WppChannel wpp)
             {
-                ok = WppPresentationHost.TryCaptureSlide(wpp, pageNumber, out result, out error);
+                ok = WppPresentationHost.TryCaptureSlide(
+                    wpp, pageNumber, out result, out error, maxLongEdge);
             }
             else
             {

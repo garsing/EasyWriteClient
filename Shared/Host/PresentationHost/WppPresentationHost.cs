@@ -199,7 +199,8 @@ namespace WordAddIn1.PresentationHost
             WppChannel channel,
             int pageNumber,
             out PresentationCaptureResult result,
-            out string error)
+            out string error,
+            int maxLongEdge = 0)
         {
             result = null;
             error = null;
@@ -293,7 +294,12 @@ namespace WordAddIn1.PresentationHost
                 {
                 }
 
-                ImageCaptureCompressor.FitExportPixelSize(slideWidth, slideHeight, out int exportW, out int exportH);
+                ImageCaptureCompressor.FitExportPixelSize(
+                    slideWidth,
+                    slideHeight,
+                    maxLongEdge,
+                    out int exportW,
+                    out int exportH);
                 try
                 {
                     WppCom.Invoke(slide, "Export", pngPath, "PNG", exportW, exportH);
