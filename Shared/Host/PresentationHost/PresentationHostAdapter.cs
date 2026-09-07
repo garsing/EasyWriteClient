@@ -517,25 +517,28 @@ namespace WordAddIn1.PresentationHost
         }
 
         public static bool TryManageShape(
-            IOperationChannel channel,
+            IOperationChannel dest,
+            IOperationChannel source,
             PresentationManageShapeRequest request,
             out PresentationManageShapeResult result,
             out ToolResult errorResult)
         {
             result = null;
             errorResult = null;
-            if (channel == null)
+            if (dest == null)
             {
                 errorResult = new ToolResult { Success = false, Error = "未知 channel_id" };
                 return false;
             }
 
-            if (channel.Kind == ChannelKind.Word
-                || channel.Kind == ChannelKind.Wps
-                || channel.Kind == ChannelKind.Excel
-                || channel.Kind == ChannelKind.Et)
+            if (source == null)
             {
-                string host = channel.Kind.ToString().ToLowerInvariant();
+                source = dest;
+            }
+
+            if (!IsPresentationKind(dest.Kind))
+            {
+                string host = dest.Kind.ToString().ToLowerInvariant();
                 errorResult = new ToolResult
                 {
                     Success = false,
@@ -545,15 +548,35 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (!IsPresentationKind(source.Kind))
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "源头须为演示文稿渠道（ppt: / wpp:）"
+                };
+                return false;
+            }
+
+            if (dest.Kind != source.Kind)
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "源头与目标须同为 ppt 或同为 wpp"
+                };
+                return false;
+            }
+
             bool ok;
             string error;
-            if (channel is PptChannel ppt)
+            if (dest is PptChannel pptDest && source is PptChannel pptSource)
             {
-                ok = PowerPointPresentationHost.TryManageShape(ppt, request, out result, out error);
+                ok = PowerPointPresentationHost.TryManageShape(pptDest, pptSource, request, out result, out error);
             }
-            else if (channel is WppChannel wpp)
+            else if (dest is WppChannel wppDest && source is WppChannel wppSource)
             {
-                ok = WppPresentationHost.TryManageShape(wpp, request, out result, out error);
+                ok = WppPresentationHost.TryManageShape(wppDest, wppSource, request, out result, out error);
             }
             else
             {

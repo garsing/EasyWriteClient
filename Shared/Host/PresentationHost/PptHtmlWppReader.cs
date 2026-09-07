@@ -139,10 +139,6 @@ namespace WordAddIn1.PresentationHost
                         trimmed,
                         slideWidth,
                         slideHeight,
-                        0,
-                        0,
-                        slideWidth,
-                        slideHeight,
                         GroupReadMode.SearchPage,
                         1,
                         shapes,
@@ -162,10 +158,6 @@ namespace WordAddIn1.PresentationHost
                     if (!CollectShapes(
                         shapesObj,
                         trimmed,
-                        slideWidth,
-                        slideHeight,
-                        0,
-                        0,
                         slideWidth,
                         slideHeight,
                         GroupReadMode.FullPage,
@@ -204,10 +196,6 @@ namespace WordAddIn1.PresentationHost
                 else if (!CollectShapes(
                     shapesObj,
                     trimmed,
-                    slideWidth,
-                    slideHeight,
-                    0,
-                    0,
                     slideWidth,
                     slideHeight,
                     GroupReadMode.Skeleton,
@@ -341,10 +329,6 @@ namespace WordAddIn1.PresentationHost
             string slideId,
             double slideWidth,
             double slideHeight,
-            double parentLeft,
-            double parentTop,
-            double parentWidth,
-            double parentHeight,
             GroupReadMode mode,
             int expandLayer,
             List<PptHtmlShapeNode> output,
@@ -390,10 +374,6 @@ namespace WordAddIn1.PresentationHost
                     slideId,
                     slideWidth,
                     slideHeight,
-                    parentLeft,
-                    parentTop,
-                    parentWidth,
-                    parentHeight,
                     mode,
                     expandLayer,
                     output,
@@ -454,24 +434,11 @@ namespace WordAddIn1.PresentationHost
             isSkeleton = typeName == "group";
             GroupReadMode mode = isSkeleton ? GroupReadMode.Skeleton : GroupReadMode.ShellOnly;
             var built = new List<PptHtmlShapeNode>();
-            double pL = 0;
-            double pT = 0;
-            double pW = slideWidth;
-            double pH = slideHeight;
-            if (path.Count >= 2)
-            {
-                TryReadBox(path[path.Count - 2], out pL, out pT, out pW, out pH);
-            }
-
             if (!AppendNode(
                 target,
                 slideId,
                 slideWidth,
                 slideHeight,
-                pL,
-                pT,
-                pW,
-                pH,
                 mode,
                 0,
                 built,
@@ -492,24 +459,11 @@ namespace WordAddIn1.PresentationHost
             PptHtmlShapeNode current = built[0];
             for (int i = path.Count - 2; i >= 0; i--)
             {
-                double aL = 0;
-                double aT = 0;
-                double aW = slideWidth;
-                double aH = slideHeight;
-                if (i >= 1)
-                {
-                    TryReadBox(path[i - 1], out aL, out aT, out aW, out aH);
-                }
-
                 if (!AppendNode(
                     path[i],
                     slideId,
                     slideWidth,
                     slideHeight,
-                    aL,
-                    aT,
-                    aW,
-                    aH,
                     GroupReadMode.ShellOnly,
                     0,
                     new List<PptHtmlShapeNode>(),
@@ -660,7 +614,6 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            TryReadBox(group, out double gL, out double gT, out double gW, out double gH);
             for (int i = 1; i <= count; i++)
             {
                 object child = WppCom.GetIndexed(items, i);
@@ -674,10 +627,6 @@ namespace WordAddIn1.PresentationHost
                     slideId,
                     slideWidth,
                     slideHeight,
-                    gL,
-                    gT,
-                    gW,
-                    gH,
                     childMode,
                     childExpandLayer,
                     output,
@@ -698,10 +647,6 @@ namespace WordAddIn1.PresentationHost
             string slideId,
             double slideWidth,
             double slideHeight,
-            double parentLeft,
-            double parentTop,
-            double parentWidth,
-            double parentHeight,
             GroupReadMode mode,
             int expandLayer,
             List<PptHtmlShapeNode> output,
@@ -715,10 +660,6 @@ namespace WordAddIn1.PresentationHost
                 slideId,
                 slideWidth,
                 slideHeight,
-                parentLeft,
-                parentTop,
-                parentWidth,
-                parentHeight,
                 mode,
                 expandLayer,
                 output,
@@ -734,10 +675,6 @@ namespace WordAddIn1.PresentationHost
             string slideId,
             double slideWidth,
             double slideHeight,
-            double parentLeft,
-            double parentTop,
-            double parentWidth,
-            double parentHeight,
             GroupReadMode mode,
             int expandLayer,
             List<PptHtmlShapeNode> output,
@@ -895,7 +832,7 @@ namespace WordAddIn1.PresentationHost
                 pageTextTruncated = true;
             }
 
-            string style = TryBuildStyle(shape, parentLeft, parentTop, parentWidth, parentHeight);
+            string style = TryBuildStyle(shape, slideWidth, slideHeight);
             double? rotation = null;
             try
             {
@@ -1749,10 +1686,8 @@ namespace WordAddIn1.PresentationHost
 
         private static string TryBuildStyle(
             object shape,
-            double parentLeft,
-            double parentTop,
-            double parentWidth,
-            double parentHeight)
+            double slideWidth,
+            double slideHeight)
         {
             try
             {
@@ -1760,15 +1695,13 @@ namespace WordAddIn1.PresentationHost
                 double top = Convert.ToDouble(WppCom.GetProperty(shape, "Top"));
                 double width = Convert.ToDouble(WppCom.GetProperty(shape, "Width"));
                 double height = Convert.ToDouble(WppCom.GetProperty(shape, "Height"));
-                return PptHtmlGeom.StyleFromSlideBox(
+                return PptHtmlGeom.StyleFromSlidePoints(
                     left,
                     top,
                     width,
                     height,
-                    parentLeft,
-                    parentTop,
-                    parentWidth,
-                    parentHeight);
+                    slideWidth,
+                    slideHeight);
             }
             catch (Exception)
             {
@@ -1811,7 +1744,6 @@ namespace WordAddIn1.PresentationHost
             object pageSetup = WppCom.GetProperty(presentation, "PageSetup");
             double slideWidth = Convert.ToDouble(WppCom.GetProperty(pageSetup, "SlideWidth"));
             double slideHeight = Convert.ToDouble(WppCom.GetProperty(pageSetup, "SlideHeight"));
-            TryReadBox(target, out double boxL, out double boxT, out double boxW, out double boxH);
             string typeName = PeekTypeName(target);
             var built = new List<PptHtmlShapeNode>();
             bool truncated = false;
@@ -1823,10 +1755,6 @@ namespace WordAddIn1.PresentationHost
                 slideId.Trim(),
                 slideWidth,
                 slideHeight,
-                boxL,
-                boxT,
-                boxW,
-                boxH,
                 mode,
                 0,
                 built,
@@ -1845,11 +1773,6 @@ namespace WordAddIn1.PresentationHost
             }
 
             node = built[0];
-            if (typeName != "group")
-            {
-                node.Style = PptConventionHtml.BuildStyle(0, 0, 100, 100);
-            }
-
             return true;
         }
 

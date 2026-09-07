@@ -158,10 +158,6 @@ namespace WordAddIn1.PresentationHost
                     if (!TryApplyOne(
                             slide,
                             node,
-                            0,
-                            0,
-                            100,
-                            100,
                             slideWidth,
                             slideHeight,
                             plan,
@@ -597,10 +593,6 @@ namespace WordAddIn1.PresentationHost
         private static bool TryApplyOne(
             PowerPoint.Slide slide,
             PptHtmlApplyNode node,
-            double parentLeft,
-            double parentTop,
-            double parentWidth,
-            double parentHeight,
             float slideWidth,
             float slideHeight,
             PptHtmlApplyPlan plan,
@@ -621,7 +613,6 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
-            ResolveToSlidePct(node, parentLeft, parentTop, parentWidth, parentHeight);
             if (IsGroupType(node.ShapeType))
             {
                 return TryApplyGroup(
@@ -734,12 +725,6 @@ namespace WordAddIn1.PresentationHost
                     out error);
             }
 
-            double boxL;
-            double boxT;
-            double boxW;
-            double boxH;
-            ReadParentBox(node, existing, slideWidth, slideHeight, out boxL, out boxT, out boxW, out boxH);
-
             bool hasKids = node.Children != null && node.Children.Count > 0;
             if (hasKids || !LiveMatchesHtml(existing, node, slideWidth, slideHeight))
             {
@@ -747,14 +732,6 @@ namespace WordAddIn1.PresentationHost
                 {
                     dbg?.Step("UPDATE_FAIL", node, error);
                     return false;
-                }
-
-                if (node.HasGeometry)
-                {
-                    boxL = node.LeftPct.GetValueOrDefault();
-                    boxT = node.TopPct.GetValueOrDefault();
-                    boxW = node.WidthPct.GetValueOrDefault();
-                    boxH = node.HeightPct.GetValueOrDefault();
                 }
 
                 TryCollectZ(slide, node, zTargets);
@@ -779,10 +756,6 @@ namespace WordAddIn1.PresentationHost
                 if (!TryApplyOne(
                         slide,
                         child,
-                        boxL,
-                        boxT,
-                        boxW,
-                        boxH,
                         slideWidth,
                         slideHeight,
                         plan,
@@ -846,10 +819,6 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            double boxL = node.LeftPct.GetValueOrDefault();
-            double boxT = node.TopPct.GetValueOrDefault();
-            double boxW = node.WidthPct.GetValueOrDefault();
-            double boxH = node.HeightPct.GetValueOrDefault();
             var members = new List<PowerPoint.Shape>();
             foreach (PptHtmlApplyNode child in node.Children)
             {
@@ -861,10 +830,6 @@ namespace WordAddIn1.PresentationHost
                 if (!TryApplyOne(
                         slide,
                         child,
-                        boxL,
-                        boxT,
-                        boxW,
-                        boxH,
                         slideWidth,
                         slideHeight,
                         plan,
@@ -1065,82 +1030,6 @@ namespace WordAddIn1.PresentationHost
         private static bool IsGroupType(string type)
         {
             return string.Equals(type, "group", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static void ResolveToSlidePct(
-            PptHtmlApplyNode node,
-            double parentLeft,
-            double parentTop,
-            double parentWidth,
-            double parentHeight)
-        {
-            if (node == null || !node.HasGeometry)
-            {
-                return;
-            }
-
-            if (parentLeft == 0 && parentTop == 0 && parentWidth == 100 && parentHeight == 100)
-            {
-                return;
-            }
-
-            PptHtmlGeom.ChildPctToParentPct(
-                node.LeftPct.GetValueOrDefault(),
-                node.TopPct.GetValueOrDefault(),
-                node.WidthPct.GetValueOrDefault(),
-                node.HeightPct.GetValueOrDefault(),
-                parentLeft,
-                parentTop,
-                parentWidth,
-                parentHeight,
-                out double sl,
-                out double st,
-                out double sw,
-                out double sh);
-            node.LeftPct = sl;
-            node.TopPct = st;
-            node.WidthPct = sw;
-            node.HeightPct = sh;
-        }
-
-        private static void ReadParentBox(
-            PptHtmlApplyNode node,
-            PowerPoint.Shape existing,
-            float slideWidth,
-            float slideHeight,
-            out double left,
-            out double top,
-            out double width,
-            out double height)
-        {
-            if (node != null && node.HasGeometry)
-            {
-                left = node.LeftPct.GetValueOrDefault();
-                top = node.TopPct.GetValueOrDefault();
-                width = node.WidthPct.GetValueOrDefault();
-                height = node.HeightPct.GetValueOrDefault();
-                return;
-            }
-
-            if (existing != null && slideWidth > 0 && slideHeight > 0)
-            {
-                try
-                {
-                    left = existing.Left / slideWidth * 100.0;
-                    top = existing.Top / slideHeight * 100.0;
-                    width = existing.Width / slideWidth * 100.0;
-                    height = existing.Height / slideHeight * 100.0;
-                    return;
-                }
-                catch (Exception)
-                {
-                }
-            }
-
-            left = 0;
-            top = 0;
-            width = 100;
-            height = 100;
         }
 
         private static bool TryPreflight(

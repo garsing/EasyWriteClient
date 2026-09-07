@@ -2,79 +2,63 @@ using System;
 
 namespace WordAddIn1.PresentationHost
 {
-    /// <summary>约定 HTML 几何：% 相对最近定位祖先（CSS 包含块），COM 用幻灯片点。</summary>
+    /// <summary>约定 HTML 几何：% 一律相对幻灯片；COM 用幻灯片点。</summary>
     internal static class PptHtmlGeom
     {
-        public static void ChildPctToParentPct(
-            double childLeft,
-            double childTop,
-            double childWidth,
-            double childHeight,
-            double parentLeft,
-            double parentTop,
-            double parentWidth,
-            double parentHeight,
+        public static string StyleFromSlidePoints(
+            double left,
+            double top,
+            double width,
+            double height,
+            double slideWidth,
+            double slideHeight)
+        {
+            if (slideWidth <= 0.0001 || slideHeight <= 0.0001)
+            {
+                return PptConventionHtml.BuildStyle(0, 0, 0, 0);
+            }
+
+            return PptConventionHtml.BuildStyle(
+                left / slideWidth * 100.0,
+                top / slideHeight * 100.0,
+                width / slideWidth * 100.0,
+                height / slideHeight * 100.0);
+        }
+
+        /// <summary>
+        /// 把已是页 % 的框，从源页框仿射到目标页框（extends：组件根原页框 → 实例页框）。
+        /// </summary>
+        public static void MapSlidePctBox(
+            double srcLeft,
+            double srcTop,
+            double srcWidth,
+            double srcHeight,
+            double fromLeft,
+            double fromTop,
+            double fromWidth,
+            double fromHeight,
+            double toLeft,
+            double toTop,
+            double toWidth,
+            double toHeight,
             out double outLeft,
             out double outTop,
             out double outWidth,
             out double outHeight)
         {
-            outLeft = parentLeft + childLeft / 100.0 * parentWidth;
-            outTop = parentTop + childTop / 100.0 * parentHeight;
-            outWidth = childWidth / 100.0 * parentWidth;
-            outHeight = childHeight / 100.0 * parentHeight;
-        }
-
-        public static void SlideBoxToParentPct(
-            double slideLeft,
-            double slideTop,
-            double slideWidth,
-            double slideHeight,
-            double parentLeft,
-            double parentTop,
-            double parentWidth,
-            double parentHeight,
-            out double pctLeft,
-            out double pctTop,
-            out double pctWidth,
-            out double pctHeight)
-        {
-            if (parentWidth <= 0.0001 || parentHeight <= 0.0001)
+            if (fromWidth <= 0.0001 || fromHeight <= 0.0001)
             {
-                pctLeft = pctTop = pctWidth = pctHeight = 0;
+                outLeft = toLeft;
+                outTop = toTop;
+                outWidth = toWidth;
+                outHeight = toHeight;
                 return;
             }
 
-            pctLeft = (slideLeft - parentLeft) / parentWidth * 100.0;
-            pctTop = (slideTop - parentTop) / parentHeight * 100.0;
-            pctWidth = slideWidth / parentWidth * 100.0;
-            pctHeight = slideHeight / parentHeight * 100.0;
-        }
-
-        public static string StyleFromSlideBox(
-            double slideLeft,
-            double slideTop,
-            double slideWidth,
-            double slideHeight,
-            double parentLeft,
-            double parentTop,
-            double parentWidth,
-            double parentHeight)
-        {
-            SlideBoxToParentPct(
-                slideLeft,
-                slideTop,
-                slideWidth,
-                slideHeight,
-                parentLeft,
-                parentTop,
-                parentWidth,
-                parentHeight,
-                out double l,
-                out double t,
-                out double w,
-                out double h);
-            return PptConventionHtml.BuildStyle(l, t, w, h);
+            outLeft = toLeft + (srcLeft - fromLeft) / fromWidth * toWidth;
+            outTop = toTop + (srcTop - fromTop) / fromHeight * toHeight;
+            outWidth = srcWidth / fromWidth * toWidth;
+            outHeight = srcHeight / fromHeight * toHeight;
         }
 
         public static int CountNodes(PptHtmlShapeNode node)

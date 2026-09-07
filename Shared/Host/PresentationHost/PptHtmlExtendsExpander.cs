@@ -198,7 +198,7 @@ namespace WordAddIn1.PresentationHost
             }
 
             int? instZ = TryParseInt(GetAttr(instance, "data-z"));
-            nodes = new List<XElement>();
+            var tops = new List<XElement>();
             foreach (XElement child in root.Elements())
             {
                 if (!TryValidateComponentNode(child, out error))
@@ -206,6 +206,31 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                if (!PptHtmlApplyParser.TryParseGeometry(GetAttr(child, "style"), out _, out _, out _, out _))
+                {
+                    error = "组件节点缺几何";
+                    return false;
+                }
+
+                tops.Add(child);
+            }
+
+            if (tops.Count == 0)
+            {
+                error = "组件没有可展开节点: " + full;
+                return false;
+            }
+
+            nodes = new List<XElement>();
+            bool singleGroup = tops.Count == 1
+                && string.Equals(GetAttr(tops[0], "data-shape-type"), "group", StringComparison.OrdinalIgnoreCase);
+            if (!TryUnionGeometry(tops, out double fromL, out double fromT, out double fromW, out double fromH, out error))
+            {
+                return false;
+            }
+
+            foreach (XElement child in tops)
+            {
                 if (!PptHtmlApplyParser.TryParseGeometry(
                         GetAttr(child, "style"),
                         out double cL,
@@ -218,21 +243,40 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 XElement clone = new XElement(child);
-                string shapeType = GetAttr(clone, "data-shape-type");
-                bool isGroup = string.Equals(shapeType, "group", StringComparison.OrdinalIgnoreCase);
-                if (isGroup)
+                if (singleGroup)
                 {
                     clone.SetAttributeValue("style", PptConventionHtml.BuildStyle(instL, instT, instW, instH));
+                    if (!TryRemapDescendants(clone, cL, cT, cW, cH, instL, instT, instW, instH, out error))
+                    {
+                        return false;
+                    }
                 }
                 else
                 {
+                    PptHtmlGeom.MapSlidePctBox(
+                        cL,
+                        cT,
+                        cW,
+                        cH,
+                        fromL,
+                        fromT,
+                        fromW,
+                        fromH,
+                        instL,
+                        instT,
+                        instW,
+                        instH,
+                        out double mappedL,
+                        out double mappedT,
+                        out double mappedW,
+                        out double mappedH);
                     clone.SetAttributeValue(
                         "style",
-                        PptConventionHtml.BuildStyle(
-                            instL + cL / 100.0 * instW,
-                            instT + cT / 100.0 * instH,
-                            cW / 100.0 * instW,
-                            cH / 100.0 * instH));
+                        PptConventionHtml.BuildStyle(mappedL, mappedT, mappedW, mappedH));
+                    if (!TryRemapDescendants(clone, fromL, fromT, fromW, fromH, instL, instT, instW, instH, out error))
+                    {
+                        return false;
+                    }
                 }
 
                 StripShapeIds(clone);
@@ -250,6 +294,135 @@ namespace WordAddIn1.PresentationHost
             {
                 error = "组件没有可展开节点: " + full;
                 return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryUnionGeometry(
+            List<XElement> nodes,
+            out double left,
+            out double top,
+            out double width,
+            out double height,
+            out string error)
+        {
+            left = top = width = height = 0;
+            error = null;
+            bool any = false;
+            double minL = 0;
+            double minT = 0;
+            double maxR = 0;
+            double maxB = 0;
+            foreach (XElement node in nodes)
+            {
+                if (!PptHtmlApplyParser.TryParseGeometry(
+                        GetAttr(node, "style"),
+                        out double l,
+                        out double t,
+                        out double w,
+                        out double h))
+                {
+                    error = "组件节点缺几何";
+                    return false;
+                }
+
+                if (!any)
+                {
+                    minL = l;
+                    minT = t;
+                    maxR = l + w;
+                    maxB = t + h;
+                    any = true;
+                }
+                else
+                {
+                    minL = Math.Min(minL, l);
+                    minT = Math.Min(minT, t);
+                    maxR = Math.Max(maxR, l + w);
+                    maxB = Math.Max(maxB, t + h);
+                }
+            }
+
+            if (!any)
+            {
+                error = "组件节点缺几何";
+                return false;
+            }
+
+            left = minL;
+            top = minT;
+            width = Math.Max(0.0001, maxR - minL);
+            height = Math.Max(0.0001, maxB - minT);
+            return true;
+        }
+
+        private static bool TryRemapDescendants(
+            XElement parent,
+            double fromLeft,
+            double fromTop,
+            double fromWidth,
+            double fromHeight,
+            double toLeft,
+            double toTop,
+            double toWidth,
+            double toHeight,
+            out string error)
+        {
+            error = null;
+            if (parent == null)
+            {
+                return true;
+            }
+
+            foreach (XElement child in parent.Elements())
+            {
+                if (!PptHtmlApplyParser.TryParseGeometry(
+                        GetAttr(child, "style"),
+                        out double childL,
+                        out double childT,
+                        out double childW,
+                        out double childH))
+                {
+                    error = "组件节点缺几何";
+                    return false;
+                }
+
+                PptHtmlGeom.MapSlidePctBox(
+                    childL,
+                    childT,
+                    childW,
+                    childH,
+                    fromLeft,
+                    fromTop,
+                    fromWidth,
+                    fromHeight,
+                    toLeft,
+                    toTop,
+                    toWidth,
+                    toHeight,
+                    out double mappedL,
+                    out double mappedT,
+                    out double mappedW,
+                    out double mappedH);
+                child.SetAttributeValue(
+                    "style",
+                    PptConventionHtml.BuildStyle(mappedL, mappedT, mappedW, mappedH));
+
+                if (!TryRemapDescendants(
+                        child,
+                        fromLeft,
+                        fromTop,
+                        fromWidth,
+                        fromHeight,
+                        toLeft,
+                        toTop,
+                        toWidth,
+                        toHeight,
+                        out error))
+                {
+                    return false;
+                }
             }
 
             return true;

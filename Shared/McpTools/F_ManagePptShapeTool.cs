@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using System.Threading.Tasks;
 using WordAddIn1.PresentationHost;
@@ -18,7 +19,7 @@ namespace WordAddIn1
                 try
                 {
                     AgentRunCancellation.ThrowIfCancelled();
-                    if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string resolveError))
+                    if (!ChannelContext.TryResolveChannel(args, out IOperationChannel dest, out string resolveError))
                     {
                         return new ToolResult { Success = false, Error = resolveError };
                     }
@@ -26,28 +27,60 @@ namespace WordAddIn1
                     string action = GetStringArg(args, "action");
                     if (string.IsNullOrWhiteSpace(action))
                     {
-                        return new ToolResult { Success = false, Error = "须提供 action（delete）" };
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "须提供 action（delete、group 或 duplicate_group）"
+                        };
                     }
 
-                    string[] shapeIds = TryGetStringArray(args, "shape_ids");
-                    if (shapeIds == null || shapeIds.Length == 0)
+                    action = action.Trim().ToLowerInvariant();
+                    if (!TryRejectForeignArgs(action, args, out string foreignError))
                     {
-                        string single = GetStringArg(args, "shape_id");
-                        if (!string.IsNullOrWhiteSpace(single))
-                        {
-                            shapeIds = new[] { single };
-                        }
+                        return new ToolResult { Success = false, Error = foreignError };
+                    }
+
+                    if (!TryResolveSourceChannel(action, dest, args, out IOperationChannel source, out string sourceError))
+                    {
+                        return new ToolResult { Success = false, Error = sourceError };
                     }
 
                     var request = new PresentationManageShapeRequest
                     {
                         Action = action,
                         SlideId = GetStringArg(args, "slide_id"),
-                        ShapeIds = shapeIds
+                        ToSlideId = GetStringArg(args, "to_slide_id"),
+                        ShapeIds = TryGetStringArray(args, "shape_ids"),
+                        ShapeId = GetStringArg(args, "shape_id"),
+                        SourceChannelId = source.ChannelId
                     };
 
+                    if (string.Equals(action, "delete", StringComparison.Ordinal)
+                        && (request.ShapeIds == null || request.ShapeIds.Length == 0)
+                        && !string.IsNullOrWhiteSpace(request.ShapeId))
+                    {
+                        request.ShapeIds = new[] { request.ShapeId };
+                    }
+
+                    if (string.Equals(action, "duplicate_group", StringComparison.Ordinal))
+                    {
+                        if (!TryParsePct(args, "left", out double left, out string leftError))
+                        {
+                            return new ToolResult { Success = false, Error = leftError };
+                        }
+
+                        if (!TryParsePct(args, "top", out double top, out string topError))
+                        {
+                            return new ToolResult { Success = false, Error = topError };
+                        }
+
+                        request.LeftPct = left;
+                        request.TopPct = top;
+                    }
+
                     if (!PresentationHostAdapter.TryManageShape(
-                            channel,
+                            dest,
+                            source,
                             request,
                             out PresentationManageShapeResult hostResult,
                             out ToolResult errorResult))
@@ -61,11 +94,27 @@ namespace WordAddIn1
                         ["kind"] = hostResult.Kind ?? "",
                         ["action"] = hostResult.Action ?? "",
                         ["slide_id"] = hostResult.SlideId ?? "",
-                        ["deleted_count"] = hostResult.DeletedCount,
-                        ["deleted_shape_ids"] = hostResult.DeletedShapeIds ?? new List<string>(),
                         ["warnings"] = hostResult.Warnings ?? new List<string>(),
                         ["display_contents"] = BuildDisplay(hostResult)
                     };
+
+                    if (string.Equals(hostResult.Action, "delete", StringComparison.Ordinal))
+                    {
+                        data["deleted_count"] = hostResult.DeletedCount;
+                        data["deleted_shape_ids"] = hostResult.DeletedShapeIds ?? new List<string>();
+                    }
+
+                    if (!string.IsNullOrEmpty(hostResult.GroupShapeId))
+                    {
+                        data["group_shape_id"] = hostResult.GroupShapeId;
+                    }
+
+                    if (string.Equals(hostResult.Action, "duplicate_group", StringComparison.Ordinal))
+                    {
+                        data["source_slide_id"] = hostResult.SourceSlideId ?? "";
+                        data["source_shape_id"] = hostResult.SourceShapeId ?? "";
+                        data["source_channel_id"] = ChannelRegistry.ToPublicId(hostResult.SourceChannelId) ?? "";
+                    }
 
                     await Task.CompletedTask;
                     return new ToolResult { Success = true, Data = data };
@@ -81,12 +130,146 @@ namespace WordAddIn1
             };
         }
 
+        private static bool TryRejectForeignArgs(
+            string action,
+            Dictionary<string, object> args,
+            out string error)
+        {
+            error = null;
+            bool hasSource = HasArgKey(args, "source_channel_id");
+            bool hasToSlide = HasArgKey(args, "to_slide_id");
+            bool hasLeft = HasArgKey(args, "left");
+            bool hasTop = HasArgKey(args, "top");
+            bool hasWidth = HasArgKey(args, "width");
+            bool hasHeight = HasArgKey(args, "height");
+            bool hasShapeId = HasArgKey(args, "shape_id");
+            bool hasShapeIds = HasArgKey(args, "shape_ids");
+
+            switch (action)
+            {
+                case "delete":
+                    if (hasSource || hasToSlide || hasLeft || hasTop || hasWidth || hasHeight)
+                    {
+                        error = "delete 不接受 source_channel_id / to_slide_id / left / top / width / height";
+                        return false;
+                    }
+
+                    return true;
+                case "group":
+                    if (hasSource || hasToSlide || hasShapeId || hasLeft || hasTop || hasWidth || hasHeight)
+                    {
+                        error = "group 不接受 source_channel_id / to_slide_id / shape_id / left / top / width / height";
+                        return false;
+                    }
+
+                    return true;
+                case "duplicate_group":
+                    if (hasShapeIds || hasWidth || hasHeight)
+                    {
+                        error = "duplicate_group 不接受 shape_ids / width / height";
+                        return false;
+                    }
+
+                    return true;
+                default:
+                    error = "action 须为 delete、group 或 duplicate_group";
+                    return false;
+            }
+        }
+
+        private static bool TryResolveSourceChannel(
+            string action,
+            IOperationChannel dest,
+            Dictionary<string, object> args,
+            out IOperationChannel source,
+            out string error)
+        {
+            source = dest;
+            error = null;
+            if (!string.Equals(action, "duplicate_group", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (!HasArgKey(args, "source_channel_id"))
+            {
+                return true;
+            }
+
+            string raw = GetStringArg(args, "source_channel_id");
+            if (string.IsNullOrEmpty(raw))
+            {
+                error = "未知 source_channel_id: ";
+                return false;
+            }
+
+            if (!ChannelRegistry.TryGet(raw, out source) || source == null)
+            {
+                error = "未知 source_channel_id: " + raw;
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryParsePct(
+            Dictionary<string, object> args,
+            string key,
+            out double value,
+            out string error)
+        {
+            value = 0;
+            error = null;
+            if (args == null || !args.ContainsKey(key) || args[key] == null)
+            {
+                error = key + " 须为相对目标幻灯片的百分比";
+                return false;
+            }
+
+            string raw = Convert.ToString(args[key], CultureInfo.InvariantCulture)?.Trim() ?? "";
+            if (raw.EndsWith("%", StringComparison.Ordinal))
+            {
+                raw = raw.Substring(0, raw.Length - 1).Trim();
+            }
+
+            if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+                || double.IsNaN(value)
+                || double.IsInfinity(value))
+            {
+                error = "left/top 须为相对目标幻灯片的百分比";
+                return false;
+            }
+
+            return true;
+        }
+
         private static string BuildDisplay(PresentationManageShapeResult result)
         {
             var sb = new StringBuilder();
-            sb.Append("action=").Append(result?.Action ?? "").Append(" slide_id=")
-                .Append(result?.SlideId ?? "").Append(" deleted=").Append(result?.DeletedCount ?? 0);
+            sb.Append("action=").Append(result?.Action ?? "")
+                .Append(" slide_id=").Append(result?.SlideId ?? "");
+            if (string.Equals(result?.Action, "delete", StringComparison.Ordinal))
+            {
+                sb.Append(" deleted=").Append(result?.DeletedCount ?? 0);
+            }
+            else
+            {
+                sb.Append(" group_shape_id=").Append(result?.GroupShapeId ?? "");
+            }
+
+            if (string.Equals(result?.Action, "duplicate_group", StringComparison.Ordinal))
+            {
+                sb.Append(" source_slide_id=").Append(result?.SourceSlideId ?? "")
+                    .Append(" source_shape_id=").Append(result?.SourceShapeId ?? "");
+                sb.Append(" 先 F_read_ppt_html 再改新叶子");
+            }
+
             return sb.ToString();
+        }
+
+        private static bool HasArgKey(Dictionary<string, object> args, string key)
+        {
+            return args != null && args.ContainsKey(key);
         }
 
         private static string GetStringArg(Dictionary<string, object> args, string key)

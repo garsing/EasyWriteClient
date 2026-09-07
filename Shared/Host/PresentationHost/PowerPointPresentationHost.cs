@@ -471,22 +471,31 @@ namespace WordAddIn1.PresentationHost
         }
 
         public static bool TryManageShape(
-            PptChannel channel,
+            PptChannel destChannel,
+            PptChannel sourceChannel,
             PresentationManageShapeRequest request,
             out PresentationManageShapeResult result,
             out string error)
         {
             result = null;
             error = null;
-            if (channel == null || !channel.TryGetLivePresentation(out PowerPoint.Presentation presentation))
+            if (destChannel == null || !destChannel.TryGetLivePresentation(out PowerPoint.Presentation dest))
             {
                 error = "渠道对应的演示文稿已关闭";
                 return false;
             }
 
+            if (sourceChannel == null || !sourceChannel.TryGetLivePresentation(out PowerPoint.Presentation source))
+            {
+                error = "源头演示文稿已关闭";
+                return false;
+            }
+
             return PptShapePowerPointManager.TryManage(
-                presentation,
-                channel.ChannelId,
+                dest,
+                source,
+                destChannel.ChannelId,
+                sourceChannel.ChannelId,
                 request,
                 out result,
                 out error);

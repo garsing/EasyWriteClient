@@ -141,10 +141,6 @@ namespace WordAddIn1.PresentationHost
                         trimmed,
                         slideWidth,
                         slideHeight,
-                        0,
-                        0,
-                        slideWidth,
-                        slideHeight,
                         GroupReadMode.SearchPage,
                         1,
                         shapes,
@@ -164,10 +160,6 @@ namespace WordAddIn1.PresentationHost
                     if (!CollectShapes(
                         slide.Shapes,
                         trimmed,
-                        slideWidth,
-                        slideHeight,
-                        0,
-                        0,
                         slideWidth,
                         slideHeight,
                         GroupReadMode.FullPage,
@@ -206,10 +198,6 @@ namespace WordAddIn1.PresentationHost
                 else if (!CollectShapes(
                     slide.Shapes,
                     trimmed,
-                    slideWidth,
-                    slideHeight,
-                    0,
-                    0,
                     slideWidth,
                     slideHeight,
                     GroupReadMode.Skeleton,
@@ -306,7 +294,6 @@ namespace WordAddIn1.PresentationHost
             PowerPoint.Shape target = path[path.Count - 1];
             float slideWidth = presentation.PageSetup.SlideWidth;
             float slideHeight = presentation.PageSetup.SlideHeight;
-            TryReadBox(target, out float boxL, out float boxT, out float boxW, out float boxH);
             string typeName = PeekTypeName(target);
             var built = new List<PptHtmlShapeNode>();
             bool truncated = false;
@@ -318,10 +305,6 @@ namespace WordAddIn1.PresentationHost
                 slideId.Trim(),
                 slideWidth,
                 slideHeight,
-                boxL,
-                boxT,
-                boxW,
-                boxH,
                 mode,
                 0,
                 built,
@@ -340,11 +323,6 @@ namespace WordAddIn1.PresentationHost
             }
 
             node = built[0];
-            if (typeName != "group")
-            {
-                node.Style = PptConventionHtml.BuildStyle(0, 0, 100, 100);
-            }
-
             return true;
         }
 
@@ -399,10 +377,6 @@ namespace WordAddIn1.PresentationHost
             string slideId,
             float slideWidth,
             float slideHeight,
-            float parentLeft,
-            float parentTop,
-            float parentWidth,
-            float parentHeight,
             GroupReadMode mode,
             int expandLayer,
             List<PptHtmlShapeNode> output,
@@ -452,10 +426,6 @@ namespace WordAddIn1.PresentationHost
                     slideId,
                     slideWidth,
                     slideHeight,
-                    parentLeft,
-                    parentTop,
-                    parentWidth,
-                    parentHeight,
                     mode,
                     expandLayer,
                     output,
@@ -511,24 +481,11 @@ namespace WordAddIn1.PresentationHost
             isSkeleton = typeName == "group";
             GroupReadMode mode = isSkeleton ? GroupReadMode.Skeleton : GroupReadMode.ShellOnly;
             var built = new List<PptHtmlShapeNode>();
-            float pL = 0;
-            float pT = 0;
-            float pW = slideWidth;
-            float pH = slideHeight;
-            if (path.Count >= 2)
-            {
-                TryReadBox(path[path.Count - 2], out pL, out pT, out pW, out pH);
-            }
-
             if (!AppendNode(
                 target,
                 slideId,
                 slideWidth,
                 slideHeight,
-                pL,
-                pT,
-                pW,
-                pH,
                 mode,
                 0,
                 built,
@@ -549,24 +506,11 @@ namespace WordAddIn1.PresentationHost
             PptHtmlShapeNode current = built[0];
             for (int i = path.Count - 2; i >= 0; i--)
             {
-                float aL = 0;
-                float aT = 0;
-                float aW = slideWidth;
-                float aH = slideHeight;
-                if (i >= 1)
-                {
-                    TryReadBox(path[i - 1], out aL, out aT, out aW, out aH);
-                }
-
                 if (!AppendNode(
                     path[i],
                     slideId,
                     slideWidth,
                     slideHeight,
-                    aL,
-                    aT,
-                    aW,
-                    aH,
                     GroupReadMode.ShellOnly,
                     0,
                     new List<PptHtmlShapeNode>(),
@@ -742,7 +686,6 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            TryReadBox(group, out float gL, out float gT, out float gW, out float gH);
             for (int i = 1; i <= count; i++)
             {
                 PowerPoint.Shape child;
@@ -760,10 +703,6 @@ namespace WordAddIn1.PresentationHost
                     slideId,
                     slideWidth,
                     slideHeight,
-                    gL,
-                    gT,
-                    gW,
-                    gH,
                     childMode,
                     childExpandLayer,
                     output,
@@ -784,10 +723,6 @@ namespace WordAddIn1.PresentationHost
             string slideId,
             float slideWidth,
             float slideHeight,
-            float parentLeft,
-            float parentTop,
-            float parentWidth,
-            float parentHeight,
             GroupReadMode mode,
             int expandLayer,
             List<PptHtmlShapeNode> output,
@@ -801,10 +736,6 @@ namespace WordAddIn1.PresentationHost
                 slideId,
                 slideWidth,
                 slideHeight,
-                parentLeft,
-                parentTop,
-                parentWidth,
-                parentHeight,
                 mode,
                 expandLayer,
                 output,
@@ -820,10 +751,6 @@ namespace WordAddIn1.PresentationHost
             string slideId,
             float slideWidth,
             float slideHeight,
-            float parentLeft,
-            float parentTop,
-            float parentWidth,
-            float parentHeight,
             GroupReadMode mode,
             int expandLayer,
             List<PptHtmlShapeNode> output,
@@ -1005,7 +932,7 @@ namespace WordAddIn1.PresentationHost
                 pageTextTruncated = true;
             }
 
-            string style = TryBuildStyle(shape, parentLeft, parentTop, parentWidth, parentHeight);
+            string style = TryBuildStyle(shape, slideWidth, slideHeight);
             double? rotation = null;
             try
             {
@@ -1833,22 +1760,18 @@ namespace WordAddIn1.PresentationHost
 
         private static string TryBuildStyle(
             PowerPoint.Shape shape,
-            float parentLeft,
-            float parentTop,
-            float parentWidth,
-            float parentHeight)
+            float slideWidth,
+            float slideHeight)
         {
             try
             {
-                return PptHtmlGeom.StyleFromSlideBox(
+                return PptHtmlGeom.StyleFromSlidePoints(
                     shape.Left,
                     shape.Top,
                     shape.Width,
                     shape.Height,
-                    parentLeft,
-                    parentTop,
-                    parentWidth,
-                    parentHeight);
+                    slideWidth,
+                    slideHeight);
             }
             catch (Exception)
             {

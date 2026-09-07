@@ -511,22 +511,31 @@ namespace WordAddIn1.PresentationHost
         }
 
         public static bool TryManageShape(
-            WppChannel channel,
+            WppChannel destChannel,
+            WppChannel sourceChannel,
             PresentationManageShapeRequest request,
             out PresentationManageShapeResult result,
             out string error)
         {
             result = null;
             error = null;
-            if (channel == null || !channel.TryGetLivePresentation(out object presentation))
+            if (destChannel == null || !destChannel.TryGetLivePresentation(out object dest))
             {
                 error = "渠道对应的演示文稿已关闭";
                 return false;
             }
 
+            if (sourceChannel == null || !sourceChannel.TryGetLivePresentation(out object source))
+            {
+                error = "源头演示文稿已关闭";
+                return false;
+            }
+
             return PptShapeWppManager.TryManage(
-                presentation,
-                channel.ChannelId,
+                dest,
+                source,
+                destChannel.ChannelId,
+                sourceChannel.ChannelId,
                 request,
                 out result,
                 out error);
