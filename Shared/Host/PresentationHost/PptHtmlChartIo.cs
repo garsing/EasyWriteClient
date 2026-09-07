@@ -1798,12 +1798,35 @@ namespace WordAddIn1.PresentationHost
                 return "line";
             }
 
-            if (xlType == XlPie || xlType == Xl3DPie)
+            if (IsPieXl(xlType))
             {
                 return "pie";
             }
 
             return "column";
+        }
+
+        private static bool IsPieXl(int xlType)
+        {
+            return xlType == XlPie || xlType == Xl3DPie;
+        }
+
+        private static bool IsPieChart(object chart)
+        {
+            if (chart == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                object t = WppCom.GetProperty(chart, "ChartType");
+                return t != null && IsPieXl(Convert.ToInt32(t));
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         public static IEnumerable<XElement> EnumerateTableRows(XElement table)
@@ -2280,37 +2303,27 @@ namespace WordAddIn1.PresentationHost
             object excelApp = null;
             try
             {
-                int wantSeries = 0;
-                for (int c = 0; c < grid.Columns.Count; c++)
-                {
-                    if (grid.Columns[c].Role != "category")
-                    {
-                        wantSeries++;
-                    }
-                }
-
-                // 与 Word FillChartData 相同：直接写 Series，不 Activate ChartData（避免拉起内嵌 Excel）
-                if (!TryEnsureSeriesCount(chart, wantSeries, out error))
-                {
-                    if (!TryExpandViaChartData(chart, grid, out excelApp, out error))
-                    {
-                        return false;
-                    }
-
-                    if (!TryEnsureSeriesCount(chart, wantSeries, out error))
-                    {
-                        return false;
-                    }
-                }
-
-                if (!TryPourSeriesLikeWord(chart, grid, out error))
+                // 换数只认包内嵌表：清 Sheet → 写行列 → SetSourceData。
+                // 不以 Series.Values 当主路（饼图 2 瓣扩 5 瓣会静默丢掉）。
+                if (!TryExpandViaChartData(chart, grid, out excelApp, out error))
                 {
                     return false;
                 }
 
+                int wantSeries = CountValueColumns(grid);
                 TrimExtraSeries(chart, wantSeries, out _);
                 TryInvoke(chart, "Refresh");
+                if (!TryVerifyPouredGrid(chart, grid, out error))
+                {
+                    return false;
+                }
+
                 ApplySeriesExtras(chart, grid);
+                if (IsPieChart(chart))
+                {
+                    TrySetVaryByCategories(chart, true);
+                }
+
                 return true;
             }
             catch (Exception ex)
@@ -2495,8 +2508,21 @@ namespace WordAddIn1.PresentationHost
                 && snap.Series[0].ChartType.HasValue
                 && snap.Series[0].ChartType.Value != xlType)
             {
-                StyleLog(warnings, "建图类型改用快照 " + xlType + " → " + snap.Series[0].ChartType.Value);
-                xlType = snap.Series[0].ChartType.Value;
+                int snapXl = snap.Series[0].ChartType.Value;
+                // 同族（pie ↔ pie3d）不要建图前劫持，否则 3D 饼灌点失败还报成功。
+                if (string.Equals(
+                    CanonicalTypeFromXl(snapXl),
+                    CanonicalTypeFromXl(xlType),
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    StyleLog(warnings, "建图保持稿类型 " + xlType
+                        + "，快照 " + snapXl + " 灌数后再套");
+                }
+                else
+                {
+                    StyleLog(warnings, "建图类型改用快照 " + xlType + " → " + snapXl);
+                    xlType = snapXl;
+                }
             }
 
             // 改已有图：数据来自 HTML 表，版式/轴/标题/系列样式按旧图快照原样写回。
@@ -2536,6 +2562,24 @@ namespace WordAddIn1.PresentationHost
             catch (Exception ex)
             {
                 StyleLog(warnings, "回读新图异常: " + ex.Message);
+            }
+
+            // 套快照（含 3D）可能把数据打回字面量；必须再验，对不上再灌一次，仍不对就失败并删新图。
+            if (!TryVerifyPouredGrid(newChart, useGrid, out error))
+            {
+                StyleLog(warnings, "套回后数据对不上，再灌内嵌表: " + (error ?? ""));
+                if (!TryPourGrid(newChart, useGrid, out error)
+                    || !TryVerifyPouredGrid(newChart, useGrid, out error))
+                {
+                    TryDelete(newShape);
+                    newShape = null;
+                    if (string.IsNullOrEmpty(error))
+                    {
+                        error = "图表换数后内嵌表与稿不一致";
+                    }
+
+                    return false;
+                }
             }
 
             TryHideChartExcel(newChart);
@@ -2710,7 +2754,8 @@ namespace WordAddIn1.PresentationHost
                         }
 
                         SeriesStyleSnap one = snap.Series[i];
-                        if (one.ChartType.HasValue)
+                        if (one.ChartType.HasValue
+                            && !(IsPieXl(one.ChartType.Value) && IsPieChart(chart)))
                         {
                             WppCom.TrySetProperty(series, "ChartType", one.ChartType.Value);
                         }
@@ -2794,13 +2839,31 @@ namespace WordAddIn1.PresentationHost
                         }
 
                         SeriesStyleSnap one = snap.Series[i];
-                        TryApplyFill(series, one.Fill, warnings, "S" + (i + 1));
-                        TryApplyPointFills(series, one.PointFills, warnings, "S" + (i + 1));
+                        if (IsPieChart(chart)
+                            || (one.ChartType.HasValue && IsPieXl(one.ChartType.Value)))
+                        {
+                            int live = TryGetPointCount(series);
+                            if (one.PointFills != null && live > 0 && one.PointFills.Count == live)
+                            {
+                                TryApplyPointFills(series, one.PointFills, warnings, "S" + (i + 1));
+                            }
+                            else
+                            {
+                                TrySetVaryByCategories(chart, true);
+                            }
+                        }
+                        else
+                        {
+                            TryApplyFill(series, one.Fill, warnings, "S" + (i + 1));
+                            TryApplyPointFills(series, one.PointFills, warnings, "S" + (i + 1));
+                        }
+
                         TryApplyLine(series, one.Line, warnings, "S" + (i + 1));
                         TryApplyMarker(series, one);
                     }
                 }
 
+                TryRestorePieChartType(chart, snap);
                 TryApplyPlotLayout(chart, snap);
 
                 if (snap.Series != null)
@@ -5138,7 +5201,9 @@ namespace WordAddIn1.PresentationHost
                         continue;
                     }
 
-                    if (!string.IsNullOrEmpty(col.Color) && TryParseHexToOffice(col.Color, out int rgb))
+                    if (!IsPieChart(chart)
+                        && !string.IsNullOrEmpty(col.Color)
+                        && TryParseHexToOffice(col.Color, out int rgb))
                     {
                         try
                         {
@@ -6100,6 +6165,144 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private static int CountValueColumns(PptHtmlChartGrid grid)
+        {
+            int n = 0;
+            if (grid == null || grid.Columns == null)
+            {
+                return 0;
+            }
+
+            for (int c = 0; c < grid.Columns.Count; c++)
+            {
+                if (grid.Columns[c] != null && grid.Columns[c].Role != "category")
+                {
+                    n++;
+                }
+            }
+
+            return n;
+        }
+
+        private static bool TryVerifyPouredGrid(object chart, PptHtmlChartGrid want, out string error)
+        {
+            error = null;
+            if (chart == null || want == null || !want.IsPourable)
+            {
+                error = "图表换数后无法校验内嵌表";
+                return false;
+            }
+
+            if (TryReadGridFromEmbeddedSheet(
+                    chart,
+                    want.Columns.Count,
+                    want.Rows.Count,
+                    out PptHtmlChartGrid sheet,
+                    out string sheetError)
+                && sheet != null)
+            {
+                if (GridsMatch(want, sheet, compareNames: false))
+                {
+                    return true;
+                }
+
+                error = "图表内嵌表与稿不一致（期望 "
+                    + want.Rows.Count + " 行，表上 "
+                    + (sheet.Rows == null ? 0 : sheet.Rows.Count) + " 行）";
+                return false;
+            }
+
+            if (GridAlreadyMatches(chart, want))
+            {
+                return true;
+            }
+
+            error = string.IsNullOrEmpty(sheetError)
+                ? "图表换数后数据与稿不一致"
+                : sheetError;
+            return false;
+        }
+
+        private static bool TryReadGridFromEmbeddedSheet(
+            object chart,
+            int cols,
+            int rows,
+            out PptHtmlChartGrid grid,
+            out string error)
+        {
+            grid = null;
+            error = null;
+            object excelApp = null;
+            try
+            {
+                object chartData = WppCom.GetProperty(chart, "ChartData");
+                if (chartData == null)
+                {
+                    error = "无法访问 ChartData 以回读";
+                    return false;
+                }
+
+                TryInvoke(chartData, "Activate");
+                object workbook = WppCom.GetProperty(chartData, "Workbook");
+                if (workbook == null)
+                {
+                    error = "无法打开图表内嵌工作簿以回读";
+                    return false;
+                }
+
+                excelApp = WppCom.GetProperty(workbook, "Application");
+                SuppressExcel(excelApp);
+                object sheets = WppCom.GetProperty(workbook, "Worksheets");
+                object ws = WppCom.GetIndexed(sheets, 1);
+                if (ws == null)
+                {
+                    error = "图表内嵌表不存在";
+                    return false;
+                }
+
+                var columns = new List<PptHtmlChartColumn>();
+                for (int c = 0; c < cols; c++)
+                {
+                    string name = Convert.ToString(GetCell(ws, 1, c + 1) ?? "");
+                    columns.Add(new PptHtmlChartColumn
+                    {
+                        Role = c == 0 ? "category" : "value",
+                        Name = name
+                    });
+                }
+
+                var dataRows = new List<List<string>>();
+                for (int r = 0; r < rows; r++)
+                {
+                    var row = new List<string>();
+                    for (int c = 0; c < cols; c++)
+                    {
+                        object raw = GetCell(ws, r + 2, c + 1);
+                        row.Add(Convert.ToString(raw ?? "", CultureInfo.InvariantCulture));
+                    }
+
+                    dataRows.Add(row);
+                }
+
+                grid = new PptHtmlChartGrid
+                {
+                    Columns = columns,
+                    Rows = dataRows
+                };
+                return grid.IsPourable;
+            }
+            catch (Exception ex)
+            {
+                error = "回读图表内嵌表失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                HideEmbeddedExcel(excelApp);
+                TryHideChartExcel(chart);
+            }
+        }
+
         private static bool GridAlreadyMatches(object chart, PptHtmlChartGrid grid)
         {
             if (chart == null || grid == null || !grid.IsPourable)
@@ -6107,47 +6310,52 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            if (!TryReadGridFromSeries(chart, out PptHtmlChartGrid cur, out _)
-                || cur == null
-                || !cur.IsPourable
-                || cur.Columns == null
-                || cur.Rows == null
-                || cur.Columns.Count != grid.Columns.Count
-                || cur.Rows.Count != grid.Rows.Count)
+            return TryReadGridFromSeries(chart, out PptHtmlChartGrid cur, out _)
+                && GridsMatch(grid, cur, compareNames: true);
+        }
+
+        private static bool GridsMatch(PptHtmlChartGrid want, PptHtmlChartGrid got, bool compareNames)
+        {
+            if (want == null || got == null
+                || want.Columns == null || got.Columns == null
+                || want.Rows == null || got.Rows == null
+                || want.Columns.Count != got.Columns.Count
+                || want.Rows.Count != got.Rows.Count)
             {
                 return false;
             }
 
-            for (int c = 0; c < grid.Columns.Count; c++)
+            for (int c = 0; c < want.Columns.Count; c++)
             {
-                string role = grid.Columns[c].Role ?? "";
-                if (!string.Equals(cur.Columns[c].Role ?? "", role, StringComparison.OrdinalIgnoreCase))
+                string role = want.Columns[c].Role ?? "";
+                if (!string.Equals(got.Columns[c].Role ?? "", role, StringComparison.OrdinalIgnoreCase))
                 {
                     return false;
                 }
 
-                if (role != "category"
-                    && !string.Equals(cur.Columns[c].Name ?? "", grid.Columns[c].Name ?? "", StringComparison.Ordinal))
+                if (compareNames
+                    && role != "category"
+                    && !string.Equals(got.Columns[c].Name ?? "", want.Columns[c].Name ?? "", StringComparison.Ordinal))
                 {
                     return false;
                 }
             }
 
-            for (int r = 0; r < grid.Rows.Count; r++)
+            for (int r = 0; r < want.Rows.Count; r++)
             {
-                List<string> a = grid.Rows[r];
-                List<string> b = cur.Rows[r];
-                if (a == null || b == null || a.Count < grid.Columns.Count || b.Count < grid.Columns.Count)
+                List<string> a = want.Rows[r];
+                List<string> b = got.Rows[r];
+                if (a == null || b == null || a.Count < want.Columns.Count || b.Count < want.Columns.Count)
                 {
                     return false;
                 }
 
-                for (int c = 0; c < grid.Columns.Count; c++)
+                for (int c = 0; c < want.Columns.Count; c++)
                 {
-                    if (grid.Columns[c].Role == "value")
+                    if (want.Columns[c].Role == "value")
                     {
-                        if (!double.TryParse(a[c], NumberStyles.Float, CultureInfo.InvariantCulture, out double x)
-                            || !double.TryParse(b[c], NumberStyles.Float, CultureInfo.InvariantCulture, out double y)
+                        if (!TryParseLooseDouble(a[c], out double x)
+                            || !TryParseLooseDouble(b[c], out double y)
                             || Math.Abs(x - y) > 0.0001)
                         {
                             return false;
@@ -6161,6 +6369,79 @@ namespace WordAddIn1.PresentationHost
             }
 
             return true;
+        }
+
+        private static bool TryParseLooseDouble(string raw, out double n)
+        {
+            return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out n)
+                || double.TryParse(raw, NumberStyles.Float, CultureInfo.CurrentCulture, out n);
+        }
+
+        private static int TryGetPointCount(object series)
+        {
+            object pts = TryGetPoints(series);
+            if (pts == null)
+            {
+                return 0;
+            }
+
+            try
+            {
+                return Convert.ToInt32(WppCom.GetProperty(pts, "Count"));
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+        }
+
+        private static void TrySetVaryByCategories(object chart, bool on)
+        {
+            try
+            {
+                object g = TryInvoke(chart, "ChartGroups", 1);
+                WppCom.TrySetProperty(g, "VaryByCategories", on);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryRestorePieChartType(object chart, ChartStyleSnap snap)
+        {
+            if (chart == null || snap == null || snap.Series == null)
+            {
+                return;
+            }
+
+            int? want = null;
+            for (int i = 0; i < snap.Series.Count; i++)
+            {
+                if (snap.Series[i].ChartType.HasValue && IsPieXl(snap.Series[i].ChartType.Value))
+                {
+                    want = snap.Series[i].ChartType.Value;
+                    break;
+                }
+            }
+
+            if (!want.HasValue)
+            {
+                return;
+            }
+
+            try
+            {
+                object t = WppCom.GetProperty(chart, "ChartType");
+                if (t != null && Convert.ToInt32(t) == want.Value)
+                {
+                    return;
+                }
+
+                WppCom.TrySetProperty(chart, "ChartType", want.Value);
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private static List<string> CategoryLabels(PptHtmlChartGrid grid)
