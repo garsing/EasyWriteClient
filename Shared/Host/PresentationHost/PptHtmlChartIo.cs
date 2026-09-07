@@ -277,6 +277,11 @@ namespace WordAddIn1.PresentationHost
 
             public int? TickFontColor { get; set; }
 
+            /// <summary>MsoThemeColorIndex。主题/自动色没有合法 RGB 时靠这个写回。</summary>
+            public int? TickFontTheme { get; set; }
+
+            public int? TickFontColorType { get; set; }
+
             public double? TickFontSize { get; set; }
 
             public int? TickLabelPosition { get; set; }
@@ -856,6 +861,16 @@ namespace WordAddIn1.PresentationHost
             if (src.TickFontColor.HasValue)
             {
                 dest.TickFontColor = src.TickFontColor;
+            }
+
+            if (src.TickFontTheme.HasValue)
+            {
+                dest.TickFontTheme = src.TickFontTheme;
+            }
+
+            if (src.TickFontColorType.HasValue)
+            {
+                dest.TickFontColorType = src.TickFontColorType;
             }
 
             if (src.TickFontSize.HasValue)
@@ -2582,9 +2597,11 @@ namespace WordAddIn1.PresentationHost
 
             object newChart = TryGetChart(newShape);
             TryApplyStyleSnap(newChart, snap, warnings);
+            DumpLiveAxisChrome(newChart, "套回后Refresh前");
             FinishLineChartLayout(newChart, xlType, useFormat, warnings);
             HideDeletedAxes(newChart, snap);
             RestoreAxesAfterSnap(newChart, useGrid, snap);
+            DumpLiveAxisChrome(newChart, "Refresh后再钉");
             // Refresh / ChartStyle 会把默认白网格画回来；原图或稿要求关则再关一次。
             EnsureGridlinesMatchSnap(newChart, snap, useFormat, warnings);
             try
@@ -2954,7 +2971,7 @@ namespace WordAddIn1.PresentationHost
                 {
                     object ticks = WppCom.GetProperty(axis, "TickLabels");
                     object font = ticks == null ? null : WppCom.GetProperty(ticks, "Font");
-                    snap.TickFontColor = TryReadTickLabelsRgb(ticks, font);
+                    TryCaptureTickColor(chart, ticks, font, snap);
 
                     object sz = font == null ? null : WppCom.GetProperty(font, "Size");
                     if (sz != null)
@@ -3048,6 +3065,7 @@ namespace WordAddIn1.PresentationHost
                     snap.Deleted = true;
                 }
 
+                DumpAxisObject(axis, "拍" + AxisTag(axisType, group), snap);
                 return snap;
             }
             catch (Exception)
@@ -3108,6 +3126,15 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 object ticks = WppCom.GetProperty(axis, "TickLabels");
+                StyleLog(null, "写轴 " + AxisTag(axisType, group)
+                    + " tick=" + HexOf(snap.TickFontColor)
+                    + " theme=" + snap.TickFontTheme
+                    + " lineVis=" + snap.LineVisible
+                    + " lineRgb=" + HexOf(snap.LineRgb)
+                    + " w=" + (snap.LineWeight.HasValue
+                        ? snap.LineWeight.Value.ToString(CultureInfo.InvariantCulture)
+                        : "-")
+                    + " majorTick=" + snap.MajorTickMark);
                 TryWriteTickFont(ticks, snap);
 
                 // 分类轴 2019/2021 会被收成时间轴，再套快照里的日期格式会把前几年变成主题灰字。
@@ -3135,6 +3162,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 TryApplyAxisLine(axis, snap);
+                DumpAxisObject(axis, "写后" + AxisTag(axisType, group), snap);
             }
             catch (Exception)
             {
@@ -4147,6 +4175,11 @@ namespace WordAddIn1.PresentationHost
                 WppCom.TrySetProperty(font, "Name", snap.TickFontName);
             }
 
+            if (snap.TickFontTheme.HasValue && IsUsableThemeIndex(snap.TickFontTheme.Value))
+            {
+                TryWriteFontTheme(font, ticks, snap.TickFontTheme.Value);
+            }
+
             if (snap.TickFontColor.HasValue)
             {
                 TryWriteFontRgb(font, snap.TickFontColor.Value);
@@ -4252,7 +4285,7 @@ namespace WordAddIn1.PresentationHost
             WppCom.TrySetProperty(axisLine, "Visible", -1);
             int rgb = snap.LineRgb ?? 0x00FFFFFF;
             TryWriteLineRgb(axisLine, rgb);
-            if (snap.LineWeight.HasValue)
+            if (snap.LineWeight.HasValue && !IsPhantomWeight(snap.LineWeight.Value))
             {
                 WppCom.TrySetProperty(axisLine, "Weight", snap.LineWeight.Value);
             }
@@ -4270,6 +4303,22 @@ namespace WordAddIn1.PresentationHost
 
             InheritAxisChrome(snap.Category, snap.Value);
             InheritAxisChrome(snap.Value, snap.Category);
+            EnsureDefaultTickColor(snap.Category, "cat");
+            EnsureDefaultTickColor(snap.Value, "val");
+        }
+
+        private static void EnsureDefaultTickColor(AxisStyleSnap ax, string tag)
+        {
+            if (ax == null
+                || ax.Deleted == true
+                || ax.TickFontColor.HasValue
+                || (ax.TickFontTheme.HasValue && IsUsableThemeIndex(ax.TickFontTheme.Value)))
+            {
+                return;
+            }
+
+            ax.TickFontColor = 0x00FFFFFF;
+            StyleLog(null, tag + " 刻度字拍空，回落#FFFFFF");
         }
 
         private static void InheritAxisChrome(AxisStyleSnap dest, AxisStyleSnap src)
@@ -4282,6 +4331,11 @@ namespace WordAddIn1.PresentationHost
             if (!dest.TickFontColor.HasValue && src.TickFontColor.HasValue)
             {
                 dest.TickFontColor = src.TickFontColor;
+            }
+
+            if (!dest.TickFontTheme.HasValue && src.TickFontTheme.HasValue)
+            {
+                dest.TickFontTheme = src.TickFontTheme;
             }
 
             if (string.IsNullOrEmpty(dest.TickFontName) && !string.IsNullOrEmpty(src.TickFontName))
@@ -4980,7 +5034,166 @@ namespace WordAddIn1.PresentationHost
             return tag
                 + "Line=" + (ax.LineVisible == false ? "off" : "on")
                 + "/" + HexOf(ax.LineRgb)
-                + " tick=" + HexOf(ax.TickFontColor);
+                + " w=" + (ax.LineWeight.HasValue
+                    ? ax.LineWeight.Value.ToString(CultureInfo.InvariantCulture)
+                    : "-")
+                + " tick=" + HexOf(ax.TickFontColor)
+                + " theme=" + ax.TickFontTheme
+                + " type=" + ax.TickFontColorType
+                + " majorTick=" + ax.MajorTickMark;
+        }
+
+        private static string AxisTag(int axisType, int group)
+        {
+            if (axisType == XlCategory)
+            {
+                return group == XlSecondary ? "cat2" : "cat";
+            }
+
+            return group == XlSecondary ? "val2" : "val";
+        }
+
+        private static void DumpLiveAxisChrome(object chart, string tag)
+        {
+            if (chart == null)
+            {
+                StyleLog(null, tag + " chart=null");
+                return;
+            }
+
+            DumpAxisObject(TryInvoke(chart, "Axes", XlCategory, XlPrimary), tag + " cat", null);
+            DumpAxisObject(TryInvoke(chart, "Axes", XlValue, XlPrimary), tag + " val", null);
+            try
+            {
+                EasyWriteLog.Flush();
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void DumpAxisObject(object axis, string tag, AxisStyleSnap snap)
+        {
+            if (axis == null)
+            {
+                StyleLog(null, tag + " axis=null");
+                return;
+            }
+
+            try
+            {
+                var sb = new StringBuilder();
+                sb.Append(tag);
+                if (snap != null)
+                {
+                    sb.Append(" snap=").Append(DescribeAxisChrome("s", snap));
+                }
+
+                object ticks = WppCom.GetProperty(axis, "TickLabels");
+                object font = ticks == null ? null : WppCom.GetProperty(ticks, "Font");
+                sb.Append(" fontColor=").Append(DescribeRaw(font == null ? null : WppCom.GetProperty(font, "Color")));
+                sb.Append(" fontCf=").Append(DescribeColorFormat(font == null ? null : WppCom.GetProperty(font, "ColorFormat")));
+                sb.Append(" tf2=").Append(DescribeTickTextFrame(ticks));
+                sb.Append(" parsed=").Append(HexOf(TryReadTickLabelsRgb(ticks, font)));
+                sb.Append(" name=").Append(SafeProp(font, "Name"));
+                sb.Append(" size=").Append(SafeProp(font, "Size"));
+                sb.Append(" numFmt=").Append(SafeProp(ticks, "NumberFormat"));
+                sb.Append(" tickPos=").Append(SafeProp(axis, "TickLabelPosition"));
+                sb.Append(" majorTick=").Append(SafeProp(axis, "MajorTickMark"));
+
+                object axisLine = WppCom.GetProperty(WppCom.GetProperty(axis, "Format"), "Line");
+                object fc = axisLine == null ? null : WppCom.GetProperty(axisLine, "ForeColor");
+                sb.Append(" lineVis=").Append(SafeProp(axisLine, "Visible"));
+                sb.Append(" lineW=").Append(SafeProp(axisLine, "Weight"));
+                sb.Append(" lineT=").Append(SafeProp(axisLine, "Transparency"));
+                sb.Append(" lineCf=").Append(DescribeColorFormat(fc));
+                StyleLog(null, sb.ToString());
+            }
+            catch (Exception ex)
+            {
+                StyleLog(null, tag + " dump失败: " + ex.Message);
+            }
+        }
+
+        private static string DescribeTickTextFrame(object ticks)
+        {
+            try
+            {
+                object format = ticks == null ? null : WppCom.GetProperty(ticks, "Format");
+                object tf2 = format == null ? null : WppCom.GetProperty(format, "TextFrame2");
+                object tr = tf2 == null ? null : WppCom.GetProperty(tf2, "TextRange");
+                object f2 = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                object fill = f2 == null ? null : WppCom.GetProperty(f2, "Fill");
+                object fc = fill == null ? null : WppCom.GetProperty(fill, "ForeColor");
+                return DescribeColorFormat(fc);
+            }
+            catch (Exception ex)
+            {
+                return "err:" + ex.Message;
+            }
+        }
+
+        private static string DescribeColorFormat(object color)
+        {
+            if (color == null)
+            {
+                return "null";
+            }
+
+            try
+            {
+                return "Type=" + SafeProp(color, "Type")
+                    + " RGB=" + SafeProp(color, "RGB")
+                    + " theme=" + SafeProp(color, "ObjectThemeColor")
+                    + " scheme=" + SafeProp(color, "SchemeColor")
+                    + " resolved=" + HexOf(TryReadResolvedRgb(color));
+            }
+            catch (Exception ex)
+            {
+                return "err:" + ex.Message;
+            }
+        }
+
+        private static string DescribeRaw(object value)
+        {
+            if (value == null)
+            {
+                return "null";
+            }
+
+            try
+            {
+                string typeName = value.GetType().Name;
+                if (typeName.IndexOf("ComObject", StringComparison.OrdinalIgnoreCase) >= 0
+                    || typeName == "__ComObject")
+                {
+                    return DescribeColorFormat(value);
+                }
+
+                return Convert.ToString(value, CultureInfo.InvariantCulture) + "/" + typeName;
+            }
+            catch (Exception ex)
+            {
+                return "err:" + ex.Message;
+            }
+        }
+
+        private static string SafeProp(object target, string name)
+        {
+            if (target == null)
+            {
+                return "null";
+            }
+
+            try
+            {
+                object value = WppCom.GetProperty(target, name);
+                return value == null ? "null" : Convert.ToString(value, CultureInfo.InvariantCulture);
+            }
+            catch (Exception ex)
+            {
+                return "err:" + ex.Message;
+            }
         }
 
         private static string DescribeSeries(int index, SeriesStyleSnap one)
@@ -5211,6 +5424,142 @@ namespace WordAddIn1.PresentationHost
         {
             int? rgb = TryReadTickFontRgb(font);
             return rgb.HasValue ? OfficeRgbToHex(rgb.Value) : null;
+        }
+
+        private static void TryCaptureTickColor(object chart, object ticks, object font, AxisStyleSnap snap)
+        {
+            if (snap == null)
+            {
+                return;
+            }
+
+            ProbeTickColor(snap, font == null ? null : WppCom.GetProperty(font, "ColorFormat"));
+            ProbeTickColor(snap, font == null ? null : WppCom.GetProperty(font, "Color"));
+            ProbeTickColor(snap, TryGetTickForeColor(ticks));
+
+            int? rgb = TryReadTickLabelsRgb(ticks, font);
+            if (rgb.HasValue)
+            {
+                snap.TickFontColor = rgb;
+            }
+
+            if (!snap.TickFontColor.HasValue
+                && snap.TickFontTheme.HasValue
+                && IsUsableThemeIndex(snap.TickFontTheme.Value))
+            {
+                snap.TickFontColor = TryResolveThemeRgb(chart, snap.TickFontTheme.Value);
+                StyleLog(null, "刻度主题色 " + snap.TickFontTheme + " 解析 " + HexOf(snap.TickFontColor));
+            }
+        }
+
+        private static void ProbeTickColor(AxisStyleSnap snap, object color)
+        {
+            if (snap == null || color == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object type = WppCom.GetProperty(color, "Type");
+                if (type != null && !snap.TickFontColorType.HasValue)
+                {
+                    snap.TickFontColorType = Convert.ToInt32(type);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                object theme = WppCom.GetProperty(color, "ObjectThemeColor");
+                if (theme != null)
+                {
+                    int idx = Convert.ToInt32(theme);
+                    if (IsUsableThemeIndex(idx))
+                    {
+                        snap.TickFontTheme = idx;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static bool IsUsableThemeIndex(int theme)
+        {
+            return theme > 0 && theme != -2 && theme <= 16;
+        }
+
+        private static object TryGetTickForeColor(object ticks)
+        {
+            try
+            {
+                object format = ticks == null ? null : WppCom.GetProperty(ticks, "Format");
+                object tf2 = format == null ? null : WppCom.GetProperty(format, "TextFrame2");
+                object tr = tf2 == null ? null : WppCom.GetProperty(tf2, "TextRange");
+                object f2 = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                object fill = f2 == null ? null : WppCom.GetProperty(f2, "Fill");
+                return fill == null ? null : WppCom.GetProperty(fill, "ForeColor");
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static int? TryResolveThemeRgb(object chart, int themeIdx)
+        {
+            if (!PptHtmlStyleIo.TryMapThemeColorIndexToSchemeIndex(themeIdx, out int schemeIdx))
+            {
+                return null;
+            }
+
+            try
+            {
+                object shape = chart == null ? null : WppCom.GetProperty(chart, "Parent");
+                object slide = shape == null ? null : WppCom.GetProperty(shape, "Parent");
+                object design = slide == null ? null : WppCom.GetProperty(slide, "Design");
+                object master = design == null ? null : WppCom.GetProperty(design, "SlideMaster");
+                object theme = master == null ? null : WppCom.GetProperty(master, "Theme");
+                object scheme = theme == null ? null : WppCom.GetProperty(theme, "ThemeColorScheme");
+                object color = scheme == null ? null : TryInvoke(scheme, "Colors", schemeIdx);
+                if (color == null)
+                {
+                    return null;
+                }
+
+                object rgb = WppCom.GetProperty(color, "RGB");
+                if (rgb != null)
+                {
+                    return Convert.ToInt32(Convert.ToDouble(rgb)) & 0x00FFFFFF;
+                }
+
+                return TryReadResolvedRgb(color);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static void TryWriteFontTheme(object font, object ticks, int theme)
+        {
+            TrySetObjectTheme(font == null ? null : WppCom.GetProperty(font, "Color"), theme);
+            TrySetObjectTheme(font == null ? null : WppCom.GetProperty(font, "ColorFormat"), theme);
+            TrySetObjectTheme(TryGetTickForeColor(ticks), theme);
+        }
+
+        private static void TrySetObjectTheme(object color, int theme)
+        {
+            if (color == null)
+            {
+                return;
+            }
+
+            WppCom.TrySetProperty(color, "ObjectThemeColor", theme);
         }
 
         private static int? TryReadTickLabelsRgb(object ticks, object font)
