@@ -2304,22 +2304,45 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            PourLog(warnings, "开始灌数 " + DescribeWantGrid(grid));
+            PourLog(warnings, "开始灌数（按 Word 建图写 Series） " + DescribeWantGrid(grid));
             object excelApp = null;
             try
             {
-                // 换数只认包内嵌表：清 Sheet → 写行列 → SetSourceData。
-                // 不以 Series.Values 当主路（饼图 2 瓣扩 5 瓣会静默丢掉）。
-                if (!TryExpandViaChartData(chart, grid, out excelApp, out error, warnings))
+                // 改已有图也是新建：AddChart2 之后按 Word FillChartData 写 Values/XValues。
+                // ChartData / SetSourceData 只在点数扩不上时兜底。
+                int wantSeries = CountValueColumns(grid);
+                if (!TryEnsureSeriesCount(chart, wantSeries, out error))
                 {
-                    PourLog(warnings, "ChartData 失败: " + (error ?? ""));
                     return false;
                 }
 
-                int wantSeries = CountValueColumns(grid);
                 TrimExtraSeries(chart, wantSeries, out _);
-                TryInvoke(chart, "Refresh");
-                PourLog(warnings, "灌后裁系列 wantSeries=" + wantSeries + " | " + DescribeLiveSeries(chart));
+                if (!TryPourSeriesLikeWord(chart, grid, out error))
+                {
+                    PourLog(warnings, "写 Series 失败: " + (error ?? ""));
+                    return false;
+                }
+
+                PourLog(warnings, "Word 灌数后 " + DescribeLiveSeries(chart));
+                if (!SeriesRowCountMatches(chart, grid))
+                {
+                    PourLog(warnings, "Series 未扩到 " + grid.Rows.Count + " 行，兜底写内嵌表");
+                    if (!TryExpandViaChartData(chart, grid, out excelApp, out error, warnings))
+                    {
+                        PourLog(warnings, "ChartData 兜底失败: " + (error ?? ""));
+                        return false;
+                    }
+
+                    TrimExtraSeries(chart, wantSeries, out _);
+                    if (!TryPourSeriesLikeWord(chart, grid, out error))
+                    {
+                        PourLog(warnings, "兜底后再写 Series 失败: " + (error ?? ""));
+                        return false;
+                    }
+
+                    PourLog(warnings, "兜底后 " + DescribeLiveSeries(chart));
+                }
+
                 if (!TryVerifyPouredGrid(chart, grid, out error, warnings))
                 {
                     PourLog(warnings, "灌后校验失败: " + (error ?? ""));
@@ -2388,7 +2411,8 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
-        /// 改已有图：先 AddChart 再建、再删旧图。新图自带包内 embeddings，不继承外链。
+        /// 改已有图 = 新建图。先拍旧图属性，AddChart2 灌数（Word 同路），
+        /// HTML 没写的属性用旧图快照补上，再删旧图。
         /// </summary>
         public static bool TryReplaceOnSlide(
             object shapes,
@@ -2576,7 +2600,7 @@ namespace WordAddIn1.PresentationHost
             // 套快照（含 3D）可能把数据打回字面量；必须再验，对不上再灌一次，仍不对就失败并删新图。
             if (!TryVerifyPouredGrid(newChart, useGrid, out error, warnings))
             {
-                StyleLog(warnings, "套回后数据对不上，再灌内嵌表: " + (error ?? ""));
+                StyleLog(warnings, "套回后数据对不上，再按新建图灌数: " + (error ?? ""));
                 if (!TryPourGrid(newChart, useGrid, out error, warnings)
                     || !TryVerifyPouredGrid(newChart, useGrid, out error, warnings))
                 {
@@ -2594,7 +2618,7 @@ namespace WordAddIn1.PresentationHost
             TryHideChartExcel(newChart);
             DismissChartExcelUi();
             TryDelete(oldShape);
-            warnings?.Add("已删除原图并新建（不继承外链；已套回原图样式）");
+            warnings?.Add("已按旧图属性新建图表（HTML 未写的属性用快照补上）");
             if (!string.IsNullOrEmpty(EasyWriteLog.CurrentLogPath))
             {
                 warnings?.Add("chart 样式日志: " + EasyWriteLog.CurrentLogPath);
@@ -5211,8 +5235,6 @@ namespace WordAddIn1.PresentationHost
 
             PourLog(warnings, "建图后取 Chart " + (chart == null ? "null" : "ok")
                 + " | " + DescribeLiveSeries(chart));
-            TryHideChartExcel(chart);
-            PourLog(warnings, "藏内嵌 Excel 后 " + DescribeLiveSeries(chart));
             try
             {
                 if (!TryPourGrid(chart, grid, out error, warnings))
@@ -6410,41 +6432,26 @@ namespace WordAddIn1.PresentationHost
             }
 
             PourLog(warnings, "校验 " + DescribeWantGrid(want) + " | " + DescribeLiveSeries(chart));
-            if (TryReadGridFromEmbeddedSheet(
-                    chart,
-                    want.Columns.Count,
-                    want.Rows.Count,
-                    out PptHtmlChartGrid sheet,
-                    out string sheetError)
-                && sheet != null)
+            if (!SeriesRowCountMatches(chart, want))
             {
-                PourLog(warnings, "回读内嵌表 " + DescribeWantGrid(sheet)
-                    + " match=" + GridsMatch(want, sheet, compareNames: false));
-                if (GridsMatch(want, sheet, compareNames: false))
-                {
-                    PourLog(warnings, "校验通过（只对上内嵌表格子）");
-                    return true;
-                }
-
-                error = "图表内嵌表与稿不一致（期望 "
-                    + want.Rows.Count + " 行，表上 "
-                    + (sheet.Rows == null ? 0 : sheet.Rows.Count) + " 行）";
-                PourLog(warnings, "校验失败表 " + error);
+                error = "图表系列点数与稿不一致（期望 "
+                    + want.Rows.Count + " 行，图上 " + ReadSeriesRowCount(chart) + " 行）";
+                PourLog(warnings, "校验失败点数 " + error);
                 return false;
             }
 
-            bool seriesOk = GridAlreadyMatches(chart, want);
-            PourLog(warnings, "回读内嵌表失败: " + (sheetError ?? "")
-                + " 系列对齐=" + seriesOk);
-            if (seriesOk)
+            if (TryReadGridFromSeries(chart, out PptHtmlChartGrid live, out _)
+                && live != null
+                && !GridsMatch(want, live, compareNames: false))
             {
-                return true;
+                error = "图表系列数值与稿不一致";
+                PourLog(warnings, "校验失败数值 稿=" + DescribeWantGrid(want)
+                    + " 系列=" + DescribeWantGrid(live));
+                return false;
             }
 
-            error = string.IsNullOrEmpty(sheetError)
-                ? "图表换数后数据与稿不一致"
-                : sheetError;
-            return false;
+            PourLog(warnings, "校验通过（系列点数与稿一致）");
+            return true;
         }
 
         private static bool TryReadGridFromEmbeddedSheet(
@@ -6536,6 +6543,35 @@ namespace WordAddIn1.PresentationHost
 
             return TryReadGridFromSeries(chart, out PptHtmlChartGrid cur, out _)
                 && GridsMatch(grid, cur, compareNames: true);
+        }
+
+        private static bool SeriesRowCountMatches(object chart, PptHtmlChartGrid grid)
+        {
+            return grid != null && grid.Rows != null && ReadSeriesRowCount(chart) == grid.Rows.Count;
+        }
+
+        private static int ReadSeriesRowCount(object chart)
+        {
+            try
+            {
+                object s1 = GetSeries(chart, 1);
+                if (s1 == null)
+                {
+                    return 0;
+                }
+
+                List<string> cats = ToStringList(WppCom.GetProperty(s1, "XValues"));
+                if (cats.Count > 0)
+                {
+                    return cats.Count;
+                }
+
+                return ToStringList(WppCom.GetProperty(s1, "Values")).Count;
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
         }
 
         private static bool GridsMatch(PptHtmlChartGrid want, PptHtmlChartGrid got, bool compareNames)
