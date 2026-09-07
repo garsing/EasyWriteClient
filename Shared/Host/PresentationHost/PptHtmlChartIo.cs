@@ -2291,7 +2291,11 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
-        public static bool TryPourGrid(object chart, PptHtmlChartGrid grid, out string error)
+        public static bool TryPourGrid(
+            object chart,
+            PptHtmlChartGrid grid,
+            out string error,
+            List<string> warnings = null)
         {
             error = null;
             if (chart == null || grid == null || !grid.IsPourable)
@@ -2300,21 +2304,25 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            PourLog(warnings, "开始灌数 " + DescribeWantGrid(grid));
             object excelApp = null;
             try
             {
                 // 换数只认包内嵌表：清 Sheet → 写行列 → SetSourceData。
                 // 不以 Series.Values 当主路（饼图 2 瓣扩 5 瓣会静默丢掉）。
-                if (!TryExpandViaChartData(chart, grid, out excelApp, out error))
+                if (!TryExpandViaChartData(chart, grid, out excelApp, out error, warnings))
                 {
+                    PourLog(warnings, "ChartData 失败: " + (error ?? ""));
                     return false;
                 }
 
                 int wantSeries = CountValueColumns(grid);
                 TrimExtraSeries(chart, wantSeries, out _);
                 TryInvoke(chart, "Refresh");
-                if (!TryVerifyPouredGrid(chart, grid, out error))
+                PourLog(warnings, "灌后裁系列 wantSeries=" + wantSeries + " | " + DescribeLiveSeries(chart));
+                if (!TryVerifyPouredGrid(chart, grid, out error, warnings))
                 {
+                    PourLog(warnings, "灌后校验失败: " + (error ?? ""));
                     return false;
                 }
 
@@ -2564,12 +2572,13 @@ namespace WordAddIn1.PresentationHost
                 StyleLog(warnings, "回读新图异常: " + ex.Message);
             }
 
+            PourLog(warnings, "套快照后 " + DescribeLiveSeries(newChart));
             // 套快照（含 3D）可能把数据打回字面量；必须再验，对不上再灌一次，仍不对就失败并删新图。
-            if (!TryVerifyPouredGrid(newChart, useGrid, out error))
+            if (!TryVerifyPouredGrid(newChart, useGrid, out error, warnings))
             {
                 StyleLog(warnings, "套回后数据对不上，再灌内嵌表: " + (error ?? ""));
-                if (!TryPourGrid(newChart, useGrid, out error)
-                    || !TryVerifyPouredGrid(newChart, useGrid, out error))
+                if (!TryPourGrid(newChart, useGrid, out error, warnings)
+                    || !TryVerifyPouredGrid(newChart, useGrid, out error, warnings))
                 {
                     TryDelete(newShape);
                     newShape = null;
@@ -4644,6 +4653,173 @@ namespace WordAddIn1.PresentationHost
             warnings?.Add(line);
         }
 
+        private static void PourLog(List<string> warnings, string message)
+        {
+            if (string.IsNullOrEmpty(message))
+            {
+                return;
+            }
+
+            string line = "[PptChartPour] " + message;
+            try
+            {
+                EasyWriteLog.WriteLine(line);
+                EasyWriteLog.Flush();
+            }
+            catch (Exception)
+            {
+            }
+
+            warnings?.Add(line);
+        }
+
+        private static string DescribeWantGrid(PptHtmlChartGrid grid)
+        {
+            if (grid == null || grid.Rows == null || grid.Columns == null)
+            {
+                return "稿=null";
+            }
+
+            var cats = new List<string>();
+            var vals = new List<string>();
+            for (int r = 0; r < grid.Rows.Count; r++)
+            {
+                List<string> row = grid.Rows[r];
+                cats.Add(row != null && row.Count > 0 ? row[0] ?? "" : "");
+                if (row != null && row.Count > 1)
+                {
+                    vals.Add(row[1] ?? "");
+                }
+            }
+
+            return "稿 " + grid.Rows.Count + "x" + grid.Columns.Count
+                + " cats=[" + string.Join(",", cats) + "]"
+                + " vals=[" + string.Join(",", vals) + "]";
+        }
+
+        private static string DescribeLiveSeries(object chart)
+        {
+            if (chart == null)
+            {
+                return "图=null";
+            }
+
+            try
+            {
+                object t = WppCom.GetProperty(chart, "ChartType");
+                int n = GetSeriesCount(chart);
+                var sb = new StringBuilder();
+                sb.Append("xl=").Append(t == null ? "?" : t.ToString());
+                sb.Append(" series=").Append(n);
+                int use = Math.Min(n, 3);
+                for (int i = 1; i <= use; i++)
+                {
+                    object series = GetSeries(chart, i);
+                    if (series == null)
+                    {
+                        sb.Append(" | S").Append(i).Append("=null");
+                        continue;
+                    }
+
+                    List<string> xs = ToStringList(WppCom.GetProperty(series, "XValues"));
+                    List<string> ys = ToStringList(WppCom.GetProperty(series, "Values"));
+                    sb.Append(" | S").Append(i)
+                        .Append(" pts=").Append(TryGetPointCount(series))
+                        .Append(" X=[").Append(string.Join(",", xs)).Append("]")
+                        .Append(" Y=[").Append(string.Join(",", ys)).Append("]");
+                }
+
+                return sb.ToString();
+            }
+            catch (Exception ex)
+            {
+                return "图读失败: " + ex.Message;
+            }
+        }
+
+        private static string TryPropString(object target, string name)
+        {
+            try
+            {
+                object v = WppCom.GetProperty(target, name);
+                return v == null ? null : Convert.ToString(v);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static string TryRangeAddress(object range)
+        {
+            if (range == null)
+            {
+                return "null";
+            }
+
+            return TryPropString(range, "Address")
+                ?? TryPropString(range, "AddressLocal")
+                ?? "ok";
+        }
+
+        private static object TryGetProp(object target, string name)
+        {
+            try
+            {
+                return WppCom.GetProperty(target, name);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static int ReadListObjectCount(object ws)
+        {
+            try
+            {
+                object lists = WppCom.GetProperty(ws, "ListObjects");
+                return lists == null ? -1 : Convert.ToInt32(WppCom.GetProperty(lists, "Count"));
+            }
+            catch (Exception)
+            {
+                return -1;
+            }
+        }
+
+        private static string DescribeSheetCells(object ws, int lastRow, int lastCol)
+        {
+            if (ws == null)
+            {
+                return "sheet=null";
+            }
+
+            var sb = new StringBuilder();
+            sb.Append("name=").Append(TryPropString(ws, "Name") ?? "?");
+            sb.Append(" lists=").Append(ReadListObjectCount(ws));
+            sb.Append(" used=").Append(TryRangeAddress(TryGetProp(ws, "UsedRange")));
+            sb.Append(" cells=");
+            for (int r = 1; r <= lastRow; r++)
+            {
+                if (r > 1)
+                {
+                    sb.Append(" / ");
+                }
+
+                for (int c = 1; c <= lastCol; c++)
+                {
+                    if (c > 1)
+                    {
+                        sb.Append("|");
+                    }
+
+                    sb.Append(FormatCell(GetCell(ws, r, c)));
+                }
+            }
+
+            return sb.ToString();
+        }
+
         private static string DescribeSnap(string tag, ChartStyleSnap snap)
         {
             if (snap == null)
@@ -4975,6 +5151,13 @@ namespace WordAddIn1.PresentationHost
 
             try
             {
+                PourLog(warnings, "即将 AddChart2 style=" + chartStyle
+                    + " xl=" + xlType
+                    + " newLayout=" + newLayout
+                    + " box=" + left.ToString("0.#", CultureInfo.InvariantCulture) + ","
+                    + top.ToString("0.#", CultureInfo.InvariantCulture) + " "
+                    + width.ToString("0.#", CultureInfo.InvariantCulture) + "x"
+                    + height.ToString("0.#", CultureInfo.InvariantCulture));
                 try
                 {
                     shape = WppCom.Invoke(
@@ -4987,22 +5170,28 @@ namespace WordAddIn1.PresentationHost
                         width,
                         height,
                         newLayout);
+                    PourLog(warnings, "AddChart2(newLayout) 返回 " + (shape == null ? "null" : "ok"));
                 }
-                catch (Exception)
+                catch (Exception ex1)
                 {
+                    PourLog(warnings, "AddChart2(newLayout) 失败: " + ex1.Message);
                     try
                     {
                         shape = WppCom.Invoke(shapes, "AddChart2", chartStyle, xlType, left, top, width, height);
+                        PourLog(warnings, "AddChart2 返回 " + (shape == null ? "null" : "ok"));
                     }
-                    catch (Exception)
+                    catch (Exception ex2)
                     {
+                        PourLog(warnings, "AddChart2 失败: " + ex2.Message);
                         shape = WppCom.Invoke(shapes, "AddChart", xlType, left, top, width, height);
+                        PourLog(warnings, "AddChart 返回 " + (shape == null ? "null" : "ok"));
                     }
                 }
             }
             catch (Exception ex)
             {
                 error = "创建图表失败: " + ex.Message;
+                PourLog(warnings, error);
                 return false;
             }
 
@@ -5020,10 +5209,13 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            PourLog(warnings, "建图后取 Chart " + (chart == null ? "null" : "ok")
+                + " | " + DescribeLiveSeries(chart));
             TryHideChartExcel(chart);
+            PourLog(warnings, "藏内嵌 Excel 后 " + DescribeLiveSeries(chart));
             try
             {
-                if (!TryPourGrid(chart, grid, out error))
+                if (!TryPourGrid(chart, grid, out error, warnings))
                 {
                     TryDelete(shape);
                     shape = null;
@@ -5931,7 +6123,8 @@ namespace WordAddIn1.PresentationHost
             object chart,
             PptHtmlChartGrid grid,
             out object excelApp,
-            out string error)
+            out string error,
+            List<string> warnings = null)
         {
             excelApp = null;
             error = null;
@@ -5944,6 +6137,7 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                PourLog(warnings, "ChartData IsLinked=" + (TryPropString(chartData, "IsLinked") ?? "?"));
                 TryInvoke(chartData, "Activate");
                 object workbook = WppCom.GetProperty(chartData, "Workbook");
                 if (workbook == null)
@@ -5962,6 +6156,8 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                PourLog(warnings, "打开内嵌簿 " + (TryPropString(workbook, "Name") ?? "?")
+                    + " | " + DescribeSheetCells(ws, 5, 2));
                 TryClearSheet(ws);
                 int cols = grid.Columns.Count;
                 int rows = grid.Rows.Count;
@@ -5988,16 +6184,28 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 object range = TryGetDataRange(ws, rows + 1, cols);
+                PourLog(warnings, "写入后 " + DescribeSheetCells(ws, rows + 1, cols)
+                    + " range=" + TryRangeAddress(range));
                 if (range != null)
                 {
-                    TrySetSourceData(chart, range);
+                    if (!TrySetSourceData(chart, range, warnings))
+                    {
+                        PourLog(warnings, "SetSourceData 未成功，继续（旧行为） | "
+                            + DescribeLiveSeries(chart));
+                    }
+                }
+                else
+                {
+                    PourLog(warnings, "无法定位写入区");
                 }
 
+                PourLog(warnings, "ChartData 结束 " + DescribeLiveSeries(chart));
                 return true;
             }
             catch (Exception ex)
             {
                 error = "灌入图表数据失败: " + ex.Message;
+                PourLog(warnings, error);
                 return false;
             }
         }
@@ -6068,24 +6276,28 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static bool TrySetSourceData(object chart, object range)
+        private static bool TrySetSourceData(object chart, object range, List<string> warnings = null)
         {
             try
             {
                 WppCom.Invoke(chart, "SetSourceData", range, 2);
+                PourLog(warnings, "SetSourceData(range,2) ok");
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                PourLog(warnings, "SetSourceData(range,2) 失败: " + ex.Message);
             }
 
             try
             {
                 WppCom.Invoke(chart, "SetSourceData", range);
+                PourLog(warnings, "SetSourceData(range) ok");
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                PourLog(warnings, "SetSourceData(range) 失败: " + ex.Message);
             }
 
             return false;
@@ -6184,7 +6396,11 @@ namespace WordAddIn1.PresentationHost
             return n;
         }
 
-        private static bool TryVerifyPouredGrid(object chart, PptHtmlChartGrid want, out string error)
+        private static bool TryVerifyPouredGrid(
+            object chart,
+            PptHtmlChartGrid want,
+            out string error,
+            List<string> warnings = null)
         {
             error = null;
             if (chart == null || want == null || !want.IsPourable)
@@ -6193,6 +6409,7 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            PourLog(warnings, "校验 " + DescribeWantGrid(want) + " | " + DescribeLiveSeries(chart));
             if (TryReadGridFromEmbeddedSheet(
                     chart,
                     want.Columns.Count,
@@ -6201,18 +6418,25 @@ namespace WordAddIn1.PresentationHost
                     out string sheetError)
                 && sheet != null)
             {
+                PourLog(warnings, "回读内嵌表 " + DescribeWantGrid(sheet)
+                    + " match=" + GridsMatch(want, sheet, compareNames: false));
                 if (GridsMatch(want, sheet, compareNames: false))
                 {
+                    PourLog(warnings, "校验通过（只对上内嵌表格子）");
                     return true;
                 }
 
                 error = "图表内嵌表与稿不一致（期望 "
                     + want.Rows.Count + " 行，表上 "
                     + (sheet.Rows == null ? 0 : sheet.Rows.Count) + " 行）";
+                PourLog(warnings, "校验失败表 " + error);
                 return false;
             }
 
-            if (GridAlreadyMatches(chart, want))
+            bool seriesOk = GridAlreadyMatches(chart, want);
+            PourLog(warnings, "回读内嵌表失败: " + (sheetError ?? "")
+                + " 系列对齐=" + seriesOk);
+            if (seriesOk)
             {
                 return true;
             }

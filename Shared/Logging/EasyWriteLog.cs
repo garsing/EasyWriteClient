@@ -88,6 +88,21 @@ namespace WordAddIn1
             }
         }
 
+        /// <summary>立刻落盘，避免宿主崩溃时最后几行丢失。</summary>
+        public static void Flush()
+        {
+            lock (Sync)
+            {
+                try
+                {
+                    _writer?.Flush();
+                }
+                catch
+                {
+                }
+            }
+        }
+
         /// <summary>插件关闭时调用：移除监听并关闭文件。</summary>
         public static void Shutdown()
         {
