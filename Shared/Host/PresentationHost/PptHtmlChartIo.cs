@@ -2584,7 +2584,7 @@ namespace WordAddIn1.PresentationHost
             TryApplyStyleSnap(newChart, snap, warnings);
             FinishLineChartLayout(newChart, xlType, useFormat, warnings);
             HideDeletedAxes(newChart, snap);
-            RestoreCategoryAxisAfterSnap(newChart, useGrid, snap);
+            RestoreAxesAfterSnap(newChart, useGrid, snap);
             // Refresh / ChartStyle 会把默认白网格画回来；原图或稿要求关则再关一次。
             EnsureGridlinesMatchSnap(newChart, snap, useFormat, warnings);
             try
@@ -2704,6 +2704,7 @@ namespace WordAddIn1.PresentationHost
             snap.Category = TryCaptureAxis(chart, XlCategory, XlPrimary);
             snap.Value = TryCaptureAxis(chart, XlValue, XlPrimary);
             snap.ValueSecondary = TryCaptureAxis(chart, XlValue, XlSecondary);
+            NormalizeAxisChrome(snap);
 
             try
             {
@@ -2953,11 +2954,7 @@ namespace WordAddIn1.PresentationHost
                 {
                     object ticks = WppCom.GetProperty(axis, "TickLabels");
                     object font = ticks == null ? null : WppCom.GetProperty(ticks, "Font");
-                    string hex = TryReadFontColorHex(font);
-                    if (!string.IsNullOrEmpty(hex) && TryParseHexToOffice(hex, out int rgb))
-                    {
-                        snap.TickFontColor = rgb;
-                    }
+                    snap.TickFontColor = TryReadTickLabelsRgb(ticks, font);
 
                     object sz = font == null ? null : WppCom.GetProperty(font, "Size");
                     if (sz != null)
@@ -3031,7 +3028,8 @@ namespace WordAddIn1.PresentationHost
                     }
 
                     object axisColor = axisLine == null ? null : WppCom.GetProperty(axisLine, "ForeColor");
-                    snap.LineRgb = TryReadExplicitRgb(axisColor);
+                    // 主题白/自动色 Type≠RGB，只认显式色会拍成 null，套回后新图轴线就没了。
+                    snap.LineRgb = TryReadResolvedRgb(axisColor);
                     object weight = axisLine == null ? null : WppCom.GetProperty(axisLine, "Weight");
                     if (weight != null)
                     {
@@ -3136,24 +3134,7 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
 
-                object axisLine = WppCom.GetProperty(WppCom.GetProperty(axis, "Format"), "Line");
-                if (snap.LineVisible == false)
-                {
-                    WppCom.TrySetProperty(axisLine, "Visible", 0);
-                }
-                else
-                {
-                    if (snap.LineRgb.HasValue)
-                    {
-                        object axisColor = axisLine == null ? null : WppCom.GetProperty(axisLine, "ForeColor");
-                        WppCom.TrySetProperty(axisColor, "RGB", snap.LineRgb.Value);
-                    }
-
-                    if (snap.LineWeight.HasValue)
-                    {
-                        WppCom.TrySetProperty(axisLine, "Weight", snap.LineWeight.Value);
-                    }
-                }
+                TryApplyAxisLine(axis, snap);
             }
             catch (Exception)
             {
@@ -4168,15 +4149,28 @@ namespace WordAddIn1.PresentationHost
 
             if (snap.TickFontColor.HasValue)
             {
-                WppCom.TrySetProperty(font, "Color", snap.TickFontColor.Value);
-                object color = WppCom.GetProperty(font, "Color");
-                WppCom.TrySetProperty(color, "RGB", snap.TickFontColor.Value);
+                TryWriteFontRgb(font, snap.TickFontColor.Value);
+                TryWriteTickLabelsRgb(ticks, snap.TickFontColor.Value);
             }
 
             if (snap.TickFontSize.HasValue)
             {
                 WppCom.TrySetProperty(font, "Size", snap.TickFontSize.Value);
             }
+        }
+
+        /// <summary>
+        /// Refresh / ChartStyle 会把新建图默认轴线、主题字色冲回来。
+        /// 分类轴再钉文本类目和刻度字；数值轴同样回写字色和轴线。
+        /// </summary>
+        private static void RestoreAxesAfterSnap(
+            object chart,
+            PptHtmlChartGrid grid,
+            ChartStyleSnap snap)
+        {
+            RestoreCategoryAxisAfterSnap(chart, grid, snap);
+            RestoreAxisChrome(chart, XlValue, XlPrimary, snap == null ? null : snap.Value);
+            RestoreAxisChrome(chart, XlValue, XlSecondary, snap == null ? null : snap.ValueSecondary);
         }
 
         /// <summary>
@@ -4193,14 +4187,116 @@ namespace WordAddIn1.PresentationHost
             }
 
             EnsureCategoryAxisLabels(chart, grid);
+            RestoreAxisChrome(chart, XlCategory, XlPrimary, snap.Category);
+        }
+
+        private static void RestoreAxisChrome(object chart, int axisType, int group, AxisStyleSnap snap)
+        {
+            if (chart == null || snap == null || snap.Deleted == true)
+            {
+                return;
+            }
+
             try
             {
-                object axis = TryInvoke(chart, "Axes", XlCategory, XlPrimary);
-                object ticks = axis == null ? null : WppCom.GetProperty(axis, "TickLabels");
-                TryWriteTickFont(ticks, snap.Category);
+                object axis = TryInvoke(chart, "Axes", axisType, group);
+                if (axis == null)
+                {
+                    return;
+                }
+
+                if (snap.TickLabelPosition.HasValue)
+                {
+                    WppCom.TrySetProperty(axis, "TickLabelPosition", snap.TickLabelPosition.Value);
+                }
+
+                if (snap.MajorTickMark.HasValue)
+                {
+                    WppCom.TrySetProperty(axis, "MajorTickMark", snap.MajorTickMark.Value);
+                }
+
+                if (snap.MinorTickMark.HasValue)
+                {
+                    WppCom.TrySetProperty(axis, "MinorTickMark", snap.MinorTickMark.Value);
+                }
+
+                object ticks = WppCom.GetProperty(axis, "TickLabels");
+                TryWriteTickFont(ticks, snap);
+                TryApplyAxisLine(axis, snap);
             }
             catch (Exception)
             {
+            }
+        }
+
+        private static void TryApplyAxisLine(object axis, AxisStyleSnap snap)
+        {
+            if (axis == null || snap == null)
+            {
+                return;
+            }
+
+            object axisLine = WppCom.GetProperty(WppCom.GetProperty(axis, "Format"), "Line");
+            if (axisLine == null)
+            {
+                return;
+            }
+
+            if (snap.LineVisible == false)
+            {
+                WppCom.TrySetProperty(axisLine, "Visible", 0);
+                return;
+            }
+
+            // AddChart2 + ChartStyle 默认常无线；Visible 为 true/未拍到时都要把线打开。
+            WppCom.TrySetProperty(axisLine, "Visible", -1);
+            int rgb = snap.LineRgb ?? 0x00FFFFFF;
+            TryWriteLineRgb(axisLine, rgb);
+            if (snap.LineWeight.HasValue)
+            {
+                WppCom.TrySetProperty(axisLine, "Weight", snap.LineWeight.Value);
+            }
+        }
+
+        /// <summary>
+        /// 横轴年能拍到白色、纵轴主题色拍空时，两边轴线/刻度字互相补，避免一边白一边棕橙。
+        /// </summary>
+        private static void NormalizeAxisChrome(ChartStyleSnap snap)
+        {
+            if (snap == null)
+            {
+                return;
+            }
+
+            InheritAxisChrome(snap.Category, snap.Value);
+            InheritAxisChrome(snap.Value, snap.Category);
+        }
+
+        private static void InheritAxisChrome(AxisStyleSnap dest, AxisStyleSnap src)
+        {
+            if (dest == null || src == null || dest.Deleted == true)
+            {
+                return;
+            }
+
+            if (!dest.TickFontColor.HasValue && src.TickFontColor.HasValue)
+            {
+                dest.TickFontColor = src.TickFontColor;
+            }
+
+            if (string.IsNullOrEmpty(dest.TickFontName) && !string.IsNullOrEmpty(src.TickFontName))
+            {
+                dest.TickFontName = src.TickFontName;
+            }
+
+            if (!dest.TickFontSize.HasValue && src.TickFontSize.HasValue)
+            {
+                dest.TickFontSize = src.TickFontSize;
+            }
+
+            if (dest.LineVisible != false && !dest.LineRgb.HasValue && src.LineRgb.HasValue)
+            {
+                dest.LineRgb = src.LineRgb;
             }
         }
 
@@ -4860,7 +4956,9 @@ namespace WordAddIn1.PresentationHost
                 .Append(" gap=").Append(snap.GapWidth)
                 .Append(" overlap=").Append(snap.Overlap)
                 .Append(" catDel=").Append(snap.Category == null ? "null" : Convert.ToString(snap.Category.Deleted))
-                .Append(" valDel=").Append(snap.Value == null ? "null" : Convert.ToString(snap.Value.Deleted));
+                .Append(" valDel=").Append(snap.Value == null ? "null" : Convert.ToString(snap.Value.Deleted))
+                .Append(" ").Append(DescribeAxisChrome("cat", snap.Category))
+                .Append(" ").Append(DescribeAxisChrome("val", snap.Value));
             if (snap.Series != null)
             {
                 for (int i = 0; i < snap.Series.Count; i++)
@@ -4870,6 +4968,19 @@ namespace WordAddIn1.PresentationHost
             }
 
             return sb.ToString();
+        }
+
+        private static string DescribeAxisChrome(string tag, AxisStyleSnap ax)
+        {
+            if (ax == null)
+            {
+                return tag + "=null";
+            }
+
+            return tag
+                + "Line=" + (ax.LineVisible == false ? "off" : "on")
+                + "/" + HexOf(ax.LineRgb)
+                + " tick=" + HexOf(ax.TickFontColor);
         }
 
         private static string DescribeSeries(int index, SeriesStyleSnap one)
@@ -5098,24 +5209,125 @@ namespace WordAddIn1.PresentationHost
 
         private static string TryReadFontColorHex(object font)
         {
+            int? rgb = TryReadTickFontRgb(font);
+            return rgb.HasValue ? OfficeRgbToHex(rgb.Value) : null;
+        }
+
+        private static int? TryReadTickLabelsRgb(object ticks, object font)
+        {
+            int? rgb = TryReadTickFontRgb(font);
+            if (rgb.HasValue)
+            {
+                return rgb;
+            }
+
+            try
+            {
+                object format = ticks == null ? null : WppCom.GetProperty(ticks, "Format");
+                object tf2 = format == null ? null : WppCom.GetProperty(format, "TextFrame2");
+                object tr = tf2 == null ? null : WppCom.GetProperty(tf2, "TextRange");
+                object f2 = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                object fill = f2 == null ? null : WppCom.GetProperty(f2, "Fill");
+                object fc = fill == null ? null : WppCom.GetProperty(fill, "ForeColor");
+                return TryReadResolvedRgb(fc);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static int? TryReadTickFontRgb(object font)
+        {
             if (font == null)
             {
                 return null;
             }
 
+            int? rgb = TryReadResolvedRgb(WppCom.GetProperty(font, "ColorFormat"));
+            if (rgb.HasValue)
+            {
+                return rgb;
+            }
+
+            object color = WppCom.GetProperty(font, "Color");
+            rgb = TryReadResolvedRgb(color);
+            if (rgb.HasValue)
+            {
+                return rgb;
+            }
+
             try
             {
-                object color = WppCom.GetProperty(font, "Color");
                 if (color == null)
                 {
                     return null;
                 }
 
-                return OfficeRgbToHex(Convert.ToInt32(Convert.ToDouble(color)));
+                int value = Convert.ToInt32(Convert.ToDouble(color)) & 0x00FFFFFF;
+                // 主题色索引通常很小；把它当 RGB 会写成棕橙。
+                if (value <= 80)
+                {
+                    return null;
+                }
+
+                return value;
             }
             catch (Exception)
             {
                 return null;
+            }
+        }
+
+        private static void TryWriteFontRgb(object font, int rgb)
+        {
+            if (font == null)
+            {
+                return;
+            }
+
+            WppCom.TrySetProperty(font, "Color", rgb);
+            try
+            {
+                object color = WppCom.GetProperty(font, "Color");
+                WppCom.TrySetProperty(color, "Type", 1);
+                WppCom.TrySetProperty(color, "RGB", rgb);
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                object cf = WppCom.GetProperty(font, "ColorFormat");
+                WppCom.TrySetProperty(cf, "Type", 1);
+                WppCom.TrySetProperty(cf, "RGB", rgb);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryWriteTickLabelsRgb(object ticks, int rgb)
+        {
+            if (ticks == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object format = WppCom.GetProperty(ticks, "Format");
+                object tf2 = format == null ? null : WppCom.GetProperty(format, "TextFrame2");
+                object tr = tf2 == null ? null : WppCom.GetProperty(tf2, "TextRange");
+                object f2 = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                object fill = f2 == null ? null : WppCom.GetProperty(f2, "Fill");
+                object fc = fill == null ? null : WppCom.GetProperty(fill, "ForeColor");
+                WppCom.TrySetProperty(fc, "Type", 1);
+                WppCom.TrySetProperty(fc, "RGB", rgb);
+            }
+            catch (Exception)
+            {
             }
         }
 
@@ -5253,9 +5465,11 @@ namespace WordAddIn1.PresentationHost
                         return false;
                     }
 
-                    TryApplyStyleSnap(chart, SnapFromFormat(format, grid), warnings);
+                    ChartStyleSnap htmlSnap = SnapFromFormat(format, grid);
+                    TryApplyStyleSnap(chart, htmlSnap, warnings);
                     EnsureCategoryAxisLabels(chart, grid);
                     FinishLineChartLayout(chart, xlType, format, warnings);
+                    RestoreAxesAfterSnap(chart, grid, htmlSnap);
                 }
                 else
                 {
