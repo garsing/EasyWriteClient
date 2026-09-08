@@ -7044,7 +7044,8 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
-        /// 颜色只走这一条继承：饼图先看扇区色够不够分，够就套旧色+主题，不够只自动分色。
+        /// 颜色只走这一条、按优先级盖：主题盘 →（饼）扇区色够分就盖点色，不够就 VaryByCategories。
+        /// 饼图不套系列填，避免整圈一色盖掉上面两层。
         /// </summary>
         private static void TryInheritColors(object chart, ChartStyleSnap snap, List<string> warnings)
         {
@@ -7055,6 +7056,7 @@ namespace WordAddIn1.PresentationHost
 
             if (IsPieChart(chart))
             {
+                TryApplyChartTheme(chart, snap);
                 object series = GetSeries(chart, 1);
                 SeriesStyleSnap one = snap.Series != null && snap.Series.Count > 0
                     ? snap.Series[0]
@@ -7063,13 +7065,12 @@ namespace WordAddIn1.PresentationHost
                 int oldPts = one == null || one.PointFills == null ? 0 : one.PointFills.Count;
                 if (one != null && one.PointFills != null && live > 0 && oldPts == live)
                 {
-                    StyleLog(warnings, "饼图继承扇区色 " + live + " 个");
-                    TryApplyChartTheme(chart, snap);
+                    StyleLog(warnings, "饼图在主题上覆盖扇区色 " + live + " 个");
                     TryApplyPointFills(series, one.PointFills, warnings, "S1");
                     return;
                 }
 
-                StyleLog(warnings, "饼图扇区色 " + oldPts + " 个不够分 " + live + " 瓣，自动分色");
+                StyleLog(warnings, "饼图已继承主题，扇区色 " + oldPts + " 个不够分 " + live + " 瓣，VaryByCategories");
                 TrySetVaryByCategories(chart, true, warnings);
                 return;
             }
