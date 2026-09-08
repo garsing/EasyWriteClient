@@ -2631,15 +2631,6 @@ namespace WordAddIn1.PresentationHost
             object newChart = TryGetChart(newShape);
             FinishLineChartLayout(newChart, xlType, useFormat, warnings);
             TryApplyStyleSnap(newChart, snap, warnings, useGrid, useFormat);
-            try
-            {
-                TryCaptureStyle(newChart, warnings, "新图套回后");
-            }
-            catch (Exception ex)
-            {
-                StyleLog(warnings, "回读新图异常: " + ex.Message);
-            }
-
             PourLog(warnings, "套快照后 " + DescribeLiveSeries(newChart));
             // 套快照（含 3D）可能把数据打回字面量；必须再验，对不上再灌一次，仍不对就失败并删新图。
             if (!TryVerifyPouredGrid(newChart, useGrid, out error, warnings))
@@ -2657,6 +2648,17 @@ namespace WordAddIn1.PresentationHost
 
                     return false;
                 }
+            }
+
+            // 轴皮是最后一层：前面结构/开标签/再灌数都可能按 ChartStyle 掀字色。
+            TryInheritAxisChrome(newChart, snap, warnings);
+            try
+            {
+                TryCaptureStyle(newChart, warnings, "新图套回后");
+            }
+            catch (Exception ex)
+            {
+                StyleLog(warnings, "回读新图异常: " + ex.Message);
             }
 
             TryHideChartExcel(newChart);
@@ -2823,7 +2825,8 @@ namespace WordAddIn1.PresentationHost
 
         /// <summary>
         /// 继承只走这一次：Refresh 已在调用方做完。顺序粗→细，后面盖前面。
-        /// 结构 → 主题盘 → 标题/图例/区 → 轴+网格 → 系列填/扇区 → 线/标记 → 标签。
+        /// 结构 → 主题盘 → 标题/图例/区 → 轴结构+网格 → 系列填/扇区 → 线/标记 → 标签。
+        /// 轴皮（字色/轴线）不在这里写，整次套回最后一层。
         /// </summary>
         private static void TryApplyStyleSnap(
             object chart,
@@ -3192,8 +3195,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 object ticks = WppCom.GetProperty(axis, "TickLabels");
-                // 分类轴 2019/2021 会被收成时间轴，再套日期格式会把字收成主题灰。
-                // 先钉格式/网格，最后写字色和轴线，避免 NumberFormat 冲掉刚写的白。
+                // 只写轴结构。字色/轴线整次套回最后一层，避免 NumberFormat 之后的 COM 按风格掀掉。
                 if (ticks != null)
                 {
                     if (axisType == XlCategory)
@@ -3215,9 +3217,6 @@ namespace WordAddIn1.PresentationHost
                         TryApplyGridlineLine(axis, snap);
                     }
                 }
-
-                TryWriteTickFont(ticks, snap);
-                TryApplyAxisLine(axis, snap);
             }
             catch (Exception)
             {
@@ -4380,30 +4379,24 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
-        /// Refresh 会冲掉轴线和刻度字。只重钉字色/轴线/刻度，不再走整轴套回
-        /// （NumberFormat 会把刚写的白字收成主题灰，黑线在深色底上看不见）。
+        /// 轴皮最后一层：只写字色/轴线，不再走 NumberFormat / 分类名。
         /// </summary>
-        private static void RestoreAxesAfterSnap(
-            object chart,
-            PptHtmlChartGrid grid,
-            ChartStyleSnap snap)
+        private static void TryInheritAxisChrome(object chart, ChartStyleSnap snap, List<string> warnings)
         {
             if (chart == null || snap == null)
             {
                 return;
             }
 
-            if (snap.Category != null && snap.Category.Deleted != true)
-            {
-                EnsureCategoryAxisLabels(chart, grid);
-            }
-
-            RestoreAxisChrome(chart, XlCategory, XlPrimary, snap.Category);
-            RestoreAxisChrome(chart, XlValue, XlPrimary, snap.Value);
-            RestoreAxisChrome(chart, XlValue, XlSecondary, snap.ValueSecondary);
+            StyleLog(warnings, "轴皮最后一层 "
+                + "catTick=" + (snap.Category == null ? "-" : HexOf(snap.Category.TickFontColor))
+                + " valTick=" + (snap.Value == null ? "-" : HexOf(snap.Value.TickFontColor)));
+            TryInheritOneAxisChrome(chart, XlCategory, XlPrimary, snap.Category);
+            TryInheritOneAxisChrome(chart, XlValue, XlPrimary, snap.Value);
+            TryInheritOneAxisChrome(chart, XlValue, XlSecondary, snap.ValueSecondary);
         }
 
-        private static void RestoreAxisChrome(object chart, int axisType, int group, AxisStyleSnap snap)
+        private static void TryInheritOneAxisChrome(object chart, int axisType, int group, AxisStyleSnap snap)
         {
             if (chart == null || snap == null || snap.Deleted == true)
             {
@@ -4416,21 +4409,6 @@ namespace WordAddIn1.PresentationHost
                 if (axis == null)
                 {
                     return;
-                }
-
-                if (snap.TickLabelPosition.HasValue)
-                {
-                    WppCom.TrySetProperty(axis, "TickLabelPosition", snap.TickLabelPosition.Value);
-                }
-
-                if (snap.MajorTickMark.HasValue)
-                {
-                    WppCom.TrySetProperty(axis, "MajorTickMark", snap.MajorTickMark.Value);
-                }
-
-                if (snap.MinorTickMark.HasValue)
-                {
-                    WppCom.TrySetProperty(axis, "MinorTickMark", snap.MinorTickMark.Value);
                 }
 
                 object ticks = WppCom.GetProperty(axis, "TickLabels");
@@ -5689,6 +5667,7 @@ namespace WordAddIn1.PresentationHost
                     ChartStyleSnap htmlSnap = SnapFromFormat(format, grid);
                     FinishLineChartLayout(chart, xlType, format, warnings);
                     TryApplyStyleSnap(chart, htmlSnap, warnings, grid, format);
+                    TryInheritAxisChrome(chart, htmlSnap, warnings);
                 }
                 else
                 {
