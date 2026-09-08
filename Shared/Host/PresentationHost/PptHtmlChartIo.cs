@@ -2416,11 +2416,6 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 ApplySeriesExtras(chart, grid);
-                if (IsPieChart(chart))
-                {
-                    TrySetVaryByCategories(chart, true, warnings);
-                }
-
                 return true;
             }
             catch (Exception ex)
@@ -2626,7 +2621,7 @@ namespace WordAddIn1.PresentationHost
                 warnings,
                 out newShape,
                 out error,
-                snap == null || !snap.ChartStyle.HasValue ? -1 : snap.ChartStyle.Value,
+                -1,
                 newLayout: false,
                 applyHtmlChrome: false))
             {
@@ -2866,16 +2861,6 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
 
-                if (snap.ChartStyle.HasValue)
-                {
-                    WppCom.TrySetProperty(chart, "ChartStyle", snap.ChartStyle.Value);
-                }
-
-                if (snap.ChartColor.HasValue)
-                {
-                    WppCom.TrySetProperty(chart, "ChartColor", snap.ChartColor.Value);
-                }
-
                 if (snap.HasTitle.HasValue)
                 {
                     WppCom.TrySetProperty(chart, "HasTitle", snap.HasTitle.Value);
@@ -2932,38 +2917,20 @@ namespace WordAddIn1.PresentationHost
                 TryApplyAxis(chart, XlValue, XlPrimary, snap.Value);
                 TryApplyAxis(chart, XlValue, XlSecondary, snap.ValueSecondary);
 
+                TryInheritColors(chart, snap, warnings);
+
                 if (snap.Series != null)
                 {
                     for (int i = 0; i < snap.Series.Count; i++)
                     {
                         object series = GetSeries(chart, i + 1);
-                        if (series == null)
+                        if (series == null || snap.Series[i] == null)
                         {
                             continue;
                         }
 
-                        SeriesStyleSnap one = snap.Series[i];
-                        if (IsPieChart(chart)
-                            || (one.ChartType.HasValue && IsPieXl(one.ChartType.Value)))
-                        {
-                            int live = TryGetPointCount(series);
-                            if (one.PointFills != null && live > 0 && one.PointFills.Count == live)
-                            {
-                                TryApplyPointFills(series, one.PointFills, warnings, "S" + (i + 1));
-                            }
-                            else
-                            {
-                                TrySetVaryByCategories(chart, true, warnings);
-                            }
-                        }
-                        else
-                        {
-                            TryApplyFill(series, one.Fill, warnings, "S" + (i + 1));
-                            TryApplyPointFills(series, one.PointFills, warnings, "S" + (i + 1));
-                        }
-
-                        TryApplyLine(series, one.Line, warnings, "S" + (i + 1));
-                        TryApplyMarker(series, one);
+                        TryApplyLine(series, snap.Series[i].Line, warnings, "S" + (i + 1));
+                        TryApplyMarker(series, snap.Series[i]);
                     }
                 }
 
@@ -7073,6 +7040,69 @@ namespace WordAddIn1.PresentationHost
             catch (Exception)
             {
                 return 0;
+            }
+        }
+
+        /// <summary>
+        /// 颜色只走这一条继承：饼图先看扇区色够不够分，够就套旧色+主题，不够只自动分色。
+        /// </summary>
+        private static void TryInheritColors(object chart, ChartStyleSnap snap, List<string> warnings)
+        {
+            if (chart == null || snap == null)
+            {
+                return;
+            }
+
+            if (IsPieChart(chart))
+            {
+                object series = GetSeries(chart, 1);
+                SeriesStyleSnap one = snap.Series != null && snap.Series.Count > 0
+                    ? snap.Series[0]
+                    : null;
+                int live = TryGetPointCount(series);
+                int oldPts = one == null || one.PointFills == null ? 0 : one.PointFills.Count;
+                if (one != null && one.PointFills != null && live > 0 && oldPts == live)
+                {
+                    StyleLog(warnings, "饼图继承扇区色 " + live + " 个");
+                    TryApplyChartTheme(chart, snap);
+                    TryApplyPointFills(series, one.PointFills, warnings, "S1");
+                    return;
+                }
+
+                StyleLog(warnings, "饼图扇区色 " + oldPts + " 个不够分 " + live + " 瓣，自动分色");
+                TrySetVaryByCategories(chart, true, warnings);
+                return;
+            }
+
+            TryApplyChartTheme(chart, snap);
+            if (snap.Series == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < snap.Series.Count; i++)
+            {
+                object series = GetSeries(chart, i + 1);
+                if (series == null)
+                {
+                    continue;
+                }
+
+                TryApplyFill(series, snap.Series[i].Fill, warnings, "S" + (i + 1));
+                TryApplyPointFills(series, snap.Series[i].PointFills, warnings, "S" + (i + 1));
+            }
+        }
+
+        private static void TryApplyChartTheme(object chart, ChartStyleSnap snap)
+        {
+            if (snap.ChartStyle.HasValue)
+            {
+                WppCom.TrySetProperty(chart, "ChartStyle", snap.ChartStyle.Value);
+            }
+
+            if (snap.ChartColor.HasValue)
+            {
+                WppCom.TrySetProperty(chart, "ChartColor", snap.ChartColor.Value);
             }
         }
 
