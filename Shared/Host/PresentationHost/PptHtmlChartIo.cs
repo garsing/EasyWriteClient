@@ -940,7 +940,14 @@ namespace WordAddIn1.PresentationHost
 
             if (src.ChartType.HasValue)
             {
-                dest.ChartType = src.ChartType;
+                // th data-series-type="pie" 只表示饼族，不能把旧图 pie3d 压成 pie2d。
+                // 2D/3D 只听节点 data-chart-type。
+                if (!(dest.ChartType.HasValue
+                    && IsPieXl(dest.ChartType.Value)
+                    && IsPieXl(src.ChartType.Value)))
+                {
+                    dest.ChartType = src.ChartType;
+                }
             }
 
             if (src.AxisGroup.HasValue)
@@ -1551,9 +1558,14 @@ namespace WordAddIn1.PresentationHost
                 return "line";
             }
 
-            if (xl == XlPie || xl == Xl3DPie)
+            if (xl == Xl3DPie)
             {
-                return "pie";
+                return "pie3d";
+            }
+
+            if (xl == XlPie)
+            {
+                return "pie2d";
             }
 
             if (xl == XlColumnClustered)
@@ -1773,15 +1785,16 @@ namespace WordAddIn1.PresentationHost
                     canonical = "line";
                     return true;
                 case "pie":
+                case "pie2d":
                     xlType = XlPie;
-                    canonical = "pie";
+                    canonical = "pie2d";
                     return true;
                 case "pie3d":
                     xlType = Xl3DPie;
-                    canonical = "pie";
+                    canonical = "pie3d";
                     return true;
                 default:
-                    error = "data-chart-type 仅支持 column/bar/line/pie";
+                    error = "data-chart-type 仅支持 column/bar/line/pie2d/pie3d（pie 为 pie2d 别名）";
                     return false;
             }
         }
@@ -1798,9 +1811,14 @@ namespace WordAddIn1.PresentationHost
                 return "line";
             }
 
-            if (IsPieXl(xlType))
+            if (xlType == Xl3DPie)
             {
-                return "pie";
+                return "pie3d";
+            }
+
+            if (xlType == XlPie)
+            {
+                return "pie2d";
             }
 
             return "column";
@@ -1826,6 +1844,47 @@ namespace WordAddIn1.PresentationHost
             catch (Exception)
             {
                 return false;
+            }
+        }
+
+        private static bool TryReadChartXl(object chart, out int xlType)
+        {
+            xlType = XlColumnClustered;
+            if (chart == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                object t = WppCom.GetProperty(chart, "ChartType");
+                if (t == null)
+                {
+                    return false;
+                }
+
+                xlType = Convert.ToInt32(t);
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static void PinChartSeriesType(ChartStyleSnap snap, int xlType)
+        {
+            if (snap == null || snap.Series == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < snap.Series.Count; i++)
+            {
+                if (snap.Series[i] != null)
+                {
+                    snap.Series[i].ChartType = xlType;
+                }
             }
         }
 
@@ -2495,69 +2554,56 @@ namespace WordAddIn1.PresentationHost
             }
 
             object oldChart = TryGetChart(oldShape);
-            if (string.IsNullOrWhiteSpace(useFormat.ChartType))
-            {
-                try
-                {
-                    object t = oldChart == null ? null : WppCom.GetProperty(oldChart, "ChartType");
-                    if (t != null)
-                    {
-                        useFormat.ChartType = CanonicalTypeFromXl(Convert.ToInt32(t));
-                    }
-                }
-                catch (Exception)
-                {
-                }
-            }
+            bool htmlWroteType = format != null && !string.IsNullOrWhiteSpace(format.ChartType);
 
-            if (!TryParseType(useFormat.ChartType, out int xlType, out _, out error))
-            {
-                return false;
-            }
-
-            ChartStyleSnap snap = null;
+            ChartStyleSnap oldSnap = null;
             try
             {
-                StyleLog(warnings, "重建开始 type=" + (useFormat.ChartType ?? "")
-                    + " xl=" + xlType
-                    + " box=" + useLeft.ToString("0.#", CultureInfo.InvariantCulture)
-                    + "," + useTop.ToString("0.#", CultureInfo.InvariantCulture)
-                    + " " + useWidth.ToString("0.#", CultureInfo.InvariantCulture)
-                    + "x" + useHeight.ToString("0.#", CultureInfo.InvariantCulture));
-                snap = TryCaptureStyle(oldChart, warnings, "旧图");
+                oldSnap = TryCaptureStyle(oldChart, warnings, "旧图");
             }
             catch (Exception ex)
             {
                 StyleLog(warnings, "拍旧图样式异常: " + ex.Message);
             }
 
+            ChartStyleSnap htmlSnap = SnapFromFormat(useFormat, useGrid);
+            ChartStyleSnap snap = OverlaySnap(oldSnap, htmlSnap);
             if (snap == null)
             {
-                snap = SnapFromFormat(useFormat, useGrid);
+                snap = htmlSnap ?? oldSnap;
             }
 
-            if (snap != null && snap.Series != null && snap.Series.Count == 1
-                && snap.Series[0].ChartType.HasValue
-                && snap.Series[0].ChartType.Value != xlType)
+            int xlType;
+            if (htmlWroteType)
             {
-                int snapXl = snap.Series[0].ChartType.Value;
-                // 同族（pie ↔ pie3d）不要建图前劫持，否则 3D 饼灌点失败还报成功。
-                if (string.Equals(
-                    CanonicalTypeFromXl(snapXl),
-                    CanonicalTypeFromXl(xlType),
-                    StringComparison.OrdinalIgnoreCase))
+                if (!TryParseType(useFormat.ChartType, out xlType, out string canon, out error))
                 {
-                    StyleLog(warnings, "建图保持稿类型 " + xlType
-                        + "，快照 " + snapXl + " 灌数后再套");
+                    return false;
                 }
-                else
+
+                useFormat.ChartType = canon;
+                PinChartSeriesType(snap, xlType);
+            }
+            else if (!TryReadChartXl(oldChart, out xlType))
+            {
+                if (!TryParseType(useFormat.ChartType, out xlType, out _, out error))
                 {
-                    StyleLog(warnings, "建图类型改用快照 " + xlType + " → " + snapXl);
-                    xlType = snapXl;
+                    return false;
                 }
             }
+            else
+            {
+                useFormat.ChartType = CanonicalTypeFromXl(xlType);
+            }
 
-            // 改已有图：数据来自 HTML 表，版式/轴/标题/系列样式按旧图快照原样写回。
+            StyleLog(warnings, "重建开始 type=" + (useFormat.ChartType ?? "")
+                + " xl=" + xlType
+                + (htmlWroteType ? " from=html" : " from=old")
+                + " box=" + useLeft.ToString("0.#", CultureInfo.InvariantCulture)
+                + "," + useTop.ToString("0.#", CultureInfo.InvariantCulture)
+                + " " + useWidth.ToString("0.#", CultureInfo.InvariantCulture)
+                + "x" + useHeight.ToString("0.#", CultureInfo.InvariantCulture));
+
             SyncFormatToOldSnap(useFormat, xlType, warnings);
             MergeGridlinesFromFormat(snap, useFormat);
 
@@ -6880,9 +6926,17 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        /// <summary>
+        /// 饼图已是饼则不改 2D↔3D。未写类型时建图已跟旧图；这里只兜底「建成了非饼、快照却是饼」。
+        /// </summary>
         private static void TryRestorePieChartType(object chart, ChartStyleSnap snap)
         {
             if (chart == null || snap == null || snap.Series == null)
+            {
+                return;
+            }
+
+            if (IsPieChart(chart))
             {
                 return;
             }
@@ -6904,12 +6958,6 @@ namespace WordAddIn1.PresentationHost
 
             try
             {
-                object t = WppCom.GetProperty(chart, "ChartType");
-                if (t != null && Convert.ToInt32(t) == want.Value)
-                {
-                    return;
-                }
-
                 WppCom.TrySetProperty(chart, "ChartType", want.Value);
             }
             catch (Exception)
