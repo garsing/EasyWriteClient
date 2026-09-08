@@ -3108,10 +3108,8 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 object ticks = WppCom.GetProperty(axis, "TickLabels");
-                TryWriteTickFont(ticks, snap);
-
-                // 分类轴 2019/2021 会被收成时间轴，再套快照里的日期格式会把前几年变成主题灰字。
-                // 分类轴固定文本格式；数值轴才写回旧图 NumberFormat。
+                // 分类轴 2019/2021 会被收成时间轴，再套日期格式会把字收成主题灰。
+                // 先钉格式/网格，最后写字色和轴线，避免 NumberFormat 冲掉刚写的白。
                 if (ticks != null)
                 {
                     if (axisType == XlCategory)
@@ -3134,6 +3132,7 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
 
+                TryWriteTickFont(ticks, snap);
                 TryApplyAxisLine(axis, snap);
             }
             catch (Exception)
@@ -4160,7 +4159,8 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
-        /// Refresh 会冲掉轴线和刻度字。分类轴先钉成文本类目，再整轴重套一次。
+        /// Refresh 会冲掉轴线和刻度字。只重钉字色/轴线/刻度，不再走整轴套回
+        /// （NumberFormat 会把刚写的白字收成主题灰，黑线在深色底上看不见）。
         /// </summary>
         private static void RestoreAxesAfterSnap(
             object chart,
@@ -4177,9 +4177,48 @@ namespace WordAddIn1.PresentationHost
                 EnsureCategoryAxisLabels(chart, grid);
             }
 
-            TryApplyAxis(chart, XlCategory, XlPrimary, snap.Category);
-            TryApplyAxis(chart, XlValue, XlPrimary, snap.Value);
-            TryApplyAxis(chart, XlValue, XlSecondary, snap.ValueSecondary);
+            RestoreAxisChrome(chart, XlCategory, XlPrimary, snap.Category);
+            RestoreAxisChrome(chart, XlValue, XlPrimary, snap.Value);
+            RestoreAxisChrome(chart, XlValue, XlSecondary, snap.ValueSecondary);
+        }
+
+        private static void RestoreAxisChrome(object chart, int axisType, int group, AxisStyleSnap snap)
+        {
+            if (chart == null || snap == null || snap.Deleted == true)
+            {
+                return;
+            }
+
+            try
+            {
+                object axis = TryInvoke(chart, "Axes", axisType, group);
+                if (axis == null)
+                {
+                    return;
+                }
+
+                if (snap.TickLabelPosition.HasValue)
+                {
+                    WppCom.TrySetProperty(axis, "TickLabelPosition", snap.TickLabelPosition.Value);
+                }
+
+                if (snap.MajorTickMark.HasValue)
+                {
+                    WppCom.TrySetProperty(axis, "MajorTickMark", snap.MajorTickMark.Value);
+                }
+
+                if (snap.MinorTickMark.HasValue)
+                {
+                    WppCom.TrySetProperty(axis, "MinorTickMark", snap.MinorTickMark.Value);
+                }
+
+                object ticks = WppCom.GetProperty(axis, "TickLabels");
+                TryWriteTickFont(ticks, snap);
+                TryApplyAxisLine(axis, snap);
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private static void TryApplyAxisLine(object axis, AxisStyleSnap snap)
