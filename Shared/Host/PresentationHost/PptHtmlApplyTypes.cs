@@ -558,7 +558,16 @@ namespace WordAddIn1.PresentationHost
                 item.Rotation = rv;
             }
 
-            if (string.Equals(shapeType, "chart", StringComparison.OrdinalIgnoreCase))
+            bool markedChart = string.Equals(shapeType, "chart", StringComparison.OrdinalIgnoreCase)
+                || !string.IsNullOrWhiteSpace(item.ChartType);
+            List<XElement> nestedTables = el.Elements().Where(e =>
+                string.Equals(e.Name.LocalName, "table", StringComparison.OrdinalIgnoreCase)).ToList();
+            bool updateChartTable = hasFormalId
+                && nestedTables.Count == 1
+                && !string.Equals(shapeType, "table", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(el.Name.LocalName, "table", StringComparison.OrdinalIgnoreCase);
+
+            if (markedChart || updateChartTable)
             {
                 if (string.Equals(el.Name.LocalName, "table", StringComparison.OrdinalIgnoreCase))
                 {
@@ -568,33 +577,45 @@ namespace WordAddIn1.PresentationHost
 
                 item.ChartFormat = PptHtmlChartIo.ParseFormat(el);
                 string typeRaw = item.ChartFormat.ChartType ?? item.ChartType;
-                if (!PptHtmlChartIo.TryParseType(typeRaw, out _, out string canon, out error))
+                if (markedChart)
                 {
-                    return false;
+                    if (!PptHtmlChartIo.TryParseType(typeRaw, out _, out string canon, out error))
+                    {
+                        return false;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(typeRaw))
+                    {
+                        item.ChartType = canon;
+                        item.ChartFormat.ChartType = canon;
+                    }
                 }
 
-                if (!string.IsNullOrWhiteSpace(typeRaw))
-                {
-                    item.ChartType = canon;
-                    item.ChartFormat.ChartType = canon;
-                }
-
-                List<XElement> tables = el.Elements().Where(e =>
-                    string.Equals(e.Name.LocalName, "table", StringComparison.OrdinalIgnoreCase)).ToList();
-                if (tables.Count > 1)
+                if (nestedTables.Count > 1)
                 {
                     error = "chart 节点只能有一张内嵌 <table>";
                     return false;
                 }
 
-                if (tables.Count == 1)
+                if (nestedTables.Count == 1)
                 {
-                    if (!PptHtmlChartIo.TryParseGrid(tables[0], true, out PptHtmlChartGrid grid, out error))
+                    if (!PptHtmlChartIo.TryParseGrid(nestedTables[0], true, out PptHtmlChartGrid grid, out error))
                     {
-                        return false;
-                    }
+                        if (markedChart)
+                        {
+                            return false;
+                        }
 
-                    item.ChartGrid = grid;
+                        error = null;
+                    }
+                    else
+                    {
+                        item.ChartGrid = grid;
+                        if (string.IsNullOrEmpty(item.ShapeType))
+                        {
+                            item.ShapeType = "chart";
+                        }
+                    }
                 }
                 else
                 {

@@ -214,6 +214,8 @@ namespace WordAddIn1.PresentationHost
         {
             public int? ChartStyle { get; set; }
 
+            public int? ChartColor { get; set; }
+
             public bool? HasTitle { get; set; }
 
             public string TitleFontColor { get; set; }
@@ -696,6 +698,11 @@ namespace WordAddIn1.PresentationHost
             if (htmlSnap.ChartStyle.HasValue)
             {
                 oldSnap.ChartStyle = htmlSnap.ChartStyle;
+            }
+
+            if (htmlSnap.ChartColor.HasValue)
+            {
+                oldSnap.ChartColor = htmlSnap.ChartColor;
             }
 
             if (htmlSnap.HasTitle.HasValue)
@@ -2411,7 +2418,7 @@ namespace WordAddIn1.PresentationHost
                 ApplySeriesExtras(chart, grid);
                 if (IsPieChart(chart))
                 {
-                    TrySetVaryByCategories(chart, true);
+                    TrySetVaryByCategories(chart, true, warnings);
                 }
 
                 return true;
@@ -2695,6 +2702,18 @@ namespace WordAddIn1.PresentationHost
 
             try
             {
+                object color = WppCom.GetProperty(chart, "ChartColor");
+                if (color != null)
+                {
+                    snap.ChartColor = Convert.ToInt32(color);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
                 snap.HasTitle = IsTruthy(WppCom.GetProperty(chart, "HasTitle"));
                 if (snap.HasTitle == true)
                 {
@@ -2852,6 +2871,11 @@ namespace WordAddIn1.PresentationHost
                     WppCom.TrySetProperty(chart, "ChartStyle", snap.ChartStyle.Value);
                 }
 
+                if (snap.ChartColor.HasValue)
+                {
+                    WppCom.TrySetProperty(chart, "ChartColor", snap.ChartColor.Value);
+                }
+
                 if (snap.HasTitle.HasValue)
                 {
                     WppCom.TrySetProperty(chart, "HasTitle", snap.HasTitle.Value);
@@ -2929,7 +2953,7 @@ namespace WordAddIn1.PresentationHost
                             }
                             else
                             {
-                                TrySetVaryByCategories(chart, true);
+                                TrySetVaryByCategories(chart, true, warnings);
                             }
                         }
                         else
@@ -3375,35 +3399,93 @@ namespace WordAddIn1.PresentationHost
         private static FillSnap TryCaptureFill(object series, List<string> warnings = null, string tag = null)
         {
             string prefix = (tag ?? "fill");
+            FillSnap snap = TryCaptureFormatFill(series, warnings, prefix);
+            if (snap != null && (snap.SolidRgb.HasValue || (snap.Stops != null && snap.Stops.Count >= 2)))
+            {
+                return snap;
+            }
+
+            FillSnap interior = TryCaptureInteriorFill(series);
+            if (interior != null)
+            {
+                StyleLog(warnings, prefix + " Interior.Color=" + HexOf(interior.SolidRgb));
+                return interior;
+            }
+
+            if (snap == null)
+            {
+                StyleLog(warnings, prefix + " 拍填充失败");
+            }
+
+            return snap;
+        }
+
+        private static FillSnap TryCaptureFormatFill(object target, List<string> warnings, string prefix)
+        {
+            object fill;
             try
             {
-                object fill = WppCom.GetProperty(WppCom.GetProperty(series, "Format"), "Fill");
-                if (fill == null)
-                {
-                    StyleLog(warnings, prefix + " Format.Fill=null");
-                    return null;
-                }
+                object format = WppCom.GetProperty(target, "Format");
+                fill = format == null ? null : WppCom.GetProperty(format, "Fill");
+            }
+            catch (Exception ex)
+            {
+                StyleLog(warnings, prefix + " Format.Fill 不可用: " + ex.Message);
+                return null;
+            }
 
-                var snap = new FillSnap();
+            if (fill == null)
+            {
+                return null;
+            }
+
+            var snap = new FillSnap();
+            try
+            {
                 object vis = WppCom.GetProperty(fill, "Visible");
                 if (vis != null)
                 {
                     snap.Visible = Convert.ToInt32(vis) != 0;
                 }
+            }
+            catch (Exception)
+            {
+            }
 
+            try
+            {
                 object fillType = WppCom.GetProperty(fill, "Type");
                 if (fillType != null)
                 {
                     snap.FillType = Convert.ToInt32(fillType);
                 }
+            }
+            catch (Exception)
+            {
+            }
 
+            try
+            {
                 object angle = WppCom.GetProperty(fill, "GradientAngle");
                 if (angle != null)
                 {
                     snap.Angle = Convert.ToDouble(angle);
                 }
+            }
+            catch (Exception)
+            {
+            }
 
+            try
+            {
                 snap.Stops = TryReadGradientStops(fill, warnings, prefix);
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
                 if (snap.Stops == null || snap.Stops.Count < 2)
                 {
                     snap.SolidRgb = TryReadResolvedRgb(WppCom.GetProperty(fill, "ForeColor"));
@@ -3412,17 +3494,49 @@ namespace WordAddIn1.PresentationHost
                 {
                     snap.SolidRgb = PickSolidFromStops(snap.Stops);
                 }
+            }
+            catch (Exception)
+            {
+            }
 
-                StyleLog(warnings, prefix + " Fill.Visible=" + vis
-                    + " Type=" + fillType
-                    + " Angle=" + angle
+            if (snap.SolidRgb.HasValue || (snap.Stops != null && snap.Stops.Count >= 2) || snap.Visible.HasValue)
+            {
+                StyleLog(warnings, prefix + " Fill.Visible=" + snap.Visible
+                    + " Type=" + snap.FillType
                     + " stops=" + DescribeStops(snap.Stops)
                     + " solid=" + HexOf(snap.SolidRgb));
                 return snap;
             }
-            catch (Exception ex)
+
+            return null;
+        }
+
+        private static FillSnap TryCaptureInteriorFill(object target)
+        {
+            if (target == null)
             {
-                StyleLog(warnings, prefix + " 拍填充失败: " + ex.Message);
+                return null;
+            }
+
+            try
+            {
+                object interior = WppCom.GetProperty(target, "Interior");
+                if (interior == null)
+                {
+                    return null;
+                }
+
+                object color = WppCom.GetProperty(interior, "Color");
+                if (color == null)
+                {
+                    return null;
+                }
+
+                int rgb = Convert.ToInt32(Convert.ToDouble(color)) & 0x00FFFFFF;
+                return new FillSnap { Visible = true, SolidRgb = rgb };
+            }
+            catch (Exception)
+            {
                 return null;
             }
         }
@@ -3435,20 +3549,36 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
+            if (TryApplyFormatFill(series, snap, warnings, prefix))
+            {
+                return;
+            }
+
+            if (snap.SolidRgb.HasValue && TryApplyInteriorFill(series, snap.SolidRgb.Value))
+            {
+                StyleLog(warnings, prefix + " Interior 实色 " + HexOf(snap.SolidRgb));
+                return;
+            }
+
+            StyleLog(warnings, prefix + " 3D/COM 套不上");
+        }
+
+        private static bool TryApplyFormatFill(object target, FillSnap snap, List<string> warnings, string prefix)
+        {
             try
             {
-                object fill = WppCom.GetProperty(WppCom.GetProperty(series, "Format"), "Fill");
+                object format = WppCom.GetProperty(target, "Format");
+                object fill = format == null ? null : WppCom.GetProperty(format, "Fill");
                 if (fill == null)
                 {
-                    StyleLog(warnings, prefix + " Format.Fill=null");
-                    return;
+                    return false;
                 }
 
                 if (snap.Visible == false && (snap.Stops == null || snap.Stops.Count < 2))
                 {
                     WppCom.TrySetProperty(fill, "Visible", 0);
                     StyleLog(warnings, prefix + " 隐藏填充");
-                    return;
+                    return true;
                 }
 
                 WppCom.TrySetProperty(fill, "Visible", -1);
@@ -3458,7 +3588,7 @@ namespace WordAddIn1.PresentationHost
                     StyleLog(warnings, prefix + " 渐变 " + DescribeStops(snap.Stops) + " ok=" + ok);
                     if (ok)
                     {
-                        return;
+                        return true;
                     }
                 }
 
@@ -3466,13 +3596,44 @@ namespace WordAddIn1.PresentationHost
                 {
                     TryInvoke(fill, "Solid");
                     object fc = WppCom.GetProperty(fill, "ForeColor");
+                    WppCom.TrySetProperty(fc, "Type", 1);
                     WppCom.TrySetProperty(fc, "RGB", snap.SolidRgb.Value);
                     StyleLog(warnings, prefix + " 实色 " + HexOf(snap.SolidRgb));
+                    return true;
                 }
+
+                return snap.Visible.HasValue;
             }
             catch (Exception ex)
             {
-                StyleLog(warnings, prefix + " 异常: " + ex.Message);
+                StyleLog(warnings, prefix + " Format.Fill 异常: " + ex.Message);
+                return false;
+            }
+        }
+
+        private static bool TryApplyInteriorFill(object target, int rgb)
+        {
+            try
+            {
+                object interior = WppCom.GetProperty(target, "Interior");
+                if (interior == null)
+                {
+                    return false;
+                }
+
+                WppCom.TrySetProperty(interior, "Color", rgb);
+                object wrote = WppCom.GetProperty(interior, "Color");
+                if (wrote == null)
+                {
+                    return false;
+                }
+
+                int got = Convert.ToInt32(Convert.ToDouble(wrote)) & 0x00FFFFFF;
+                return got == (rgb & 0x00FFFFFF);
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
 
@@ -5001,6 +5162,7 @@ namespace WordAddIn1.PresentationHost
             var sb = new StringBuilder();
             sb.Append(tag)
                 .Append(" style=").Append(snap.ChartStyle)
+                .Append(" chartColor=").Append(snap.ChartColor)
                 .Append(" title=").Append(snap.HasTitle)
                 .Append(" legend=").Append(snap.HasLegend)
                 .Append(" plotFill=").Append(snap.PlotFillVisible)
@@ -6914,15 +7076,18 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static void TrySetVaryByCategories(object chart, bool on)
+        private static void TrySetVaryByCategories(object chart, bool on, List<string> warnings = null)
         {
             try
             {
                 object g = TryInvoke(chart, "ChartGroups", 1);
                 WppCom.TrySetProperty(g, "VaryByCategories", on);
+                object live = g == null ? null : WppCom.GetProperty(g, "VaryByCategories");
+                StyleLog(warnings, "VaryByCategories=" + on + " live=" + live);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                StyleLog(warnings, "VaryByCategories 异常: " + ex.Message);
             }
         }
 
