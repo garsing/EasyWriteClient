@@ -7114,8 +7114,14 @@ namespace WordAddIn1.PresentationHost
                     return;
                 }
 
-                StyleLog(warnings, "饼图已继承主题，扇区色 " + oldPts + " 个不够分 " + live + " 瓣，VaryByCategories");
+                StyleLog(warnings, "饼图已继承主题，扇区色 " + oldPts + " 个对 " + live + " 瓣，按旧色带扩/收");
                 TrySetVaryByCategories(chart, true, warnings);
+                List<FillSnap> expanded = ExpandPieSliceFills(one == null ? null : one.PointFills, live);
+                if (expanded != null && expanded.Count == live)
+                {
+                    TryApplyPointFills(series, expanded, warnings, "S1");
+                }
+
                 return;
             }
 
@@ -7148,6 +7154,210 @@ namespace WordAddIn1.PresentationHost
             {
                 WppCom.TrySetProperty(chart, "ChartColor", snap.ChartColor.Value);
             }
+        }
+
+        private static List<FillSnap> ExpandPieSliceFills(List<FillSnap> oldFills, int want)
+        {
+            if (want <= 0)
+            {
+                return null;
+            }
+
+            var seeds = new List<int>();
+            if (oldFills != null)
+            {
+                for (int i = 0; i < oldFills.Count; i++)
+                {
+                    if (oldFills[i] != null && oldFills[i].SolidRgb.HasValue)
+                    {
+                        seeds.Add(oldFills[i].SolidRgb.Value);
+                    }
+                }
+            }
+
+            var fills = new List<FillSnap>();
+            if (seeds.Count == 0)
+            {
+                return null;
+            }
+
+            int[] rgb = ExpandOfficeRgbRamp(seeds, want);
+            for (int i = 0; i < rgb.Length; i++)
+            {
+                fills.Add(new FillSnap { Visible = true, SolidRgb = rgb[i] });
+            }
+
+            return fills;
+        }
+
+        /// <summary>
+        /// 旧扇区色当种子：少了沿色带 HSL 插值拉长，多了均匀取样（含首尾）。
+        /// 只有 1 个种子时绕色相、拉明度生成可区分的瓣。
+        /// </summary>
+        private static int[] ExpandOfficeRgbRamp(List<int> seeds, int want)
+        {
+            var dest = new int[want];
+            if (seeds.Count == 1)
+            {
+                RgbToHsl(OfficeRgbToChannels(seeds[0]), out double h, out double s, out double l);
+                for (int i = 0; i < want; i++)
+                {
+                    double t = want == 1 ? 0 : i / (double)(want - 1);
+                    double nh = (h + (t - 0.5) * 0.22 + 1.0) % 1.0;
+                    double nl = Clamp01(l + (t - 0.5) * 0.28);
+                    dest[i] = ChannelsToOfficeRgb(HslToRgb(nh, Math.Max(0.25, s), nl));
+                }
+
+                return dest;
+            }
+
+            if (seeds.Count >= want)
+            {
+                for (int i = 0; i < want; i++)
+                {
+                    double t = want == 1 ? 0 : i / (double)(want - 1);
+                    dest[i] = seeds[(int)Math.Round(t * (seeds.Count - 1))];
+                }
+
+                return dest;
+            }
+
+            int segments = seeds.Count - 1;
+            for (int i = 0; i < want; i++)
+            {
+                double t = want == 1 ? 0 : i / (double)(want - 1);
+                double pos = t * segments;
+                int a = (int)Math.Floor(pos);
+                if (a >= segments)
+                {
+                    dest[i] = seeds[seeds.Count - 1];
+                    continue;
+                }
+
+                double local = pos - a;
+                dest[i] = LerpOfficeRgbHsl(seeds[a], seeds[a + 1], local);
+            }
+
+            return dest;
+        }
+
+        private static int LerpOfficeRgbHsl(int from, int to, double t)
+        {
+            RgbToHsl(OfficeRgbToChannels(from), out double h1, out double s1, out double l1);
+            RgbToHsl(OfficeRgbToChannels(to), out double h2, out double s2, out double l2);
+            double dh = h2 - h1;
+            if (dh > 0.5)
+            {
+                dh -= 1;
+            }
+            else if (dh < -0.5)
+            {
+                dh += 1;
+            }
+
+            double h = (h1 + dh * t + 1.0) % 1.0;
+            return ChannelsToOfficeRgb(HslToRgb(h, s1 + (s2 - s1) * t, l1 + (l2 - l1) * t));
+        }
+
+        private static int[] OfficeRgbToChannels(int office)
+        {
+            return new[] { office & 0xFF, (office >> 8) & 0xFF, (office >> 16) & 0xFF };
+        }
+
+        private static int ChannelsToOfficeRgb(int[] rgb)
+        {
+            return (rgb[0] & 0xFF) | ((rgb[1] & 0xFF) << 8) | ((rgb[2] & 0xFF) << 16);
+        }
+
+        private static void RgbToHsl(int[] rgb, out double h, out double s, out double l)
+        {
+            double r = rgb[0] / 255.0;
+            double g = rgb[1] / 255.0;
+            double b = rgb[2] / 255.0;
+            double max = Math.Max(r, Math.Max(g, b));
+            double min = Math.Min(r, Math.Min(g, b));
+            l = (max + min) / 2.0;
+            if (Math.Abs(max - min) < 0.0001)
+            {
+                h = 0;
+                s = 0;
+                return;
+            }
+
+            double d = max - min;
+            s = l > 0.5 ? d / (2.0 - max - min) : d / (max + min);
+            if (max == r)
+            {
+                h = ((g - b) / d + (g < b ? 6 : 0)) / 6.0;
+            }
+            else if (max == g)
+            {
+                h = ((b - r) / d + 2) / 6.0;
+            }
+            else
+            {
+                h = ((r - g) / d + 4) / 6.0;
+            }
+        }
+
+        private static int[] HslToRgb(double h, double s, double l)
+        {
+            s = Clamp01(s);
+            l = Clamp01(l);
+            if (s <= 0)
+            {
+                int g = (int)Math.Round(l * 255);
+                return new[] { g, g, g };
+            }
+
+            double q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            double p = 2 * l - q;
+            return new[]
+            {
+                (int)Math.Round(HueToRgb(p, q, h + 1.0 / 3.0) * 255),
+                (int)Math.Round(HueToRgb(p, q, h) * 255),
+                (int)Math.Round(HueToRgb(p, q, h - 1.0 / 3.0) * 255)
+            };
+        }
+
+        private static double HueToRgb(double p, double q, double t)
+        {
+            if (t < 0)
+            {
+                t += 1;
+            }
+
+            if (t > 1)
+            {
+                t -= 1;
+            }
+
+            if (t < 1.0 / 6.0)
+            {
+                return p + (q - p) * 6 * t;
+            }
+
+            if (t < 0.5)
+            {
+                return q;
+            }
+
+            if (t < 2.0 / 3.0)
+            {
+                return p + (q - p) * (2.0 / 3.0 - t) * 6;
+            }
+
+            return p;
+        }
+
+        private static double Clamp01(double x)
+        {
+            if (x < 0)
+            {
+                return 0;
+            }
+
+            return x > 1 ? 1 : x;
         }
 
         private static void TrySetVaryByCategories(object chart, bool on, List<string> warnings = null)
