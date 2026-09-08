@@ -2629,12 +2629,8 @@ namespace WordAddIn1.PresentationHost
             }
 
             object newChart = TryGetChart(newShape);
-            TryApplyStyleSnap(newChart, snap, warnings);
             FinishLineChartLayout(newChart, xlType, useFormat, warnings);
-            HideDeletedAxes(newChart, snap);
-            RestoreAxesAfterSnap(newChart, useGrid, snap);
-            // Refresh / ChartStyle 会把默认白网格画回来；原图或稿要求关则再关一次。
-            EnsureGridlinesMatchSnap(newChart, snap, useFormat, warnings);
+            TryApplyStyleSnap(newChart, snap, warnings, useGrid, useFormat);
             try
             {
                 TryCaptureStyle(newChart, warnings, "新图套回后");
@@ -2825,7 +2821,16 @@ namespace WordAddIn1.PresentationHost
             return snap;
         }
 
-        private static void TryApplyStyleSnap(object chart, ChartStyleSnap snap, List<string> warnings)
+        /// <summary>
+        /// 继承只走这一次：Refresh 已在调用方做完。顺序粗→细，后面盖前面。
+        /// 结构 → 主题盘 → 标题/图例/区 → 轴+网格 → 系列填/扇区 → 线/标记 → 标签。
+        /// </summary>
+        private static void TryApplyStyleSnap(
+            object chart,
+            ChartStyleSnap snap,
+            List<string> warnings,
+            PptHtmlChartGrid grid = null,
+            PptHtmlChartFormat format = null)
         {
             if (chart == null || snap == null)
             {
@@ -2837,123 +2842,165 @@ namespace WordAddIn1.PresentationHost
             StyleLog(warnings, "开始套回 " + DescribeSnap("快照", snap));
             try
             {
-                if (snap.Series != null)
-                {
-                    for (int i = 0; i < snap.Series.Count; i++)
-                    {
-                        object series = GetSeries(chart, i + 1);
-                        if (series == null)
-                        {
-                            continue;
-                        }
-
-                        SeriesStyleSnap one = snap.Series[i];
-                        if (one.ChartType.HasValue
-                            && !(IsPieXl(one.ChartType.Value) && IsPieChart(chart)))
-                        {
-                            WppCom.TrySetProperty(series, "ChartType", one.ChartType.Value);
-                        }
-
-                        if (one.AxisGroup.HasValue)
-                        {
-                            WppCom.TrySetProperty(series, "AxisGroup", one.AxisGroup.Value);
-                        }
-                    }
-                }
-
-                if (snap.HasTitle.HasValue)
-                {
-                    WppCom.TrySetProperty(chart, "HasTitle", snap.HasTitle.Value);
-                    if (snap.HasTitle.Value)
-                    {
-                        object title = WppCom.GetProperty(chart, "ChartTitle");
-                        object font = title == null ? null : WppCom.GetProperty(title, "Font");
-                        if (font != null)
-                        {
-                            if (!string.IsNullOrEmpty(snap.TitleFontColor)
-                                && TryParseHexToOffice(snap.TitleFontColor, out int tRgb))
-                            {
-                                WppCom.TrySetProperty(font, "Color", tRgb);
-                            }
-
-                            if (!string.IsNullOrEmpty(snap.TitleFontSize)
-                                && double.TryParse(snap.TitleFontSize, NumberStyles.Float, CultureInfo.InvariantCulture, out double sz))
-                            {
-                                WppCom.TrySetProperty(font, "Size", sz);
-                            }
-
-                            if (snap.TitleFontBold.HasValue)
-                            {
-                                WppCom.TrySetProperty(font, "Bold", snap.TitleFontBold.Value);
-                            }
-                        }
-                    }
-                }
-
-                if (snap.HasLegend.HasValue)
-                {
-                    WppCom.TrySetProperty(chart, "HasLegend", snap.HasLegend.Value);
-                    if (snap.HasLegend.Value)
-                    {
-                        object legend = WppCom.GetProperty(chart, "Legend");
-                        if (snap.LegendPosition.HasValue)
-                        {
-                            WppCom.TrySetProperty(legend, "Position", snap.LegendPosition.Value);
-                        }
-
-                        if (!string.IsNullOrEmpty(snap.LegendFontColor)
-                            && TryParseHexToOffice(snap.LegendFontColor, out int lRgb))
-                        {
-                            object legendFont = legend == null ? null : WppCom.GetProperty(legend, "Font");
-                            WppCom.TrySetProperty(legendFont, "Color", lRgb);
-                        }
-                    }
-                }
-
+                TryInheritSeriesStructure(chart, snap);
+                TryApplyChartTheme(chart, snap);
+                TryInheritTitleAndLegend(chart, snap);
                 TryWriteAreaFill(chart, "ChartArea", snap.ChartAreaFillVisible, snap.ChartAreaFillRgb);
                 TryWriteAreaFill(chart, "PlotArea", snap.PlotFillVisible, snap.PlotFillRgb);
                 TryApplyChartGroup(chart, snap);
-                TryApplyAxis(chart, XlCategory, XlPrimary, snap.Category);
-                TryApplyAxis(chart, XlValue, XlPrimary, snap.Value);
-                TryApplyAxis(chart, XlValue, XlSecondary, snap.ValueSecondary);
-
+                TryInheritAxes(chart, snap, grid, format, warnings);
                 TryInheritColors(chart, snap, warnings);
-
-                if (snap.Series != null)
-                {
-                    for (int i = 0; i < snap.Series.Count; i++)
-                    {
-                        object series = GetSeries(chart, i + 1);
-                        if (series == null || snap.Series[i] == null)
-                        {
-                            continue;
-                        }
-
-                        TryApplyLine(series, snap.Series[i].Line, warnings, "S" + (i + 1));
-                        TryApplyMarker(series, snap.Series[i]);
-                    }
-                }
-
+                TryInheritSeriesLineAndMarker(chart, snap, warnings);
                 TryRestorePieChartType(chart, snap);
                 TryApplyPlotLayout(chart, snap);
-
-                if (snap.Series != null)
-                {
-                    for (int i = 0; i < snap.Series.Count; i++)
-                    {
-                        object series = GetSeries(chart, i + 1);
-                        if (series == null)
-                        {
-                            continue;
-                        }
-
-                        TryApplyDataLabels(series, snap.Series[i], warnings, "S" + (i + 1));
-                    }
-                }
+                TryInheritDataLabels(chart, snap, warnings);
             }
             catch (Exception ex)
             {
                 StyleLog(warnings, "套回原图样式部分失败: " + ex.Message);
+            }
+        }
+
+        private static void TryInheritSeriesStructure(object chart, ChartStyleSnap snap)
+        {
+            if (snap.Series == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < snap.Series.Count; i++)
+            {
+                object series = GetSeries(chart, i + 1);
+                SeriesStyleSnap one = snap.Series[i];
+                if (series == null || one == null)
+                {
+                    continue;
+                }
+
+                if (one.ChartType.HasValue
+                    && !(IsPieXl(one.ChartType.Value) && IsPieChart(chart)))
+                {
+                    WppCom.TrySetProperty(series, "ChartType", one.ChartType.Value);
+                }
+
+                if (one.AxisGroup.HasValue)
+                {
+                    WppCom.TrySetProperty(series, "AxisGroup", one.AxisGroup.Value);
+                }
+            }
+        }
+
+        private static void TryInheritTitleAndLegend(object chart, ChartStyleSnap snap)
+        {
+            if (snap.HasTitle.HasValue)
+            {
+                WppCom.TrySetProperty(chart, "HasTitle", snap.HasTitle.Value);
+                if (snap.HasTitle.Value)
+                {
+                    object title = WppCom.GetProperty(chart, "ChartTitle");
+                    object font = title == null ? null : WppCom.GetProperty(title, "Font");
+                    if (font != null)
+                    {
+                        if (!string.IsNullOrEmpty(snap.TitleFontColor)
+                            && TryParseHexToOffice(snap.TitleFontColor, out int tRgb))
+                        {
+                            WppCom.TrySetProperty(font, "Color", tRgb);
+                        }
+
+                        if (!string.IsNullOrEmpty(snap.TitleFontSize)
+                            && double.TryParse(snap.TitleFontSize, NumberStyles.Float, CultureInfo.InvariantCulture, out double sz))
+                        {
+                            WppCom.TrySetProperty(font, "Size", sz);
+                        }
+
+                        if (snap.TitleFontBold.HasValue)
+                        {
+                            WppCom.TrySetProperty(font, "Bold", snap.TitleFontBold.Value);
+                        }
+                    }
+                }
+            }
+
+            if (!snap.HasLegend.HasValue)
+            {
+                return;
+            }
+
+            WppCom.TrySetProperty(chart, "HasLegend", snap.HasLegend.Value);
+            if (!snap.HasLegend.Value)
+            {
+                return;
+            }
+
+            object legend = WppCom.GetProperty(chart, "Legend");
+            if (snap.LegendPosition.HasValue)
+            {
+                WppCom.TrySetProperty(legend, "Position", snap.LegendPosition.Value);
+            }
+
+            if (!string.IsNullOrEmpty(snap.LegendFontColor)
+                && TryParseHexToOffice(snap.LegendFontColor, out int lRgb))
+            {
+                object legendFont = legend == null ? null : WppCom.GetProperty(legend, "Font");
+                WppCom.TrySetProperty(legendFont, "Color", lRgb);
+            }
+        }
+
+        private static void TryInheritAxes(
+            object chart,
+            ChartStyleSnap snap,
+            PptHtmlChartGrid grid,
+            PptHtmlChartFormat format,
+            List<string> warnings)
+        {
+            HideDeletedAxes(chart, snap);
+            TryApplyAxis(chart, XlCategory, XlPrimary, snap.Category);
+            TryApplyAxis(chart, XlValue, XlPrimary, snap.Value);
+            TryApplyAxis(chart, XlValue, XlSecondary, snap.ValueSecondary);
+            if (snap.Category != null && snap.Category.Deleted != true)
+            {
+                EnsureCategoryAxisLabels(chart, grid);
+            }
+
+            EnsureGridlinesMatchSnap(chart, snap, format, warnings);
+        }
+
+        private static void TryInheritSeriesLineAndMarker(object chart, ChartStyleSnap snap, List<string> warnings)
+        {
+            if (snap.Series == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < snap.Series.Count; i++)
+            {
+                object series = GetSeries(chart, i + 1);
+                if (series == null || snap.Series[i] == null)
+                {
+                    continue;
+                }
+
+                TryApplyLine(series, snap.Series[i].Line, warnings, "S" + (i + 1));
+                TryApplyMarker(series, snap.Series[i]);
+            }
+        }
+
+        private static void TryInheritDataLabels(object chart, ChartStyleSnap snap, List<string> warnings)
+        {
+            if (snap.Series == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < snap.Series.Count; i++)
+            {
+                object series = GetSeries(chart, i + 1);
+                if (series == null)
+                {
+                    continue;
+                }
+
+                TryApplyDataLabels(series, snap.Series[i], warnings, "S" + (i + 1));
             }
         }
 
@@ -5640,10 +5687,8 @@ namespace WordAddIn1.PresentationHost
                     }
 
                     ChartStyleSnap htmlSnap = SnapFromFormat(format, grid);
-                    TryApplyStyleSnap(chart, htmlSnap, warnings);
-                    EnsureCategoryAxisLabels(chart, grid);
                     FinishLineChartLayout(chart, xlType, format, warnings);
-                    RestoreAxesAfterSnap(chart, grid, htmlSnap);
+                    TryApplyStyleSnap(chart, htmlSnap, warnings, grid, format);
                 }
                 else
                 {
@@ -7044,8 +7089,8 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
-        /// 颜色只走这一条、按优先级盖：主题盘 →（饼）扇区色够分就盖点色，不够就 VaryByCategories。
-        /// 饼图不套系列填，避免整圈一色盖掉上面两层。
+        /// 主题盘已在套回里先套。这里只盖更细的色：饼扇区或自动分色；柱/线系列填+点填。
+        /// 饼图不套系列填。
         /// </summary>
         private static void TryInheritColors(object chart, ChartStyleSnap snap, List<string> warnings)
         {
@@ -7056,7 +7101,6 @@ namespace WordAddIn1.PresentationHost
 
             if (IsPieChart(chart))
             {
-                TryApplyChartTheme(chart, snap);
                 object series = GetSeries(chart, 1);
                 SeriesStyleSnap one = snap.Series != null && snap.Series.Count > 0
                     ? snap.Series[0]
@@ -7075,7 +7119,6 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            TryApplyChartTheme(chart, snap);
             if (snap.Series == null)
             {
                 return;
