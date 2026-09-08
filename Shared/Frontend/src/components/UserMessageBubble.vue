@@ -35,7 +35,10 @@
         </div>
       </div>
     </div>
-    <div class="message-content">
+    <div
+      ref="contentRef"
+      class="message-content"
+    >
       <div class="message-text">{{ message.content }}</div>
     </div>
     <ImageLightbox
@@ -48,7 +51,7 @@
 </template>
 
 <script setup>
-import { onUnmounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { resolveFileAppIconByName } from '../utils/openFileAppIcon.js'
 import { isImageFileName, loadKbImageThumbUrl } from '../utils/kbImageThumb.js'
 import ImageLightbox from './ImageLightbox.vue'
@@ -62,7 +65,36 @@ const props = defineProps({
 
 const thumbUrls = ref({})
 const preview = ref(null)
+const contentRef = ref(null)
 let blobUrls = []
+
+/** 超高时先滚气泡；到顶/底再交给外层消息列表（吸顶时原生链式滚动容易把整页先带走） */
+function onBubbleWheel (e) {
+  const el = contentRef.value
+  if (!el) return
+  const overflow = el.scrollHeight - el.clientHeight
+  if (overflow <= 1) return
+
+  let dy = e.deltaY
+  if (e.deltaMode === 1) dy *= 16
+  if (e.deltaMode === 2) dy *= el.clientHeight
+
+  const atTop = el.scrollTop <= 0
+  const atBottom = el.scrollTop >= overflow - 1
+  const scrollingUp = dy < 0
+  const scrollingDown = dy > 0
+
+  e.preventDefault()
+  e.stopPropagation()
+
+  if ((scrollingUp && !atTop) || (scrollingDown && !atBottom)) {
+    el.scrollTop += dy
+    return
+  }
+
+  const list = el.closest('.chat-messages')
+  if (list) list.scrollTop += dy
+}
 
 function isImageAtt (att) {
   return isImageFileName(att?.fileName, att?.ext)
@@ -120,7 +152,16 @@ watch(
   { immediate: true, deep: true }
 )
 
-onUnmounted(revokeThumbs)
+onMounted(() => {
+  const el = contentRef.value
+  if (el) el.addEventListener('wheel', onBubbleWheel, { passive: false })
+})
+
+onUnmounted(() => {
+  const el = contentRef.value
+  if (el) el.removeEventListener('wheel', onBubbleWheel)
+  revokeThumbs()
+})
 
 function truncate (name) {
   if (!name) return ''
@@ -141,6 +182,8 @@ function formatSub (att) {
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
+  width: 100%;
+  min-width: 0;
   margin-bottom: 4px;
 }
 
@@ -198,13 +241,34 @@ function formatSub (att) {
 }
 
 .message-content {
-  max-width: 85%;
+  box-sizing: border-box;
+  max-width: 100%;
+  max-height: 160px;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   background-color: #1890ff;
   color: #fff;
   padding: 10px 14px;
   border-radius: 8px;
   word-wrap: break-word;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.5) transparent;
+}
+
+.message-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.message-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.message-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 3px;
 }
 
 .message-text {

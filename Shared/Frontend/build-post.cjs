@@ -29,6 +29,11 @@ if (fs.existsSync(htmlPath)) {
   
   // 修复可能的引号问题
   html = html.replace(/rel="stylesheet href=/g, 'rel="stylesheet" href=');
+
+  // WebView2 会缓存同名 main.css / main.js，构建后加版本号才能看到界面改动
+  const bust = Date.now();
+  html = html.replace(/(\.\/assets\/main\.css)(\?[^"]*)?/g, `$1?v=${bust}`);
+  html = html.replace(/(\.\/assets\/main\.js)(\?[^"]*)?/g, `$1?v=${bust}`);
   
   fs.writeFileSync(htmlPath, html, 'utf8');
   console.log('✓ 已处理 index.html');
