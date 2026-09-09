@@ -27,15 +27,6 @@ namespace WordAddIn1
                         };
                     }
 
-                    if (PptHtmlNodeSearch.HasFieldsKey(args))
-                    {
-                        return new ToolResult
-                        {
-                            Success = false,
-                            Error = "搜索不接受 fields，结果是约定 HTML"
-                        };
-                    }
-
                     if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string resolveError))
                     {
                         return new ToolResult { Success = false, Error = resolveError };
@@ -63,6 +54,15 @@ namespace WordAddIn1
                     if (PptHtmlNodeSearch.IsSearchArgs(args))
                     {
                         return HandleSearch(args, channel, slideId.Trim());
+                    }
+
+                    if (PptHtmlNodeSearch.HasFieldsKey(args))
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "fields 只能与 query（或 attr+pattern）同传"
+                        };
                     }
 
                     string exportHtml = FilePathResolver.TryGetArg(args, "path", "export_html");
@@ -308,11 +308,12 @@ namespace WordAddIn1
                     out int leafCount,
                     out string matchError))
             {
+                int maxHits = PptHtmlNodeSearch.EffectiveMaxHits(request.Fields);
                 var fail = new Dictionary<string, object>
                 {
                     ["slide_id"] = hostResult != null ? hostResult.SlideId ?? slideId : slideId
                 };
-                if (leafCount > PptHtmlNodeSearch.MaxHits)
+                if (leafCount > maxHits)
                 {
                     fail["match_count"] = leafCount;
                 }
@@ -325,7 +326,43 @@ namespace WordAddIn1
                 };
             }
 
-            string display = PptHtmlNodeSearch.BuildDisplayContents(forest, leafCount);
+            if (request.Fields != null && request.Fields.Count > 0 && leafCount > 0)
+            {
+                var detailCache = new Dictionary<string, PptHtmlShapeNode>(StringComparer.Ordinal);
+                if (!PptHtmlNodeSearch.TryProjectForest(
+                        forest,
+                        request.Fields,
+                        shapeId => LoadSearchDetail(channel, slideId, shapeId, detailCache, out _),
+                        out string projectError))
+                {
+                    return new ToolResult
+                    {
+                        Success = false,
+                        Error = projectError,
+                        Data = new Dictionary<string, object>
+                        {
+                            ["slide_id"] = hostResult != null ? hostResult.SlideId ?? slideId : slideId,
+                            ["match_count"] = leafCount
+                        }
+                    };
+                }
+
+                if (!PptHtmlNodeSearch.TryCheckHtmlSize(forest, out string sizeError))
+                {
+                    return new ToolResult
+                    {
+                        Success = false,
+                        Error = sizeError,
+                        Data = new Dictionary<string, object>
+                        {
+                            ["slide_id"] = hostResult != null ? hostResult.SlideId ?? slideId : slideId,
+                            ["match_count"] = leafCount
+                        }
+                    };
+                }
+            }
+
+            string display = PptHtmlNodeSearch.BuildDisplayContents(forest, leafCount, request.Fields);
             var data = new Dictionary<string, object>
             {
                 ["channel_id"] = ChannelRegistry.ToPublicId(hostResult.ChannelId) ?? "",
@@ -340,6 +377,82 @@ namespace WordAddIn1
                 Success = true,
                 Data = data
             };
+        }
+
+        private static PptHtmlShapeNode LoadSearchDetail(
+            IOperationChannel channel,
+            string slideId,
+            string shapeId,
+            Dictionary<string, PptHtmlShapeNode> cache,
+            out string error)
+        {
+            error = null;
+            if (string.IsNullOrEmpty(shapeId))
+            {
+                error = "空 ShapeId";
+                return null;
+            }
+
+            if (cache != null && cache.TryGetValue(shapeId, out PptHtmlShapeNode hit))
+            {
+                return hit;
+            }
+
+            if (!PresentationHostAdapter.TryReadPptHtml(
+                    channel,
+                    slideId,
+                    shapeId,
+                    false,
+                    out PptHtmlReadResult detail,
+                    out ToolResult fail))
+            {
+                error = fail != null ? fail.Error : "详细读失败";
+                return null;
+            }
+
+            PptHtmlShapeNode node = FindShapeById(detail != null ? detail.Shapes : null, shapeId);
+            if (node == null)
+            {
+                error = "详细读未找到 " + shapeId;
+                return null;
+            }
+
+            if (cache != null)
+            {
+                cache[shapeId] = node;
+            }
+
+            return node;
+        }
+
+        private static PptHtmlShapeNode FindShapeById(IList<PptHtmlShapeNode> nodes, string shapeId)
+        {
+            if (nodes == null || string.IsNullOrEmpty(shapeId))
+            {
+                return null;
+            }
+
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                PptHtmlShapeNode n = nodes[i];
+                if (n == null)
+                {
+                    continue;
+                }
+
+                if (string.Equals(n.ShapeId, shapeId, StringComparison.Ordinal))
+                {
+                    return n;
+                }
+
+                PptHtmlShapeNode nested = FindShapeById(n.Children, shapeId);
+                if (nested != null)
+                {
+                    return nested;
+                }
+            }
+
+            return null;
         }
 
         private static bool HasPageIndexPrimary(Dictionary<string, object> args)

@@ -200,12 +200,18 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            if (node.ShapeType == "chart" && !hasKids && node.ChartFormat != null)
+            if (node.ShapeType == "chart"
+                && !hasKids
+                && (node.ChartFormat != null || !string.IsNullOrEmpty(node.InnerHtml)))
             {
                 sb.Append(indent).Append("<div");
                 AppendShapeId(sb, node);
                 AppendCommonAttrs(sb, node);
-                PptHtmlChartIo.AppendFormatAttrs(sb, node.ChartFormat);
+                if (node.ChartFormat != null)
+                {
+                    PptHtmlChartIo.AppendFormatAttrs(sb, node.ChartFormat);
+                }
+
                 sb.AppendLine(">");
                 sb.Append(indent).AppendLine("  <table>");
                 if (!string.IsNullOrEmpty(node.InnerHtml))
