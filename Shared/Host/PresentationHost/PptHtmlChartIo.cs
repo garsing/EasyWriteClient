@@ -699,6 +699,9 @@ namespace WordAddIn1.PresentationHost
                 snap.Series = new List<SeriesStyleSnap>();
             }
 
+            // 展示开关必须在白名单之前：snap 常与 htmlSnap 同引用，贴皮会补旧图例字色等，误判成「稿写了皮」
+            EnsureDisplaySwitches(oldSnap, htmlSnap, format, snap, warnings);
+
             if (oldSnap != null)
             {
                 ApplyAppearanceWhitelist(oldSnap, snap, warnings);
@@ -707,6 +710,232 @@ namespace WordAddIn1.PresentationHost
             EnsureReplaceAxisStructure(snap, format, warnings);
             NormalizeAxisChrome(snap);
             return snap;
+        }
+
+        /// <summary>
+        /// 图例/标题/标签/网格：稿写了该类属性且非显式关 → 开；显式关 → 关；完全未提 → 跟旧图。
+        /// </summary>
+        private static void EnsureDisplaySwitches(
+            ChartStyleSnap oldSnap,
+            ChartStyleSnap htmlSnap,
+            PptHtmlChartFormat format,
+            ChartStyleSnap snap,
+            List<string> warnings)
+        {
+            if (snap == null)
+            {
+                return;
+            }
+
+            EnsureLegendSwitch(oldSnap, htmlSnap, format, snap, warnings);
+            EnsureTitleSwitch(oldSnap, htmlSnap, format, snap, warnings);
+            EnsureDataLabelSwitches(oldSnap, htmlSnap, format, snap, warnings);
+            EnsureGridlineSwitch(oldSnap, htmlSnap, format, snap, warnings);
+        }
+
+        private static void EnsureLegendSwitch(
+            ChartStyleSnap oldSnap,
+            ChartStyleSnap htmlSnap,
+            PptHtmlChartFormat format,
+            ChartStyleSnap snap,
+            List<string> warnings)
+        {
+            bool explicitOff = (format != null
+                    && format.Legend != null
+                    && string.Equals(format.Legend.Trim(), "none", StringComparison.OrdinalIgnoreCase))
+                || (htmlSnap != null && htmlSnap.HasLegend == false);
+
+            bool htmlMentioned = (format != null && format.Legend != null)
+                || (format != null && !string.IsNullOrWhiteSpace(format.LegendFontColor))
+                || (htmlSnap != null && htmlSnap.HasLegend.HasValue)
+                || (htmlSnap != null && htmlSnap.LegendPosition.HasValue)
+                || (htmlSnap != null && !string.IsNullOrEmpty(htmlSnap.LegendFontColor));
+
+            if (explicitOff)
+            {
+                snap.HasLegend = false;
+                StyleLog(warnings, "图例开关=关（稿显式 none）");
+                return;
+            }
+
+            if (htmlMentioned)
+            {
+                snap.HasLegend = true;
+                StyleLog(warnings, "图例开关=开（稿写了图例属性）");
+                return;
+            }
+
+            snap.HasLegend = oldSnap != null && oldSnap.HasLegend == true;
+            StyleLog(warnings, "图例开关=" + (snap.HasLegend == true ? "开" : "关") + "（跟旧图）");
+        }
+
+        private static void EnsureTitleSwitch(
+            ChartStyleSnap oldSnap,
+            ChartStyleSnap htmlSnap,
+            PptHtmlChartFormat format,
+            ChartStyleSnap snap,
+            List<string> warnings)
+        {
+            bool explicitOff = format != null
+                && format.Title != null
+                && string.IsNullOrEmpty(format.Title);
+
+            bool htmlMentioned = (format != null && format.Title != null)
+                || (format != null && !string.IsNullOrWhiteSpace(format.TitleFontColor))
+                || (format != null && !string.IsNullOrWhiteSpace(format.TitleFontSize))
+                || (format != null && !string.IsNullOrWhiteSpace(format.TitleFontBold))
+                || (htmlSnap != null && htmlSnap.HasTitle.HasValue)
+                || (htmlSnap != null && !string.IsNullOrEmpty(htmlSnap.TitleFontColor))
+                || (htmlSnap != null && !string.IsNullOrEmpty(htmlSnap.TitleFontSize))
+                || (htmlSnap != null && htmlSnap.TitleFontBold.HasValue);
+
+            if (explicitOff)
+            {
+                snap.HasTitle = false;
+                StyleLog(warnings, "标题开关=关（稿空标题）");
+                return;
+            }
+
+            if (htmlMentioned)
+            {
+                snap.HasTitle = true;
+                StyleLog(warnings, "标题开关=开（稿写了标题属性）");
+                return;
+            }
+
+            snap.HasTitle = oldSnap != null && oldSnap.HasTitle == true;
+            StyleLog(warnings, "标题开关=" + (snap.HasTitle == true ? "开" : "关") + "（跟旧图）");
+        }
+
+        private static void EnsureDataLabelSwitches(
+            ChartStyleSnap oldSnap,
+            ChartStyleSnap htmlSnap,
+            PptHtmlChartFormat format,
+            ChartStyleSnap snap,
+            List<string> warnings)
+        {
+            if (snap.Series == null)
+            {
+                return;
+            }
+
+            bool chartLevelOff = format != null
+                && !string.IsNullOrWhiteSpace(format.ShowDataLabels)
+                && !IsTrue(format.ShowDataLabels);
+            bool chartLevelOn = format != null
+                && !string.IsNullOrWhiteSpace(format.ShowDataLabels)
+                && IsTrue(format.ShowDataLabels);
+
+            for (int i = 0; i < snap.Series.Count; i++)
+            {
+                SeriesStyleSnap one = snap.Series[i];
+                if (one == null)
+                {
+                    continue;
+                }
+
+                SeriesStyleSnap htmlOne = htmlSnap != null
+                    && htmlSnap.Series != null
+                    && i < htmlSnap.Series.Count
+                    ? htmlSnap.Series[i]
+                    : null;
+
+                bool explicitOff = chartLevelOff
+                    || (htmlOne != null && htmlOne.HasDataLabels == false);
+                bool htmlMentioned = chartLevelOn
+                    || chartLevelOff
+                    || (htmlOne != null && htmlOne.HasDataLabels.HasValue)
+                    || (htmlOne != null && htmlOne.DataLabelPosition.HasValue)
+                    || (htmlOne != null && htmlOne.DataLabelFontColor.HasValue)
+                    || (htmlOne != null && htmlOne.DataLabelFontSize.HasValue)
+                    || (htmlOne != null && !string.IsNullOrEmpty(htmlOne.DataLabelFontName))
+                    || (htmlOne != null && !string.IsNullOrEmpty(htmlOne.DataLabelNumberFormat));
+
+                if (explicitOff)
+                {
+                    one.HasDataLabels = false;
+                    continue;
+                }
+
+                if (htmlMentioned)
+                {
+                    one.HasDataLabels = true;
+                    continue;
+                }
+
+                SeriesStyleSnap oldOne = oldSnap != null
+                    && oldSnap.Series != null
+                    && i < oldSnap.Series.Count
+                    ? oldSnap.Series[i]
+                    : null;
+                one.HasDataLabels = oldOne != null && oldOne.HasDataLabels == true;
+            }
+
+            StyleLog(warnings, "数据标签开关已按稿/旧图推断 series=" + snap.Series.Count);
+        }
+
+        private static void EnsureGridlineSwitch(
+            ChartStyleSnap oldSnap,
+            ChartStyleSnap htmlSnap,
+            PptHtmlChartFormat format,
+            ChartStyleSnap snap,
+            List<string> warnings)
+        {
+            if (snap.Value == null)
+            {
+                snap.Value = new AxisStyleSnap();
+            }
+
+            bool explicitOff = (format != null
+                    && !string.IsNullOrWhiteSpace(format.Gridlines)
+                    && !IsTrue(format.Gridlines))
+                || AxisExtrasGridOff(format != null ? format.AxisYStyle : null)
+                || (htmlSnap != null
+                    && htmlSnap.Value != null
+                    && htmlSnap.Value.HasMajorGridlines == false);
+
+            bool htmlMentioned = (format != null && !string.IsNullOrWhiteSpace(format.Gridlines))
+                || AxisExtrasMentionsGrid(format != null ? format.AxisYStyle : null)
+                || AxisExtrasMentionsGrid(format != null ? format.AxisXStyle : null)
+                || (htmlSnap != null
+                    && htmlSnap.Value != null
+                    && (htmlSnap.Value.HasMajorGridlines.HasValue
+                        || htmlSnap.Value.MajorGridlineRgb.HasValue));
+
+            if (explicitOff)
+            {
+                snap.Value.HasMajorGridlines = false;
+                StyleLog(warnings, "网格开关=关（稿显式）");
+                return;
+            }
+
+            if (htmlMentioned)
+            {
+                snap.Value.HasMajorGridlines = true;
+                StyleLog(warnings, "网格开关=开（稿写了网格属性）");
+                return;
+            }
+
+            bool oldOn = oldSnap != null
+                && oldSnap.Value != null
+                && oldSnap.Value.HasMajorGridlines == true
+                && oldSnap.Value.GridlineVisible != false;
+            snap.Value.HasMajorGridlines = oldOn;
+            StyleLog(warnings, "网格开关=" + (oldOn ? "开" : "关") + "（跟旧图）");
+        }
+
+        private static bool AxisExtrasGridOff(PptHtmlAxisExtras extras)
+        {
+            return extras != null
+                && !string.IsNullOrWhiteSpace(extras.Grid)
+                && !IsTrue(extras.Grid);
+        }
+
+        private static bool AxisExtrasMentionsGrid(PptHtmlAxisExtras extras)
+        {
+            return extras != null
+                && (!string.IsNullOrWhiteSpace(extras.Grid)
+                    || !string.IsNullOrWhiteSpace(extras.GridColor));
         }
 
         private static void ApplyAppearanceWhitelist(
@@ -729,7 +958,7 @@ namespace WordAddIn1.PresentationHost
                 snap.ChartColor = oldSnap.ChartColor;
             }
 
-            // 标题/图例：只要皮，不要 HasTitle / HasLegend
+            // 标题/图例皮可补旧图；开关由 EnsureDisplaySwitches 推断（写了皮⇒开，沉默跟旧图）
             if (string.IsNullOrEmpty(snap.TitleFontColor) && !string.IsNullOrEmpty(oldSnap.TitleFontColor))
             {
                 snap.TitleFontColor = oldSnap.TitleFontColor;
