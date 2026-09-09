@@ -486,11 +486,11 @@ namespace WordAddIn1.PresentationHost
 
                 if (one.AxisGroup == XlSecondary)
                 {
-                    col.AxisY = "secondary";
+                    col.AxisY = "y2";
                 }
                 else if (one.AxisGroup == XlPrimary)
                 {
-                    col.AxisY = "primary";
+                    col.AxisY = "y";
                 }
 
                 if (one.Fill != null)
@@ -1104,11 +1104,11 @@ namespace WordAddIn1.PresentationHost
                 one.ChartType = xl;
             }
 
-            if (string.Equals(col.AxisY, "secondary", StringComparison.OrdinalIgnoreCase))
+            if (IsSeriesAxisY2(col.AxisY))
             {
                 one.AxisGroup = XlSecondary;
             }
-            else if (string.Equals(col.AxisY, "primary", StringComparison.OrdinalIgnoreCase))
+            else if (IsSeriesAxisY(col.AxisY))
             {
                 one.AxisGroup = XlPrimary;
             }
@@ -1879,7 +1879,10 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static void PinChartSeriesType(ChartStyleSnap snap, int xlType)
+        /// <summary>
+        /// 整图 data-chart-type 只铺底：列上已写 data-series-type 的系列不被盖掉。
+        /// </summary>
+        private static void PinChartSeriesType(ChartStyleSnap snap, ChartStyleSnap htmlSnap, int xlType)
         {
             if (snap == null || snap.Series == null)
             {
@@ -1888,11 +1891,121 @@ namespace WordAddIn1.PresentationHost
 
             for (int i = 0; i < snap.Series.Count; i++)
             {
-                if (snap.Series[i] != null)
+                if (snap.Series[i] == null)
                 {
-                    snap.Series[i].ChartType = xlType;
+                    continue;
+                }
+
+                if (htmlSnap != null
+                    && htmlSnap.Series != null
+                    && i < htmlSnap.Series.Count
+                    && htmlSnap.Series[i] != null
+                    && htmlSnap.Series[i].ChartType.HasValue)
+                {
+                    continue;
+                }
+
+                snap.Series[i].ChartType = xlType;
+            }
+        }
+
+        /// <summary>
+        /// 列上系列绑轴：规范 data-axis=y|y2；兼容旧 data-axis-y / data-axis-y2。
+        /// 返回规范槽位 "y" / "y2"，未写返回 null。
+        /// </summary>
+        private static string ResolveSeriesAxisSlot(XElement cell)
+        {
+            if (cell == null)
+            {
+                return null;
+            }
+
+            string axis = GetAttr(cell, "data-axis");
+            if (!string.IsNullOrWhiteSpace(axis))
+            {
+                string a = axis.Trim().ToLowerInvariant();
+                if (a == "y2" || a == "secondary")
+                {
+                    return "y2";
+                }
+
+                if (a == "y" || a == "primary" || a == "x")
+                {
+                    // x 不当纵轴次轴；当主轴忽略（系列只挂 y/y2）
+                    return a == "x" ? null : "y";
                 }
             }
+
+            string ay = GetAttr(cell, "data-axis-y");
+            if (!string.IsNullOrWhiteSpace(ay))
+            {
+                string a = ay.Trim().ToLowerInvariant();
+                if (a == "secondary" || a == "y2")
+                {
+                    return "y2";
+                }
+
+                if (a == "primary" || a == "y")
+                {
+                    return "y";
+                }
+            }
+
+            string ay2 = GetAttr(cell, "data-axis-y2");
+            if (ay2 == null)
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(ay2))
+            {
+                return "y2";
+            }
+
+            string v = ay2.Trim().ToLowerInvariant();
+            if (v == "false" || v == "0" || v == "primary" || v == "y" || v == "no")
+            {
+                return "y";
+            }
+
+            return "y2";
+        }
+
+        private static bool IsSeriesAxisY2(string slot)
+        {
+            if (string.IsNullOrWhiteSpace(slot))
+            {
+                return false;
+            }
+
+            string a = slot.Trim().ToLowerInvariant();
+            return a == "y2" || a == "secondary";
+        }
+
+        private static bool IsSeriesAxisY(string slot)
+        {
+            if (string.IsNullOrWhiteSpace(slot))
+            {
+                return false;
+            }
+
+            string a = slot.Trim().ToLowerInvariant();
+            return a == "y" || a == "primary";
+        }
+
+        private static string CanonicalSeriesAxisSlot(string slot)
+        {
+            if (IsSeriesAxisY2(slot))
+            {
+                return "y2";
+            }
+
+            if (IsSeriesAxisY(slot))
+            {
+                return "y";
+            }
+
+            return null;
         }
 
         public static IEnumerable<XElement> EnumerateTableRows(XElement table)
@@ -1970,7 +2083,7 @@ namespace WordAddIn1.PresentationHost
                             Name = InnerText(cells[i]),
                             Color = ParseColorOrNone(GetAttr(cells[i], "data-color")),
                             SeriesType = GetAttr(cells[i], "data-series-type"),
-                            AxisY = GetAttr(cells[i], "data-axis-y"),
+                            AxisY = ResolveSeriesAxisSlot(cells[i]),
                             ShowDataLabels = GetAttr(cells[i], "data-show-data-labels"),
                             FillGradient = GetAttr(cells[i], "data-fill-gradient"),
                             FillAngle = GetAttr(cells[i], "data-fill-angle"),
@@ -2167,9 +2280,10 @@ namespace WordAddIn1.PresentationHost
                     sb.Append(" data-series-type=\"").Append(EscapeAttr(col.SeriesType)).Append("\"");
                 }
 
-                if (!string.IsNullOrEmpty(col.AxisY))
+                string axisSlot = CanonicalSeriesAxisSlot(col.AxisY);
+                if (!string.IsNullOrEmpty(axisSlot))
                 {
-                    sb.Append(" data-axis-y=\"").Append(EscapeAttr(col.AxisY)).Append("\"");
+                    sb.Append(" data-axis=\"").Append(EscapeAttr(axisSlot)).Append("\"");
                 }
 
                 if (!string.IsNullOrEmpty(col.ShowDataLabels))
@@ -2584,7 +2698,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 useFormat.ChartType = canon;
-                PinChartSeriesType(snap, xlType);
+                PinChartSeriesType(snap, htmlSnap, xlType);
             }
             else if (!TryReadChartXl(oldChart, out xlType))
             {
@@ -5849,9 +5963,13 @@ namespace WordAddIn1.PresentationHost
                         WppCom.TrySetProperty(series, "ChartType", xl);
                     }
 
-                    if (string.Equals(col.AxisY, "secondary", StringComparison.OrdinalIgnoreCase))
+                    if (IsSeriesAxisY2(col.AxisY))
                     {
                         WppCom.TrySetProperty(series, "AxisGroup", XlSecondary);
+                    }
+                    else if (IsSeriesAxisY(col.AxisY))
+                    {
+                        WppCom.TrySetProperty(series, "AxisGroup", XlPrimary);
                     }
                 }
             }
