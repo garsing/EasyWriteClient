@@ -683,6 +683,402 @@ namespace WordAddIn1.PresentationHost
             return snap;
         }
 
+        /// <summary>
+        /// 换数套回：结构听 HTML/表；外观白名单从旧图贴皮；HTML 显式皮再盖。
+        /// 不再全盘 OverlaySnap（避免旧图次轴 Deleted、关标签等打乱新图）。
+        /// </summary>
+        private static ChartStyleSnap MergeReplaceSnap(
+            ChartStyleSnap oldSnap,
+            ChartStyleSnap htmlSnap,
+            PptHtmlChartFormat format,
+            List<string> warnings)
+        {
+            ChartStyleSnap snap = htmlSnap ?? new ChartStyleSnap { Series = new List<SeriesStyleSnap>() };
+            if (snap.Series == null)
+            {
+                snap.Series = new List<SeriesStyleSnap>();
+            }
+
+            if (oldSnap != null)
+            {
+                ApplyAppearanceWhitelist(oldSnap, snap, warnings);
+            }
+
+            EnsureReplaceAxisStructure(snap, format, warnings);
+            NormalizeAxisChrome(snap);
+            return snap;
+        }
+
+        private static void ApplyAppearanceWhitelist(
+            ChartStyleSnap oldSnap,
+            ChartStyleSnap snap,
+            List<string> warnings)
+        {
+            if (oldSnap == null || snap == null)
+            {
+                return;
+            }
+
+            if (!snap.ChartStyle.HasValue && oldSnap.ChartStyle.HasValue)
+            {
+                snap.ChartStyle = oldSnap.ChartStyle;
+            }
+
+            if (!snap.ChartColor.HasValue && oldSnap.ChartColor.HasValue)
+            {
+                snap.ChartColor = oldSnap.ChartColor;
+            }
+
+            // 标题/图例：只要皮，不要 HasTitle / HasLegend
+            if (string.IsNullOrEmpty(snap.TitleFontColor) && !string.IsNullOrEmpty(oldSnap.TitleFontColor))
+            {
+                snap.TitleFontColor = oldSnap.TitleFontColor;
+            }
+
+            if (string.IsNullOrEmpty(snap.TitleFontSize) && !string.IsNullOrEmpty(oldSnap.TitleFontSize))
+            {
+                snap.TitleFontSize = oldSnap.TitleFontSize;
+            }
+
+            if (!snap.TitleFontBold.HasValue && oldSnap.TitleFontBold.HasValue)
+            {
+                snap.TitleFontBold = oldSnap.TitleFontBold;
+            }
+
+            if (!snap.LegendPosition.HasValue && oldSnap.LegendPosition.HasValue)
+            {
+                snap.LegendPosition = oldSnap.LegendPosition;
+            }
+
+            if (string.IsNullOrEmpty(snap.LegendFontColor) && !string.IsNullOrEmpty(oldSnap.LegendFontColor))
+            {
+                snap.LegendFontColor = oldSnap.LegendFontColor;
+            }
+
+            if (!snap.ChartAreaFillVisible.HasValue && oldSnap.ChartAreaFillVisible.HasValue)
+            {
+                snap.ChartAreaFillVisible = oldSnap.ChartAreaFillVisible;
+                snap.ChartAreaFillRgb = oldSnap.ChartAreaFillRgb;
+            }
+
+            if (!snap.PlotFillVisible.HasValue && oldSnap.PlotFillVisible.HasValue)
+            {
+                snap.PlotFillVisible = oldSnap.PlotFillVisible;
+                snap.PlotFillRgb = oldSnap.PlotFillRgb;
+            }
+
+            if (!snap.GapWidth.HasValue && oldSnap.GapWidth.HasValue)
+            {
+                snap.GapWidth = oldSnap.GapWidth;
+            }
+
+            if (!snap.Overlap.HasValue && oldSnap.Overlap.HasValue)
+            {
+                snap.Overlap = oldSnap.Overlap;
+            }
+
+            CopyPlotBoxIfEmpty(oldSnap, snap);
+
+            snap.Category = MergeAxisAppearance(oldSnap.Category, snap.Category);
+            snap.Value = MergeAxisAppearance(oldSnap.Value, snap.Value);
+            snap.ValueSecondary = MergeAxisAppearance(oldSnap.ValueSecondary, snap.ValueSecondary);
+
+            if (oldSnap.Series != null)
+            {
+                for (int i = 0; i < snap.Series.Count && i < oldSnap.Series.Count; i++)
+                {
+                    MergeSeriesAppearance(oldSnap.Series[i], snap.Series[i]);
+                }
+            }
+
+            StyleLog(warnings, "换数白名单贴皮 "
+                + "style=" + snap.ChartStyle
+                + " chartColor=" + snap.ChartColor
+                + " gap=" + snap.GapWidth
+                + " plotBox=" + (snap.PlotLeft.HasValue ? "yes" : "no")
+                + " series=" + snap.Series.Count);
+        }
+
+        private static void CopyPlotBoxIfEmpty(ChartStyleSnap oldSnap, ChartStyleSnap snap)
+        {
+            if (!snap.PlotLeft.HasValue && oldSnap.PlotLeft.HasValue)
+            {
+                snap.PlotLeft = oldSnap.PlotLeft;
+            }
+
+            if (!snap.PlotTop.HasValue && oldSnap.PlotTop.HasValue)
+            {
+                snap.PlotTop = oldSnap.PlotTop;
+            }
+
+            if (!snap.PlotWidth.HasValue && oldSnap.PlotWidth.HasValue)
+            {
+                snap.PlotWidth = oldSnap.PlotWidth;
+            }
+
+            if (!snap.PlotHeight.HasValue && oldSnap.PlotHeight.HasValue)
+            {
+                snap.PlotHeight = oldSnap.PlotHeight;
+            }
+
+            if (!snap.PlotInsideLeft.HasValue && oldSnap.PlotInsideLeft.HasValue)
+            {
+                snap.PlotInsideLeft = oldSnap.PlotInsideLeft;
+            }
+
+            if (!snap.PlotInsideTop.HasValue && oldSnap.PlotInsideTop.HasValue)
+            {
+                snap.PlotInsideTop = oldSnap.PlotInsideTop;
+            }
+
+            if (!snap.PlotInsideWidth.HasValue && oldSnap.PlotInsideWidth.HasValue)
+            {
+                snap.PlotInsideWidth = oldSnap.PlotInsideWidth;
+            }
+
+            if (!snap.PlotInsideHeight.HasValue && oldSnap.PlotInsideHeight.HasValue)
+            {
+                snap.PlotInsideHeight = oldSnap.PlotInsideHeight;
+            }
+        }
+
+        /// <summary>
+        /// 轴：结构（Deleted/标题/网格开闭/格式）只听 HTML；皮从旧图补。
+        /// </summary>
+        private static AxisStyleSnap MergeAxisAppearance(AxisStyleSnap oldAx, AxisStyleSnap htmlAx)
+        {
+            AxisStyleSnap ax = htmlAx ?? new AxisStyleSnap();
+            if (oldAx == null)
+            {
+                return ax;
+            }
+
+            if (string.IsNullOrEmpty(ax.TickFontName) && !string.IsNullOrEmpty(oldAx.TickFontName))
+            {
+                ax.TickFontName = oldAx.TickFontName;
+            }
+
+            if (!ax.TickFontColor.HasValue && oldAx.TickFontColor.HasValue)
+            {
+                ax.TickFontColor = oldAx.TickFontColor;
+            }
+
+            if (!ax.TickFontSize.HasValue && oldAx.TickFontSize.HasValue)
+            {
+                ax.TickFontSize = oldAx.TickFontSize;
+            }
+
+            if (!ax.TickLabelPosition.HasValue && oldAx.TickLabelPosition.HasValue)
+            {
+                ax.TickLabelPosition = oldAx.TickLabelPosition;
+            }
+
+            if (!ax.MajorTickMark.HasValue && oldAx.MajorTickMark.HasValue)
+            {
+                ax.MajorTickMark = oldAx.MajorTickMark;
+            }
+
+            if (!ax.MinorTickMark.HasValue && oldAx.MinorTickMark.HasValue)
+            {
+                ax.MinorTickMark = oldAx.MinorTickMark;
+            }
+
+            if (!ax.LineVisible.HasValue && oldAx.LineVisible.HasValue)
+            {
+                ax.LineVisible = oldAx.LineVisible;
+            }
+
+            if (!ax.LineRgb.HasValue && oldAx.LineRgb.HasValue)
+            {
+                ax.LineRgb = oldAx.LineRgb;
+            }
+
+            if (!ax.LineWeight.HasValue && oldAx.LineWeight.HasValue)
+            {
+                ax.LineWeight = oldAx.LineWeight;
+            }
+
+            if (!ax.MajorGridlineRgb.HasValue && oldAx.MajorGridlineRgb.HasValue)
+            {
+                ax.MajorGridlineRgb = oldAx.MajorGridlineRgb;
+            }
+
+            if (!ax.GridlineWeight.HasValue && oldAx.GridlineWeight.HasValue)
+            {
+                ax.GridlineWeight = oldAx.GridlineWeight;
+            }
+
+            return ax;
+        }
+
+        /// <summary>
+        /// 系列：类型/挂轴/标签开关只听 HTML；填色/线/标记从旧图补。
+        /// </summary>
+        private static void MergeSeriesAppearance(SeriesStyleSnap oldS, SeriesStyleSnap htmlS)
+        {
+            if (oldS == null || htmlS == null)
+            {
+                return;
+            }
+
+            if (htmlS.Fill == null && oldS.Fill != null)
+            {
+                htmlS.Fill = CloneFillSnap(oldS.Fill);
+            }
+            else if (htmlS.Fill != null && oldS.Fill != null)
+            {
+                htmlS.Fill = OverlayFill(CloneFillSnap(oldS.Fill), htmlS.Fill);
+            }
+
+            if (htmlS.Line == null && oldS.Line != null)
+            {
+                htmlS.Line = CloneLineSnap(oldS.Line);
+            }
+            else if (htmlS.Line != null && oldS.Line != null)
+            {
+                htmlS.Line = OverlayLine(CloneLineSnap(oldS.Line), htmlS.Line);
+            }
+
+            if ((htmlS.PointFills == null || htmlS.PointFills.Count == 0)
+                && oldS.PointFills != null
+                && oldS.PointFills.Count > 0)
+            {
+                htmlS.PointFills = oldS.PointFills;
+            }
+
+            if (!htmlS.MarkerStyle.HasValue && oldS.MarkerStyle.HasValue)
+            {
+                htmlS.MarkerStyle = oldS.MarkerStyle;
+            }
+
+            if (!htmlS.MarkerSize.HasValue && oldS.MarkerSize.HasValue)
+            {
+                htmlS.MarkerSize = oldS.MarkerSize;
+            }
+
+            if (!htmlS.MarkerForeRgb.HasValue && oldS.MarkerForeRgb.HasValue)
+            {
+                htmlS.MarkerForeRgb = oldS.MarkerForeRgb;
+            }
+
+            if (!htmlS.MarkerBackRgb.HasValue && oldS.MarkerBackRgb.HasValue)
+            {
+                htmlS.MarkerBackRgb = oldS.MarkerBackRgb;
+            }
+        }
+
+        private static FillSnap CloneFillSnap(FillSnap src)
+        {
+            if (src == null)
+            {
+                return null;
+            }
+
+            return new FillSnap
+            {
+                Visible = src.Visible,
+                FillType = src.FillType,
+                SolidRgb = src.SolidRgb,
+                Angle = src.Angle,
+                Stops = src.Stops
+            };
+        }
+
+        private static LineSnap CloneLineSnap(LineSnap src)
+        {
+            if (src == null)
+            {
+                return null;
+            }
+
+            return new LineSnap
+            {
+                Visible = src.Visible,
+                Rgb = src.Rgb,
+                Weight = src.Weight,
+                Stops = src.Stops
+            };
+        }
+
+        /// <summary>
+        /// 有无次轴：听系列挂 y2 或稿 data-axis-y2-visible；不听旧图 Deleted。
+        /// </summary>
+        private static void EnsureReplaceAxisStructure(
+            ChartStyleSnap snap,
+            PptHtmlChartFormat format,
+            List<string> warnings)
+        {
+            if (snap == null)
+            {
+                return;
+            }
+
+            bool needY2 = false;
+            if (snap.Series != null)
+            {
+                for (int i = 0; i < snap.Series.Count; i++)
+                {
+                    if (snap.Series[i] != null && snap.Series[i].AxisGroup == XlSecondary)
+                    {
+                        needY2 = true;
+                        break;
+                    }
+                }
+            }
+
+            bool? htmlY2Visible = null;
+            if (format != null
+                && format.AxisY2Style != null
+                && !string.IsNullOrWhiteSpace(format.AxisY2Style.Visible))
+            {
+                htmlY2Visible = IsTrue(format.AxisY2Style.Visible);
+            }
+
+            if (snap.Category != null && snap.Category.Deleted == null)
+            {
+                snap.Category.Deleted = false;
+            }
+
+            if (snap.Value != null && snap.Value.Deleted == null)
+            {
+                snap.Value.Deleted = false;
+            }
+
+            if (htmlY2Visible == true || needY2)
+            {
+                if (snap.ValueSecondary == null)
+                {
+                    snap.ValueSecondary = new AxisStyleSnap();
+                }
+
+                snap.ValueSecondary.Deleted = false;
+                StyleLog(warnings, "次轴结构打开 needY2=" + needY2
+                    + " htmlVisible=" + (htmlY2Visible.HasValue ? htmlY2Visible.Value.ToString() : "null"));
+            }
+            else if (htmlY2Visible == false)
+            {
+                if (snap.ValueSecondary == null)
+                {
+                    snap.ValueSecondary = new AxisStyleSnap { Deleted = true };
+                }
+                else
+                {
+                    snap.ValueSecondary.Deleted = true;
+                }
+            }
+            else
+            {
+                if (snap.ValueSecondary == null)
+                {
+                    snap.ValueSecondary = new AxisStyleSnap { Deleted = true };
+                }
+                else if (snap.ValueSecondary.Deleted != false)
+                {
+                    snap.ValueSecondary.Deleted = true;
+                }
+            }
+        }
+
         private static ChartStyleSnap OverlaySnap(ChartStyleSnap oldSnap, ChartStyleSnap htmlSnap)
         {
             if (oldSnap == null)
@@ -2586,8 +2982,7 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
-        /// 改已有图 = 新建图。先拍旧图属性，AddChart2 灌数（Word 同路），
-        /// HTML 没写的属性用旧图快照补上，再删旧图。
+        /// 改已有图 = 新建图。拍旧图外观白名单 + HTML/表结构，AddChart2 灌数，再删旧图。
         /// </summary>
         public static bool TryReplaceOnSlide(
             object shapes,
@@ -2683,7 +3078,7 @@ namespace WordAddIn1.PresentationHost
             }
 
             ChartStyleSnap htmlSnap = SnapFromFormat(useFormat, useGrid);
-            ChartStyleSnap snap = OverlaySnap(oldSnap, htmlSnap);
+            ChartStyleSnap snap = MergeReplaceSnap(oldSnap, htmlSnap, useFormat, warnings);
             if (snap == null)
             {
                 snap = htmlSnap ?? oldSnap;
@@ -3009,42 +3404,51 @@ namespace WordAddIn1.PresentationHost
 
         private static void TryInheritTitleAndLegend(object chart, ChartStyleSnap snap)
         {
-            if (snap.HasTitle.HasValue)
-            {
-                WppCom.TrySetProperty(chart, "HasTitle", snap.HasTitle.Value);
-                if (snap.HasTitle.Value)
-                {
-                    object title = WppCom.GetProperty(chart, "ChartTitle");
-                    object font = title == null ? null : WppCom.GetProperty(title, "Font");
-                    if (font != null)
-                    {
-                        if (!string.IsNullOrEmpty(snap.TitleFontColor)
-                            && TryParseHexToOffice(snap.TitleFontColor, out int tRgb))
-                        {
-                            WppCom.TrySetProperty(font, "Color", tRgb);
-                        }
-
-                        if (!string.IsNullOrEmpty(snap.TitleFontSize)
-                            && double.TryParse(snap.TitleFontSize, NumberStyles.Float, CultureInfo.InvariantCulture, out double sz))
-                        {
-                            WppCom.TrySetProperty(font, "Size", sz);
-                        }
-
-                        if (snap.TitleFontBold.HasValue)
-                        {
-                            WppCom.TrySetProperty(font, "Bold", snap.TitleFontBold.Value);
-                        }
-                    }
-                }
-            }
-
-            if (!snap.HasLegend.HasValue)
+            if (snap == null)
             {
                 return;
             }
 
-            WppCom.TrySetProperty(chart, "HasLegend", snap.HasLegend.Value);
-            if (!snap.HasLegend.Value)
+            if (snap.HasTitle.HasValue)
+            {
+                WppCom.TrySetProperty(chart, "HasTitle", snap.HasTitle.Value);
+            }
+
+            bool titleOn = snap.HasTitle == true
+                || (snap.HasTitle == null && IsTruthy(WppCom.GetProperty(chart, "HasTitle")));
+            if (titleOn)
+            {
+                object title = WppCom.GetProperty(chart, "ChartTitle");
+                object font = title == null ? null : WppCom.GetProperty(title, "Font");
+                if (font != null)
+                {
+                    if (!string.IsNullOrEmpty(snap.TitleFontColor)
+                        && TryParseHexToOffice(snap.TitleFontColor, out int tRgb))
+                    {
+                        WppCom.TrySetProperty(font, "Color", tRgb);
+                    }
+
+                    if (!string.IsNullOrEmpty(snap.TitleFontSize)
+                        && double.TryParse(snap.TitleFontSize, NumberStyles.Float, CultureInfo.InvariantCulture, out double sz))
+                    {
+                        WppCom.TrySetProperty(font, "Size", sz);
+                    }
+
+                    if (snap.TitleFontBold.HasValue)
+                    {
+                        WppCom.TrySetProperty(font, "Bold", snap.TitleFontBold.Value);
+                    }
+                }
+            }
+
+            if (snap.HasLegend.HasValue)
+            {
+                WppCom.TrySetProperty(chart, "HasLegend", snap.HasLegend.Value);
+            }
+
+            bool legendOn = snap.HasLegend == true
+                || (snap.HasLegend == null && IsTruthy(WppCom.GetProperty(chart, "HasLegend")));
+            if (!legendOn)
             {
                 return;
             }
