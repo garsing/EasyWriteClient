@@ -84,6 +84,8 @@ namespace WordAddIn1.PresentationHost
                 "data-theme",
                 "data-legend",
                 "data-show-data-labels",
+                "data-show-value",
+                "data-show-percentage",
                 "data-plot-color",
                 "data-title-font-size",
                 "data-title-font-bold",
@@ -96,7 +98,6 @@ namespace WordAddIn1.PresentationHost
                 "data-axis-y-min",
                 "data-axis-y-max",
                 "data-axis-y-major-unit",
-                "data-data-label-type",
                 "data-explosion",
                 "data-fill-missing",
                 "data-axis-x",
@@ -677,6 +678,8 @@ namespace WordAddIn1.PresentationHost
                         || n == "data-theme"
                         || n == "data-legend"
                         || n == "data-show-data-labels"
+                        || n == "data-show-value"
+                        || n == "data-show-percentage"
                         || n == "data-plot-color"
                         || n == "data-title-font-size"
                         || n == "data-title-font-bold"
@@ -685,7 +688,6 @@ namespace WordAddIn1.PresentationHost
                         || n == "data-gap-width"
                         || n == "data-data-markers"
                         || n == "data-marker-size"
-                        || n == "data-data-label-type"
                         || n == "data-explosion"
                         || n == "data-fill-missing"
                         || n == "data-legend-font-color"
@@ -714,6 +716,8 @@ namespace WordAddIn1.PresentationHost
             any |= CopyIf(want, "data-theme", src.Theme, v => dest.Theme = v);
             any |= CopyIf(want, "data-legend", src.Legend, v => dest.Legend = v);
             any |= CopyIf(want, "data-show-data-labels", src.ShowDataLabels, v => dest.ShowDataLabels = v);
+            any |= CopyIf(want, "data-show-value", src.ShowValue, v => dest.ShowValue = v);
+            any |= CopyIf(want, "data-show-percentage", src.ShowPercentage, v => dest.ShowPercentage = v);
             any |= CopyIf(want, "data-plot-color", src.PlotColor, v => dest.PlotColor = v);
             any |= CopyIf(want, "data-title-font-size", src.TitleFontSize, v => dest.TitleFontSize = v);
             any |= CopyIf(want, "data-title-font-bold", src.TitleFontBold, v => dest.TitleFontBold = v);
@@ -726,7 +730,6 @@ namespace WordAddIn1.PresentationHost
             any |= CopyIf(want, "data-axis-y-min", src.AxisYMin, v => dest.AxisYMin = v);
             any |= CopyIf(want, "data-axis-y-max", src.AxisYMax, v => dest.AxisYMax = v);
             any |= CopyIf(want, "data-axis-y-major-unit", src.AxisYMajorUnit, v => dest.AxisYMajorUnit = v);
-            any |= CopyIf(want, "data-data-label-type", src.DataLabelType, v => dest.DataLabelType = v);
             any |= CopyIf(want, "data-explosion", src.Explosion, v => dest.Explosion = v);
             any |= CopyIf(want, "data-fill-missing", src.FillMissing, v => dest.FillMissing = v);
             any |= CopyIf(want, "data-axis-x", src.AxisX, v => dest.AxisX = v);

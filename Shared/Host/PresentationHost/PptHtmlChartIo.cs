@@ -26,6 +26,12 @@ namespace WordAddIn1.PresentationHost
 
         public string ShowDataLabels { get; set; }
 
+        /// <summary>对齐 COM DataLabels.ShowValue。</summary>
+        public string ShowValue { get; set; }
+
+        /// <summary>对齐 COM DataLabels.ShowPercentage。</summary>
+        public string ShowPercentage { get; set; }
+
         public string FillGradient { get; set; }
 
         public string FillAngle { get; set; }
@@ -114,6 +120,12 @@ namespace WordAddIn1.PresentationHost
 
         public string ShowDataLabels { get; set; }
 
+        /// <summary>图级：对齐 COM ShowValue；会落到各系列（列上未写时）。</summary>
+        public string ShowValue { get; set; }
+
+        /// <summary>图级：对齐 COM ShowPercentage。</summary>
+        public string ShowPercentage { get; set; }
+
         public string PlotColor { get; set; }
 
         public string TitleFontSize { get; set; }
@@ -137,8 +149,6 @@ namespace WordAddIn1.PresentationHost
         public string AxisYMax { get; set; }
 
         public string AxisYMajorUnit { get; set; }
-
-        public string DataLabelType { get; set; }
 
         public string Explosion { get; set; }
 
@@ -325,6 +335,10 @@ namespace WordAddIn1.PresentationHost
             public int? MarkerBackRgb { get; set; }
 
             public bool? HasDataLabels { get; set; }
+
+            public bool? ShowValue { get; set; }
+
+            public bool? ShowPercentage { get; set; }
 
             public int? DataLabelPosition { get; set; }
 
@@ -555,6 +569,16 @@ namespace WordAddIn1.PresentationHost
                     col.ShowDataLabels = one.HasDataLabels.Value ? "true" : "false";
                 }
 
+                if (one.ShowValue.HasValue)
+                {
+                    col.ShowValue = one.ShowValue.Value ? "true" : "false";
+                }
+
+                if (one.ShowPercentage.HasValue)
+                {
+                    col.ShowPercentage = one.ShowPercentage.Value ? "true" : "false";
+                }
+
                 if (one.DataLabelPosition.HasValue)
                 {
                     col.LabelPosition = LabelPosFromXl(one.DataLabelPosition.Value);
@@ -680,7 +704,53 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
+            ApplyChartLevelLabelContent(format, snap);
             return snap;
+        }
+
+        /// <summary>图级 data-show-value / percentage 落到列上未写的系列。</summary>
+        private static void ApplyChartLevelLabelContent(PptHtmlChartFormat format, ChartStyleSnap snap)
+        {
+            if (format == null || snap == null || snap.Series == null)
+            {
+                return;
+            }
+
+            bool? chartValue = ParseOptionalBool(format.ShowValue);
+            bool? chartPct = ParseOptionalBool(format.ShowPercentage);
+            if (chartValue == null && chartPct == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < snap.Series.Count; i++)
+            {
+                SeriesStyleSnap one = snap.Series[i];
+                if (one == null)
+                {
+                    continue;
+                }
+
+                if (chartValue.HasValue && !one.ShowValue.HasValue)
+                {
+                    one.ShowValue = chartValue;
+                }
+
+                if (chartPct.HasValue && !one.ShowPercentage.HasValue)
+                {
+                    one.ShowPercentage = chartPct;
+                }
+            }
+        }
+
+        private static bool? ParseOptionalBool(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+
+            return IsTrue(raw);
         }
 
         /// <summary>
@@ -845,11 +915,21 @@ namespace WordAddIn1.PresentationHost
                 bool htmlMentioned = chartLevelOn
                     || chartLevelOff
                     || (htmlOne != null && htmlOne.HasDataLabels.HasValue)
+                    || (htmlOne != null && htmlOne.ShowValue.HasValue)
+                    || (htmlOne != null && htmlOne.ShowPercentage.HasValue)
                     || (htmlOne != null && htmlOne.DataLabelPosition.HasValue)
                     || (htmlOne != null && htmlOne.DataLabelFontColor.HasValue)
                     || (htmlOne != null && htmlOne.DataLabelFontSize.HasValue)
                     || (htmlOne != null && !string.IsNullOrEmpty(htmlOne.DataLabelFontName))
                     || (htmlOne != null && !string.IsNullOrEmpty(htmlOne.DataLabelNumberFormat));
+
+                // 图级写了标签内容开关也算「提到标签」
+                if (!htmlMentioned && format != null
+                    && (!string.IsNullOrWhiteSpace(format.ShowValue)
+                        || !string.IsNullOrWhiteSpace(format.ShowPercentage)))
+                {
+                    htmlMentioned = true;
+                }
 
                 if (explicitOff)
                 {
@@ -1193,6 +1273,16 @@ namespace WordAddIn1.PresentationHost
             if (!htmlS.MarkerBackRgb.HasValue && oldS.MarkerBackRgb.HasValue)
             {
                 htmlS.MarkerBackRgb = oldS.MarkerBackRgb;
+            }
+
+            if (!htmlS.ShowValue.HasValue && oldS.ShowValue.HasValue)
+            {
+                htmlS.ShowValue = oldS.ShowValue;
+            }
+
+            if (!htmlS.ShowPercentage.HasValue && oldS.ShowPercentage.HasValue)
+            {
+                htmlS.ShowPercentage = oldS.ShowPercentage;
             }
         }
 
@@ -1618,6 +1708,16 @@ namespace WordAddIn1.PresentationHost
                 dest.HasDataLabels = src.HasDataLabels;
             }
 
+            if (src.ShowValue.HasValue)
+            {
+                dest.ShowValue = src.ShowValue;
+            }
+
+            if (src.ShowPercentage.HasValue)
+            {
+                dest.ShowPercentage = src.ShowPercentage;
+            }
+
             if (src.DataLabelPosition.HasValue)
             {
                 dest.DataLabelPosition = src.DataLabelPosition;
@@ -1763,6 +1863,16 @@ namespace WordAddIn1.PresentationHost
             if (!string.IsNullOrWhiteSpace(col.ShowDataLabels))
             {
                 one.HasDataLabels = IsTrue(col.ShowDataLabels);
+            }
+
+            if (!string.IsNullOrWhiteSpace(col.ShowValue))
+            {
+                one.ShowValue = IsTrue(col.ShowValue);
+            }
+
+            if (!string.IsNullOrWhiteSpace(col.ShowPercentage))
+            {
+                one.ShowPercentage = IsTrue(col.ShowPercentage);
             }
 
             if (!string.IsNullOrWhiteSpace(col.LabelPosition))
@@ -2710,6 +2820,8 @@ namespace WordAddIn1.PresentationHost
                             SeriesType = GetAttr(cells[i], "data-series-type"),
                             AxisY = ResolveSeriesAxisSlot(cells[i]),
                             ShowDataLabels = GetAttr(cells[i], "data-show-data-labels"),
+                            ShowValue = GetAttr(cells[i], "data-show-value"),
+                            ShowPercentage = GetAttr(cells[i], "data-show-percentage"),
                             FillGradient = GetAttr(cells[i], "data-fill-gradient"),
                             FillAngle = GetAttr(cells[i], "data-fill-angle"),
                             Line = GetAttr(cells[i], "data-line"),
@@ -2827,6 +2939,8 @@ namespace WordAddIn1.PresentationHost
                 Theme = GetAttr(el, "data-theme"),
                 Legend = GetAttr(el, "data-legend"),
                 ShowDataLabels = GetAttr(el, "data-show-data-labels"),
+                ShowValue = GetAttr(el, "data-show-value"),
+                ShowPercentage = GetAttr(el, "data-show-percentage"),
                 PlotColor = GetAttr(el, "data-plot-color"),
                 TitleFontSize = GetAttr(el, "data-title-font-size"),
                 TitleFontBold = GetAttr(el, "data-title-font-bold"),
@@ -2839,7 +2953,6 @@ namespace WordAddIn1.PresentationHost
                 AxisYMin = GetAttr(el, "data-axis-y-min"),
                 AxisYMax = GetAttr(el, "data-axis-y-max"),
                 AxisYMajorUnit = GetAttr(el, "data-axis-y-major-unit"),
-                DataLabelType = GetAttr(el, "data-data-label-type"),
                 Explosion = GetAttr(el, "data-explosion"),
                 FillMissing = GetAttr(el, "data-fill-missing"),
                 AxisX = GetAttr(el, "data-axis-x"),
@@ -2916,6 +3029,16 @@ namespace WordAddIn1.PresentationHost
                     sb.Append(" data-show-data-labels=\"").Append(EscapeAttr(col.ShowDataLabels)).Append("\"");
                 }
 
+                if (!string.IsNullOrEmpty(col.ShowValue))
+                {
+                    sb.Append(" data-show-value=\"").Append(EscapeAttr(col.ShowValue)).Append("\"");
+                }
+
+                if (!string.IsNullOrEmpty(col.ShowPercentage))
+                {
+                    sb.Append(" data-show-percentage=\"").Append(EscapeAttr(col.ShowPercentage)).Append("\"");
+                }
+
                 WriteRawAttr(sb, "data-fill-gradient", col.FillGradient);
                 WriteRawAttr(sb, "data-fill-angle", col.FillAngle);
                 WriteRawAttr(sb, "data-line", col.Line);
@@ -2965,6 +3088,8 @@ namespace WordAddIn1.PresentationHost
             WriteAttr(sb, "data-theme", fmt.Theme);
             WriteAttr(sb, "data-legend", fmt.Legend);
             WriteAttr(sb, "data-show-data-labels", fmt.ShowDataLabels);
+            WriteAttr(sb, "data-show-value", fmt.ShowValue);
+            WriteAttr(sb, "data-show-percentage", fmt.ShowPercentage);
             WriteAttr(sb, "data-plot-color", fmt.PlotColor);
             WriteAttr(sb, "data-title-font-size", fmt.TitleFontSize);
             WriteAttr(sb, "data-title-font-bold", fmt.TitleFontBold);
@@ -2977,7 +3102,6 @@ namespace WordAddIn1.PresentationHost
             WriteAttr(sb, "data-axis-y-min", fmt.AxisYMin);
             WriteAttr(sb, "data-axis-y-max", fmt.AxisYMax);
             WriteAttr(sb, "data-axis-y-major-unit", fmt.AxisYMajorUnit);
-            WriteAttr(sb, "data-data-label-type", fmt.DataLabelType);
             WriteAttr(sb, "data-explosion", fmt.Explosion);
             WriteAttr(sb, "data-fill-missing", fmt.FillMissing);
             WriteAttr(sb, "data-axis-x", fmt.AxisX);
@@ -4767,6 +4891,18 @@ namespace WordAddIn1.PresentationHost
             object dls = one.HasDataLabels == true ? TryGetDataLabels(series) : null;
             if (dls != null)
             {
+                bool? showValue = TryGetBoolProperty(dls, "ShowValue");
+                if (showValue.HasValue)
+                {
+                    one.ShowValue = showValue;
+                }
+
+                bool? showPct = TryGetBoolProperty(dls, "ShowPercentage");
+                if (showPct.HasValue)
+                {
+                    one.ShowPercentage = showPct;
+                }
+
                 try
                 {
                     object pos = WppCom.GetProperty(dls, "Position");
@@ -4822,6 +4958,29 @@ namespace WordAddIn1.PresentationHost
 
         }
 
+        private static bool? TryGetBoolProperty(object target, string name)
+        {
+            if (target == null || string.IsNullOrEmpty(name))
+            {
+                return null;
+            }
+
+            try
+            {
+                object v = WppCom.GetProperty(target, name);
+                if (v == null)
+                {
+                    return null;
+                }
+
+                return IsTruthy(v);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
         private static void TryApplyDataLabels(object series, SeriesStyleSnap one, List<string> warnings = null, string tag = null)
         {
             string prefix = "套标签 " + (tag ?? "");
@@ -4831,11 +4990,15 @@ namespace WordAddIn1.PresentationHost
             }
 
             bool want = one.HasDataLabels == true
+                || one.ShowValue.HasValue
+                || one.ShowPercentage.HasValue
                 || one.DataLabelPosition.HasValue
                 || one.DataLabelFontColor.HasValue
                 || !string.IsNullOrEmpty(one.DataLabelNumberFormat);
             StyleLog(warnings, prefix + " HasDataLabels=" + one.HasDataLabels
                 + " want=" + want
+                + " showValue=" + one.ShowValue
+                + " showPct=" + one.ShowPercentage
                 + " pos=" + one.DataLabelPosition
                 + " fontColor=" + HexOf(one.DataLabelFontColor)
                 + " fmt=" + (one.DataLabelNumberFormat ?? ""));
@@ -4874,11 +5037,16 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            WppCom.TrySetProperty(dls, "ShowValue", true);
-            WppCom.TrySetProperty(dls, "ShowCategoryName", false);
-            WppCom.TrySetProperty(dls, "ShowSeriesName", false);
-            WppCom.TrySetProperty(dls, "ShowPercentage", false);
-            WppCom.TrySetProperty(dls, "ShowLegendKey", false);
+            // 有快照则听快照；未提的内容开关不硬改（跟 ApplyDataLabels 默认 / 旧图继承）
+            if (one.ShowValue.HasValue)
+            {
+                WppCom.TrySetProperty(dls, "ShowValue", one.ShowValue.Value);
+            }
+
+            if (one.ShowPercentage.HasValue)
+            {
+                WppCom.TrySetProperty(dls, "ShowPercentage", one.ShowPercentage.Value);
+            }
 
             if (one.DataLabelPosition.HasValue)
             {
@@ -6813,6 +6981,49 @@ namespace WordAddIn1.PresentationHost
                 catch (Exception)
                 {
                     Warn(warnings, "data-show-data-labels");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(fmt.ShowValue) || !string.IsNullOrWhiteSpace(fmt.ShowPercentage))
+            {
+                try
+                {
+                    bool? showValue = ParseOptionalBool(fmt.ShowValue);
+                    bool? showPct = ParseOptionalBool(fmt.ShowPercentage);
+                    object sc = TryInvoke(chart, "SeriesCollection");
+                    int n = Convert.ToInt32(WppCom.GetProperty(sc, "Count"));
+                    for (int i = 1; i <= n; i++)
+                    {
+                        object s = WppCom.GetIndexed(sc, i);
+                        if (showValue == true || showPct == true)
+                        {
+                            object has = WppCom.GetProperty(s, "HasDataLabels");
+                            if (!IsTruthy(has))
+                            {
+                                TryInvoke(s, "ApplyDataLabels", XlDataLabelsShowValue);
+                            }
+                        }
+
+                        object dls = TryGetDataLabels(s);
+                        if (dls == null)
+                        {
+                            continue;
+                        }
+
+                        if (showValue.HasValue)
+                        {
+                            WppCom.TrySetProperty(dls, "ShowValue", showValue.Value);
+                        }
+
+                        if (showPct.HasValue)
+                        {
+                            WppCom.TrySetProperty(dls, "ShowPercentage", showPct.Value);
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                    Warn(warnings, "data-show-value/percentage");
                 }
             }
 
