@@ -7023,9 +7023,10 @@ namespace WordAddIn1.PresentationHost
         {
             grid = null;
             error = null;
-            // I8：优先 ChartData 内嵌工作簿；Series 仅兜底。
+            // I8：未外链时优先 ChartData 内嵌表；外链图禁止开 Workbook（会弹「链接的文件不可用」），改读 Series。
             string embeddedErr = null;
-            if (TryReadGridFromEmbeddedSheetAuto(chart, out grid, out embeddedErr)
+            if (!IsChartDataLinked(chart)
+                && TryReadGridFromEmbeddedSheetAuto(chart, out grid, out embeddedErr)
                 && grid != null
                 && grid.IsPourable)
             {
@@ -7069,8 +7070,13 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 object s1 = GetSeries(chart, 1);
-                object xvals = WppCom.GetProperty(s1, "XValues");
-                List<string> cats = ToStringList(xvals);
+                List<string> cats = ToStringList(WppCom.GetProperty(s1, "XValues"));
+                if (cats.Count == 0)
+                {
+                    // 外链/部分图类别只在轴上，XValues 为空。
+                    cats = TryReadCategoryAxisNames(chart);
+                }
+
                 if (cats.Count == 0)
                 {
                     error = "图表没有类别";
@@ -7960,6 +7966,15 @@ namespace WordAddIn1.PresentationHost
             try
             {
                 object chartData = WppCom.GetProperty(chart, "ChartData");
+                if (IsChartDataLinked(chart))
+                {
+                    if (!TryBreakChartDataLink(chart, warnings))
+                    {
+                        error = "图表为外链数据源且无法断链，请先换成内嵌表";
+                        return false;
+                    }
+                }
+
                 if (!TryOpenChartWorksheet(chart, out object ws, out excelApp, out error))
                 {
                     return false;
@@ -8011,6 +8026,69 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        /// <summary>
+        /// 只读 IsLinked，不访问 Workbook（访问会触发「链接的文件不可用」模态框）。
+        /// </summary>
+        private static bool IsChartDataLinked(object chart)
+        {
+            if (chart == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                object chartData = WppCom.GetProperty(chart, "ChartData");
+                if (chartData == null)
+                {
+                    return false;
+                }
+
+                object linked = WppCom.GetProperty(chartData, "IsLinked");
+                if (linked == null)
+                {
+                    return false;
+                }
+
+                if (linked is bool b)
+                {
+                    return b;
+                }
+
+                return Convert.ToBoolean(linked);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool TryBreakChartDataLink(object chart, List<string> warnings = null)
+        {
+            if (chart == null || !IsChartDataLinked(chart))
+            {
+                return true;
+            }
+
+            try
+            {
+                object chartData = WppCom.GetProperty(chart, "ChartData");
+                if (chartData == null)
+                {
+                    return false;
+                }
+
+                WppCom.Invoke(chartData, "BreakLink");
+                PourLog(warnings, "已 BreakLink，改为内嵌表");
+                return !IsChartDataLinked(chart);
+            }
+            catch (Exception ex)
+            {
+                PourLog(warnings, "BreakLink 失败: " + ex.Message);
+                return false;
+            }
+        }
+
         private static bool TryOpenChartWorksheet(
             object chart,
             out object ws,
@@ -8032,6 +8110,13 @@ namespace WordAddIn1.PresentationHost
                 if (chartData == null)
                 {
                     error = "无法访问 ChartData";
+                    return false;
+                }
+
+                // 外链且未断链时禁止碰 Workbook，否则 Office 弹「链接的文件不可用」并卡住自动化。
+                if (IsChartDataLinked(chart))
+                {
+                    error = "图表数据源为外链，跳过打开 Workbook";
                     return false;
                 }
 
@@ -8058,6 +8143,31 @@ namespace WordAddIn1.PresentationHost
             {
                 error = "打开 ChartData 失败: " + ex.Message;
                 return false;
+            }
+        }
+
+        private static List<string> TryReadCategoryAxisNames(object chart)
+        {
+            var cats = new List<string>();
+            if (chart == null)
+            {
+                return cats;
+            }
+
+            try
+            {
+                object axis = TryInvoke(chart, "Axes", 1, 1)
+                    ?? TryInvoke(chart, "Axes", 1);
+                if (axis == null)
+                {
+                    return cats;
+                }
+
+                return ToStringList(WppCom.GetProperty(axis, "CategoryNames"));
+            }
+            catch (Exception)
+            {
+                return cats;
             }
         }
 
