@@ -210,6 +210,9 @@ namespace WordAddIn1.PresentationHost
         private const int XlPie = 5;
         private const int Xl3DPie = -4102;
 
+        /// <summary>xlCombination：混合图整图结果态，不可传给 AddChart2。</summary>
+        private const int XlCombination = -4111;
+
         private const int XlCategory = 1;
         private const int XlValue = 2;
         private const int XlPrimary = 1;
@@ -2614,6 +2617,185 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private static bool IsBuildableAddChartXl(int xlType)
+        {
+            switch (xlType)
+            {
+                case XlColumnClustered:
+                case XlBarClustered:
+                case XlLine:
+                case XlLineMarkers:
+                case XlPie:
+                case Xl3DPie:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static string NormalizeSeriesTypeHint(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+
+            string s = raw.Trim().ToLowerInvariant();
+            if (s == "pie")
+            {
+                return "pie2d";
+            }
+
+            if (s == "column_clustered")
+            {
+                return "column";
+            }
+
+            return s;
+        }
+
+        private static int BaseTypePreferenceRank(string normalizedHint)
+        {
+            switch (normalizedHint)
+            {
+                case "column":
+                    return 0;
+                case "bar":
+                    return 1;
+                case "line":
+                    return 2;
+                case "pie2d":
+                    return 3;
+                case "pie3d":
+                    return 4;
+                default:
+                    return 10;
+            }
+        }
+
+        private static string PickDeriveBaseSeriesType(IList<string> hintsInOrder)
+        {
+            if (hintsInOrder == null || hintsInOrder.Count == 0)
+            {
+                return null;
+            }
+
+            int bestRank = int.MaxValue;
+            string best = null;
+            foreach (string raw in hintsInOrder)
+            {
+                string hint = NormalizeSeriesTypeHint(raw);
+                if (hint == null)
+                {
+                    continue;
+                }
+
+                int rank = BaseTypePreferenceRank(hint);
+                if (rank < bestRank)
+                {
+                    bestRank = rank;
+                    best = hint;
+                }
+            }
+
+            return best;
+        }
+
+        private static List<string> CollectGridSeriesTypeHints(PptHtmlChartGrid grid)
+        {
+            var list = new List<string>();
+            if (grid?.Columns == null)
+            {
+                return list;
+            }
+
+            foreach (PptHtmlChartColumn col in grid.Columns)
+            {
+                if (col == null || col.Role == "category")
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(col.SeriesType))
+                {
+                    list.Add(col.SeriesType);
+                }
+            }
+
+            return list;
+        }
+
+        private static List<string> CollectSnapSeriesTypeHints(ChartStyleSnap snap)
+        {
+            var list = new List<string>();
+            if (snap?.Series == null)
+            {
+                return list;
+            }
+
+            foreach (SeriesStyleSnap one in snap.Series)
+            {
+                if (one?.ChartType.HasValue == true)
+                {
+                    list.Add(SeriesTypeFromXl(one.ChartType.Value));
+                }
+            }
+
+            return list;
+        }
+
+        private static bool TryDeriveAddChartBaseType(
+            bool gridFromHtml,
+            PptHtmlChartGrid grid,
+            ChartStyleSnap oldSnap,
+            out int xlType,
+            out string canonical,
+            out string deriveSource,
+            out string error)
+        {
+            xlType = XlColumnClustered;
+            canonical = "column";
+            deriveSource = "default";
+            error = null;
+
+            string hint = null;
+            if (gridFromHtml)
+            {
+                hint = PickDeriveBaseSeriesType(CollectGridSeriesTypeHints(grid));
+                if (!string.IsNullOrEmpty(hint))
+                {
+                    deriveSource = "html-grid";
+                }
+            }
+
+            if (string.IsNullOrEmpty(hint) && oldSnap != null)
+            {
+                hint = PickDeriveBaseSeriesType(CollectSnapSeriesTypeHints(oldSnap));
+                if (!string.IsNullOrEmpty(hint))
+                {
+                    deriveSource = "old-series";
+                }
+            }
+
+            if (string.IsNullOrEmpty(hint))
+            {
+                hint = "column";
+                deriveSource = "default";
+            }
+
+            if (!TryParseType(hint, out xlType, out canonical, out error))
+            {
+                if (!TryParseType("column", out xlType, out canonical, out error))
+                {
+                    return false;
+                }
+
+                deriveSource = "default";
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// 整图 data-chart-type 只铺底：列上已写 data-series-type 的系列不被盖掉。
         /// </summary>
@@ -3393,7 +3575,9 @@ namespace WordAddIn1.PresentationHost
             }
 
             PptHtmlChartFormat useFormat = format ?? new PptHtmlChartFormat();
-            PptHtmlChartGrid useGrid = grid != null && grid.IsPourable ? grid : null;
+            bool htmlWroteType = format != null && !string.IsNullOrWhiteSpace(format.ChartType);
+            bool gridFromHtml = grid != null && grid.IsPourable;
+            PptHtmlChartGrid useGrid = gridFromHtml ? grid : null;
             if (useGrid == null)
             {
                 if (TryRead(oldShape, out PptHtmlChartReadModel model, out _)
@@ -3402,12 +3586,6 @@ namespace WordAddIn1.PresentationHost
                     && model.Grid.IsPourable)
                 {
                     useGrid = model.Grid;
-                    if (string.IsNullOrWhiteSpace(useFormat.ChartType)
-                        && model.Format != null
-                        && !string.IsNullOrWhiteSpace(model.Format.ChartType))
-                    {
-                        useFormat.ChartType = model.Format.ChartType;
-                    }
                 }
             }
 
@@ -3418,7 +3596,6 @@ namespace WordAddIn1.PresentationHost
             }
 
             object oldChart = TryGetChart(oldShape);
-            bool htmlWroteType = format != null && !string.IsNullOrWhiteSpace(format.ChartType);
 
             ChartStyleSnap oldSnap = null;
             try
@@ -3438,6 +3615,7 @@ namespace WordAddIn1.PresentationHost
             }
 
             int xlType;
+            string typeFrom;
             if (htmlWroteType)
             {
                 if (!TryParseType(useFormat.ChartType, out xlType, out string canon, out error))
@@ -3447,22 +3625,41 @@ namespace WordAddIn1.PresentationHost
 
                 useFormat.ChartType = canon;
                 PinChartSeriesType(snap, htmlSnap, xlType);
+                typeFrom = "html";
             }
-            else if (!TryReadChartXl(oldChart, out xlType))
+            else if (TryReadChartXl(oldChart, out xlType) && IsBuildableAddChartXl(xlType))
             {
-                if (!TryParseType(useFormat.ChartType, out xlType, out _, out error))
-                {
-                    return false;
-                }
+                useFormat.ChartType = CanonicalTypeFromXl(xlType);
+                typeFrom = "old";
             }
             else
             {
-                useFormat.ChartType = CanonicalTypeFromXl(xlType);
+                int oldXl = 0;
+                TryReadChartXl(oldChart, out oldXl);
+                if (!TryDeriveAddChartBaseType(
+                    gridFromHtml,
+                    useGrid,
+                    oldSnap,
+                    out xlType,
+                    out string canon,
+                    out string deriveSource,
+                    out error))
+                {
+                    return false;
+                }
+
+                useFormat.ChartType = canon;
+                PinChartSeriesType(snap, htmlSnap, xlType);
+                typeFrom = "old-derived:" + deriveSource;
+                if (oldXl == XlCombination)
+                {
+                    StyleLog(warnings, "整图 xlCombination 不可建，推导底型=" + canon + " xl=" + xlType);
+                }
             }
 
             StyleLog(warnings, "重建开始 type=" + (useFormat.ChartType ?? "")
                 + " xl=" + xlType
-                + (htmlWroteType ? " from=html" : " from=old")
+                + " from=" + typeFrom
                 + " box=" + useLeft.ToString("0.#", CultureInfo.InvariantCulture)
                 + "," + useTop.ToString("0.#", CultureInfo.InvariantCulture)
                 + " " + useWidth.ToString("0.#", CultureInfo.InvariantCulture)
