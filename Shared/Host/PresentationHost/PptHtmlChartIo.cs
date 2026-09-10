@@ -3426,9 +3426,21 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 int wantSeries = CountValueColumns(grid);
+                if (!TryEnsureSeriesCount(chart, wantSeries, out error))
+                {
+                    PourLog(warnings, "扩系列失败: " + (error ?? ""));
+                    return false;
+                }
+
                 TrimExtraSeries(chart, wantSeries, out _);
+                if (!TryPourSeriesLikeWord(chart, grid, out error))
+                {
+                    PourLog(warnings, "Series 同步失败: " + (error ?? ""));
+                    return false;
+                }
+
                 EnsureCategoryAxisLabels(chart, grid);
-                PourLog(warnings, "内嵌表灌数后 " + DescribeLiveSeries(chart));
+                PourLog(warnings, "灌数后 " + DescribeLiveSeries(chart));
 
                 if (!TryVerifyPouredGrid(chart, grid, out error, warnings))
                 {
@@ -7957,9 +7969,9 @@ namespace WordAddIn1.PresentationHost
                 PourLog(warnings, "ChartData IsLinked=" + (TryPropString(chartData, "IsLinked") ?? "?"));
                 PourLog(warnings, "打开内嵌簿 " + (TryPropString(workbook, "Name") ?? "?")
                     + " | " + DescribeSheetCells(ws, 5, 2));
-                TryClearSheet(ws);
                 int cols = grid.Columns.Count;
                 int rows = grid.Rows.Count;
+                TryResizeEmbeddedListObject(ws, rows + 1, cols, warnings);
                 for (int c = 0; c < cols; c++)
                 {
                     SetCell(ws, 1, c + 1, grid.Columns[c].Name ?? "");
@@ -7982,22 +7994,12 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
 
-                object range = TryGetDataRange(ws, rows + 1, cols);
+                // PPT 上 Chart.SetSourceData 常失败，不调用；图绑定由后续 Series 同步完成。
+                // 内嵌表仍是读/验真源（I6/I8）。
                 PourLog(warnings, "写入内嵌表 " + DescribeSheetCells(ws, rows + 1, cols)
-                    + " range=" + TryRangeAddress(range));
-                if (range == null)
-                {
-                    error = "无法定位 ChartData 写入区";
-                    return false;
-                }
-
-                if (!TrySetSourceData(chart, range, warnings))
-                {
-                    error = "SetSourceData 失败，内嵌表未绑定到图表";
-                    return false;
-                }
-
-                PourLog(warnings, "ChartData 灌数完成 " + DescribeLiveSeries(chart));
+                    + " range=" + TryRangeAddress(TryGetDataRange(ws, rows + 1, cols))
+                    + "（跳过 SetSourceData，改由 Series 绑定）");
+                PourLog(warnings, "ChartData 写入完成 " + DescribeLiveSeries(chart));
                 HideEmbeddedExcel(excelApp);
                 return true;
             }
@@ -8234,31 +8236,51 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static bool TrySetSourceData(object chart, object range, List<string> warnings = null)
+        /// <summary>
+        /// PPT 内嵌表常锁在 ListObject；先 Resize 再写入，勿整块 Clear 拆表。
+        /// </summary>
+        private static void TryResizeEmbeddedListObject(
+            object ws,
+            int lastRow,
+            int lastCol,
+            List<string> warnings)
         {
-            try
+            if (ws == null || lastRow < 2 || lastCol < 2)
             {
-                WppCom.Invoke(chart, "SetSourceData", range, 2);
-                PourLog(warnings, "SetSourceData(range,2) ok");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                PourLog(warnings, "SetSourceData(range,2) 失败: " + ex.Message);
+                return;
             }
 
             try
             {
-                WppCom.Invoke(chart, "SetSourceData", range);
-                PourLog(warnings, "SetSourceData(range) ok");
-                return true;
+                object lists = WppCom.GetProperty(ws, "ListObjects");
+                if (lists == null)
+                {
+                    return;
+                }
+
+                int count = Convert.ToInt32(WppCom.GetProperty(lists, "Count"));
+                if (count < 1)
+                {
+                    return;
+                }
+
+                object lo = WppCom.GetIndexed(lists, 1);
+                string corner = ColLetter(lastCol) + lastRow.ToString(CultureInfo.InvariantCulture);
+                object resizeRange = TryGetExcelRange(ws, "A1", corner)
+                    ?? TryGetExcelRange(ws, "A1:" + corner, null);
+                if (resizeRange == null)
+                {
+                    PourLog(warnings, "ListObject Resize 跳过：无法构造范围 A1:" + corner);
+                    return;
+                }
+
+                WppCom.Invoke(lo, "Resize", resizeRange);
+                PourLog(warnings, "ListObject Resize A1:" + corner + " ok");
             }
             catch (Exception ex)
             {
-                PourLog(warnings, "SetSourceData(range) 失败: " + ex.Message);
+                PourLog(warnings, "ListObject Resize 失败: " + ex.Message);
             }
-
-            return false;
         }
 
         private static object GetSeries(object chart, int index)
