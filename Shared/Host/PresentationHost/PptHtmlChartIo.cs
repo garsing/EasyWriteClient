@@ -3471,7 +3471,7 @@ namespace WordAddIn1.PresentationHost
             finally
             {
                 HideEmbeddedExcel(excelApp);
-                TryHideChartExcel(chart);
+                DismissChartExcelUiForChart(chart);
             }
         }
 
@@ -3720,8 +3720,7 @@ namespace WordAddIn1.PresentationHost
                 StyleLog(warnings, "回读新图异常: " + ex.Message);
             }
 
-            TryHideChartExcel(newChart);
-            DismissChartExcelUi();
+            DismissChartExcelUiForChart(newChart);
             TryDelete(oldShape);
             warnings?.Add("已按旧图属性新建图表（HTML 未写的属性用快照补上）");
             if (!string.IsNullOrEmpty(EasyWriteLog.CurrentLogPath))
@@ -6696,6 +6695,7 @@ namespace WordAddIn1.PresentationHost
                 chartStyle = htmlStyle;
             }
 
+            PrepareChartExcelUiSuppression();
             try
             {
                 PourLog(warnings, "即将 AddChart2 style=" + chartStyle
@@ -6758,6 +6758,7 @@ namespace WordAddIn1.PresentationHost
 
             PourLog(warnings, "建图后取 Chart " + (chart == null ? "null" : "ok")
                 + " | " + DescribeLiveSeries(chart));
+            DismissChartExcelUiForChart(chart);
             try
             {
                 if (!TryPourGrid(chart, grid, out error, warnings))
@@ -6790,7 +6791,7 @@ namespace WordAddIn1.PresentationHost
             }
             finally
             {
-                TryHideChartExcel(chart);
+                DismissChartExcelUiForChart(chart);
             }
         }
 
@@ -7452,23 +7453,52 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
+        /// 建/灌 chart 前先把已知的图表 Excel 窗藏起来，减轻 AddChart2 闪窗。
+        /// </summary>
+        private static void PrepareChartExcelUiSuppression()
+        {
+            TryHidePowerPointChartExcelWindows();
+        }
+
+        /// <summary>
+        /// 单次 chart 操作后：藏 COM + 关 HWND；AddChart2 常在返回后才画出编辑框，须轮询。
+        /// </summary>
+        private static void DismissChartExcelUiForChart(object chart)
+        {
+            TryHideChartExcel(chart);
+            DismissChartExcelUi();
+        }
+
+        private static bool TryGetEmbeddedExcelApp(object chart, out object excelApp)
+        {
+            excelApp = null;
+            if (chart == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                object chartData = WppCom.GetProperty(chart, "ChartData");
+                object workbook = chartData == null ? null : WppCom.GetProperty(chartData, "Workbook");
+                excelApp = workbook == null ? null : WppCom.GetProperty(workbook, "Application");
+                return excelApp != null;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
         /// 藏图表拉起的内嵌 Excel，不 Quit，避免弄坏包内 embeddings。
         /// COM Visible=false 常只藏内容，PowerPoint 会留下空白编辑框，须再关 HWND。
         /// </summary>
         private static void TryHideChartExcel(object chart)
         {
-            if (chart != null)
+            if (TryGetEmbeddedExcelApp(chart, out object excelApp))
             {
-                try
-                {
-                    object chartData = WppCom.GetProperty(chart, "ChartData");
-                    object workbook = chartData == null ? null : WppCom.GetProperty(chartData, "Workbook");
-                    object excelApp = workbook == null ? null : WppCom.GetProperty(workbook, "Application");
-                    HideEmbeddedExcel(excelApp);
-                }
-                catch (Exception)
-                {
-                }
+                HideEmbeddedExcel(excelApp);
             }
 
             TryHidePowerPointChartExcelWindows();
@@ -7731,7 +7761,6 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 PourLog(warnings, "ChartData IsLinked=" + (TryPropString(chartData, "IsLinked") ?? "?"));
-                TryInvoke(chartData, "Activate");
                 object workbook = WppCom.GetProperty(chartData, "Workbook");
                 if (workbook == null)
                 {
@@ -7740,7 +7769,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 excelApp = WppCom.GetProperty(workbook, "Application");
-                SuppressExcel(excelApp);
+                HideEmbeddedExcel(excelApp);
                 object sheets = WppCom.GetProperty(workbook, "Worksheets");
                 object ws = WppCom.GetIndexed(sheets, 1);
                 if (ws == null)
@@ -7793,6 +7822,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 PourLog(warnings, "ChartData 结束 " + DescribeLiveSeries(chart));
+                HideEmbeddedExcel(excelApp);
                 return true;
             }
             catch (Exception ex)
@@ -8044,7 +8074,6 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                TryInvoke(chartData, "Activate");
                 object workbook = WppCom.GetProperty(chartData, "Workbook");
                 if (workbook == null)
                 {
@@ -8053,7 +8082,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 excelApp = WppCom.GetProperty(workbook, "Application");
-                SuppressExcel(excelApp);
+                HideEmbeddedExcel(excelApp);
                 object sheets = WppCom.GetProperty(workbook, "Worksheets");
                 object ws = WppCom.GetIndexed(sheets, 1);
                 if (ws == null)
@@ -8101,7 +8130,7 @@ namespace WordAddIn1.PresentationHost
             finally
             {
                 HideEmbeddedExcel(excelApp);
-                TryHideChartExcel(chart);
+                DismissChartExcelUiForChart(chart);
             }
         }
 
