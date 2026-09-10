@@ -43,6 +43,15 @@ namespace WordAddIn1.PresentationHost
 
         private static readonly HashSet<string> AllowedFields = BuildAllowedFields();
 
+        /// <summary>
+        /// 命中叶子始终写出的身份字段（D10）。允许写进 fields，投影时本就必带，当作无操作，避免模型误报「未知名」。
+        /// </summary>
+        private static readonly HashSet<string> AlwaysEmittedFieldNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "ShapeId",
+            "data-shape-type"
+        };
+
         private static HashSet<string> BuildAllowedFields()
         {
             var set = new HashSet<string>(StringComparer.Ordinal)
@@ -113,7 +122,10 @@ namespace WordAddIn1.PresentationHost
                 "data-chart-area-color",
                 "data-overlap",
                 "data-plot-box",
-                "data-plot-inside"
+                "data-plot-inside",
+                // 必出身份字段（写进 fields 不报错）
+                "ShapeId",
+                "data-shape-type"
             };
 
             string[] axisPrefixes = { "data-axis-x", "data-axis-y", "data-axis-y2" };
@@ -1039,6 +1051,13 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                // 常见误写：query 的 shape_id / 连字符写法 → 归一成必出 ShapeId
+                if (string.Equals(name, "shape_id", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(name, "shape-id", StringComparison.OrdinalIgnoreCase))
+                {
+                    name = "ShapeId";
+                }
+
                 if (!AllowedFields.Contains(name))
                 {
                     error = "fields 含未知名：" + name;
@@ -1047,6 +1066,12 @@ namespace WordAddIn1.PresentationHost
 
                 if (!seen.Add(name))
                 {
+                    // 必出字段及其别名重复：忽略，不报错（模型常把 ShapeId 写两遍）
+                    if (AlwaysEmittedFieldNames.Contains(name))
+                    {
+                        continue;
+                    }
+
                     error = "fields 不要重复：" + name;
                     return false;
                 }
