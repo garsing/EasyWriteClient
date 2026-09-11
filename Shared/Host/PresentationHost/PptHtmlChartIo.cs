@@ -786,7 +786,7 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
-        /// 图例/标题/标签/网格：稿写了该类属性且非显式关 → 开；显式关 → 关；完全未提 → 跟旧图。
+        /// 图例/标题/标签/网格/主轴显隐：稿写了该类属性且非显式关 → 开；显式关 → 关；完全未提 → 跟旧图。
         /// </summary>
         private static void EnsureDisplaySwitches(
             ChartStyleSnap oldSnap,
@@ -804,6 +804,164 @@ namespace WordAddIn1.PresentationHost
             EnsureTitleSwitch(oldSnap, htmlSnap, format, snap, warnings);
             EnsureDataLabelSwitches(oldSnap, htmlSnap, format, snap, warnings);
             EnsureGridlineSwitch(oldSnap, htmlSnap, format, snap, warnings);
+            EnsureAxisVisibilitySwitches(oldSnap, htmlSnap, format, snap, warnings);
+        }
+
+        /// <summary>
+        /// 主轴显隐：显式 visible=false → 关；稿写了该轴任一属性且非显式关 → 开；完全未提 → 跟旧图 Deleted。
+        /// 次轴有无仍由 EnsureReplaceAxisStructure 听系列挂 y2 / 稿 y2-visible，不走本套。
+        /// 必须在贴白名单前调用，避免旧刻度色被补进 snap 后误判成「写了皮」。
+        /// </summary>
+        private static void EnsureAxisVisibilitySwitches(
+            ChartStyleSnap oldSnap,
+            ChartStyleSnap htmlSnap,
+            PptHtmlChartFormat format,
+            ChartStyleSnap snap,
+            List<string> warnings)
+        {
+            if (snap == null)
+            {
+                return;
+            }
+
+            if (snap.Category == null)
+            {
+                snap.Category = new AxisStyleSnap();
+            }
+
+            if (snap.Value == null)
+            {
+                snap.Value = new AxisStyleSnap();
+            }
+
+            EnsureOnePrimaryAxisVisibility(
+                oldSnap != null ? oldSnap.Category : null,
+                htmlSnap != null ? htmlSnap.Category : null,
+                format,
+                forCategory: true,
+                dest: snap.Category,
+                warnings: warnings);
+
+            EnsureOnePrimaryAxisVisibility(
+                oldSnap != null ? oldSnap.Value : null,
+                htmlSnap != null ? htmlSnap.Value : null,
+                format,
+                forCategory: false,
+                dest: snap.Value,
+                warnings: warnings);
+        }
+
+        private static void EnsureOnePrimaryAxisVisibility(
+            AxisStyleSnap oldAx,
+            AxisStyleSnap htmlAx,
+            PptHtmlChartFormat format,
+            bool forCategory,
+            AxisStyleSnap dest,
+            List<string> warnings)
+        {
+            if (dest == null)
+            {
+                return;
+            }
+
+            PptHtmlAxisExtras extras = null;
+            bool formatMentioned = false;
+            if (format != null)
+            {
+                if (forCategory)
+                {
+                    extras = format.AxisXStyle;
+                    formatMentioned = AxisExtrasHasContent(extras)
+                        || format.AxisX != null
+                        || !string.IsNullOrWhiteSpace(format.AxisXType)
+                        || !string.IsNullOrWhiteSpace(format.AxisXFormat)
+                        || !string.IsNullOrWhiteSpace(format.AxisXTickCount)
+                        || !string.IsNullOrWhiteSpace(format.AxisXTickSpacing)
+                        || !string.IsNullOrWhiteSpace(format.AxisXBetween);
+                }
+                else
+                {
+                    extras = format.AxisYStyle;
+                    formatMentioned = AxisExtrasHasContent(extras)
+                        || format.AxisY != null
+                        || !string.IsNullOrWhiteSpace(format.AxisYMin)
+                        || !string.IsNullOrWhiteSpace(format.AxisYMax)
+                        || !string.IsNullOrWhiteSpace(format.AxisYMajorUnit);
+                }
+            }
+
+            bool explicitOff = extras != null
+                && !string.IsNullOrWhiteSpace(extras.Visible)
+                && !IsTrue(extras.Visible);
+
+            bool htmlMentioned = formatMentioned
+                || HtmlAxisSnapMentionsVisibility(htmlAx);
+
+            string axisName = forCategory ? "横轴" : "纵轴";
+            if (explicitOff)
+            {
+                dest.Deleted = true;
+                StyleLog(warnings, axisName + "显隐=关（稿显式 visible=false）");
+                return;
+            }
+
+            if (htmlMentioned)
+            {
+                dest.Deleted = false;
+                StyleLog(warnings, axisName + "显隐=开（稿写了轴属性）");
+                return;
+            }
+
+            // 跟旧图：仅当旧图明确 Deleted=true 才继续藏；否则显示
+            dest.Deleted = oldAx != null && oldAx.Deleted == true;
+            StyleLog(warnings, axisName + "显隐="
+                + (dest.Deleted == true ? "关" : "开")
+                + "（跟旧图）");
+        }
+
+        private static bool AxisExtrasHasContent(PptHtmlAxisExtras extras)
+        {
+            if (extras == null)
+            {
+                return false;
+            }
+
+            return !string.IsNullOrWhiteSpace(extras.Visible)
+                || !string.IsNullOrWhiteSpace(extras.TickFont)
+                || !string.IsNullOrWhiteSpace(extras.TickColor)
+                || !string.IsNullOrWhiteSpace(extras.TickSize)
+                || !string.IsNullOrWhiteSpace(extras.TickPosition)
+                || !string.IsNullOrWhiteSpace(extras.MajorTick)
+                || !string.IsNullOrWhiteSpace(extras.MinorTick)
+                || !string.IsNullOrWhiteSpace(extras.Format)
+                || !string.IsNullOrWhiteSpace(extras.Grid)
+                || !string.IsNullOrWhiteSpace(extras.GridColor)
+                || !string.IsNullOrWhiteSpace(extras.Line)
+                || !string.IsNullOrWhiteSpace(extras.LineWeight);
+        }
+
+        private static bool HtmlAxisSnapMentionsVisibility(AxisStyleSnap ax)
+        {
+            if (ax == null)
+            {
+                return false;
+            }
+
+            return ax.Deleted.HasValue
+                || ax.HasTitle.HasValue
+                || !string.IsNullOrEmpty(ax.Title)
+                || !string.IsNullOrEmpty(ax.TickFontName)
+                || ax.TickFontColor.HasValue
+                || ax.TickFontSize.HasValue
+                || ax.TickLabelPosition.HasValue
+                || ax.MajorTickMark.HasValue
+                || ax.MinorTickMark.HasValue
+                || !string.IsNullOrEmpty(ax.NumberFormat)
+                || ax.HasMajorGridlines.HasValue
+                || ax.MajorGridlineRgb.HasValue
+                || ax.LineVisible.HasValue
+                || ax.LineRgb.HasValue
+                || ax.LineWeight.HasValue;
         }
 
         private static void EnsureLegendSwitch(
@@ -1155,7 +1313,7 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
-        /// 轴：结构（Deleted/标题/网格开闭/格式）只听 HTML；皮从旧图补。
+        /// 轴皮从旧图补；主轴 Deleted 由 EnsureAxisVisibilitySwitches 推断，此处不改结构。
         /// </summary>
         private static AxisStyleSnap MergeAxisAppearance(AxisStyleSnap oldAx, AxisStyleSnap htmlAx)
         {
@@ -1324,6 +1482,7 @@ namespace WordAddIn1.PresentationHost
 
         /// <summary>
         /// 有无次轴：听系列挂 y2 或稿 data-axis-y2-visible；不听旧图 Deleted。
+        /// 主轴显隐已由 EnsureAxisVisibilitySwitches 推断，此处不再把 Category/Value 的 null 打成 false。
         /// </summary>
         private static void EnsureReplaceAxisStructure(
             ChartStyleSnap snap,
@@ -1356,14 +1515,14 @@ namespace WordAddIn1.PresentationHost
                 htmlY2Visible = IsTrue(format.AxisY2Style.Visible);
             }
 
-            if (snap.Category != null && snap.Category.Deleted == null)
+            if (snap.Category == null)
             {
-                snap.Category.Deleted = false;
+                snap.Category = new AxisStyleSnap();
             }
 
-            if (snap.Value != null && snap.Value.Deleted == null)
+            if (snap.Value == null)
             {
-                snap.Value.Deleted = false;
+                snap.Value = new AxisStyleSnap();
             }
 
             if (htmlY2Visible == true || needY2)
