@@ -1,10 +1,12 @@
 using System;
+using WordAddIn1.OpenFiles;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 
 namespace WordAddIn1
 {
     public sealed class PptChannel : IOperationChannel
     {
+        private readonly object _gate = new object();
         private PowerPoint.Presentation _presentation;
         private string _filePath;
 
@@ -43,26 +45,65 @@ namespace WordAddIn1
 
         public void UpdatePresentation(PowerPoint.Presentation presentation, string filePath = null)
         {
-            _presentation = presentation ?? throw new ArgumentNullException(nameof(presentation));
-            string next = WordChannel.NormalizePath(filePath) ?? TryReadFullName(presentation);
-            if (!string.IsNullOrEmpty(next))
+            if (presentation == null)
             {
-                _filePath = next;
+                throw new ArgumentNullException(nameof(presentation));
+            }
+
+            PowerPoint.Presentation old = null;
+            lock (_gate)
+            {
+                if (!ReferenceEquals(_presentation, presentation))
+                {
+                    old = _presentation;
+                    _presentation = presentation;
+                }
+
+                string next = WordChannel.NormalizePath(filePath) ?? TryReadFullName(presentation);
+                if (!string.IsNullOrEmpty(next))
+                {
+                    _filePath = next;
+                }
+            }
+
+            // 探测器换 RCW 时只减一次引用；FinalRelease 容易拆掉仍被打开路径持有的同 COM
+            ComRelease.ReleaseOnce(old);
+        }
+
+        /// <summary>渠道摘掉时释放 Presentation RCW（对齐 WppChannel），避免钉住无窗空壳。</summary>
+        public void ReleaseCom()
+        {
+            PowerPoint.Presentation presentation;
+            lock (_gate)
+            {
+                presentation = _presentation;
+                _presentation = null;
+            }
+
+            if (presentation != null)
+            {
+                ComRelease.Safe(presentation);
             }
         }
 
         public bool TryGetLivePresentation(out PowerPoint.Presentation presentation)
         {
             presentation = null;
-            if (_presentation == null)
+            PowerPoint.Presentation current;
+            lock (_gate)
+            {
+                current = _presentation;
+            }
+
+            if (current == null)
             {
                 return false;
             }
 
             try
             {
-                var _ = _presentation.Name;
-                presentation = _presentation;
+                var _ = current.Name;
+                presentation = current;
                 return true;
             }
             catch (Exception)
@@ -97,20 +138,26 @@ namespace WordAddIn1
 
             try
             {
-                presentation.Windows[1].Activate();
+                PowerPointApplicationResolver.EnsureVisible(presentation.Application);
+                PowerPointApplicationResolver.EnsurePresentationHasWindow(presentation);
+                if (presentation.Windows.Count >= 1)
+                {
+                    presentation.Windows[1].Activate();
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                presentation.Application.Activate();
                 return true;
             }
             catch (Exception)
             {
-                try
-                {
-                    presentation.Application.Activate();
-                    return true;
-                }
-                catch (Exception)
-                {
-                    return false;
-                }
+                return false;
             }
         }
 

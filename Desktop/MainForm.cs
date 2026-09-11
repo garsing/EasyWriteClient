@@ -249,6 +249,7 @@ namespace EasyWriteClient.Desktop
 
                 WordHost.Shutdown();
                 ExcelHost.Shutdown();
+                PowerPointHost.Shutdown();
                 OfficeStaScheduler.Shutdown();
             };
             ApplyWindowRegion();

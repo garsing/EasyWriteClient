@@ -7,6 +7,7 @@ namespace WordAddIn1
     /// <summary>
     /// 解析 PowerPoint.Application：缓存 → GetActiveObject → 可选 new。
     /// 跨程序集公开 API 用 object，避免 Desktop 无 PowerPoint Interop 时 CS1748。
+    /// 不 Quit 用户 PowerPoint；关窗后清缓存 / 补文档窗，避免「有稿无窗」空壳。
     /// </summary>
     public static class PowerPointApplicationResolver
     {
@@ -37,6 +38,39 @@ namespace WordAddIn1
                 }
 
                 _hosted = typed;
+            }
+        }
+
+        /// <summary>
+        /// 无打开演示时清掉托管缓存（不 Quit）。对齐 Excel Attach(null) 的空闲释放意图。
+        /// </summary>
+        public static void ReleaseHostedIfIdle()
+        {
+            if (OfficeStaScheduler.ShouldHop)
+            {
+                OfficeStaScheduler.Invoke(ReleaseHostedIfIdle);
+                return;
+            }
+
+            lock (Gate)
+            {
+                if (_hosted == null)
+                {
+                    return;
+                }
+
+                try
+                {
+                    if (_hosted.Presentations.Count > 0)
+                    {
+                        return;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                _hosted = null;
             }
         }
 
@@ -168,6 +202,14 @@ namespace WordAddIn1
             EnsureVisibleCore(application as PowerPoint.Application);
         }
 
+        /// <summary>
+        /// COM 持有 Presentation 但 Windows=0 时补文档窗（易写关窗后空壳的兜底）。
+        /// </summary>
+        public static void EnsurePresentationHasWindow(object presentation)
+        {
+            EnsurePresentationHasWindowCore(presentation as PowerPoint.Presentation);
+        }
+
         private static void EnsureVisibleCore(PowerPoint.Application application)
         {
             if (application == null)
@@ -191,6 +233,56 @@ namespace WordAddIn1
                 }
             }
 
+            try
+            {
+                foreach (PowerPoint.Presentation presentation in application.Presentations)
+                {
+                    EnsurePresentationHasWindowCore(presentation);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void EnsurePresentationHasWindowCore(PowerPoint.Presentation presentation)
+        {
+            if (presentation == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (presentation.Windows != null && presentation.Windows.Count > 0)
+                {
+                    return;
+                }
+
+                presentation.NewWindow();
+                try
+                {
+                    EasyWriteDiagnostics.Log(
+                        DebugCategory.OpenFiles,
+                        "[PowerPointApplicationResolver] NewWindow for windowless presentation "
+                            + (presentation.Name ?? ""));
+                }
+                catch (Exception)
+                {
+                }
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    EasyWriteDiagnostics.Log(
+                        DebugCategory.OpenFiles,
+                        "[PowerPointApplicationResolver] NewWindow failed: " + ex.Message);
+                }
+                catch (Exception)
+                {
+                }
+            }
         }
     }
 }

@@ -638,6 +638,10 @@ namespace WordAddIn1
             {
                 wppRelease.ReleaseCom();
             }
+            else if (ch is PptChannel pptRelease)
+            {
+                pptRelease.ReleaseCom();
+            }
 
             return true;
         }
@@ -671,8 +675,10 @@ namespace WordAddIn1
 
         public static void ClearAll()
         {
+            List<IOperationChannel> snapshot;
             lock (Gate)
             {
+                snapshot = new List<IOperationChannel>(Channels.Values);
                 Channels.Clear();
                 KeyToChannelId.Clear();
                 DocUuidToChannelId.Clear();
@@ -682,6 +688,23 @@ namespace WordAddIn1
                 _nextP = 0;
                 _nextB = 0;
                 _defaultChannelId = null;
+            }
+
+            for (int i = 0; i < snapshot.Count; i++)
+            {
+                IOperationChannel ch = snapshot[i];
+                if (ch is EtChannel etRelease)
+                {
+                    etRelease.ReleaseCom();
+                }
+                else if (ch is WppChannel wppRelease)
+                {
+                    wppRelease.ReleaseCom();
+                }
+                else if (ch is PptChannel pptRelease)
+                {
+                    pptRelease.ReleaseCom();
+                }
             }
         }
 

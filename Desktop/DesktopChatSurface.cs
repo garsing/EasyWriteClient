@@ -202,7 +202,7 @@ namespace EasyWriteClient.Desktop
 
         private void OnPowerPointApplicationResolved(object powerPointApp)
         {
-            PowerPointApplicationResolver.Attach(powerPointApp);
+            PowerPointHost.Attach(powerPointApp);
             try
             {
                 _openFilesMonitor?.TryAttachNow();

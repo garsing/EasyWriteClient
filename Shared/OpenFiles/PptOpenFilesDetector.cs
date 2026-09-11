@@ -112,6 +112,9 @@ namespace WordAddIn1.OpenFiles
                             continue;
                         }
 
+                        // 关窗后 COM 仍握着稿但 Windows=0 → 空壳；探测时补文档窗
+                        PowerPointApplicationResolver.EnsurePresentationHasWindow(presentation);
+
                         EnsureChannel(presentation, item);
                         int key = RuntimeHelpers.GetHashCode(presentation);
                         lock (_gate)
@@ -141,6 +144,7 @@ namespace WordAddIn1.OpenFiles
                 EasyWriteDiagnostics.Log(DebugCategory.OpenFiles,
                     "[PptOpenFilesDetector] no presentations — detach");
                 MarkDetached();
+                PowerPointApplicationResolver.ReleaseHostedIfIdle();
             }
 
             return result;
@@ -436,8 +440,12 @@ namespace WordAddIn1.OpenFiles
             }
 
             _subscribed = false;
+            PowerPoint.Application app = _app;
             _app = null;
             _rcwToId.Clear();
+
+            // 只 Release 一次：Resolver 可能仍缓存同 Application，勿 FinalRelease
+            ComRelease.ReleaseOnce(app);
 
             if (raiseDetached)
             {
