@@ -785,7 +785,7 @@ namespace WordAddIn1.PresentationHost
                 return null;
             }
 
-            PptHtmlChartIo.MarkAxisVisibilityMentions(dest);
+            PptHtmlChartIo.MarkDisplaySwitchMentions(dest);
             return dest;
         }
 

@@ -57,6 +57,11 @@ namespace WordAddIn1.PresentationHost
         public string LabelColor { get; set; }
 
         public string LabelFormat { get; set; }
+
+        /// <summary>
+        /// 解析层钉死：该列是否写过与「数据标签开关」相关的支持属性。
+        /// </summary>
+        public bool DataLabelsMentioned { get; set; }
     }
 
     internal sealed class PptHtmlAxisExtras
@@ -190,7 +195,7 @@ namespace WordAddIn1.PresentationHost
 
         /// <summary>
         /// 解析层钉死：稿是否写过与「横轴显隐」相关的支持属性。
-        /// 合并时只读此标志，禁止从 htmlSnap 反推（易被网格等开关误伤）。
+        /// 合并时只读此标志，禁止从 htmlSnap 反推（易被其它开关误伤）。
         /// </summary>
         public bool AxisXVisibilityMentioned { get; set; }
 
@@ -198,6 +203,18 @@ namespace WordAddIn1.PresentationHost
         /// 解析层钉死：稿是否写过与「纵轴显隐」相关的支持属性。
         /// </summary>
         public bool AxisYVisibilityMentioned { get; set; }
+
+        /// <summary>解析层：是否写过与图例开关相关的支持属性。</summary>
+        public bool LegendMentioned { get; set; }
+
+        /// <summary>解析层：是否写过与图标题开关相关的支持属性。</summary>
+        public bool TitleMentioned { get; set; }
+
+        /// <summary>解析层：图级是否写过与数据标签开关相关的支持属性。</summary>
+        public bool DataLabelsMentioned { get; set; }
+
+        /// <summary>解析层：是否写过与网格开闭相关的支持属性。</summary>
+        public bool GridlinesMentioned { get; set; }
     }
 
     internal sealed class PptHtmlChartReadModel
@@ -364,6 +381,12 @@ namespace WordAddIn1.PresentationHost
 
             public string DataLabelNumberFormat { get; set; }
 
+            /// <summary>解析层：该系列列是否写过与数据标签开关相关的支持属性。</summary>
+            public bool DataLabelsMentioned { get; set; }
+
+            /// <summary>解析层：列上显式 data-show-data-labels=false。</summary>
+            public bool DataLabelsExplicitOff { get; set; }
+
             /// <summary>饼图等扇区色在 Point 上；Series.Fill 常拍失败。</summary>
             public List<FillSnap> PointFills { get; set; }
         }
@@ -489,7 +512,7 @@ namespace WordAddIn1.PresentationHost
                 format.Gridlines = snap.Value.HasMajorGridlines.Value ? "true" : "false";
             }
 
-            MarkAxisVisibilityMentions(format);
+            MarkDisplaySwitchMentions(format);
         }
 
         private static void ProjectSnapToColumns(PptHtmlChartGrid grid, ChartStyleSnap snap)
@@ -620,6 +643,8 @@ namespace WordAddIn1.PresentationHost
                 {
                     col.LabelFormat = one.DataLabelNumberFormat;
                 }
+
+                MarkColumnDataLabelMentions(col);
             }
         }
 
@@ -785,8 +810,8 @@ namespace WordAddIn1.PresentationHost
                 snap.Series = new List<SeriesStyleSnap>();
             }
 
-            // 展示开关必须在白名单之前：snap 常与 htmlSnap 同引用，贴皮会补旧图例字色等，误判成「稿写了皮」
-            EnsureDisplaySwitches(oldSnap, htmlSnap, format, snap, warnings);
+            // 展示开关必须在白名单之前；「是否提到」已由解析层 MarkDisplaySwitchMentions 钉死。
+            EnsureDisplaySwitches(oldSnap, format, snap, warnings);
 
             if (oldSnap != null)
             {
@@ -799,11 +824,11 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
-        /// 图例/标题/标签/网格/主轴显隐：稿写了该类属性且非显式关 → 开；显式关 → 关；完全未提 → 跟旧图。
+        /// 图例/标题/标签/网格/主轴显隐：解析层 Mentioned + 显式关 → 开/关；完全未提 → 跟旧图。
+        /// 「是否提到」只信 format / 列解析标志，不从 htmlSnap 反推。
         /// </summary>
         private static void EnsureDisplaySwitches(
             ChartStyleSnap oldSnap,
-            ChartStyleSnap htmlSnap,
             PptHtmlChartFormat format,
             ChartStyleSnap snap,
             List<string> warnings)
@@ -813,11 +838,11 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            EnsureLegendSwitch(oldSnap, htmlSnap, format, snap, warnings);
-            EnsureTitleSwitch(oldSnap, htmlSnap, format, snap, warnings);
-            EnsureDataLabelSwitches(oldSnap, htmlSnap, format, snap, warnings);
+            EnsureLegendSwitch(oldSnap, format, snap, warnings);
+            EnsureTitleSwitch(oldSnap, format, snap, warnings);
+            EnsureDataLabelSwitches(oldSnap, format, snap, warnings);
             EnsureAxisVisibilitySwitches(oldSnap, format, snap, warnings);
-            EnsureGridlineSwitch(oldSnap, htmlSnap, format, snap, warnings);
+            EnsureGridlineSwitch(oldSnap, format, snap, warnings);
         }
 
         /// <summary>
@@ -916,18 +941,69 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
-        /// 解析层：按「支持属性 ↔ 主轴显隐开关」登记表，钉死 AxisX/YVisibilityMentioned。
-        /// 系列 th 的 data-axis=y|y2、图级 data-gridlines 不进本表（挂轴 / 网格另有开关）。
+        /// 解析层：按「支持属性 ↔ 展示开关」登记表钉死各 Mentioned 标志。
+        /// 合并 Ensure* 只读这些标志，禁止从 htmlSnap 反推。
         /// </summary>
-        public static void MarkAxisVisibilityMentions(PptHtmlChartFormat format)
+        public static void MarkDisplaySwitchMentions(PptHtmlChartFormat format)
         {
             if (format == null)
             {
                 return;
             }
 
+            // 图例：data-legend、data-legend-font-color
+            format.LegendMentioned = format.Legend != null
+                || !string.IsNullOrWhiteSpace(format.LegendFontColor);
+
+            // 标题：data-title（含空串=显式关）、字色/字号/粗体
+            format.TitleMentioned = format.Title != null
+                || !string.IsNullOrWhiteSpace(format.TitleFontColor)
+                || !string.IsNullOrWhiteSpace(format.TitleFontSize)
+                || !string.IsNullOrWhiteSpace(format.TitleFontBold);
+
+            // 图级数据标签：data-show-data-labels / show-value / show-percentage
+            format.DataLabelsMentioned = !string.IsNullOrWhiteSpace(format.ShowDataLabels)
+                || !string.IsNullOrWhiteSpace(format.ShowValue)
+                || !string.IsNullOrWhiteSpace(format.ShowPercentage);
+
+            // 网格：data-gridlines、轴 extras 的 grid/grid-color
+            format.GridlinesMentioned = !string.IsNullOrWhiteSpace(format.Gridlines)
+                || AxisExtrasMentionsGrid(format.AxisYStyle)
+                || AxisExtrasMentionsGrid(format.AxisXStyle)
+                || AxisExtrasMentionsGrid(format.AxisY2Style);
+
             format.AxisXVisibilityMentioned = MentionsPrimaryAxisXVisibility(format);
             format.AxisYVisibilityMentioned = MentionsPrimaryAxisYVisibility(format);
+        }
+
+        /// <summary>兼容旧调用名；等价 MarkDisplaySwitchMentions。</summary>
+        public static void MarkAxisVisibilityMentions(PptHtmlChartFormat format)
+        {
+            MarkDisplaySwitchMentions(format);
+        }
+
+        /// <summary>解析层：列上与数据标签开关相关的支持属性。</summary>
+        public static void MarkColumnDataLabelMentions(PptHtmlChartColumn col)
+        {
+            if (col == null)
+            {
+                return;
+            }
+
+            if (string.Equals(col.Role, "category", StringComparison.OrdinalIgnoreCase))
+            {
+                col.DataLabelsMentioned = false;
+                return;
+            }
+
+            col.DataLabelsMentioned = !string.IsNullOrWhiteSpace(col.ShowDataLabels)
+                || !string.IsNullOrWhiteSpace(col.ShowValue)
+                || !string.IsNullOrWhiteSpace(col.ShowPercentage)
+                || !string.IsNullOrWhiteSpace(col.LabelPosition)
+                || !string.IsNullOrWhiteSpace(col.LabelFont)
+                || !string.IsNullOrWhiteSpace(col.LabelSize)
+                || !string.IsNullOrWhiteSpace(col.LabelColor)
+                || !string.IsNullOrWhiteSpace(col.LabelFormat);
         }
 
         private static bool MentionsPrimaryAxisXVisibility(PptHtmlChartFormat format)
@@ -977,21 +1053,15 @@ namespace WordAddIn1.PresentationHost
 
         private static void EnsureLegendSwitch(
             ChartStyleSnap oldSnap,
-            ChartStyleSnap htmlSnap,
             PptHtmlChartFormat format,
             ChartStyleSnap snap,
             List<string> warnings)
         {
-            bool explicitOff = (format != null
-                    && format.Legend != null
-                    && string.Equals(format.Legend.Trim(), "none", StringComparison.OrdinalIgnoreCase))
-                || (htmlSnap != null && htmlSnap.HasLegend == false);
+            bool explicitOff = format != null
+                && format.Legend != null
+                && string.Equals(format.Legend.Trim(), "none", StringComparison.OrdinalIgnoreCase);
 
-            bool htmlMentioned = (format != null && format.Legend != null)
-                || (format != null && !string.IsNullOrWhiteSpace(format.LegendFontColor))
-                || (htmlSnap != null && htmlSnap.HasLegend.HasValue)
-                || (htmlSnap != null && htmlSnap.LegendPosition.HasValue)
-                || (htmlSnap != null && !string.IsNullOrEmpty(htmlSnap.LegendFontColor));
+            bool mentioned = format != null && format.LegendMentioned;
 
             if (explicitOff)
             {
@@ -1000,7 +1070,7 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            if (htmlMentioned)
+            if (mentioned)
             {
                 snap.HasLegend = true;
                 StyleLog(warnings, "图例开关=开（稿写了图例属性）");
@@ -1013,7 +1083,6 @@ namespace WordAddIn1.PresentationHost
 
         private static void EnsureTitleSwitch(
             ChartStyleSnap oldSnap,
-            ChartStyleSnap htmlSnap,
             PptHtmlChartFormat format,
             ChartStyleSnap snap,
             List<string> warnings)
@@ -1022,14 +1091,7 @@ namespace WordAddIn1.PresentationHost
                 && format.Title != null
                 && string.IsNullOrEmpty(format.Title);
 
-            bool htmlMentioned = (format != null && format.Title != null)
-                || (format != null && !string.IsNullOrWhiteSpace(format.TitleFontColor))
-                || (format != null && !string.IsNullOrWhiteSpace(format.TitleFontSize))
-                || (format != null && !string.IsNullOrWhiteSpace(format.TitleFontBold))
-                || (htmlSnap != null && htmlSnap.HasTitle.HasValue)
-                || (htmlSnap != null && !string.IsNullOrEmpty(htmlSnap.TitleFontColor))
-                || (htmlSnap != null && !string.IsNullOrEmpty(htmlSnap.TitleFontSize))
-                || (htmlSnap != null && htmlSnap.TitleFontBold.HasValue);
+            bool mentioned = format != null && format.TitleMentioned;
 
             if (explicitOff)
             {
@@ -1038,7 +1100,7 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            if (htmlMentioned)
+            if (mentioned)
             {
                 snap.HasTitle = true;
                 StyleLog(warnings, "标题开关=开（稿写了标题属性）");
@@ -1051,7 +1113,6 @@ namespace WordAddIn1.PresentationHost
 
         private static void EnsureDataLabelSwitches(
             ChartStyleSnap oldSnap,
-            ChartStyleSnap htmlSnap,
             PptHtmlChartFormat format,
             ChartStyleSnap snap,
             List<string> warnings)
@@ -1064,9 +1125,7 @@ namespace WordAddIn1.PresentationHost
             bool chartLevelOff = format != null
                 && !string.IsNullOrWhiteSpace(format.ShowDataLabels)
                 && !IsTrue(format.ShowDataLabels);
-            bool chartLevelOn = format != null
-                && !string.IsNullOrWhiteSpace(format.ShowDataLabels)
-                && IsTrue(format.ShowDataLabels);
+            bool chartMentioned = format != null && format.DataLabelsMentioned;
 
             for (int i = 0; i < snap.Series.Count; i++)
             {
@@ -1076,32 +1135,8 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
-                SeriesStyleSnap htmlOne = htmlSnap != null
-                    && htmlSnap.Series != null
-                    && i < htmlSnap.Series.Count
-                    ? htmlSnap.Series[i]
-                    : null;
-
-                bool explicitOff = chartLevelOff
-                    || (htmlOne != null && htmlOne.HasDataLabels == false);
-                bool htmlMentioned = chartLevelOn
-                    || chartLevelOff
-                    || (htmlOne != null && htmlOne.HasDataLabels.HasValue)
-                    || (htmlOne != null && htmlOne.ShowValue.HasValue)
-                    || (htmlOne != null && htmlOne.ShowPercentage.HasValue)
-                    || (htmlOne != null && htmlOne.DataLabelPosition.HasValue)
-                    || (htmlOne != null && htmlOne.DataLabelFontColor.HasValue)
-                    || (htmlOne != null && htmlOne.DataLabelFontSize.HasValue)
-                    || (htmlOne != null && !string.IsNullOrEmpty(htmlOne.DataLabelFontName))
-                    || (htmlOne != null && !string.IsNullOrEmpty(htmlOne.DataLabelNumberFormat));
-
-                // 图级写了标签内容开关也算「提到标签」
-                if (!htmlMentioned && format != null
-                    && (!string.IsNullOrWhiteSpace(format.ShowValue)
-                        || !string.IsNullOrWhiteSpace(format.ShowPercentage)))
-                {
-                    htmlMentioned = true;
-                }
+                bool explicitOff = chartLevelOff || one.DataLabelsExplicitOff;
+                bool mentioned = chartMentioned || one.DataLabelsMentioned;
 
                 if (explicitOff)
                 {
@@ -1109,7 +1144,7 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
-                if (htmlMentioned)
+                if (mentioned)
                 {
                     one.HasDataLabels = true;
                     continue;
@@ -1128,7 +1163,6 @@ namespace WordAddIn1.PresentationHost
 
         private static void EnsureGridlineSwitch(
             ChartStyleSnap oldSnap,
-            ChartStyleSnap htmlSnap,
             PptHtmlChartFormat format,
             ChartStyleSnap snap,
             List<string> warnings)
@@ -1141,18 +1175,9 @@ namespace WordAddIn1.PresentationHost
             bool explicitOff = (format != null
                     && !string.IsNullOrWhiteSpace(format.Gridlines)
                     && !IsTrue(format.Gridlines))
-                || AxisExtrasGridOff(format != null ? format.AxisYStyle : null)
-                || (htmlSnap != null
-                    && htmlSnap.Value != null
-                    && htmlSnap.Value.HasMajorGridlines == false);
+                || AxisExtrasGridOff(format != null ? format.AxisYStyle : null);
 
-            bool htmlMentioned = (format != null && !string.IsNullOrWhiteSpace(format.Gridlines))
-                || AxisExtrasMentionsGrid(format != null ? format.AxisYStyle : null)
-                || AxisExtrasMentionsGrid(format != null ? format.AxisXStyle : null)
-                || (htmlSnap != null
-                    && htmlSnap.Value != null
-                    && (htmlSnap.Value.HasMajorGridlines.HasValue
-                        || htmlSnap.Value.MajorGridlineRgb.HasValue));
+            bool mentioned = format != null && format.GridlinesMentioned;
 
             if (explicitOff)
             {
@@ -1161,7 +1186,7 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            if (htmlMentioned)
+            if (mentioned)
             {
                 snap.Value.HasMajorGridlines = true;
                 StyleLog(warnings, "网格开关=开（稿写了网格属性）");
@@ -2072,6 +2097,11 @@ namespace WordAddIn1.PresentationHost
             {
                 one.DataLabelNumberFormat = col.LabelFormat;
             }
+
+            MarkColumnDataLabelMentions(col);
+            one.DataLabelsMentioned = col.DataLabelsMentioned;
+            one.DataLabelsExplicitOff = !string.IsNullOrWhiteSpace(col.ShowDataLabels)
+                && !IsTrue(col.ShowDataLabels);
 
             return one;
         }
@@ -3188,6 +3218,7 @@ namespace WordAddIn1.PresentationHost
                             LabelColor = GetAttr(cells[i], "data-label-color"),
                             LabelFormat = GetAttr(cells[i], "data-label-format")
                         });
+                        MarkColumnDataLabelMentions(columns[columns.Count - 1]);
                     }
 
                     first = false;
@@ -3325,7 +3356,7 @@ namespace WordAddIn1.PresentationHost
                 AxisYStyle = ParseAxisExtras(el, "data-axis-y"),
                 AxisY2Style = ParseAxisExtras(el, "data-axis-y2")
             };
-            MarkAxisVisibilityMentions(format);
+            MarkDisplaySwitchMentions(format);
             return format;
         }
 
