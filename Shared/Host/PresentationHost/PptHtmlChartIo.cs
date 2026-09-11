@@ -1107,8 +1107,10 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
+            // 完全未提：有旧图则跟旧图；新建无旧图 → 默认关（压住 AddChart2 自带标题）
             snap.HasTitle = oldSnap != null && oldSnap.HasTitle == true;
-            StyleLog(warnings, "标题开关=" + (snap.HasTitle == true ? "开" : "关") + "（跟旧图）");
+            StyleLog(warnings, "标题开关=" + (snap.HasTitle == true ? "开" : "关")
+                + (oldSnap == null ? "（新建默认关）" : "（跟旧图）"));
         }
 
         private static void EnsureDataLabelSwitches(
@@ -4152,6 +4154,17 @@ namespace WordAddIn1.PresentationHost
             if (snap.HasTitle.HasValue)
             {
                 WppCom.TrySetProperty(chart, "HasTitle", snap.HasTitle.Value);
+                if (snap.HasTitle.Value == false)
+                {
+                    // 再建后主题盘偶发又开标题，再钉一次关
+                    try
+                    {
+                        WppCom.TrySetProperty(chart, "HasTitle", false);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
             }
 
             bool titleOn = snap.HasTitle == true
@@ -7176,6 +7189,8 @@ namespace WordAddIn1.PresentationHost
                     }
 
                     ChartStyleSnap htmlSnap = SnapFromFormat(format, grid);
+                    // 新建无旧图：展示开关按「未提默认关」，避免 AddChart2 默认 ChartTitle=系列名
+                    EnsureDisplaySwitches(oldSnap: null, format, htmlSnap, warnings);
                     FinishLineChartLayout(chart, xlType, format, warnings);
                     TryApplyStyleSnap(chart, htmlSnap, warnings, grid, format);
                     TryInheritAxisChrome(chart, htmlSnap, warnings);
