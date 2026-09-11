@@ -187,6 +187,17 @@ namespace WordAddIn1.PresentationHost
         public PptHtmlAxisExtras AxisYStyle { get; set; }
 
         public PptHtmlAxisExtras AxisY2Style { get; set; }
+
+        /// <summary>
+        /// 解析层钉死：稿是否写过与「横轴显隐」相关的支持属性。
+        /// 合并时只读此标志，禁止从 htmlSnap 反推（易被网格等开关误伤）。
+        /// </summary>
+        public bool AxisXVisibilityMentioned { get; set; }
+
+        /// <summary>
+        /// 解析层钉死：稿是否写过与「纵轴显隐」相关的支持属性。
+        /// </summary>
+        public bool AxisYVisibilityMentioned { get; set; }
     }
 
     internal sealed class PptHtmlChartReadModel
@@ -477,6 +488,8 @@ namespace WordAddIn1.PresentationHost
             {
                 format.Gridlines = snap.Value.HasMajorGridlines.Value ? "true" : "false";
             }
+
+            MarkAxisVisibilityMentions(format);
         }
 
         private static void ProjectSnapToColumns(PptHtmlChartGrid grid, ChartStyleSnap snap)
@@ -803,18 +816,17 @@ namespace WordAddIn1.PresentationHost
             EnsureLegendSwitch(oldSnap, htmlSnap, format, snap, warnings);
             EnsureTitleSwitch(oldSnap, htmlSnap, format, snap, warnings);
             EnsureDataLabelSwitches(oldSnap, htmlSnap, format, snap, warnings);
+            EnsureAxisVisibilitySwitches(oldSnap, format, snap, warnings);
             EnsureGridlineSwitch(oldSnap, htmlSnap, format, snap, warnings);
-            EnsureAxisVisibilitySwitches(oldSnap, htmlSnap, format, snap, warnings);
         }
 
         /// <summary>
-        /// 主轴显隐：显式 visible=false → 关；稿写了该轴任一属性且非显式关 → 开；完全未提 → 跟旧图 Deleted。
+        /// 主轴显隐：显式 visible=false → 关；解析层 Axis*VisibilityMentioned 且非显式关 → 开；未提 → 跟旧图 Deleted。
         /// 次轴有无仍由 EnsureReplaceAxisStructure 听系列挂 y2 / 稿 y2-visible，不走本套。
-        /// 必须在贴白名单前调用，避免旧刻度色被补进 snap 后误判成「写了皮」。
+        /// 「是否提到」只信 format 解析标志，不读 htmlSnap。
         /// </summary>
         private static void EnsureAxisVisibilitySwitches(
             ChartStyleSnap oldSnap,
-            ChartStyleSnap htmlSnap,
             PptHtmlChartFormat format,
             ChartStyleSnap snap,
             List<string> warnings)
@@ -836,7 +848,6 @@ namespace WordAddIn1.PresentationHost
 
             EnsureOnePrimaryAxisVisibility(
                 oldSnap != null ? oldSnap.Category : null,
-                htmlSnap != null ? htmlSnap.Category : null,
                 format,
                 forCategory: true,
                 dest: snap.Category,
@@ -844,7 +855,6 @@ namespace WordAddIn1.PresentationHost
 
             EnsureOnePrimaryAxisVisibility(
                 oldSnap != null ? oldSnap.Value : null,
-                htmlSnap != null ? htmlSnap.Value : null,
                 format,
                 forCategory: false,
                 dest: snap.Value,
@@ -853,7 +863,6 @@ namespace WordAddIn1.PresentationHost
 
         private static void EnsureOnePrimaryAxisVisibility(
             AxisStyleSnap oldAx,
-            AxisStyleSnap htmlAx,
             PptHtmlChartFormat format,
             bool forCategory,
             AxisStyleSnap dest,
@@ -865,37 +874,24 @@ namespace WordAddIn1.PresentationHost
             }
 
             PptHtmlAxisExtras extras = null;
-            bool formatMentioned = false;
+            bool mentioned = false;
             if (format != null)
             {
                 if (forCategory)
                 {
                     extras = format.AxisXStyle;
-                    formatMentioned = AxisExtrasHasContent(extras)
-                        || format.AxisX != null
-                        || !string.IsNullOrWhiteSpace(format.AxisXType)
-                        || !string.IsNullOrWhiteSpace(format.AxisXFormat)
-                        || !string.IsNullOrWhiteSpace(format.AxisXTickCount)
-                        || !string.IsNullOrWhiteSpace(format.AxisXTickSpacing)
-                        || !string.IsNullOrWhiteSpace(format.AxisXBetween);
+                    mentioned = format.AxisXVisibilityMentioned;
                 }
                 else
                 {
                     extras = format.AxisYStyle;
-                    formatMentioned = AxisExtrasHasContent(extras)
-                        || format.AxisY != null
-                        || !string.IsNullOrWhiteSpace(format.AxisYMin)
-                        || !string.IsNullOrWhiteSpace(format.AxisYMax)
-                        || !string.IsNullOrWhiteSpace(format.AxisYMajorUnit);
+                    mentioned = format.AxisYVisibilityMentioned;
                 }
             }
 
             bool explicitOff = extras != null
                 && !string.IsNullOrWhiteSpace(extras.Visible)
                 && !IsTrue(extras.Visible);
-
-            bool htmlMentioned = formatMentioned
-                || HtmlAxisSnapMentionsVisibility(htmlAx);
 
             string axisName = forCategory ? "横轴" : "纵轴";
             if (explicitOff)
@@ -905,7 +901,7 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            if (htmlMentioned)
+            if (mentioned)
             {
                 dest.Deleted = false;
                 StyleLog(warnings, axisName + "显隐=开（稿写了轴属性）");
@@ -919,7 +915,46 @@ namespace WordAddIn1.PresentationHost
                 + "（跟旧图）");
         }
 
-        private static bool AxisExtrasHasContent(PptHtmlAxisExtras extras)
+        /// <summary>
+        /// 解析层：按「支持属性 ↔ 主轴显隐开关」登记表，钉死 AxisX/YVisibilityMentioned。
+        /// 系列 th 的 data-axis=y|y2、图级 data-gridlines 不进本表（挂轴 / 网格另有开关）。
+        /// </summary>
+        public static void MarkAxisVisibilityMentions(PptHtmlChartFormat format)
+        {
+            if (format == null)
+            {
+                return;
+            }
+
+            format.AxisXVisibilityMentioned = MentionsPrimaryAxisXVisibility(format);
+            format.AxisYVisibilityMentioned = MentionsPrimaryAxisYVisibility(format);
+        }
+
+        private static bool MentionsPrimaryAxisXVisibility(PptHtmlChartFormat format)
+        {
+            return AxisExtrasMentionsVisibilitySwitch(format.AxisXStyle)
+                || !string.IsNullOrWhiteSpace(format.AxisX)
+                || !string.IsNullOrWhiteSpace(format.AxisXType)
+                || !string.IsNullOrWhiteSpace(format.AxisXFormat)
+                || !string.IsNullOrWhiteSpace(format.AxisXTickCount)
+                || !string.IsNullOrWhiteSpace(format.AxisXTickSpacing)
+                || !string.IsNullOrWhiteSpace(format.AxisXBetween);
+        }
+
+        private static bool MentionsPrimaryAxisYVisibility(PptHtmlChartFormat format)
+        {
+            return AxisExtrasMentionsVisibilitySwitch(format.AxisYStyle)
+                || !string.IsNullOrWhiteSpace(format.AxisY)
+                || !string.IsNullOrWhiteSpace(format.AxisYMin)
+                || !string.IsNullOrWhiteSpace(format.AxisYMax)
+                || !string.IsNullOrWhiteSpace(format.AxisYMajorUnit);
+        }
+
+        /// <summary>
+        /// data-axis-{x|y}-* extras 中与主轴显隐相关的支持项：
+        /// visible / tick-* / major|minor-tick / format / grid|grid-color / line|line-weight。
+        /// </summary>
+        private static bool AxisExtrasMentionsVisibilitySwitch(PptHtmlAxisExtras extras)
         {
             if (extras == null)
             {
@@ -938,30 +973,6 @@ namespace WordAddIn1.PresentationHost
                 || !string.IsNullOrWhiteSpace(extras.GridColor)
                 || !string.IsNullOrWhiteSpace(extras.Line)
                 || !string.IsNullOrWhiteSpace(extras.LineWeight);
-        }
-
-        private static bool HtmlAxisSnapMentionsVisibility(AxisStyleSnap ax)
-        {
-            if (ax == null)
-            {
-                return false;
-            }
-
-            return ax.Deleted.HasValue
-                || ax.HasTitle.HasValue
-                || !string.IsNullOrEmpty(ax.Title)
-                || !string.IsNullOrEmpty(ax.TickFontName)
-                || ax.TickFontColor.HasValue
-                || ax.TickFontSize.HasValue
-                || ax.TickLabelPosition.HasValue
-                || ax.MajorTickMark.HasValue
-                || ax.MinorTickMark.HasValue
-                || !string.IsNullOrEmpty(ax.NumberFormat)
-                || ax.HasMajorGridlines.HasValue
-                || ax.MajorGridlineRgb.HasValue
-                || ax.LineVisible.HasValue
-                || ax.LineRgb.HasValue
-                || ax.LineWeight.HasValue;
         }
 
         private static void EnsureLegendSwitch(
@@ -3273,7 +3284,7 @@ namespace WordAddIn1.PresentationHost
                 return new PptHtmlChartFormat();
             }
 
-            return new PptHtmlChartFormat
+            var format = new PptHtmlChartFormat
             {
                 ChartType = GetAttr(el, "data-chart-type"),
                 Title = GetAttr(el, "data-title"),
@@ -3314,6 +3325,8 @@ namespace WordAddIn1.PresentationHost
                 AxisYStyle = ParseAxisExtras(el, "data-axis-y"),
                 AxisY2Style = ParseAxisExtras(el, "data-axis-y2")
             };
+            MarkAxisVisibilityMentions(format);
+            return format;
         }
 
         private static PptHtmlAxisExtras ParseAxisExtras(XElement el, string prefix)

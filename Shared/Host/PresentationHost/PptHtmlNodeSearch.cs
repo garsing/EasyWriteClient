@@ -780,7 +780,13 @@ namespace WordAddIn1.PresentationHost
                 any = true;
             }
 
-            return any ? dest : null;
+            if (!any)
+            {
+                return null;
+            }
+
+            PptHtmlChartIo.MarkAxisVisibilityMentions(dest);
+            return dest;
         }
 
         private static bool CopyIf(HashSet<string> want, string name, string src, Action<string> set)
