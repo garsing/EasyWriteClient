@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using WordAddIn1.HostPlatform;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
@@ -461,6 +462,221 @@ namespace WordAddIn1.PresentationHost
                     {
                         crop.Bitmap.Dispose();
                     }
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "导出形状截图失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(pngPath))
+                    {
+                        File.Delete(pngPath);
+                    }
+
+                    if (Directory.Exists(tempDir))
+                    {
+                        Directory.Delete(tempDir, true);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        /// <summary>
+        /// 同页多 shape：整页 Export 一次，再按序裁切（宫格用）。
+        /// </summary>
+        public static bool TryCaptureShapes(
+            PptChannel channel,
+            IList<string> shapeIds,
+            out List<PresentationCaptureResult> results,
+            out string error)
+        {
+            results = null;
+            error = null;
+            if (shapeIds == null || shapeIds.Count == 0)
+            {
+                error = "shape_ids 不能为空";
+                return false;
+            }
+
+            if (shapeIds.Count > ImageCaptureCompressor.ContactSheetMaxPages)
+            {
+                error = "shape_ids 一次最多 9 个，请拆批";
+                return false;
+            }
+
+            if (channel == null || !channel.TryGetLivePresentation(out PowerPoint.Presentation presentation))
+            {
+                error = "渠道对应的演示文稿已关闭";
+                return false;
+            }
+
+            string commonSlideId = null;
+            var parsed = new List<Tuple<string, int, string>>(shapeIds.Count);
+            for (int i = 0; i < shapeIds.Count; i++)
+            {
+                string raw = shapeIds[i] == null ? "" : shapeIds[i].Trim();
+                if (!PptShapeId.TryParseShape(raw, out string slideIdText, out int comId))
+                {
+                    error = "形状截图须提供完整 shape_id（sid{SlideID}-s{n}）";
+                    return false;
+                }
+
+                if (commonSlideId == null)
+                {
+                    commonSlideId = slideIdText;
+                }
+                else if (!string.Equals(commonSlideId, slideIdText, StringComparison.Ordinal))
+                {
+                    error = "shape_ids 须属于同一页（SlideID 一致）";
+                    return false;
+                }
+
+                parsed.Add(Tuple.Create(raw, comId, slideIdText));
+            }
+
+            if (!TryFindSlideBySlideId(presentation, commonSlideId, out PowerPoint.Slide slide, out error))
+            {
+                return false;
+            }
+
+            var geoms = new List<Tuple<string, float, float, float, float>>(parsed.Count);
+            for (int i = 0; i < parsed.Count; i++)
+            {
+                string shapeId = parsed[i].Item1;
+                int comId = parsed[i].Item2;
+                PowerPoint.Shape shape = FindShapeByIdDeep(slide.Shapes, comId);
+                if (shape == null)
+                {
+                    error = "未找到形状: " + shapeId;
+                    return false;
+                }
+
+                try
+                {
+                    if (shape.Visible == Office.MsoTriState.msoFalse)
+                    {
+                        error = "形状已隐藏，无法截图: " + shapeId;
+                        return false;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                try
+                {
+                    geoms.Add(Tuple.Create(
+                        shapeId,
+                        shape.Left,
+                        shape.Top,
+                        shape.Width,
+                        shape.Height));
+                }
+                catch (Exception ex)
+                {
+                    error = "读取形状几何失败: " + shapeId + " — " + ex.Message;
+                    return false;
+                }
+            }
+
+            int slideCount;
+            int pageNumber;
+            try
+            {
+                slideCount = presentation.Slides.Count;
+                pageNumber = slide.SlideIndex;
+            }
+            catch (Exception ex)
+            {
+                error = "COM 不可用: " + ex.Message;
+                return false;
+            }
+
+            string tempDir = Path.Combine(Path.GetTempPath(), "EasyWrite", "capture", Guid.NewGuid().ToString("N"));
+            string pngPath = Path.Combine(tempDir, "slide.png");
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+                float slideWidth = 0f;
+                float slideHeight = 0f;
+                try
+                {
+                    slideWidth = presentation.PageSetup.SlideWidth;
+                    slideHeight = presentation.PageSetup.SlideHeight;
+                }
+                catch (Exception)
+                {
+                }
+
+                ImageCaptureCompressor.FitExportPixelSize(
+                    slideWidth,
+                    slideHeight,
+                    out int exportW,
+                    out int exportH);
+                slide.Export(pngPath, "PNG", exportW, exportH);
+                if (!File.Exists(pngPath) || new FileInfo(pngPath).Length == 0)
+                {
+                    error = "幻灯片导出图片为空";
+                    return false;
+                }
+
+                using (var page = new Bitmap(pngPath))
+                {
+                    var list = new List<PresentationCaptureResult>(geoms.Count);
+                    for (int i = 0; i < geoms.Count; i++)
+                    {
+                        if (!PptShapeCaptureHelper.TryCropFromSlideBitmap(
+                                page,
+                                slideWidth,
+                                slideHeight,
+                                geoms[i].Item2,
+                                geoms[i].Item3,
+                                geoms[i].Item4,
+                                geoms[i].Item5,
+                                out PptShapeCaptureHelper.CropResult crop,
+                                out error))
+                        {
+                            error = (error ?? "裁切失败") + ": " + geoms[i].Item1;
+                            return false;
+                        }
+
+                        try
+                        {
+                            list.Add(new PresentationCaptureResult
+                            {
+                                ChannelId = channel.ChannelId,
+                                Kind = "ppt",
+                                PageNumber = pageNumber,
+                                SlideCount = slideCount,
+                                SlideId = commonSlideId,
+                                ShapeId = geoms[i].Item1,
+                                Scale = crop.Scale,
+                                BoundsLeftPct = crop.LeftPct,
+                                BoundsTopPct = crop.TopPct,
+                                BoundsWidthPct = crop.WidthPct,
+                                BoundsHeightPct = crop.HeightPct,
+                                Image = ImageCaptureCompressor.Compress(crop.Bitmap)
+                            });
+                        }
+                        finally
+                        {
+                            if (crop?.Bitmap != null)
+                            {
+                                crop.Bitmap.Dispose();
+                            }
+                        }
+                    }
+
+                    results = list;
+                    return true;
                 }
             }
             catch (Exception ex)

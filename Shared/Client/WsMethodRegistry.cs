@@ -64,6 +64,7 @@ namespace WordAddIn1
                 { "document.formatTransfer", "F_format_transfer" },
                 { "document.applyPageSetup", "F_apply_page_setup" },
                 { "document.captureDocumentPageImage", "F_capture_document_page_image" },
+                { "presentation.capturePptShape", "F_capture_ppt_shape" },
                 { "document.getPageInfo", "F_get_document_page_info" },
                 { "document.listOperations", "F_list_document_operations" },
                 { "document.restoreCheckpoint", "F_restore_document_checkpoint" },

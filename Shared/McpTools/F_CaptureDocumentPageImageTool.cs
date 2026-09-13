@@ -30,15 +30,9 @@ namespace WordAddIn1
                         return Fail(unused);
                     }
 
-                    string shapeId = GetString(args, "shape_id");
-                    bool hasShapeId = !string.IsNullOrWhiteSpace(shapeId);
-                    if (hasShapeId)
+                    if (HasNonEmpty(args, "shape_id") || args.ContainsKey("shape_ids"))
                     {
-                        string shapeMutex = ValidateShapeCaptureArgs(args);
-                        if (shapeMutex != null)
-                        {
-                            return Fail(shapeMutex);
-                        }
+                        return Fail(F_CapturePptShapeTool.ShapeMigratedAwayMessage);
                     }
 
                     if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string resolveError))
@@ -47,47 +41,35 @@ namespace WordAddIn1
                     }
 
                     ToolResult captured;
-                    if (hasShapeId)
+                    string kindError = ValidateArgsForKind(channel.Kind, args, out PageCaptureRequest pageReq);
+                    if (kindError != null)
                     {
-                        if (channel.Kind != ChannelKind.Ppt && channel.Kind != ChannelKind.Wpp)
-                        {
-                            return Fail("按 shape_id 截图仅支持已打开的 PPT/WPP 渠道");
-                        }
+                        return Fail(kindError);
+                    }
 
-                        captured = CapturePresentationShape(channel, shapeId.Trim());
+                    if (channel.Kind == ChannelKind.Word || channel.Kind == ChannelKind.Wps)
+                    {
+                        captured = await CaptureWordAsync(args, wordApplication, pageReq.PageNumber).ConfigureAwait(false);
+                    }
+                    else if (channel.Kind == ChannelKind.Excel || channel.Kind == ChannelKind.Et)
+                    {
+                        captured = CaptureSpreadsheet(channel, args);
+                    }
+                    else if (channel.Kind == ChannelKind.Ppt || channel.Kind == ChannelKind.Wpp)
+                    {
+                        captured = pageReq.IsContactSheet
+                            ? CapturePresentationRange(channel, pageReq.PageFrom.Value, pageReq.PageTo.Value)
+                            : CapturePresentation(channel, pageReq.PageNumber.Value);
+                    }
+                    else if (channel.Kind == ChannelKind.Browser)
+                    {
+                        captured = await OfficeStaScheduler
+                            .InvokeOnUiAsync(() => CaptureBrowserAsync(channel))
+                            .ConfigureAwait(false);
                     }
                     else
                     {
-                        string kindError = ValidateArgsForKind(channel.Kind, args, out PageCaptureRequest pageReq);
-                        if (kindError != null)
-                        {
-                            return Fail(kindError);
-                        }
-
-                        if (channel.Kind == ChannelKind.Word || channel.Kind == ChannelKind.Wps)
-                        {
-                            captured = await CaptureWordAsync(args, wordApplication, pageReq.PageNumber).ConfigureAwait(false);
-                        }
-                        else if (channel.Kind == ChannelKind.Excel || channel.Kind == ChannelKind.Et)
-                        {
-                            captured = CaptureSpreadsheet(channel, args);
-                        }
-                        else if (channel.Kind == ChannelKind.Ppt || channel.Kind == ChannelKind.Wpp)
-                        {
-                            captured = pageReq.IsContactSheet
-                                ? CapturePresentationRange(channel, pageReq.PageFrom.Value, pageReq.PageTo.Value)
-                                : CapturePresentation(channel, pageReq.PageNumber.Value);
-                        }
-                        else if (channel.Kind == ChannelKind.Browser)
-                        {
-                            captured = await OfficeStaScheduler
-                                .InvokeOnUiAsync(() => CaptureBrowserAsync(channel))
-                                .ConfigureAwait(false);
-                        }
-                        else
-                        {
-                            return Fail("unsupported: 当前渠道不支持截图");
-                        }
+                        return Fail("unsupported: 当前渠道不支持截图");
                     }
 
                     if (captured == null || !captured.Success)
@@ -141,7 +123,7 @@ namespace WordAddIn1
 
             if (HasNonEmpty(args, "slide_id"))
             {
-                return "截图请用 page_number 或 shape_id，不要 slide_id";
+                return "截图请用 page_number，不要 slide_id";
             }
 
             if (HasNonEmpty(args, "storage_doc_uuid"))
@@ -157,23 +139,6 @@ namespace WordAddIn1
             if (HasNonEmpty(args, "document_name") || HasNonEmpty(args, "knowledge_base_uuid"))
             {
                 return "截图不收名+库，请用 channel_id 或 storage_doc_uuid";
-            }
-
-            return null;
-        }
-
-        private static string ValidateShapeCaptureArgs(IReadOnlyDictionary<string, object> args)
-        {
-            if (HasNonEmpty(args, "page_number")
-                || HasNonEmpty(args, "page_from")
-                || HasNonEmpty(args, "page_to"))
-            {
-                return "shape_id 不能与 page_number / page_from / page_to 同时传";
-            }
-
-            if (HasNonEmpty(args, "sheet") || HasNonEmpty(args, "range"))
-            {
-                return "shape_id 不能与 sheet/range 同时传";
             }
 
             return null;
@@ -402,49 +367,6 @@ namespace WordAddIn1
                     ["range"] = hostResult.Range ?? "",
                     ["actual_range"] = hostResult.ActualRange ?? ""
                 });
-        }
-
-        private static ToolResult CapturePresentationShape(IOperationChannel channel, string shapeId)
-        {
-            if (!PresentationHostAdapter.TryCaptureShape(
-                    channel,
-                    shapeId,
-                    out PresentationCaptureResult hostResult,
-                    out ToolResult errorResult))
-            {
-                return errorResult;
-            }
-
-            var extra = new Dictionary<string, object>
-            {
-                ["source_kind"] = hostResult.Kind ?? "",
-                ["channel_id"] = ChannelRegistry.ToPublicId(hostResult.ChannelId) ?? hostResult.ChannelId ?? "",
-                ["page_number"] = hostResult.PageNumber,
-                ["slide_count"] = hostResult.SlideCount,
-                ["shape_id"] = hostResult.ShapeId ?? shapeId,
-                ["capture_mode"] = "shape",
-                ["scale"] = hostResult.Scale
-            };
-            if (!string.IsNullOrEmpty(hostResult.SlideId))
-            {
-                extra["slide_id"] = hostResult.SlideId;
-            }
-
-            if (hostResult.BoundsLeftPct.HasValue
-                && hostResult.BoundsTopPct.HasValue
-                && hostResult.BoundsWidthPct.HasValue
-                && hostResult.BoundsHeightPct.HasValue)
-            {
-                extra["bounds_pct"] = new Dictionary<string, object>
-                {
-                    ["left"] = Math.Round(hostResult.BoundsLeftPct.Value, 4),
-                    ["top"] = Math.Round(hostResult.BoundsTopPct.Value, 4),
-                    ["width"] = Math.Round(hostResult.BoundsWidthPct.Value, 4),
-                    ["height"] = Math.Round(hostResult.BoundsHeightPct.Value, 4)
-                };
-            }
-
-            return OkImage(hostResult.Image, extra);
         }
 
         private static ToolResult CapturePresentation(IOperationChannel channel, int pageNumber)

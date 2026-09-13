@@ -40,6 +40,57 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            Bitmap page = null;
+            try
+            {
+                page = new Bitmap(pngPath);
+                return TryCropFromSlideBitmap(
+                    page,
+                    slideWidthPt,
+                    slideHeightPt,
+                    shapeLeftPt,
+                    shapeTopPt,
+                    shapeWidthPt,
+                    shapeHeightPt,
+                    out crop,
+                    out error);
+            }
+            catch (Exception ex)
+            {
+                error = "裁切形状失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                if (page != null)
+                {
+                    page.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 已加载的整页位图上裁切形状（同页多 shape 时只 Export 一次）。
+        /// </summary>
+        public static bool TryCropFromSlideBitmap(
+            Bitmap page,
+            float slideWidthPt,
+            float slideHeightPt,
+            float shapeLeftPt,
+            float shapeTopPt,
+            float shapeWidthPt,
+            float shapeHeightPt,
+            out CropResult crop,
+            out string error)
+        {
+            crop = null;
+            error = null;
+            if (page == null)
+            {
+                error = "幻灯片导出图片不存在";
+                return false;
+            }
+
             if (slideWidthPt <= 0f || slideHeightPt <= 0f)
             {
                 error = "幻灯片页面尺寸无效";
@@ -52,10 +103,8 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            Bitmap page = null;
             try
             {
-                page = new Bitmap(pngPath);
                 int pageW = page.Width;
                 int pageH = page.Height;
                 if (pageW < 1 || pageH < 1)
@@ -140,13 +189,6 @@ namespace WordAddIn1.PresentationHost
             {
                 error = "裁切形状失败: " + ex.Message;
                 return false;
-            }
-            finally
-            {
-                if (page != null)
-                {
-                    page.Dispose();
-                }
             }
         }
 

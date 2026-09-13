@@ -92,6 +92,7 @@ namespace WordAddIn1
             // F_FindPositionTool 暂不下线注册：只读定位，Agent 暂不可用（代码保留）
             // F_FindPositionTool.Register(toolRegistry, wordApplication);
             F_CaptureDocumentPageImageTool.Register(toolRegistry, wordApplication);
+            F_CapturePptShapeTool.Register(toolRegistry, wordApplication);
             F_GetDocumentPageInfoTool.Register(toolRegistry, wordApplication);
             F_GetFormatContextTool.Register(toolRegistry, wordApplication);
             F_ApplyDocumentFormatTool.Register(toolRegistry, wordApplication);

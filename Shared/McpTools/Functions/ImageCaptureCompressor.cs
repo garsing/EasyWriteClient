@@ -241,6 +241,201 @@ namespace WordAddIn1
             }
         }
 
+        internal sealed class ShapeContactSheetTile
+        {
+            public int Index { get; set; }
+            public string ShapeId { get; set; }
+            public byte[] ImageBytes { get; set; }
+        }
+
+        /// <summary>
+        /// 形状九宫格：2～4 → 固定 2×2；5～9 → 固定 3×3；空格留灰底。
+        /// </summary>
+        public static CompressedImage ComposeShapeContactSheet(IReadOnlyList<ShapeContactSheetTile> tiles)
+        {
+            if (tiles == null || tiles.Count == 0)
+            {
+                throw new ArgumentException("形状宫格没有格子");
+            }
+
+            if (tiles.Count > ContactSheetMaxPages)
+            {
+                throw new ArgumentException("一次最多 " + ContactSheetMaxPages + " 个形状");
+            }
+
+            int n = tiles.Count;
+            int cols;
+            int rows;
+            if (n <= 4)
+            {
+                cols = 2;
+                rows = 2;
+            }
+            else
+            {
+                cols = 3;
+                rows = 3;
+            }
+
+            const int gap = 8;
+            const int labelH = 28;
+            const int margin = 8;
+            const int cellW = ContactSheetCellLongEdge;
+            int cellImgH = cellW * 9 / 16;
+            var decoded = new List<Bitmap>(n);
+            try
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    Bitmap bmp = DecodeBitmap(tiles[i] == null ? null : tiles[i].ImageBytes);
+                    decoded.Add(bmp);
+                    if (i == 0 && bmp != null && bmp.Width > 0)
+                    {
+                        cellImgH = Math.Max(1, (int)Math.Round(cellW * (double)bmp.Height / bmp.Width));
+                    }
+                }
+
+                int cellH = labelH + cellImgH;
+                int width = margin * 2 + cols * cellW + (cols - 1) * gap;
+                int height = margin * 2 + rows * cellH + (rows - 1) * gap;
+                int slotCount = cols * rows;
+                using (var canvas = new Bitmap(width, height))
+                using (var graphics = Graphics.FromImage(canvas))
+                using (var imgBg = new SolidBrush(Color.FromArgb(32, 36, 42)))
+                using (var bar = new SolidBrush(Color.FromArgb(27, 58, 75)))
+                using (var emptyBar = new SolidBrush(Color.FromArgb(180, 180, 180)))
+                using (var white = new SolidBrush(Color.White))
+                {
+                    graphics.Clear(Color.FromArgb(236, 236, 236));
+                    graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+                    graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    graphics.CompositingQuality = CompositingQuality.HighQuality;
+                    for (int slot = 0; slot < slotCount; slot++)
+                    {
+                        int row = slot / cols;
+                        int col = slot % cols;
+                        int x = margin + col * (cellW + gap);
+                        int y = margin + row * (cellH + gap);
+                        int imgY = y + labelH;
+                        graphics.FillRectangle(imgBg, x, imgY, cellW, cellImgH);
+                        if (slot >= n)
+                        {
+                            graphics.FillRectangle(emptyBar, x, y, cellW, labelH);
+                            continue;
+                        }
+
+                        graphics.FillRectangle(bar, x, y, cellW, labelH);
+                        string shapeId = tiles[slot] == null ? "" : (tiles[slot].ShapeId ?? "");
+                        int index = tiles[slot] == null ? slot + 1 : tiles[slot].Index;
+                        string label = string.IsNullOrEmpty(shapeId)
+                            ? index.ToString()
+                            : index + " · " + shapeId;
+                        using (Font font = CreateFittedLabelFont(
+                                   graphics, label, cellW - 8, labelH - 2))
+                        {
+                            graphics.DrawString(
+                                FitLabelText(graphics, font, label, cellW - 8),
+                                font,
+                                white,
+                                new RectangleF(x + 4, y + 2, cellW - 8, labelH - 2));
+                        }
+
+                        Bitmap src = decoded[slot];
+                        if (src != null && src.Width > 0 && src.Height > 0)
+                        {
+                            double scale = Math.Min(
+                                (double)cellW / src.Width,
+                                (double)cellImgH / src.Height);
+                            int dw = Math.Max(1, (int)Math.Round(src.Width * scale));
+                            int dh = Math.Max(1, (int)Math.Round(src.Height * scale));
+                            int dx = x + (cellW - dw) / 2;
+                            int dy = imgY + (cellImgH - dh) / 2;
+                            graphics.DrawImage(src, dx, dy, dw, dh);
+                        }
+                    }
+
+                    return Compress(canvas);
+                }
+            }
+            finally
+            {
+                for (int i = 0; i < decoded.Count; i++)
+                {
+                    if (decoded[i] != null)
+                    {
+                        decoded[i].Dispose();
+                    }
+                }
+            }
+        }
+
+        private static Font CreateFittedLabelFont(Graphics graphics, string text, int maxWidth, int maxHeight)
+        {
+            for (float size = 11f; size >= 8f; size -= 1f)
+            {
+                Font font = CreateLabelFont(size);
+                SizeF measured = graphics.MeasureString(text ?? "", font);
+                if (measured.Width <= maxWidth && measured.Height <= maxHeight + 2)
+                {
+                    return font;
+                }
+
+                font.Dispose();
+            }
+
+            return CreateLabelFont(8f);
+        }
+
+        private static string FitLabelText(Graphics graphics, Font font, string text, int maxWidth)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            if (graphics.MeasureString(text, font).Width <= maxWidth)
+            {
+                return text;
+            }
+
+            // 优先保留 sid… 与 -s… 两端
+            int dash = text.LastIndexOf("-s", StringComparison.Ordinal);
+            if (dash > 3)
+            {
+                string left = text.Substring(0, Math.Min(6, dash));
+                string right = text.Substring(dash);
+                string candidate = left + "…" + right;
+                if (graphics.MeasureString(candidate, font).Width <= maxWidth)
+                {
+                    return candidate;
+                }
+            }
+
+            string ellipsis = "…";
+            for (int len = text.Length - 1; len >= 4; len--)
+            {
+                string candidate = text.Substring(0, len) + ellipsis;
+                if (graphics.MeasureString(candidate, font).Width <= maxWidth)
+                {
+                    return candidate;
+                }
+            }
+
+            return ellipsis;
+        }
+
+        private static Font CreateLabelFont(float sizePx)
+        {
+            try
+            {
+                return new Font("Microsoft YaHei", sizePx, FontStyle.Bold, GraphicsUnit.Pixel);
+            }
+            catch (Exception)
+            {
+                return new Font(FontFamily.GenericSansSerif, sizePx, FontStyle.Bold, GraphicsUnit.Pixel);
+            }
+        }
+
         public static CompressedImage CompressThumb(Bitmap source, int maxLongEdge = 320, int quality = 80)
         {
             if (source == null)
@@ -351,14 +546,7 @@ namespace WordAddIn1
 
         private static Font CreateLabelFont()
         {
-            try
-            {
-                return new Font("Microsoft YaHei", 11f, FontStyle.Bold, GraphicsUnit.Pixel);
-            }
-            catch (Exception)
-            {
-                return new Font(FontFamily.GenericSansSerif, 11f, FontStyle.Bold, GraphicsUnit.Pixel);
-            }
+            return CreateLabelFont(11f);
         }
 
         private static Bitmap ResizeBitmap(Bitmap source, int width, int height)
