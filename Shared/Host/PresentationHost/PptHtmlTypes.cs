@@ -95,6 +95,12 @@ namespace WordAddIn1.PresentationHost
         /// <summary>骨架到层空壳：本组还有更深子节点未写出</summary>
         public bool DepthCapped { get; set; }
 
+        /// <summary>搜索 picture 面积档：页面积占比（宽%×高%/100）；apply 忽略</summary>
+        public double? SearchArea { get; set; }
+
+        /// <summary>搜索 picture 面积档：截断前按面积降序排名，1=最大；apply 忽略</summary>
+        public int? SearchAreaRank { get; set; }
+
         internal PptHtmlChartFormat ChartFormat { get; set; }
 
         public List<PptHtmlShapeNode> Children { get; set; }

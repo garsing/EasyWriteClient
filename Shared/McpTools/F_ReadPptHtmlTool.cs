@@ -306,6 +306,8 @@ namespace WordAddIn1
                     request,
                     out List<PptHtmlShapeNode> forest,
                     out int leafCount,
+                    out int matchTotal,
+                    out bool pictureOriented,
                     out string matchError))
             {
                 int maxHits = PptHtmlNodeSearch.EffectiveMaxHits(request.Fields);
@@ -324,6 +326,12 @@ namespace WordAddIn1
                     Error = matchError,
                     Data = fail
                 };
+            }
+
+            Dictionary<string, KeyValuePair<double, int>> areaMap = null;
+            if (pictureOriented)
+            {
+                areaMap = PptHtmlNodeSearch.SnapshotSearchAreas(forest);
             }
 
             if (request.Fields != null && request.Fields.Count > 0 && leafCount > 0)
@@ -347,6 +355,27 @@ namespace WordAddIn1
                     };
                 }
 
+                if (pictureOriented)
+                {
+                    PptHtmlNodeSearch.RestoreSearchAreas(forest, areaMap);
+                }
+
+                if (!PptHtmlNodeSearch.TryCheckHtmlSize(forest, out string sizeError))
+                {
+                    return new ToolResult
+                    {
+                        Success = false,
+                        Error = sizeError,
+                        Data = new Dictionary<string, object>
+                        {
+                            ["slide_id"] = hostResult != null ? hostResult.SlideId ?? slideId : slideId,
+                            ["match_count"] = leafCount
+                        }
+                    };
+                }
+            }
+            else if (pictureOriented && leafCount > 0)
+            {
                 if (!PptHtmlNodeSearch.TryCheckHtmlSize(forest, out string sizeError))
                 {
                     return new ToolResult
@@ -362,7 +391,12 @@ namespace WordAddIn1
                 }
             }
 
-            string display = PptHtmlNodeSearch.BuildDisplayContents(forest, leafCount, request.Fields);
+            string display = PptHtmlNodeSearch.BuildDisplayContents(
+                forest,
+                leafCount,
+                matchTotal,
+                pictureOriented,
+                request.Fields);
             var data = new Dictionary<string, object>
             {
                 ["channel_id"] = ChannelRegistry.ToPublicId(hostResult.ChannelId) ?? "",
@@ -372,6 +406,12 @@ namespace WordAddIn1
                 ["match_count"] = leafCount,
                 ["display_contents"] = display
             };
+            if (pictureOriented && matchTotal > leafCount)
+            {
+                data["match_count_before_truncate"] = matchTotal;
+                data["truncated"] = true;
+            }
+
             return new ToolResult
             {
                 Success = true,

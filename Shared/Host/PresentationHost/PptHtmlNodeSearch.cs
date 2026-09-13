@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
@@ -49,7 +50,9 @@ namespace WordAddIn1.PresentationHost
         private static readonly HashSet<string> AlwaysEmittedFieldNames = new HashSet<string>(StringComparer.Ordinal)
         {
             "ShapeId",
-            "data-shape-type"
+            "data-shape-type",
+            "data-area",
+            "data-area-rank"
         };
 
         private static HashSet<string> BuildAllowedFields()
@@ -65,6 +68,8 @@ namespace WordAddIn1.PresentationHost
                 "table",
                 "data-src",
                 "data-rasterized-from",
+                "data-area",
+                "data-area-rank",
                 "data-fill",
                 "data-font-color",
                 "data-font-size",
@@ -294,10 +299,14 @@ namespace WordAddIn1.PresentationHost
             PptHtmlSearchRequest request,
             out List<PptHtmlShapeNode> forest,
             out int leafCount,
+            out int matchTotal,
+            out bool pictureOriented,
             out string error)
         {
             forest = new List<PptHtmlShapeNode>();
             leafCount = 0;
+            matchTotal = 0;
+            pictureOriented = false;
             error = null;
             if (request == null || request.Clauses == null || request.Clauses.Count == 0)
             {
@@ -317,8 +326,16 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            matchTotal = hits.Count;
             leafCount = hits.Count;
             int maxHits = EffectiveMaxHits(request.Fields);
+            pictureOriented = IsPictureOrientedSearch(request);
+
+            if (pictureOriented)
+            {
+                return BuildPictureOrientedForest(hits, maxHits, out forest, out leafCount, out error);
+            }
+
             if (leafCount > maxHits)
             {
                 error = maxHits == MaxHitsHeavy
@@ -355,6 +372,240 @@ namespace WordAddIn1.PresentationHost
                 {
                     forest.Add(outLeaf);
                 }
+            }
+
+            return true;
+        }
+
+        /// <summary>兼容旧签名：非 picture 向语义。</summary>
+        public static bool TryMatch(
+            IList<PptHtmlShapeNode> roots,
+            PptHtmlSearchRequest request,
+            out List<PptHtmlShapeNode> forest,
+            out int leafCount,
+            out string error)
+        {
+            return TryMatch(roots, request, out forest, out leafCount, out _, out _, out error);
+        }
+
+        public static bool IsPictureOrientedSearch(PptHtmlSearchRequest request)
+        {
+            if (request == null || request.Clauses == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < request.Clauses.Count; i++)
+            {
+                PptHtmlSearchClause clause = request.Clauses[i];
+                if (clause == null || clause.Regex == null)
+                {
+                    continue;
+                }
+
+                if (string.Equals(clause.Attr, "data-shape-type", StringComparison.Ordinal)
+                    && clause.Regex.IsMatch("picture"))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static Dictionary<string, KeyValuePair<double, int>> SnapshotSearchAreas(
+            IList<PptHtmlShapeNode> forest)
+        {
+            var map = new Dictionary<string, KeyValuePair<double, int>>(StringComparer.Ordinal);
+            if (forest == null)
+            {
+                return map;
+            }
+
+            void Walk(PptHtmlShapeNode node)
+            {
+                if (node == null)
+                {
+                    return;
+                }
+
+                if (!IsGroup(node)
+                    && !string.IsNullOrEmpty(node.ShapeId)
+                    && node.SearchArea.HasValue
+                    && node.SearchAreaRank.HasValue)
+                {
+                    map[node.ShapeId] = new KeyValuePair<double, int>(
+                        node.SearchArea.Value,
+                        node.SearchAreaRank.Value);
+                }
+
+                if (node.Children == null)
+                {
+                    return;
+                }
+
+                for (int i = 0; i < node.Children.Count; i++)
+                {
+                    Walk(node.Children[i]);
+                }
+            }
+
+            for (int i = 0; i < forest.Count; i++)
+            {
+                Walk(forest[i]);
+            }
+
+            return map;
+        }
+
+        public static void RestoreSearchAreas(
+            IList<PptHtmlShapeNode> forest,
+            Dictionary<string, KeyValuePair<double, int>> map)
+        {
+            if (forest == null || map == null || map.Count == 0)
+            {
+                return;
+            }
+
+            void Walk(PptHtmlShapeNode node)
+            {
+                if (node == null)
+                {
+                    return;
+                }
+
+                if (!IsGroup(node)
+                    && !string.IsNullOrEmpty(node.ShapeId)
+                    && map.TryGetValue(node.ShapeId, out KeyValuePair<double, int> pair))
+                {
+                    node.SearchArea = pair.Key;
+                    node.SearchAreaRank = pair.Value;
+                }
+
+                if (node.Children == null)
+                {
+                    return;
+                }
+
+                for (int i = 0; i < node.Children.Count; i++)
+                {
+                    Walk(node.Children[i]);
+                }
+            }
+
+            for (int i = 0; i < forest.Count; i++)
+            {
+                Walk(forest[i]);
+            }
+        }
+
+        private static bool BuildPictureOrientedForest(
+            List<KeyValuePair<PptHtmlShapeNode, PptHtmlShapeNode>> hits,
+            int maxHits,
+            out List<PptHtmlShapeNode> forest,
+            out int leafCount,
+            out string error)
+        {
+            forest = new List<PptHtmlShapeNode>();
+            leafCount = 0;
+            error = null;
+            if (hits == null || hits.Count == 0)
+            {
+                return true;
+            }
+
+            var scored = new List<KeyValuePair<PptHtmlShapeNode, double>>(hits.Count);
+            for (int i = 0; i < hits.Count; i++)
+            {
+                PptHtmlShapeNode leaf = hits[i].Key;
+                scored.Add(new KeyValuePair<PptHtmlShapeNode, double>(leaf, ComputeArea(leaf)));
+            }
+
+            scored.Sort(CompareAreaDescThenShapeId);
+            for (int i = 0; i < scored.Count; i++)
+            {
+                PptHtmlShapeNode src = scored[i].Key;
+                PptHtmlShapeNode outLeaf = CloneLeaf(src);
+                outLeaf.SearchArea = scored[i].Value;
+                outLeaf.SearchAreaRank = i + 1;
+                if (forest.Count < maxHits)
+                {
+                    forest.Add(outLeaf);
+                }
+            }
+
+            leafCount = forest.Count;
+            return true;
+        }
+
+        private static int CompareAreaDescThenShapeId(
+            KeyValuePair<PptHtmlShapeNode, double> a,
+            KeyValuePair<PptHtmlShapeNode, double> b)
+        {
+            int cmp = b.Value.CompareTo(a.Value);
+            if (cmp != 0)
+            {
+                return cmp;
+            }
+
+            string idA = a.Key != null ? a.Key.ShapeId : "";
+            string idB = b.Key != null ? b.Key.ShapeId : "";
+            return string.CompareOrdinal(idA ?? "", idB ?? "");
+        }
+
+        public static double ComputeArea(PptHtmlShapeNode leaf)
+        {
+            if (leaf == null || string.IsNullOrWhiteSpace(leaf.Style))
+            {
+                return 0;
+            }
+
+            if (!TryParseWidthHeightPct(leaf.Style, out double width, out double height))
+            {
+                return 0;
+            }
+
+            return width * height / 100.0;
+        }
+
+        private static bool TryParseWidthHeightPct(string style, out double width, out double height)
+        {
+            width = 0;
+            height = 0;
+            if (string.IsNullOrWhiteSpace(style))
+            {
+                return false;
+            }
+
+            Match mw = Regex.Match(
+                style,
+                @"width\s*:\s*([0-9.]+)\s*%",
+                RegexOptions.IgnoreCase);
+            Match mh = Regex.Match(
+                style,
+                @"height\s*:\s*([0-9.]+)\s*%",
+                RegexOptions.IgnoreCase);
+            if (!mw.Success || !mh.Success)
+            {
+                return false;
+            }
+
+            if (!double.TryParse(
+                    mw.Groups[1].Value,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out width))
+            {
+                return false;
+            }
+
+            if (!double.TryParse(
+                    mh.Groups[1].Value,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out height))
+            {
+                return false;
             }
 
             return true;
@@ -447,9 +698,40 @@ namespace WordAddIn1.PresentationHost
             int leafCount,
             IList<string> fields)
         {
+            return BuildDisplayContents(forest, leafCount, leafCount, false, fields);
+        }
+
+        public static string BuildDisplayContents(
+            IList<PptHtmlShapeNode> forest,
+            int leafCount,
+            int matchTotal,
+            bool pictureOriented,
+            IList<string> fields)
+        {
             int maxHits = EffectiveMaxHits(fields);
             var sb = new StringBuilder();
-            sb.Append("页内节点搜索：命中 ").Append(leafCount).Append(" 条叶子（最多 ").Append(maxHits).Append("）。");
+            if (pictureOriented)
+            {
+                sb.Append("页内节点搜索：picture 向；");
+                if (matchTotal > leafCount)
+                {
+                    sb.Append("截断前命中 ").Append(matchTotal)
+                        .Append("；已按面积取前 ").Append(leafCount)
+                        .Append("（truncated=true）。");
+                }
+                else
+                {
+                    sb.Append("命中 ").Append(leafCount).Append(" 条。");
+                }
+
+                sb.Append("data-area 为页面积占比（宽%×高%/100）；已按面积从大到小排序。");
+                sb.Append("看 data-area-rank 靠前的再 shape 截图确认。");
+            }
+            else
+            {
+                sb.Append("页内节点搜索：命中 ").Append(leafCount).Append(" 条叶子（最多 ").Append(maxHits).Append("）。");
+            }
+
             if (fields != null && fields.Count > 0)
             {
                 sb.Append("已按 fields 写出。");
@@ -943,6 +1225,11 @@ namespace WordAddIn1.PresentationHost
                 return node.ShapeId ?? "";
             }
 
+            if (attr == "data-rasterized-from")
+            {
+                return node.RasterizedFrom ?? "";
+            }
+
             return "";
         }
 
@@ -966,7 +1253,9 @@ namespace WordAddIn1.PresentationHost
                 Rotation = src != null ? src.Rotation : null,
                 RasterizedFrom = src != null ? src.RasterizedFrom : null,
                 TextTruncated = truncated,
-                Editable = true
+                Editable = true,
+                SearchArea = src != null ? src.SearchArea : null,
+                SearchAreaRank = src != null ? src.SearchAreaRank : null
             };
         }
 
@@ -1151,9 +1440,12 @@ namespace WordAddIn1.PresentationHost
 
             string attr = GetString(map, "attr");
             string pattern = GetString(map, "pattern");
-            if (attr != "text" && attr != "data-shape-type" && attr != "shape_id")
+            if (attr != "text"
+                && attr != "data-shape-type"
+                && attr != "shape_id"
+                && attr != "data-rasterized-from")
             {
-                error = "attr 只能是 text / data-shape-type / shape_id";
+                error = "attr 只能是 text / data-shape-type / shape_id / data-rasterized-from";
                 return false;
             }
 

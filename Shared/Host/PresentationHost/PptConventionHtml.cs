@@ -291,6 +291,20 @@ namespace WordAddIn1.PresentationHost
                     .Append("\"");
             }
 
+            if (node.SearchArea.HasValue)
+            {
+                sb.Append(" data-area=\"")
+                    .Append(node.SearchArea.Value.ToString("0.0000", CultureInfo.InvariantCulture))
+                    .Append("\"");
+            }
+
+            if (node.SearchAreaRank.HasValue)
+            {
+                sb.Append(" data-area-rank=\"")
+                    .Append(node.SearchAreaRank.Value.ToString(CultureInfo.InvariantCulture))
+                    .Append("\"");
+            }
+
             if (!string.IsNullOrEmpty(node.Fill))
             {
                 sb.Append(" data-fill=\"").Append(EscapeAttr(node.Fill)).Append("\"");
