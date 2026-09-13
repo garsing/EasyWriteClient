@@ -713,6 +713,49 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
+        internal static bool TryCaptureShape(
+            IOperationChannel channel,
+            string shapeId,
+            out PresentationCaptureResult result,
+            out ToolResult errorResult)
+        {
+            result = null;
+            errorResult = null;
+            if (channel == null)
+            {
+                errorResult = new ToolResult { Success = false, Error = "未知 channel_id" };
+                return false;
+            }
+
+            bool ok;
+            string error;
+            if (channel is PptChannel ppt)
+            {
+                ok = PowerPointPresentationHost.TryCaptureShape(ppt, shapeId, out result, out error);
+            }
+            else if (channel is WppChannel wpp)
+            {
+                ok = WppPresentationHost.TryCaptureShape(wpp, shapeId, out result, out error);
+            }
+            else
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "unsupported: 当前渠道不是 ppt/wpp"
+                };
+                return false;
+            }
+
+            if (!ok)
+            {
+                errorResult = new ToolResult { Success = false, Error = error };
+                return false;
+            }
+
+            return true;
+        }
+
         internal static bool TryCaptureSlide(
             IOperationChannel channel,
             int pageNumber,

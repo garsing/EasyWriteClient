@@ -58,5 +58,16 @@ namespace WordAddIn1.PresentationHost
         public int SlideCount { get; set; }
         public string SlideId { get; set; }
         public ImageCaptureCompressor.CompressedImage Image { get; set; }
+
+        /// <summary>形状档：回显的完整 ShapeId。</summary>
+        public string ShapeId { get; set; }
+
+        /// <summary>形状档：上采样倍数，默认 1。</summary>
+        public double Scale { get; set; } = 1.0;
+
+        public double? BoundsLeftPct { get; set; }
+        public double? BoundsTopPct { get; set; }
+        public double? BoundsWidthPct { get; set; }
+        public double? BoundsHeightPct { get; set; }
     }
 }

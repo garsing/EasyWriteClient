@@ -360,6 +360,332 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        public static bool TryCaptureShape(
+            WppChannel channel,
+            string shapeId,
+            out PresentationCaptureResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLivePresentation(out object presentation))
+            {
+                error = "渠道对应的演示文稿已关闭";
+                return false;
+            }
+
+            if (!PptShapeId.TryParseShape(shapeId, out string slideIdText, out int comId))
+            {
+                error = "形状截图须提供完整 shape_id（sid{SlideID}-s{n}）";
+                return false;
+            }
+
+            if (!TryFindSlideBySlideId(presentation, slideIdText, out object slide, out error))
+            {
+                return false;
+            }
+
+            object shapes = WppCom.GetProperty(slide, "Shapes");
+            object shape = FindShapeByIdDeep(shapes, comId);
+            if (shape == null)
+            {
+                error = "未找到形状: " + shapeId.Trim();
+                return false;
+            }
+
+            try
+            {
+                object visible = WppCom.GetProperty(shape, "Visible");
+                if (visible != null && Convert.ToInt32(visible) == 0)
+                {
+                    error = "形状已隐藏，无法截图";
+                    return false;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            float shapeLeft;
+            float shapeTop;
+            float shapeWidth;
+            float shapeHeight;
+            try
+            {
+                shapeLeft = Convert.ToSingle(WppCom.GetProperty(shape, "Left"));
+                shapeTop = Convert.ToSingle(WppCom.GetProperty(shape, "Top"));
+                shapeWidth = Convert.ToSingle(WppCom.GetProperty(shape, "Width"));
+                shapeHeight = Convert.ToSingle(WppCom.GetProperty(shape, "Height"));
+            }
+            catch (Exception ex)
+            {
+                error = "unsupported: 读取形状几何失败: " + ex.Message;
+                return false;
+            }
+
+            int slideCount;
+            int pageNumber;
+            try
+            {
+                object slidesCollection = WppCom.GetProperty(presentation, "Slides");
+                slideCount = Convert.ToInt32(WppCom.GetProperty(slidesCollection, "Count"));
+                pageNumber = Convert.ToInt32(WppCom.GetProperty(slide, "SlideIndex"));
+            }
+            catch (Exception ex)
+            {
+                error = "COM 不可用: " + ex.Message;
+                return false;
+            }
+
+            string tempDir = Path.Combine(Path.GetTempPath(), "EasyWrite", "capture", Guid.NewGuid().ToString("N"));
+            string pngPath = Path.Combine(tempDir, "slide.png");
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+                float slideWidth = 0f;
+                float slideHeight = 0f;
+                try
+                {
+                    object setup = WppCom.GetProperty(presentation, "PageSetup");
+                    if (setup != null)
+                    {
+                        object w = WppCom.GetProperty(setup, "SlideWidth");
+                        object h = WppCom.GetProperty(setup, "SlideHeight");
+                        if (w != null)
+                        {
+                            slideWidth = Convert.ToSingle(w);
+                        }
+
+                        if (h != null)
+                        {
+                            slideHeight = Convert.ToSingle(h);
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                ImageCaptureCompressor.FitExportPixelSize(
+                    slideWidth,
+                    slideHeight,
+                    out int exportW,
+                    out int exportH);
+                try
+                {
+                    WppCom.Invoke(slide, "Export", pngPath, "PNG", exportW, exportH);
+                }
+                catch (Exception)
+                {
+                    WppCom.Invoke(slide, "Export", pngPath, "PNG");
+                }
+
+                if (!File.Exists(pngPath) || new FileInfo(pngPath).Length == 0)
+                {
+                    error = "unsupported: WPS 演示导出图片为空";
+                    return false;
+                }
+
+                if (!PptShapeCaptureHelper.TryCropFromSlidePng(
+                        pngPath,
+                        slideWidth,
+                        slideHeight,
+                        shapeLeft,
+                        shapeTop,
+                        shapeWidth,
+                        shapeHeight,
+                        out PptShapeCaptureHelper.CropResult crop,
+                        out error))
+                {
+                    return false;
+                }
+
+                try
+                {
+                    result = new PresentationCaptureResult
+                    {
+                        ChannelId = channel.ChannelId,
+                        Kind = "wpp",
+                        PageNumber = pageNumber,
+                        SlideCount = slideCount,
+                        SlideId = slideIdText,
+                        ShapeId = shapeId.Trim(),
+                        Scale = crop.Scale,
+                        BoundsLeftPct = crop.LeftPct,
+                        BoundsTopPct = crop.TopPct,
+                        BoundsWidthPct = crop.WidthPct,
+                        BoundsHeightPct = crop.HeightPct,
+                        Image = ImageCaptureCompressor.Compress(crop.Bitmap)
+                    };
+                    return true;
+                }
+                finally
+                {
+                    if (crop?.Bitmap != null)
+                    {
+                        crop.Bitmap.Dispose();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "unsupported: WPS 形状截图失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(pngPath))
+                    {
+                        File.Delete(pngPath);
+                    }
+
+                    if (Directory.Exists(tempDir))
+                    {
+                        Directory.Delete(tempDir, true);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        private static bool TryFindSlideBySlideId(
+            object presentation,
+            string slideIdText,
+            out object slide,
+            out string error)
+        {
+            slide = null;
+            error = null;
+            if (!int.TryParse(slideIdText, System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out int slideId))
+            {
+                error = "shape_id 内 SlideID 无效";
+                return false;
+            }
+
+            try
+            {
+                object slidesCollection = WppCom.GetProperty(presentation, "Slides");
+                int count = Convert.ToInt32(WppCom.GetProperty(slidesCollection, "Count"));
+                for (int i = 1; i <= count; i++)
+                {
+                    object candidate = WppCom.GetIndexed(slidesCollection, i);
+                    if (candidate == null)
+                    {
+                        continue;
+                    }
+
+                    object id = WppCom.GetProperty(candidate, "SlideID");
+                    if (id != null && Convert.ToInt32(id) == slideId)
+                    {
+                        slide = candidate;
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "unsupported: WPS 查找幻灯片失败: " + ex.Message;
+                return false;
+            }
+
+            error = "幻灯片不存在: " + slideIdText;
+            return false;
+        }
+
+        private static object FindShapeByIdDeep(object shapes, int id)
+        {
+            if (shapes == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                int count = Convert.ToInt32(WppCom.GetProperty(shapes, "Count"));
+                for (int i = 1; i <= count; i++)
+                {
+                    object shape = WppCom.GetIndexed(shapes, i);
+                    if (shape == null)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        if (Convert.ToInt32(WppCom.GetProperty(shape, "Id")) == id)
+                        {
+                            return shape;
+                        }
+
+                        object type = WppCom.GetProperty(shape, "Type");
+                        if (type != null && Convert.ToInt32(type) == 6)
+                        {
+                            object found = FindShapeInGroupDeep(shape, id);
+                            if (found != null)
+                            {
+                                return found;
+                            }
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return null;
+        }
+
+        private static object FindShapeInGroupDeep(object group, int id)
+        {
+            try
+            {
+                object items = WppCom.GetProperty(group, "GroupItems");
+                if (items == null)
+                {
+                    return null;
+                }
+
+                int count = Convert.ToInt32(WppCom.GetProperty(items, "Count"));
+                for (int i = 1; i <= count; i++)
+                {
+                    object child = WppCom.GetIndexed(items, i);
+                    if (child == null)
+                    {
+                        continue;
+                    }
+
+                    if (Convert.ToInt32(WppCom.GetProperty(child, "Id")) == id)
+                    {
+                        return child;
+                    }
+
+                    object type = WppCom.GetProperty(child, "Type");
+                    if (type != null && Convert.ToInt32(type) == 6)
+                    {
+                        object nested = FindShapeInGroupDeep(child, id);
+                        if (nested != null)
+                        {
+                            return nested;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return null;
+        }
+
         public static bool TryReadPptHtml(
             WppChannel channel,
             string slideId,

@@ -320,6 +320,296 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        public static bool TryCaptureShape(
+            PptChannel channel,
+            string shapeId,
+            out PresentationCaptureResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLivePresentation(out PowerPoint.Presentation presentation))
+            {
+                error = "渠道对应的演示文稿已关闭";
+                return false;
+            }
+
+            if (!PptShapeId.TryParseShape(shapeId, out string slideIdText, out int comId))
+            {
+                error = "形状截图须提供完整 shape_id（sid{SlideID}-s{n}）";
+                return false;
+            }
+
+            if (!TryFindSlideBySlideId(presentation, slideIdText, out PowerPoint.Slide slide, out error))
+            {
+                return false;
+            }
+
+            PowerPoint.Shape shape = FindShapeByIdDeep(slide.Shapes, comId);
+            if (shape == null)
+            {
+                error = "未找到形状: " + shapeId.Trim();
+                return false;
+            }
+
+            try
+            {
+                if (shape.Visible == Office.MsoTriState.msoFalse)
+                {
+                    error = "形状已隐藏，无法截图";
+                    return false;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            float shapeLeft;
+            float shapeTop;
+            float shapeWidth;
+            float shapeHeight;
+            try
+            {
+                shapeLeft = shape.Left;
+                shapeTop = shape.Top;
+                shapeWidth = shape.Width;
+                shapeHeight = shape.Height;
+            }
+            catch (Exception ex)
+            {
+                error = "读取形状几何失败: " + ex.Message;
+                return false;
+            }
+
+            int slideCount;
+            int pageNumber;
+            try
+            {
+                slideCount = presentation.Slides.Count;
+                pageNumber = slide.SlideIndex;
+            }
+            catch (Exception ex)
+            {
+                error = "COM 不可用: " + ex.Message;
+                return false;
+            }
+
+            string tempDir = Path.Combine(Path.GetTempPath(), "EasyWrite", "capture", Guid.NewGuid().ToString("N"));
+            string pngPath = Path.Combine(tempDir, "slide.png");
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+                float slideWidth = 0f;
+                float slideHeight = 0f;
+                try
+                {
+                    slideWidth = presentation.PageSetup.SlideWidth;
+                    slideHeight = presentation.PageSetup.SlideHeight;
+                }
+                catch (Exception)
+                {
+                }
+
+                ImageCaptureCompressor.FitExportPixelSize(
+                    slideWidth,
+                    slideHeight,
+                    out int exportW,
+                    out int exportH);
+                slide.Export(pngPath, "PNG", exportW, exportH);
+                if (!File.Exists(pngPath) || new FileInfo(pngPath).Length == 0)
+                {
+                    error = "幻灯片导出图片为空";
+                    return false;
+                }
+
+                if (!PptShapeCaptureHelper.TryCropFromSlidePng(
+                        pngPath,
+                        slideWidth,
+                        slideHeight,
+                        shapeLeft,
+                        shapeTop,
+                        shapeWidth,
+                        shapeHeight,
+                        out PptShapeCaptureHelper.CropResult crop,
+                        out error))
+                {
+                    return false;
+                }
+
+                try
+                {
+                    result = new PresentationCaptureResult
+                    {
+                        ChannelId = channel.ChannelId,
+                        Kind = "ppt",
+                        PageNumber = pageNumber,
+                        SlideCount = slideCount,
+                        SlideId = slideIdText,
+                        ShapeId = shapeId.Trim(),
+                        Scale = crop.Scale,
+                        BoundsLeftPct = crop.LeftPct,
+                        BoundsTopPct = crop.TopPct,
+                        BoundsWidthPct = crop.WidthPct,
+                        BoundsHeightPct = crop.HeightPct,
+                        Image = ImageCaptureCompressor.Compress(crop.Bitmap)
+                    };
+                    return true;
+                }
+                finally
+                {
+                    if (crop?.Bitmap != null)
+                    {
+                        crop.Bitmap.Dispose();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "导出形状截图失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(pngPath))
+                    {
+                        File.Delete(pngPath);
+                    }
+
+                    if (Directory.Exists(tempDir))
+                    {
+                        Directory.Delete(tempDir, true);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        private static bool TryFindSlideBySlideId(
+            PowerPoint.Presentation presentation,
+            string slideIdText,
+            out PowerPoint.Slide slide,
+            out string error)
+        {
+            slide = null;
+            error = null;
+            if (!int.TryParse(slideIdText, System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out int slideId))
+            {
+                error = "shape_id 内 SlideID 无效";
+                return false;
+            }
+
+            try
+            {
+                slide = presentation.Slides.FindBySlideID(slideId);
+                if (slide != null)
+                {
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                int count = presentation.Slides.Count;
+                for (int i = 1; i <= count; i++)
+                {
+                    PowerPoint.Slide s = presentation.Slides[i];
+                    if (s.SlideID == slideId)
+                    {
+                        slide = s;
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "查找幻灯片失败: " + ex.Message;
+                return false;
+            }
+
+            error = "幻灯片不存在: " + slideIdText;
+            return false;
+        }
+
+        private static PowerPoint.Shape FindShapeByIdDeep(PowerPoint.Shapes shapes, int id)
+        {
+            if (shapes == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                int count = shapes.Count;
+                for (int i = 1; i <= count; i++)
+                {
+                    PowerPoint.Shape shape = shapes[i];
+                    try
+                    {
+                        if (shape.Id == id)
+                        {
+                            return shape;
+                        }
+
+                        if ((int)shape.Type == 6)
+                        {
+                            PowerPoint.Shape found = FindShapeInGroupDeep(shape, id);
+                            if (found != null)
+                            {
+                                return found;
+                            }
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return null;
+        }
+
+        private static PowerPoint.Shape FindShapeInGroupDeep(PowerPoint.Shape group, int id)
+        {
+            try
+            {
+                PowerPoint.GroupShapes items = group.GroupItems;
+                int count = items.Count;
+                for (int i = 1; i <= count; i++)
+                {
+                    PowerPoint.Shape child = items[i];
+                    if (child.Id == id)
+                    {
+                        return child;
+                    }
+
+                    if ((int)child.Type == 6)
+                    {
+                        PowerPoint.Shape nested = FindShapeInGroupDeep(child, id);
+                        if (nested != null)
+                        {
+                            return nested;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return null;
+        }
+
         public static bool TryReadPptHtml(
             PptChannel channel,
             string slideId,
