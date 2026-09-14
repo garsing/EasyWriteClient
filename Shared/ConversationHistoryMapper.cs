@@ -67,6 +67,7 @@ namespace WordAddIn1
                         content = text,
                         attachments,
                         timestamp = idBase + seq,
+                        duration_ms = ReadDurationMs(message),
                         isStreaming = false
                     });
                     continue;
@@ -116,6 +117,33 @@ namespace WordAddIn1
             }
 
             return result;
+        }
+
+        private static long? ReadDurationMs(JObject message)
+        {
+            if (message == null)
+            {
+                return null;
+            }
+
+            JToken token = message["duration_ms"];
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                return null;
+            }
+
+            if (token.Type == JTokenType.Integer)
+            {
+                return token.Value<long>();
+            }
+
+            long parsed;
+            if (long.TryParse(token.ToString(), out parsed) && parsed >= 0)
+            {
+                return parsed;
+            }
+
+            return null;
         }
 
         /// <summary>

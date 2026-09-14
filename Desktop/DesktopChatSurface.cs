@@ -1184,6 +1184,15 @@ namespace EasyWriteClient.Desktop
                             return;
                         }
 
+                        if (chunk?.easywrite_meta?.@event == "turn_timing")
+                        {
+                            _bridge.SendToJavaScript("turnTiming", new
+                            {
+                                duration_ms = chunk.easywrite_meta.duration_ms
+                            });
+                            return;
+                        }
+
                         if (chunk?.choices == null || chunk.choices.Count == 0)
                         {
                             return;

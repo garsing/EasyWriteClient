@@ -873,6 +873,7 @@ function normalizeHistoryMessage(m) {
       attachments: normalizeHistoryAttachments(m.attachments),
       segments,
       timestamp,
+      duration_ms: Number.isFinite(Number(m.duration_ms)) ? Number(m.duration_ms) : undefined,
       isStreaming: false,
       isHint: !!m.isHint,
       fromHistory: true,
@@ -900,6 +901,7 @@ function normalizeHistoryMessage(m) {
     attachments: normalizeHistoryAttachments(m.attachments),
     segments,
     timestamp,
+    duration_ms: Number.isFinite(Number(m.duration_ms)) ? Number(m.duration_ms) : undefined,
     isStreaming: false,
     isHint: !!m.isHint,
     fromHistory: true,
@@ -1007,9 +1009,6 @@ onMounted(() => {
           messages.value[index].segments = segments
           messages.value[index].isStreaming = isStreaming
           messages.value[index].timestamp = new Date(messageData.timestamp || data.timestamp || Date.now())
-          if (!messages.value[index].startedAt) {
-            messages.value[index].startedAt = messages.value[index].timestamp
-          }
           console.log('[App] 消息已更新，segments:', segments.length, 'content长度:', messageContent.length)
         }
       } else {
@@ -1021,7 +1020,6 @@ onMounted(() => {
           content: messageContent,
           segments,
           timestamp: new Date(messageData.timestamp || data.timestamp || Date.now()),
-          startedAt: new Date(messageData.timestamp || data.timestamp || Date.now()),
           isStreaming: isStreaming,
           isHint: !!messageData.isHint
         }
@@ -1036,6 +1034,18 @@ onMounted(() => {
     } else if (data.type === 'requiresLogin') {
       // 认证过期，需要登录
       handleLoginRequired(data.userInput || pendingInput.value)
+    } else if (data.type === 'turnTiming') {
+      const payload = data.data || data
+      const durationMs = Number(payload.duration_ms)
+      if (!Number.isFinite(durationMs) || durationMs < 0) {
+        return
+      }
+      for (let i = messages.value.length - 1; i >= 0; i--) {
+        if (messages.value[i].role === 'user') {
+          messages.value[i].duration_ms = durationMs
+          break
+        }
+      }
     } else if (data.type === 'requestStateChanged') {
       // 请求状态变化（开始/停止处理）
       const stateData = data.data || data

@@ -590,6 +590,9 @@ namespace WordAddIn1
         public string tool_call_id { get; set; }
 
         public string text { get; set; }
+
+        [JsonProperty("duration_ms")]
+        public long? duration_ms { get; set; }
     }
 
     /// <summary>
