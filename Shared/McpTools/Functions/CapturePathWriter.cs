@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 截图可选 path：FilePathResolver + 扩展名必须与压缩后 format 一致。
+    /// 截图可选 path：FilePathResolver。扩展名与压缩后 format 不一致时改后缀再写，不失败。
     /// </summary>
     internal static class CapturePathWriter
     {
@@ -53,14 +53,24 @@ namespace WordAddIn1
                 fmt = "jpeg";
             }
 
-            if (!IsAllowedExtension(ext))
+            if (string.IsNullOrEmpty(fmt) || (fmt != "png" && fmt != "jpeg"))
             {
-                return Fail("path 扩展名须为 .png / .jpg / .jpeg");
+                return Fail("截图 format 无效，无法写入 path");
             }
 
-            if (!ExtensionMatchesFormat(ext, fmt))
+            string wantExt = fmt == "png" ? ".png" : ".jpg";
+            if (string.IsNullOrEmpty(ext) || !ExtensionMatchesFormat(ext, fmt))
             {
-                return Fail("path 扩展名须与实际 format 一致（当前 format=" + fmt + "）");
+                resolved.LocalPath = Path.ChangeExtension(resolved.LocalPath, wantExt);
+                if (!string.IsNullOrEmpty(resolved.Display))
+                {
+                    resolved.Display = Path.ChangeExtension(resolved.Display, wantExt);
+                }
+
+                if (!string.IsNullOrEmpty(resolved.Relative))
+                {
+                    resolved.Relative = Path.ChangeExtension(resolved.Relative, wantExt);
+                }
             }
 
             var written = await FilePathResolver.WriteBytesAsync(resolved, bytes).ConfigureAwait(false);
@@ -75,13 +85,6 @@ namespace WordAddIn1
             }
 
             return null;
-        }
-
-        private static bool IsAllowedExtension(string ext)
-        {
-            return string.Equals(ext, ".png", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(ext, ".jpg", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(ext, ".jpeg", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool ExtensionMatchesFormat(string ext, string format)
