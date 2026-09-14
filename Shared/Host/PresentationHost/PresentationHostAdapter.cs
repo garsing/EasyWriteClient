@@ -137,6 +137,29 @@ namespace WordAddIn1.PresentationHost
             out PptHtmlReadResult result,
             out ToolResult errorResult)
         {
+            return TryReadPptHtml(
+                channel,
+                slideId,
+                shapeId,
+                fullPage,
+                skipRasterized,
+                false,
+                PptConventionHtml.DefaultContentMinArea,
+                out result,
+                out errorResult);
+        }
+
+        public static bool TryReadPptHtml(
+            IOperationChannel channel,
+            string slideId,
+            string shapeId,
+            bool fullPage,
+            bool skipRasterized,
+            bool contentOnly,
+            double contentMinArea,
+            out PptHtmlReadResult result,
+            out ToolResult errorResult)
+        {
             result = null;
             errorResult = null;
             if (channel == null)
@@ -175,12 +198,14 @@ namespace WordAddIn1.PresentationHost
             if (channel is PptChannel ppt)
             {
                 ok = PowerPointPresentationHost.TryReadPptHtml(
-                    ppt, slideId, shapeId, fullPage, skipRasterized, out result, out error);
+                    ppt, slideId, shapeId, fullPage, skipRasterized, contentOnly, contentMinArea,
+                    out result, out error);
             }
             else if (channel is WppChannel wpp)
             {
                 ok = WppPresentationHost.TryReadPptHtml(
-                    wpp, slideId, shapeId, fullPage, skipRasterized, out result, out error);
+                    wpp, slideId, shapeId, fullPage, skipRasterized, contentOnly, contentMinArea,
+                    out result, out error);
             }
             else
             {

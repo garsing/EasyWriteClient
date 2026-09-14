@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -62,6 +63,15 @@ namespace WordAddIn1
                             };
                         }
 
+                        if (GetBoolArg(args, "content_only", false) || HasArgKey(args, "min_area"))
+                        {
+                            return new ToolResult
+                            {
+                                Success = false,
+                                Error = "内容骨架不要同时传 query"
+                            };
+                        }
+
                         return HandleSearch(args, channel, slideId.Trim());
                     }
 
@@ -77,7 +87,12 @@ namespace WordAddIn1
                     string exportHtml = FilePathResolver.TryGetArg(args, "path", "export_html");
                     bool full = GetBoolArg(args, "full", false);
                     bool compact = GetBoolArg(args, "compact", false);
+                    bool contentOnly = GetBoolArg(args, "content_only", false);
                     string shapeId = GetStringArg(args, "shape_id");
+                    if (!TryGetMinArea(args, contentOnly, out double minArea, out string minAreaError))
+                    {
+                        return new ToolResult { Success = false, Error = minAreaError };
+                    }
 
                     if (compact && full)
                     {
@@ -85,6 +100,15 @@ namespace WordAddIn1
                         {
                             Success = false,
                             Error = "精简骨架不要同时传 full"
+                        };
+                    }
+
+                    if (contentOnly && full)
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "内容骨架不要同时传 full"
                         };
                     }
 
@@ -129,19 +153,23 @@ namespace WordAddIn1
                             slideId.Trim(),
                             string.IsNullOrWhiteSpace(shapeId) ? null : shapeId.Trim(),
                             full,
-                            compact,
+                            compact || contentOnly,
+                            contentOnly,
+                            minArea,
                             out PptHtmlReadResult hostResult,
                             out ToolResult errorResult))
                     {
                         return errorResult;
                     }
 
-                    if (compact && hostResult != null && !hostResult.IsSkeleton)
+                    if ((compact || contentOnly) && hostResult != null && !hostResult.IsSkeleton)
                     {
                         return new ToolResult
                         {
                             Success = false,
-                            Error = "精简骨架只用于整页或组，叶子详细读不要传 compact"
+                            Error = contentOnly
+                                ? "内容骨架只用于整页或组，叶子详细读不要传 content_only"
+                                : "精简骨架只用于整页或组，叶子详细读不要传 compact"
                         };
                     }
 
@@ -254,7 +282,12 @@ namespace WordAddIn1
                         data["html_filename"] = exportResolved.Display;
                     }
 
-                    if (compact)
+                    if (contentOnly)
+                    {
+                        data["content_only"] = true;
+                        data["min_area"] = minArea;
+                    }
+                    else if (compact)
                     {
                         data["compact"] = true;
                     }
@@ -552,6 +585,77 @@ namespace WordAddIn1
             }
 
             return Convert.ToString(raw)?.Trim() ?? "";
+        }
+
+        private static bool HasArgKey(Dictionary<string, object> args, string key)
+        {
+            return args != null && !string.IsNullOrEmpty(key) && args.ContainsKey(key);
+        }
+
+        private static bool TryGetMinArea(
+            Dictionary<string, object> args,
+            bool contentOnly,
+            out double minArea,
+            out string error)
+        {
+            minArea = PptConventionHtml.DefaultContentMinArea;
+            error = null;
+            bool hasKey = HasArgKey(args, "min_area");
+            if (hasKey && !contentOnly)
+            {
+                error = "min_area 只与 content_only 同传";
+                return false;
+            }
+
+            if (!hasKey)
+            {
+                return true;
+            }
+
+            object raw = args["min_area"];
+            if (raw == null)
+            {
+                error = "min_area 须为大于等于 0 的数字";
+                return false;
+            }
+
+            if (raw is double d)
+            {
+                minArea = d;
+            }
+            else if (raw is float f)
+            {
+                minArea = f;
+            }
+            else if (raw is int i)
+            {
+                minArea = i;
+            }
+            else if (raw is long l)
+            {
+                minArea = l;
+            }
+            else if (raw is decimal dec)
+            {
+                minArea = (double)dec;
+            }
+            else if (!double.TryParse(
+                Convert.ToString(raw),
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out minArea))
+            {
+                error = "min_area 须为大于等于 0 的数字";
+                return false;
+            }
+
+            if (double.IsNaN(minArea) || double.IsInfinity(minArea) || minArea < 0)
+            {
+                error = "min_area 须为大于等于 0 的数字";
+                return false;
+            }
+
+            return true;
         }
 
         private static bool GetBoolArg(Dictionary<string, object> args, string key, bool defaultValue)

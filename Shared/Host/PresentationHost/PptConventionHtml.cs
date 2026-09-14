@@ -56,6 +56,8 @@ namespace WordAddIn1.PresentationHost
             return ids;
         }
 
+        public const double DefaultContentMinArea = 1.0;
+
         /// <summary>
         /// 精简骨架：去掉带 data-rasterized-from 的栅格装饰，并丢掉因此变空的组。
         /// </summary>
@@ -112,6 +114,120 @@ namespace WordAddIn1.PresentationHost
                 && (node.Children == null || node.Children.Count == 0)
                 && !node.DepthCapped
                 && string.IsNullOrEmpty(node.Text))
+            {
+                return null;
+            }
+
+            return node;
+        }
+
+        /// <summary>
+        /// 内容骨架：只留有字/textbox/占位符/chart/table/media，以及足够大的真图；空组丢掉。
+        /// </summary>
+        public static void ApplyContentOnlyFilter(List<PptHtmlShapeNode> shapes, double minArea)
+        {
+            if (shapes == null)
+            {
+                return;
+            }
+
+            List<PptHtmlShapeNode> kept = FilterContentOnlyNodes(shapes, minArea);
+            shapes.Clear();
+            shapes.AddRange(kept);
+        }
+
+        public static bool IsContentCarrier(PptHtmlShapeNode node, bool picturesNeedArea, double minArea)
+        {
+            if (node == null)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(node.RasterizedFrom))
+            {
+                return false;
+            }
+
+            string type = node.ShapeType ?? "";
+            if (type == "group"
+                || type == "chart"
+                || type == "table"
+                || type == "media"
+                || type == "textbox"
+                || type.StartsWith("placeholder_", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(node.Text))
+            {
+                return true;
+            }
+
+            if (type == "picture")
+            {
+                if (!picturesNeedArea)
+                {
+                    return true;
+                }
+
+                double area = PptHtmlNodeSearch.ComputeArea(node);
+                if (area <= 0)
+                {
+                    return true;
+                }
+
+                return area + 0.0000001 >= minArea;
+            }
+
+            return false;
+        }
+
+        private static List<PptHtmlShapeNode> FilterContentOnlyNodes(IList<PptHtmlShapeNode> nodes, double minArea)
+        {
+            var kept = new List<PptHtmlShapeNode>();
+            if (nodes == null)
+            {
+                return kept;
+            }
+
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                PptHtmlShapeNode node = FilterContentOnlyNode(nodes[i], minArea);
+                if (node != null)
+                {
+                    kept.Add(node);
+                }
+            }
+
+            return kept;
+        }
+
+        private static PptHtmlShapeNode FilterContentOnlyNode(PptHtmlShapeNode node, double minArea)
+        {
+            if (node == null)
+            {
+                return null;
+            }
+
+            if (node.Children != null && node.Children.Count > 0)
+            {
+                node.Children = FilterContentOnlyNodes(node.Children, minArea);
+            }
+
+            if (string.Equals(node.ShapeType, "group", StringComparison.Ordinal))
+            {
+                if ((node.Children == null || node.Children.Count == 0)
+                    && !node.DepthCapped
+                    && string.IsNullOrWhiteSpace(node.Text))
+                {
+                    return null;
+                }
+
+                return node;
+            }
+
+            if (!IsContentCarrier(node, picturesNeedArea: true, minArea))
             {
                 return null;
             }
@@ -529,11 +645,21 @@ namespace WordAddIn1.PresentationHost
 
         private static void AppendSkeletonPreface(StringBuilder sb, PptHtmlReadResult result)
         {
-            if (result.IsCompact)
+            if (result.IsContentOnly)
+            {
+                string area = (result.ContentMinArea ?? DefaultContentMinArea)
+                    .ToString("0.####", CultureInfo.InvariantCulture);
+                sb.AppendLine(
+                    "内容骨架：只留有字 / textbox / 占位符 / chart / table / media，以及页面积≥"
+                    + area
+                    + " 的真图；线、三角、菱形、圆点等无字装饰已去掉。");
+                sb.AppendLine("要对齐装饰框看完整骨架；只要去掉栅格装饰用 compact=true。");
+            }
+            else if (result.IsCompact)
             {
                 sb.AppendLine(
                     "精简骨架：已去掉带 data-rasterized-from 的栅格装饰（freeform 等），空组已去掉；这些装饰不占 200 顶。");
-                sb.AppendLine("要对齐装饰框看完整骨架（不要传 compact）。");
+                sb.AppendLine("只要内容、不要矢量装饰用 content_only=true。要对齐装饰框看完整骨架。");
             }
 
             sb.AppendLine("骨架：本窗只展开 3 层（根不算层，从孩子起数；max_depth=3）。");

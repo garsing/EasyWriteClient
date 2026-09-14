@@ -147,6 +147,12 @@ namespace WordAddIn1.PresentationHost
         /// <summary>精简骨架：已去掉带 RasterizedFrom 的栅格装饰。</summary>
         public bool IsCompact { get; set; }
 
+        /// <summary>内容骨架：只留有字/槽/图/表的节点。</summary>
+        public bool IsContentOnly { get; set; }
+
+        /// <summary>内容骨架筛真图的页面积下限（width%×height%/100）。</summary>
+        public double? ContentMinArea { get; set; }
+
         /// <summary>本窗因深度截断的 group ShapeId，树上遇见顺序。</summary>
         public List<string> DepthCappedShapeIds { get; set; }
 
