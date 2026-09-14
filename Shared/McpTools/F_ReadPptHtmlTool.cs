@@ -463,7 +463,9 @@ namespace WordAddIn1
                 leafCount,
                 matchTotal,
                 pictureOriented,
-                request.Fields);
+                request.Fields,
+                request.MatchAny,
+                request.Clauses != null ? request.Clauses.Count : 0);
             var data = new Dictionary<string, object>
             {
                 ["channel_id"] = ChannelRegistry.ToPublicId(hostResult.ChannelId) ?? "",

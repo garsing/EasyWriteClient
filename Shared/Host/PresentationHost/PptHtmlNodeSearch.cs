@@ -271,7 +271,7 @@ namespace WordAddIn1.PresentationHost
                 clauses.Add(one);
             }
 
-            if (!TryParseMatch(GetString(args, "match"), out bool matchAny, out error))
+            if (!TryParseMatch(GetString(args, "match"), clauses.Count, out bool matchAny, out error))
             {
                 return false;
             }
@@ -708,6 +708,19 @@ namespace WordAddIn1.PresentationHost
             bool pictureOriented,
             IList<string> fields)
         {
+            return BuildDisplayContents(
+                forest, leafCount, matchTotal, pictureOriented, fields, matchAny: false, clauseCount: 1);
+        }
+
+        public static string BuildDisplayContents(
+            IList<PptHtmlShapeNode> forest,
+            int leafCount,
+            int matchTotal,
+            bool pictureOriented,
+            IList<string> fields,
+            bool matchAny,
+            int clauseCount)
+        {
             int maxHits = EffectiveMaxHits(fields);
             var sb = new StringBuilder();
             if (pictureOriented)
@@ -730,6 +743,11 @@ namespace WordAddIn1.PresentationHost
             else
             {
                 sb.Append("页内节点搜索：命中 ").Append(leafCount).Append(" 条叶子（最多 ").Append(maxHits).Append("）。");
+            }
+
+            if (!matchAny && clauseCount >= 2 && leafCount == 0)
+            {
+                sb.Append("match=and 是同一叶子同时满足，不是或。要并集写 match=or，或拆成两次搜。");
             }
 
             if (fields != null && fields.Count > 0)
@@ -1403,28 +1421,41 @@ namespace WordAddIn1.PresentationHost
             return Convert.ToString(raw)?.Trim() ?? "";
         }
 
-        private static bool TryParseMatch(string raw, out bool matchAny, out string error)
+        private static bool TryParseMatch(string raw, int clauseCount, out bool matchAny, out string error)
         {
             matchAny = false;
             error = null;
             if (string.IsNullOrWhiteSpace(raw))
             {
+                if (clauseCount >= 2)
+                {
+                    error = "多条 query 必须写 match：and=同一叶子同时满足，or=两类叶子并集。| 只在同一条 pattern 里表示或。";
+                    return false;
+                }
+
                 return true;
             }
 
             string t = raw.Trim();
-            if (string.Equals(t, "all", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(t, "and", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
 
-            if (string.Equals(t, "any", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(t, "or", StringComparison.OrdinalIgnoreCase))
             {
                 matchAny = true;
                 return true;
             }
 
-            error = "match 只能是 all 或 any";
+            if (string.Equals(t, "all", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(t, "any", StringComparison.OrdinalIgnoreCase))
+            {
+                error = "match 只能是 and 或 or（不要写 all/any）";
+                return false;
+            }
+
+            error = "match 只能是 and 或 or";
             return false;
         }
 
