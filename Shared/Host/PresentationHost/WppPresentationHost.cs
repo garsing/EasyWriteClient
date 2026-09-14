@@ -953,6 +953,18 @@ namespace WordAddIn1.PresentationHost
             out PptHtmlReadResult result,
             out string error)
         {
+            return TryReadPptHtml(channel, slideId, shapeId, fullPage, false, out result, out error);
+        }
+
+        public static bool TryReadPptHtml(
+            WppChannel channel,
+            string slideId,
+            string shapeId,
+            bool fullPage,
+            bool skipRasterized,
+            out PptHtmlReadResult result,
+            out string error)
+        {
             result = null;
             error = null;
             if (channel == null || !channel.TryGetLivePresentation(out object presentation))
@@ -968,6 +980,8 @@ namespace WordAddIn1.PresentationHost
                 "wpp",
                 shapeId,
                 fullPage,
+                false,
+                skipRasterized,
                 out result,
                 out error);
         }

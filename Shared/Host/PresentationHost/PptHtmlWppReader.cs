@@ -59,6 +59,31 @@ namespace WordAddIn1.PresentationHost
             out PptHtmlReadResult result,
             out string error)
         {
+            return TryRead(
+                presentation,
+                slideId,
+                channelId,
+                kind,
+                shapeId,
+                fullPage,
+                searchPage,
+                false,
+                out result,
+                out error);
+        }
+
+        public static bool TryRead(
+            object presentation,
+            string slideId,
+            string channelId,
+            string kind,
+            string shapeId,
+            bool fullPage,
+            bool searchPage,
+            bool skipRasterized,
+            out PptHtmlReadResult result,
+            out string error)
+        {
             result = null;
             error = null;
             if (presentation == null)
@@ -128,7 +153,8 @@ namespace WordAddIn1.PresentationHost
             bool isSkeleton = true;
             fontDbg.Line("begin slide_id=" + trimmed + " host=wpp"
                 + (fullPage ? " fullPage=true" : "")
-                + (searchPage ? " searchPage=true" : ""));
+                + (searchPage ? " searchPage=true" : "")
+                + (skipRasterized ? " compact=true" : ""));
             try
             {
                 object shapesObj = WppCom.GetProperty(slide, "Shapes");
@@ -186,6 +212,7 @@ namespace WordAddIn1.PresentationHost
                         ref truncated,
                         ref truncatedReason,
                         fontDbg,
+                        skipRasterized,
                         out string focusError,
                         out isSkeleton))
                     {
@@ -198,7 +225,7 @@ namespace WordAddIn1.PresentationHost
                     trimmed,
                     slideWidth,
                     slideHeight,
-                    GroupReadMode.Skeleton,
+                    skipRasterized ? GroupReadMode.SkeletonCompact : GroupReadMode.Skeleton,
                     1,
                     shapes,
                     ref truncated,
@@ -219,6 +246,11 @@ namespace WordAddIn1.PresentationHost
             {
                 error = "读取形状失败: " + ex.Message;
                 return false;
+            }
+
+            if (skipRasterized && isSkeleton)
+            {
+                PptConventionHtml.ApplyCompactFilter(shapes);
             }
 
             string debugFile = fontDbg.TryWriteToSession(trimmed, out string debugWriteErr);
@@ -246,6 +278,7 @@ namespace WordAddIn1.PresentationHost
                 TruncatedReason = truncatedReason,
                 ShapeCount = PptHtmlGeom.CountNodes(shapes),
                 IsSkeleton = isSkeleton,
+                IsCompact = skipRasterized && isSkeleton,
                 DepthCappedShapeIds = isSkeleton
                     ? PptConventionHtml.CollectDepthCappedIds(shapes)
                     : null,
@@ -309,6 +342,7 @@ namespace WordAddIn1.PresentationHost
         {
             ShellOnly,
             Skeleton,
+            SkeletonCompact,
             FullTree,
             FullPage,
             SearchPage
@@ -319,9 +353,14 @@ namespace WordAddIn1.PresentationHost
             return mode == GroupReadMode.FullPage || mode == GroupReadMode.SearchPage;
         }
 
+        private static bool IsSkeletonMode(GroupReadMode mode)
+        {
+            return mode == GroupReadMode.Skeleton || mode == GroupReadMode.SkeletonCompact;
+        }
+
         private static bool IsSlim(GroupReadMode mode)
         {
-            return mode == GroupReadMode.Skeleton || mode == GroupReadMode.SearchPage;
+            return IsSkeletonMode(mode) || mode == GroupReadMode.SearchPage;
         }
 
         private static bool CollectShapes(
@@ -399,6 +438,7 @@ namespace WordAddIn1.PresentationHost
             ref bool truncated,
             ref string truncatedReason,
             PptHtmlReadDebug fontDbg,
+            bool skipRasterized,
             out string error,
             out bool isSkeleton)
         {
@@ -432,7 +472,9 @@ namespace WordAddIn1.PresentationHost
             object target = path[path.Count - 1];
             string typeName = PeekTypeName(target);
             isSkeleton = typeName == "group";
-            GroupReadMode mode = isSkeleton ? GroupReadMode.Skeleton : GroupReadMode.ShellOnly;
+            GroupReadMode mode = isSkeleton
+                ? (skipRasterized ? GroupReadMode.SkeletonCompact : GroupReadMode.Skeleton)
+                : GroupReadMode.ShellOnly;
             var built = new List<PptHtmlShapeNode>();
             if (!AppendNode(
                 target,
@@ -734,11 +776,11 @@ namespace WordAddIn1.PresentationHost
             {
                 if (mode == GroupReadMode.FullTree
                     || IsUnlimited(mode)
-                    || (mode == GroupReadMode.Skeleton
+                    || (IsSkeletonMode(mode)
                         && expandLayer < PptHtmlReadResult.SkeletonMaxDepth))
                 {
                     groupKids = new List<PptHtmlShapeNode>();
-                    int childLayer = mode == GroupReadMode.Skeleton ? expandLayer + 1 : 0;
+                    int childLayer = IsSkeletonMode(mode) ? expandLayer + 1 : 0;
                     if (!TryReadGroupChildren(
                         shape,
                         slideId,
@@ -761,7 +803,7 @@ namespace WordAddIn1.PresentationHost
                         groupKids = null;
                     }
                 }
-                else if (mode == GroupReadMode.Skeleton)
+                else if (IsSkeletonMode(mode))
                 {
                     depthCapped = TryPeekGroupHasChildren(shape);
                 }
@@ -781,6 +823,11 @@ namespace WordAddIn1.PresentationHost
             {
                 rasterizedFrom = typeName;
                 typeName = "picture";
+            }
+
+            if (mode == GroupReadMode.SkeletonCompact && !string.IsNullOrEmpty(rasterizedFrom))
+            {
+                return true;
             }
 
             bool slim = IsSlim(mode);

@@ -144,6 +144,9 @@ namespace WordAddIn1.PresentationHost
         /// <summary>默认页 / 组 shape_id 的骨架窗。叶子详细读为 false。</summary>
         public bool IsSkeleton { get; set; }
 
+        /// <summary>精简骨架：已去掉带 RasterizedFrom 的栅格装饰。</summary>
+        public bool IsCompact { get; set; }
+
         /// <summary>本窗因深度截断的 group ShapeId，树上遇见顺序。</summary>
         public List<string> DepthCappedShapeIds { get; set; }
 

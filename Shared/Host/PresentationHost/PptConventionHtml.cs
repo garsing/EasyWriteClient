@@ -56,6 +56,69 @@ namespace WordAddIn1.PresentationHost
             return ids;
         }
 
+        /// <summary>
+        /// 精简骨架：去掉带 data-rasterized-from 的栅格装饰，并丢掉因此变空的组。
+        /// </summary>
+        public static void ApplyCompactFilter(List<PptHtmlShapeNode> shapes)
+        {
+            if (shapes == null)
+            {
+                return;
+            }
+
+            List<PptHtmlShapeNode> kept = FilterCompactNodes(shapes);
+            shapes.Clear();
+            shapes.AddRange(kept);
+        }
+
+        public static List<PptHtmlShapeNode> FilterCompactNodes(IList<PptHtmlShapeNode> nodes)
+        {
+            var kept = new List<PptHtmlShapeNode>();
+            if (nodes == null)
+            {
+                return kept;
+            }
+
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                PptHtmlShapeNode node = FilterCompactNode(nodes[i]);
+                if (node != null)
+                {
+                    kept.Add(node);
+                }
+            }
+
+            return kept;
+        }
+
+        private static PptHtmlShapeNode FilterCompactNode(PptHtmlShapeNode node)
+        {
+            if (node == null)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrEmpty(node.RasterizedFrom))
+            {
+                return null;
+            }
+
+            if (node.Children != null && node.Children.Count > 0)
+            {
+                node.Children = FilterCompactNodes(node.Children);
+            }
+
+            if (string.Equals(node.ShapeType, "group", StringComparison.Ordinal)
+                && (node.Children == null || node.Children.Count == 0)
+                && !node.DepthCapped
+                && string.IsNullOrEmpty(node.Text))
+            {
+                return null;
+            }
+
+            return node;
+        }
+
         public static string TruncateText(string text, int maxChars, out bool truncated)
         {
             truncated = false;
@@ -466,6 +529,13 @@ namespace WordAddIn1.PresentationHost
 
         private static void AppendSkeletonPreface(StringBuilder sb, PptHtmlReadResult result)
         {
+            if (result.IsCompact)
+            {
+                sb.AppendLine(
+                    "精简骨架：已去掉带 data-rasterized-from 的栅格装饰（freeform 等），空组已去掉；这些装饰不占 200 顶。");
+                sb.AppendLine("要对齐装饰框看完整骨架（不要传 compact）。");
+            }
+
             sb.AppendLine("骨架：本窗只展开 3 层（根不算层，从孩子起数；max_depth=3）。");
             List<string> ids = result.DepthCappedShapeIds;
             if (ids != null && ids.Count > 0)

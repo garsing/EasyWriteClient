@@ -53,6 +53,15 @@ namespace WordAddIn1
 
                     if (PptHtmlNodeSearch.IsSearchArgs(args))
                     {
+                        if (GetBoolArg(args, "compact", false))
+                        {
+                            return new ToolResult
+                            {
+                                Success = false,
+                                Error = "精简骨架不要同时传 query"
+                            };
+                        }
+
                         return HandleSearch(args, channel, slideId.Trim());
                     }
 
@@ -67,7 +76,17 @@ namespace WordAddIn1
 
                     string exportHtml = FilePathResolver.TryGetArg(args, "path", "export_html");
                     bool full = GetBoolArg(args, "full", false);
+                    bool compact = GetBoolArg(args, "compact", false);
                     string shapeId = GetStringArg(args, "shape_id");
+
+                    if (compact && full)
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "精简骨架不要同时传 full"
+                        };
+                    }
 
                     if (full && string.IsNullOrEmpty(exportHtml))
                     {
@@ -110,10 +129,20 @@ namespace WordAddIn1
                             slideId.Trim(),
                             string.IsNullOrWhiteSpace(shapeId) ? null : shapeId.Trim(),
                             full,
+                            compact,
                             out PptHtmlReadResult hostResult,
                             out ToolResult errorResult))
                     {
                         return errorResult;
+                    }
+
+                    if (compact && hostResult != null && !hostResult.IsSkeleton)
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "精简骨架只用于整页或组，叶子详细读不要传 compact"
+                        };
                     }
 
                     string display = PptConventionHtml.BuildDisplayContents(hostResult);
@@ -223,6 +252,11 @@ namespace WordAddIn1
 
                         data["path"] = exportResolved.Display;
                         data["html_filename"] = exportResolved.Display;
+                    }
+
+                    if (compact)
+                    {
+                        data["compact"] = true;
                     }
 
                     if (full)
