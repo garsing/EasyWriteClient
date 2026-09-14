@@ -73,13 +73,13 @@ namespace WordAddIn1
         /// 发送聊天请求
         /// </summary>
         /// <param name="messages">消息列表</param>
-        /// <param name="model">模型名称，默认为 deepseek-v4-flash（实际以服务端用户套餐为准）</param>
+        /// <param name="model">模型名称，默认为 deepseek-flash（实际以服务端用户套餐为准）</param>
         /// <param name="temperature">温度参数，控制随机性 (0.0-2.0)</param>
         /// <param name="maxTokens">最大token数</param>
         /// <returns>API响应</returns>
         public async Task<LlmResponse> ChatAsync(
             List<ChatMessage> messages,
-            string model = "deepseek-v4-flash",
+            string model = "deepseek-flash",
             double temperature = 0.7,
             int? maxTokens = null)
         {
@@ -138,7 +138,7 @@ namespace WordAddIn1
         /// </summary>
         /// <param name="messages">消息列表</param>
         /// <param name="onChunk">处理每个数据块的回调函数</param>
-        /// <param name="model">模型名称，默认为 deepseek-v4-flash</param>
+        /// <param name="model">模型名称，默认为 deepseek-flash</param>
         /// <param name="temperature">温度参数，控制随机性 (0.0-2.0)</param>
         /// <param name="maxTokens">最大token数</param>
         /// <param name="cancellationToken">取消令牌</param>
@@ -220,7 +220,7 @@ namespace WordAddIn1
         public async Task<ChatStreamResult> ChatStreamAsync(
             List<ChatMessage> messages,
             Action<StreamChunk> onChunk,
-            string model = "deepseek-v4-flash",
+            string model = "deepseek-flash",
             double temperature = 0.7,
             int? maxTokens = null,
             Dictionary<string, string> headers = null,
