@@ -670,6 +670,37 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
+        public static bool TryProjectReadShapes(
+            IList<PptHtmlShapeNode> shapes,
+            IList<string> fields,
+            out string error)
+        {
+            error = null;
+            if (shapes == null || fields == null)
+            {
+                return true;
+            }
+
+            for (int i = 0; i < shapes.Count; i++)
+            {
+                PptHtmlShapeNode node = shapes[i];
+                if (node == null)
+                {
+                    continue;
+                }
+
+                if (IsGroup(node))
+                {
+                    error = "fields 只用于叶子详细读或 query，组骨架不要传 fields";
+                    return false;
+                }
+
+                shapes[i] = ProjectLeaf(node, fields);
+            }
+
+            return true;
+        }
+
         public static bool TryCheckHtmlSize(IList<PptHtmlShapeNode> forest, out string error)
         {
             error = null;
@@ -1290,7 +1321,7 @@ namespace WordAddIn1.PresentationHost
             };
         }
 
-        private static bool TryParseFields(object raw, out List<string> fields, out string error)
+        public static bool TryParseFields(object raw, out List<string> fields, out string error)
         {
             fields = null;
             error = null;
@@ -1357,7 +1388,7 @@ namespace WordAddIn1.PresentationHost
                 if (string.Equals(name, "all", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(name, "detail", StringComparison.OrdinalIgnoreCase))
                 {
-                    error = "搜索 fields 不支持 all/detail，要全量请传 shape_id";
+                    error = "fields 不支持 all/detail。要全量：叶子只传 shape_id，不要 fields";
                     return false;
                 }
 

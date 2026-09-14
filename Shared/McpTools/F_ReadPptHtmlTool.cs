@@ -75,13 +75,22 @@ namespace WordAddIn1
                         return HandleSearch(args, channel, slideId.Trim());
                     }
 
+                    List<string> leafFields = null;
                     if (PptHtmlNodeSearch.HasFieldsKey(args))
                     {
-                        return new ToolResult
+                        if (string.IsNullOrWhiteSpace(GetStringArg(args, "shape_id")))
                         {
-                            Success = false,
-                            Error = "fields 只能与 query（或 attr+pattern）同传"
-                        };
+                            return new ToolResult
+                            {
+                                Success = false,
+                                Error = "fields 只能与 query（或 attr+pattern）或叶子 shape_id 同传"
+                            };
+                        }
+
+                        if (!PptHtmlNodeSearch.TryParseFields(args["fields"], out leafFields, out string fieldsParseError))
+                        {
+                            return new ToolResult { Success = false, Error = fieldsParseError };
+                        }
                     }
 
                     string exportHtml = FilePathResolver.TryGetArg(args, "path", "export_html");
@@ -173,7 +182,38 @@ namespace WordAddIn1
                         };
                     }
 
+                    if (leafFields != null)
+                    {
+                        if (hostResult != null && hostResult.IsSkeleton)
+                        {
+                            return new ToolResult
+                            {
+                                Success = false,
+                                Error = "fields 只用于叶子详细读或 query，组/整页骨架不要传 fields"
+                            };
+                        }
+
+                        if (!PptHtmlNodeSearch.TryProjectReadShapes(
+                                hostResult != null ? hostResult.Shapes : null,
+                                leafFields,
+                                out string projectError))
+                        {
+                            return new ToolResult { Success = false, Error = projectError };
+                        }
+
+                        if (!PptHtmlNodeSearch.TryCheckHtmlSize(
+                                hostResult != null ? hostResult.Shapes : null,
+                                out string sizeError))
+                        {
+                            return new ToolResult { Success = false, Error = sizeError };
+                        }
+                    }
+
                     string display = PptConventionHtml.BuildDisplayContents(hostResult);
+                    if (leafFields != null)
+                    {
+                        display = "已按 fields 写出。" + Environment.NewLine + Environment.NewLine + display;
+                    }
                     var data = new Dictionary<string, object>
                     {
                         ["channel_id"] = ChannelRegistry.ToPublicId(hostResult.ChannelId) ?? "",
