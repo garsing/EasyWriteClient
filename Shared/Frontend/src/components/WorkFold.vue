@@ -7,7 +7,10 @@
         aria-hidden="true"
       />
       <span class="work-fold-icon-spacer" aria-hidden="true" />
-      <span class="work-fold-title">奋力工作的记录</span>
+      <span class="work-fold-title">
+        奋力工作的记录
+        <span v-if="durationText" class="work-fold-duration">{{ durationText }}</span>
+      </span>
     </div>
     <div v-if="isExpanded" class="work-fold-body">
       <slot />
@@ -16,9 +19,36 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+
+const props = defineProps({
+  /** 本轮从提问到收尾的毫秒数；过短或未知则不展示 */
+  durationMs: {
+    type: Number,
+    default: null
+  }
+})
 
 const isExpanded = ref(false)
+
+const durationText = computed(() => formatWorkDuration(props.durationMs))
+
+function formatWorkDuration (ms) {
+  const n = Number(ms)
+  if (!Number.isFinite(n) || n < 500) return ''
+  const totalSec = Math.round(n / 1000)
+  if (totalSec < 1) return ''
+  const hours = Math.floor(totalSec / 3600)
+  const minutes = Math.floor((totalSec % 3600) / 60)
+  const seconds = totalSec % 60
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}小时${minutes}分` : `${hours}小时`
+  }
+  if (minutes > 0) {
+    return seconds > 0 ? `${minutes}分${seconds}秒` : `${minutes}分`
+  }
+  return `${seconds}秒`
+}
 
 const toggleExpand = () => {
   isExpanded.value = !isExpanded.value
@@ -68,6 +98,12 @@ const toggleExpand = () => {
   font-size: 13px;
   font-weight: 500;
   color: #666;
+}
+
+.work-fold-duration {
+  margin-left: 8px;
+  font-weight: 400;
+  color: #999;
 }
 
 .work-fold-body {

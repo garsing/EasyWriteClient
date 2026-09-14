@@ -9,7 +9,7 @@
     </template>
     <div v-else class="system-message">
       <div class="message-content">
-        <WorkFold v-if="workMessage">
+        <WorkFold v-if="workMessage" :duration-ms="durationMs">
           <SystemMessageBubble :message="workMessage" compact force-process />
         </WorkFold>
         <SystemMessageBubble v-if="finalMessage" :message="finalMessage" compact />
@@ -31,6 +31,10 @@ const props = defineProps({
   archived: {
     type: Boolean,
     default: false
+  },
+  durationMs: {
+    type: Number,
+    default: null
   }
 })
 

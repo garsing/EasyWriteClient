@@ -1007,6 +1007,9 @@ onMounted(() => {
           messages.value[index].segments = segments
           messages.value[index].isStreaming = isStreaming
           messages.value[index].timestamp = new Date(messageData.timestamp || data.timestamp || Date.now())
+          if (!messages.value[index].startedAt) {
+            messages.value[index].startedAt = messages.value[index].timestamp
+          }
           console.log('[App] 消息已更新，segments:', segments.length, 'content长度:', messageContent.length)
         }
       } else {
@@ -1018,6 +1021,7 @@ onMounted(() => {
           content: messageContent,
           segments,
           timestamp: new Date(messageData.timestamp || data.timestamp || Date.now()),
+          startedAt: new Date(messageData.timestamp || data.timestamp || Date.now()),
           isStreaming: isStreaming,
           isHint: !!messageData.isHint
         }

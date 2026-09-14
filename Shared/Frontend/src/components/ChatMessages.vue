@@ -14,6 +14,7 @@
           v-else
           :messages="item.messages"
           :archived="item.archived"
+          :duration-ms="item.durationMs"
         />
       </div>
     </div>
@@ -41,13 +42,34 @@ const props = defineProps({
 /** 用户气泡 / 提示单独一项；连续助手消息合成一轮。
  * 归档：后面已有用户消息，或从历史加载（切对话 / 重开应用）——最后一轮也收进「奋力工作的记录」。
  * 只有本会话刚生成完 / 刚点停止的那一轮保持展开。 */
+function toTime (value) {
+  if (!value) return 0
+  const t = value instanceof Date ? value.getTime() : new Date(value).getTime()
+  return Number.isFinite(t) ? t : 0
+}
+
+/** 从上一问发出到本轮助手最后一次更新。历史回放的时间戳是假的，过短则不展示。 */
+function computeTurnDurationMs (user, run) {
+  if (!run || !run.length) return null
+  const starts = [
+    toTime(user?.timestamp),
+    ...run.map((m) => toTime(m.startedAt || m.timestamp))
+  ].filter((t) => t > 0)
+  const ends = run.map((m) => toTime(m.timestamp)).filter((t) => t > 0)
+  if (!starts.length || !ends.length) return null
+  const ms = Math.max(...ends) - Math.min(...starts)
+  return ms >= 500 ? ms : null
+}
+
 const displayItems = computed(() => {
   const items = []
   const list = props.messages || []
   let i = 0
+  let lastUser = null
   while (i < list.length) {
     const m = list[i]
     if (m.role === 'user') {
+      lastUser = m
       items.push({ kind: 'user', key: `user-${m.id}`, message: m })
       i += 1
       continue
@@ -68,7 +90,8 @@ const displayItems = computed(() => {
       kind: 'assistant',
       key: `asst-${run.map((x) => x.id).join('-')}`,
       messages: run,
-      archived: hasUserAfter || fromHistory
+      archived: hasUserAfter || fromHistory,
+      durationMs: computeTurnDurationMs(lastUser, run)
     })
   }
   return items
