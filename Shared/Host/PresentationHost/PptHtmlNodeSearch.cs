@@ -725,18 +725,15 @@ namespace WordAddIn1.PresentationHost
             var sb = new StringBuilder();
             if (pictureOriented)
             {
-                sb.Append("页内节点搜索：picture 向；");
                 if (matchTotal > leafCount)
                 {
-                    sb.Append("截断前命中 ").Append(matchTotal)
-                        .Append("；已按面积取前 ").Append(leafCount)
-                        .Append("（truncated=true）。");
-                }
-                else
-                {
-                    sb.Append("命中 ").Append(leafCount).Append(" 条。");
+                    sb.Append("【截断】共 ").Append(matchTotal)
+                        .Append(" 条，只回面积最大的 ").Append(leafCount)
+                        .Append(" 条（truncated=true）。不要换正则补全；看 data-area-rank，或改用 content_only=true。");
+                    sb.AppendLine();
                 }
 
+                sb.Append("页内节点搜索：picture 向；命中 ").Append(leafCount).Append(" 条。");
                 sb.Append("data-area 为页面积占比（宽%×高%/100）；已按面积从大到小排序。");
                 sb.Append("看 data-area-rank 靠前的再 shape 截图确认。");
             }

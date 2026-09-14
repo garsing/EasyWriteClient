@@ -15,6 +15,18 @@ namespace WordAddIn1.PresentationHost
             }
 
             var sb = new StringBuilder();
+            if (result.Truncated)
+            {
+                sb.Append("【截断】本窗未写完整页（truncated=true）。");
+                if (!string.IsNullOrEmpty(result.TruncatedReason))
+                {
+                    sb.Append(result.TruncatedReason).Append("。");
+                }
+
+                sb.AppendLine("下面不是整页，不要当全量。");
+                sb.AppendLine();
+            }
+
             sb.AppendLine("演示文稿：" + (result.Name ?? ""));
             sb.AppendLine(
                 "kind=" + (result.Kind ?? "")
@@ -29,15 +41,6 @@ namespace WordAddIn1.PresentationHost
             }
 
             sb.AppendLine();
-            if (result.Truncated)
-            {
-                sb.AppendLine(
-                    "truncated=true"
-                    + (string.IsNullOrEmpty(result.TruncatedReason)
-                        ? ""
-                        : " reason=" + result.TruncatedReason));
-            }
-
             sb.AppendLine();
             if (result.IsSkeleton)
             {
@@ -666,7 +669,7 @@ namespace WordAddIn1.PresentationHost
             List<string> ids = result.DepthCappedShapeIds;
             if (ids != null && ids.Count > 0)
             {
-                sb.AppendLine("下列 group 还有更深子节点，本窗未写出。要继续展开请再调 F_read_ppt_html，传入该 shape_id：");
+                sb.AppendLine("【深度截断】下列 group 还有更深子节点，本窗未写出。要继续展开请再调 F_read_ppt_html，传入该 shape_id：");
                 for (int i = 0; i < ids.Count; i++)
                 {
                     if (!string.IsNullOrEmpty(ids[i]))
