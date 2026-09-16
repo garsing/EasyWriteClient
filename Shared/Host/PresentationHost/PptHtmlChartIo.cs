@@ -7194,6 +7194,7 @@ namespace WordAddIn1.PresentationHost
                     FinishLineChartLayout(chart, xlType, format, warnings);
                     TryApplyStyleSnap(chart, htmlSnap, warnings, grid, format);
                     TryInheritAxisChrome(chart, htmlSnap, warnings);
+                    EnsureNewPieVariesByCategory(chart, grid, warnings);
                 }
                 else
                 {
@@ -9117,6 +9118,47 @@ namespace WordAddIn1.PresentationHost
             }
 
             return x > 1 ? 1 : x;
+        }
+
+        /// <summary>
+        /// 仅新建饼图：稿未写系列色时按类别分色。改已有图不走这里。
+        /// </summary>
+        private static void EnsureNewPieVariesByCategory(
+            object chart,
+            PptHtmlChartGrid grid,
+            List<string> warnings)
+        {
+            if (!IsPieChart(chart) || HtmlGridHasSeriesColor(grid))
+            {
+                return;
+            }
+
+            TrySetVaryByCategories(chart, true, warnings);
+            StyleLog(warnings, "新建饼图未写系列色，按类别分色");
+        }
+
+        private static bool HtmlGridHasSeriesColor(PptHtmlChartGrid grid)
+        {
+            if (grid == null || grid.Columns == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < grid.Columns.Count; i++)
+            {
+                PptHtmlChartColumn col = grid.Columns[i];
+                if (col == null || col.Role == "category")
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(col.Color))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static void TrySetVaryByCategories(object chart, bool on, List<string> warnings = null)
