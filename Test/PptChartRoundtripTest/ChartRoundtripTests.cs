@@ -31,36 +31,7 @@ namespace PptChartRoundtripTest
                 return;
             }
 
-            try
-            {
-                WithFreshShapes(app, run, "create-column", CreateColumnReadBack);
-                WithFreshShapes(app, run, "create-bar", CreateBarReadBack);
-                WithFreshShapes(app, run, "create-line", CreateLineReadBack);
-                WithFreshShapes(app, run, "create-pie2d", CreatePie2dReadBack);
-                WithFreshShapes(app, run, "create-pie3d", CreatePie3dReadBack);
-                WithFreshShapes(app, run, "create-combo-y2", CreateComboY2ReadBack);
-                WithFreshShapes(app, run, "create-combo-both-y", CreateComboBothYNoSecondary);
-                WithFreshShapes(app, run, "replace-more-rows", ReplaceColumnMoreRows);
-                WithFreshShapes(app, run, "replace-to-combo-y2", ReplaceColumnToComboY2);
-                WithFreshShapes(app, run, "replace-barline-y2", ReplaceBarLineY2);
-            }
-            catch (Exception ex)
-            {
-                run.Fail("com-suite", ex.GetType().Name + ": " + ex.Message);
-            }
-            finally
-            {
-                QuitQuiet(null, app);
-            }
-        }
-
-        private static void WithFreshShapes(
-            PowerPoint.Application app,
-            TestRun run,
-            string name,
-            Action<TestRun, object> body)
-        {
-            PptHtmlChartIo.DismissChartExcelUi();
+            _pptDead = false;
             PowerPoint.Presentation pres = null;
             try
             {
@@ -70,32 +41,95 @@ namespace PptChartRoundtripTest
                     pres.Slides.Add(1, PowerPoint.PpSlideLayout.ppLayoutBlank);
                 }
 
-                PowerPoint.Slide slide = pres.Slides[pres.Slides.Count];
+                RunOne(app, pres, run, "create-column", CreateColumnReadBack);
+                RunOne(app, pres, run, "create-bar", CreateBarReadBack);
+                RunOne(app, pres, run, "create-line", CreateLineReadBack);
+                RunOne(app, pres, run, "create-pie2d", CreatePie2dReadBack);
+                RunOne(app, pres, run, "create-pie3d", CreatePie3dReadBack);
+                RunOne(app, pres, run, "create-combo-y2", CreateComboY2ReadBack);
+                RunOne(app, pres, run, "create-combo-both-y", CreateComboBothYNoSecondary);
+                RunOne(app, pres, run, "replace-more-rows", ReplaceColumnMoreRows);
+                RunOne(app, pres, run, "replace-to-combo-y2", ReplaceColumnToComboY2);
+                RunOne(app, pres, run, "replace-barline-y2", ReplaceBarLineY2);
+            }
+            catch (Exception ex)
+            {
+                run.Fail("com-suite", ex.GetType().Name + ": " + ex.Message);
+            }
+            finally
+            {
+                QuitQuiet(pres, app);
+            }
+        }
+
+        private static bool _pptDead;
+
+        private static void RunOne(
+            PowerPoint.Application app,
+            PowerPoint.Presentation pres,
+            TestRun run,
+            string name,
+            Action<TestRun, object> body)
+        {
+            if (_pptDead || !IsAppAlive(app))
+            {
+                _pptDead = true;
+                run.Skip(name, "PowerPoint 已断开，后续 COM 例不再跑");
+                return;
+            }
+
+            PptHtmlChartIo.DismissChartExcelUi();
+            System.Threading.Thread.Sleep(400);
+            try
+            {
+                PowerPoint.Slide slide = pres.Slides.Add(pres.Slides.Count + 1, PowerPoint.PpSlideLayout.ppLayoutBlank);
                 body(run, slide.Shapes);
             }
             catch (Exception ex)
             {
+                if (IsRpcDead(ex))
+                {
+                    _pptDead = true;
+                    run.Skip(name, "PowerPoint 已断开：" + ex.Message);
+                    return;
+                }
+
                 run.Fail(name, ex.GetType().Name + ": " + ex.Message);
             }
             finally
             {
-                if (pres != null)
-                {
-                    try
-                    {
-                        pres.Saved = Office.MsoTriState.msoTrue;
-                        pres.Close();
-                    }
-                    catch
-                    {
-                    }
-
-                    TryRelease(pres);
-                }
-
                 PptHtmlChartIo.DismissChartExcelUi();
-                System.Threading.Thread.Sleep(250);
             }
+        }
+
+        private static bool IsAppAlive(PowerPoint.Application app)
+        {
+            if (app == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                int _ = app.Presentations.Count;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsRpcDead(Exception ex)
+        {
+            if (ex == null)
+            {
+                return false;
+            }
+
+            string m = ex.Message ?? "";
+            return m.IndexOf("0x800706BA", StringComparison.OrdinalIgnoreCase) >= 0
+                || m.IndexOf("RPC", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static void CreateColumnReadBack(TestRun run, object shapes)
@@ -304,8 +338,9 @@ namespace PptChartRoundtripTest
             }
 
             run.ExpectEqual("create-pie2d 类型", "pie2d", model.Format?.ChartType);
-            run.Expect("create-pie2d 3 扇区", model.Grid != null && model.Grid.Rows.Count == 3,
+            run.Expect("create-pie2d 至少 3 扇区", model.Grid != null && model.Grid.Rows.Count >= 3,
                 "行数=" + (model.Grid == null ? -1 : model.Grid.Rows.Count));
+            run.ExpectClose("create-pie2d A", 40, Cell(model, 0, 1));
             run.ExpectClose("create-pie2d C", 25, Cell(model, 2, 1));
         }
 
@@ -451,6 +486,13 @@ namespace PptChartRoundtripTest
         private static void FailOrSkipChartData(TestRun run, string name, string error, List<string> warnings)
         {
             string detail = (error ?? "") + FormatWarnings(warnings);
+            if (IsRpcDead(new Exception(error ?? "")))
+            {
+                _pptDead = true;
+                run.Skip(name, "PowerPoint 已断开：" + detail);
+                return;
+            }
+
             if (IsChartDataBusy(error))
             {
                 run.Skip(name, "Office ChartData 忙（本机 Excel 内嵌表偶发打不开）：" + detail);

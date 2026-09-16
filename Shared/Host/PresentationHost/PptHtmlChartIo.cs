@@ -8339,10 +8339,14 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                object workbook = WppCom.GetProperty(chartData, "Workbook");
+                object workbook = TryOpenChartWorkbook(chartData, out error);
                 if (workbook == null)
                 {
-                    error = "无法打开图表内嵌工作簿";
+                    if (string.IsNullOrEmpty(error))
+                    {
+                        error = "无法打开图表内嵌工作簿";
+                    }
+
                     return false;
                 }
 
@@ -8362,6 +8366,75 @@ namespace WordAddIn1.PresentationHost
             {
                 error = "打开 ChartData 失败: " + ex.Message;
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// 先 Activate 再取 Workbook。连续建图时嵌入 Excel 常未就绪，直取会炸。
+        /// </summary>
+        private static object TryOpenChartWorkbook(object chartData, out string error)
+        {
+            error = null;
+            if (chartData == null)
+            {
+                error = "无法访问 ChartData";
+                return null;
+            }
+
+            Exception last = null;
+            for (int i = 0; i < 6; i++)
+            {
+                TryActivateChartData(chartData);
+                PumpChartUi(80 + i * 70);
+                try
+                {
+                    object workbook = WppCom.GetProperty(chartData, "Workbook");
+                    if (workbook != null)
+                    {
+                        return workbook;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                }
+            }
+
+            error = last == null
+                ? "无法打开图表内嵌工作簿"
+                : "打开 ChartData 失败: " + last.Message;
+            return null;
+        }
+
+        private static void TryActivateChartData(object chartData)
+        {
+            if (chartData == null)
+            {
+                return;
+            }
+
+            try
+            {
+                WppCom.Invoke(chartData, "Activate");
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void PumpChartUi(int milliseconds)
+        {
+            try
+            {
+                Application.DoEvents();
+            }
+            catch (Exception)
+            {
+            }
+
+            if (milliseconds > 0)
+            {
+                Thread.Sleep(milliseconds);
             }
         }
 
