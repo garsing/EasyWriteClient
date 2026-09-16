@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Globalization;
+using System.Text;
 using WordAddIn1.PresentationHost;
 
 namespace PptChartRoundtripTest
@@ -407,6 +409,66 @@ namespace PptChartRoundtripTest
                 + "      <tr><td>2027</td><td>2.8</td><td>0.302</td></tr>\n"
                 + "      <tr><td>2028</td><td>3.65</td><td>0.304</td></tr>\n"
                 + "      <tr><td>2029</td><td>4.8</td><td>0.315</td></tr>\n";
+        }
+
+        public static string BuildChart(
+            bool create,
+            string chartType,
+            string legend,
+            IList<string> cats,
+            IList<IList<double>> series,
+            IList<string> seriesTypes,
+            IList<string> axes,
+            IList<string> seriesNames,
+            bool showLabels)
+        {
+            string head = create
+                ? "  <div ShapeId=\"new-case\" data-shape-type=\"chart\" data-chart-type=\"" + chartType + "\" data-legend=\"" + legend + "\" " + CreateBox
+                : "  <div ShapeId=\"" + FormalId + "\" data-chart-type=\"" + chartType + "\" data-legend=\"" + legend + "\"";
+            var sb = new StringBuilder();
+            sb.Append(head).Append(">\n    <table>\n      <tr>\n");
+            sb.Append("        <th data-col=\"category\">类别</th>\n");
+            for (int s = 0; s < series.Count; s++)
+            {
+                string st = seriesTypes[s];
+                string ax = axes[s];
+                string nm = seriesNames[s];
+                sb.Append("        <th data-col=\"value\" data-series-type=\"").Append(st)
+                    .Append("\" data-axis=\"").Append(ax).Append("\"");
+                if (showLabels)
+                {
+                    sb.Append(" data-show-data-labels=\"true\"");
+                    if (st != null && st.IndexOf("pie", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        sb.Append(" data-show-percentage=\"true\" data-show-value=\"false\"");
+                    }
+                    else
+                    {
+                        sb.Append(" data-show-value=\"true\"");
+                    }
+                }
+                else
+                {
+                    sb.Append(" data-show-data-labels=\"false\"");
+                }
+
+                sb.Append(">").Append(nm).Append("</th>\n");
+            }
+
+            sb.Append("      </tr>\n");
+            for (int r = 0; r < cats.Count; r++)
+            {
+                sb.Append("      <tr><td>").Append(cats[r]).Append("</td>");
+                for (int s = 0; s < series.Count; s++)
+                {
+                    sb.Append("<td>").Append(series[s][r].ToString("0.###", CultureInfo.InvariantCulture)).Append("</td>");
+                }
+
+                sb.Append("</tr>\n");
+            }
+
+            sb.Append("    </table>\n  </div>");
+            return Section(sb.ToString());
         }
 
         public static PptHtmlChartColumn ValueCol(PptHtmlChartGrid grid, int valueIndex)

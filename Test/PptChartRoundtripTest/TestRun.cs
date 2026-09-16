@@ -10,6 +10,31 @@ namespace PptChartRoundtripTest
 
         public int Skipped { get; private set; }
 
+        /// <summary>按「一页一图」计的用例数，不是单属性断言。</summary>
+        public int CasesPassed { get; private set; }
+
+        public int CasesFailed { get; private set; }
+
+        public int CasesSkipped { get; private set; }
+
+        public void CaseOk(string name)
+        {
+            CasesPassed++;
+            Ok(name);
+        }
+
+        public void CaseFail(string name, string reason)
+        {
+            CasesFailed++;
+            Fail(name, reason);
+        }
+
+        public void CaseSkip(string name, string reason)
+        {
+            CasesSkipped++;
+            Skip(name, reason);
+        }
+
         public void Ok(string name)
         {
             Passed++;
