@@ -34,11 +34,15 @@ namespace PptChartRoundtripTest
             try
             {
                 WithFreshShapes(app, run, "create-column", CreateColumnReadBack);
+                WithFreshShapes(app, run, "create-bar", CreateBarReadBack);
+                WithFreshShapes(app, run, "create-line", CreateLineReadBack);
+                WithFreshShapes(app, run, "create-pie2d", CreatePie2dReadBack);
                 WithFreshShapes(app, run, "create-pie3d", CreatePie3dReadBack);
                 WithFreshShapes(app, run, "create-combo-y2", CreateComboY2ReadBack);
                 WithFreshShapes(app, run, "create-combo-both-y", CreateComboBothYNoSecondary);
                 WithFreshShapes(app, run, "replace-more-rows", ReplaceColumnMoreRows);
                 WithFreshShapes(app, run, "replace-to-combo-y2", ReplaceColumnToComboY2);
+                WithFreshShapes(app, run, "replace-barline-y2", ReplaceBarLineY2);
             }
             catch (Exception ex)
             {
@@ -246,6 +250,93 @@ namespace PptChartRoundtripTest
             run.ExpectEqual("replace-to-combo-y2 折线系列", "line", NormalizeSeries(line?.SeriesType));
             run.ExpectEqual("replace-to-combo-y2 折线次轴", "y2", line?.AxisY);
             run.ExpectClose("replace-to-combo-y2 线 0.315", 0.315, Cell(model, 3, 2));
+        }
+
+        private static void CreateBarReadBack(TestRun run, object shapes)
+        {
+            if (!TryCreate(ChartHtml.BarCreate(), shapes, out object shape, out string error, out List<string> warnings))
+            {
+                FailOrSkipChartData(run, "create-bar", error, warnings);
+                return;
+            }
+
+            if (!TryReadModel(shape, out PptHtmlChartReadModel model, out error))
+            {
+                run.Fail("create-bar 读回", error);
+                return;
+            }
+
+            run.ExpectEqual("create-bar 类型", "bar", model.Format?.ChartType);
+            run.ExpectClose("create-bar 2026", 2.15, Cell(model, 0, 1));
+        }
+
+        private static void CreateLineReadBack(TestRun run, object shapes)
+        {
+            if (!TryCreate(ChartHtml.LineCreate(), shapes, out object shape, out string error, out List<string> warnings))
+            {
+                FailOrSkipChartData(run, "create-line", error, warnings);
+                return;
+            }
+
+            if (!TryReadModel(shape, out PptHtmlChartReadModel model, out error))
+            {
+                run.Fail("create-line 读回", error);
+                return;
+            }
+
+            run.ExpectEqual("create-line 类型", "line", NormalizeSeries(model.Format?.ChartType));
+            run.ExpectEqual("create-line 系列", "line", NormalizeSeries(ChartHtml.ValueCol(model.Grid, 0)?.SeriesType));
+            run.ExpectClose("create-line 2029", 4.8, Cell(model, 3, 1));
+        }
+
+        private static void CreatePie2dReadBack(TestRun run, object shapes)
+        {
+            if (!TryCreate(ChartHtml.Pie2dCreate(), shapes, out object shape, out string error, out List<string> warnings))
+            {
+                FailOrSkipChartData(run, "create-pie2d", error, warnings);
+                return;
+            }
+
+            if (!TryReadModel(shape, out PptHtmlChartReadModel model, out error))
+            {
+                run.Fail("create-pie2d 读回", error);
+                return;
+            }
+
+            run.ExpectEqual("create-pie2d 类型", "pie2d", model.Format?.ChartType);
+            run.Expect("create-pie2d 3 扇区", model.Grid != null && model.Grid.Rows.Count == 3,
+                "行数=" + (model.Grid == null ? -1 : model.Grid.Rows.Count));
+            run.ExpectClose("create-pie2d C", 25, Cell(model, 2, 1));
+        }
+
+        private static void ReplaceBarLineY2(TestRun run, object shapes)
+        {
+            if (!TryCreate(ChartHtml.BarCreate(), shapes, out object oldShape, out string error, out List<string> warnings))
+            {
+                FailOrSkipChartData(run, "replace-barline-y2 建底图", error, warnings);
+                return;
+            }
+
+            if (!ChartHtml.TryParseFirstChart(ChartHtml.BarLineY2Replace(), out PptHtmlApplyNode node, out error))
+            {
+                run.Fail("replace-barline-y2 解析", error);
+                return;
+            }
+
+            if (!TryReplace(shapes, oldShape, node, out object newShape, out error, out warnings))
+            {
+                FailOrSkipChartData(run, "replace-barline-y2 换数", error, warnings);
+                return;
+            }
+
+            if (!TryReadModel(newShape, out PptHtmlChartReadModel model, out error))
+            {
+                run.Fail("replace-barline-y2 读回", error);
+                return;
+            }
+
+            run.ExpectEqual("replace-barline-y2 折线次轴", "y2", ChartHtml.ValueCol(model.Grid, 1)?.AxisY);
+            run.ExpectClose("replace-barline-y2 线 0.315", 0.315, Cell(model, 3, 2));
         }
 
         private static bool TryCreate(
