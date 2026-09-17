@@ -212,6 +212,7 @@ namespace WordAddIn1.PresentationHost
                 if (snap.Explosion.HasValue)
                 {
                     TryApplyPieExplosion(chart, snap.Explosion.Value, warnings);
+                    TryRestorePieChartType(chart, snap);
                 }
             }
             catch (Exception ex)

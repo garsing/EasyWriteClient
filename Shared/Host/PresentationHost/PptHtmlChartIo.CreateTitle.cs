@@ -138,6 +138,7 @@ namespace WordAddIn1.PresentationHost
                     EnsureNewPieVariesByCategory(chart, grid, warnings);
                     // VaryByCategory 可能重建瓣点，爆炸须在其后按当前点数再写。
                     TryApplyPieExplosionFromFormat(chart, format, warnings);
+                    TryRestorePieChartType(chart, htmlSnap);
                 }
                 else
                 {
@@ -783,6 +784,12 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
+            int? pieXl = null;
+            if (TryReadChartXl(chart, out int cur) && IsPieXl(cur))
+            {
+                pieXl = cur;
+            }
+
             try
             {
                 object sc = TryInvoke(chart, "SeriesCollection");
@@ -797,23 +804,40 @@ namespace WordAddIn1.PresentationHost
                     return;
                 }
 
-                // 系列级顺带写一下（部分环境会带动点）；读回以点为准。
-                try
-                {
-                    WppCom.TrySetProperty(s, "Explosion", explosion);
-                }
-                catch (Exception)
-                {
-                }
-
-                object pts = WppCom.GetProperty(s, "Points");
+                // 只写 Point.Explosion。系列级 Explosion 在部分环境会把饼图 ChartType 打成柱图。
+                object pts = TryGetPoints(s);
                 if (pts == null)
                 {
-                    pts = TryInvoke(s, "Points");
-                }
+                    // 退回逐点 Points(i)
+                    int guess = 0;
+                    try
+                    {
+                        object cnt = WppCom.GetProperty(s, "Points") ?? TryInvoke(s, "Points");
+                        if (cnt != null)
+                        {
+                            guess = Convert.ToInt32(WppCom.GetProperty(cnt, "Count"));
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
 
-                if (pts == null)
-                {
+                    if (guess < 1)
+                    {
+                        guess = 8;
+                    }
+
+                    for (int i = 1; i <= guess; i++)
+                    {
+                        object pt = TryInvoke(s, "Points", i);
+                        if (pt == null)
+                        {
+                            break;
+                        }
+
+                        WppCom.TrySetProperty(pt, "Explosion", explosion);
+                    }
+
                     return;
                 }
 
@@ -826,6 +850,11 @@ namespace WordAddIn1.PresentationHost
                         pt = TryInvoke(pts, "Item", i);
                     }
 
+                    if (pt == null)
+                    {
+                        pt = TryInvoke(s, "Points", i);
+                    }
+
                     if (pt != null)
                     {
                         WppCom.TrySetProperty(pt, "Explosion", explosion);
@@ -835,6 +864,20 @@ namespace WordAddIn1.PresentationHost
             catch (Exception)
             {
                 Warn(warnings, "data-explosion");
+            }
+            finally
+            {
+                // 部分环境下写 Point.Explosion 会把整图 ChartType 打成柱图，须钉回。
+                if (pieXl.HasValue && !IsPieChart(chart))
+                {
+                    try
+                    {
+                        WppCom.TrySetProperty(chart, "ChartType", pieXl.Value);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
             }
         }
 
@@ -875,15 +918,17 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 object s = sc == null ? null : WppCom.GetIndexed(sc, 1);
-                object pts = s == null ? null : WppCom.GetProperty(s, "Points");
-                if (pts == null && s != null)
-                {
-                    pts = TryInvoke(s, "Points");
-                }
-
-                if (pts == null)
+                if (s == null)
                 {
                     return null;
+                }
+
+                object pts = TryGetPoints(s);
+                if (pts == null)
+                {
+                    // 点集合不可用时退回系列级（常为 0）
+                    object rawSeries = WppCom.GetProperty(s, "Explosion");
+                    return rawSeries == null ? 0 : Convert.ToInt32(Convert.ToDouble(rawSeries));
                 }
 
                 int n = Convert.ToInt32(WppCom.GetProperty(pts, "Count"));
@@ -895,7 +940,9 @@ namespace WordAddIn1.PresentationHost
                 int? uniform = null;
                 for (int i = 1; i <= n; i++)
                 {
-                    object pt = WppCom.GetIndexed(pts, i) ?? TryInvoke(pts, "Item", i);
+                    object pt = WppCom.GetIndexed(pts, i)
+                        ?? TryInvoke(pts, "Item", i)
+                        ?? TryInvoke(s, "Points", i);
                     object raw = pt == null ? null : WppCom.GetProperty(pt, "Explosion");
                     int v = raw == null ? 0 : Convert.ToInt32(Convert.ToDouble(raw));
                     if (uniform == null)

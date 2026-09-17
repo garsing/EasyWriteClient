@@ -391,6 +391,8 @@ namespace WordAddIn1.PresentationHost
                 TryApplyPieExplosion(newChart, snap.Explosion.Value, warnings);
             }
 
+            TryRestorePieChartType(newChart, snap);
+
             DismissChartExcelUiForChart(newChart);
             if (deferTitleOff)
             {
