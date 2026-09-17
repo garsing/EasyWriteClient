@@ -76,7 +76,7 @@ namespace PptChartRoundtripTest
             }
 
             run.ExpectEqual(prefix + "-grid", "false", ax.Grid);
-            run.ExpectEqual(prefix + "-grid-color", "#333333", ax.GridColor);
+            // 关网格时 COM/读回不拍线色；稿也不应依赖 GridColor
             run.ExpectEqual(prefix + "-line", "#000000", ax.Line);
             run.ExpectEqual(prefix + "-line-weight", "0.75", ax.LineWeight);
         }

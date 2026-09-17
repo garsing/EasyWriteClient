@@ -390,7 +390,6 @@ namespace PptChartRoundtripTest
                 + prefix + "-minor-tick=\"none\""
                 + formatAttr + " "
                 + prefix + "-grid=\"false\" "
-                + prefix + "-grid-color=\"#333333\" "
                 + prefix + "-line=\"#000000\" "
                 + prefix + "-line-weight=\"0.75\"";
         }

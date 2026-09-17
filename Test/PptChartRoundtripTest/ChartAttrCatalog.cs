@@ -781,6 +781,7 @@ namespace PptChartRoundtripTest
                 Node(prefix + "-major-tick", "outside"),
                 Node(prefix + "-minor-tick", "none"),
                 prefix == "data-axis-x" ? null : Node(prefix + "-format", "0.00"),
+                // 要对网格色必须开网格；关网格时读回不拍 GridColor
                 Node(prefix + "-grid", "true"),
                 Node(prefix + "-grid-color", "#333333"),
                 Node(prefix + "-line", "#000000"),
