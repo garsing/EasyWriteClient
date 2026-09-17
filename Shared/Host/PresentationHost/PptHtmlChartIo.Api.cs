@@ -44,7 +44,6 @@ namespace WordAddIn1.PresentationHost
             }
 
             var format = new PptHtmlChartFormat();
-            Console.WriteLine("  [标题调试] TryRead 入口 " + DescribeLiveTitle(chart));
             try
             {
                 object t = WppCom.GetProperty(chart, "ChartType");
@@ -380,37 +379,14 @@ namespace WordAddIn1.PresentationHost
 
             // 轴皮是最后一层：前面结构/开标签/再灌数都可能按 ChartStyle 掀字色。
             TryInheritAxisChrome(newChart, snap, warnings);
-            StyleLog(warnings, "换数末 format.Title=[" + (useFormat == null ? "fmt-null" : (useFormat.Title ?? "(null)"))
-                + "] Mentioned=" + (useFormat != null && useFormat.TitleMentioned)
-                + " snap.HasTitle=" + (snap == null ? "snap-null" : Convert.ToString(snap.HasTitle))
-                + " snap.Title=[" + (snap == null ? "" : (snap.Title ?? "(null)")) + "]"
-                + " deferTitleOff=" + deferTitleOff
-                + " 套轴后 " + DescribeLiveTitle(newChart));
-            if (!deferTitleOff && useFormat != null && useFormat.Title != null)
-            {
-                TrySetTitle(newChart, useFormat.Title, warnings);
-                StyleLog(warnings, "换数末 TrySetTitle 后 " + DescribeLiveTitle(newChart));
-            }
-
-            try
-            {
-                TryCaptureStyle(newChart, warnings, "新图套回后");
-            }
-            catch (Exception ex)
-            {
-                StyleLog(warnings, "回读新图异常: " + ex.Message);
-            }
 
             DismissChartExcelUiForChart(newChart);
-            StyleLog(warnings, "Dismiss Excel 后 " + DescribeLiveTitle(newChart));
             if (deferTitleOff)
             {
                 TrySetTitle(newChart, "", warnings);
-                StyleLog(warnings, "Dismiss 后关标题 " + DescribeLiveTitle(newChart));
             }
 
             TryDelete(oldShape);
-            StyleLog(warnings, "删旧图后 " + DescribeLiveTitle(newChart));
             warnings?.Add("已按旧图属性新建图表（HTML 未写的属性用快照补上）");
             if (!string.IsNullOrEmpty(EasyWriteLog.CurrentLogPath))
             {

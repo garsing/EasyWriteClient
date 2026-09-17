@@ -306,14 +306,6 @@ namespace PptChartRoundtripTest
                     return null;
                 }
 
-                if (one.Name != null && one.Name.IndexOf("title", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    PptHtmlChartFormat fmt = node.ChartFormat;
-                    Console.WriteLine("  [标题调试] 换数稿 format.Title=["
-                        + (fmt == null ? "fmt-null" : (fmt.Title ?? "(null)"))
-                        + "] Mentioned=" + (fmt != null && fmt.TitleMentioned));
-                }
-
                 if (!TryReplace(shapes, shape, node, out shape, out error, out warnings))
                 {
                     if (IsRpcText(error))
@@ -337,15 +329,6 @@ namespace PptChartRoundtripTest
                 return null;
             }
 
-            if (one.Name != null && one.Name.IndexOf("title", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                string readTitle = model != null && model.Format != null
-                    ? (model.Format.Title ?? "(null)")
-                    : "model-null";
-                Console.WriteLine("  [标题调试] TryRead 后 Format.Title=[" + readTitle + "]");
-                DumpTitleDebug(warnings);
-            }
-
             string mismatch = MatchExpect(one, model);
             if (mismatch == null)
             {
@@ -354,10 +337,6 @@ namespace PptChartRoundtripTest
             else
             {
                 run.CaseFail(tag, mismatch);
-                if (one.Name == null || one.Name.IndexOf("title", StringComparison.OrdinalIgnoreCase) < 0)
-                {
-                    DumpTitleDebug(warnings);
-                }
             }
 
             return null;
@@ -801,39 +780,6 @@ namespace PptChartRoundtripTest
             }
 
             return "column";
-        }
-
-        private static void DumpTitleDebug(List<string> warnings)
-        {
-            if (warnings == null || warnings.Count == 0)
-            {
-                Console.WriteLine("  [标题调试] 无 StyleLog");
-                return;
-            }
-
-            int n = 0;
-            for (int i = 0; i < warnings.Count; i++)
-            {
-                string w = warnings[i] ?? "";
-                if (w.IndexOf("标题", StringComparison.Ordinal) < 0
-                    && w.IndexOf("TrySetTitle", StringComparison.Ordinal) < 0
-                    && w.IndexOf("title=", StringComparison.OrdinalIgnoreCase) < 0
-                    && w.IndexOf("Dismiss", StringComparison.OrdinalIgnoreCase) < 0
-                    && w.IndexOf("删旧图", StringComparison.Ordinal) < 0
-                    && w.IndexOf("SyncFormat", StringComparison.Ordinal) < 0
-                    && w.IndexOf("TryReadTitle", StringComparison.Ordinal) < 0)
-                {
-                    continue;
-                }
-
-                Console.WriteLine("  [标题调试] " + w);
-                n++;
-                if (n >= 40)
-                {
-                    Console.WriteLine("  [标题调试] … 其后省略");
-                    break;
-                }
-            }
         }
 
         private static string FormatWarnings(List<string> warnings)

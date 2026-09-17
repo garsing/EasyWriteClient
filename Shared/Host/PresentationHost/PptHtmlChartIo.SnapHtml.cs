@@ -59,7 +59,6 @@ namespace WordAddIn1.PresentationHost
             if (snap.HasTitle == true && !string.IsNullOrEmpty(snap.Title)
                 && string.IsNullOrEmpty(format.Title))
             {
-                Console.WriteLine("  [标题调试] ProjectSnapToFormat 补 Title=[" + snap.Title + "]");
                 format.Title = snap.Title;
             }
 

@@ -190,8 +190,7 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            StyleLog(warnings, "开始套回 " + DescribeSnap("快照", snap)
-                + (deferTitleOff ? " deferTitleOff=True" : ""));
+            StyleLog(warnings, "开始套回 " + DescribeSnap("快照", snap));
             try
             {
                 TryInheritSeriesStructure(chart, snap);
@@ -255,14 +254,11 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            StyleLog(warnings, "套标题前 snap.HasTitle=" + Convert.ToString(snap.HasTitle)
-                + " snap.Title=[" + (snap.Title ?? "(null)") + "] deferTitleOff=" + deferTitleOff
-                + " " + DescribeLiveTitle(chart));
             bool explicitOff = snap.HasTitle == false
                 || (snap.Title != null && snap.Title.Length == 0);
             if (explicitOff && deferTitleOff)
             {
-                StyleLog(warnings, "关标题延后到 Dismiss Excel 后，此处跳过");
+                // Dismiss Excel 会再掀开默认标题，关标题留到换数末尾做。
             }
             else if (explicitOff)
             {
@@ -284,7 +280,6 @@ namespace WordAddIn1.PresentationHost
                 WppCom.TrySetProperty(chart, "HasTitle", snap.HasTitle.Value);
             }
 
-            StyleLog(warnings, "套标题后 explicitOff=" + explicitOff + " " + DescribeLiveTitle(chart));
             bool titleOn = !explicitOff
                 && (snap.HasTitle == true
                     || !string.IsNullOrEmpty(snap.Title)
@@ -1780,7 +1775,6 @@ namespace WordAddIn1.PresentationHost
             format.AxisX = null;
             format.AxisY = null;
             format.AxisYSecondary = null;
-            StyleLog(warnings, "SyncFormatToOldSnap 清空 format.Title=[" + (format.Title ?? "(null)") + "] Mentioned=" + format.TitleMentioned);
             format.Title = null;
         }
 

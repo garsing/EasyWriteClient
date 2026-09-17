@@ -356,16 +356,11 @@ namespace WordAddIn1.PresentationHost
                 object has = WppCom.GetProperty(chart, "HasTitle");
                 if (!IsTruthy(has))
                 {
-                    StyleLog(null, "TryReadTitle " + DescribeLiveTitle(chart) + " → 不写 Title");
-                    Console.WriteLine("  [标题调试] TryReadTitle " + DescribeLiveTitle(chart) + " → 不写 Title");
                     return;
                 }
 
                 object title = WppCom.GetProperty(chart, "ChartTitle");
                 format.Title = Convert.ToString(WppCom.GetProperty(title, "Text") ?? "");
-                StyleLog(null, "TryReadTitle " + DescribeLiveTitle(chart) + " → Title=[" + (format.Title ?? "") + "]");
-                Console.WriteLine("  [标题调试] TryReadTitle " + DescribeLiveTitle(chart)
-                    + " → Title=[" + (format.Title ?? "") + "]");
                 object font = WppCom.GetProperty(title, "Font");
                 if (font != null)
                 {
@@ -545,40 +540,13 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static string DescribeLiveTitle(object chart)
-        {
-            if (chart == null)
-            {
-                return "live=chart-null";
-            }
-
-            try
-            {
-                bool on = IsTruthy(WppCom.GetProperty(chart, "HasTitle"));
-                string text = "";
-                if (on)
-                {
-                    object ct = WppCom.GetProperty(chart, "ChartTitle");
-                    text = ct == null ? "(ChartTitle-null)" : Convert.ToString(WppCom.GetProperty(ct, "Text") ?? "");
-                }
-
-                return "live HasTitle=" + on + " Text=[" + text + "]";
-            }
-            catch (Exception ex)
-            {
-                return "live 读标题异常:" + ex.Message;
-            }
-        }
-
         private static void TrySetTitle(object chart, string title, List<string> warnings)
         {
-            StyleLog(warnings, "TrySetTitle 入参=[" + (title ?? "(null)") + "] " + DescribeLiveTitle(chart));
             try
             {
                 if (string.IsNullOrEmpty(title))
                 {
                     WppCom.TrySetProperty(chart, "HasTitle", false);
-                    StyleLog(warnings, "TrySetTitle 关后第一次 " + DescribeLiveTitle(chart));
                     try
                     {
                         if (IsTruthy(WppCom.GetProperty(chart, "HasTitle")))
@@ -590,12 +558,10 @@ namespace WordAddIn1.PresentationHost
                             }
 
                             WppCom.TrySetProperty(chart, "HasTitle", false);
-                            StyleLog(warnings, "TrySetTitle 关后清正文再关 " + DescribeLiveTitle(chart));
                         }
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
-                        StyleLog(warnings, "TrySetTitle 再关异常: " + ex.Message);
                     }
 
                     return;
@@ -604,12 +570,10 @@ namespace WordAddIn1.PresentationHost
                 WppCom.TrySetProperty(chart, "HasTitle", true);
                 object ct = WppCom.GetProperty(chart, "ChartTitle");
                 WppCom.TrySetProperty(ct, "Text", title);
-                StyleLog(warnings, "TrySetTitle 写正文后 " + DescribeLiveTitle(chart));
             }
             catch (Exception ex)
             {
                 warnings?.Add("未能套用 data-title: " + ex.Message);
-                StyleLog(warnings, "TrySetTitle 异常: " + ex.Message);
             }
         }
 
