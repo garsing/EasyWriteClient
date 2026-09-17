@@ -132,6 +132,7 @@ namespace PptChartRoundtripTest
             list.Add(Column(p + "plot-none", replace,
                 Merge(Node("data-plot-color", "none"), Node("data-chart-area-color", "none")),
                 AttrCheck.Exact("PlotColor", "none"), AttrCheck.Exact("ChartAreaColor", "none")));
+            // 绘图区几何：尽量套；有图例/轴字/标题时 Office 可能重排，仅套用不做 Exact
             list.Add(Column(p + "plot-box", replace, Node("data-plot-box", "20,25,400,200"),
                 AttrCheck.ApplyOnly("PlotBox", "20,25,400,200")));
             list.Add(Column(p + "plot-inside", replace, Node("data-plot-inside", "30,35,360,170"),
