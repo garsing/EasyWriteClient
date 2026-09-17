@@ -513,6 +513,11 @@ namespace WordAddIn1.PresentationHost
                 {
                 }
 
+                if (axisType == XlValue)
+                {
+                    TryCaptureValueAxisScale(axis, snap);
+                }
+
                 if (hasAxis == null
                     && snap.TickLabelPosition == XlTickLabelPositionNone
                     && snap.LineVisible == false
@@ -603,9 +608,141 @@ namespace WordAddIn1.PresentationHost
                         TryApplyGridlineLine(axis, snap);
                     }
                 }
+
+                if (axisType == XlValue)
+                {
+                    TryApplyValueAxisScale(axis, snap);
+                }
             }
             catch (Exception)
             {
+            }
+        }
+
+        private static void TryCaptureValueAxisScale(object axis, AxisStyleSnap snap)
+        {
+            if (axis == null || snap == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (!IsTruthy(WppCom.GetProperty(axis, "MinimumScaleIsAuto")))
+                {
+                    object mn = WppCom.GetProperty(axis, "MinimumScale");
+                    if (mn != null)
+                    {
+                        snap.MinimumScale = Convert.ToDouble(mn);
+                    }
+                }
+
+                if (!IsTruthy(WppCom.GetProperty(axis, "MaximumScaleIsAuto")))
+                {
+                    object mx = WppCom.GetProperty(axis, "MaximumScale");
+                    if (mx != null)
+                    {
+                        snap.MaximumScale = Convert.ToDouble(mx);
+                    }
+                }
+
+                if (!IsTruthy(WppCom.GetProperty(axis, "MajorUnitIsAuto")))
+                {
+                    object un = WppCom.GetProperty(axis, "MajorUnit");
+                    if (un != null)
+                    {
+                        snap.MajorUnit = Convert.ToDouble(un);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryApplyValueAxisScale(object axis, AxisStyleSnap snap)
+        {
+            if (axis == null || snap == null)
+            {
+                return;
+            }
+
+            if (!snap.MinimumScale.HasValue
+                && !snap.MaximumScale.HasValue
+                && !snap.MajorUnit.HasValue)
+            {
+                return;
+            }
+
+            try
+            {
+                if (snap.MinimumScale.HasValue)
+                {
+                    WppCom.TrySetProperty(axis, "MinimumScale", snap.MinimumScale.Value);
+                }
+
+                if (snap.MaximumScale.HasValue)
+                {
+                    WppCom.TrySetProperty(axis, "MaximumScale", snap.MaximumScale.Value);
+                }
+
+                if (snap.MajorUnit.HasValue)
+                {
+                    WppCom.TrySetProperty(axis, "MajorUnit", snap.MajorUnit.Value);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>按 HTML format 写主值轴尺度（新建 TrySetOptional 与换数末尾共用）。</summary>
+        private static void TryApplyValueAxisScaleFromFormat(
+            object chart,
+            PptHtmlChartFormat fmt,
+            List<string> warnings)
+        {
+            if (chart == null || fmt == null)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(fmt.AxisYMin)
+                && string.IsNullOrWhiteSpace(fmt.AxisYMax)
+                && string.IsNullOrWhiteSpace(fmt.AxisYMajorUnit))
+            {
+                return;
+            }
+
+            try
+            {
+                object y = TryInvoke(chart, "Axes", XlValue, XlPrimary);
+                if (y == null)
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(fmt.AxisYMin)
+                    && double.TryParse(fmt.AxisYMin, NumberStyles.Float, CultureInfo.InvariantCulture, out double mn))
+                {
+                    WppCom.TrySetProperty(y, "MinimumScale", mn);
+                }
+
+                if (!string.IsNullOrWhiteSpace(fmt.AxisYMax)
+                    && double.TryParse(fmt.AxisYMax, NumberStyles.Float, CultureInfo.InvariantCulture, out double mx))
+                {
+                    WppCom.TrySetProperty(y, "MaximumScale", mx);
+                }
+
+                if (!string.IsNullOrWhiteSpace(fmt.AxisYMajorUnit)
+                    && double.TryParse(fmt.AxisYMajorUnit, NumberStyles.Float, CultureInfo.InvariantCulture, out double un))
+                {
+                    WppCom.TrySetProperty(y, "MajorUnit", un);
+                }
+            }
+            catch (Exception)
+            {
+                Warn(warnings, "data-axis-y-min/max/major-unit");
             }
         }
 

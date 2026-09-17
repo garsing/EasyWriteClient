@@ -749,31 +749,7 @@ namespace WordAddIn1.PresentationHost
                 || !string.IsNullOrWhiteSpace(fmt.AxisYMax)
                 || !string.IsNullOrWhiteSpace(fmt.AxisYMajorUnit))
             {
-                try
-                {
-                    object y = TryInvoke(chart, "Axes", XlValue, XlPrimary);
-                    if (!string.IsNullOrWhiteSpace(fmt.AxisYMin)
-                        && double.TryParse(fmt.AxisYMin, NumberStyles.Float, CultureInfo.InvariantCulture, out double mn))
-                    {
-                        WppCom.TrySetProperty(y, "MinimumScale", mn);
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(fmt.AxisYMax)
-                        && double.TryParse(fmt.AxisYMax, NumberStyles.Float, CultureInfo.InvariantCulture, out double mx))
-                    {
-                        WppCom.TrySetProperty(y, "MaximumScale", mx);
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(fmt.AxisYMajorUnit)
-                        && double.TryParse(fmt.AxisYMajorUnit, NumberStyles.Float, CultureInfo.InvariantCulture, out double un))
-                    {
-                        WppCom.TrySetProperty(y, "MajorUnit", un);
-                    }
-                }
-                catch (Exception)
-                {
-                    Warn(warnings, "data-axis-y-min/max/major-unit");
-                }
+                TryApplyValueAxisScaleFromFormat(chart, fmt, warnings);
             }
 
             if (!string.IsNullOrWhiteSpace(fmt.GapWidth)

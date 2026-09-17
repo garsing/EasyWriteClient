@@ -379,6 +379,8 @@ namespace WordAddIn1.PresentationHost
 
             // 轴皮是最后一层：前面结构/开标签/再灌数都可能按 ChartStyle 掀字色。
             TryInheritAxisChrome(newChart, snap, warnings);
+            // 换数跳过 applyHtmlChrome，尺度不在快照旧字段里时仍以稿为准再钉一次。
+            TryApplyValueAxisScaleFromFormat(newChart, useFormat, warnings);
 
             DismissChartExcelUiForChart(newChart);
             if (deferTitleOff)

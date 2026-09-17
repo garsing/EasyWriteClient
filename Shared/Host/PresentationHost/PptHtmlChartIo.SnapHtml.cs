@@ -323,6 +323,7 @@ namespace WordAddIn1.PresentationHost
                 snap.Category = AxisSnapFromExtras(format.AxisXStyle, format.AxisX, format.AxisXFormat);
                 snap.Value = AxisSnapFromExtras(format.AxisYStyle, format.AxisY, null);
                 snap.ValueSecondary = AxisSnapFromExtras(format.AxisY2Style, format.AxisYSecondary, null);
+                ApplyValueAxisScaleFromFormat(snap, format);
                 if (!string.IsNullOrWhiteSpace(format.Gridlines) && snap.Value != null
                     && snap.Value.HasMajorGridlines == null)
                 {
@@ -1023,6 +1024,21 @@ namespace WordAddIn1.PresentationHost
                 ax.GridlineWeight = oldAx.GridlineWeight;
             }
 
+            if (!ax.MinimumScale.HasValue && oldAx.MinimumScale.HasValue)
+            {
+                ax.MinimumScale = oldAx.MinimumScale;
+            }
+
+            if (!ax.MaximumScale.HasValue && oldAx.MaximumScale.HasValue)
+            {
+                ax.MaximumScale = oldAx.MaximumScale;
+            }
+
+            if (!ax.MajorUnit.HasValue && oldAx.MajorUnit.HasValue)
+            {
+                ax.MajorUnit = oldAx.MajorUnit;
+            }
+
             return ax;
         }
 
@@ -1457,6 +1473,21 @@ namespace WordAddIn1.PresentationHost
                 dest.LineWeight = src.LineWeight;
             }
 
+            if (src.MinimumScale.HasValue)
+            {
+                dest.MinimumScale = src.MinimumScale;
+            }
+
+            if (src.MaximumScale.HasValue)
+            {
+                dest.MaximumScale = src.MaximumScale;
+            }
+
+            if (src.MajorUnit.HasValue)
+            {
+                dest.MajorUnit = src.MajorUnit;
+            }
+
             return dest;
         }
 
@@ -1847,6 +1878,46 @@ namespace WordAddIn1.PresentationHost
             }
 
             return extras;
+        }
+
+        private static void ApplyValueAxisScaleFromFormat(ChartStyleSnap snap, PptHtmlChartFormat format)
+        {
+            if (snap == null || format == null)
+            {
+                return;
+            }
+
+            double mn = 0, mx = 0, un = 0;
+            bool hasMin = !string.IsNullOrWhiteSpace(format.AxisYMin)
+                && double.TryParse(format.AxisYMin, NumberStyles.Float, CultureInfo.InvariantCulture, out mn);
+            bool hasMax = !string.IsNullOrWhiteSpace(format.AxisYMax)
+                && double.TryParse(format.AxisYMax, NumberStyles.Float, CultureInfo.InvariantCulture, out mx);
+            bool hasUnit = !string.IsNullOrWhiteSpace(format.AxisYMajorUnit)
+                && double.TryParse(format.AxisYMajorUnit, NumberStyles.Float, CultureInfo.InvariantCulture, out un);
+            if (!hasMin && !hasMax && !hasUnit)
+            {
+                return;
+            }
+
+            if (snap.Value == null)
+            {
+                snap.Value = new AxisStyleSnap();
+            }
+
+            if (hasMin)
+            {
+                snap.Value.MinimumScale = mn;
+            }
+
+            if (hasMax)
+            {
+                snap.Value.MaximumScale = mx;
+            }
+
+            if (hasUnit)
+            {
+                snap.Value.MajorUnit = un;
+            }
         }
 
         private static AxisStyleSnap AxisSnapFromExtras(PptHtmlAxisExtras extras, string title, string formatFallback)

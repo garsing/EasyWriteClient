@@ -137,6 +137,15 @@ namespace WordAddIn1.PresentationHost
             public int? LineRgb { get; set; }
 
             public double? LineWeight { get; set; }
+
+            /// <summary>非自动时的主值轴下限；分类轴不用。</summary>
+            public double? MinimumScale { get; set; }
+
+            /// <summary>非自动时的主值轴上限。</summary>
+            public double? MaximumScale { get; set; }
+
+            /// <summary>非自动时的主刻度间距。</summary>
+            public double? MajorUnit { get; set; }
         }
 
         private sealed class SeriesStyleSnap
