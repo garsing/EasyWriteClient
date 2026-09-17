@@ -31,6 +31,44 @@ namespace PptChartRoundtripTest
         public double FirstValue { get; set; }
 
         public double LastValue { get; set; }
+
+        /// <summary>读回属性断言；空则只对结构。</summary>
+        public List<AttrCheck> Attrs { get; set; }
+    }
+
+    internal sealed class AttrCheck
+    {
+        public string Key { get; set; }
+
+        public string Expected { get; set; }
+
+        /// <summary>exact / hex / num / box / applyonly</summary>
+        public string Mode { get; set; }
+
+        public static AttrCheck Exact(string key, string expected)
+        {
+            return new AttrCheck { Key = key, Expected = expected, Mode = "exact" };
+        }
+
+        public static AttrCheck Hex(string key, string expected)
+        {
+            return new AttrCheck { Key = key, Expected = expected, Mode = "hex" };
+        }
+
+        public static AttrCheck Num(string key, string expected)
+        {
+            return new AttrCheck { Key = key, Expected = expected, Mode = "num" };
+        }
+
+        public static AttrCheck Box(string key, string expected)
+        {
+            return new AttrCheck { Key = key, Expected = expected, Mode = "box" };
+        }
+
+        public static AttrCheck ApplyOnly(string key, string expected)
+        {
+            return new AttrCheck { Key = key, Expected = expected, Mode = "applyonly" };
+        }
     }
 
     internal sealed class ChartSeriesSpec

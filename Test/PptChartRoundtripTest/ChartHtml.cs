@@ -411,6 +411,79 @@ namespace PptChartRoundtripTest
                 + "      <tr><td>2029</td><td>4.8</td><td>0.315</td></tr>\n";
         }
 
+        public static string BuildAttrChart(
+            bool create,
+            string chartType,
+            string legend,
+            IList<string> cats,
+            IList<IList<double>> series,
+            IList<string> seriesTypes,
+            IList<string> axes,
+            IList<string> seriesNames,
+            IDictionary<string, string> extraNode,
+            IList<IDictionary<string, string>> extraTh)
+        {
+            string head = create
+                ? "  <div ShapeId=\"new-case\" data-shape-type=\"chart\" data-chart-type=\"" + chartType
+                    + "\" data-legend=\"" + legend + "\" " + CreateBox
+                : "  <div ShapeId=\"" + FormalId + "\" data-chart-type=\"" + chartType
+                    + "\" data-legend=\"" + legend + "\"";
+            var sb = new StringBuilder();
+            sb.Append(head);
+            if (extraNode != null)
+            {
+                foreach (KeyValuePair<string, string> kv in extraNode)
+                {
+                    if (string.IsNullOrEmpty(kv.Key) || kv.Value == null)
+                    {
+                        continue;
+                    }
+
+                    sb.Append(" ").Append(kv.Key).Append("=\"").Append(kv.Value).Append("\"");
+                }
+            }
+
+            sb.Append(">\n    <table>\n      <tr>\n");
+            sb.Append("        <th data-col=\"category\">类别</th>\n");
+            for (int s = 0; s < series.Count; s++)
+            {
+                string st = seriesTypes[s];
+                string ax = axes[s];
+                string nm = seriesNames[s];
+                sb.Append("        <th data-col=\"value\" data-series-type=\"").Append(st)
+                    .Append("\" data-axis=\"").Append(ax).Append("\"");
+                if (extraTh != null && s < extraTh.Count && extraTh[s] != null)
+                {
+                    foreach (KeyValuePair<string, string> kv in extraTh[s])
+                    {
+                        if (string.IsNullOrEmpty(kv.Key) || kv.Value == null)
+                        {
+                            continue;
+                        }
+
+                        sb.Append(" ").Append(kv.Key).Append("=\"").Append(kv.Value).Append("\"");
+                    }
+                }
+
+                sb.Append(">").Append(nm).Append("</th>\n");
+            }
+
+            sb.Append("      </tr>\n");
+            for (int r = 0; r < cats.Count; r++)
+            {
+                sb.Append("      <tr><td>").Append(cats[r]).Append("</td>");
+                for (int s = 0; s < series.Count; s++)
+                {
+                    sb.Append("<td>").Append(series[s][r].ToString("0.###", CultureInfo.InvariantCulture)).Append("</td>");
+                }
+
+                sb.Append("</tr>\n");
+            }
+
+            sb.Append("    </table>\n  </div>");
+            return Section(sb.ToString());
+        }
+
         public static string BuildChart(
             bool create,
             string chartType,

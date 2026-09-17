@@ -15,32 +15,113 @@ namespace PptChartRoundtripTest
     {
         private const int RecycleEvery = 8;
 
-        public static void Run(TestRun run, int? onlyBatch, string outDir)
+        public static void Run(TestRun run, int? onlyBatch, string outDir, IList<string> nameFilters)
+        {
+            RunSuite(
+                run,
+                onlyBatch,
+                outDir,
+                ChartCaseCatalog.Build(),
+                ChartCaseCatalog.BatchCount,
+                "chart-batch-",
+                nameFilters);
+        }
+
+        public static void RunAttrs(TestRun run, int? onlyBatch, string outDir, IList<string> nameFilters)
+        {
+            RunSuite(
+                run,
+                onlyBatch,
+                outDir,
+                ChartAttrCatalog.Build(),
+                ChartAttrCatalog.BatchCount,
+                "chart-attr-batch-",
+                nameFilters);
+        }
+
+        private static void RunSuite(
+            TestRun run,
+            int? onlyBatch,
+            string outDir,
+            List<ChartCase> all,
+            int batchCount,
+            string filePrefix,
+            IList<string> nameFilters)
         {
             Directory.CreateDirectory(outDir);
-            List<ChartCase> all = ChartCaseCatalog.Build();
-            for (int batch = 1; batch <= ChartCaseCatalog.BatchCount; batch++)
+            if (nameFilters != null && nameFilters.Count > 0)
+            {
+                Console.WriteLine("过滤用例名含: " + string.Join(", ", nameFilters));
+            }
+
+            for (int batch = 1; batch <= batchCount; batch++)
             {
                 if (onlyBatch.HasValue && onlyBatch.Value != batch)
                 {
                     continue;
                 }
 
-                RunBatch(run, all, batch, outDir);
+                if (!BatchHasCases(all, batch, nameFilters))
+                {
+                    continue;
+                }
+
+                RunBatch(run, all, batch, batchCount, outDir, filePrefix, nameFilters);
             }
         }
 
-        private static void RunBatch(TestRun run, List<ChartCase> all, int batch, string outDir)
+        private static bool BatchHasCases(List<ChartCase> all, int batch, IList<string> nameFilters)
         {
-            string path = Path.Combine(outDir, "chart-batch-" + batch + ".pptx");
+            for (int i = 0; i < all.Count; i++)
+            {
+                if (all[i].Batch == batch && NameMatches(all[i].Name, nameFilters))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool NameMatches(string name, IList<string> nameFilters)
+        {
+            if (nameFilters == null || nameFilters.Count == 0)
+            {
+                return true;
+            }
+
+            string n = name ?? "";
+            for (int i = 0; i < nameFilters.Count; i++)
+            {
+                string f = nameFilters[i];
+                if (!string.IsNullOrEmpty(f)
+                    && n.IndexOf(f, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void RunBatch(
+            TestRun run,
+            List<ChartCase> all,
+            int batch,
+            int batchCount,
+            string outDir,
+            string filePrefix,
+            IList<string> nameFilters)
+        {
+            string path = Path.Combine(outDir, filePrefix + batch + ".pptx");
             Console.WriteLine();
-            Console.WriteLine("--- 正式用例 批次 " + batch + "/" + ChartCaseCatalog.BatchCount
-                + " （约 " + ChartCaseCatalog.BatchSize + " 页）→ " + path + " ---");
+            Console.WriteLine("--- 正式用例 批次 " + batch + "/" + batchCount
+                + " （约 50 页）→ " + path + " ---");
 
             var cases = new List<ChartCase>();
             for (int i = 0; i < all.Count; i++)
             {
-                if (all[i].Batch == batch)
+                if (all[i].Batch == batch && NameMatches(all[i].Name, nameFilters))
                 {
                     cases.Add(all[i]);
                 }
@@ -225,6 +306,14 @@ namespace PptChartRoundtripTest
                     return null;
                 }
 
+                if (one.Name != null && one.Name.IndexOf("title", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    PptHtmlChartFormat fmt = node.ChartFormat;
+                    Console.WriteLine("  [标题调试] 换数稿 format.Title=["
+                        + (fmt == null ? "fmt-null" : (fmt.Title ?? "(null)"))
+                        + "] Mentioned=" + (fmt != null && fmt.TitleMentioned));
+                }
+
                 if (!TryReplace(shapes, shape, node, out shape, out error, out warnings))
                 {
                     if (IsRpcText(error))
@@ -248,6 +337,15 @@ namespace PptChartRoundtripTest
                 return null;
             }
 
+            if (one.Name != null && one.Name.IndexOf("title", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                string readTitle = model != null && model.Format != null
+                    ? (model.Format.Title ?? "(null)")
+                    : "model-null";
+                Console.WriteLine("  [标题调试] TryRead 后 Format.Title=[" + readTitle + "]");
+                DumpTitleDebug(warnings);
+            }
+
             string mismatch = MatchExpect(one, model);
             if (mismatch == null)
             {
@@ -256,6 +354,10 @@ namespace PptChartRoundtripTest
             else
             {
                 run.CaseFail(tag, mismatch);
+                if (one.Name == null || one.Name.IndexOf("title", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    DumpTitleDebug(warnings);
+                }
             }
 
             return null;
@@ -330,7 +432,7 @@ namespace PptChartRoundtripTest
                     + " 实际 " + (Cell(model, one.ExpectRows - 1, 1) ?? "(null)");
             }
 
-            return null;
+            return ChartAttrMatch.Check(one.Attrs, model);
         }
 
         private static bool TryCreate(
@@ -699,6 +801,39 @@ namespace PptChartRoundtripTest
             }
 
             return "column";
+        }
+
+        private static void DumpTitleDebug(List<string> warnings)
+        {
+            if (warnings == null || warnings.Count == 0)
+            {
+                Console.WriteLine("  [标题调试] 无 StyleLog");
+                return;
+            }
+
+            int n = 0;
+            for (int i = 0; i < warnings.Count; i++)
+            {
+                string w = warnings[i] ?? "";
+                if (w.IndexOf("标题", StringComparison.Ordinal) < 0
+                    && w.IndexOf("TrySetTitle", StringComparison.Ordinal) < 0
+                    && w.IndexOf("title=", StringComparison.OrdinalIgnoreCase) < 0
+                    && w.IndexOf("Dismiss", StringComparison.OrdinalIgnoreCase) < 0
+                    && w.IndexOf("删旧图", StringComparison.Ordinal) < 0
+                    && w.IndexOf("SyncFormat", StringComparison.Ordinal) < 0
+                    && w.IndexOf("TryReadTitle", StringComparison.Ordinal) < 0)
+                {
+                    continue;
+                }
+
+                Console.WriteLine("  [标题调试] " + w);
+                n++;
+                if (n >= 40)
+                {
+                    Console.WriteLine("  [标题调试] … 其后省略");
+                    break;
+                }
+            }
         }
 
         private static string FormatWarnings(List<string> warnings)

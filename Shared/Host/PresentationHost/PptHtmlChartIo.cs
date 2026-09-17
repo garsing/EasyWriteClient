@@ -259,6 +259,9 @@ namespace WordAddIn1.PresentationHost
 
             public bool? HasTitle { get; set; }
 
+            /// <summary>图标题正文。换数要拍旧图并写回新图；仅开关/字体会留下 AddChart2 默认系列名。</summary>
+            public string Title { get; set; }
+
             public string TitleFontColor { get; set; }
 
             public string TitleFontSize { get; set; }
@@ -463,6 +466,13 @@ namespace WordAddIn1.PresentationHost
             if (!string.IsNullOrEmpty(snap.TitleFontColor))
             {
                 format.TitleFontColor = snap.TitleFontColor;
+            }
+
+            if (snap.HasTitle == true && !string.IsNullOrEmpty(snap.Title)
+                && string.IsNullOrEmpty(format.Title))
+            {
+                Console.WriteLine("  [标题调试] ProjectSnapToFormat 补 Title=[" + snap.Title + "]");
+                format.Title = snap.Title;
             }
 
             format.ChartAreaColor = AreaColorFromSnap(snap.ChartAreaFillVisible, snap.ChartAreaFillRgb);
@@ -679,6 +689,7 @@ namespace WordAddIn1.PresentationHost
                 if (format.Title != null)
                 {
                     snap.HasTitle = !string.IsNullOrEmpty(format.Title);
+                    snap.Title = format.Title;
                 }
 
                 if (!string.IsNullOrWhiteSpace(format.TitleFontSize))
@@ -1096,14 +1107,18 @@ namespace WordAddIn1.PresentationHost
             if (explicitOff)
             {
                 snap.HasTitle = false;
-                StyleLog(warnings, "标题开关=关（稿空标题）");
+                snap.Title = "";
+                StyleLog(warnings, "标题开关=关（稿空标题） TitleMentioned="
+                    + (format != null && format.TitleMentioned)
+                    + " format.Title=[" + (format.Title ?? "(null)") + "]");
                 return;
             }
 
             if (mentioned)
             {
                 snap.HasTitle = true;
-                StyleLog(warnings, "标题开关=开（稿写了标题属性）");
+                StyleLog(warnings, "标题开关=开（稿写了标题属性） format.Title=["
+                    + (format.Title ?? "(null)") + "] snap.Title=[" + (snap.Title ?? "(null)") + "]");
                 return;
             }
 
@@ -1238,6 +1253,11 @@ namespace WordAddIn1.PresentationHost
             }
 
             // 标题/图例皮可补旧图；开关由 EnsureDisplaySwitches 推断（写了皮⇒开，沉默跟旧图）
+            if (snap.Title == null && oldSnap.Title != null)
+            {
+                snap.Title = oldSnap.Title;
+            }
+
             if (string.IsNullOrEmpty(snap.TitleFontColor) && !string.IsNullOrEmpty(oldSnap.TitleFontColor))
             {
                 snap.TitleFontColor = oldSnap.TitleFontColor;
@@ -1623,6 +1643,11 @@ namespace WordAddIn1.PresentationHost
             if (htmlSnap.HasTitle.HasValue)
             {
                 oldSnap.HasTitle = htmlSnap.HasTitle;
+            }
+
+            if (htmlSnap.Title != null)
+            {
+                oldSnap.Title = htmlSnap.Title;
             }
 
             if (!string.IsNullOrEmpty(htmlSnap.TitleFontColor))
@@ -3574,6 +3599,7 @@ namespace WordAddIn1.PresentationHost
             }
 
             var format = new PptHtmlChartFormat();
+            Console.WriteLine("  [标题调试] TryRead 入口 " + DescribeLiveTitle(chart));
             try
             {
                 object t = WppCom.GetProperty(chart, "ChartType");
@@ -3590,6 +3616,8 @@ namespace WordAddIn1.PresentationHost
             TryReadLegend(chart, format);
             TryReadPlotAndLabels(chart, format);
             TryReadAxes(chart, format);
+            TryReadValueScale(chart, format);
+            TryReadExplosion(chart, format);
             ChartStyleSnap snap = TryCaptureStyle(chart);
 
             if (!TryReadGrid(chart, out PptHtmlChartGrid grid, out error))
@@ -3882,7 +3910,10 @@ namespace WordAddIn1.PresentationHost
 
             object newChart = TryGetChart(newShape);
             FinishLineChartLayout(newChart, xlType, useFormat, warnings);
-            TryApplyStyleSnap(newChart, snap, warnings, useGrid, useFormat);
+            // 关标题须在 Dismiss Excel 之后：Dismiss 会把默认标题再掀开成「系列A」，套样式阶段先跳过关。
+            bool deferTitleOff = snap != null
+                && (snap.HasTitle == false || (snap.Title != null && snap.Title.Length == 0));
+            TryApplyStyleSnap(newChart, snap, warnings, useGrid, useFormat, deferTitleOff);
             PourLog(warnings, "套快照后 " + DescribeLiveSeries(newChart));
             // 套快照（含 3D）可能把数据打回字面量；必须再验，对不上再灌一次，仍不对就失败并删新图。
             if (!TryVerifyPouredGrid(newChart, useGrid, out error, warnings))
@@ -3904,6 +3935,18 @@ namespace WordAddIn1.PresentationHost
 
             // 轴皮是最后一层：前面结构/开标签/再灌数都可能按 ChartStyle 掀字色。
             TryInheritAxisChrome(newChart, snap, warnings);
+            StyleLog(warnings, "换数末 format.Title=[" + (useFormat == null ? "fmt-null" : (useFormat.Title ?? "(null)"))
+                + "] Mentioned=" + (useFormat != null && useFormat.TitleMentioned)
+                + " snap.HasTitle=" + (snap == null ? "snap-null" : Convert.ToString(snap.HasTitle))
+                + " snap.Title=[" + (snap == null ? "" : (snap.Title ?? "(null)")) + "]"
+                + " deferTitleOff=" + deferTitleOff
+                + " 套轴后 " + DescribeLiveTitle(newChart));
+            if (!deferTitleOff && useFormat != null && useFormat.Title != null)
+            {
+                TrySetTitle(newChart, useFormat.Title, warnings);
+                StyleLog(warnings, "换数末 TrySetTitle 后 " + DescribeLiveTitle(newChart));
+            }
+
             try
             {
                 TryCaptureStyle(newChart, warnings, "新图套回后");
@@ -3914,7 +3957,15 @@ namespace WordAddIn1.PresentationHost
             }
 
             DismissChartExcelUiForChart(newChart);
+            StyleLog(warnings, "Dismiss Excel 后 " + DescribeLiveTitle(newChart));
+            if (deferTitleOff)
+            {
+                TrySetTitle(newChart, "", warnings);
+                StyleLog(warnings, "Dismiss 后关标题 " + DescribeLiveTitle(newChart));
+            }
+
             TryDelete(oldShape);
+            StyleLog(warnings, "删旧图后 " + DescribeLiveTitle(newChart));
             warnings?.Add("已按旧图属性新建图表（HTML 未写的属性用快照补上）");
             if (!string.IsNullOrEmpty(EasyWriteLog.CurrentLogPath))
             {
@@ -3962,6 +4013,11 @@ namespace WordAddIn1.PresentationHost
                 if (snap.HasTitle == true)
                 {
                     object title = WppCom.GetProperty(chart, "ChartTitle");
+                    if (title != null)
+                    {
+                        snap.Title = Convert.ToString(WppCom.GetProperty(title, "Text") ?? "");
+                    }
+
                     object font = title == null ? null : WppCom.GetProperty(title, "Font");
                     snap.TitleFontColor = TryReadFontColorHex(font);
                     object sz = font == null ? null : WppCom.GetProperty(font, "Size");
@@ -4084,7 +4140,8 @@ namespace WordAddIn1.PresentationHost
             ChartStyleSnap snap,
             List<string> warnings,
             PptHtmlChartGrid grid = null,
-            PptHtmlChartFormat format = null)
+            PptHtmlChartFormat format = null,
+            bool deferTitleOff = false)
         {
             if (chart == null || snap == null)
             {
@@ -4093,12 +4150,13 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            StyleLog(warnings, "开始套回 " + DescribeSnap("快照", snap));
+            StyleLog(warnings, "开始套回 " + DescribeSnap("快照", snap)
+                + (deferTitleOff ? " deferTitleOff=True" : ""));
             try
             {
                 TryInheritSeriesStructure(chart, snap);
                 TryApplyChartTheme(chart, snap);
-                TryInheritTitleAndLegend(chart, snap);
+                TryInheritTitleAndLegend(chart, snap, warnings, deferTitleOff);
                 TryWriteAreaFill(chart, "ChartArea", snap.ChartAreaFillVisible, snap.ChartAreaFillRgb);
                 TryWriteAreaFill(chart, "PlotArea", snap.PlotFillVisible, snap.PlotFillRgb);
                 TryApplyChartGroup(chart, snap);
@@ -4108,6 +4166,8 @@ namespace WordAddIn1.PresentationHost
                 TryRestorePieChartType(chart, snap);
                 TryApplyPlotLayout(chart, snap);
                 TryInheritDataLabels(chart, snap, warnings);
+                // 主题/系列/标签可能把 AddChart2 默认标题再打开，正文和开关最后再钉一次
+                TryInheritTitleAndLegend(chart, snap, warnings, deferTitleOff);
             }
             catch (Exception ex)
             {
@@ -4144,31 +4204,51 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static void TryInheritTitleAndLegend(object chart, ChartStyleSnap snap)
+        private static void TryInheritTitleAndLegend(
+            object chart,
+            ChartStyleSnap snap,
+            List<string> warnings,
+            bool deferTitleOff = false)
         {
             if (snap == null)
             {
                 return;
             }
 
-            if (snap.HasTitle.HasValue)
+            StyleLog(warnings, "套标题前 snap.HasTitle=" + Convert.ToString(snap.HasTitle)
+                + " snap.Title=[" + (snap.Title ?? "(null)") + "] deferTitleOff=" + deferTitleOff
+                + " " + DescribeLiveTitle(chart));
+            bool explicitOff = snap.HasTitle == false
+                || (snap.Title != null && snap.Title.Length == 0);
+            if (explicitOff && deferTitleOff)
             {
-                WppCom.TrySetProperty(chart, "HasTitle", snap.HasTitle.Value);
-                if (snap.HasTitle.Value == false)
+                StyleLog(warnings, "关标题延后到 Dismiss Excel 后，此处跳过");
+            }
+            else if (explicitOff)
+            {
+                TrySetTitle(chart, "", warnings);
+                try
                 {
-                    // 再建后主题盘偶发又开标题，再钉一次关
-                    try
-                    {
-                        WppCom.TrySetProperty(chart, "HasTitle", false);
-                    }
-                    catch (Exception)
-                    {
-                    }
+                    WppCom.TrySetProperty(chart, "HasTitle", false);
+                }
+                catch (Exception)
+                {
                 }
             }
+            else if (!string.IsNullOrEmpty(snap.Title))
+            {
+                TrySetTitle(chart, snap.Title, warnings);
+            }
+            else if (snap.HasTitle.HasValue)
+            {
+                WppCom.TrySetProperty(chart, "HasTitle", snap.HasTitle.Value);
+            }
 
-            bool titleOn = snap.HasTitle == true
-                || (snap.HasTitle == null && IsTruthy(WppCom.GetProperty(chart, "HasTitle")));
+            StyleLog(warnings, "套标题后 explicitOff=" + explicitOff + " " + DescribeLiveTitle(chart));
+            bool titleOn = !explicitOff
+                && (snap.HasTitle == true
+                    || !string.IsNullOrEmpty(snap.Title)
+                    || (snap.HasTitle == null && IsTruthy(WppCom.GetProperty(chart, "HasTitle"))));
             if (titleOn)
             {
                 object title = WppCom.GetProperty(chart, "ChartTitle");
@@ -5660,6 +5740,7 @@ namespace WordAddIn1.PresentationHost
             format.AxisX = null;
             format.AxisY = null;
             format.AxisYSecondary = null;
+            StyleLog(warnings, "SyncFormatToOldSnap 清空 format.Title=[" + (format.Title ?? "(null)") + "] Mentioned=" + format.TitleMentioned);
             format.Title = null;
         }
 
@@ -6678,6 +6759,7 @@ namespace WordAddIn1.PresentationHost
                 .Append(" style=").Append(snap.ChartStyle)
                 .Append(" chartColor=").Append(snap.ChartColor)
                 .Append(" title=").Append(snap.HasTitle)
+                .Append("/").Append(snap.Title ?? "")
                 .Append(" legend=").Append(snap.HasLegend)
                 .Append(" plotFill=").Append(snap.PlotFillVisible)
                 .Append(" gap=").Append(snap.GapWidth)
@@ -7415,11 +7497,16 @@ namespace WordAddIn1.PresentationHost
                 object has = WppCom.GetProperty(chart, "HasTitle");
                 if (!IsTruthy(has))
                 {
+                    StyleLog(null, "TryReadTitle " + DescribeLiveTitle(chart) + " → 不写 Title");
+                    Console.WriteLine("  [标题调试] TryReadTitle " + DescribeLiveTitle(chart) + " → 不写 Title");
                     return;
                 }
 
                 object title = WppCom.GetProperty(chart, "ChartTitle");
                 format.Title = Convert.ToString(WppCom.GetProperty(title, "Text") ?? "");
+                StyleLog(null, "TryReadTitle " + DescribeLiveTitle(chart) + " → Title=[" + (format.Title ?? "") + "]");
+                Console.WriteLine("  [标题调试] TryReadTitle " + DescribeLiveTitle(chart)
+                    + " → Title=[" + (format.Title ?? "") + "]");
                 object font = WppCom.GetProperty(title, "Font");
                 if (font != null)
                 {
@@ -7534,23 +7621,136 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private static void TryReadValueScale(object chart, PptHtmlChartFormat format)
+        {
+            try
+            {
+                object y = TryInvoke(chart, "Axes", XlValue, XlPrimary);
+                if (y == null)
+                {
+                    return;
+                }
+
+                if (!IsTruthy(WppCom.GetProperty(y, "MinimumScaleIsAuto")))
+                {
+                    object mn = WppCom.GetProperty(y, "MinimumScale");
+                    if (mn != null)
+                    {
+                        format.AxisYMin = Convert.ToDouble(mn).ToString("0.##", CultureInfo.InvariantCulture);
+                    }
+                }
+
+                if (!IsTruthy(WppCom.GetProperty(y, "MaximumScaleIsAuto")))
+                {
+                    object mx = WppCom.GetProperty(y, "MaximumScale");
+                    if (mx != null)
+                    {
+                        format.AxisYMax = Convert.ToDouble(mx).ToString("0.##", CultureInfo.InvariantCulture);
+                    }
+                }
+
+                if (!IsTruthy(WppCom.GetProperty(y, "MajorUnitIsAuto")))
+                {
+                    object un = WppCom.GetProperty(y, "MajorUnit");
+                    if (un != null)
+                    {
+                        format.AxisYMajorUnit = Convert.ToDouble(un).ToString("0.##", CultureInfo.InvariantCulture);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryReadExplosion(object chart, PptHtmlChartFormat format)
+        {
+            try
+            {
+                object sc = TryInvoke(chart, "SeriesCollection");
+                if (sc == null)
+                {
+                    return;
+                }
+
+                object s = WppCom.GetIndexed(sc, 1);
+                object exp = s == null ? null : WppCom.GetProperty(s, "Explosion");
+                if (exp != null)
+                {
+                    format.Explosion = Convert.ToInt32(Convert.ToDouble(exp))
+                        .ToString(CultureInfo.InvariantCulture);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static string DescribeLiveTitle(object chart)
+        {
+            if (chart == null)
+            {
+                return "live=chart-null";
+            }
+
+            try
+            {
+                bool on = IsTruthy(WppCom.GetProperty(chart, "HasTitle"));
+                string text = "";
+                if (on)
+                {
+                    object ct = WppCom.GetProperty(chart, "ChartTitle");
+                    text = ct == null ? "(ChartTitle-null)" : Convert.ToString(WppCom.GetProperty(ct, "Text") ?? "");
+                }
+
+                return "live HasTitle=" + on + " Text=[" + text + "]";
+            }
+            catch (Exception ex)
+            {
+                return "live 读标题异常:" + ex.Message;
+            }
+        }
+
         private static void TrySetTitle(object chart, string title, List<string> warnings)
         {
+            StyleLog(warnings, "TrySetTitle 入参=[" + (title ?? "(null)") + "] " + DescribeLiveTitle(chart));
             try
             {
                 if (string.IsNullOrEmpty(title))
                 {
                     WppCom.TrySetProperty(chart, "HasTitle", false);
+                    StyleLog(warnings, "TrySetTitle 关后第一次 " + DescribeLiveTitle(chart));
+                    try
+                    {
+                        if (IsTruthy(WppCom.GetProperty(chart, "HasTitle")))
+                        {
+                            object leftover = WppCom.GetProperty(chart, "ChartTitle");
+                            if (leftover != null)
+                            {
+                                WppCom.TrySetProperty(leftover, "Text", "");
+                            }
+
+                            WppCom.TrySetProperty(chart, "HasTitle", false);
+                            StyleLog(warnings, "TrySetTitle 关后清正文再关 " + DescribeLiveTitle(chart));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        StyleLog(warnings, "TrySetTitle 再关异常: " + ex.Message);
+                    }
+
                     return;
                 }
 
                 WppCom.TrySetProperty(chart, "HasTitle", true);
                 object ct = WppCom.GetProperty(chart, "ChartTitle");
                 WppCom.TrySetProperty(ct, "Text", title);
+                StyleLog(warnings, "TrySetTitle 写正文后 " + DescribeLiveTitle(chart));
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                warnings?.Add("未能套用 data-title");
+                warnings?.Add("未能套用 data-title: " + ex.Message);
+                StyleLog(warnings, "TrySetTitle 异常: " + ex.Message);
             }
         }
 

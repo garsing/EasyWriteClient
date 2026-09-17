@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace PptChartRoundtripTest
@@ -12,27 +13,46 @@ namespace PptChartRoundtripTest
             var run = new TestRun();
             bool parseOnly = HasFlag(args, "--parse-only");
             bool formalOnly = HasFlag(args, "--formal-only");
+            bool attrsOnly = HasFlag(args, "--attrs-only") || HasFlag(args, "--suite=attr");
+            bool suiteAll = HasFlag(args, "--suite=all");
             int? batch = TryParseBatch(args);
+            IList<string> nameFilters = ParseCaseFilters(args);
+            bool runParse = !formalOnly && !attrsOnly && !suiteAll;
+            bool runStruct = !parseOnly && (suiteAll || (!attrsOnly));
+            bool runAttrs = !parseOnly && (attrsOnly || suiteAll);
 
             Console.WriteLine("PPT 图表测试");
-            Console.WriteLine("正式用例：一页一张完整图（新建或改已有），约 50 页 × 6 份 PPT");
+            Console.WriteLine("结构用例：约 50 页 × 6 份；属性用例：约 50 页 × 2 份（--attrs-only）");
             Console.WriteLine();
 
-            if (!formalOnly)
+            if (runParse)
             {
                 Console.WriteLine("--- 解析契约（不启 PPT，按属性断言）---");
                 ChartParseTests.Run(run);
             }
 
-            if (!parseOnly)
+            string outDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "chart-batches");
+            if (runStruct)
             {
-                string outDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "chart-batches");
-                ChartBatchRunner.Run(run, batch, outDir);
+                ChartBatchRunner.Run(run, batch, outDir, nameFilters);
                 Console.WriteLine();
-                Console.WriteLine("正式用例 通过 " + run.CasesPassed
+                Console.WriteLine("结构用例 通过 " + run.CasesPassed
                     + "  失败 " + run.CasesFailed
                     + "  跳过 " + run.CasesSkipped
                     + "  （目标 " + ChartCaseCatalog.Total + " 张图 / 6 份 PPT）");
+            }
+
+            if (runAttrs)
+            {
+                int beforePass = run.CasesPassed;
+                int beforeFail = run.CasesFailed;
+                int beforeSkip = run.CasesSkipped;
+                ChartBatchRunner.RunAttrs(run, batch, outDir, nameFilters);
+                Console.WriteLine();
+                Console.WriteLine("属性用例 通过 " + (run.CasesPassed - beforePass)
+                    + "  失败 " + (run.CasesFailed - beforeFail)
+                    + "  跳过 " + (run.CasesSkipped - beforeSkip)
+                    + "  （目标 " + ChartAttrCatalog.Total + " 张图 / 2 份 PPT）");
             }
 
             Console.WriteLine();
@@ -78,6 +98,38 @@ namespace PptChartRoundtripTest
             }
 
             return null;
+        }
+
+        /// <summary>--case=title 或 --case=title,sink-column，用例名包含即可。</summary>
+        private static IList<string> ParseCaseFilters(string[] args)
+        {
+            var list = new List<string>();
+            if (args == null)
+            {
+                return list;
+            }
+
+            for (int i = 0; i < args.Length; i++)
+            {
+                string a = args[i] ?? "";
+                if (!a.StartsWith("--case=", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string raw = a.Substring(7);
+                string[] parts = raw.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                for (int p = 0; p < parts.Length; p++)
+                {
+                    string one = parts[p].Trim();
+                    if (one.Length > 0)
+                    {
+                        list.Add(one);
+                    }
+                }
+            }
+
+            return list;
         }
     }
 }
