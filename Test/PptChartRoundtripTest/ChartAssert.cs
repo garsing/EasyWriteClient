@@ -130,7 +130,7 @@ namespace PptChartRoundtripTest
             run.ExpectEqual(prefix + " data-marker-size", "5", col.MarkerSize);
             run.ExpectEqual(prefix + " data-marker-color", "#FFFFFF", col.MarkerColor);
             run.ExpectEqual(prefix + " data-marker-fill", "#FFFFFF", col.MarkerFill);
-            run.ExpectEqual(prefix + " data-label-position", "above", col.LabelPosition);
+            run.ExpectEqual(prefix + " data-label-position", "outside", col.LabelPosition);
             run.ExpectEqual(prefix + " data-label-font", "微软雅黑", col.LabelFont);
             run.ExpectEqual(prefix + " data-label-size", "10", col.LabelSize);
             run.ExpectEqual(prefix + " data-label-color", "#FFFFFF", col.LabelColor);

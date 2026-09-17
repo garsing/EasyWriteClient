@@ -1717,7 +1717,30 @@ namespace WordAddIn1.PresentationHost
 
             if (one.DataLabelPosition.HasValue)
             {
-                WppCom.TrySetProperty(dls, "Position", one.DataLabelPosition.Value);
+                int pos = one.DataLabelPosition.Value;
+                int? liveXl = one.ChartType;
+                if (!liveXl.HasValue)
+                {
+                    try
+                    {
+                        object ct = WppCom.GetProperty(series, "ChartType");
+                        if (ct != null)
+                        {
+                            liveXl = Convert.ToInt32(ct);
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                if (liveXl.HasValue && IsColumnOrBarXl(liveXl.Value) && (pos == 0 || pos == 1))
+                {
+                    // Above/Below 对柱/条非法，钉成 OutsideEnd
+                    pos = 2;
+                }
+
+                WppCom.TrySetProperty(dls, "Position", pos);
             }
             else if (IsLineLike(one.ChartType))
             {

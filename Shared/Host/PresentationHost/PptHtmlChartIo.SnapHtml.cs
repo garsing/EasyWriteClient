@@ -1737,7 +1737,8 @@ namespace WordAddIn1.PresentationHost
 
             if (!string.IsNullOrWhiteSpace(col.LabelPosition))
             {
-                one.DataLabelPosition = LabelPosToXl(col.LabelPosition);
+                string pos = NormalizeLabelPosForSeries(col.LabelPosition, col.SeriesType, one.ChartType);
+                one.DataLabelPosition = LabelPosToXl(pos);
             }
 
             if (!string.IsNullOrWhiteSpace(col.LabelFont))
@@ -2399,6 +2400,44 @@ namespace WordAddIn1.PresentationHost
                         ? n
                         : 0;
             }
+        }
+
+        /// <summary>
+        /// 簇状柱/条不支持 above/below（折线用语）；归一成 outside（OutsideEnd）。
+        /// </summary>
+        private static string NormalizeLabelPosForSeries(string raw, string seriesType, int? seriesXl)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return raw;
+            }
+
+            string t = raw.Trim().ToLowerInvariant();
+            if (t != "above" && t != "below")
+            {
+                return raw.Trim();
+            }
+
+            if ((seriesXl.HasValue && IsColumnOrBarXl(seriesXl.Value))
+                || IsColumnOrBarSeriesHint(seriesType))
+            {
+                return "outside";
+            }
+
+            return raw.Trim();
+        }
+
+        private static bool IsColumnOrBarXl(int xl)
+        {
+            // 51 簇状柱、52 堆积柱、53 百分比堆积柱；57–59 条形同类
+            return xl == XlColumnClustered || xl == 52 || xl == 53
+                || xl == XlBarClustered || xl == 58 || xl == 59;
+        }
+
+        private static bool IsColumnOrBarSeriesHint(string seriesType)
+        {
+            string hint = NormalizeSeriesTypeHint(seriesType);
+            return hint == "column" || hint == "bar";
         }
 
         private static bool IsPhantomWeight(double weight)

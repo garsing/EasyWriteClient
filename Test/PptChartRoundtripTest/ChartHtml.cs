@@ -348,7 +348,7 @@ namespace PptChartRoundtripTest
                 + "    <table>\n"
                 + "      <tr>\n"
                 + "        <th data-col=\"category\">类别</th>\n"
-                + "        <th data-col=\"value\" data-series-type=\"column\" data-axis=\"y\" data-color=\"#2497EA\" data-show-data-labels=\"true\" data-show-value=\"true\" data-show-percentage=\"false\" data-fill-gradient=\"0:#FFFFFF@1;1:#2497EA@0\" data-fill-angle=\"270\" data-line=\"none\" data-line-weight=\"2\" data-marker=\"none\" data-marker-size=\"5\" data-marker-color=\"#FFFFFF\" data-marker-fill=\"#FFFFFF\" data-label-position=\"above\" data-label-font=\"微软雅黑\" data-label-size=\"10\" data-label-color=\"#FFFFFF\" data-label-format=\"0.00\">规模</th>\n"
+                + "        <th data-col=\"value\" data-series-type=\"column\" data-axis=\"y\" data-color=\"#2497EA\" data-show-data-labels=\"true\" data-show-value=\"true\" data-show-percentage=\"false\" data-fill-gradient=\"0:#FFFFFF@1;1:#2497EA@0\" data-fill-angle=\"270\" data-line=\"none\" data-line-weight=\"2\" data-marker=\"none\" data-marker-size=\"5\" data-marker-color=\"#FFFFFF\" data-marker-fill=\"#FFFFFF\" data-label-position=\"outside\" data-label-font=\"微软雅黑\" data-label-size=\"10\" data-label-color=\"#FFFFFF\" data-label-format=\"0.00\">规模</th>\n"
                 + lineTh
                 + "      </tr>\n"
                 + (combo ? FourYearRows(single: false) : FourYearRows(single: true))

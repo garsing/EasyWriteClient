@@ -7,7 +7,7 @@ namespace PptChartRoundtripTest
     /// <summary>可写属性正式用例：50 新建 + 50 改已有，两份 PPT。</summary>
     internal static class ChartAttrCatalog
     {
-        public const int BatchSize = 61;
+        public const int BatchSize = 63;
 
         public const int BatchCount = 2;
 
@@ -189,6 +189,18 @@ namespace PptChartRoundtripTest
                 AttrCheck.Num("S0.LabelSize", "9"),
                 AttrCheck.Hex("S0.LabelColor", "#333333"),
                 AttrCheck.Exact("S0.LabelFormat", "0.00")));
+            // 柱图稿写 above：写路径归一成 outside（COM 无 Above）
+            list.Add(Column(p + "series-label-above-coerced", replace, null,
+                Th(Pair("data-show-data-labels", "true"), Pair("data-show-value", "true"),
+                    Pair("data-label-position", "above")),
+                AttrCheck.Exact("S0.ShowDataLabels", "true"),
+                AttrCheck.Exact("S0.LabelPosition", "outside")));
+            // 折线仍支持 above
+            list.Add(Line(p + "series-label-above-line", replace, null,
+                Th(Pair("data-show-data-labels", "true"), Pair("data-show-value", "true"),
+                    Pair("data-label-position", "above")),
+                AttrCheck.Exact("S0.ShowDataLabels", "true"),
+                AttrCheck.Exact("S0.LabelPosition", "above")));
             list.Add(Pie(p + "series-label-outside", replace, Node("data-show-data-labels", "true"),
                 Th(Pair("data-show-data-labels", "true"), Pair("data-show-percentage", "true"),
                     Pair("data-show-value", "false"), Pair("data-label-position", "outside")),
