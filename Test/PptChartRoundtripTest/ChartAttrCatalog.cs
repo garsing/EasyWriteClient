@@ -5,7 +5,7 @@ namespace PptChartRoundtripTest
     /// <summary>可写属性正式用例：50 新建 + 50 改已有，两份 PPT。</summary>
     internal static class ChartAttrCatalog
     {
-        public const int BatchSize = 50;
+        public const int BatchSize = 58;
 
         public const int BatchCount = 2;
 
@@ -61,6 +61,28 @@ namespace PptChartRoundtripTest
                 AttrCheck.Exact("Title", "属性测标题"), AttrCheck.Hex("TitleFontColor", "#C00000")));
             list.Add(Column(p + "title-off", replace, Node("data-title", ""),
                 AttrCheck.Exact("Title", null)));
+            list.Add(Column(p + "title-full", replace,
+                Merge(
+                    Node("data-title", "完整标题样式"),
+                    Node("data-title-font-size", "18"),
+                    Node("data-title-font-bold", "true"),
+                    Node("data-title-font-color", "#0070C0")),
+                AttrCheck.Exact("Title", "完整标题样式"),
+                AttrCheck.Num("TitleFontSize", "18"),
+                AttrCheck.Exact("TitleFontBold", "true"),
+                AttrCheck.Hex("TitleFontColor", "#0070C0")));
+            list.Add(Column(p + "title-long", replace,
+                Node("data-title", "一二三四五六七八九十年增长率对比图"),
+                AttrCheck.Exact("Title", "一二三四五六七八九十年增长率对比图")));
+            list.Add(Line(p + "title-off-line", replace, Node("data-title", ""), null,
+                AttrCheck.Exact("Title", null)));
+            list.Add(Pie(p + "title-off-pie", replace, Node("data-title", ""), null,
+                AttrCheck.Exact("Title", null)));
+            list.Add(Combo(p + "title-off-combo", replace, Node("data-title", ""),
+                AttrCheck.Exact("Title", null)));
+            list.Add(TitleOffFromTitled(p + "title-off-from-on", replace));
+            list.Add(TitleKeepFromOld(p + "title-keep-from-old", replace));
+            list.Add(TitleChangeText(p + "title-change-text", replace));
             list.Add(Typed(p + "legend-top", replace, "column", "top", null, null,
                 AttrCheck.Exact("Legend", "top")));
             list.Add(Typed(p + "legend-left", replace, "column", "left", null, null,
@@ -306,6 +328,87 @@ namespace PptChartRoundtripTest
                 AttrCheck.Exact("S1.Marker", "circle"),
                 AttrCheck.Exact("AxisY2Style.Visible", "true"),
                 AttrCheck.Hex("AxisY2Style.TickColor", "#7030A0"));
+        }
+
+        /// <summary>底图有标题，换数稿显式关掉（新建路径等价于直接关）。</summary>
+        private static ChartCase TitleOffFromTitled(string name, bool replace)
+        {
+            if (!replace)
+            {
+                return Column(name, false, Node("data-title", ""),
+                    AttrCheck.Exact("Title", null));
+            }
+
+            return ColumnReplaceWithBaseline(
+                name,
+                Node("data-title", "旧图标题"),
+                Node("data-title", ""),
+                AttrCheck.Exact("Title", null));
+        }
+
+        /// <summary>底图有标题，换数稿不提标题 → 应继承旧正文。</summary>
+        private static ChartCase TitleKeepFromOld(string name, bool replace)
+        {
+            if (!replace)
+            {
+                return Column(name, false, Node("data-title", "新建保留标题"),
+                    AttrCheck.Exact("Title", "新建保留标题"));
+            }
+
+            return ColumnReplaceWithBaseline(
+                name,
+                Node("data-title", "旧图应保留"),
+                null,
+                AttrCheck.Exact("Title", "旧图应保留"));
+        }
+
+        /// <summary>底图有标题，换数稿改成另一段正文。</summary>
+        private static ChartCase TitleChangeText(string name, bool replace)
+        {
+            if (!replace)
+            {
+                return Column(name, false, Node("data-title", "新建改写标题"),
+                    AttrCheck.Exact("Title", "新建改写标题"));
+            }
+
+            return ColumnReplaceWithBaseline(
+                name,
+                Node("data-title", "旧标题"),
+                Node("data-title", "新标题"),
+                AttrCheck.Exact("Title", "新标题"));
+        }
+
+        private static ChartCase ColumnReplaceWithBaseline(
+            string name,
+            Dictionary<string, string> baselineNode,
+            Dictionary<string, string> replaceNode,
+            params AttrCheck[] attrs)
+        {
+            IList<double>[] series = { ColVals };
+            string baseline = ChartHtml.BuildAttrChart(
+                true,
+                "column",
+                "none",
+                Years,
+                series,
+                new[] { "column" },
+                new[] { "y" },
+                new[] { "底图" },
+                baselineNode,
+                null);
+            string html = ChartHtml.BuildAttrChart(
+                false,
+                "column",
+                "none",
+                Years,
+                series,
+                new[] { "column" },
+                new[] { "y" },
+                new[] { "系列A" },
+                replaceNode,
+                null);
+            return Finish(name, true, "column", 4, 1, null, Years[0], ColVals[0], ColVals[3],
+                baseline, html, attrs);
         }
 
         private static ChartCase Column(string name, bool replace, Dictionary<string, string> node, params AttrCheck[] attrs)
