@@ -221,7 +221,8 @@ namespace PptChartRoundtripTest
                     Node("data-axis-x-tick-count", "4"), Node("data-axis-x-tick-spacing", "1"),
                     Node("data-axis-x-between", "true")),
                 AttrCheck.ApplyOnly("AxisXType", "category"),
-                AttrCheck.ApplyOnly("AxisXFormat", "General"),
+                // 分类轴写路径钉 @（防年份变时间轴空白）；稿可写 General，读回应对 @
+                AttrCheck.Exact("AxisXFormat", "@"),
                 AttrCheck.ApplyOnly("AxisXTickCount", "4"),
                 AttrCheck.ApplyOnly("AxisXTickSpacing", "1"),
                 AttrCheck.ApplyOnly("AxisXBetween", "true")));
