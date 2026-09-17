@@ -63,6 +63,11 @@ namespace WordAddIn1.PresentationHost
 
             public string LegendFontColor { get; set; }
 
+            /// <summary>
+            /// 饼/环整图统一爆炸值（各瓣相同）。不对称时拍成 null，换数不继承。
+            /// </summary>
+            public int? Explosion { get; set; }
+
             public bool? ChartAreaFillVisible { get; set; }
 
             public int? ChartAreaFillRgb { get; set; }

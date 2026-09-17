@@ -97,6 +97,8 @@ namespace WordAddIn1.PresentationHost
             {
             }
 
+            snap.Explosion = TryReadUniformPieExplosion(chart);
+
             TryReadAreaFill(chart, "ChartArea", out bool? areaVis, out int? areaRgb);
             snap.ChartAreaFillVisible = areaVis;
             snap.ChartAreaFillRgb = areaRgb;
@@ -207,6 +209,10 @@ namespace WordAddIn1.PresentationHost
                 TryInheritDataLabels(chart, snap, warnings);
                 // 主题/系列/标签可能把 AddChart2 默认标题再打开，正文和开关最后再钉一次
                 TryInheritTitleAndLegend(chart, snap, warnings, deferTitleOff);
+                if (snap.Explosion.HasValue)
+                {
+                    TryApplyPieExplosion(chart, snap.Explosion.Value, warnings);
+                }
             }
             catch (Exception ex)
             {
@@ -936,6 +942,14 @@ namespace WordAddIn1.PresentationHost
         {
             string prefix = (tag ?? "fill");
             FillSnap snap = TryCaptureFormatFill(series, warnings, prefix);
+            if (snap != null && snap.Visible == false)
+            {
+                // 关填充后 ForeColor 常仍挂主题色；继承/读回只认 Visible，丢掉残留 RGB。
+                snap.SolidRgb = null;
+                snap.Stops = null;
+                return snap;
+            }
+
             if (snap != null && (snap.SolidRgb.HasValue || (snap.Stops != null && snap.Stops.Count >= 2)))
             {
                 return snap;

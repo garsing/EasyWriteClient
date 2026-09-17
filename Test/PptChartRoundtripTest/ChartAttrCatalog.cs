@@ -1,11 +1,13 @@
+using System;
 using System.Collections.Generic;
+using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 
 namespace PptChartRoundtripTest
 {
     /// <summary>可写属性正式用例：50 新建 + 50 改已有，两份 PPT。</summary>
     internal static class ChartAttrCatalog
     {
-        public const int BatchSize = 58;
+        public const int BatchSize = 61;
 
         public const int BatchCount = 2;
 
@@ -20,6 +22,10 @@ namespace PptChartRoundtripTest
         private static readonly string[] PieCats = { "A", "B", "C", "D" };
 
         private static readonly double[] PieVals = { 40, 30, 20, 10 };
+
+        private static readonly string[] PieCatsMore = { "A", "B", "C", "D", "E" };
+
+        private static readonly double[] PieValsMore = { 40, 30, 20, 10, 5 };
 
         public static List<ChartCase> Build()
         {
@@ -158,7 +164,8 @@ namespace PptChartRoundtripTest
                 AttrCheck.Hex("S0.Color", "#2497EA")));
             list.Add(Column(p + "series-color-none", replace, null,
                 Th(Pair("data-color", "none")),
-                AttrCheck.ApplyOnly("S0.Color", "none")));
+                AttrCheck.Exact("S0.Color", "none")));
+            list.Add(SeriesColorKeepNone(p + "series-color-keep-none", replace));
             list.Add(Column(p + "series-gradient", replace, null,
                 Th(Pair("data-fill-gradient", "0:#FFFFFF@1;1:#2497EA@0"), Pair("data-fill-angle", "270")),
                 AttrCheck.Exact("S0.FillGradient", "0:#FFFFFF@1;1:#2497EA@0"),
@@ -187,7 +194,9 @@ namespace PptChartRoundtripTest
                     Pair("data-show-value", "false"), Pair("data-label-position", "outside")),
                 AttrCheck.Exact("S0.LabelPosition", "outside")));
             list.Add(Pie(p + "explosion", replace, Node("data-explosion", "12"), null,
-                AttrCheck.ApplyOnly("Explosion", "12")));
+                AttrCheck.Exact("Explosion", "12")));
+            list.Add(ExplosionKeepAll(p + "explosion-keep-all", replace));
+            list.Add(ExplosionSkipPartial(p + "explosion-skip-partial", replace));
             list.Add(Column(p + "chart-style", replace, Node("data-chart-style", "286"),
                 AttrCheck.Num("ChartStyle", "286")));
             list.Add(Column(p + "theme", replace, Node("data-theme", "office"),
@@ -298,7 +307,7 @@ namespace PptChartRoundtripTest
                     Pair("data-show-value", "false"),
                     Pair("data-show-percentage", "true"),
                     Pair("data-label-position", "outside")),
-                AttrCheck.ApplyOnly("Explosion", "8"),
+                AttrCheck.Exact("Explosion", "8"),
                 AttrCheck.Exact("S0.ShowPercentage", "true"),
                 AttrCheck.Exact("S0.ShowValue", "false"),
                 AttrCheck.Exact("S0.LabelPosition", "outside"));
@@ -328,6 +337,136 @@ namespace PptChartRoundtripTest
                 AttrCheck.Exact("S1.Marker", "circle"),
                 AttrCheck.Exact("AxisY2Style.Visible", "true"),
                 AttrCheck.Hex("AxisY2Style.TickColor", "#7030A0"));
+        }
+
+        /// <summary>底图系列无色，换数稿不提 data-color → 应继承 none。</summary>
+        private static ChartCase SeriesColorKeepNone(string name, bool replace)
+        {
+            if (!replace)
+            {
+                return Column(name, false, null,
+                    Th(Pair("data-color", "none")),
+                    AttrCheck.Exact("S0.Color", "none"));
+            }
+
+            IList<double>[] series = { ColVals };
+            string baseline = ChartHtml.BuildAttrChart(
+                true,
+                "column",
+                "none",
+                Years,
+                series,
+                new[] { "column" },
+                new[] { "y" },
+                new[] { "底图" },
+                null,
+                new IDictionary<string, string>[] { Th(Pair("data-color", "none")) });
+            string html = ChartHtml.BuildAttrChart(
+                false,
+                "column",
+                "none",
+                Years,
+                series,
+                new[] { "column" },
+                new[] { "y" },
+                new[] { "系列A" },
+                null,
+                null);
+            return Finish(name, true, "column", 4, 1, null, Years[0], ColVals[0], ColVals[3],
+                baseline, html, new[] { AttrCheck.Exact("S0.Color", "none") });
+        }
+
+        /// <summary>底图全瓣统一爆炸，换数增类别且稿不提 → 新全部瓣继承该值。</summary>
+        private static ChartCase ExplosionKeepAll(string name, bool replace)
+        {
+            if (!replace)
+            {
+                return Pie(name, false, Node("data-explosion", "15"), null,
+                    AttrCheck.Exact("Explosion", "15"));
+            }
+
+            IList<double>[] baseSeries = { PieVals };
+            IList<double>[] moreSeries = { PieValsMore };
+            string baseline = ChartHtml.BuildAttrChart(
+                true,
+                "pie2d",
+                "none",
+                PieCats,
+                baseSeries,
+                new[] { "pie2d" },
+                new[] { "y" },
+                new[] { "底图" },
+                Node("data-explosion", "15"),
+                null);
+            string html = ChartHtml.BuildAttrChart(
+                false,
+                "pie2d",
+                "right",
+                PieCatsMore,
+                moreSeries,
+                new[] { "pie2d" },
+                new[] { "y" },
+                new[] { "份额" },
+                null,
+                null);
+            return Finish(name, true, "pie2d", 5, 1, null, PieCatsMore[0], PieValsMore[0], PieValsMore[4],
+                baseline, html, new[] { AttrCheck.Exact("Explosion", "15") });
+        }
+
+        /// <summary>底图仅一瓣爆炸，换数稿不提 → 不继承不对称爆炸。</summary>
+        private static ChartCase ExplosionSkipPartial(string name, bool replace)
+        {
+            if (!replace)
+            {
+                return Pie(name, false, null, null,
+                    AttrCheck.Exact("Explosion", "0"));
+            }
+
+            IList<double>[] series = { PieVals };
+            string baseline = ChartHtml.BuildAttrChart(
+                true,
+                "pie2d",
+                "none",
+                PieCats,
+                series,
+                new[] { "pie2d" },
+                new[] { "y" },
+                new[] { "底图" },
+                null,
+                null);
+            string html = ChartHtml.BuildAttrChart(
+                false,
+                "pie2d",
+                "right",
+                PieCats,
+                series,
+                new[] { "pie2d" },
+                new[] { "y" },
+                new[] { "份额" },
+                null,
+                null);
+            ChartCase c = Finish(name, true, "pie2d", 4, 1, null, PieCats[0], PieVals[0], PieVals[3],
+                baseline, html, new[] { AttrCheck.Exact("Explosion", "0") });
+            c.AfterCreateMutate = ExplodeFirstPieSliceOnly;
+            return c;
+        }
+
+        private static void ExplodeFirstPieSliceOnly(object shape)
+        {
+            if (shape == null)
+            {
+                throw new InvalidOperationException("底图 shape 为空");
+            }
+
+            PowerPoint.Shape shp = shape as PowerPoint.Shape;
+            if (shp == null)
+            {
+                shp = (PowerPoint.Shape)shape;
+            }
+
+            PowerPoint.Series ser = (PowerPoint.Series)shp.Chart.SeriesCollection(1);
+            PowerPoint.Point pt = (PowerPoint.Point)ser.Points(1);
+            pt.Explosion = 25;
         }
 
         /// <summary>底图有标题，换数稿显式关掉（新建路径等价于直接关）。</summary>

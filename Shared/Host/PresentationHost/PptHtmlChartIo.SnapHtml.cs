@@ -153,13 +153,13 @@ namespace WordAddIn1.PresentationHost
                             col.FillAngle = one.Fill.Angle.Value.ToString("0.##", CultureInfo.InvariantCulture);
                         }
                     }
-                    else if (one.Fill.SolidRgb.HasValue)
-                    {
-                        col.Color = OfficeRgbToHex(one.Fill.SolidRgb.Value);
-                    }
                     else if (one.Fill.Visible == false)
                     {
                         col.Color = "none";
+                    }
+                    else if (one.Fill.SolidRgb.HasValue)
+                    {
+                        col.Color = OfficeRgbToHex(one.Fill.SolidRgb.Value);
                     }
                 }
 
@@ -292,6 +292,12 @@ namespace WordAddIn1.PresentationHost
                 if (!string.IsNullOrWhiteSpace(format.TitleFontColor))
                 {
                     snap.TitleFontColor = format.TitleFontColor;
+                }
+
+                if (!string.IsNullOrWhiteSpace(format.Explosion)
+                    && int.TryParse(format.Explosion, NumberStyles.Integer, CultureInfo.InvariantCulture, out int exp))
+                {
+                    snap.Explosion = exp;
                 }
 
                 ApplyAreaColor(format.ChartAreaColor, out bool? areaVis, out int? areaRgb);
@@ -883,6 +889,12 @@ namespace WordAddIn1.PresentationHost
                 snap.PlotFillRgb = oldSnap.PlotFillRgb;
             }
 
+            // 仅旧图各瓣统一爆炸时才拍到 oldSnap.Explosion；不对称为 null 不继承。
+            if (!snap.Explosion.HasValue && oldSnap.Explosion.HasValue)
+            {
+                snap.Explosion = oldSnap.Explosion;
+            }
+
             if (!snap.GapWidth.HasValue && oldSnap.GapWidth.HasValue)
             {
                 snap.GapWidth = oldSnap.GapWidth;
@@ -1293,6 +1305,11 @@ namespace WordAddIn1.PresentationHost
             {
                 oldSnap.PlotFillVisible = htmlSnap.PlotFillVisible;
                 oldSnap.PlotFillRgb = htmlSnap.PlotFillRgb;
+            }
+
+            if (htmlSnap.Explosion.HasValue)
+            {
+                oldSnap.Explosion = htmlSnap.Explosion;
             }
 
             if (htmlSnap.GapWidth.HasValue)

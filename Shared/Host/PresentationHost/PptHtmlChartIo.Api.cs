@@ -381,6 +381,15 @@ namespace WordAddIn1.PresentationHost
             TryInheritAxisChrome(newChart, snap, warnings);
             // 换数跳过 applyHtmlChrome，尺度不在快照旧字段里时仍以稿为准再钉一次。
             TryApplyValueAxisScaleFromFormat(newChart, useFormat, warnings);
+            // 再灌数会重建瓣点：统一爆炸须按当前点数最后再钉（稿优先，否则继承快照）。
+            if (useFormat != null && !string.IsNullOrWhiteSpace(useFormat.Explosion))
+            {
+                TryApplyPieExplosionFromFormat(newChart, useFormat, warnings);
+            }
+            else if (snap != null && snap.Explosion.HasValue)
+            {
+                TryApplyPieExplosion(newChart, snap.Explosion.Value, warnings);
+            }
 
             DismissChartExcelUiForChart(newChart);
             if (deferTitleOff)

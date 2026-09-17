@@ -802,6 +802,12 @@ namespace WordAddIn1.PresentationHost
             {
                 object fmt = WppCom.GetProperty(series, "Format");
                 object fill = WppCom.GetProperty(fmt, "Fill");
+                object vis = fill == null ? null : WppCom.GetProperty(fill, "Visible");
+                if (vis != null && Convert.ToInt32(vis) == 0)
+                {
+                    return "none";
+                }
+
                 object fc = WppCom.GetProperty(fill, "ForeColor");
                 object rgb = WppCom.GetProperty(fc, "RGB");
                 if (rgb != null)

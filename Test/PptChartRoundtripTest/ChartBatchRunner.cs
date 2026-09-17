@@ -298,6 +298,19 @@ namespace PptChartRoundtripTest
                 return null;
             }
 
+            if (one.AfterCreateMutate != null)
+            {
+                try
+                {
+                    one.AfterCreateMutate(shape);
+                }
+                catch (Exception ex)
+                {
+                    run.CaseFail(tag, "底图微调失败: " + ex.Message);
+                    return null;
+                }
+            }
+
             if (one.IsReplace)
             {
                 if (!ChartHtml.TryParseFirstChart(one.ReplaceHtml, out PptHtmlApplyNode node, out error))

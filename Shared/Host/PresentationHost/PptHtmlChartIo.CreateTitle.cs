@@ -136,6 +136,8 @@ namespace WordAddIn1.PresentationHost
                     TryApplyStyleSnap(chart, htmlSnap, warnings, grid, format);
                     TryInheritAxisChrome(chart, htmlSnap, warnings);
                     EnsureNewPieVariesByCategory(chart, grid, warnings);
+                    // VaryByCategory 可能重建瓣点，爆炸须在其后按当前点数再写。
+                    TryApplyPieExplosionFromFormat(chart, format, warnings);
                 }
                 else
                 {
@@ -312,16 +314,23 @@ namespace WordAddIn1.PresentationHost
                         continue;
                     }
 
-                    if (!IsPieChart(chart)
-                        && !string.IsNullOrEmpty(col.Color)
-                        && TryParseHexToOffice(col.Color, out int rgb))
+                    if (!IsPieChart(chart) && !string.IsNullOrEmpty(col.Color))
                     {
                         try
                         {
                             object fmt = WppCom.GetProperty(series, "Format");
                             object fill = WppCom.GetProperty(fmt, "Fill");
-                            object fc = WppCom.GetProperty(fill, "ForeColor");
-                            WppCom.TrySetProperty(fc, "RGB", rgb);
+                            if (string.Equals(col.Color, "none", StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(col.Color, "transparent", StringComparison.OrdinalIgnoreCase))
+                            {
+                                WppCom.TrySetProperty(fill, "Visible", 0);
+                            }
+                            else if (TryParseHexToOffice(col.Color, out int rgb))
+                            {
+                                WppCom.TrySetProperty(fill, "Visible", -1);
+                                object fc = WppCom.GetProperty(fill, "ForeColor");
+                                WppCom.TrySetProperty(fc, "RGB", rgb);
+                            }
                         }
                         catch (Exception)
                         {
@@ -521,18 +530,11 @@ namespace WordAddIn1.PresentationHost
         {
             try
             {
-                object sc = TryInvoke(chart, "SeriesCollection");
-                if (sc == null)
+                // 仅各瓣相同才报整图值；不对称不输出（换数也不继承）。
+                int? uniform = TryReadUniformPieExplosion(chart);
+                if (uniform.HasValue)
                 {
-                    return;
-                }
-
-                object s = WppCom.GetIndexed(sc, 1);
-                object exp = s == null ? null : WppCom.GetProperty(s, "Explosion");
-                if (exp != null)
-                {
-                    format.Explosion = Convert.ToInt32(Convert.ToDouble(exp))
-                        .ToString(CultureInfo.InvariantCulture);
+                    format.Explosion = uniform.Value.ToString(CultureInfo.InvariantCulture);
                 }
             }
             catch (Exception)
@@ -769,16 +771,148 @@ namespace WordAddIn1.PresentationHost
             if (!string.IsNullOrWhiteSpace(fmt.Explosion)
                 && int.TryParse(fmt.Explosion, NumberStyles.Integer, CultureInfo.InvariantCulture, out int exp))
             {
+                TryApplyPieExplosion(chart, exp, warnings);
+            }
+        }
+
+        /// <summary>饼/环：灌数后点数已定，给当前全部瓣写同一爆炸值。</summary>
+        private static void TryApplyPieExplosion(object chart, int explosion, List<string> warnings)
+        {
+            if (chart == null || !IsPieChart(chart))
+            {
+                return;
+            }
+
+            try
+            {
+                object sc = TryInvoke(chart, "SeriesCollection");
+                if (sc == null)
+                {
+                    sc = WppCom.GetProperty(chart, "SeriesCollection");
+                }
+
+                object s = sc == null ? null : WppCom.GetIndexed(sc, 1);
+                if (s == null)
+                {
+                    return;
+                }
+
+                // 系列级顺带写一下（部分环境会带动点）；读回以点为准。
                 try
                 {
-                    object sc = TryInvoke(chart, "SeriesCollection");
-                    object s = WppCom.GetIndexed(sc, 1);
-                    WppCom.TrySetProperty(s, "Explosion", exp);
+                    WppCom.TrySetProperty(s, "Explosion", explosion);
                 }
                 catch (Exception)
                 {
-                    Warn(warnings, "data-explosion");
                 }
+
+                object pts = WppCom.GetProperty(s, "Points");
+                if (pts == null)
+                {
+                    pts = TryInvoke(s, "Points");
+                }
+
+                if (pts == null)
+                {
+                    return;
+                }
+
+                int n = Convert.ToInt32(WppCom.GetProperty(pts, "Count"));
+                for (int i = 1; i <= n; i++)
+                {
+                    object pt = WppCom.GetIndexed(pts, i);
+                    if (pt == null)
+                    {
+                        pt = TryInvoke(pts, "Item", i);
+                    }
+
+                    if (pt != null)
+                    {
+                        WppCom.TrySetProperty(pt, "Explosion", explosion);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                Warn(warnings, "data-explosion");
+            }
+        }
+
+        private static void TryApplyPieExplosionFromFormat(
+            object chart,
+            PptHtmlChartFormat fmt,
+            List<string> warnings)
+        {
+            if (fmt == null || string.IsNullOrWhiteSpace(fmt.Explosion))
+            {
+                return;
+            }
+
+            if (!int.TryParse(fmt.Explosion, NumberStyles.Integer, CultureInfo.InvariantCulture, out int exp))
+            {
+                return;
+            }
+
+            TryApplyPieExplosion(chart, exp, warnings);
+        }
+
+        /// <summary>
+        /// 各瓣爆炸值相同则返回该值；不对称或非饼返回 null（换数不继承不对称）。
+        /// </summary>
+        private static int? TryReadUniformPieExplosion(object chart)
+        {
+            if (chart == null || !IsPieChart(chart))
+            {
+                return null;
+            }
+
+            try
+            {
+                object sc = TryInvoke(chart, "SeriesCollection");
+                if (sc == null)
+                {
+                    sc = WppCom.GetProperty(chart, "SeriesCollection");
+                }
+
+                object s = sc == null ? null : WppCom.GetIndexed(sc, 1);
+                object pts = s == null ? null : WppCom.GetProperty(s, "Points");
+                if (pts == null && s != null)
+                {
+                    pts = TryInvoke(s, "Points");
+                }
+
+                if (pts == null)
+                {
+                    return null;
+                }
+
+                int n = Convert.ToInt32(WppCom.GetProperty(pts, "Count"));
+                if (n < 1)
+                {
+                    return null;
+                }
+
+                int? uniform = null;
+                for (int i = 1; i <= n; i++)
+                {
+                    object pt = WppCom.GetIndexed(pts, i) ?? TryInvoke(pts, "Item", i);
+                    object raw = pt == null ? null : WppCom.GetProperty(pt, "Explosion");
+                    int v = raw == null ? 0 : Convert.ToInt32(Convert.ToDouble(raw));
+                    if (uniform == null)
+                    {
+                        uniform = v;
+                    }
+                    else if (uniform.Value != v)
+                    {
+                        return null;
+                    }
+                }
+
+                return uniform;
+            }
+            catch (Exception)
+            {
+                return null;
             }
         }
 

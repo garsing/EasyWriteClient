@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace PptChartRoundtripTest
@@ -34,6 +35,9 @@ namespace PptChartRoundtripTest
 
         /// <summary>读回属性断言；空则只对结构。</summary>
         public List<AttrCheck> Attrs { get; set; }
+
+        /// <summary>建底图后、换数前对 shape 做 COM 微调（如仅一瓣爆炸）。</summary>
+        public Action<object> AfterCreateMutate { get; set; }
     }
 
     internal sealed class AttrCheck
