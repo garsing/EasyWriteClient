@@ -22,7 +22,7 @@ namespace PptChartRoundtripTest
             bool runAttrs = !parseOnly && (attrsOnly || suiteAll);
 
             Console.WriteLine("PPT 图表测试");
-            Console.WriteLine("结构用例：约 50 页 × 6 份；属性用例：约 50 页 × 2 份（--attrs-only）");
+            Console.WriteLine("结构用例：约 50 页 × 6 份；属性用例：单点+交叉 × 2 份（--attrs-only）");
             Console.WriteLine();
 
             if (runParse)

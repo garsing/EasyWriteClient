@@ -4,14 +4,18 @@ using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 
 namespace PptChartRoundtripTest
 {
-    /// <summary>可写属性正式用例：50 新建 + 50 改已有，两份 PPT。</summary>
+    /// <summary>可写属性正式用例：单点 + 交叉组合；新建/换数各一份 PPT。</summary>
     internal static class ChartAttrCatalog
     {
-        public const int BatchSize = 63;
+        /// <summary>每份 PPT 页数 = 新建（或换数）用例数；Build 时写入。</summary>
+        public static int BatchSize { get; private set; }
 
         public const int BatchCount = 2;
 
-        public const int Total = BatchSize * BatchCount;
+        public static int Total
+        {
+            get { return BatchSize * BatchCount; }
+        }
 
         private static readonly string[] Years = { "2026", "2027", "2028", "2029" };
 
@@ -33,8 +37,14 @@ namespace PptChartRoundtripTest
             AddAll(creates, replace: false);
             var replaces = new List<ChartCase>();
             AddAll(replaces, replace: true);
+            if (creates.Count != replaces.Count)
+            {
+                throw new InvalidOperationException(
+                    "属性新建/换数用例数不一致: create=" + creates.Count + " replace=" + replaces.Count);
+            }
 
-            var list = new List<ChartCase>(Total);
+            BatchSize = creates.Count;
+            var list = new List<ChartCase>(creates.Count + replaces.Count);
             list.AddRange(creates);
             list.AddRange(replaces);
             for (int i = 0; i < list.Count; i++)
@@ -235,6 +245,232 @@ namespace PptChartRoundtripTest
                 Th(Pair("data-line-weight", "2.5")),
                 AttrCheck.ApplyOnly("ChartLineWeight", "2.5"),
                 AttrCheck.Num("S0.LineWeight", "2.5")));
+            AddCombos(list, p, replace);
+        }
+
+        /// <summary>
+        /// 属性交叉：按真实易互相踩脚的簇精选，不穷举两两。
+        /// 图例走 Typed/Pie 的 legend 参数，勿再往 node 写 data-legend（会与默认 none 重复）。
+        /// </summary>
+        private static void AddCombos(List<ChartCase> list, string p, bool replace)
+        {
+            list.Add(Typed(p + "combo-title-legend-labels", replace, "column", "bottom",
+                Merge(
+                    Node("data-title", "交叉标题图例"),
+                    Node("data-title-font-size", "16"),
+                    Node("data-title-font-bold", "true"),
+                    Node("data-title-font-color", "#C00000"),
+                    Node("data-legend-font-color", "#00B050"),
+                    Node("data-show-data-labels", "true"),
+                    Node("data-show-value", "true"),
+                    Node("data-gridlines", "true")),
+                Th(Pair("data-show-data-labels", "true"), Pair("data-show-value", "true"),
+                    Pair("data-label-position", "outside")),
+                AttrCheck.Exact("Title", "交叉标题图例"),
+                AttrCheck.Num("TitleFontSize", "16"),
+                AttrCheck.Exact("TitleFontBold", "true"),
+                AttrCheck.Hex("TitleFontColor", "#C00000"),
+                AttrCheck.Exact("Legend", "bottom"),
+                AttrCheck.Hex("LegendFontColor", "#00B050"),
+                AttrCheck.Exact("Gridlines", "true"),
+                AttrCheck.Exact("S0.ShowDataLabels", "true"),
+                AttrCheck.Exact("S0.LabelPosition", "outside")));
+
+            list.Add(Column(p + "combo-gap-overlap-color", replace,
+                Merge(Node("data-gap-width", "90"), Node("data-overlap", "-25"),
+                    Node("data-show-data-labels", "true"), Node("data-show-value", "true")),
+                Th(Pair("data-color", "#ED7D31"),
+                    Pair("data-show-data-labels", "true"),
+                    Pair("data-show-value", "true"),
+                    Pair("data-label-position", "outside"),
+                    Pair("data-label-color", "#833C0C")),
+                AttrCheck.Num("GapWidth", "90"),
+                AttrCheck.Num("Overlap", "-25"),
+                AttrCheck.Hex("S0.Color", "#ED7D31"),
+                AttrCheck.Exact("S0.ShowDataLabels", "true"),
+                AttrCheck.Exact("S0.LabelPosition", "outside"),
+                AttrCheck.Hex("S0.LabelColor", "#833C0C")));
+
+            list.Add(Column(p + "combo-scale-axis-titles", replace,
+                Merge(
+                    Node("data-axis-x", "年份交叉"),
+                    Node("data-axis-y", "规模交叉"),
+                    Node("data-axis-y-min", "0"),
+                    Node("data-axis-y-max", "12"),
+                    Node("data-axis-y-major-unit", "3"),
+                    Node("data-gridlines", "false")),
+                AttrCheck.Exact("AxisX", "年份交叉"),
+                AttrCheck.Exact("AxisY", "规模交叉"),
+                AttrCheck.Num("AxisYMin", "0"),
+                AttrCheck.Num("AxisYMax", "12"),
+                AttrCheck.Num("AxisYMajorUnit", "3"),
+                AttrCheck.Exact("Gridlines", "false")));
+
+            list.Add(Typed(p + "combo-plot-series-title", replace, "column", "right",
+                Merge(
+                    Node("data-title", "区色与系列"),
+                    Node("data-plot-color", "#FFF2CC"),
+                    Node("data-chart-area-color", "#F2F2F2")),
+                Th(Pair("data-color", "#5B9BD5")),
+                AttrCheck.Exact("Title", "区色与系列"),
+                AttrCheck.Exact("Legend", "right"),
+                AttrCheck.Hex("PlotColor", "#FFF2CC"),
+                AttrCheck.Hex("ChartAreaColor", "#F2F2F2"),
+                AttrCheck.Hex("S0.Color", "#5B9BD5")));
+
+            list.Add(Typed(p + "combo-line-marker-label", replace, "line", "top",
+                Merge(
+                    Node("data-title", "折线交叉皮"),
+                    Node("data-data-markers", "true"),
+                    Node("data-chart-line-weight", "2"),
+                    Node("data-show-data-labels", "true"),
+                    Node("data-show-value", "true")),
+                Th(Pair("data-line", "#70AD47"), Pair("data-line-weight", "2"),
+                    Pair("data-marker", "diamond"), Pair("data-marker-size", "8"),
+                    Pair("data-marker-color", "#548235"), Pair("data-marker-fill", "#FFFFFF"),
+                    Pair("data-show-data-labels", "true"), Pair("data-show-value", "true"),
+                    Pair("data-label-position", "above")),
+                AttrCheck.Exact("Title", "折线交叉皮"),
+                AttrCheck.Exact("Legend", "top"),
+                AttrCheck.ApplyOnly("DataMarkers", "true"),
+                AttrCheck.Hex("S0.Line", "#70AD47"),
+                AttrCheck.Num("S0.LineWeight", "2"),
+                AttrCheck.Exact("S0.Marker", "diamond"),
+                AttrCheck.Num("S0.MarkerSize", "8"),
+                AttrCheck.Exact("S0.ShowDataLabels", "true"),
+                AttrCheck.Exact("S0.LabelPosition", "above")));
+
+            list.Add(Pie(p + "combo-pie-explosion-pct", replace, "bottom",
+                Merge(
+                    Node("data-title", "饼爆炸交叉"),
+                    Node("data-explosion", "10"),
+                    Node("data-show-data-labels", "true"),
+                    Node("data-show-value", "false"),
+                    Node("data-show-percentage", "true")),
+                Th(Pair("data-show-data-labels", "true"),
+                    Pair("data-show-value", "false"),
+                    Pair("data-show-percentage", "true"),
+                    Pair("data-label-position", "outside"),
+                    Pair("data-label-color", "#C00000")),
+                AttrCheck.Exact("Title", "饼爆炸交叉"),
+                AttrCheck.Exact("Legend", "bottom"),
+                AttrCheck.Exact("Explosion", "10"),
+                AttrCheck.Exact("S0.ShowPercentage", "true"),
+                AttrCheck.Exact("S0.ShowValue", "false"),
+                AttrCheck.Exact("S0.LabelPosition", "outside"),
+                AttrCheck.Hex("S0.LabelColor", "#C00000")));
+
+            list.Add(Combo(p + "combo-y2-dual-skin", replace,
+                Merge(
+                    Node("data-title", "双轴交叉"),
+                    Node("data-axis-y", "规模"),
+                    Node("data-axis-y-secondary", "增速"),
+                    Node("data-axis-y-min", "0"),
+                    Node("data-axis-y-max", "10"),
+                    Node("data-axis-y-major-unit", "2")),
+                Th(Pair("data-color", "#5B9BD5"), Pair("data-show-data-labels", "false")),
+                Th(Pair("data-line", "#ED7D31"), Pair("data-line-weight", "2.25"),
+                    Pair("data-marker", "circle"), Pair("data-marker-size", "7"),
+                    Pair("data-show-data-labels", "true"), Pair("data-show-value", "true"),
+                    Pair("data-label-format", "0.0%")),
+                AttrCheck.Exact("Title", "双轴交叉"),
+                AttrCheck.Exact("Legend", "bottom"),
+                AttrCheck.Exact("AxisY", "规模"),
+                AttrCheck.Exact("AxisYSecondary", "增速"),
+                AttrCheck.Num("AxisYMin", "0"),
+                AttrCheck.Num("AxisYMax", "10"),
+                AttrCheck.Exact("S1.AxisY", "y2"),
+                AttrCheck.Hex("S0.Color", "#5B9BD5"),
+                AttrCheck.Hex("S1.Line", "#ED7D31"),
+                AttrCheck.Exact("S1.Marker", "circle"),
+                AttrCheck.Exact("S1.ShowDataLabels", "true")));
+
+            var xyExtras = new List<AttrCheck>();
+            xyExtras.AddRange(AxisExpects("AxisXStyle", "#FF0000"));
+            xyExtras.AddRange(AxisExpects("AxisYStyle", "#0070C0"));
+            list.Add(Column(p + "combo-xy-extras", replace,
+                Merge(AxisPack("data-axis-x", "#FF0000"), AxisPack("data-axis-y", "#0070C0")),
+                xyExtras.ToArray()));
+
+            list.Add(Typed(p + "combo-style-scale-color", replace, "column", "bottom",
+                Merge(
+                    Node("data-title", "样式与色"),
+                    Node("data-chart-style", "286"),
+                    Node("data-axis-y-min", "0"),
+                    Node("data-axis-y-max", "15"),
+                    Node("data-axis-y-major-unit", "5")),
+                Th(Pair("data-color", "#2497EA")),
+                AttrCheck.Exact("Title", "样式与色"),
+                AttrCheck.Num("ChartStyle", "286"),
+                AttrCheck.Num("AxisYMin", "0"),
+                AttrCheck.Num("AxisYMax", "15"),
+                AttrCheck.Exact("Legend", "bottom"),
+                AttrCheck.Hex("S0.Color", "#2497EA")));
+
+            list.Add(Column(p + "combo-chrome-off-series", replace,
+                Merge(
+                    Node("data-title", ""),
+                    Node("data-gridlines", "false"),
+                    Node("data-show-data-labels", "true"),
+                    Node("data-show-value", "true")),
+                Th(Pair("data-color", "#7030A0"),
+                    Pair("data-show-data-labels", "true"),
+                    Pair("data-show-value", "true"),
+                    Pair("data-label-position", "outside")),
+                AttrCheck.Exact("Title", null),
+                AttrCheck.Exact("Legend", "none"),
+                AttrCheck.Exact("Gridlines", "false"),
+                AttrCheck.Hex("S0.Color", "#7030A0"),
+                AttrCheck.Exact("S0.ShowDataLabels", "true"),
+                AttrCheck.Exact("S0.LabelPosition", "outside")));
+
+            list.Add(Column(p + "combo-x-ticks-extras", replace,
+                Merge(
+                    Node("data-axis-x", "类目"),
+                    Node("data-axis-x-type", "category"),
+                    Node("data-axis-x-format", "General"),
+                    Node("data-axis-x-tick-count", "4"),
+                    Node("data-axis-x-tick-spacing", "1"),
+                    Node("data-axis-x-between", "true"),
+                    AxisPack("data-axis-x", "#C00000")),
+                ConcatChecks(
+                    new[]
+                    {
+                        AttrCheck.Exact("AxisX", "类目"),
+                        AttrCheck.Exact("AxisXFormat", "@"),
+                        AttrCheck.ApplyOnly("AxisXType", "category"),
+                        AttrCheck.ApplyOnly("AxisXTickCount", "4"),
+                        AttrCheck.ApplyOnly("AxisXBetween", "true")
+                    },
+                    AxisExpects("AxisXStyle", "#C00000"))));
+
+            list.Add(Typed(p + "combo-gradient-label-gap", replace, "column", "bottom",
+                Merge(Node("data-gap-width", "100"), Node("data-overlap", "-10")),
+                Th(Pair("data-fill-gradient", "0:#FFFFFF@1;1:#5B9BD5@0"),
+                    Pair("data-fill-angle", "270"),
+                    Pair("data-show-data-labels", "true"),
+                    Pair("data-show-value", "true"),
+                    Pair("data-label-position", "outside"),
+                    Pair("data-label-font", "微软雅黑"),
+                    Pair("data-label-size", "9"),
+                    Pair("data-label-color", "#2F5496")),
+                AttrCheck.Num("GapWidth", "100"),
+                AttrCheck.Num("Overlap", "-10"),
+                AttrCheck.Exact("Legend", "bottom"),
+                AttrCheck.Exact("S0.FillGradient", "0:#FFFFFF@1;1:#5B9BD5@0"),
+                AttrCheck.Num("S0.FillAngle", "270"),
+                AttrCheck.Exact("S0.ShowDataLabels", "true"),
+                AttrCheck.Exact("S0.LabelPosition", "outside"),
+                AttrCheck.Exact("S0.LabelFont", "微软雅黑"),
+                AttrCheck.Hex("S0.LabelColor", "#2F5496")));
+        }
+
+        private static AttrCheck[] ConcatChecks(AttrCheck[] a, AttrCheck[] b)
+        {
+            var list = new List<AttrCheck>(a.Length + b.Length);
+            list.AddRange(a);
+            list.AddRange(b);
+            return list.ToArray();
         }
 
         private static ChartCase SinkColumn(string prefix, bool replace)
@@ -596,11 +832,22 @@ namespace PptChartRoundtripTest
             Dictionary<string, string> th,
             params AttrCheck[] attrs)
         {
+            return Pie(name, replace, "right", node, th, attrs);
+        }
+
+        private static ChartCase Pie(
+            string name,
+            bool replace,
+            string legend,
+            Dictionary<string, string> node,
+            Dictionary<string, string> th,
+            params AttrCheck[] attrs)
+        {
             IList<double>[] series = { PieVals };
             string html = ChartHtml.BuildAttrChart(
                 !replace,
                 "pie2d",
-                "right",
+                legend,
                 PieCats,
                 series,
                 new[] { "pie2d" },
