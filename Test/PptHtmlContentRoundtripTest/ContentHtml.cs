@@ -63,12 +63,19 @@ namespace PptHtmlContentRoundtripTest
             double left = 8,
             double top = 35,
             double width = 45,
-            double height = 30)
+            double height = 30,
+            string extraAttrs = null)
         {
             var sb = new StringBuilder();
             sb.Append("  <table data-shape-type=\"table\" style=\"")
                 .Append(Geo(left, top, width, height))
-                .Append("\">\n");
+                .Append("\"");
+            if (!string.IsNullOrEmpty(extraAttrs))
+            {
+                sb.Append(" ").Append(extraAttrs.Trim());
+            }
+
+            sb.Append(">\n");
             AppendRows(sb, cells);
             sb.Append("  </table>");
             return Section(sb.ToString());

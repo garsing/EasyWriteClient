@@ -317,7 +317,7 @@ namespace PptHtmlContentRoundtripTest
                 return null;
             }
 
-            if (!string.IsNullOrEmpty(one.ExpectApplyErrorContains))
+            if (!string.IsNullOrEmpty(one.ExpectApplyErrorContains) && one.ReplaceHtml == null)
             {
                 run.CaseFail(tag, "期望 apply 失败含「" + one.ExpectApplyErrorContains + "」却成功了");
                 return null;
@@ -362,6 +362,12 @@ namespace PptHtmlContentRoundtripTest
 
                 if (!ContentHtml.TryParse(replaceHtml, slideId, out PptHtmlApplyPlan replacePlan, out error))
                 {
+                    if (MatchesExpectError(one.ExpectApplyErrorContains, error))
+                    {
+                        run.CaseOk(tag);
+                        return null;
+                    }
+
                     run.CaseFail(tag, "换数稿解析失败: " + error);
                     return null;
                 }
@@ -380,7 +386,19 @@ namespace PptHtmlContentRoundtripTest
                         return error;
                     }
 
+                    if (MatchesExpectError(one.ExpectApplyErrorContains, error))
+                    {
+                        run.CaseOk(tag);
+                        return null;
+                    }
+
                     run.CaseFail(tag, "换数 apply 失败: " + error + FormatWarnings(replaceResult));
+                    return null;
+                }
+
+                if (!string.IsNullOrEmpty(one.ExpectApplyErrorContains))
+                {
+                    run.CaseFail(tag, "期望换数失败含「" + one.ExpectApplyErrorContains + "」却成功了");
                     return null;
                 }
 

@@ -1872,7 +1872,7 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
-            if (shapeType == "picture" || shapeType == "media" || shapeType == "chart")
+            if (shapeType == "picture" || shapeType == "media" || shapeType == "chart" || shapeType == "table")
             {
                 return true;
             }

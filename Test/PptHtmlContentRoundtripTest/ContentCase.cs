@@ -21,6 +21,7 @@ namespace PptHtmlContentRoundtripTest
     {
         public string RedPng { get; set; }
         public string BluePng { get; set; }
+        public string GreenPng { get; set; }
     }
 
     internal sealed class ContentAssertContext
