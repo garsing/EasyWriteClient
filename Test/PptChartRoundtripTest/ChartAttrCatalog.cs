@@ -5,7 +5,7 @@ using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 namespace PptChartRoundtripTest
 {
     /// <summary>可写属性正式用例：单点 + 交叉组合；新建/换数各一份 PPT。</summary>
-    internal static class ChartAttrCatalog
+    internal static partial class ChartAttrCatalog
     {
         /// <summary>每份 PPT 页数 = 新建（或换数）用例数；Build 时写入。</summary>
         public static int BatchSize { get; private set; }
@@ -246,6 +246,7 @@ namespace PptChartRoundtripTest
                 AttrCheck.ApplyOnly("ChartLineWeight", "2.5"),
                 AttrCheck.Num("S0.LineWeight", "2.5")));
             AddCombos(list, p, replace);
+            AddMixes(list, p, replace);
         }
 
         /// <summary>
