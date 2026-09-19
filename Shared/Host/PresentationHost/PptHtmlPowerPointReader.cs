@@ -962,6 +962,7 @@ namespace WordAddIn1.PresentationHost
             bool textTruncated = false;
             string innerHtml = null;
             PptHtmlChartFormat chartFormat = null;
+            PptHtmlTableStyleSnap tableStyleForNode = null;
             if (slim)
             {
                 if (typeName != "picture" && typeName != "group" && !PptShapeTypeMap.IsNonEditable(typeName))
@@ -993,7 +994,28 @@ namespace WordAddIn1.PresentationHost
             }
             else if (typeName == "table")
             {
-                innerHtml = TryBuildTableInner(shape, out textTruncated);
+                var tableWarnings = new List<string>();
+                if (PptHtmlTableIo.TryRead(
+                    shape,
+                    out PptHtmlTableGrid tableGrid,
+                    out PptHtmlTableStyleSnap tableStyle,
+                    out string tableErr,
+                    tableWarnings))
+                {
+                    innerHtml = PptHtmlTableIo.BuildInnerHtml(tableGrid);
+                    if (tableStyle != null && tableStyle.Truncated)
+                    {
+                        textTruncated = true;
+                        truncatedReason = "表格超过 "
+                            + PptHtmlTableGrid.MaxRows + "×" + PptHtmlTableGrid.MaxCols + "，已截断";
+                    }
+
+                    tableStyleForNode = tableStyle;
+                }
+                else
+                {
+                    innerHtml = TryBuildTableInner(shape, out textTruncated);
+                }
             }
             else if (typeName != "picture" && !PptShapeTypeMap.IsNonEditable(typeName))
             {
@@ -1124,6 +1146,7 @@ namespace WordAddIn1.PresentationHost
                 TextTruncated = textTruncated,
                 DepthCapped = depthCapped,
                 ChartFormat = chartFormat,
+                TableStyle = tableStyleForNode,
                 Children = groupKids
             };
             if (mode == GroupReadMode.SkeletonContent

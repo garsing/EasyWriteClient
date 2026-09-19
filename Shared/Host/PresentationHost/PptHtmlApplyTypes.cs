@@ -100,6 +100,12 @@ namespace WordAddIn1.PresentationHost
 
         public List<List<string>> TableCells { get; set; }
 
+        /// <summary>页内 table 增强网格；与 TableCells 同步（纯文本投影）。</summary>
+        internal PptHtmlTableGrid TableGrid { get; set; }
+
+        /// <summary>表级皮；null=稿未写表级增强属性。</summary>
+        internal PptHtmlTableStyleSnap TableStyle { get; set; }
+
         internal PptHtmlChartGrid ChartGrid { get; set; }
 
         internal PptHtmlChartFormat ChartFormat { get; set; }
@@ -228,7 +234,7 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                if (!TryParseNode(child, slideId, out PptHtmlApplyNode node, out string nodeError))
+                if (!TryParseNode(child, slideId, warnings, out PptHtmlApplyNode node, out string nodeError))
                 {
                     error = nodeError;
                     return false;
@@ -252,11 +258,17 @@ namespace WordAddIn1.PresentationHost
         private static bool TryParseNode(
             XElement el,
             string targetSlideId,
+            List<string> warnings,
             out PptHtmlApplyNode node,
             out string error)
         {
             node = null;
             error = null;
+            if (warnings == null)
+            {
+                warnings = new List<string>();
+            }
+
             string shapeId = GetAttr(el, "ShapeId");
             string shapeType = GetAttr(el, "data-shape-type");
             // 有可解析的页内 Shape.Id → 更新（不要求 ShapeId 内 SlideID 等于目标页）
@@ -599,6 +611,11 @@ namespace WordAddIn1.PresentationHost
 
                 if (nestedTables.Count == 1)
                 {
+                    if (!PptHtmlTableParse.TryRejectChartTableEnhancements(nestedTables[0], out error))
+                    {
+                        return false;
+                    }
+
                     if (!PptHtmlChartIo.TryParseGrid(nestedTables[0], true, out PptHtmlChartGrid grid, out error))
                     {
                         if (markedChart)
@@ -636,8 +653,25 @@ namespace WordAddIn1.PresentationHost
             else if (string.Equals(el.Name.LocalName, "table", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(shapeType, "table", StringComparison.OrdinalIgnoreCase))
             {
-                item.TableCells = ParseTableCells(el);
+                var tableWarnings = new List<string>();
+                if (!PptHtmlTableParse.TryParseTableShape(
+                    el,
+                    out PptHtmlTableGrid tableGrid,
+                    out PptHtmlTableStyleSnap tableStyle,
+                    out error,
+                    tableWarnings))
+                {
+                    return false;
+                }
+
+                item.TableGrid = tableGrid;
+                item.TableStyle = tableStyle;
+                item.TableCells = tableGrid.ToPlainTextMatrix();
                 item.ShapeType = string.IsNullOrEmpty(item.ShapeType) ? "table" : item.ShapeType;
+                if (tableWarnings.Count > 0)
+                {
+                    warnings.AddRange(tableWarnings);
+                }
             }
             else if (string.Equals(el.Name.LocalName, "img", StringComparison.OrdinalIgnoreCase))
             {
@@ -670,7 +704,7 @@ namespace WordAddIn1.PresentationHost
                         return false;
                     }
 
-                    if (!TryParseNode(childEl, targetSlideId, out PptHtmlApplyNode childNode, out error))
+                    if (!TryParseNode(childEl, targetSlideId, warnings, out PptHtmlApplyNode childNode, out error))
                     {
                         return false;
                     }
@@ -694,7 +728,18 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
-            if (item.TableCells != null)
+            if (item.TableGrid != null)
+            {
+                foreach (PptHtmlTableCell cell in item.TableGrid.Cells)
+                {
+                    if (cell != null && cell.Text != null && cell.Text.Length > PptHtmlReadResult.MaxTextChars)
+                    {
+                        error = "表格单元格文本超过 " + PptHtmlReadResult.MaxTextChars + " 字符";
+                        return false;
+                    }
+                }
+            }
+            else if (item.TableCells != null)
             {
                 foreach (List<string> row in item.TableCells)
                 {

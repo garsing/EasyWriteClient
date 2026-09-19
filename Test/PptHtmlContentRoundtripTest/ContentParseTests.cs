@@ -10,6 +10,9 @@ namespace PptHtmlContentRoundtripTest
         {
             ParseTextbox(run);
             ParseTable(run);
+            ParseTableMerge(run);
+            ParseTableRejectBadMerge(run);
+            ParseChartRejectTableEnhance(run);
             ParsePictureAbsolute(run);
             ParseRejectHttp(run);
             ParseLeanTextbox(run);
@@ -63,6 +66,76 @@ namespace PptHtmlContentRoundtripTest
                 "网格尺寸不对");
             run.ExpectEqual("parse-tbl a1", "a", n.TableCells[0][0]);
             run.ExpectEqual("parse-tbl d", "d", n.TableCells[1][1]);
+            run.Expect("parse-tbl TableGrid", n.TableGrid != null && n.TableGrid.RowCount == 2, "无 TableGrid");
+        }
+
+        private static void ParseTableMerge(TestRun run)
+        {
+            string html = ContentHtml.Section(
+                "  <table data-shape-type=\"table\" style=\""
+                + ContentHtml.Geo(8, 35, 45, 30)
+                + "\" data-table-style=\"three-line\" data-col-widths=\"50%,50%\">\n"
+                + "    <tr><th colspan=\"2\">头</th></tr>\n"
+                + "    <tr><td></td><td data-fill=\"#F5F5F5\"><span style=\"color:#C00000;font-weight:bold\">重点</span></td></tr>\n"
+                + "  </table>");
+            if (!ContentHtml.TryParse(html, "1", out PptHtmlApplyPlan plan, out string error))
+            {
+                run.Fail("parse-merge", error);
+                return;
+            }
+
+            PptHtmlApplyNode n = plan.Nodes[0];
+            run.Expect("parse-merge grid", n.TableGrid != null, "无网格");
+            if (n.TableGrid == null)
+            {
+                return;
+            }
+
+            run.Expect("parse-merge rows", n.TableGrid.RowCount == 2, "rows=" + n.TableGrid.RowCount);
+            run.Expect("parse-merge cols", n.TableGrid.ColCount == 2, "cols=" + n.TableGrid.ColCount);
+            PptHtmlTableCell a0 = n.TableGrid.CellAt(0, 0);
+            run.Expect("parse-merge colspan", a0 != null && !a0.IsCovered && a0.ColSpan == 2, "表头未合并");
+            run.ExpectEqual("parse-merge 表头字", "头", a0.Text);
+            run.Expect("parse-merge 占位", n.TableGrid.CellAt(0, 1) != null && n.TableGrid.CellAt(0, 1).IsCovered, "缺占位");
+            PptHtmlTableCell b1 = n.TableGrid.CellAt(1, 1);
+            run.Expect("parse-merge fill", b1 != null && b1.Fill == "#F5F5F5", "底色");
+            run.Expect("parse-merge bold", b1 != null && b1.FontBold == true, "加粗");
+            run.ExpectEqual("parse-merge 字色", "#C00000", b1.FontColor);
+            run.Expect("parse-merge three-line",
+                n.TableStyle != null && n.TableStyle.TableStyle == "three-line",
+                "无三线");
+            run.Expect("parse-merge col-widths",
+                n.TableStyle != null && n.TableStyle.ColWidthPcts != null && n.TableStyle.ColWidthPcts.Length == 2,
+                "无列宽");
+        }
+
+        private static void ParseTableRejectBadMerge(TestRun run)
+        {
+            // 第二行缺格 → 占位不合法
+            string html = ContentHtml.Section(
+                "  <table data-shape-type=\"table\" style=\""
+                + ContentHtml.Geo(8, 35, 45, 30)
+                + "\">\n"
+                + "    <tr><td>a</td><td>b</td></tr>\n"
+                + "    <tr><td>c</td></tr>\n"
+                + "  </table>");
+            bool ok = ContentHtml.TryParse(html, "1", out _, out string error);
+            run.Expect("parse-bad-merge 应失败", !ok, ok ? "应失败" : ("error=" + error));
+        }
+
+        private static void ParseChartRejectTableEnhance(TestRun run)
+        {
+            string html = ContentHtml.Section(
+                "  <div data-shape-type=\"chart\" data-chart-type=\"column\" style=\""
+                + ContentHtml.Geo(10, 10, 40, 40)
+                + "\">\n"
+                + "    <table><tr><th colspan=\"2\">x</th></tr><tr><td></td><td>1</td></tr></table>\n"
+                + "  </div>");
+            bool ok = ContentHtml.TryParse(html, "1", out _, out string error);
+            run.Expect(
+                "parse-chart-enhance 应失败",
+                !ok && error != null && error.IndexOf("chart", System.StringComparison.OrdinalIgnoreCase) >= 0,
+                ok ? "应失败" : ("error=" + error));
         }
 
         private static void ParsePictureAbsolute(TestRun run)

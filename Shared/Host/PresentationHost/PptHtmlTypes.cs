@@ -103,6 +103,9 @@ namespace WordAddIn1.PresentationHost
 
         internal PptHtmlChartFormat ChartFormat { get; set; }
 
+        /// <summary>页内 table 表级皮（列宽/三线等）；null=未读或不输出。</summary>
+        internal PptHtmlTableStyleSnap TableStyle { get; set; }
+
         public List<PptHtmlShapeNode> Children { get; set; }
     }
 

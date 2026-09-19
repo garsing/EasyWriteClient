@@ -1302,11 +1302,24 @@ namespace WordAddIn1.PresentationHost
             {
                 warnings.Add("忽略对 smartart 的文本修改: " + node.ShapeId);
             }
-            else if ((existingType == "table" || node.TableCells != null) && node.TableCells != null)
+            else if ((existingType == "table" || node.TableGrid != null || node.TableCells != null)
+                && (node.TableGrid != null || node.TableCells != null || node.TableStyle != null))
             {
-                if (!TryWriteTable(shape, node.TableCells, out error))
+                PptHtmlTableGrid grid = node.TableGrid;
+                if (grid == null && node.TableCells != null)
+                {
+                    grid = PlainMatrixToGrid(node.TableCells);
+                }
+
+                var tw = new List<string>();
+                if (!PptHtmlTableIo.TryApply(shape, grid, node.TableStyle, out error, tw))
                 {
                     return false;
+                }
+
+                if (tw.Count > 0)
+                {
+                    warnings.AddRange(tw);
                 }
             }
             else if (node.HasText && existingType != "picture" && existingType != "media")
@@ -1465,23 +1478,37 @@ namespace WordAddIn1.PresentationHost
                 }
                 else if (type == "table")
                 {
-                    int rows = Math.Max(1, node.TableCells == null ? 1 : node.TableCells.Count);
-                    int cols = 1;
-                    if (node.TableCells != null && node.TableCells.Count > 0)
+                    PptHtmlTableGrid grid = node.TableGrid;
+                    if (grid == null && node.TableCells != null)
                     {
-                        cols = Math.Max(1, node.TableCells[0].Count);
+                        grid = PlainMatrixToGrid(node.TableCells);
                     }
 
-                    if (rows > 20 || cols > 20)
+                    if (grid == null)
                     {
-                        error = "新建表格不得超过 20×20";
+                        error = "新建 table 必须内嵌 <table> 网格";
+                        return false;
+                    }
+
+                    int rows = Math.Max(1, grid.RowCount);
+                    int cols = Math.Max(1, grid.ColCount);
+                    if (rows > PptHtmlTableGrid.MaxRows || cols > PptHtmlTableGrid.MaxCols)
+                    {
+                        error = "新建表格不得超过 "
+                            + PptHtmlTableGrid.MaxRows + "×" + PptHtmlTableGrid.MaxCols;
                         return false;
                     }
 
                     shape = slide.Shapes.AddTable(rows, cols, left, top, width, height);
-                    if (node.TableCells != null)
+                    var tw = new List<string>();
+                    if (!PptHtmlTableIo.TryApply(shape, grid, node.TableStyle, out error, tw))
                     {
-                        TryWriteTable(shape, node.TableCells, out _);
+                        return false;
+                    }
+
+                    if (tw.Count > 0)
+                    {
+                        warnings.AddRange(tw);
                     }
                 }
                 else if (type == "picture")
@@ -2502,44 +2529,54 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private static PptHtmlTableGrid PlainMatrixToGrid(List<List<string>> cells)
+        {
+            if (cells == null || cells.Count == 0)
+            {
+                return new PptHtmlTableGrid
+                {
+                    RowCount = 1,
+                    ColCount = 1,
+                    Cells = new List<PptHtmlTableCell>
+                    {
+                        new PptHtmlTableCell { Text = "" }
+                    }
+                };
+            }
+
+            int rows = cells.Count;
+            int cols = 1;
+            foreach (List<string> row in cells)
+            {
+                if (row != null && row.Count > cols)
+                {
+                    cols = row.Count;
+                }
+            }
+
+            var list = new List<PptHtmlTableCell>(rows * cols);
+            for (int r = 0; r < rows; r++)
+            {
+                List<string> row = cells[r] ?? new List<string>();
+                for (int c = 0; c < cols; c++)
+                {
+                    string t = c < row.Count ? (row[c] ?? "") : "";
+                    list.Add(new PptHtmlTableCell { Text = t });
+                }
+            }
+
+            return new PptHtmlTableGrid
+            {
+                RowCount = rows,
+                ColCount = cols,
+                Cells = list
+            };
+        }
+
         private static bool TryWriteTable(PowerPoint.Shape shape, List<List<string>> cells, out string error)
         {
-            error = null;
-            try
-            {
-                if (shape.HasTable != Office.MsoTriState.msoTrue)
-                {
-                    error = "目标不是表格";
-                    return false;
-                }
-
-                PowerPoint.Table table = shape.Table;
-                int rows = table.Rows.Count;
-                int cols = table.Columns.Count;
-                int wantRows = cells.Count;
-                int wantCols = cells.Count == 0 ? 0 : cells[0].Count;
-                if (wantRows > rows || wantCols > cols)
-                {
-                    error = "表格行列多于现有表（首期不自动扩表）";
-                    return false;
-                }
-
-                for (int r = 0; r < wantRows; r++)
-                {
-                    List<string> row = cells[r];
-                    for (int c = 0; c < row.Count && c < cols; c++)
-                    {
-                        table.Cell(r + 1, c + 1).Shape.TextFrame.TextRange.Text = row[c] ?? "";
-                    }
-                }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                error = "写表格失败: " + ex.Message;
-                return false;
-            }
+            // 兼容旧路径：转网格后走 TableIo
+            return PptHtmlTableIo.TryApply(shape, PlainMatrixToGrid(cells), null, out error, new List<string>());
         }
 
         private static PowerPoint.Shape FindShapeById(PowerPoint.Shapes shapes, int id)

@@ -1944,21 +1944,63 @@ namespace WordAddIn1.PresentationHost
             try
             {
                 object table = WppCom.GetProperty(shape, "Table");
-                int rows = Convert.ToInt32(WppCom.GetProperty(WppCom.GetProperty(table, "Rows"), "Count"));
-                int cols = Convert.ToInt32(WppCom.GetProperty(WppCom.GetProperty(table, "Columns"), "Count"));
-                if (cells.Count > rows || (cells.Count > 0 && cells[0].Count > cols))
+                object rowsObj = WppCom.GetProperty(table, "Rows");
+                object colsObj = WppCom.GetProperty(table, "Columns");
+                int rows = Convert.ToInt32(WppCom.GetProperty(rowsObj, "Count"));
+                int cols = Convert.ToInt32(WppCom.GetProperty(colsObj, "Count"));
+                int wantRows = cells == null ? 0 : cells.Count;
+                int wantCols = 0;
+                if (cells != null)
                 {
-                    error = "表格行列多于现有表（首期不自动扩表）";
-                    return false;
+                    foreach (List<string> row in cells)
+                    {
+                        if (row != null && row.Count > wantCols)
+                        {
+                            wantCols = row.Count;
+                        }
+                    }
+                }
+
+                while (rows < wantRows)
+                {
+                    Invoke(rowsObj, "Add", -1);
+                    rows++;
+                }
+
+                while (rows > wantRows && wantRows > 0)
+                {
+                    object last = WppCom.GetIndexed(rowsObj, rows);
+                    Invoke(last, "Delete");
+                    rows--;
+                }
+
+                while (cols < wantCols)
+                {
+                    Invoke(colsObj, "Add", -1);
+                    cols++;
+                }
+
+                while (cols > wantCols && wantCols > 0)
+                {
+                    object last = WppCom.GetIndexed(colsObj, cols);
+                    Invoke(last, "Delete");
+                    cols--;
+                }
+
+                if (cells == null)
+                {
+                    return true;
                 }
 
                 for (int r = 0; r < cells.Count; r++)
                 {
-                    for (int c = 0; c < cells[r].Count && c < cols; c++)
+                    List<string> row = cells[r] ?? new List<string>();
+                    for (int c = 0; c < wantCols; c++)
                     {
                         object cell = Invoke(table, "Cell", r + 1, c + 1);
                         object cellShape = WppCom.GetProperty(cell, "Shape");
-                        TryWriteText(cellShape, cells[r][c] ?? "", out _);
+                        string text = c < row.Count ? (row[c] ?? "") : "";
+                        TryWriteText(cellShape, text, out _);
                     }
                 }
 

@@ -364,6 +364,11 @@ namespace WordAddIn1.PresentationHost
                 sb.Append(indent).Append("<table");
                 AppendShapeId(sb, node);
                 AppendCommonAttrs(sb, node);
+                if (node.TableStyle != null)
+                {
+                    PptHtmlTableParse.AppendTableStyleAttrs(sb, node.TableStyle);
+                }
+
                 sb.AppendLine(">");
                 if (!string.IsNullOrEmpty(node.InnerHtml))
                 {
