@@ -426,11 +426,18 @@ namespace PptHtmlContentRoundtripTest
                         : "瘦稿换表不应丢几何";
                 });
 
-            Add(list, ref page, "tbl-neg-grow",
+            // D21：原地扩表（2×2 → 3×3），禁止删表重建
+            Add(list, ref page, "tbl-grow-2x2-to-3x3",
                 a => ContentHtml.TableCreate(g2),
                 (a, ids) => ContentHtml.TableUpdate(ids[0], g3),
+                ctx => ContentAssert.TableCellsMismatch(
+                    PreferCreated(ctx, "table", useReplace: true), g3));
+
+            // 合并表头 + 三线 + 列宽%（增强表方言）
+            Add(list, ref page, "tbl-create-merge-three-line",
+                a => ContentHtml.TableCreateMergeThreeLine(),
                 null,
-                expectApplyErrorContains: "不自动扩表");
+                ctx => ContentAssert.TableMergeThreeLineOk(PreferCreated(ctx, "table")));
         }
 
         private static void AddPictureCases(List<ContentCase> list, ref int page)

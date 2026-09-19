@@ -84,6 +84,48 @@ namespace PptHtmlContentRoundtripTest
                 && Math.Abs(h1 - h2) <= eps;
         }
 
+        public static string TableMergeThreeLineOk(PptHtmlShapeNode node)
+        {
+            if (node == null)
+            {
+                return "无 table 节点";
+            }
+
+            string inner = node.InnerHtml ?? "";
+            if (inner.IndexOf("头", StringComparison.Ordinal) < 0
+                || inner.IndexOf("左", StringComparison.Ordinal) < 0
+                || inner.IndexOf("右", StringComparison.Ordinal) < 0)
+            {
+                return "合并表文字不全: " + Trunc(inner, 240);
+            }
+
+            if (node.TableStyle == null
+                || node.TableStyle.ColWidthPcts == null
+                || node.TableStyle.ColWidthPcts.Length != 2)
+            {
+                return "列宽% 未读回";
+            }
+
+            bool hasColspan = inner.IndexOf("colspan=\"2\"", StringComparison.OrdinalIgnoreCase) >= 0
+                || inner.IndexOf("colspan='2'", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!hasColspan)
+            {
+                return "读回缺 colspan=2（OOXML 合并拓扑）: " + Trunc(inner, 240);
+            }
+
+            return null;
+        }
+
+        private static string Trunc(string s, int max)
+        {
+            if (string.IsNullOrEmpty(s) || s.Length <= max)
+            {
+                return s ?? "";
+            }
+
+            return s.Substring(0, max) + "…";
+        }
+
         public static string TableCellsMismatch(PptHtmlShapeNode node, string[][] expect)
         {
             if (node == null)

@@ -801,11 +801,24 @@ namespace WordAddIn1.PresentationHost
                 {
                 }
             }
-            else if (node.TableCells != null)
+            else if ((existingType == "table" || node.TableGrid != null || node.TableCells != null)
+                && (node.TableGrid != null || node.TableCells != null || node.TableStyle != null))
             {
-                if (!TryWriteTable(shape, node.TableCells, out error))
+                PptHtmlTableGrid grid = node.TableGrid;
+                if (grid == null && node.TableCells != null)
+                {
+                    grid = PlainMatrixToGrid(node.TableCells);
+                }
+
+                var tw = new List<string>();
+                if (!PptHtmlTableIo.TryApply(shape, grid, node.TableStyle, out error, tw))
                 {
                     return false;
+                }
+
+                if (tw.Count > 0)
+                {
+                    warnings.AddRange(tw);
                 }
             }
             else if (node.HasText)
@@ -1004,20 +1017,37 @@ namespace WordAddIn1.PresentationHost
                 }
                 else if (type == "table")
                 {
-                    int rows = Math.Max(1, node.TableCells == null ? 1 : node.TableCells.Count);
-                    int cols = node.TableCells == null || node.TableCells.Count == 0
-                        ? 1
-                        : Math.Max(1, node.TableCells[0].Count);
-                    if (rows > 20 || cols > 20)
+                    PptHtmlTableGrid grid = node.TableGrid;
+                    if (grid == null && node.TableCells != null)
                     {
-                        error = "新建表格不得超过 20×20";
+                        grid = PlainMatrixToGrid(node.TableCells);
+                    }
+
+                    if (grid == null)
+                    {
+                        error = "新建 table 必须内嵌 <table> 网格";
+                        return false;
+                    }
+
+                    int rows = Math.Max(1, grid.RowCount);
+                    int cols = Math.Max(1, grid.ColCount);
+                    if (rows > PptHtmlTableGrid.MaxRows || cols > PptHtmlTableGrid.MaxCols)
+                    {
+                        error = "新建表格不得超过 "
+                            + PptHtmlTableGrid.MaxRows + "×" + PptHtmlTableGrid.MaxCols;
                         return false;
                     }
 
                     shape = Invoke(shapes, "AddTable", rows, cols, left, top, width, height);
-                    if (node.TableCells != null)
+                    var tw = new List<string>();
+                    if (!PptHtmlTableIo.TryApply(shape, grid, node.TableStyle, out error, tw))
                     {
-                        TryWriteTable(shape, node.TableCells, out _);
+                        return false;
+                    }
+
+                    if (tw.Count > 0)
+                    {
+                        warnings.AddRange(tw);
                     }
                 }
                 else if (type == "picture")
@@ -1938,79 +1968,53 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private static PptHtmlTableGrid PlainMatrixToGrid(List<List<string>> cells)
+        {
+            if (cells == null || cells.Count == 0)
+            {
+                return new PptHtmlTableGrid
+                {
+                    RowCount = 1,
+                    ColCount = 1,
+                    Cells = new List<PptHtmlTableCell>
+                    {
+                        new PptHtmlTableCell { Text = "" }
+                    }
+                };
+            }
+
+            int rows = cells.Count;
+            int cols = 1;
+            foreach (List<string> row in cells)
+            {
+                if (row != null && row.Count > cols)
+                {
+                    cols = row.Count;
+                }
+            }
+
+            var list = new List<PptHtmlTableCell>(rows * cols);
+            for (int r = 0; r < rows; r++)
+            {
+                List<string> row = cells[r] ?? new List<string>();
+                for (int c = 0; c < cols; c++)
+                {
+                    string t = c < row.Count ? (row[c] ?? "") : "";
+                    list.Add(new PptHtmlTableCell { Text = t });
+                }
+            }
+
+            return new PptHtmlTableGrid
+            {
+                RowCount = rows,
+                ColCount = cols,
+                Cells = list
+            };
+        }
+
         private static bool TryWriteTable(object shape, List<List<string>> cells, out string error)
         {
-            error = null;
-            try
-            {
-                object table = WppCom.GetProperty(shape, "Table");
-                object rowsObj = WppCom.GetProperty(table, "Rows");
-                object colsObj = WppCom.GetProperty(table, "Columns");
-                int rows = Convert.ToInt32(WppCom.GetProperty(rowsObj, "Count"));
-                int cols = Convert.ToInt32(WppCom.GetProperty(colsObj, "Count"));
-                int wantRows = cells == null ? 0 : cells.Count;
-                int wantCols = 0;
-                if (cells != null)
-                {
-                    foreach (List<string> row in cells)
-                    {
-                        if (row != null && row.Count > wantCols)
-                        {
-                            wantCols = row.Count;
-                        }
-                    }
-                }
-
-                while (rows < wantRows)
-                {
-                    Invoke(rowsObj, "Add", -1);
-                    rows++;
-                }
-
-                while (rows > wantRows && wantRows > 0)
-                {
-                    object last = WppCom.GetIndexed(rowsObj, rows);
-                    Invoke(last, "Delete");
-                    rows--;
-                }
-
-                while (cols < wantCols)
-                {
-                    Invoke(colsObj, "Add", -1);
-                    cols++;
-                }
-
-                while (cols > wantCols && wantCols > 0)
-                {
-                    object last = WppCom.GetIndexed(colsObj, cols);
-                    Invoke(last, "Delete");
-                    cols--;
-                }
-
-                if (cells == null)
-                {
-                    return true;
-                }
-
-                for (int r = 0; r < cells.Count; r++)
-                {
-                    List<string> row = cells[r] ?? new List<string>();
-                    for (int c = 0; c < wantCols; c++)
-                    {
-                        object cell = Invoke(table, "Cell", r + 1, c + 1);
-                        object cellShape = WppCom.GetProperty(cell, "Shape");
-                        string text = c < row.Count ? (row[c] ?? "") : "";
-                        TryWriteText(cellShape, text, out _);
-                    }
-                }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                error = "写表格失败: " + ex.Message;
-                return false;
-            }
+            return PptHtmlTableIo.TryApply(shape, PlainMatrixToGrid(cells), null, out error, new List<string>());
         }
 
         private static object FindSlideById(object slides, int slideId)

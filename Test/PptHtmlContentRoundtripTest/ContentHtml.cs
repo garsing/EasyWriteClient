@@ -90,6 +90,24 @@ namespace PptHtmlContentRoundtripTest
             return Section(sb.ToString());
         }
 
+        /// <summary>合并表头 + 三线 + 列宽%（增强表方言 COM 往返）。</summary>
+        public static string TableCreateMergeThreeLine(
+            double left = 10,
+            double top = 20,
+            double width = 60,
+            double height = 35)
+        {
+            var sb = new StringBuilder();
+            sb.Append("  <table data-shape-type=\"table\" style=\"")
+                .Append(Geo(left, top, width, height))
+                .Append("\" data-table-style=\"three-line\" data-col-widths=\"50%,50%\">\n")
+                .Append("    <tr><th colspan=\"2\">头</th></tr>\n")
+                .Append("    <tr><td>左</td><td data-fill=\"#F5F5F5\">")
+                .Append("<span style=\"color:#C00000;font-weight:bold\">右</span></td></tr>\n")
+                .Append("  </table>");
+            return Section(sb.ToString());
+        }
+
         public static string PictureCreate(
             string absolutePath,
             double left = 55,
