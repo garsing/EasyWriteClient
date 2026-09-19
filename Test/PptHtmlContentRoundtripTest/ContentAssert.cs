@@ -1,0 +1,232 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+using WordAddIn1.PresentationHost;
+using PowerPoint = Microsoft.Office.Interop.PowerPoint;
+
+namespace PptHtmlContentRoundtripTest
+{
+    internal static class ContentAssert
+    {
+        public static string NormText(string s)
+        {
+            if (string.IsNullOrEmpty(s))
+            {
+                return "";
+            }
+
+            return s.Replace("\r", "").Replace("\v", "").TrimEnd();
+        }
+
+        public static PptHtmlShapeNode FindByType(PptHtmlReadResult result, string shapeType)
+        {
+            if (result?.Shapes == null)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < result.Shapes.Count; i++)
+            {
+                PptHtmlShapeNode n = result.Shapes[i];
+                if (n != null
+                    && string.Equals(n.ShapeType, shapeType, StringComparison.OrdinalIgnoreCase))
+                {
+                    return n;
+                }
+            }
+
+            return null;
+        }
+
+        public static PptHtmlShapeNode FindById(PptHtmlReadResult result, string shapeId)
+        {
+            if (result?.Shapes == null || string.IsNullOrEmpty(shapeId))
+            {
+                return null;
+            }
+
+            for (int i = 0; i < result.Shapes.Count; i++)
+            {
+                PptHtmlShapeNode n = result.Shapes[i];
+                if (n != null && string.Equals(n.ShapeId, shapeId, StringComparison.Ordinal))
+                {
+                    return n;
+                }
+            }
+
+            return null;
+        }
+
+        public static bool TryParseGeo(
+            string style,
+            out double left,
+            out double top,
+            out double width,
+            out double height)
+        {
+            return PptHtmlApplyParser.TryParseGeometry(style, out left, out top, out width, out height);
+        }
+
+        public static bool GeoClose(string a, string b, double eps = 0.6)
+        {
+            if (!TryParseGeo(a, out double l1, out double t1, out double w1, out double h1)
+                || !TryParseGeo(b, out double l2, out double t2, out double w2, out double h2))
+            {
+                return false;
+            }
+
+            return Math.Abs(l1 - l2) <= eps
+                && Math.Abs(t1 - t2) <= eps
+                && Math.Abs(w1 - w2) <= eps
+                && Math.Abs(h1 - h2) <= eps;
+        }
+
+        public static string TableCellsMismatch(PptHtmlShapeNode node, string[][] expect)
+        {
+            if (node == null)
+            {
+                return "无 table 节点";
+            }
+
+            List<List<string>> actual = ParseInnerTable(node.InnerHtml);
+            if (expect == null)
+            {
+                return null;
+            }
+
+            if (actual.Count != expect.Length)
+            {
+                return "行数期望 " + expect.Length + " 实际 " + actual.Count;
+            }
+
+            for (int r = 0; r < expect.Length; r++)
+            {
+                string[] er = expect[r] ?? Array.Empty<string>();
+                List<string> ar = actual[r];
+                if (ar.Count != er.Length)
+                {
+                    return "第" + (r + 1) + "行列数期望 " + er.Length + " 实际 " + ar.Count;
+                }
+
+                for (int c = 0; c < er.Length; c++)
+                {
+                    if (!string.Equals(NormText(er[c]), NormText(ar[c]), StringComparison.Ordinal))
+                    {
+                        return "单元格[" + r + "," + c + "] 期望 " + er[c] + " 实际 " + ar[c];
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        public static List<List<string>> ParseInnerTable(string innerHtml)
+        {
+            var rows = new List<List<string>>();
+            if (string.IsNullOrWhiteSpace(innerHtml))
+            {
+                return rows;
+            }
+
+            string wrapped = "<table>" + innerHtml + "</table>";
+            try
+            {
+                var doc = System.Xml.Linq.XElement.Parse(wrapped, System.Xml.Linq.LoadOptions.PreserveWhitespace);
+                foreach (var tr in doc.Elements())
+                {
+                    if (!string.Equals(tr.Name.LocalName, "tr", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    var row = new List<string>();
+                    foreach (var cell in tr.Elements())
+                    {
+                        if (string.Equals(cell.Name.LocalName, "td", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(cell.Name.LocalName, "th", StringComparison.OrdinalIgnoreCase))
+                        {
+                            row.Add(string.Concat(
+                                cell.DescendantNodes().OfType<System.Xml.Linq.XText>()
+                                    .Select(t => t.Value)).TrimEnd());
+                        }
+                    }
+
+                    rows.Add(row);
+                }
+            }
+            catch
+            {
+                // fallback regex
+                MatchCollection trs = Regex.Matches(
+                    innerHtml,
+                    @"<tr\b[^>]*>(.*?)</tr>",
+                    RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                for (int i = 0; i < trs.Count; i++)
+                {
+                    var row = new List<string>();
+                    MatchCollection tds = Regex.Matches(
+                        trs[i].Groups[1].Value,
+                        @"<t[dh]\b[^>]*>(.*?)</t[dh]>",
+                        RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                    for (int j = 0; j < tds.Count; j++)
+                    {
+                        row.Add(System.Net.WebUtility.HtmlDecode(
+                            Regex.Replace(tds[j].Groups[1].Value, "<.*?>", "")).Trim());
+                    }
+
+                    rows.Add(row);
+                }
+            }
+
+            return rows;
+        }
+
+        public static string AttachPictureSrc(
+            PowerPoint.Presentation presentation,
+            PptHtmlReadResult result,
+            string exportDir)
+        {
+            if (presentation == null || result == null)
+            {
+                return "无 presentation/result";
+            }
+
+            Directory.CreateDirectory(exportDir);
+            if (!PptHtmlPictureExporter.TryAttachExportedPictures(
+                    presentation,
+                    result,
+                    "ppt_images",
+                    exportDir,
+                    out _,
+                    out string error))
+            {
+                return error ?? "导出图片失败";
+            }
+
+            return null;
+        }
+
+        public static string HexOrNull(string color)
+        {
+            if (string.IsNullOrEmpty(color))
+            {
+                return color;
+            }
+
+            return color.Trim().ToUpperInvariant();
+        }
+
+        public static bool FontSizeClose(double? actual, double expect, double eps = 0.6)
+        {
+            return actual.HasValue && Math.Abs(actual.Value - expect) <= eps;
+        }
+
+        public static string Pct(double v)
+        {
+            return v.ToString("0.##", CultureInfo.InvariantCulture);
+        }
+    }
+}
