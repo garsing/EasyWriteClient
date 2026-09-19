@@ -251,6 +251,21 @@ namespace PptHtmlContentRoundtripTest
             return null;
         }
 
+        /// <summary>WPP 宿主下 Presentation 非 Interop 类型；暂不导图，不挡表格/文本断言。</summary>
+        public static string AttachPictureSrc(
+            object presentation,
+            PptHtmlReadResult result,
+            string exportDir)
+        {
+            var ppt = presentation as PowerPoint.Presentation;
+            if (ppt != null)
+            {
+                return AttachPictureSrc(ppt, result, exportDir);
+            }
+
+            return null;
+        }
+
         public static string HexOrNull(string color)
         {
             if (string.IsNullOrEmpty(color))

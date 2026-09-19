@@ -450,7 +450,7 @@ namespace PptHtmlContentRoundtripTest
                     PptHtmlShapeNode n = PreferCreated(ctx, "picture");
                     if (n == null) return "无 picture";
                     string err = ContentAssert.AttachPictureSrc(
-                        (PowerPoint.Presentation)ctx.Presentation, ctx.AfterCreate, ctx.ExportDir);
+                        ctx.Presentation, ctx.AfterCreate, ctx.ExportDir);
                     if (err != null) return "导出失败: " + err;
                     return string.IsNullOrEmpty(n.DataSrc) ? "导出后无 data-src" : null;
                 });
@@ -469,7 +469,7 @@ namespace PptHtmlContentRoundtripTest
                     }
 
                     string err2 = ContentAssert.AttachPictureSrc(
-                        (PowerPoint.Presentation)ctx.Presentation,
+                        ctx.Presentation,
                         ctx.AfterReplace,
                         Path.Combine(ctx.ExportDir, "after"));
                     if (err2 != null) return "导出失败: " + err2;
@@ -513,7 +513,7 @@ namespace PptHtmlContentRoundtripTest
                     PptHtmlShapeNode after = PreferCreated(ctx, "picture", useReplace: true);
                     if (before == null || after == null) return "缺 picture";
                     string err = ContentAssert.AttachPictureSrc(
-                        (PowerPoint.Presentation)ctx.Presentation,
+                        ctx.Presentation,
                         ctx.AfterReplace,
                         Path.Combine(ctx.ExportDir, "after"));
                     if (err != null) return err;
@@ -648,7 +648,7 @@ namespace PptHtmlContentRoundtripTest
                     PptHtmlShapeNode after = PreferCreated(ctx, "picture", useReplace: true);
                     if (before == null || after == null) return "缺 picture";
                     string err = ContentAssert.AttachPictureSrc(
-                        (PowerPoint.Presentation)ctx.Presentation,
+                        ctx.Presentation,
                         ctx.AfterReplace,
                         Path.Combine(ctx.ExportDir, "after"));
                     if (err != null) return err;

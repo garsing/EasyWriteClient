@@ -13,23 +13,36 @@ namespace PptHtmlContentRoundtripTest
             var run = new TestRun();
             bool parseOnly = HasFlag(args, "--parse-only");
             bool formalOnly = HasFlag(args, "--formal-only");
+            bool useWpp = IsWppHost(args);
             int? batch = TryParseBatch(args);
             IList<string> nameFilters = ParseCaseFilters(args);
 
-            Console.WriteLine("PPT 约定 HTML · 文本框 / 表格 / 图片 往返测试（P0）");
-            Console.WriteLine("解析契约 + COM 正式用例（Applier → Reader）");
+            Console.WriteLine("约定 HTML · 文本框 / 表格 / 图片 往返测试（P0）");
+            Console.WriteLine(useWpp
+                ? "宿主 WPP · 解析契约 + COM 正式用例（WppApplier → WppReader）"
+                : "宿主 PPT · 解析契约 + COM 正式用例（Applier → Reader）");
             Console.WriteLine();
 
             if (!formalOnly)
             {
-                Console.WriteLine("--- 解析契约（不启 PPT）---");
+                Console.WriteLine("--- 解析契约（不启 COM）---");
                 ContentParseTests.Run(run);
             }
 
             if (!parseOnly)
             {
-                string outDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "content-batches");
-                ContentBatchRunner.Run(run, batch, outDir, nameFilters);
+                string outDir = Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory,
+                    useWpp ? "content-batches-wpp" : "content-batches");
+                if (useWpp)
+                {
+                    ContentBatchRunnerWpp.Run(run, batch, outDir, nameFilters);
+                }
+                else
+                {
+                    ContentBatchRunner.Run(run, batch, outDir, nameFilters);
+                }
+
                 Console.WriteLine();
                 Console.WriteLine("正式用例 通过 " + run.CasesPassed
                     + "  失败 " + run.CasesFailed
@@ -54,6 +67,28 @@ namespace PptHtmlContentRoundtripTest
                 if (string.Equals(args[i], flag, StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>--host=wpp 走 WPS 演示晚绑定；默认 / --host=ppt 走 PowerPoint Interop。</summary>
+        private static bool IsWppHost(string[] args)
+        {
+            if (args == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < args.Length; i++)
+            {
+                string a = args[i] ?? "";
+                if (a.StartsWith("--host=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string v = a.Substring(7).Trim();
+                    return string.Equals(v, "wpp", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(v, "wps", StringComparison.OrdinalIgnoreCase);
                 }
             }
 
