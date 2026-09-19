@@ -206,7 +206,11 @@ namespace WordAddIn1.PresentationHost
                 object colsObj = WppCom.GetProperty(table, "Columns");
                 while (Convert.ToInt32(WppCom.GetProperty(rowsObj, "Count")) < wantRows)
                 {
-                    WppCom.Invoke(rowsObj, "Add", -1);
+                    // PPT: Add(-1) 末尾追加；WPP 行同样支持
+                    if (!TryAddRowOrColumnWpp(rowsObj, isColumn: false, out error))
+                    {
+                        return false;
+                    }
                 }
 
                 while (Convert.ToInt32(WppCom.GetProperty(rowsObj, "Count")) > wantRows)
@@ -218,7 +222,11 @@ namespace WordAddIn1.PresentationHost
 
                 while (Convert.ToInt32(WppCom.GetProperty(colsObj, "Count")) < wantCols)
                 {
-                    WppCom.Invoke(colsObj, "Add", -1);
+                    // WPP: Columns.Add(-1)/Add() 均 E_INVALIDARG；Add(Count) 可用
+                    if (!TryAddRowOrColumnWpp(colsObj, isColumn: true, out error))
+                    {
+                        return false;
+                    }
                 }
 
                 while (Convert.ToInt32(WppCom.GetProperty(colsObj, "Count")) > wantCols)
@@ -232,9 +240,75 @@ namespace WordAddIn1.PresentationHost
             }
             catch (Exception ex)
             {
-                error = "调整表格行列失败: " + ex.Message;
+                error = "调整表格行列失败: " + UnwrapComMessage(ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// WPP 行列追加：行可用 Add(-1)/Add()；列必须 Add(Count)（-1 与无参均 E_INVALIDARG）。
+        /// </summary>
+        private static bool TryAddRowOrColumnWpp(object collection, bool isColumn, out string error)
+        {
+            error = null;
+            int count = Convert.ToInt32(WppCom.GetProperty(collection, "Count") ?? 0);
+            Exception last = null;
+
+            object[][] attempts = isColumn
+                ? new[]
+                {
+                    new object[] { count },
+                    new object[] { count > 0 ? (object)WppCom.GetIndexed(collection, count) : count },
+                    new object[] { 1 }
+                }
+                : new[]
+                {
+                    new object[] { -1 },
+                    Array.Empty<object>(),
+                    new object[] { count },
+                    new object[] { 1 }
+                };
+
+            for (int i = 0; i < attempts.Length; i++)
+            {
+                object[] args = attempts[i];
+                if (args != null && args.Length == 1 && args[0] == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (args == null || args.Length == 0)
+                    {
+                        WppCom.Invoke(collection, "Add");
+                    }
+                    else
+                    {
+                        WppCom.Invoke(collection, "Add", args);
+                    }
+
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                }
+            }
+
+            error = (isColumn ? "追加列失败: " : "追加行失败: ") + UnwrapComMessage(last);
+            return false;
+        }
+
+        private static string UnwrapComMessage(Exception ex)
+        {
+            Exception e = ex;
+            while (e is System.Reflection.TargetInvocationException && e.InnerException != null)
+            {
+                e = e.InnerException;
+            }
+
+            return e == null ? "未知错误" : e.Message;
         }
 
         private static bool TryClearMergesWpp(
