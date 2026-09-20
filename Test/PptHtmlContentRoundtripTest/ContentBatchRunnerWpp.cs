@@ -346,7 +346,11 @@ namespace PptHtmlContentRoundtripTest
                 return null;
             }
 
-            // WPP 暂不导出图片附件（PPT 导出器）；表格/文本断言不依赖此项
+            // 换图前先导出 data-src：替换后旧 COM Id 可能已失效，事后再导出会漏 before
+            string exportRoot = Path.Combine(outDir, "export-wpp", one.Name);
+            ContentAssert.AttachPictureSrc(
+                presentation, afterCreate, Path.Combine(exportRoot, "after-create"));
+
             PptHtmlReadResult afterReplace = null;
             PptHtmlApplyResult replaceResult = null;
             if (one.ReplaceHtml != null)

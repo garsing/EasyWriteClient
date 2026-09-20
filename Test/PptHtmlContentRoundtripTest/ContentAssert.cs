@@ -251,7 +251,9 @@ namespace PptHtmlContentRoundtripTest
             return null;
         }
 
-        /// <summary>WPP 宿主下 Presentation 非 Interop 类型；暂不导图，不挡表格/文本断言。</summary>
+        /// <summary>
+        /// PPT Interop 走 PictureExporter；否则按 WPP 晚绑定导图回填 data-src。
+        /// </summary>
         public static string AttachPictureSrc(
             object presentation,
             PptHtmlReadResult result,
@@ -261,6 +263,23 @@ namespace PptHtmlContentRoundtripTest
             if (ppt != null)
             {
                 return AttachPictureSrc(ppt, result, exportDir);
+            }
+
+            if (presentation == null || result == null)
+            {
+                return "无 presentation/result";
+            }
+
+            Directory.CreateDirectory(exportDir);
+            if (!PptHtmlWppPictureExporter.TryAttachExportedPictures(
+                    presentation,
+                    result,
+                    "ppt_images",
+                    exportDir,
+                    out _,
+                    out string error))
+            {
+                return error ?? "WPP 导出图片失败";
             }
 
             return null;
