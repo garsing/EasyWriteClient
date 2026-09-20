@@ -83,11 +83,168 @@ namespace PptHtmlContentRoundtripTest
 
         public static string TableUpdate(string shapeId, string[][] cells)
         {
+            return TableUpdate(shapeId, cells, null);
+        }
+
+        public static string TableUpdate(string shapeId, string[][] cells, string extraAttrs)
+        {
             var sb = new StringBuilder();
-            sb.Append("  <table ShapeId=\"").Append(shapeId).Append("\">\n");
+            sb.Append("  <table ShapeId=\"").Append(shapeId).Append("\"");
+            if (!string.IsNullOrEmpty(extraAttrs))
+            {
+                sb.Append(" ").Append(extraAttrs.Trim());
+            }
+
+            sb.Append(">\n");
             AppendRows(sb, cells);
             sb.Append("  </table>");
             return Section(sb.ToString());
+        }
+
+        /// <summary>自定义行 HTML（合并/格皮/span）；tableAttrs 为表级 data-*。</summary>
+        public static string TableCreateRaw(
+            string rowsHtml,
+            double left = 8,
+            double top = 35,
+            double width = 45,
+            double height = 30,
+            string tableAttrs = null)
+        {
+            var sb = new StringBuilder();
+            sb.Append("  <table data-shape-type=\"table\" style=\"")
+                .Append(Geo(left, top, width, height))
+                .Append("\"");
+            if (!string.IsNullOrEmpty(tableAttrs))
+            {
+                sb.Append(" ").Append(tableAttrs.Trim());
+            }
+
+            sb.Append(">\n");
+            sb.Append(rowsHtml);
+            if (!rowsHtml.EndsWith("\n", StringComparison.Ordinal))
+            {
+                sb.Append("\n");
+            }
+
+            sb.Append("  </table>");
+            return Section(sb.ToString());
+        }
+
+        public static string TableUpdateRaw(string shapeId, string rowsHtml, string tableAttrs = null)
+        {
+            var sb = new StringBuilder();
+            sb.Append("  <table ShapeId=\"").Append(shapeId).Append("\"");
+            if (!string.IsNullOrEmpty(tableAttrs))
+            {
+                sb.Append(" ").Append(tableAttrs.Trim());
+            }
+
+            sb.Append(">\n");
+            sb.Append(rowsHtml);
+            if (!rowsHtml.EndsWith("\n", StringComparison.Ordinal))
+            {
+                sb.Append("\n");
+            }
+
+            sb.Append("  </table>");
+            return Section(sb.ToString());
+        }
+
+        public static string[][] Grid(int rows, int cols, string prefix = "c")
+        {
+            var g = new string[rows][];
+            for (int r = 0; r < rows; r++)
+            {
+                g[r] = new string[cols];
+                for (int c = 0; c < cols; c++)
+                {
+                    g[r][c] = prefix + (r + 1) + (c + 1);
+                }
+            }
+
+            return g;
+        }
+
+        public static string PctList(params double[] pcts)
+        {
+            if (pcts == null || pcts.Length == 0)
+            {
+                return "";
+            }
+
+            var parts = new string[pcts.Length];
+            for (int i = 0; i < pcts.Length; i++)
+            {
+                parts[i] = pcts[i].ToString("0.##", CultureInfo.InvariantCulture) + "%";
+            }
+
+            return string.Join(",", parts);
+        }
+
+        public static string Td(
+            string text,
+            int colspan = 1,
+            int rowspan = 1,
+            string fill = null,
+            string fontColor = null,
+            bool? bold = null,
+            bool? italic = null,
+            bool header = false)
+        {
+            var sb = new StringBuilder();
+            sb.Append(header ? "<th" : "<td");
+            if (colspan > 1)
+            {
+                sb.Append(" colspan=\"").Append(colspan).Append('"');
+            }
+
+            if (rowspan > 1)
+            {
+                sb.Append(" rowspan=\"").Append(rowspan).Append('"');
+            }
+
+            if (!string.IsNullOrEmpty(fill))
+            {
+                sb.Append(" data-fill=\"").Append(EscapeAttr(fill)).Append('"');
+            }
+
+            bool span = !string.IsNullOrEmpty(fontColor) || bold == true || italic == true;
+            sb.Append(">");
+            if (span)
+            {
+                sb.Append("<span style=\"");
+                var styles = new List<string>();
+                if (!string.IsNullOrEmpty(fontColor))
+                {
+                    styles.Add("color:" + fontColor);
+                }
+
+                if (bold == true)
+                {
+                    styles.Add("font-weight:bold");
+                }
+
+                if (italic == true)
+                {
+                    styles.Add("font-style:italic");
+                }
+
+                sb.Append(string.Join(";", styles)).Append("\">");
+            }
+
+            sb.Append(Escape(text ?? ""));
+            if (span)
+            {
+                sb.Append("</span>");
+            }
+
+            sb.Append(header ? "</th>" : "</td>");
+            return sb.ToString();
+        }
+
+        public static string Tr(params string[] cellsHtml)
+        {
+            return "    <tr>" + string.Join("", cellsHtml ?? Array.Empty<string>()) + "</tr>\n";
         }
 
         /// <summary>合并表头 + 三线 + 列宽%（增强表方言 COM 往返）。</summary>
@@ -97,15 +254,14 @@ namespace PptHtmlContentRoundtripTest
             double width = 60,
             double height = 35)
         {
-            var sb = new StringBuilder();
-            sb.Append("  <table data-shape-type=\"table\" style=\"")
-                .Append(Geo(left, top, width, height))
-                .Append("\" data-table-style=\"three-line\" data-col-widths=\"50%,50%\">\n")
-                .Append("    <tr><th colspan=\"2\">头</th></tr>\n")
-                .Append("    <tr><td>左</td><td data-fill=\"#F5F5F5\">")
-                .Append("<span style=\"color:#C00000;font-weight:bold\">右</span></td></tr>\n")
-                .Append("  </table>");
-            return Section(sb.ToString());
+            return TableCreateRaw(
+                Tr(Td("头", colspan: 2, header: true))
+                + Tr(Td("左"), Td("右", fill: "#F5F5F5", fontColor: "#C00000", bold: true)),
+                left,
+                top,
+                width,
+                height,
+                "data-table-style=\"three-line\" data-col-widths=\"50%,50%\"");
         }
 
         public static string PictureCreate(

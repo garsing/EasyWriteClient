@@ -7,8 +7,8 @@ using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 
 namespace PptHtmlContentRoundtripTest
 {
-    /// <summary>P0/P1 内容往返目录。规模对齐草案（目标约 50 COM 页，后续再扩到 60～80）。</summary>
-    internal static class ContentCatalog
+    /// <summary>P0/P1 内容往返目录。含表格属性交叉矩阵（tbl-mx-*，≥100）。</summary>
+    internal static partial class ContentCatalog
     {
         public const int BatchCount = 1;
 
@@ -438,6 +438,9 @@ namespace PptHtmlContentRoundtripTest
                 a => ContentHtml.TableCreateMergeThreeLine(),
                 null,
                 ctx => ContentAssert.TableMergeThreeLineOk(PreferCreated(ctx, "table")));
+
+            // 属性交叉矩阵（≥100）：tbl-mx-*
+            AddTableMatrixCases(list, ref page);
         }
 
         private static void AddPictureCases(List<ContentCase> list, ref int page)

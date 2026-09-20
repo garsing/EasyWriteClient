@@ -285,5 +285,139 @@ namespace PptHtmlContentRoundtripTest
         {
             return v.ToString("0.##", CultureInfo.InvariantCulture);
         }
+
+        public static string TableRequire(PptHtmlShapeNode node)
+        {
+            return node == null ? "无 table 节点" : null;
+        }
+
+        /// <summary>
+        /// three-line 只是边框组合写入，宿主不存命名样式，读回不保证
+        /// <c>data-table-style</c>。此处仅确认表节点读回成功。
+        /// </summary>
+        public static string TableStyleIsThreeLine(PptHtmlShapeNode node)
+        {
+            return TableRequire(node);
+        }
+
+        public static string TableColWidthsClose(PptHtmlShapeNode node, float[] expect, float eps = 4f)
+        {
+            string e = TableRequire(node);
+            if (e != null) return e;
+            if (expect == null) return null;
+            if (node.TableStyle?.ColWidthPcts == null)
+            {
+                return "列宽% 未读回";
+            }
+
+            float[] actual = node.TableStyle.ColWidthPcts;
+            if (actual.Length != expect.Length)
+            {
+                return "列宽个数期望 " + expect.Length + " 实际 " + actual.Length;
+            }
+
+            for (int i = 0; i < expect.Length; i++)
+            {
+                if (Math.Abs(actual[i] - expect[i]) > eps)
+                {
+                    return "列宽[" + i + "] 期望 " + expect[i] + " 实际 " + actual[i];
+                }
+            }
+
+            return null;
+        }
+
+        public static string TableRowHeightsClose(PptHtmlShapeNode node, float[] expect, float eps = 5f)
+        {
+            string e = TableRequire(node);
+            if (e != null) return e;
+            if (expect == null) return null;
+            if (node.TableStyle?.RowHeightPcts == null)
+            {
+                return "行高% 未读回";
+            }
+
+            float[] actual = node.TableStyle.RowHeightPcts;
+            if (actual.Length != expect.Length)
+            {
+                return "行高个数期望 " + expect.Length + " 实际 " + actual.Length;
+            }
+
+            for (int i = 0; i < expect.Length; i++)
+            {
+                if (Math.Abs(actual[i] - expect[i]) > eps)
+                {
+                    return "行高[" + i + "] 期望 " + expect[i] + " 实际 " + actual[i];
+                }
+            }
+
+            return null;
+        }
+
+        public static string TableFontClose(
+            PptHtmlShapeNode node,
+            string fontName = null,
+            double? fontSizePt = null,
+            string fontColor = null)
+        {
+            string e = TableRequire(node);
+            if (e != null) return e;
+            PptHtmlTableStyleSnap style = node.TableStyle;
+            if (style == null)
+            {
+                return "表级字体未读回";
+            }
+
+            if (!string.IsNullOrEmpty(fontName)
+                && (string.IsNullOrEmpty(style.FontName)
+                    || style.FontName.IndexOf(fontName, StringComparison.OrdinalIgnoreCase) < 0))
+            {
+                return "表字体期望含 " + fontName + " 实际 " + style.FontName;
+            }
+
+            if (fontSizePt.HasValue && !FontSizeClose(style.FontSizePt, fontSizePt.Value, 1.2))
+            {
+                return "表字号期望 " + fontSizePt + " 实际 " + style.FontSizePt;
+            }
+
+            if (!string.IsNullOrEmpty(fontColor)
+                && !string.Equals(HexOrNull(style.FontColor), HexOrNull(fontColor), StringComparison.OrdinalIgnoreCase))
+            {
+                return "表字色期望 " + fontColor + " 实际 " + style.FontColor;
+            }
+
+            return null;
+        }
+
+        public static string InnerHas(PptHtmlShapeNode node, string needle, string label = null)
+        {
+            string e = TableRequire(node);
+            if (e != null) return e;
+            string inner = node.InnerHtml ?? "";
+            if (inner.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return (label ?? ("缺 " + needle)) + ": " + Trunc(inner, 240);
+            }
+
+            return null;
+        }
+
+        public static string FirstFail(params string[] errors)
+        {
+            if (errors == null)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < errors.Length; i++)
+            {
+                if (!string.IsNullOrEmpty(errors[i]))
+                {
+                    return errors[i];
+                }
+            }
+
+            return null;
+        }
     }
 }
