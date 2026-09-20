@@ -632,8 +632,7 @@ namespace WordAddIn1.PresentationHost
 
                 try
                 {
-                    // WPP 已知限制：晚绑定写 LineRuleWithin（倍数）常静默不生效，SpaceWithin 会按定距 pt 落下；
-                    // 因此这里读回多为 exact:N，即使 HTML 约定写的是倍数，也无法可靠读回倍数方言。
+                    // WPP：Rule=-1/1 表示倍数（读侧）；写侧勿按 Office 字面去写规则，倍数只写 SpaceWithin。
                     object within = WppCom.GetProperty(pf, "SpaceWithin");
                     object rule = WppCom.GetProperty(pf, "LineRuleWithin");
                     float w = within == null ? 0f : Convert.ToSingle(within);
@@ -796,7 +795,7 @@ namespace WordAddIn1.PresentationHost
                         CultureInfo.InvariantCulture,
                         out double multWant))
                 {
-                    // 先短试真倍数；失败则走 WPP 诱饵降级（见 TryApplyWppMultipleFallback）
+                    // 先只写 SpaceWithin；失败则多目标回退（仍只写 SpaceWithin，见 TryApplyWppMultipleFallback）
                     multipleOk = TryApplyWppMultipleLineSpacing(shape, multWant)
                         || TryApplyWppMultipleFallback(shape, multWant);
                 }

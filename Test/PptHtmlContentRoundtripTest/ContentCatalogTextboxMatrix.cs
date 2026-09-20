@@ -209,13 +209,13 @@ namespace PptHtmlContentRoundtripTest
                         if (n == null) return "无 textbox";
                         if (!Near(n.SpaceBeforePt, p.Bf)) return "space-before 期望 " + p.Bf + " 实际 " + n.SpaceBeforePt;
                         if (!Near(n.SpaceAfterPt, p.Af)) return "space-after 期望 " + p.Af + " 实际 " + n.SpaceAfterPt;
-                        return LineSpacingClose(n.LineSpacing, p.Ls, n.FontSizePt)
+                        return LineSpacingClose(n.LineSpacing, p.Ls)
                             ? null
                             : "line-spacing 期望 " + p.Ls + " 实际 " + n.LineSpacing;
                     });
             }
 
-            // 整数倍行距探针（对照 WPP exact:N 读回）；正式矩阵用 1.25/1.75 避开
+            // 整数倍行距探针（确认 WPP 真倍数读回）；正式矩阵用 1.25/1.75
             foreach (var dbg in new[]
             {
                 new { Tag = "1", Ls = "1.0" },
@@ -232,13 +232,13 @@ namespace PptHtmlContentRoundtripTest
                     {
                         PptHtmlShapeNode n = PreferCreated(ctx, "textbox");
                         if (n == null) return "无 textbox";
-                        return LineSpacingClose(n.LineSpacing, ls, n.FontSizePt)
+                        return LineSpacingClose(n.LineSpacing, ls)
                             ? null
                             : "line-spacing 期望倍数 " + ls + " 实际 " + n.LineSpacing;
                     });
             }
 
-            // 肉眼对照：左 data-line-spacing=1.0（疑似写成 exact:1pt），右 1.5 倍数
+            // 肉眼对照：左倍数 1.0，右倍数 1.5（多行）
             string multi =
                 "第一行文字AAAA\n第二行文字BBBB\n第三行文字CCCC\n第四行文字DDDD\n第五行文字EEEE";
             Add(list, ref page, "tb-mx-dbg-ls-visual",
@@ -519,7 +519,7 @@ namespace PptHtmlContentRoundtripTest
                                 return "段距";
                             }
 
-                            if (!LineSpacingClose(n.LineSpacing, "1.5", n.FontSizePt))
+                            if (!LineSpacingClose(n.LineSpacing, "1.5"))
                             {
                                 return "行距 " + n.LineSpacing;
                             }
@@ -751,11 +751,9 @@ namespace PptHtmlContentRoundtripTest
         }
 
         /// <summary>
-        /// 读回可能是 "1.5" / "exact:12"。
-        /// WPP 降级：期望倍数时，若读回 exact:(字号×倍数) 或裸数值≈字号×倍数也算接近
-        /// （WPS 有时把定距误报成倍数方言）。
+        /// 读回可能是 "1.5" / "exact:12"。同模式才比数值（倍数对倍数、定距对定距）。
         /// </summary>
-        private static bool LineSpacingClose(string actual, string expect, double? fontSizePt = null)
+        private static bool LineSpacingClose(string actual, string expect)
         {
             if (string.IsNullOrEmpty(actual) || string.IsNullOrEmpty(expect)) return false;
 
@@ -763,27 +761,15 @@ namespace PptHtmlContentRoundtripTest
             string eRaw = expect.Trim();
             bool aExact = aRaw.StartsWith("exact:", StringComparison.OrdinalIgnoreCase);
             bool eExact = eRaw.StartsWith("exact:", StringComparison.OrdinalIgnoreCase);
+            if (aExact != eExact) return false;
 
             string a = aExact ? aRaw.Substring(6).Trim() : aRaw;
             string e = eExact ? eRaw.Substring(6).Trim() : eRaw;
             if (!TryLeadingDouble(e, out double want)) return false;
             if (!TryLeadingDouble(a, out double got)) return false;
 
-            if (aExact == eExact)
-            {
-                if (string.Equals(a, e, StringComparison.OrdinalIgnoreCase)) return true;
-                if (Math.Abs(got - want) <= 0.08) return true;
-            }
-
-            // WPP：倍数降级定距后，读回 exact:font×mult，或裸 font×mult
-            if (!eExact && fontSizePt.HasValue && fontSizePt.Value >= 1.0)
-            {
-                double expectExact = fontSizePt.Value * want;
-                double tol = Math.Max(1.0, fontSizePt.Value * 0.25);
-                if (Math.Abs(got - expectExact) <= tol) return true;
-            }
-
-            return false;
+            if (string.Equals(a, e, StringComparison.OrdinalIgnoreCase)) return true;
+            return Math.Abs(got - want) <= 0.08;
         }
 
         private static bool TryLeadingDouble(string s, out double value)
