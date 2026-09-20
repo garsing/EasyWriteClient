@@ -1398,6 +1398,12 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                // 更新稿带了显式 style → 用新框；未写 style → 继承旧框（换图保框）。
+                bool keepHtmlGeo = node.HasGeometry
+                    && node.LeftPct.HasValue
+                    && node.TopPct.HasValue
+                    && node.WidthPct.HasValue
+                    && node.HeightPct.HasValue;
                 float left = shape.Left, top = shape.Top, width = shape.Width, height = shape.Height;
                 try
                 {
@@ -1411,10 +1417,14 @@ namespace WordAddIn1.PresentationHost
 
                 node.IsCreate = true;
                 node.HasGeometry = true;
-                node.LeftPct = left / slideWidth * 100;
-                node.TopPct = top / slideHeight * 100;
-                node.WidthPct = width / slideWidth * 100;
-                node.HeightPct = height / slideHeight * 100;
+                if (!keepHtmlGeo)
+                {
+                    node.LeftPct = left / slideWidth * 100;
+                    node.TopPct = top / slideHeight * 100;
+                    node.WidthPct = width / slideWidth * 100;
+                    node.HeightPct = height / slideHeight * 100;
+                }
+
                 node.ShapeType = existingType == "media" ? "media" : "picture";
                 if (!TryCreate(slide, node, slideWidth, slideHeight, warnings, out string newId, out error))
                 {

@@ -899,6 +899,12 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                // 更新稿带了显式 style → 用新框；未写 style → 继承旧框（换图保框）。
+                bool keepHtmlGeo = node.HasGeometry
+                    && node.LeftPct.HasValue
+                    && node.TopPct.HasValue
+                    && node.WidthPct.HasValue
+                    && node.HeightPct.HasValue;
                 double left = Convert.ToDouble(WppCom.GetProperty(shape, "Left") ?? 0.0);
                 double top = Convert.ToDouble(WppCom.GetProperty(shape, "Top") ?? 0.0);
                 double width = Convert.ToDouble(WppCom.GetProperty(shape, "Width") ?? 0.0);
@@ -915,10 +921,14 @@ namespace WordAddIn1.PresentationHost
 
                 node.IsCreate = true;
                 node.HasGeometry = true;
-                node.LeftPct = left / slideWidth * 100;
-                node.TopPct = top / slideHeight * 100;
-                node.WidthPct = width / slideWidth * 100;
-                node.HeightPct = height / slideHeight * 100;
+                if (!keepHtmlGeo)
+                {
+                    node.LeftPct = left / slideWidth * 100;
+                    node.TopPct = top / slideHeight * 100;
+                    node.WidthPct = width / slideWidth * 100;
+                    node.HeightPct = height / slideHeight * 100;
+                }
+
                 node.ShapeType = existingType == "media" ? "media" : "picture";
                 if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, warnings, out string newId, out error))
                 {
@@ -1140,6 +1150,11 @@ namespace WordAddIn1.PresentationHost
             {
                 error = "创建形状返回空";
                 return false;
+            }
+
+            if (node.Rotation.HasValue)
+            {
+                TrySet(shape, "Rotation", node.Rotation.Value);
             }
 
             // 先字体后颜色：写 NameFarEast 常会把主题字色重置为黑，字色必须最后落盘。
