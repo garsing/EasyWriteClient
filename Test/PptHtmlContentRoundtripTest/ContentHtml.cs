@@ -269,24 +269,45 @@ namespace PptHtmlContentRoundtripTest
             double left = 55,
             double top = 20,
             double width = 35,
-            double height = 40)
+            double height = 40,
+            string extraAttrs = null)
         {
+            string attrs = string.IsNullOrEmpty(extraAttrs) ? "" : " " + extraAttrs.Trim();
             return Section(
                 "  <img data-shape-type=\"picture\" data-src=\""
                 + EscapeAttr(absolutePath)
                 + "\" style=\""
                 + Geo(left, top, width, height)
-                + "\" />");
+                + "\""
+                + attrs
+                + " />");
         }
 
-        public static string PictureUpdate(string shapeId, string absolutePath)
+        public static string PictureUpdate(
+            string shapeId,
+            string absolutePath,
+            double? left = null,
+            double? top = null,
+            double? width = null,
+            double? height = null,
+            string extraAttrs = null)
         {
+            string style = "";
+            if (left.HasValue && top.HasValue && width.HasValue && height.HasValue)
+            {
+                style = " style=\"" + Geo(left.Value, top.Value, width.Value, height.Value) + "\"";
+            }
+
+            string attrs = string.IsNullOrEmpty(extraAttrs) ? "" : " " + extraAttrs.Trim();
             return Section(
                 "  <img ShapeId=\""
                 + shapeId
                 + "\" data-src=\""
                 + EscapeAttr(absolutePath)
-                + "\" />");
+                + "\""
+                + style
+                + attrs
+                + " />");
         }
 
         public static string MixCreate(string title, string[][] cells, string picturePath)
