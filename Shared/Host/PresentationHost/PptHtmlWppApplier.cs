@@ -756,6 +756,7 @@ namespace WordAddIn1.PresentationHost
             }
 
             string existingType = ResolveExistingType(shape);
+            PptHtmlTableGrid tableGridForFill = null;
 
             if (existingType == "chart")
             {
@@ -809,6 +810,8 @@ namespace WordAddIn1.PresentationHost
                 {
                     grid = PlainMatrixToGrid(node.TableCells);
                 }
+
+                tableGridForFill = grid;
 
                 var tw = new List<string>();
                 if (!PptHtmlTableIo.TryApply(shape, grid, node.TableStyle, out error, tw))
@@ -874,9 +877,15 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            // 表 data-fill 在格色之后写（会刷底）；再把显式格 fill 盖回
             if (!TryApplyColors(shape, node, existingType, out error))
             {
                 return false;
+            }
+
+            if (tableGridForFill != null && !string.IsNullOrEmpty(node.Fill))
+            {
+                PptHtmlTableIo.TryReapplyExplicitCellFills(shape, tableGridForFill, warnings);
             }
 
             LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight);
@@ -1161,6 +1170,21 @@ namespace WordAddIn1.PresentationHost
             if (!TryApplyColors(shape, node, type, out error))
             {
                 return false;
+            }
+
+            // 表 data-fill 后写会刷底，再盖回显式格 fill
+            if (type == "table" && !string.IsNullOrEmpty(node.Fill))
+            {
+                PptHtmlTableGrid fillGrid = node.TableGrid;
+                if (fillGrid == null && node.TableCells != null)
+                {
+                    fillGrid = PlainMatrixToGrid(node.TableCells);
+                }
+
+                if (fillGrid != null)
+                {
+                    PptHtmlTableIo.TryReapplyExplicitCellFills(shape, fillGrid, warnings);
+                }
             }
 
             // 新建 AddTextbox 默认内边距会挤窄正文；无 data-margin-* 时置 0
@@ -1868,6 +1892,7 @@ namespace WordAddIn1.PresentationHost
                         {
                             TrySet(fill, "Visible", 0);
                         }
+
                     }
                     else
                     {
@@ -1890,6 +1915,7 @@ namespace WordAddIn1.PresentationHost
                             object fore = WppCom.GetProperty(fill, "ForeColor");
                             TrySet(fore, "RGB", rgb);
                         }
+
                     }
                 }
                 catch (Exception ex)

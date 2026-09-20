@@ -307,6 +307,64 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        /// <summary>
+        /// 表级 data-fill 写形状 Fill 会刷掉格色；在表 fill 之后把网格里显式格 fill 再盖回去。
+        /// </summary>
+        public static void TryReapplyExplicitCellFills(
+            PowerPoint.Shape shape,
+            PptHtmlTableGrid grid,
+            List<string> warnings)
+        {
+            if (shape == null || grid == null || shape.HasTable != Office.MsoTriState.msoTrue)
+            {
+                return;
+            }
+
+            if (warnings == null)
+            {
+                warnings = new List<string>();
+            }
+
+            try
+            {
+                PowerPoint.Table table = shape.Table;
+                for (int r = 0; r < grid.RowCount; r++)
+                {
+                    for (int c = 0; c < grid.ColCount; c++)
+                    {
+                        PptHtmlTableCell cell = grid.CellAt(r, c);
+                        if (cell == null || cell.IsCovered || string.IsNullOrEmpty(cell.Fill))
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            PowerPoint.Cell pptCell = table.Cell(r + 1, c + 1);
+                            if (string.Equals(cell.Fill, "none", StringComparison.OrdinalIgnoreCase))
+                            {
+                                pptCell.Shape.Fill.Visible = Office.MsoTriState.msoFalse;
+                            }
+                            else if (TryParseRgb(cell.Fill, out int fillRgb))
+                            {
+                                pptCell.Shape.Fill.Visible = Office.MsoTriState.msoTrue;
+                                pptCell.Shape.Fill.Solid();
+                                pptCell.Shape.Fill.ForeColor.RGB = fillRgb;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            warnings.Add("回写格 fill 失败 (" + (r + 1) + "," + (c + 1) + "): " + ex.Message);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                warnings.Add("回写格 fill 失败: " + ex.Message);
+            }
+        }
+
         private static void TryApplyColRowPcts(
             PowerPoint.Shape shape,
             PowerPoint.Table table,

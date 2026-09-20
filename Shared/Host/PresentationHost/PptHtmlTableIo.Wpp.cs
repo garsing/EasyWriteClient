@@ -492,6 +492,55 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        /// <summary>
+        /// 表级 data-fill 写形状 Fill 会刷掉格色；在表 fill 之后把网格里显式格 fill 再盖回去。
+        /// </summary>
+        public static void TryReapplyExplicitCellFills(
+            object shape,
+            PptHtmlTableGrid grid,
+            List<string> warnings)
+        {
+            if (shape == null || grid == null || !IsTruthy(WppCom.GetProperty(shape, "HasTable")))
+            {
+                return;
+            }
+
+            if (warnings == null)
+            {
+                warnings = new List<string>();
+            }
+
+            try
+            {
+                object table = WppCom.GetProperty(shape, "Table");
+                for (int r = 0; r < grid.RowCount; r++)
+                {
+                    for (int c = 0; c < grid.ColCount; c++)
+                    {
+                        PptHtmlTableCell cell = grid.CellAt(r, c);
+                        if (cell == null || cell.IsCovered || string.IsNullOrEmpty(cell.Fill))
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            object pptCell = WppCom.Invoke(table, "Cell", r + 1, c + 1);
+                            TryWriteCellSkinWpp(pptCell, cell, warnings);
+                        }
+                        catch (Exception ex)
+                        {
+                            warnings.Add("回写格 fill 失败 (" + (r + 1) + "," + (c + 1) + "): " + ex.Message);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                warnings.Add("回写格 fill 失败: " + ex.Message);
+            }
+        }
+
         private static void TryReadCellSkinWpp(
             object pptCell,
             PptHtmlTableCell cell,

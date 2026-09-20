@@ -1221,6 +1221,7 @@ namespace WordAddIn1.PresentationHost
             }
 
             string existingType = "";
+            PptHtmlTableGrid tableGridForFill = null;
             try
             {
                 int st = (int)shape.Type;
@@ -1311,6 +1312,8 @@ namespace WordAddIn1.PresentationHost
                     grid = PlainMatrixToGrid(node.TableCells);
                 }
 
+                tableGridForFill = grid;
+
                 var tw = new List<string>();
                 if (!PptHtmlTableIo.TryApply(shape, grid, node.TableStyle, out error, tw))
                 {
@@ -1371,9 +1374,15 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            // 表 data-fill 后写（刷底），再盖回显式格 fill
             if (!TryApplyColors(shape, node, existingType, out error))
             {
                 return false;
+            }
+
+            if (tableGridForFill != null && !string.IsNullOrEmpty(node.Fill))
+            {
+                PptHtmlTableIo.TryReapplyExplicitCellFills(shape, tableGridForFill, warnings);
             }
 
             // 字号/AutoSize 可能撑破形状：写完样式后重锁几何
@@ -1657,6 +1666,21 @@ namespace WordAddIn1.PresentationHost
             if (!TryApplyColors(shape, node, type, out error))
             {
                 return false;
+            }
+
+            // 表 data-fill 后写会刷底，再盖回显式格 fill
+            if (type == "table" && !string.IsNullOrEmpty(node.Fill))
+            {
+                PptHtmlTableGrid fillGrid = node.TableGrid;
+                if (fillGrid == null && node.TableCells != null)
+                {
+                    fillGrid = PlainMatrixToGrid(node.TableCells);
+                }
+
+                if (fillGrid != null)
+                {
+                    PptHtmlTableIo.TryReapplyExplicitCellFills(shape, fillGrid, warnings);
+                }
             }
 
             // 新建 AddTextbox 默认左右内边距约 7.2pt，会挤窄正文；无 data-margin-* 时置 0
