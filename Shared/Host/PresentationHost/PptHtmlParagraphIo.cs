@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using WordAddIn1.OpenFiles;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
@@ -631,10 +632,13 @@ namespace WordAddIn1.PresentationHost
 
                 try
                 {
+                    // WPP 已知限制：晚绑定写 LineRuleWithin（倍数）常静默不生效，SpaceWithin 会按定距 pt 落下；
+                    // 因此这里读回多为 exact:N，即使 HTML 约定写的是倍数，也无法可靠读回倍数方言。
                     object within = WppCom.GetProperty(pf, "SpaceWithin");
                     object rule = WppCom.GetProperty(pf, "LineRuleWithin");
                     float w = within == null ? 0f : Convert.ToSingle(within);
-                    bool ruleLines = rule != null && (Convert.ToInt32(rule) == -1 || Convert.ToInt32(rule) == 1);
+                    int ruleInt = rule == null ? int.MinValue : Convert.ToInt32(rule);
+                    bool ruleLines = rule != null && (ruleInt == -1 || ruleInt == 1);
                     if (ruleLines)
                     {
                         snap.LineSpacing = FormatPt(w);
@@ -642,6 +646,15 @@ namespace WordAddIn1.PresentationHost
                     else if (w > 0)
                     {
                         snap.LineSpacing = "exact:" + FormatPt(w);
+                    }
+
+                    if (DebugLineSpacing)
+                    {
+                        Console.WriteLine(
+                            "[LS-DEBUG] WPP读 ParagraphFormat"
+                            + " LineRuleWithin=" + (rule == null ? "null" : ruleInt.ToString(CultureInfo.InvariantCulture))
+                            + " SpaceWithin=" + w.ToString(CultureInfo.InvariantCulture)
+                            + " → dialect=" + (snap.LineSpacing ?? "(空)"));
                     }
                 }
                 catch (Exception)
@@ -755,89 +768,102 @@ namespace WordAddIn1.PresentationHost
 
             try
             {
-                if (!IsTruthy(WppCom.GetProperty(shape, "HasTextFrame")))
+                if (!TryGetWppTextRange(shape, out object tr) || tr == null)
                 {
                     return true;
                 }
 
-                object tr = null;
-                object tf2 = WppCom.GetProperty(shape, "TextFrame2");
-                if (tf2 != null)
-                {
-                    tr = WppCom.GetProperty(tf2, "TextRange");
-                }
-
-                if (tr == null)
-                {
-                    object tf = WppCom.GetProperty(shape, "TextFrame");
-                    tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
-                }
-
-                object pf = tr == null ? null : WppCom.GetProperty(tr, "ParagraphFormat");
-                if (pf == null)
+                // 与读路径一致：优先逐段 ParagraphFormat；整段 TextRange.ParagraphFormat 在 WPS 上
+                // 常写不住 LineRuleWithin（倍数会落成定距 pt）。
+                var pfs = new List<object>();
+                CollectWppParagraphFormats(shape, tr, pfs);
+                if (pfs.Count == 0)
                 {
                     return true;
                 }
 
-                if (!string.IsNullOrEmpty(align))
+                if (DebugLineSpacing)
                 {
-                    TrySet(pf, "Alignment", AlignToPp(align));
+                    Console.WriteLine("[LS-DEBUG] WPP写命中 ParagraphFormat ×" + pfs.Count);
                 }
 
-                if (!string.IsNullOrEmpty(lineSpacing))
+                bool multipleOk = false;
+                if (!string.IsNullOrEmpty(lineSpacing)
+                    && !lineSpacing.StartsWith("exact:", StringComparison.OrdinalIgnoreCase)
+                    && double.TryParse(
+                        lineSpacing,
+                        NumberStyles.Float,
+                        CultureInfo.InvariantCulture,
+                        out double multWant))
                 {
-                    if (lineSpacing.StartsWith("exact:", StringComparison.OrdinalIgnoreCase))
+                    // 先短试真倍数；失败则走 WPP 诱饵降级（见 TryApplyWppMultipleFallback）
+                    multipleOk = TryApplyWppMultipleLineSpacing(shape, multWant)
+                        || TryApplyWppMultipleFallback(shape, multWant);
+                }
+
+                for (int i = 0; i < pfs.Count; i++)
+                {
+                    object pf = pfs[i];
+                    if (pf == null)
                     {
-                        string ptPart = lineSpacing.Substring(6);
-                        if (double.TryParse(ptPart, NumberStyles.Float, CultureInfo.InvariantCulture, out double pt))
+                        continue;
+                    }
+
+                    if (!string.IsNullOrEmpty(align))
+                    {
+                        TrySet(pf, "Alignment", AlignToPp(align));
+                    }
+
+                    if (!string.IsNullOrEmpty(lineSpacing) && !multipleOk)
+                    {
+                        ApplyWppLineSpacing(pf, lineSpacing);
+                    }
+
+                    if (spaceBeforePt.HasValue)
+                    {
+                        TrySet(pf, "SpaceBefore", spaceBeforePt.Value);
+                    }
+
+                    if (spaceAfterPt.HasValue)
+                    {
+                        TrySet(pf, "SpaceAfter", spaceAfterPt.Value);
+                    }
+
+                    if (indentLeftPt.HasValue)
+                    {
+                        TrySet(pf, "LeftIndent", indentLeftPt.Value);
+                    }
+
+                    if (indentFirstPt.HasValue)
+                    {
+                        TrySet(pf, "FirstLineIndent", indentFirstPt.Value);
+                    }
+
+                    if (!string.IsNullOrEmpty(bullet))
+                    {
+                        object bf = WppCom.GetProperty(pf, "Bullet");
+                        if (string.Equals(bullet, BulletNone, StringComparison.OrdinalIgnoreCase))
                         {
-                            TrySet(pf, "LineRuleWithin", 0);
-                            TrySet(pf, "SpaceWithin", pt);
+                            TrySet(bf, "Visible", 0);
+                        }
+                        else if (string.Equals(bullet, BulletNumber, StringComparison.OrdinalIgnoreCase))
+                        {
+                            TrySet(bf, "Visible", -1);
+                            TrySet(bf, "Type", PpBulletNumbered);
+                        }
+                        else
+                        {
+                            TrySet(bf, "Visible", -1);
+                            TrySet(bf, "Type", PpBulletUnnumbered);
                         }
                     }
-                    else if (double.TryParse(lineSpacing, NumberStyles.Float, CultureInfo.InvariantCulture, out double mult))
+
+                    if (!string.IsNullOrEmpty(lineSpacing))
                     {
-                        TrySet(pf, "LineRuleWithin", -1);
-                        TrySet(pf, "SpaceWithin", mult);
-                    }
-                }
-
-                if (spaceBeforePt.HasValue)
-                {
-                    TrySet(pf, "SpaceBefore", spaceBeforePt.Value);
-                }
-
-                if (spaceAfterPt.HasValue)
-                {
-                    TrySet(pf, "SpaceAfter", spaceAfterPt.Value);
-                }
-
-                if (indentLeftPt.HasValue)
-                {
-                    TrySet(pf, "LeftIndent", indentLeftPt.Value);
-                }
-
-                if (indentFirstPt.HasValue)
-                {
-                    TrySet(pf, "FirstLineIndent", indentFirstPt.Value);
-                }
-
-                if (!string.IsNullOrEmpty(bullet))
-                {
-                    object bf = WppCom.GetProperty(pf, "Bullet");
-                    if (string.Equals(bullet, BulletNone, StringComparison.OrdinalIgnoreCase))
-                    {
-                        TrySet(bf, "Visible", 0);
-                    }
-                    else if (string.Equals(bullet, BulletNumber, StringComparison.OrdinalIgnoreCase))
-                    {
-                        TrySet(bf, "Visible", -1);
-                        TrySet(bf, "Type", PpBulletNumbered);
-                    }
-                    else
-                    {
-                        TrySet(bf, "Visible", -1);
-                        TrySet(bf, "Type", PpBulletUnnumbered);
+                        DumpWppLineSpacing(
+                            pf,
+                            multipleOk ? "WPP写段落结束#策略成功#" + (i + 1) : "WPP写段落结束#" + (i + 1),
+                            lineSpacing);
                     }
                 }
 
@@ -847,6 +873,669 @@ namespace WordAddIn1.PresentationHost
             {
                 error = "写段落格式失败: " + ex.Message;
                 return false;
+            }
+        }
+
+        private static bool TryGetWppTextRange(object shape, out object textRange)
+        {
+            textRange = null;
+            if (shape == null || !IsTruthy(WppCom.GetProperty(shape, "HasTextFrame")))
+            {
+                return false;
+            }
+
+            object tf2 = WppCom.GetProperty(shape, "TextFrame2");
+            if (tf2 != null)
+            {
+                textRange = WppCom.GetProperty(tf2, "TextRange");
+            }
+
+            if (textRange == null)
+            {
+                object tf = WppCom.GetProperty(shape, "TextFrame");
+                textRange = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+            }
+
+            return textRange != null;
+        }
+
+        /// <summary>收集 WPS 上可能生效的 ParagraphFormat：TextFrame2/TextFrame 整段 + 各段。</summary>
+        private static void CollectWppParagraphFormats(object shape, object textRange, List<object> into)
+        {
+            if (into == null)
+            {
+                return;
+            }
+
+            // 1) 调用方已解析的 TextRange（通常 TextFrame2）
+            CollectWppParagraphFormatsFromTextRange(textRange, into);
+
+            // 2) 经典 TextFrame.TextRange —— 部分 WPS 版本只在这里认 LineRuleWithin
+            try
+            {
+                object tf = WppCom.GetProperty(shape, "TextFrame");
+                object trLegacy = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                if (trLegacy != null && !ReferenceEquals(trLegacy, textRange))
+                {
+                    CollectWppParagraphFormatsFromTextRange(trLegacy, into);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void CollectWppParagraphFormatsFromTextRange(object textRange, List<object> into)
+        {
+            if (textRange == null || into == null)
+            {
+                return;
+            }
+
+            // 整段 ParagraphFormat
+            try
+            {
+                object pfAll = WppCom.GetProperty(textRange, "ParagraphFormat");
+                AddUniqueCom(into, pfAll);
+            }
+            catch (Exception)
+            {
+            }
+
+            for (int i = 1; i <= 64; i++)
+            {
+                object para = null;
+                try
+                {
+                    para = WppCom.Invoke(textRange, "Paragraphs", i, 1);
+                }
+                catch (Exception)
+                {
+                    try
+                    {
+                        para = WppCom.Invoke(textRange, "Paragraphs", i);
+                    }
+                    catch (Exception)
+                    {
+                        break;
+                    }
+                }
+
+                if (para == null)
+                {
+                    break;
+                }
+
+                try
+                {
+                    object pf = WppCom.GetProperty(para, "ParagraphFormat");
+                    AddUniqueCom(into, pf);
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        private static void AddUniqueCom(List<object> into, object item)
+        {
+            if (item == null || into == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < into.Count; i++)
+            {
+                if (ReferenceEquals(into[i], item))
+                {
+                    return;
+                }
+            }
+
+            into.Add(item);
+        }
+
+        /// <summary>
+        /// WPP 阶梯探针结论（晚绑定）：
+        /// - 只写 SpaceWithin → 读回多为倍数（Rule=-1）
+        /// - 写 LineRuleWithin=-1/1（本意倍数）→ 读回反而定距（Rule=0）
+        /// - 写 LineRuleWithin=0（本意定距）→ 常钉不住，仍是倍数
+        /// 故倍数路径：只写 SpaceWithin，绝不碰 LineRuleWithin。
+        /// </summary>
+        private static bool TryApplyWppMultipleLineSpacing(object shape, double mult)
+        {
+            if (shape == null || mult <= 0)
+            {
+                return false;
+            }
+
+            float m = (float)mult;
+            string tag = mult.ToString("0.##", CultureInfo.InvariantCulture);
+            object pf = TryWppPf_TextFrameWhole(shape, "quick");
+            if (pf == null)
+            {
+                pf = TryWppPf_TextFrame2Whole(shape, "quick2");
+            }
+
+            if (pf == null)
+            {
+                return false;
+            }
+
+            // 关键：不要写 LineRuleWithin（写 -1/1 会把模式拧成定距）
+            TrySetLogged(pf, "SpaceWithin", m);
+            DumpWppLineSpacing(pf, "WPP只写SpaceWithin(倍数)", tag);
+
+            if (IsWppMultipleLive(shape, mult, out string how))
+            {
+                if (DebugLineSpacing)
+                {
+                    Console.WriteLine("[LS-DEBUG] WPP真倍数成功 want=" + tag + " via " + how);
+                }
+
+                return true;
+            }
+
+            if (DebugLineSpacing)
+            {
+                DumpWppLineSpacing(pf, "WPP只写SpaceWithin未活，将多目标回退", tag);
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 多 ParagraphFormat 目标只写 SpaceWithin（仍不碰 LineRuleWithin）。
+        /// 若已在倍数态，可先写大诱饵再改回真倍数，避免某路径仍停在定距小数。
+        /// </summary>
+        private static bool TryApplyWppMultipleFallback(object shape, double mult)
+        {
+            if (shape == null || mult <= 0)
+            {
+                return false;
+            }
+
+            double fontPt = TryReadWppFontSizePt(shape);
+            if (fontPt < 1.0)
+            {
+                fontPt = 18.0;
+            }
+
+            double baitPt = fontPt * mult;
+            if (baitPt < 1.0)
+            {
+                baitPt = 1.0;
+            }
+
+            float multF = (float)mult;
+            string want = mult.ToString("0.##", CultureInfo.InvariantCulture);
+
+            if (DebugLineSpacing)
+            {
+                Console.WriteLine(
+                    "[LS-DEBUG] WPP倍数多目标回退 mult="
+                    + want
+                    + " fontPt=" + fontPt.ToString("0.##", CultureInfo.InvariantCulture)
+                    + " baitPt=" + baitPt.ToString("0.##", CultureInfo.InvariantCulture));
+            }
+
+            object[] targets =
+            {
+                TryWppPf_TextFrameWhole(shape, "fb-tf"),
+                TryWppPf_TextFrame2Whole(shape, "fb-tf2"),
+                TryWppPf_TextFramePara1(shape, "fb-p1"),
+                TryWppPf_TextFrame2Para1(shape, "fb-p2")
+            };
+
+            bool any = false;
+            for (int i = 0; i < targets.Length; i++)
+            {
+                object pf = targets[i];
+                if (pf == null)
+                {
+                    continue;
+                }
+
+                // 先只写真倍数
+                TrySetLogged(pf, "SpaceWithin", multF);
+                DumpWppLineSpacing(pf, "WPP回退直写#" + (i + 1), want);
+
+                if (TryPeekWppLineRule(pf, out int rule, out float within)
+                    && IsLineRuleMultiple(rule)
+                    && Math.Abs(within - multF) <= 0.08f)
+                {
+                    any = true;
+                    continue;
+                }
+
+                // 诱饵拉到倍数态后，只改 SpaceWithin（禁止再写 LineRuleWithin）
+                TrySetLogged(pf, "SpaceWithin", (float)baitPt);
+                DumpWppLineSpacing(pf, "WPP回退诱饵#" + (i + 1), want);
+                TrySetLogged(pf, "SpaceWithin", multF);
+                DumpWppLineSpacing(pf, "WPP回退改回#" + (i + 1), want);
+                any = true;
+            }
+
+            return any;
+        }
+
+        private static double TryReadWppFontSizePt(object shape)
+        {
+            try
+            {
+                object tf = WppCom.GetProperty(shape, "TextFrame");
+                object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+                object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                object size = font == null ? null : WppCom.GetProperty(font, "Size");
+                if (size != null)
+                {
+                    double pt = Convert.ToDouble(size);
+                    if (pt >= 1.0)
+                    {
+                        return pt;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                object tf2 = WppCom.GetProperty(shape, "TextFrame2");
+                object tr = tf2 == null ? null : WppCom.GetProperty(tf2, "TextRange");
+                object font = tr == null ? null : WppCom.GetProperty(tr, "Font");
+                object size = font == null ? null : WppCom.GetProperty(font, "Size");
+                if (size != null)
+                {
+                    double pt = Convert.ToDouble(size);
+                    if (pt >= 1.0)
+                    {
+                        return pt;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return 0;
+        }
+
+        private static bool IsWppMultipleLive(object shape, double mult, out string how)
+        {
+            how = null;
+            try
+            {
+                Snapshot snap = TryReadFromWppShape(shape);
+                if (snap == null || string.IsNullOrEmpty(snap.LineSpacing))
+                {
+                    return false;
+                }
+
+                string ls = snap.LineSpacing.Trim();
+                if (ls.StartsWith("exact:", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                if (!double.TryParse(ls, NumberStyles.Float, CultureInfo.InvariantCulture, out double got))
+                {
+                    return false;
+                }
+
+                if (Math.Abs(got - mult) <= 0.08)
+                {
+                    how = "read dialect=" + ls;
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return false;
+        }
+
+        private static object TryWppPf_TextFrameWhole(object shape, string name)
+        {
+            if (DebugLineSpacing)
+            {
+                Console.WriteLine("[LS-DEBUG] " + name + " TextFrame.TextRange.ParagraphFormat");
+            }
+
+            object tf = WppCom.GetProperty(shape, "TextFrame");
+            object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+            return tr == null ? null : WppCom.GetProperty(tr, "ParagraphFormat");
+        }
+
+        private static object TryWppPf_TextFrame2Whole(object shape, string name)
+        {
+            if (DebugLineSpacing)
+            {
+                Console.WriteLine("[LS-DEBUG] " + name + " TextFrame2.TextRange.ParagraphFormat");
+            }
+
+            object tf2 = WppCom.GetProperty(shape, "TextFrame2");
+            object tr = tf2 == null ? null : WppCom.GetProperty(tf2, "TextRange");
+            return tr == null ? null : WppCom.GetProperty(tr, "ParagraphFormat");
+        }
+
+        private static object TryWppPf_TextFramePara1(object shape, string name)
+        {
+            if (DebugLineSpacing)
+            {
+                Console.WriteLine("[LS-DEBUG] " + name + " TextFrame.Paragraphs(1)");
+            }
+
+            object tf = WppCom.GetProperty(shape, "TextFrame");
+            object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+            return TryWppPf_FromParagraph1(tr);
+        }
+
+        private static object TryWppPf_TextFrame2Para1(object shape, string name)
+        {
+            if (DebugLineSpacing)
+            {
+                Console.WriteLine("[LS-DEBUG] " + name + " TextFrame2.Paragraphs(1)");
+            }
+
+            object tf2 = WppCom.GetProperty(shape, "TextFrame2");
+            object tr = tf2 == null ? null : WppCom.GetProperty(tf2, "TextRange");
+            return TryWppPf_FromParagraph1(tr);
+        }
+
+        private static object TryWppPf_FromParagraph1(object tr)
+        {
+            if (tr == null)
+            {
+                return null;
+            }
+
+            object para = null;
+            try
+            {
+                para = WppCom.Invoke(tr, "Paragraphs", 1, 1);
+            }
+            catch (Exception)
+            {
+                try
+                {
+                    para = WppCom.Invoke(tr, "Paragraphs", 1);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return para == null ? null : WppCom.GetProperty(para, "ParagraphFormat");
+        }
+
+        private static object TryWppPf_SelectThenTextFrame(object shape, string name)
+        {
+            try
+            {
+                WppCom.Invoke(shape, "Select");
+            }
+            catch (Exception)
+            {
+            }
+
+            object tf = WppCom.GetProperty(shape, "TextFrame");
+            object tr = tf == null ? null : WppCom.GetProperty(tf, "TextRange");
+            try
+            {
+                if (tr != null)
+                {
+                    WppCom.Invoke(tr, "Select");
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return tr == null ? null : WppCom.GetProperty(tr, "ParagraphFormat");
+        }
+
+        private static object TryWppPf_GrowBoxThenTextFrame(object shape, string name)
+        {
+            try
+            {
+                object hObj = WppCom.GetProperty(shape, "Height");
+                double oldH = hObj == null ? 0 : Convert.ToDouble(hObj);
+                if (oldH > 0)
+                {
+                    WppCom.TrySetProperty(shape, "Height", oldH * 2.5);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return TryWppPf_TextFrameWhole(shape, name + "-grow");
+        }
+
+        /// <summary>
+        /// WPP 行距写入（阶梯探针）：
+        /// 倍数 → 只写 SpaceWithin；定距 → 先写 LineRuleWithin=-1/1（会把读回拧成定距），再写 pt。
+        /// </summary>
+        private static void ApplyWppLineSpacing(object pf, string lineSpacing)
+        {
+            if (pf == null || string.IsNullOrEmpty(lineSpacing))
+            {
+                return;
+            }
+
+            if (lineSpacing.StartsWith("exact:", StringComparison.OrdinalIgnoreCase))
+            {
+                string ptPart = lineSpacing.Substring(6);
+                if (!double.TryParse(ptPart, NumberStyles.Float, CultureInfo.InvariantCulture, out double pt))
+                {
+                    return;
+                }
+
+                // 探针：写 -1/1 反而落成定距；写 0 钉不住
+                TryForceWppLineRuleExactViaInvertedWrite(pf);
+                TrySet(pf, "SpaceWithin", (float)pt);
+                TryForceWppLineRuleExactViaInvertedWrite(pf);
+                DumpWppLineSpacing(pf, "WPP写定距", lineSpacing);
+                return;
+            }
+
+            if (!double.TryParse(lineSpacing, NumberStyles.Float, CultureInfo.InvariantCulture, out double mult))
+            {
+                return;
+            }
+
+            TrySetLogged(pf, "SpaceWithin", (float)mult);
+            DumpWppLineSpacing(pf, "WPP写倍数(只SpaceWithin)", lineSpacing);
+        }
+
+        /// <summary>
+        /// WPP 上要把模式拧成定距，应写 LineRuleWithin=-1/1（读回变为 0）；
+        /// 写 0 往往钉不住。与 Office 字面语义相反。
+        /// </summary>
+        private static bool TryForceWppLineRuleExactViaInvertedWrite(object pf)
+        {
+            return TryForceWppLineRuleMultiple(pf);
+        }
+
+        private static void DumpWppParagraphFormatMembers(object pf)
+        {
+            if (!DebugLineSpacing || pf == null)
+            {
+                return;
+            }
+
+            try
+            {
+                Console.WriteLine("[LS-DEBUG] ParagraphFormat type=" + pf.GetType().FullName);
+                foreach (string name in new[]
+                {
+                    "LineRuleWithin", "SpaceWithin", "LineSpacingRule", "LineSpacing",
+                    "SpaceBefore", "SpaceAfter"
+                })
+                {
+                    try
+                    {
+                        object v = WppCom.GetProperty(pf, name);
+                        Console.WriteLine(
+                            "[LS-DEBUG]   get " + name + "="
+                            + (v == null ? "null" : v.ToString() + " (" + v.GetType().Name + ")"));
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine(
+                            "[LS-DEBUG]   get " + name + " ERR "
+                            + ex.GetBaseException().Message);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[LS-DEBUG] dump members 失败: " + ex.Message);
+            }
+        }
+
+        private static bool TryForceWppLineRuleMultiple(object pf)
+        {
+            // msoTrue 在晚绑定里常见 -1；个别宿主只认 1 / true / short
+            // 另：部分 WPS 对 SetProperty 静默吞掉，需换 put_ 名或 Invoke
+            object[] candidates = { -1, 1, true, (short)-1, (short)1 };
+            string[] names = { "LineRuleWithin", "put_LineRuleWithin" };
+            for (int n = 0; n < names.Length; n++)
+            {
+                for (int i = 0; i < candidates.Length; i++)
+                {
+                    if (!TrySetLogged(pf, names[n], candidates[i]))
+                    {
+                        continue;
+                    }
+
+                    if (TryPeekWppLineRule(pf, out int rule, out _) && IsLineRuleMultiple(rule))
+                    {
+                        return true;
+                    }
+
+                    if (DebugLineSpacing)
+                    {
+                        Console.WriteLine(
+                            "[LS-DEBUG] 设 " + names[n] + "=" + candidates[i]
+                            + " 后仍非倍数 rule="
+                            + (TryPeekWppLineRule(pf, out int r2, out _)
+                                ? r2.ToString(CultureInfo.InvariantCulture)
+                                : "?"));
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TrySetLogged(object target, string name, object value)
+        {
+            if (target == null || string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            try
+            {
+                target.GetType().InvokeMember(
+                    name,
+                    System.Reflection.BindingFlags.SetProperty
+                        | System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.Public,
+                    null,
+                    target,
+                    new object[] { value });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (DebugLineSpacing)
+                {
+                    Console.WriteLine(
+                        "[LS-DEBUG] Set " + name + "=" + value
+                        + " 失败: " + ex.GetBaseException().Message);
+                }
+
+                return false;
+            }
+        }
+
+        /// <summary>环境变量 PPT_HTML_DEBUG_LINESPACING=1 时打印 WPP 行距 COM 读写探针。</summary>
+        internal static bool DebugLineSpacing
+        {
+            get
+            {
+                string v = Environment.GetEnvironmentVariable("PPT_HTML_DEBUG_LINESPACING");
+                return string.Equals(v, "1", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        private static bool IsLineRuleMultiple(int rule)
+        {
+            return rule == -1 || rule == 1;
+        }
+
+        private static bool TryPeekWppLineRule(object pf, out int rule, out float within)
+        {
+            rule = int.MinValue;
+            within = 0f;
+            try
+            {
+                object r = WppCom.GetProperty(pf, "LineRuleWithin");
+                object w = WppCom.GetProperty(pf, "SpaceWithin");
+                if (r != null)
+                {
+                    rule = Convert.ToInt32(r);
+                }
+
+                if (w != null)
+                {
+                    within = Convert.ToSingle(w);
+                }
+
+                return r != null || w != null;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static void DumpWppLineSpacing(object pf, string stage, string want)
+        {
+            if (!DebugLineSpacing || pf == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (!TryPeekWppLineRule(pf, out int rule, out float within))
+                {
+                    Console.WriteLine("[LS-DEBUG] " + stage + " want=" + want + " （读 COM 失败）");
+                    return;
+                }
+
+                string kind = IsLineRuleMultiple(rule) ? "倍数" : "定距(exact)";
+                string asDialect = IsLineRuleMultiple(rule)
+                    ? FormatPt(within)
+                    : (within > 0 ? "exact:" + FormatPt(within) : "(空)");
+                Console.WriteLine(
+                    "[LS-DEBUG] " + stage
+                    + " want=" + want
+                    + " LineRuleWithin=" + rule
+                    + " SpaceWithin=" + within.ToString(CultureInfo.InvariantCulture)
+                    + " →" + kind
+                    + " dialect=" + asDialect);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[LS-DEBUG] " + stage + " dump失败: " + ex.Message);
             }
         }
 

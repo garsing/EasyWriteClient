@@ -7,7 +7,7 @@ using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 
 namespace PptHtmlContentRoundtripTest
 {
-    /// <summary>P0/P1 内容往返目录。含表格矩阵（tbl-mx-*）与图片矩阵（pic-mx-*）。</summary>
+    /// <summary>P0/P1 内容往返目录。含表格/图片/文本框矩阵（tbl-mx / pic-mx / tb-mx）。</summary>
     internal static partial class ContentCatalog
     {
         public const int BatchCount = 1;
@@ -20,6 +20,7 @@ namespace PptHtmlContentRoundtripTest
             int page = 0;
 
             AddTextboxCases(list, ref page);
+            AddTextboxMatrixCases(list, ref page);
             AddTableCases(list, ref page);
             AddPictureCases(list, ref page);
             AddPictureMatrixCases(list, ref page);
