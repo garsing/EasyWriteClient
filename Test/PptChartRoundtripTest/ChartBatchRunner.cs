@@ -284,12 +284,12 @@ namespace PptChartRoundtripTest
             }
         }
 
-        /// <returns>RPC 死信，否则 null（已记 CaseOk/Fail）。</returns>
-        private static string RunOneSlide(TestRun run, object shapes, ChartCase one, string tag)
+        /// <returns>RPC 死信，否则 null（已记 CaseOk/Fail）。WPP 批跑复用此路径。</returns>
+        internal static string RunOneSlide(TestRun run, object shapes, ChartCase one, string tag)
         {
             if (!TryCreate(one.CreateHtml, shapes, out object shape, out string error, out List<string> warnings))
             {
-                if (IsRpcText(error))
+                if (IsRetryableCom(error))
                 {
                     return error;
                 }
@@ -321,7 +321,7 @@ namespace PptChartRoundtripTest
 
                 if (!TryReplace(shapes, shape, node, out shape, out error, out warnings))
                 {
-                    if (IsRpcText(error))
+                    if (IsRetryableCom(error))
                     {
                         return error;
                     }
@@ -333,7 +333,7 @@ namespace PptChartRoundtripTest
 
             if (!PptHtmlChartIo.TryRead(shape, out PptHtmlChartReadModel model, out error))
             {
-                if (IsRpcText(error))
+                if (IsRetryableCom(error))
                 {
                     return error;
                 }
@@ -355,7 +355,7 @@ namespace PptChartRoundtripTest
             return null;
         }
 
-        private static string MatchExpect(ChartCase one, PptHtmlChartReadModel model)
+        internal static string MatchExpect(ChartCase one, PptHtmlChartReadModel model)
         {
             if (model == null || model.Grid == null)
             {
@@ -427,7 +427,7 @@ namespace PptChartRoundtripTest
             return ChartAttrMatch.Check(one.Attrs, model);
         }
 
-        private static bool TryCreate(
+        internal static bool TryCreate(
             string html,
             object shapes,
             out object shape,
@@ -489,7 +489,7 @@ namespace PptChartRoundtripTest
             return ok;
         }
 
-        private static bool TryReplace(
+        internal static bool TryReplace(
             object shapes,
             object oldShape,
             PptHtmlApplyNode node,
@@ -704,8 +704,19 @@ namespace PptChartRoundtripTest
 
         private static bool IsChartDataBusy(string error)
         {
-            return !string.IsNullOrEmpty(error)
-                && error.IndexOf("ChartData", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (string.IsNullOrEmpty(error))
+            {
+                return false;
+            }
+
+            return error.IndexOf("ChartData", StringComparison.OrdinalIgnoreCase) >= 0
+                || error.IndexOf("内嵌工作簿", StringComparison.OrdinalIgnoreCase) >= 0
+                || error.IndexOf("无法打开图表", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        internal static bool IsRetryableCom(string error)
+        {
+            return IsRpcText(error) || IsChartDataBusy(error);
         }
 
         private static void TryAddCaseLabel(PowerPoint.Slide slide, string text)
@@ -801,7 +812,7 @@ namespace PptChartRoundtripTest
             return "column";
         }
 
-        private static string FormatWarnings(List<string> warnings)
+        internal static string FormatWarnings(List<string> warnings)
         {
             if (warnings == null || warnings.Count == 0)
             {

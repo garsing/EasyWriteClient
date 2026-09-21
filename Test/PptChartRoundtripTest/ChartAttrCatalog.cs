@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using WordAddIn1.OpenFiles;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 
 namespace PptChartRoundtripTest
@@ -710,14 +711,40 @@ namespace PptChartRoundtripTest
             }
 
             PowerPoint.Shape shp = shape as PowerPoint.Shape;
-            if (shp == null)
+            if (shp != null)
             {
-                shp = (PowerPoint.Shape)shape;
+                PowerPoint.Series ser = (PowerPoint.Series)shp.Chart.SeriesCollection(1);
+                PowerPoint.Point pt = (PowerPoint.Point)ser.Points(1);
+                pt.Explosion = 25;
+                return;
             }
 
-            PowerPoint.Series ser = (PowerPoint.Series)shp.Chart.SeriesCollection(1);
-            PowerPoint.Point pt = (PowerPoint.Point)ser.Points(1);
-            pt.Explosion = 25;
+            object chart = WppCom.GetProperty(shape, "Chart");
+            object sc = chart == null ? null : WppCom.GetProperty(chart, "SeriesCollection");
+            object serW = sc == null ? null : WppCom.GetIndexed(sc, 1);
+            if (serW == null && sc != null)
+            {
+                serW = WppCom.Invoke(sc, "Item", 1);
+            }
+
+            object pts = serW == null ? null : WppCom.GetProperty(serW, "Points");
+            object ptW = pts == null ? null : WppCom.GetIndexed(pts, 1);
+            if (ptW == null && pts != null)
+            {
+                ptW = WppCom.Invoke(pts, "Item", 1);
+            }
+
+            if (ptW == null)
+            {
+                throw new InvalidOperationException("WPP 无法取第一瓣 Point");
+            }
+
+            WppCom.TrySetProperty(ptW, "Explosion", 25);
+            object explosion = WppCom.GetProperty(ptW, "Explosion");
+            if (explosion == null || Convert.ToInt32(explosion) < 1)
+            {
+                throw new InvalidOperationException("WPP 无法写第一瓣 Explosion");
+            }
         }
 
         /// <summary>底图有标题，换数稿显式关掉（新建路径等价于直接关）。</summary>

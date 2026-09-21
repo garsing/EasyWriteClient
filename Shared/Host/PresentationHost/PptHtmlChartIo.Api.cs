@@ -135,7 +135,7 @@ namespace WordAddIn1.PresentationHost
             }
             finally
             {
-                HideEmbeddedExcel(excelApp);
+                ReleaseEmbeddedChartWorkbook(chart, excelApp, warnings);
                 DismissChartExcelUiForChart(chart);
             }
         }

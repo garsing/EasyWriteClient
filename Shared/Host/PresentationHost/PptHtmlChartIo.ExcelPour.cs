@@ -124,16 +124,106 @@ namespace WordAddIn1.PresentationHost
         /// <summary>
         /// 藏图表拉起的内嵌 Excel，不 Quit，避免弄坏包内 embeddings。
         /// COM Visible=false 常只藏内容，PowerPoint 会留下空白编辑框，须再关 HWND。
+        /// 不经 Workbook 取 Application：刚 Close 后再取会把表重新 Activate。
         /// </summary>
         private static void TryHideChartExcel(object chart)
         {
-            if (TryGetEmbeddedExcelApp(chart, out object excelApp))
-            {
-                HideEmbeddedExcel(excelApp);
-            }
-
             TryHidePowerPointChartExcelWindows();
             TryCloseChartExcelHwnds(forceClose: false);
+        }
+
+        /// <summary>
+        /// 关掉本次打开的内嵌簿并放开 RCW。不 Quit ET/Excel。
+        /// WPP 上一张表还占着时第二次 Activate 会失败；删图能再开，说明 Close 可能够用。
+        /// </summary>
+        private static void ReleaseEmbeddedChartWorkbook(
+            object chart,
+            object excelApp,
+            List<string> warnings = null)
+        {
+            object chartData = null;
+            object workbook = null;
+            try
+            {
+                if (chart != null)
+                {
+                    try
+                    {
+                        chartData = WppCom.GetProperty(chart, "ChartData");
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                if (chartData != null)
+                {
+                    try
+                    {
+                        workbook = WppCom.GetProperty(chartData, "Workbook");
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                if (workbook != null)
+                {
+                    try
+                    {
+                        WppCom.Invoke(workbook, "Close", false);
+                        PourLog(warnings, "已 Close 内嵌簿");
+                    }
+                    catch (Exception ex1)
+                    {
+                        try
+                        {
+                            WppCom.Invoke(workbook, "Close");
+                            PourLog(warnings, "已 Close 内嵌簿");
+                        }
+                        catch (Exception)
+                        {
+                            PourLog(warnings, "Close 内嵌簿失败: " + ex1.Message);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                PourLog(warnings, "释放内嵌簿失败: " + ex.Message);
+            }
+            finally
+            {
+                HideEmbeddedExcel(excelApp);
+                TryReleaseCom(workbook);
+                TryReleaseCom(chartData);
+                try
+                {
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                }
+                catch (Exception)
+                {
+                }
+
+                Thread.Sleep(200);
+            }
+        }
+
+        private static void TryReleaseCom(object com)
+        {
+            if (com == null)
+            {
+                return;
+            }
+
+            try
+            {
+                Marshal.FinalReleaseComObject(com);
+            }
+            catch (Exception)
+            {
+            }
         }
 
         /// <summary>

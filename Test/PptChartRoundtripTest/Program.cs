@@ -15,26 +15,40 @@ namespace PptChartRoundtripTest
             bool formalOnly = HasFlag(args, "--formal-only");
             bool attrsOnly = HasFlag(args, "--attrs-only") || HasFlag(args, "--suite=attr");
             bool suiteAll = HasFlag(args, "--suite=all");
+            bool useWpp = IsWppHost(args);
             int? batch = TryParseBatch(args);
             IList<string> nameFilters = ParseCaseFilters(args);
-            bool runParse = !formalOnly && !attrsOnly && !suiteAll;
+            bool runParse = !formalOnly && !attrsOnly && !suiteAll && !useWpp;
             bool runStruct = !parseOnly && (suiteAll || (!attrsOnly));
             bool runAttrs = !parseOnly && (attrsOnly || suiteAll);
 
             Console.WriteLine("PPT 图表测试");
+            Console.WriteLine(useWpp
+                ? "宿主 WPP · 建图/换数/读回走 PptHtmlChartIo（WppCom 晚绑定）"
+                : "宿主 PPT · 建图/换数/读回走 PptHtmlChartIo（PowerPoint Interop）");
             Console.WriteLine("结构用例：约 50 页 × 6 份；属性用例：单点+交叉 × 2 份（--attrs-only）");
             Console.WriteLine();
 
             if (runParse)
             {
-                Console.WriteLine("--- 解析契约（不启 PPT，按属性断言）---");
+                Console.WriteLine("--- 解析契约（不启 COM，按属性断言）---");
                 ChartParseTests.Run(run);
             }
 
-            string outDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "chart-batches");
+            string outDir = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                useWpp ? "chart-batches-wpp" : "chart-batches");
             if (runStruct)
             {
-                ChartBatchRunner.Run(run, batch, outDir, nameFilters);
+                if (useWpp)
+                {
+                    ChartBatchRunnerWpp.Run(run, batch, outDir, nameFilters);
+                }
+                else
+                {
+                    ChartBatchRunner.Run(run, batch, outDir, nameFilters);
+                }
+
                 Console.WriteLine();
                 Console.WriteLine("结构用例 通过 " + run.CasesPassed
                     + "  失败 " + run.CasesFailed
@@ -47,7 +61,15 @@ namespace PptChartRoundtripTest
                 int beforePass = run.CasesPassed;
                 int beforeFail = run.CasesFailed;
                 int beforeSkip = run.CasesSkipped;
-                ChartBatchRunner.RunAttrs(run, batch, outDir, nameFilters);
+                if (useWpp)
+                {
+                    ChartBatchRunnerWpp.RunAttrs(run, batch, outDir, nameFilters);
+                }
+                else
+                {
+                    ChartBatchRunner.RunAttrs(run, batch, outDir, nameFilters);
+                }
+
                 Console.WriteLine();
                 Console.WriteLine("属性用例 通过 " + (run.CasesPassed - beforePass)
                     + "  失败 " + (run.CasesFailed - beforeFail)
@@ -72,6 +94,28 @@ namespace PptChartRoundtripTest
                 if (string.Equals(args[i], flag, StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>--host=wpp 走 WPS 演示晚绑定；默认 / --host=ppt 走 PowerPoint Interop。</summary>
+        private static bool IsWppHost(string[] args)
+        {
+            if (args == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < args.Length; i++)
+            {
+                string a = args[i] ?? "";
+                if (a.StartsWith("--host=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string v = a.Substring(7).Trim();
+                    return string.Equals(v, "wpp", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(v, "wps", StringComparison.OrdinalIgnoreCase);
                 }
             }
 

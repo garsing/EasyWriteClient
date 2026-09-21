@@ -188,10 +188,12 @@ namespace WordAddIn1.PresentationHost
             error = null;
             // I8：未外链时优先 ChartData 内嵌表；外链图禁止开 Workbook（会弹「链接的文件不可用」），改读 Series。
             string embeddedErr = null;
-            if (!IsChartDataLinked(chart)
+            bool fromSheet = !IsChartDataLinked(chart)
                 && TryReadGridFromEmbeddedSheetAuto(chart, out grid, out embeddedErr)
                 && grid != null
-                && grid.IsPourable)
+                && grid.IsPourable;
+            ReleaseEmbeddedChartWorkbook(chart, null);
+            if (fromSheet)
             {
                 return true;
             }
