@@ -464,23 +464,26 @@ namespace PptChartRoundtripTest
                 true);
             if (!ok && IsChartDataBusy(error) && !IsRpcText(error))
             {
-                Thread.Sleep(500);
-                warnings.Add("retry after ChartData busy");
-                ok = PptHtmlChartIo.TryCreateOnSlide(
-                    shapes,
-                    72f,
-                    80f,
-                    480f,
-                    280f,
-                    xlType,
-                    node.ChartGrid,
-                    node.ChartFormat ?? new PptHtmlChartFormat(),
-                    warnings,
-                    out shape,
-                    out error,
-                    -1,
-                    true,
-                    true);
+                for (int attempt = 0; attempt < 2 && !ok; attempt++)
+                {
+                    Thread.Sleep(800);
+                    warnings.Add("retry after ChartData busy #" + (attempt + 1));
+                    ok = PptHtmlChartIo.TryCreateOnSlide(
+                        shapes,
+                        72f,
+                        80f,
+                        480f,
+                        280f,
+                        xlType,
+                        node.ChartGrid,
+                        node.ChartFormat ?? new PptHtmlChartFormat(),
+                        warnings,
+                        out shape,
+                        out error,
+                        -1,
+                        true,
+                        true);
+                }
             }
 
             return ok;
@@ -509,20 +512,23 @@ namespace PptChartRoundtripTest
                 out error);
             if (!ok && IsChartDataBusy(error) && !IsRpcText(error))
             {
-                Thread.Sleep(500);
-                warnings.Add("retry after ChartData busy");
-                ok = PptHtmlChartIo.TryReplaceOnSlide(
-                    shapes,
-                    oldShape,
-                    node.ChartGrid,
-                    node.ChartFormat,
-                    null,
-                    null,
-                    null,
-                    null,
-                    warnings,
-                    out newShape,
-                    out error);
+                for (int attempt = 0; attempt < 2 && !ok; attempt++)
+                {
+                    Thread.Sleep(800);
+                    warnings.Add("retry after ChartData busy #" + (attempt + 1));
+                    ok = PptHtmlChartIo.TryReplaceOnSlide(
+                        shapes,
+                        oldShape,
+                        node.ChartGrid,
+                        node.ChartFormat,
+                        null,
+                        null,
+                        null,
+                        null,
+                        warnings,
+                        out newShape,
+                        out error);
+                }
             }
 
             return ok;
