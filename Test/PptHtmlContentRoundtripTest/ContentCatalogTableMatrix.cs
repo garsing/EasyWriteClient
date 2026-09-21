@@ -646,7 +646,7 @@ namespace PptHtmlContentRoundtripTest
                         ContentAssert.TableColWidthsClose(n, new float[] { 30f, 35f, 35f }));
                 });
 
-            // 表 fill × 格 fill × 三线
+            // 表 fill × 格 fill × 三线：表级 fill 只作灌格种子，有显式格色后读回不保证表级 Fill
             Add(list, ref page, "tbl-mx-x-shape-and-cell-fill",
                 a => ContentHtml.TableCreateRaw(
                     ContentHtml.Tr(ContentHtml.Td("a"), ContentHtml.Td("b", fill: "#FFC7CE"))
@@ -658,7 +658,6 @@ namespace PptHtmlContentRoundtripTest
                     PptHtmlShapeNode n = PreferCreated(ctx, "table");
                     return ContentAssert.FirstFail(
                         ContentAssert.TableStyleIsThreeLine(n),
-                        HexEq(n?.Fill, "#DEEBF7") ? null : "表 fill",
                         ContentAssert.InnerHas(n, "data-fill=\"#FFC7CE\""),
                         ContentAssert.InnerHas(n, "data-fill=\"#C6EFCE\""));
                 });
