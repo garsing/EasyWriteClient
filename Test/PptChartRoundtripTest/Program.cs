@@ -38,6 +38,7 @@ namespace PptChartRoundtripTest
             string outDir = Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
                 useWpp ? "chart-batches-wpp" : "chart-batches");
+            ChartPourLog.Init(outDir);
             if (runStruct)
             {
                 if (useWpp)
@@ -79,6 +80,11 @@ namespace PptChartRoundtripTest
 
             Console.WriteLine();
             Console.WriteLine("断言 通过 " + run.Passed + "  失败 " + run.Failed + "  跳过 " + run.Skipped);
+            if (!string.IsNullOrEmpty(ChartPourLog.FilePath))
+            {
+                Console.WriteLine("pour 日志: " + ChartPourLog.FilePath);
+            }
+
             return run.Failed == 0 && run.CasesFailed == 0 ? 0 : 1;
         }
 

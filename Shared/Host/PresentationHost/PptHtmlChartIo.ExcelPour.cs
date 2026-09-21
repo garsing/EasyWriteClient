@@ -490,12 +490,19 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 object workbook = chartData == null ? null : WppCom.GetProperty(chartData, "Workbook");
-                PourLog(warnings, "ChartData IsLinked=" + (TryPropString(chartData, "IsLinked") ?? "?"));
+                PourLog(warnings, "ChartData IsLinked=" + (TryPropString(chartData, "IsLinked") ?? "?")
+                    + " 内嵌应用=" + (TryPropString(excelApp, "Name") ?? "?")
+                    + " ver=" + (TryPropString(excelApp, "Version") ?? "?"));
                 PourLog(warnings, "打开内嵌簿 " + (TryPropString(workbook, "Name") ?? "?")
-                    + " | " + DescribeSheetCells(ws, 5, 2));
+                    + " | " + DescribeSheetCells(ws, 5, 4)
+                    + " | " + DescribeListBind(ws));
+                DumpPourState("打开后", chart, ws, grid, warnings);
                 int cols = grid.Columns.Count;
                 int rows = grid.Rows.Count;
+                // WPP 默认无 ListObject；强行 Add 会把 SERIES 从 $A$2:$A$5 错位成 $A$3:$A$6。
+                // PPT 自带表对象，只 Resize。
                 TryResizeEmbeddedListObject(ws, rows + 1, cols, warnings);
+                DumpPourState("扩表后", chart, ws, grid, warnings);
                 for (int c = 0; c < cols; c++)
                 {
                     SetCell(ws, 1, c + 1, grid.Columns[c].Name ?? "");
@@ -518,12 +525,35 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
 
-                // PPT 上 Chart.SetSourceData 常失败，不调用；图绑定由后续 Series 同步完成。
-                // 内嵌表仍是读/验真源（I6/I8）。
+                TryClearSheetBeyond(ws, rows + 1, cols, warnings);
+                object source = TryGetDataRange(ws, rows + 1, cols);
                 PourLog(warnings, "写入内嵌表 " + DescribeSheetCells(ws, rows + 1, cols)
-                    + " range=" + TryRangeAddress(TryGetDataRange(ws, rows + 1, cols))
-                    + "（跳过 SetSourceData，改由 Series 绑定）");
-                PourLog(warnings, "ChartData 写入完成 " + DescribeLiveSeries(chart));
+                    + " range=" + DescribeComArg(source)
+                    + " | " + DescribeListBind(ws));
+                DumpPourState("写格后", chart, ws, grid, warnings);
+                if (ReadSeriesRowCount(chart) != rows)
+                {
+                    TryBindSeriesToSheetFormulas(chart, ws, grid, warnings);
+                    DumpPourState("改公式后", chart, ws, grid, warnings);
+                }
+
+                if (ReadSeriesRowCount(chart) != rows)
+                {
+                    TryInvoke(chart, "Refresh");
+                    PourLog(warnings, "Refresh 后 " + DescribeLiveSeries(chart)
+                        + " | " + DescribeSeriesExtra(chart));
+                }
+
+                if (ReadSeriesRowCount(chart) != rows)
+                {
+                    PourLog(warnings, "系列仍是 " + ReadSeriesRowCount(chart)
+                        + " 点，稿要 " + rows + "（WPP 赋数组常截在 AddChart2 默认 4 点）");
+                    DumpPourState("绑源失败", chart, ws, grid, warnings);
+                }
+
+                PourLog(warnings, "ChartData 写入完成 " + DescribeLiveSeries(chart)
+                    + " | " + DescribeListBind(ws)
+                    + " | " + DescribeSeriesExtra(chart));
                 HideEmbeddedExcel(excelApp);
                 return true;
             }
@@ -957,6 +987,31 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 object lo = WppCom.GetIndexed(lists, 1);
+                int curCols = 0;
+                int curRows = 0;
+                try
+                {
+                    object loRange = WppCom.GetProperty(lo, "Range");
+                    curRows = Convert.ToInt32(WppCom.GetProperty(WppCom.GetProperty(loRange, "Rows"), "Count"));
+                    curCols = Convert.ToInt32(WppCom.GetProperty(WppCom.GetProperty(loRange, "Columns"), "Count"));
+                }
+                catch (Exception)
+                {
+                }
+
+                // 先扩行、后缩列：WPP/PPT 从默认 A1:D5 一次缩成 A1:B7 常失败。
+                if (curCols > lastCol && lastRow > curRows)
+                {
+                    string expandCorner = ColLetter(curCols) + lastRow.ToString(CultureInfo.InvariantCulture);
+                    object expandRange = TryGetExcelRange(ws, "A1", expandCorner)
+                        ?? TryGetExcelRange(ws, "A1:" + expandCorner, null);
+                    if (expandRange != null)
+                    {
+                        WppCom.Invoke(lo, "Resize", expandRange);
+                        PourLog(warnings, "ListObject 先扩行 A1:" + expandCorner + " ok");
+                    }
+                }
+
                 string corner = ColLetter(lastCol) + lastRow.ToString(CultureInfo.InvariantCulture);
                 object resizeRange = TryGetExcelRange(ws, "A1", corner)
                     ?? TryGetExcelRange(ws, "A1:" + corner, null);
@@ -967,11 +1022,12 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 WppCom.Invoke(lo, "Resize", resizeRange);
-                PourLog(warnings, "ListObject Resize A1:" + corner + " ok");
+                PourLog(warnings, "ListObject Resize A1:" + corner + " ok 前="
+                    + curRows + "x" + curCols + " 后=" + DescribeListBind(ws));
             }
             catch (Exception ex)
             {
-                PourLog(warnings, "ListObject Resize 失败: " + ex.Message);
+                PourLog(warnings, "ListObject Resize 失败: " + FormatComError(ex));
             }
         }
 
@@ -1101,8 +1157,766 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            PourLog(warnings, "校验通过（内嵌表与稿一致）");
+            int seriesRows = ReadSeriesRowCount(chart);
+            if (seriesRows != want.Rows.Count)
+            {
+                error = "系列点数 " + seriesRows + " 与稿行数 " + want.Rows.Count
+                    + " 不一致（内嵌表已写入，图未绑到整表）";
+                PourLog(warnings, "校验失败 " + error + " | " + DescribeLiveSeries(chart));
+                return false;
+            }
+
+            PourLog(warnings, "校验通过（内嵌表与稿一致，系列 " + seriesRows + " 点）");
             return true;
+        }
+
+        /// <summary>
+        /// WPP 图认 SERIES 公式，不认 ET Range / 数组扩点。
+        /// 默认是 =SERIES(Sheet1!$B$1,Sheet1!$A$2:$A$5,Sheet1!$B$2:$B$5,1)，改成 $A$7/$B$7。
+        /// </summary>
+        private static void TryBindSeriesToSheetFormulas(
+            object chart,
+            object ws,
+            PptHtmlChartGrid grid,
+            List<string> warnings)
+        {
+            if (chart == null || ws == null || grid == null || grid.Rows == null)
+            {
+                return;
+            }
+
+            string sheet = TryPropString(ws, "Name") ?? "Sheet1";
+            string sheetRef = SheetFormulaName(sheet);
+            int last = grid.Rows.Count + 1;
+            string lastText = last.ToString(CultureInfo.InvariantCulture);
+            string cats = sheetRef + "!$A$2:$A$" + lastText;
+            int si = 0;
+            for (int c = 0; c < grid.Columns.Count; c++)
+            {
+                if (grid.Columns[c].Role == "category")
+                {
+                    continue;
+                }
+
+                si++;
+                object series = GetSeries(chart, si);
+                if (series == null)
+                {
+                    PourLog(warnings, "改公式无系列 " + si);
+                    continue;
+                }
+
+                string col = ColLetter(c + 1);
+                string nameRef = sheetRef + "!$" + col + "$1";
+                string vals = sheetRef + "!$" + col + "$2:$" + col + "$" + lastText;
+                string formula = "=SERIES(" + nameRef + "," + cats + "," + vals + ","
+                    + si.ToString(CultureInfo.InvariantCulture) + ")";
+
+                if (TrySetSeriesProp(series, "Values", "=" + vals, out string valErr)
+                    || TrySetSeriesProp(series, "Values", vals, out valErr))
+                {
+                    PourLog(warnings, "Values 公式 S" + si + " " + vals
+                        + " | " + DescribeLiveSeries(chart));
+                }
+                else
+                {
+                    PourLog(warnings, "Values 公式 S" + si + " 失败: " + valErr);
+                }
+
+                if (TrySetSeriesProp(series, "XValues", "=" + cats, out string xErr)
+                    || TrySetSeriesProp(series, "XValues", cats, out xErr))
+                {
+                    PourLog(warnings, "XValues 公式 S" + si + " " + cats
+                        + " | " + DescribeLiveSeries(chart));
+                }
+                else
+                {
+                    PourLog(warnings, "XValues 公式 S" + si + " 失败: " + xErr);
+                }
+
+                TrySetSeriesProp(series, "Name", "=" + nameRef, out _);
+                TrySetSeriesProp(series, "Name", nameRef, out _);
+
+                if (ReadSeriesRowCount(chart) == grid.Rows.Count)
+                {
+                    PourLog(warnings, "地址公式已把 S" + si + " 扩到 " + grid.Rows.Count + " 点");
+                    continue;
+                }
+
+                if (TrySetSeriesProp(series, "Formula", formula, out string fErr)
+                    || TrySetSeriesProp(series, "FormulaLocal", formula, out fErr))
+                {
+                    PourLog(warnings, "Formula S" + si + " " + formula
+                        + " | " + DescribeSeriesExtra(chart) + " | " + DescribeLiveSeries(chart));
+                }
+                else
+                {
+                    PourLog(warnings, "Formula S" + si + " 失败 " + formula + " | " + fErr);
+                }
+            }
+        }
+
+        private static string SheetFormulaName(string sheet)
+        {
+            if (string.IsNullOrEmpty(sheet))
+            {
+                return "Sheet1";
+            }
+
+            bool quote = false;
+            for (int i = 0; i < sheet.Length; i++)
+            {
+                char ch = sheet[i];
+                if (!(ch == '_' || ch == '.' || char.IsLetterOrDigit(ch)))
+                {
+                    quote = true;
+                    break;
+                }
+            }
+
+            if (!quote && sheet.Length > 0 && char.IsDigit(sheet[0]))
+            {
+                quote = true;
+            }
+
+            return quote ? "'" + sheet.Replace("'", "''") + "'" : sheet;
+        }
+
+        private static bool TrySetSeriesProp(object series, string name, object value, out string error)
+        {
+            error = null;
+            if (series == null || string.IsNullOrEmpty(name) || value == null)
+            {
+                error = "空";
+                return false;
+            }
+
+            try
+            {
+                series.GetType().InvokeMember(
+                    name,
+                    BindingFlags.SetProperty | BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    series,
+                    new object[] { value });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = FormatComError(ex);
+                return false;
+            }
+        }
+
+        private static void DumpPourState(
+            string tag,
+            object chart,
+            object ws,
+            PptHtmlChartGrid grid,
+            List<string> warnings)
+        {
+            int want = grid != null && grid.Rows != null ? grid.Rows.Count : -1;
+            PourLog(warnings, tag
+                + " 稿行=" + want
+                + " 系列点=" + ReadSeriesRowCount(chart)
+                + " | " + DescribeLiveSeries(chart)
+                + " | " + DescribeListBind(ws)
+                + " | " + DescribeSeriesExtra(chart)
+                + " | catAxis=[" + string.Join(",", TryReadCategoryAxisNames(chart)) + "]");
+        }
+
+        private static string DescribeListBind(object ws)
+        {
+            if (ws == null)
+            {
+                return "表=null";
+            }
+
+            try
+            {
+                string used = TryRangeAddress(TryGetProp(ws, "UsedRange"));
+                object lists = WppCom.GetProperty(ws, "ListObjects");
+                int count = lists == null ? -1 : Convert.ToInt32(WppCom.GetProperty(lists, "Count") ?? -1);
+                if (count < 1)
+                {
+                    return "lists=" + count + " used=" + used;
+                }
+
+                object lo = WppCom.GetIndexed(lists, 1);
+                object loRange = lo == null ? null : WppCom.GetProperty(lo, "Range");
+                object body = lo == null ? null : TryGetProp(lo, "DataBodyRange");
+                return "lists=" + count
+                    + " lo=" + TryRangeAddress(loRange)
+                    + " body=" + TryRangeAddress(body)
+                    + " used=" + used
+                    + " name=" + (TryPropString(lo, "Name") ?? "?");
+            }
+            catch (Exception ex)
+            {
+                return "表读失败: " + ex.Message;
+            }
+        }
+
+        private static string DescribeSeriesExtra(object chart)
+        {
+            if (chart == null)
+            {
+                return "S1=null";
+            }
+
+            try
+            {
+                object s1 = GetSeries(chart, 1);
+                if (s1 == null)
+                {
+                    return "S1=null PlotBy=" + (TryPropString(chart, "PlotBy") ?? "?");
+                }
+
+                return "S1 Formula=" + (TryPropString(s1, "Formula") ?? TryPropString(s1, "FormulaLocal") ?? "?")
+                    + " Values=" + DescribeComArg(TryGetProp(s1, "Values"))
+                    + " XValues=" + DescribeComArg(TryGetProp(s1, "XValues"))
+                    + " PlotBy=" + (TryPropString(chart, "PlotBy") ?? "?");
+            }
+            catch (Exception ex)
+            {
+                return "S1读失败: " + ex.Message;
+            }
+        }
+
+        private static string DescribeComArg(object value)
+        {
+            if (value == null)
+            {
+                return "null";
+            }
+
+            if (value is string s)
+            {
+                return "str:" + s;
+            }
+
+            if (value is Array arr)
+            {
+                var dims = new List<string>();
+                for (int i = 0; i < arr.Rank; i++)
+                {
+                    dims.Add(arr.GetLength(i).ToString(CultureInfo.InvariantCulture));
+                }
+
+                string sample = "";
+                try
+                {
+                    int take = Math.Min(6, arr.Length);
+                    var bits = new List<string>();
+                    int n = 0;
+                    foreach (object item in arr)
+                    {
+                        if (n >= take)
+                        {
+                            break;
+                        }
+
+                        bits.Add(FormatCell(item));
+                        n++;
+                    }
+
+                    sample = " [" + string.Join(",", bits) + (arr.Length > take ? ",…" : "") + "]";
+                }
+                catch (Exception)
+                {
+                }
+
+                return arr.GetType().Name + " rank=" + arr.Rank + " dim=" + string.Join("x", dims)
+                    + " len=" + arr.Length + sample;
+            }
+
+            string addr = null;
+            try
+            {
+                addr = TryRangeAddress(value);
+            }
+            catch (Exception)
+            {
+            }
+
+            string typeName = value.GetType().Name;
+            if (!string.IsNullOrEmpty(addr) && !string.Equals(addr, "ok", StringComparison.Ordinal)
+                && !string.Equals(addr, "null", StringComparison.Ordinal))
+            {
+                return "Range " + addr + " (" + typeName + ")";
+            }
+
+            return typeName + "=" + Convert.ToString(value, CultureInfo.InvariantCulture);
+        }
+
+        private static string FormatComError(Exception ex)
+        {
+            if (ex == null)
+            {
+                return "?";
+            }
+
+            var sb = new StringBuilder();
+            Exception cur = ex;
+            int depth = 0;
+            while (cur != null && depth < 4)
+            {
+                if (depth > 0)
+                {
+                    sb.Append(" / ");
+                }
+
+                sb.Append(cur.GetType().Name).Append(": ").Append(cur.Message);
+                if (cur is COMException com)
+                {
+                    sb.Append(" hr=0x").Append(com.ErrorCode.ToString("X8", CultureInfo.InvariantCulture));
+                }
+
+                cur = cur.InnerException;
+                depth++;
+            }
+
+            return sb.ToString();
+        }
+
+        private static object SheetQualifiedAddress(object ws, object range)
+        {
+            string addr = TryRangeAddress(range);
+            if (string.IsNullOrEmpty(addr))
+            {
+                return null;
+            }
+
+            string sheet = TryPropString(ws, "Name") ?? "Sheet1";
+            if (addr.IndexOf('!') >= 0)
+            {
+                return addr;
+            }
+
+            return "'" + sheet.Replace("'", "''") + "'!" + addr;
+        }
+
+        private static void TryEnsureSheetListObject(object ws, List<string> warnings)
+        {
+            if (ws == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object lists = WppCom.GetProperty(ws, "ListObjects");
+                int count = lists == null ? 0 : Convert.ToInt32(WppCom.GetProperty(lists, "Count") ?? 0);
+                if (count > 0)
+                {
+                    PourLog(warnings, "表已有 ListObject " + count);
+                    return;
+                }
+
+                object used = WppCom.GetProperty(ws, "UsedRange")
+                    ?? TryGetExcelRange(ws, "A1", "D5");
+                if (used == null)
+                {
+                    PourLog(warnings, "ListObjects.Add 跳过：无 UsedRange");
+                    return;
+                }
+
+                object lo = WppCom.Invoke(lists, "Add", 1, used, true);
+                PourLog(warnings, "ListObjects.Add 默认表 src=" + DescribeComArg(used)
+                    + " " + (lo == null ? "null" : "ok") + " | " + DescribeListBind(ws));
+            }
+            catch (Exception ex)
+            {
+                PourLog(warnings, "ListObjects.Add 失败: " + FormatComError(ex));
+            }
+        }
+
+        private static object TryGetListObjectRange(object ws)
+        {
+            try
+            {
+                object lists = WppCom.GetProperty(ws, "ListObjects");
+                int count = lists == null ? 0 : Convert.ToInt32(WppCom.GetProperty(lists, "Count") ?? 0);
+                if (count < 1)
+                {
+                    return null;
+                }
+
+                object lo = WppCom.GetIndexed(lists, 1);
+                return lo == null ? null : WppCom.GetProperty(lo, "Range");
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static void TryChartWizard(object chart, object source, List<string> warnings)
+        {
+            if (chart == null || source == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object xl = WppCom.GetProperty(chart, "ChartType");
+                WppCom.Invoke(chart, "ChartWizard", source, xl, Type.Missing, 2, 1, 1);
+                PourLog(warnings, "ChartWizard(source,type,xlColumns) src=" + DescribeComArg(source)
+                    + " ok | " + DescribeLiveSeries(chart));
+                return;
+            }
+            catch (Exception ex)
+            {
+                PourLog(warnings, "ChartWizard 带参失败 src=" + DescribeComArg(source)
+                    + " | " + FormatComError(ex));
+            }
+
+            try
+            {
+                WppCom.Invoke(chart, "ChartWizard", source);
+                PourLog(warnings, "ChartWizard(source) src=" + DescribeComArg(source)
+                    + " ok | " + DescribeLiveSeries(chart));
+            }
+            catch (Exception ex)
+            {
+                PourLog(warnings, "ChartWizard 失败: " + FormatComError(ex));
+            }
+        }
+
+        private static void TryBindSeriesToSheetValue2(
+            object chart,
+            object ws,
+            PptHtmlChartGrid grid,
+            List<string> warnings)
+        {
+            if (chart == null || ws == null || grid == null || grid.Rows == null || grid.Rows.Count < 1)
+            {
+                return;
+            }
+
+            int rows = grid.Rows.Count;
+            object xRange = TryGetExcelRange(ws, "A2", "A" + (rows + 1).ToString(CultureInfo.InvariantCulture));
+            object xVal = TryRangeValues(xRange);
+            int si = 0;
+            for (int c = 0; c < grid.Columns.Count; c++)
+            {
+                if (grid.Columns[c].Role == "category")
+                {
+                    continue;
+                }
+
+                si++;
+                object series = GetSeries(chart, si);
+                if (series == null)
+                {
+                    continue;
+                }
+
+                string colLetter = ColLetter(c + 1);
+                object yRange = TryGetExcelRange(
+                    ws,
+                    colLetter + "2",
+                    colLetter + (rows + 1).ToString(CultureInfo.InvariantCulture));
+                object yVal = TryRangeValues(yRange);
+                if (yVal == null)
+                {
+                    PourLog(warnings, "Value2 S" + si + " 无数组 yRange=" + DescribeComArg(yRange));
+                    continue;
+                }
+
+                PourLog(warnings, "Value2 S" + si + " y=" + DescribeComArg(yVal)
+                    + " x=" + DescribeComArg(xVal));
+                if (!TryAssignSeriesValues(series, yVal, xVal, out string bindErr))
+                {
+                    PourLog(warnings, "Value2 S" + si + " 失败: " + bindErr);
+                    continue;
+                }
+
+                PourLog(warnings, "Value2 S" + si + " ok | " + DescribeLiveSeries(chart)
+                    + " | " + DescribeSeriesExtra(chart));
+            }
+        }
+
+        private static object TryRangeValues(object range)
+        {
+            if (range == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return WppCom.GetProperty(range, "Value2") ?? WppCom.GetProperty(range, "Value");
+            }
+            catch (Exception)
+            {
+                try
+                {
+                    return WppCom.GetProperty(range, "Value");
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+            }
+        }
+
+        private static void TryRebuildSeriesWithArrays(
+            object chart,
+            PptHtmlChartGrid grid,
+            List<string> warnings)
+        {
+            if (chart == null || grid == null || grid.Rows == null)
+            {
+                return;
+            }
+
+            int want = CountValueColumns(grid);
+            if (want < 1)
+            {
+                return;
+            }
+
+            try
+            {
+                int total = GetSeriesCount(chart);
+                for (int i = total; i >= 1; i--)
+                {
+                    object series = GetSeries(chart, i);
+                    if (series != null)
+                    {
+                        WppCom.Invoke(series, "Delete");
+                    }
+                }
+
+                PourLog(warnings, "已删系列，准备 NewSeries ×" + want);
+            }
+            catch (Exception ex)
+            {
+                PourLog(warnings, "删系列失败: " + ex.Message);
+            }
+
+            if (!TryEnsureSeriesCount(chart, want, out string ensureErr))
+            {
+                PourLog(warnings, "NewSeries 失败: " + (ensureErr ?? "?"));
+                return;
+            }
+
+            if (TryAssignGridArrays(chart, grid, warnings, out string assignErr))
+            {
+                PourLog(warnings, "重建系列后 " + DescribeLiveSeries(chart));
+                return;
+            }
+
+            PourLog(warnings, "重建系列赋数组失败: " + (assignErr ?? "?")
+                + " | " + DescribeLiveSeries(chart));
+        }
+
+        private static bool TrySetChartSourceData(object chart, object range, List<string> warnings)
+        {
+            if (chart == null || range == null)
+            {
+                return false;
+            }
+
+            Exception last = null;
+            try
+            {
+                WppCom.Invoke(chart, "SetSourceData", range);
+                PourLog(warnings, "SetSourceData(range) src=" + DescribeComArg(range)
+                    + " ok | " + DescribeLiveSeries(chart));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                last = ex;
+                PourLog(warnings, "SetSourceData(range) 失败 src=" + DescribeComArg(range)
+                    + " | " + FormatComError(ex));
+            }
+
+            try
+            {
+                WppCom.Invoke(chart, "SetSourceData", range, 2);
+                PourLog(warnings, "SetSourceData(range,xlColumns) src=" + DescribeComArg(range)
+                    + " ok | " + DescribeLiveSeries(chart));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                last = ex;
+                PourLog(warnings, "SetSourceData(range,xlColumns) 失败 | " + FormatComError(ex));
+            }
+
+            string addr = range as string ?? TryRangeAddress(range);
+            if (!string.IsNullOrEmpty(addr) && !string.Equals(addr, "ok", StringComparison.Ordinal))
+            {
+                try
+                {
+                    WppCom.Invoke(chart, "SetSourceData", addr);
+                    PourLog(warnings, "SetSourceData(addr) src=" + addr
+                        + " ok | " + DescribeLiveSeries(chart));
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                    PourLog(warnings, "SetSourceData(addr) 失败 src=" + addr
+                        + " | " + FormatComError(ex));
+                }
+            }
+
+            PourLog(warnings, "SetSourceData 失败: " + FormatComError(last));
+            return false;
+        }
+
+        private static void TryBindSeriesToSheetRanges(
+            object chart,
+            object ws,
+            PptHtmlChartGrid grid,
+            List<string> warnings)
+        {
+            if (chart == null || ws == null || grid == null || grid.Rows == null || grid.Rows.Count < 1)
+            {
+                return;
+            }
+
+            int rows = grid.Rows.Count;
+            object xRange = TryGetExcelRange(ws, "A2", "A" + (rows + 1).ToString(CultureInfo.InvariantCulture));
+            int si = 0;
+            for (int c = 0; c < grid.Columns.Count; c++)
+            {
+                if (grid.Columns[c].Role == "category")
+                {
+                    continue;
+                }
+
+                si++;
+                object series = GetSeries(chart, si);
+                if (series == null)
+                {
+                    PourLog(warnings, "绑 Range 无系列 " + si);
+                    continue;
+                }
+
+                string colLetter = ColLetter(c + 1);
+                object yRange = TryGetExcelRange(
+                    ws,
+                    colLetter + "2",
+                    colLetter + (rows + 1).ToString(CultureInfo.InvariantCulture));
+                if (yRange == null)
+                {
+                    PourLog(warnings, "绑 Range 无 Y " + colLetter);
+                    continue;
+                }
+
+                PourLog(warnings, "绑 Range S" + si + " y=" + DescribeComArg(yRange)
+                    + " x=" + DescribeComArg(xRange));
+                if (!TryAssignSeriesValues(series, yRange, xRange, out string bindErr))
+                {
+                    PourLog(warnings, "绑 Range S" + si + " 失败: " + bindErr);
+                    continue;
+                }
+
+                PourLog(warnings, "绑 Range S" + si + " ok | " + DescribeLiveSeries(chart)
+                    + " | " + DescribeSeriesExtra(chart));
+            }
+        }
+
+        private static bool TryAssignSeriesValues(
+            object series,
+            object yRange,
+            object xRange,
+            out string error)
+        {
+            error = null;
+            if (series == null || yRange == null)
+            {
+                error = "series/y 为空";
+                return false;
+            }
+
+            try
+            {
+                series.GetType().InvokeMember(
+                    "Values",
+                    BindingFlags.SetProperty | BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    series,
+                    new object[] { yRange });
+            }
+            catch (Exception ex)
+            {
+                error = "Values=" + DescribeComArg(yRange) + " | " + FormatComError(ex);
+                return false;
+            }
+
+            if (xRange == null)
+            {
+                return true;
+            }
+
+            try
+            {
+                series.GetType().InvokeMember(
+                    "XValues",
+                    BindingFlags.SetProperty | BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    series,
+                    new object[] { xRange });
+            }
+            catch (Exception ex)
+            {
+                PourLog(null, "XValues=" + DescribeComArg(xRange) + " 失败: " + FormatComError(ex));
+            }
+
+            return true;
+        }
+
+        private static void TryClearSheetBeyond(object ws, int lastRow, int lastCol, List<string> warnings)
+        {
+            if (ws == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object used = WppCom.GetProperty(ws, "UsedRange");
+                if (used == null)
+                {
+                    return;
+                }
+
+                int usedRows = Convert.ToInt32(WppCom.GetProperty(WppCom.GetProperty(used, "Rows"), "Count"));
+                int usedCols = Convert.ToInt32(WppCom.GetProperty(WppCom.GetProperty(used, "Columns"), "Count"));
+                int maxR = Math.Max(usedRows, lastRow);
+                int maxC = Math.Max(usedCols, lastCol);
+                bool cleared = false;
+                for (int r = 1; r <= maxR; r++)
+                {
+                    for (int c = 1; c <= maxC; c++)
+                    {
+                        if (r <= lastRow && c <= lastCol)
+                        {
+                            continue;
+                        }
+
+                        SetCell(ws, r, c, "");
+                        cleared = true;
+                    }
+                }
+
+                if (cleared)
+                {
+                    PourLog(warnings, "已清表外残留 used=" + usedRows + "x" + usedCols
+                        + " keep=" + lastRow + "x" + lastCol);
+                }
+            }
+            catch (Exception ex)
+            {
+                PourLog(warnings, "清表外残留失败: " + ex.Message);
+            }
         }
 
         private static bool TryReadGridFromEmbeddedSheet(

@@ -2861,6 +2861,8 @@ namespace WordAddIn1.PresentationHost
                     List<string> ys = ToStringList(WppCom.GetProperty(series, "Values"));
                     sb.Append(" | S").Append(i)
                         .Append(" pts=").Append(TryGetPointCount(series))
+                        .Append(" Xn=").Append(xs.Count)
+                        .Append(" Yn=").Append(ys.Count)
                         .Append(" X=[").Append(string.Join(",", xs)).Append("]")
                         .Append(" Y=[").Append(string.Join(",", ys)).Append("]");
                 }

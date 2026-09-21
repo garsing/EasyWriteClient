@@ -110,7 +110,12 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 TrimExtraSeries(chart, wantSeries, out _);
-                if (!TryPourSeriesLikeWord(chart, grid, out error))
+                if (ReadSeriesRowCount(chart) == grid.Rows.Count)
+                {
+                    PourLog(warnings, "系列点数已对齐，跳过数组灌入以免截成默认 4 点 | "
+                        + DescribeLiveSeries(chart) + " | " + DescribeSeriesExtra(chart));
+                }
+                else if (!TryPourSeriesLikeWord(chart, grid, out error, warnings))
                 {
                     PourLog(warnings, "Series 同步失败: " + (error ?? ""));
                     return false;

@@ -555,13 +555,8 @@ namespace PptChartRoundtripTest
 
         private static string FormatWarnings(List<string> warnings)
         {
-            if (warnings == null || warnings.Count == 0)
-            {
-                return "";
-            }
-
-            int n = Math.Min(4, warnings.Count);
-            return " | " + string.Join(" / ", warnings.GetRange(0, n));
+            ChartPourLog.WriteCase("(smoke)", "FAIL", null, warnings, toConsole: true);
+            return ChartPourLog.SeeFile();
         }
 
         private static void QuitQuiet(PowerPoint.Presentation pres, PowerPoint.Application app)

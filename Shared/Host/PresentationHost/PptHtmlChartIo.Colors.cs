@@ -540,16 +540,32 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static bool TryPourSeriesLikeWord(object chart, PptHtmlChartGrid grid, out string error)
+        private static bool TryPourSeriesLikeWord(
+            object chart,
+            PptHtmlChartGrid grid,
+            out string error,
+            List<string> warnings = null)
+        {
+            return TryAssignGridArrays(chart, grid, warnings, out error);
+        }
+
+        private static bool TryAssignGridArrays(
+            object chart,
+            PptHtmlChartGrid grid,
+            List<string> warnings,
+            out string error)
         {
             error = null;
-            var cats = new List<string>();
-            if (grid.Rows != null)
+            if (chart == null || grid == null || grid.Rows == null)
             {
-                foreach (List<string> row in grid.Rows)
-                {
-                    cats.Add(row != null && row.Count > 0 ? (row[0] ?? "") : "");
-                }
+                error = "无法按数组灌系列";
+                return false;
+            }
+
+            var cats = new List<string>();
+            foreach (List<string> row in grid.Rows)
+            {
+                cats.Add(row != null && row.Count > 0 ? (row[0] ?? "") : "");
             }
 
             int si = 0;
@@ -569,41 +585,100 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 var values = new List<double>();
-                if (grid.Rows != null)
+                foreach (List<string> row in grid.Rows)
                 {
-                    foreach (List<string> row in grid.Rows)
+                    string raw = row != null && c < row.Count ? row[c] : "";
+                    if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double n))
                     {
-                        string raw = row != null && c < row.Count ? row[c] : "";
-                        if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double n))
-                        {
-                            n = 0;
-                        }
-
-                        values.Add(n);
+                        n = 0;
                     }
+
+                    values.Add(n);
                 }
 
-                try
+                if (!TryAssignSeriesArrayShapes(series, values, cats, warnings, out error))
                 {
-                    WppCom.TrySetProperty(series, "Values", values.ToArray());
-                    if (cats.Count > 0)
-                    {
-                        WppCom.TrySetProperty(series, "XValues", cats.ToArray());
-                    }
-
-                    if (!string.IsNullOrEmpty(grid.Columns[c].Name))
-                    {
-                        WppCom.TrySetProperty(series, "Name", grid.Columns[c].Name);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    error = "写入系列 " + si + " 失败: " + ex.Message;
                     return false;
+                }
+
+                if (!string.IsNullOrEmpty(grid.Columns[c].Name))
+                {
+                    WppCom.TrySetProperty(series, "Name", grid.Columns[c].Name);
                 }
             }
 
+            if (ReadSeriesRowCount(chart) != grid.Rows.Count)
+            {
+                error = "系列点数 " + ReadSeriesRowCount(chart) + " 与稿行数 " + grid.Rows.Count + " 不一致";
+                return false;
+            }
+
             return true;
+        }
+
+        private static bool TryAssignSeriesArrayShapes(
+            object series,
+            List<double> values,
+            List<string> cats,
+            List<string> warnings,
+            out string error)
+        {
+            error = null;
+            int n = values.Count;
+            var yCol = new object[n, 1];
+            var yRow = new object[1, n];
+            var xCol = new object[n, 1];
+            var xRow = new object[1, n];
+            var yObj = new object[n];
+            var xObj = new object[n];
+            for (int i = 0; i < n; i++)
+            {
+                yCol[i, 0] = values[i];
+                yRow[0, i] = values[i];
+                yObj[i] = values[i];
+                string cat = i < cats.Count ? cats[i] : "";
+                xCol[i, 0] = cat;
+                xRow[0, i] = cat;
+                xObj[i] = cat;
+            }
+
+            object[] yCandidates = { yCol, yRow, yObj, values.ToArray() };
+            object[] xCandidates = { xCol, xRow, xObj, cats.ToArray() };
+            string[] tags = { "col2d", "row2d", "obj1d", "dbl1d" };
+            for (int i = 0; i < yCandidates.Length; i++)
+            {
+                if (TryAssignSeriesValues(series, yCandidates[i], xCandidates[i], out string bindErr))
+                {
+                    int pts = TryGetPointCount(series);
+                    int yn = ReadSeriesValuesCount(series);
+                    PourLog(warnings, "数组 " + tags[i] + " y=" + DescribeComArg(yCandidates[i])
+                        + " 后 pts=" + pts + " Yn=" + yn);
+                    if (pts >= n || yn >= n)
+                    {
+                        return true;
+                    }
+                }
+                else
+                {
+                    PourLog(warnings, "数组 " + tags[i] + " 失败 y=" + DescribeComArg(yCandidates[i])
+                        + " | " + bindErr);
+                }
+            }
+
+            error = "各形状数组都未能把系列扩到 " + n + " 点";
+            return false;
+        }
+
+        private static int ReadSeriesValuesCount(object series)
+        {
+            try
+            {
+                return ToStringList(WppCom.GetProperty(series, "Values")).Count;
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
         }
 
         private static bool TrimExtraSeries(object chart, int wantSeries, out string error)

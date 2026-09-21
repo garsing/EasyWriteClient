@@ -334,7 +334,8 @@ namespace PptChartRoundtripTest
                     return error;
                 }
 
-                run.CaseFail(tag, "建底图失败: " + error + ChartBatchRunner.FormatWarnings(warnings));
+                ChartPourLog.WriteCase(tag, "FAIL", "建底图失败: " + error, warnings, toConsole: true);
+                run.CaseFail(tag, "建底图失败: " + error + ChartPourLog.SeeFile());
                 return null;
             }
 
@@ -391,13 +392,15 @@ namespace PptChartRoundtripTest
                             return error;
                         }
 
-                        run.CaseFail(tag, "换数失败: " + error + ChartBatchRunner.FormatWarnings(warnings));
+                        ChartPourLog.WriteCase(tag, "FAIL", "换数失败: " + error, warnings, toConsole: true);
+                        run.CaseFail(tag, "换数失败: " + error + ChartPourLog.SeeFile());
                         return null;
                     }
                 }
                 else
                 {
-                    run.CaseFail(tag, "换数失败: " + error + ChartBatchRunner.FormatWarnings(warnings));
+                    ChartPourLog.WriteCase(tag, "FAIL", "换数失败: " + error, warnings, toConsole: true);
+                    run.CaseFail(tag, "换数失败: " + error + ChartPourLog.SeeFile());
                     return null;
                 }
             }
@@ -416,11 +419,13 @@ namespace PptChartRoundtripTest
             string mismatch = ChartBatchRunner.MatchExpect(one, model);
             if (mismatch == null)
             {
+                ChartPourLog.WriteCase(tag, "OK", null, warnings, toConsole: false);
                 run.CaseOk(tag);
             }
             else
             {
-                run.CaseFail(tag, mismatch);
+                ChartPourLog.WriteCase(tag, "FAIL", mismatch, warnings, toConsole: true);
+                run.CaseFail(tag, mismatch + ChartPourLog.SeeFile());
             }
 
             return null;
