@@ -1243,15 +1243,22 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
-                if (TrySetSeriesProp(series, "Formula", formula, out string fErr)
-                    || TrySetSeriesProp(series, "FormulaLocal", formula, out fErr))
+                if (TrySetSeriesProp(series, "Formula", formula, out string fErr))
                 {
                     PourLog(warnings, "Formula S" + si + " " + formula
+                        + " | " + DescribeSeriesExtra(chart) + " | " + DescribeLiveSeries(chart));
+                    continue;
+                }
+
+                PourLog(warnings, "Formula S" + si + " 失败 " + formula + " | " + fErr);
+                if (TrySetSeriesProp(series, "FormulaLocal", formula, out string flErr))
+                {
+                    PourLog(warnings, "FormulaLocal S" + si + " " + formula
                         + " | " + DescribeSeriesExtra(chart) + " | " + DescribeLiveSeries(chart));
                 }
                 else
                 {
-                    PourLog(warnings, "Formula S" + si + " 失败 " + formula + " | " + fErr);
+                    PourLog(warnings, "FormulaLocal S" + si + " 失败 " + formula + " | " + flErr);
                 }
             }
         }

@@ -115,9 +115,18 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!TryPourGrid(chart, grid, out error, warnings))
                 {
-                    TryDelete(shape);
-                    shape = null;
-                    return false;
+                    if (TryFixSeriesViaOoxml(shape, grid, warnings, out shape))
+                    {
+                        chart = TryGetChart(shape);
+                        PourLog(warnings, "OOXML 修点后 " + DescribeLiveSeries(chart)
+                            + " | " + DescribeSeriesExtra(chart));
+                    }
+                    else
+                    {
+                        TryDelete(shape);
+                        shape = null;
+                        return false;
+                    }
                 }
 
                 if (applyHtmlChrome)
