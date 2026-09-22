@@ -1020,7 +1020,11 @@ namespace WordAddIn1.PresentationHost
                 object angle = WppCom.GetProperty(fill, "GradientAngle");
                 if (angle != null)
                 {
-                    snap.Angle = Convert.ToDouble(angle);
+                    double deg = Convert.ToDouble(angle);
+                    if (deg >= -360 && deg <= 360)
+                    {
+                        snap.Angle = deg;
+                    }
                 }
             }
             catch (Exception)
@@ -1139,6 +1143,12 @@ namespace WordAddIn1.PresentationHost
                     StyleLog(warnings, prefix + " 渐变 " + DescribeStops(snap.Stops) + " ok=" + ok);
                     if (ok)
                     {
+                        return true;
+                    }
+
+                    if (snap.FillType == MsoFillGradient || snap.Angle.HasValue)
+                    {
+                        StyleLog(warnings, prefix + " 渐变 COM 失败，留给 OOXML");
                         return true;
                     }
                 }
@@ -1479,8 +1489,10 @@ namespace WordAddIn1.PresentationHost
                     one.MarkerSize = Convert.ToInt32(size);
                 }
 
-                one.MarkerForeRgb = TryReadMarkerColor(WppCom.GetProperty(series, "MarkerForegroundColor"));
-                one.MarkerBackRgb = TryReadMarkerColor(WppCom.GetProperty(series, "MarkerBackgroundColor"));
+                one.MarkerForeRgb = TryReadSeriesMarkerRgb(
+                    series, "MarkerForegroundColor", "MarkerForegroundColorFormat");
+                one.MarkerBackRgb = TryReadSeriesMarkerRgb(
+                    series, "MarkerBackgroundColor", "MarkerBackgroundColorFormat");
                 if (!one.MarkerForeRgb.HasValue || !one.MarkerBackRgb.HasValue)
                 {
                     int? lineRgb = one.Line == null ? null : one.Line.Rgb;
@@ -1517,17 +1529,59 @@ namespace WordAddIn1.PresentationHost
 
                 if (one.MarkerForeRgb.HasValue)
                 {
-                    WppCom.TrySetProperty(series, "MarkerForegroundColor", one.MarkerForeRgb.Value);
+                    TryWriteSeriesMarkerRgb(
+                        series,
+                        "MarkerForegroundColor",
+                        "MarkerForegroundColorFormat",
+                        one.MarkerForeRgb.Value);
                 }
 
                 if (one.MarkerBackRgb.HasValue)
                 {
-                    WppCom.TrySetProperty(series, "MarkerBackgroundColor", one.MarkerBackRgb.Value);
+                    TryWriteSeriesMarkerRgb(
+                        series,
+                        "MarkerBackgroundColor",
+                        "MarkerBackgroundColorFormat",
+                        one.MarkerBackRgb.Value);
                 }
             }
             catch (Exception)
             {
             }
+        }
+
+        private static void TryWriteSeriesMarkerRgb(
+            object series,
+            string longName,
+            string formatName,
+            int rgb)
+        {
+            int value = rgb & 0x00FFFFFF;
+            WppCom.TrySetProperty(series, longName, value);
+            TryWriteColorFormatRgb(WppCom.GetProperty(series, formatName), value);
+            object raw = WppCom.GetProperty(series, longName);
+            if (raw != null && !(raw is ValueType))
+            {
+                TryWriteColorFormatRgb(raw, value);
+            }
+        }
+
+        private static int? TryReadSeriesMarkerRgb(object series, string longName, string formatName)
+        {
+            int? rgb = TryReadResolvedRgb(WppCom.GetProperty(series, formatName));
+            if (rgb.HasValue)
+            {
+                return rgb;
+            }
+
+            object raw = WppCom.GetProperty(series, longName);
+            rgb = TryReadResolvedRgb(raw);
+            if (rgb.HasValue)
+            {
+                return rgb;
+            }
+
+            return TryReadMarkerColor(raw);
         }
 
         private static void TryCaptureDataLabels(object series, SeriesStyleSnap one)
@@ -2205,59 +2259,127 @@ namespace WordAddIn1.PresentationHost
             {
                 object type = WppCom.GetProperty(fill, "Type");
                 object gs = WppCom.GetProperty(fill, "GradientStops");
-                if (gs == null)
+                var list = new List<GradientStopSnap>();
+                if (gs != null)
+                {
+                    int n = Convert.ToInt32(WppCom.GetProperty(gs, "Count"));
+                    for (int i = 1; i <= n; i++)
+                    {
+                        object stop = WppCom.GetIndexed(gs, i);
+                        if (stop == null)
+                        {
+                            continue;
+                        }
+
+                        var one = new GradientStopSnap();
+                        object pos = WppCom.GetProperty(stop, "Position");
+                        if (pos != null)
+                        {
+                            one.Position = Convert.ToDouble(pos);
+                        }
+
+                        object trans = WppCom.GetProperty(stop, "Transparency");
+                        if (trans != null)
+                        {
+                            one.Transparency = Convert.ToDouble(trans);
+                        }
+
+                        object color = WppCom.GetProperty(stop, "Color");
+                        int? rgb = TryReadResolvedRgb(color);
+                        if (!rgb.HasValue)
+                        {
+                            rgb = TryReadOleColor(color == null ? null : WppCom.GetProperty(color, "RGB"));
+                        }
+
+                        if (!rgb.HasValue)
+                        {
+                            continue;
+                        }
+
+                        one.Rgb = rgb.Value;
+                        list.Add(one);
+                    }
+
+                    StyleLog(warnings, (tag ?? "grad") + " Type=" + type + " n=" + n + " " + DescribeStops(list));
+                }
+                else
                 {
                     StyleLog(warnings, (tag ?? "grad") + " Type=" + type + " GradientStops=null");
-                    return null;
                 }
 
-                int n = Convert.ToInt32(WppCom.GetProperty(gs, "Count"));
-                var list = new List<GradientStopSnap>();
-                for (int i = 1; i <= n; i++)
+                if (list.Count >= 2)
                 {
-                    object stop = WppCom.GetIndexed(gs, i);
-                    if (stop == null)
-                    {
-                        continue;
-                    }
-
-                    var one = new GradientStopSnap();
-                    object pos = WppCom.GetProperty(stop, "Position");
-                    if (pos != null)
-                    {
-                        one.Position = Convert.ToDouble(pos);
-                    }
-
-                    object trans = WppCom.GetProperty(stop, "Transparency");
-                    if (trans != null)
-                    {
-                        one.Transparency = Convert.ToDouble(trans);
-                    }
-
-                    object color = WppCom.GetProperty(stop, "Color");
-                    int? rgb = TryReadResolvedRgb(color);
-                    if (!rgb.HasValue)
-                    {
-                        rgb = TryReadOleColor(color == null ? null : WppCom.GetProperty(color, "RGB"));
-                    }
-
-                    if (!rgb.HasValue)
-                    {
-                        continue;
-                    }
-
-                    one.Rgb = rgb.Value;
-                    list.Add(one);
+                    return list;
                 }
 
-                StyleLog(warnings, (tag ?? "grad") + " Type=" + type + " n=" + n + " " + DescribeStops(list));
-                return list.Count >= 2 ? list : null;
+                return TryReadGradientFromForeBack(fill, type, warnings, tag);
             }
             catch (Exception ex)
             {
                 StyleLog(warnings, (tag ?? "grad") + " 读停靠点失败: " + ex.Message);
+                return TryReadGradientFromForeBack(fill, null, warnings, tag);
+            }
+        }
+
+        /// <summary>
+        /// WPP 常没有可用的 GradientStops。Type 已是渐变时，用 ForeColor/BackColor 拼两点。
+        /// </summary>
+        private static List<GradientStopSnap> TryReadGradientFromForeBack(
+            object fill,
+            object type,
+            List<string> warnings,
+            string tag)
+        {
+            if (fill == null)
+            {
                 return null;
             }
+
+            int fillType = 0;
+            if (type != null)
+            {
+                try
+                {
+                    fillType = Convert.ToInt32(type);
+                }
+                catch (Exception)
+                {
+                }
+            }
+            else
+            {
+                try
+                {
+                    object rawType = WppCom.GetProperty(fill, "Type");
+                    if (rawType != null)
+                    {
+                        fillType = Convert.ToInt32(rawType);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            if (fillType != MsoFillGradient)
+            {
+                return null;
+            }
+
+            int? fore = TryReadResolvedRgb(WppCom.GetProperty(fill, "ForeColor"));
+            int? back = TryReadResolvedRgb(WppCom.GetProperty(fill, "BackColor"));
+            if (!fore.HasValue || !back.HasValue || fore.Value == back.Value)
+            {
+                return null;
+            }
+
+            var list = new List<GradientStopSnap>
+            {
+                new GradientStopSnap { Position = 0, Rgb = back.Value },
+                new GradientStopSnap { Position = 1, Rgb = fore.Value }
+            };
+            StyleLog(warnings, (tag ?? "grad") + " Fore/Back 两点 " + DescribeStops(list));
+            return list;
         }
 
         private static bool TryWriteGradientStops(object fill, List<GradientStopSnap> stops, double? angle = null)
@@ -2275,10 +2397,13 @@ namespace WordAddIn1.PresentationHost
                     WppCom.TrySetProperty(fill, "GradientAngle", angle.Value);
                 }
 
+                TryWriteColorFormatRgb(WppCom.GetProperty(fill, "ForeColor"), stops[stops.Count - 1].Rgb);
+                TryWriteColorFormatRgb(WppCom.GetProperty(fill, "BackColor"), stops[0].Rgb);
+
                 object gs = WppCom.GetProperty(fill, "GradientStops");
                 if (gs == null)
                 {
-                    return false;
+                    return TryReadGradientStops(fill) != null;
                 }
 
                 int count = Convert.ToInt32(WppCom.GetProperty(gs, "Count"));
@@ -2288,6 +2413,7 @@ namespace WordAddIn1.PresentationHost
                     object stop = WppCom.GetIndexed(gs, i + 1);
                     WppCom.TrySetProperty(stop, "Position", stops[i].Position);
                     object color = WppCom.GetProperty(stop, "Color");
+                    TryWriteColorFormatRgb(color, stops[i].Rgb);
                     WppCom.TrySetProperty(color, "RGB", stops[i].Rgb);
                     WppCom.TrySetProperty(stop, "Transparency", stops[i].Transparency);
                 }
@@ -2304,7 +2430,7 @@ namespace WordAddIn1.PresentationHost
                     TryInvoke(extra, "Delete");
                 }
 
-                return true;
+                return TryReadGradientStops(fill) != null;
             }
             catch (Exception)
             {
@@ -3233,7 +3359,7 @@ namespace WordAddIn1.PresentationHost
             try
             {
                 int value = Convert.ToInt32(Convert.ToDouble(raw));
-                if (value < 0)
+                if (value == -1 || value == -4142)
                 {
                     return null;
                 }
@@ -3242,7 +3368,7 @@ namespace WordAddIn1.PresentationHost
             }
             catch (Exception)
             {
-                return null;
+                return TryReadResolvedRgb(raw);
             }
         }
 

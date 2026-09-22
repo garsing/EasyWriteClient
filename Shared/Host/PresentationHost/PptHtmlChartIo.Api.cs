@@ -63,6 +63,7 @@ namespace WordAddIn1.PresentationHost
             TryReadValueScale(chart, format);
             TryReadExplosion(chart, format);
             ChartStyleSnap snap = TryCaptureStyle(chart);
+            TryEnrichSnapFromOoxml(shape, snap);
 
             if (!TryReadGrid(chart, out PptHtmlChartGrid grid, out error))
             {
