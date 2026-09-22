@@ -7,42 +7,48 @@ using System.Threading.Tasks;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 问好工具：按人名、语言、语气和当前时段生成问候，并返回时间上下文。
+    /// 问好工具：按人名、语言、语气和当前时段生成问候。
     /// </summary>
     public static class F_GreetTool
     {
-        private static readonly string[] SupportedLanguages = { "zh", "en", "ja", "ko", "fr", "de", "es" };
-        private static readonly string[] SupportedStyles = { "casual", "formal", "friendly", "professional" };
+        private static readonly string[] Languages = { "zh", "en", "ja", "ko", "fr", "de", "es" };
+        private static readonly string[] Styles = { "casual", "formal", "friendly", "professional" };
 
-        private static readonly Dictionary<string, Dictionary<string, string>> TimeOfDayTranslations =
-            new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal)
+        // 顺序：普通、早晨、中午、下午、晚上、深夜
+        private static readonly Dictionary<string, string[]> Hellos =
+            new Dictionary<string, string[]>(StringComparer.Ordinal)
             {
-                ["morning"] = LangMap("早晨", "morning", "朝", "아침", "matin", "Morgen", "mañana"),
-                ["noon"] = LangMap("中午", "noon", "昼", "정오", "midi", "Mittag", "mediodía"),
-                ["afternoon"] = LangMap("下午", "afternoon", "午後", "오후", "après-midi", "Nachmittag", "tarde"),
-                ["evening"] = LangMap("晚上", "evening", "夕方", "저녁", "soir", "Abend", "noche"),
-                ["night"] = LangMap("深夜", "night", "夜", "밤", "nuit", "Nacht", "noche"),
+                ["zh"] = new[] { "你好", "早上好", "中午好", "下午好", "晚上好", "深夜好" },
+                ["en"] = new[] { "Hello", "Good morning", "Good afternoon", "Good afternoon", "Good evening", "Good night" },
+                ["ja"] = new[] { "こんにちは", "おはようございます", "こんにちは", "こんにちは", "こんばんは", "こんばんは" },
+                ["ko"] = new[] { "안녕하세요", "좋은 아침입니다", "안녕하세요", "안녕하세요", "안녕하세요", "안녕하세요" },
+                ["fr"] = new[] { "Bonjour", "Bonjour", "Bonjour", "Bonjour", "Bonsoir", "Bonne nuit" },
+                ["de"] = new[] { "Guten Tag", "Guten Morgen", "Guten Tag", "Guten Tag", "Guten Abend", "Gute Nacht" },
+                ["es"] = new[] { "Hola", "Buenos días", "Buenas tardes", "Buenas tardes", "Buenas tardes", "Buenas noches" },
             };
 
-        private static readonly Dictionary<string, Dictionary<string, string>> SeasonTranslations =
-            new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal)
+        private static readonly Dictionary<string, string[]> TimeLabels =
+            new Dictionary<string, string[]>(StringComparer.Ordinal)
             {
-                ["spring"] = LangMap("春季", "spring", "春", "봄", "printemps", "Frühling", "primavera"),
-                ["summer"] = LangMap("夏季", "summer", "夏", "여름", "été", "Sommer", "verano"),
-                ["autumn"] = LangMap("秋季", "autumn", "秋", "가을", "automne", "Herbst", "otoño"),
-                ["winter"] = LangMap("冬季", "winter", "冬", "겨울", "hiver", "Winter", "invierno"),
+                ["zh"] = new[] { "早晨", "中午", "下午", "晚上", "深夜" },
+                ["en"] = new[] { "morning", "noon", "afternoon", "evening", "night" },
+                ["ja"] = new[] { "朝", "昼", "午後", "夕方", "夜" },
+                ["ko"] = new[] { "아침", "정오", "오후", "저녁", "밤" },
+                ["fr"] = new[] { "matin", "midi", "après-midi", "soir", "nuit" },
+                ["de"] = new[] { "Morgen", "Mittag", "Nachmittag", "Abend", "Nacht" },
+                ["es"] = new[] { "mañana", "mediodía", "tarde", "noche", "noche" },
             };
 
-        private static readonly Dictionary<DayOfWeek, Dictionary<string, string>> DayOfWeekTranslations =
-            new Dictionary<DayOfWeek, Dictionary<string, string>>
+        private static readonly Dictionary<string, string[]> SeasonLabels =
+            new Dictionary<string, string[]>(StringComparer.Ordinal)
             {
-                [DayOfWeek.Monday] = LangMap("星期一", "Monday", "月曜日", "월요일", "Lundi", "Montag", "Lunes"),
-                [DayOfWeek.Tuesday] = LangMap("星期二", "Tuesday", "火曜日", "화요일", "Mardi", "Dienstag", "Martes"),
-                [DayOfWeek.Wednesday] = LangMap("星期三", "Wednesday", "水曜日", "수요일", "Mercredi", "Mittwoch", "Miércoles"),
-                [DayOfWeek.Thursday] = LangMap("星期四", "Thursday", "木曜日", "목요일", "Jeudi", "Donnerstag", "Jueves"),
-                [DayOfWeek.Friday] = LangMap("星期五", "Friday", "金曜日", "금요일", "Vendredi", "Freitag", "Viernes"),
-                [DayOfWeek.Saturday] = LangMap("星期六", "Saturday", "土曜日", "토요일", "Samedi", "Samstag", "Sábado"),
-                [DayOfWeek.Sunday] = LangMap("星期日", "Sunday", "日曜日", "일요일", "Dimanche", "Sonntag", "Domingo"),
+                ["zh"] = new[] { "春季", "夏季", "秋季", "冬季" },
+                ["en"] = new[] { "spring", "summer", "autumn", "winter" },
+                ["ja"] = new[] { "春", "夏", "秋", "冬" },
+                ["ko"] = new[] { "봄", "여름", "가을", "겨울" },
+                ["fr"] = new[] { "printemps", "été", "automne", "hiver" },
+                ["de"] = new[] { "Frühling", "Sommer", "Herbst", "Winter" },
+                ["es"] = new[] { "primavera", "verano", "otoño", "invierno" },
             };
 
         public static void Register(
@@ -53,26 +59,19 @@ namespace WordAddIn1
             {
                 try
                 {
-                    System.Diagnostics.Debug.WriteLine("[F_greet] 您好啊哈哈20260905");
-
-                    string name = GetStringArg(args, "name");
+                    string name = GetString(args, "name");
                     if (string.IsNullOrWhiteSpace(name))
                     {
                         name = "朋友";
                     }
 
-                    string language = NormalizeChoice(GetStringArg(args, "language"), SupportedLanguages, "zh");
-                    string style = NormalizeChoice(GetStringArg(args, "style"), SupportedStyles, "friendly");
-                    bool useTimeGreeting = GetBoolArg(args, "use_time_greeting", true);
+                    string language = Normalize(GetString(args, "language"), Languages, "zh");
+                    string style = Normalize(GetString(args, "style"), Styles, "friendly");
+                    bool useTimeGreeting = GetBool(args, "use_time_greeting", true);
 
                     DateTime now = DateTime.Now;
-                    string periodKey = GetTimePeriodKey(now.Hour);
-                    string timeOfDay = Translate(TimeOfDayTranslations, periodKey, language);
-                    string season = Translate(SeasonTranslations, GetSeasonKey(now.Month), language);
-                    string greeting = GenerateGreeting(name, language, style, useTimeGreeting, periodKey);
-
-                    System.Diagnostics.Debug.WriteLine(
-                        "[F_greet] " + greeting + " hour=" + now.Hour + " lang=" + language + " style=" + style);
+                    int period = PeriodIndex(now.Hour);
+                    string greeting = BuildGreeting(name, language, style, useTimeGreeting, period);
 
                     return Task.FromResult(new ToolResult
                     {
@@ -84,14 +83,11 @@ namespace WordAddIn1
                             language,
                             style,
                             use_time_greeting = useTimeGreeting,
-                            time_of_day = timeOfDay,
-                            season,
-                            day_of_week = TranslateDay(now.DayOfWeek, language),
-                            timestamp = now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                            time_of_day = TimeLabels[language][period],
+                            season = SeasonLabels[language][SeasonIndex(now.Month)],
+                            day_of_week = now.ToString("dddd", CultureOf(language)),
                             date = now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                             time = now.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
-                            hour = now.Hour,
-                            month = now.Month,
                         },
                     });
                 }
@@ -106,255 +102,67 @@ namespace WordAddIn1
             };
         }
 
-        private static string GenerateGreeting(
-            string name,
-            string language,
-            string style,
-            bool useTimeGreeting,
-            string periodKey)
+        private static string BuildGreeting(string name, string language, string style, bool timed, int period)
         {
-            if (!useTimeGreeting)
+            string hello = Hellos[language][timed ? period + 1 : 0];
+            string who = language == "ja" ? name + "さん" : language == "ko" ? name + "님" : name;
+            bool polite = style == "formal" || style == "professional";
+
+            if (language == "zh")
             {
-                return GetPlainGreeting(name, language, style);
+                if (style == "casual" && !timed) return "嗨，" + who + "！";
+                if (style == "professional") return hello + "，" + who + "，很高兴为您服务。";
+                if (style == "friendly") return hello + "，" + who + "！很高兴见到你！";
+                return hello + "，" + who + (polite ? "。" : "！");
             }
 
-            return GetTimedGreeting(name, language, style, periodKey);
+            string sep = language == "ja" ? "、" : ", ";
+            string end = polite ? "." : "!";
+            if (language == "ja" || language == "ko")
+            {
+                end = polite ? "。" : "！";
+            }
+
+            if (style == "casual" && !timed && language == "en")
+            {
+                return "Hey, " + who + "!";
+            }
+
+            return hello + sep + who + end;
         }
 
-        private static string GetPlainGreeting(string name, string language, string style)
+        private static int PeriodIndex(int hour)
+        {
+            if (hour >= 5 && hour < 12) return 0;
+            if (hour >= 12 && hour < 14) return 1;
+            if (hour >= 14 && hour < 18) return 2;
+            if (hour >= 18 && hour < 22) return 3;
+            return 4;
+        }
+
+        private static int SeasonIndex(int month)
+        {
+            if (month >= 3 && month <= 5) return 0;
+            if (month >= 6 && month <= 8) return 1;
+            if (month >= 9 && month <= 11) return 2;
+            return 3;
+        }
+
+        private static CultureInfo CultureOf(string language)
         {
             switch (language)
             {
-                case "en":
-                    return Pick(style, "Hey, " + name + "!", "Hello, " + name + "!", "Hello, " + name + "! Nice to meet you!", "Hello, " + name + ". Nice to meet you.");
-                case "ja":
-                    return Pick(style, "やあ、" + name + "！", "こんにちは、" + name + "さん！", "こんにちは、" + name + "さん！", "はじめまして、" + name + "さん。");
-                case "ko":
-                    return Pick(style, "안녕, " + name + "!", "안녕하세요, " + name + "님!", "안녕하세요, " + name + "님!", "안녕하세요, " + name + "님.");
-                case "fr":
-                    return Pick(style, "Salut, " + name + " !", "Bonjour, " + name + " !", "Bonjour, " + name + " !", "Bonjour, " + name + ".");
-                case "de":
-                    return Pick(style, "Hallo, " + name + "!", "Guten Tag, " + name + "!", "Guten Tag, " + name + "!", "Guten Tag, " + name + ".");
-                case "es":
-                    return Pick(style, "¡Hola, " + name + "!", "¡Hola, " + name + "!", "¡Hola, " + name + "!", "Buenos días, " + name + ".");
-                default:
-                    return Pick(style, "嗨，" + name + "！", "您好，" + name + "！", "你好，" + name + "！很高兴见到你！", "您好，" + name + "，很高兴为您服务。");
+                case "en": return CultureInfo.GetCultureInfo("en-US");
+                case "ja": return CultureInfo.GetCultureInfo("ja-JP");
+                case "ko": return CultureInfo.GetCultureInfo("ko-KR");
+                case "fr": return CultureInfo.GetCultureInfo("fr-FR");
+                case "de": return CultureInfo.GetCultureInfo("de-DE");
+                case "es": return CultureInfo.GetCultureInfo("es-ES");
+                default: return CultureInfo.GetCultureInfo("zh-CN");
             }
         }
 
-        private static string GetTimedGreeting(string name, string language, string style, string periodKey)
-        {
-            switch (language)
-            {
-                case "en":
-                    return GetTimedGreetingEn(name, style, periodKey);
-                case "ja":
-                    return GetTimedGreetingJa(name, style, periodKey);
-                case "ko":
-                    return GetTimedGreetingKo(name, style, periodKey);
-                case "fr":
-                    return GetTimedGreetingFr(name, style, periodKey);
-                case "de":
-                    return GetTimedGreetingDe(name, style, periodKey);
-                case "es":
-                    return GetTimedGreetingEs(name, style, periodKey);
-                default:
-                    return GetTimedGreetingZh(name, style, periodKey);
-            }
-        }
-
-        private static string GetTimedGreetingZh(string name, string style, string periodKey)
-        {
-            switch (periodKey)
-            {
-                case "morning":
-                    return Pick(style, "早啊，" + name + "！", "早上好，" + name + "！", "早上好，" + name + "！新的一天开始了！", "您好，" + name + "，新的一天开始了。");
-                case "noon":
-                    return Pick(style, "中午好，" + name + "！", "中午好，" + name + "！", "中午好，" + name + "！用餐愉快！", "您好，" + name + "，午间愉快。");
-                case "afternoon":
-                    return Pick(style, "下午好，" + name + "！", "下午好，" + name + "！", "下午好，" + name + "！工作顺利！", "您好，" + name + "，下午工作顺利。");
-                case "evening":
-                    return Pick(style, "晚上好，" + name + "！", "晚上好，" + name + "！", "晚上好，" + name + "！今天过得怎么样？", "您好，" + name + "，晚间愉快。");
-                default:
-                    return Pick(style, "这么晚了，" + name + "，还在忙呢？", "深夜好，" + name + "，请注意休息。", "晚上好，" + name + "！这么晚了还在工作，辛苦了！", "您好，" + name + "，深夜时分请注意休息。");
-            }
-        }
-
-        private static string GetTimedGreetingEn(string name, string style, string periodKey)
-        {
-            switch (periodKey)
-            {
-                case "morning":
-                    return Pick(style, "Morning, " + name + "!", "Good morning, " + name + "!", "Good morning, " + name + "! Have a wonderful day!", "Good morning, " + name + ". Have a great day.");
-                case "noon":
-                    return Pick(style, "Hey " + name + "!", "Good afternoon, " + name + "!", "Good afternoon, " + name + "! Hope you're having a great day!", "Good afternoon, " + name + ". Enjoy your lunch.");
-                case "afternoon":
-                    return Pick(style, "Hey " + name + "!", "Good afternoon, " + name + "!", "Good afternoon, " + name + "! How's your day going?", "Good afternoon, " + name + ". How can I assist you?");
-                case "evening":
-                    return Pick(style, "Evening, " + name + "!", "Good evening, " + name + "!", "Good evening, " + name + "! How was your day?", "Good evening, " + name + ". How may I help you?");
-                default:
-                    return Pick(style, "Late night, " + name + "! Still up?", "Good night, " + name + ". Please rest well.", "Good evening, " + name + "! It's late, hope you're doing well!", "Good evening, " + name + ". It's late, please take care.");
-            }
-        }
-
-        private static string GetTimedGreetingJa(string name, string style, string periodKey)
-        {
-            switch (periodKey)
-            {
-                case "morning":
-                    return Pick(style, "おはよう、" + name + "！", "おはようございます、" + name + "さん！", "おはようございます、" + name + "さん！良い一日を！", "おはようございます、" + name + "さん。よろしくお願いします。");
-                case "evening":
-                case "night":
-                    return Pick(style, "こんばんは、" + name + "！", "こんばんは、" + name + "さん！", "こんばんは、" + name + "さん！今日はどうでしたか？", "こんばんは、" + name + "さん。お疲れ様です。");
-                default:
-                    return Pick(style, "こんにちは、" + name + "！", "こんにちは、" + name + "さん！", "こんにちは、" + name + "さん！お会いできて嬉しいです！", "こんにちは、" + name + "さん。お疲れ様です。");
-            }
-        }
-
-        private static string GetTimedGreetingKo(string name, string style, string periodKey)
-        {
-            switch (periodKey)
-            {
-                case "morning":
-                    return Pick(style, "좋은 아침, " + name + "!", "좋은 아침입니다, " + name + "님!", "좋은 아침입니다, " + name + "님! 좋은 하루 보내세요!", "좋은 아침입니다, " + name + "님. 좋은 하루 되세요.");
-                case "evening":
-                case "night":
-                    return Pick(style, "안녕, " + name + "! 저녁 잘 보내고 있어?", "안녕하세요, " + name + "님! 좋은 저녁 되세요.", "안녕하세요, " + name + "님! 오늘 하루는 어땠어요?", "안녕하세요, " + name + "님. 오늘 하루 수고하셨습니다.");
-                default:
-                    return Pick(style, "안녕, " + name + "!", "안녕하세요, " + name + "님!", "안녕하세요, " + name + "님! 만나서 반갑습니다!", "안녕하세요, " + name + "님. 반갑습니다.");
-            }
-        }
-
-        private static string GetTimedGreetingFr(string name, string style, string periodKey)
-        {
-            switch (periodKey)
-            {
-                case "morning":
-                    return Pick(style, "Salut, " + name + " !", "Bonjour, " + name + " !", "Bonjour, " + name + " ! Belle journée !", "Bonjour, " + name + ". Comment puis-je vous aider ?");
-                case "evening":
-                    return Pick(style, "Bonsoir, " + name + " !", "Bonsoir, " + name + " !", "Bonsoir, " + name + " ! Comment s'est passée la journée ?", "Bonsoir, " + name + ". Comment puis-je vous aider ?");
-                case "night":
-                    return Pick(style, "Il est tard, " + name + " !", "Bonne nuit, " + name + ".", "Bonne nuit, " + name + ", reposez-vous bien !", "Bonne nuit, " + name + ". Prenez soin de vous.");
-                default:
-                    return Pick(style, "Salut, " + name + " !", "Bonjour, " + name + " !", "Bonjour, " + name + " ! Ravi de vous rencontrer !", "Bonjour, " + name + ". Comment puis-je vous aider ?");
-            }
-        }
-
-        private static string GetTimedGreetingDe(string name, string style, string periodKey)
-        {
-            switch (periodKey)
-            {
-                case "morning":
-                    return Pick(style, "Morgen, " + name + "!", "Guten Morgen, " + name + "!", "Guten Morgen, " + name + "! Schönen Tag!", "Guten Morgen, " + name + ". Wie kann ich Ihnen helfen?");
-                case "evening":
-                    return Pick(style, "Abend, " + name + "!", "Guten Abend, " + name + "!", "Guten Abend, " + name + "! Wie war dein Tag?", "Guten Abend, " + name + ". Wie kann ich Ihnen helfen?");
-                case "night":
-                    return Pick(style, "Schon spät, " + name + "!", "Gute Nacht, " + name + ".", "Gute Nacht, " + name + ", ruh dich gut aus!", "Gute Nacht, " + name + ". Bitte ruhen Sie sich aus.");
-                default:
-                    return Pick(style, "Hallo, " + name + "!", "Guten Tag, " + name + "!", "Guten Tag, " + name + "! Freut mich, Sie kennenzulernen!", "Guten Tag, " + name + ". Wie kann ich Ihnen helfen?");
-            }
-        }
-
-        private static string GetTimedGreetingEs(string name, string style, string periodKey)
-        {
-            switch (periodKey)
-            {
-                case "morning":
-                    return Pick(style, "¡Hola, " + name + "!", "¡Buenos días, " + name + "!", "¡Buenos días, " + name + "! ¡Que tengas un buen día!", "Buenos días, " + name + ". ¿En qué puedo ayudarle?");
-                case "evening":
-                    return Pick(style, "¡Buenas, " + name + "!", "¡Buenas tardes, " + name + "!", "¡Buenas tardes, " + name + "! ¿Cómo te fue el día?", "Buenas tardes, " + name + ". ¿En qué puedo ayudarle?");
-                case "night":
-                    return Pick(style, "Es tarde, " + name + ".", "Buenas noches, " + name + ".", "¡Buenas noches, " + name + "! Descansa bien.", "Buenas noches, " + name + ". Cuídese.");
-                default:
-                    return Pick(style, "¡Hola, " + name + "!", "¡Buenas tardes, " + name + "!", "¡Hola, " + name + "! ¡Encantado de conocerte!", "Buenos días, " + name + ". ¿En qué puedo ayudarle?");
-            }
-        }
-
-        private static string Pick(string style, string casual, string formal, string friendly, string professional)
-        {
-            switch (style)
-            {
-                case "casual":
-                    return casual;
-                case "formal":
-                    return formal;
-                case "professional":
-                    return professional;
-                default:
-                    return friendly;
-            }
-        }
-
-        private static string GetTimePeriodKey(int hour)
-        {
-            if (hour >= 5 && hour < 12) return "morning";
-            if (hour >= 12 && hour < 14) return "noon";
-            if (hour >= 14 && hour < 18) return "afternoon";
-            if (hour >= 18 && hour < 22) return "evening";
-            return "night";
-        }
-
-        private static string GetSeasonKey(int month)
-        {
-            if (month >= 3 && month <= 5) return "spring";
-            if (month >= 6 && month <= 8) return "summer";
-            if (month >= 9 && month <= 11) return "autumn";
-            return "winter";
-        }
-
-        private static string Translate(
-            Dictionary<string, Dictionary<string, string>> table,
-            string key,
-            string language)
-        {
-            Dictionary<string, string> row;
-            if (!table.TryGetValue(key, out row))
-            {
-                return key;
-            }
-
-            string text;
-            if (row.TryGetValue(language, out text) && !string.IsNullOrEmpty(text))
-            {
-                return text;
-            }
-
-            return row["zh"];
-        }
-
-        private static string TranslateDay(DayOfWeek day, string language)
-        {
-            Dictionary<string, string> row;
-            if (!DayOfWeekTranslations.TryGetValue(day, out row))
-            {
-                return day.ToString();
-            }
-
-            string text;
-            if (row.TryGetValue(language, out text) && !string.IsNullOrEmpty(text))
-            {
-                return text;
-            }
-
-            return row["zh"];
-        }
-
-        private static Dictionary<string, string> LangMap(
-            string zh, string en, string ja, string ko, string fr, string de, string es)
-        {
-            return new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["zh"] = zh,
-                ["en"] = en,
-                ["ja"] = ja,
-                ["ko"] = ko,
-                ["fr"] = fr,
-                ["de"] = de,
-                ["es"] = es,
-            };
-        }
-
-        private static string NormalizeChoice(string value, string[] allowed, string fallback)
+        private static string Normalize(string value, string[] allowed, string fallback)
         {
             if (string.IsNullOrWhiteSpace(value))
             {
@@ -365,7 +173,7 @@ namespace WordAddIn1
             return allowed.Contains(normalized) ? normalized : fallback;
         }
 
-        private static string GetStringArg(Dictionary<string, object> args, string key)
+        private static string GetString(Dictionary<string, object> args, string key)
         {
             if (args == null || !args.ContainsKey(key) || args[key] == null)
             {
@@ -375,26 +183,20 @@ namespace WordAddIn1
             return args[key].ToString().Trim();
         }
 
-        private static bool GetBoolArg(Dictionary<string, object> args, string key, bool fallback)
+        private static bool GetBool(Dictionary<string, object> args, string key, bool fallback)
         {
             if (args == null || !args.ContainsKey(key) || args[key] == null)
             {
                 return fallback;
             }
 
-            object raw = args[key];
-            if (raw is bool)
+            if (args[key] is bool flag)
             {
-                return (bool)raw;
+                return flag;
             }
 
             bool parsed;
-            if (bool.TryParse(raw.ToString(), out parsed))
-            {
-                return parsed;
-            }
-
-            return fallback;
+            return bool.TryParse(args[key].ToString(), out parsed) ? parsed : fallback;
         }
     }
 }
