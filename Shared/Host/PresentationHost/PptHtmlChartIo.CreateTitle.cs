@@ -148,6 +148,7 @@ namespace WordAddIn1.PresentationHost
                     // VaryByCategory 可能重建瓣点，爆炸须在其后按当前点数再写。
                     TryApplyPieExplosionFromFormat(chart, format, warnings);
                     TryRestorePieChartType(chart, htmlSnap);
+                    TryStripWppSrgbTintAfterChrome(ref shape, ref chart, htmlSnap, warnings);
                 }
                 else
                 {

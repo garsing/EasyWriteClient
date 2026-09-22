@@ -404,6 +404,8 @@ namespace WordAddIn1.PresentationHost
                 TrySetTitle(newChart, "", warnings);
             }
 
+            TryStripWppSrgbTintAfterChrome(ref newShape, ref newChart, snap, warnings);
+
             TryDelete(oldShape);
             warnings?.Add("已按旧图属性新建图表（HTML 未写的属性用快照补上）");
             if (!string.IsNullOrEmpty(EasyWriteLog.CurrentLogPath))

@@ -800,7 +800,7 @@ namespace WordAddIn1.PresentationHost
                 {
                     TryInvoke(fill, "Solid");
                     object fc = WppCom.GetProperty(fill, "ForeColor");
-                    WppCom.TrySetProperty(fc, "RGB", rgb.Value);
+                    TryWriteColorFormatRgb(fc, rgb.Value);
                 }
             }
             catch (Exception)
@@ -1147,8 +1147,7 @@ namespace WordAddIn1.PresentationHost
                 {
                     TryInvoke(fill, "Solid");
                     object fc = WppCom.GetProperty(fill, "ForeColor");
-                    WppCom.TrySetProperty(fc, "Type", 1);
-                    WppCom.TrySetProperty(fc, "RGB", snap.SolidRgb.Value);
+                    TryWriteColorFormatRgb(fc, snap.SolidRgb.Value);
                     StyleLog(warnings, prefix + " 实色 " + HexOf(snap.SolidRgb));
                     return true;
                 }
@@ -2443,7 +2442,7 @@ namespace WordAddIn1.PresentationHost
                 if (snap.MajorGridlineRgb.HasValue)
                 {
                     object glColor = WppCom.GetProperty(glLine, "ForeColor");
-                    WppCom.TrySetProperty(glColor, "RGB", snap.MajorGridlineRgb.Value);
+                    TryWriteColorFormatRgb(glColor, snap.MajorGridlineRgb.Value);
                 }
 
                 if (snap.GridlineWeight.HasValue
@@ -3190,13 +3189,33 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        /// <summary>
+        /// WPP 默认 ChartStyle 会把 colors*.xml 的 tint（常见 88000）扣在自定义 srgb 上，
+        /// 画面变浅、读回 RGB 变成邻近色。写精确色时必须先钉 RGB，再清主题/tint。
+        /// </summary>
+        private static void TryWriteColorFormatRgb(object colorFormat, int rgb)
+        {
+            if (colorFormat == null)
+            {
+                return;
+            }
+
+            int value = rgb & 0x00FFFFFF;
+            WppCom.TrySetProperty(colorFormat, "Type", 1);
+            WppCom.TrySetProperty(colorFormat, "ObjectThemeColor", 0);
+            WppCom.TrySetProperty(colorFormat, "RGB", value);
+            WppCom.TrySetProperty(colorFormat, "TintAndShade", 0);
+            WppCom.TrySetProperty(colorFormat, "Brightness", 0);
+            WppCom.TrySetProperty(colorFormat, "Type", 1);
+            WppCom.TrySetProperty(colorFormat, "RGB", value);
+        }
+
         private static void TryWriteLineRgb(object line, int rgb)
         {
             try
             {
                 object fc = WppCom.GetProperty(line, "ForeColor");
-                WppCom.TrySetProperty(fc, "Type", 1);
-                WppCom.TrySetProperty(fc, "RGB", rgb);
+                TryWriteColorFormatRgb(fc, rgb);
                 WppCom.TrySetProperty(line, "ForeColor", rgb);
             }
             catch (Exception)
@@ -3314,9 +3333,7 @@ namespace WordAddIn1.PresentationHost
             WppCom.TrySetProperty(font, "Color", rgb);
             try
             {
-                object color = WppCom.GetProperty(font, "Color");
-                WppCom.TrySetProperty(color, "Type", 1);
-                WppCom.TrySetProperty(color, "RGB", rgb);
+                TryWriteColorFormatRgb(WppCom.GetProperty(font, "Color"), rgb);
             }
             catch (Exception)
             {
@@ -3324,9 +3341,7 @@ namespace WordAddIn1.PresentationHost
 
             try
             {
-                object cf = WppCom.GetProperty(font, "ColorFormat");
-                WppCom.TrySetProperty(cf, "Type", 1);
-                WppCom.TrySetProperty(cf, "RGB", rgb);
+                TryWriteColorFormatRgb(WppCom.GetProperty(font, "ColorFormat"), rgb);
             }
             catch (Exception)
             {
@@ -3335,14 +3350,7 @@ namespace WordAddIn1.PresentationHost
 
         private static void TryWriteTickLabelsRgb(object ticks, int rgb)
         {
-            object fc = TryGetTickForeColor(ticks);
-            if (fc == null)
-            {
-                return;
-            }
-
-            WppCom.TrySetProperty(fc, "Type", 1);
-            WppCom.TrySetProperty(fc, "RGB", rgb);
+            TryWriteColorFormatRgb(TryGetTickForeColor(ticks), rgb);
         }
 
         private static bool TryReadBox(

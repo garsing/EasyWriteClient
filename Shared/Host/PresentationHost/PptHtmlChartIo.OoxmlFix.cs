@@ -12,7 +12,8 @@ namespace WordAddIn1.PresentationHost
     /// <summary>
     /// WPP 建图后 SERIES 锁在 AddChart2 默认 4 格，COM 改 Formula 会 E_FAIL。
     /// 兜底：SaveCopyAs → 改 chart XML 的 c:f / c:ptCount / c:pt → 打开副本把图 Copy 回原页。
-    /// 只在 WPP 且系列点数 ≠ 稿行数时走；PPT 仍走 ListObject Resize。
+    /// 写自定义 RGB 后同一套路剥 srgbClr 上的 tint/shade（默认 ChartStyle 会扣，COM 清不掉）。
+    /// 只在 WPP 走；PPT 仍走 ListObject Resize / COM 写色。
     /// </summary>
     internal static partial class PptHtmlChartIo
     {
@@ -28,6 +29,9 @@ namespace WordAddIn1.PresentationHost
         private static readonly XNamespace RelPkgNs =
             "http://schemas.openxmlformats.org/package/2006/relationships";
 
+        private static readonly XNamespace ANs =
+            "http://schemas.openxmlformats.org/drawingml/2006/main";
+
         private static bool TryFixSeriesViaOoxml(
             object shape,
             PptHtmlChartGrid grid,
@@ -40,6 +44,153 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            int want = grid.Rows.Count;
+            return TryEditChartXmlAndCopyBack(
+                shape,
+                warnings,
+                "修点",
+                (doc, w) => RewriteChartSeries(doc, grid, w),
+                copyShape => ReadSeriesRowCount(TryGetChart(copyShape)) == want,
+                out newShape);
+        }
+
+        /// <summary>
+        /// 默认 ChartStyle 会把 tint 扣在自定义 srgb 上，COM 清不掉。
+        /// 写色后 SaveCopyAs → 剥 chart XML 里 srgbClr 的 tint/shade → Copy 回原页。
+        /// </summary>
+        private static void TryStripWppSrgbTintAfterChrome(
+            ref object shape,
+            ref object chart,
+            ChartStyleSnap snap,
+            List<string> warnings)
+        {
+            if (shape == null || !SnapNeedsSrgbTintStrip(snap))
+            {
+                return;
+            }
+
+            DismissChartExcelUiForChart(chart);
+            if (!TryEditChartXmlAndCopyBack(
+                shape,
+                warnings,
+                "剥tint",
+                StripSrgbClrTint,
+                null,
+                out object next)
+                || next == null)
+            {
+                return;
+            }
+
+            shape = next;
+            chart = TryGetChart(shape);
+            if (chart != null && snap != null)
+            {
+                TryWriteAreaFill(chart, "ChartArea", snap.ChartAreaFillVisible, snap.ChartAreaFillRgb);
+                TryWriteAreaFill(chart, "PlotArea", snap.PlotFillVisible, snap.PlotFillRgb);
+                PourLog(warnings, "OOXML 剥tint：贴回后重钉绘图区/图表区填充");
+            }
+        }
+
+        private static bool SnapNeedsSrgbTintStrip(ChartStyleSnap snap)
+        {
+            if (snap == null || snap.Series == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < snap.Series.Count; i++)
+            {
+                SeriesStyleSnap one = snap.Series[i];
+                if (one == null)
+                {
+                    continue;
+                }
+
+                if (one.Fill != null && one.Fill.SolidRgb.HasValue)
+                {
+                    return true;
+                }
+
+                if (one.Line != null && one.Line.Rgb.HasValue)
+                {
+                    return true;
+                }
+
+                if (one.PointFills == null)
+                {
+                    continue;
+                }
+
+                for (int p = 0; p < one.PointFills.Count; p++)
+                {
+                    if (one.PointFills[p] != null && one.PointFills[p].SolidRgb.HasValue)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool StripSrgbClrTint(XDocument chartDoc, List<string> warnings)
+        {
+            if (chartDoc == null)
+            {
+                return false;
+            }
+
+            int removed = 0;
+            foreach (XElement srgb in chartDoc.Descendants(ANs + "srgbClr").ToList())
+            {
+                foreach (XElement child in srgb.Elements().ToList())
+                {
+                    string local = child.Name.LocalName;
+                    if (string.Equals(local, "tint", StringComparison.Ordinal)
+                        || string.Equals(local, "shade", StringComparison.Ordinal))
+                    {
+                        child.Remove();
+                        removed++;
+                    }
+                }
+            }
+
+            if (removed == 0)
+            {
+                foreach (XElement srgb in chartDoc.Descendants().Where(e => e.Name.LocalName == "srgbClr").ToList())
+                {
+                    foreach (XElement child in srgb.Elements().ToList())
+                    {
+                        string local = child.Name.LocalName;
+                        if (string.Equals(local, "tint", StringComparison.Ordinal)
+                            || string.Equals(local, "shade", StringComparison.Ordinal))
+                        {
+                            child.Remove();
+                            removed++;
+                        }
+                    }
+                }
+            }
+
+            PourLog(warnings, "OOXML 剥tint：去掉 " + removed + " 个 tint/shade");
+            return removed > 0;
+        }
+
+        private static bool TryEditChartXmlAndCopyBack(
+            object shape,
+            List<string> warnings,
+            string tag,
+            Func<XDocument, List<string>, bool> rewrite,
+            Func<object, bool> acceptCopy,
+            out object newShape)
+        {
+            newShape = null;
+            if (shape == null || rewrite == null)
+            {
+                return false;
+            }
+
             object slide = null;
             object pres = null;
             object app = null;
@@ -48,40 +199,37 @@ namespace WordAddIn1.PresentationHost
             string tempPath = null;
             try
             {
-                PourLog(warnings, "OOXML 修点：进入");
+                PourLog(warnings, "OOXML " + tag + "：进入");
                 slide = TryGetShapeSlide(shape);
                 pres = TryGetShapePresentation(shape);
                 if (slide == null || pres == null)
                 {
-                    PourLog(warnings, "OOXML 修点：取不到 slide/presentation");
+                    PourLog(warnings, "OOXML " + tag + "：取不到 slide/presentation");
                     return false;
                 }
 
-                PourLog(warnings, "OOXML 修点：slide/pres ok");
                 app = WppCom.GetProperty(pres, "Application");
                 string appName = TryPropString(app, "Name") ?? "";
-                PourLog(warnings, "OOXML 修点：宿主 Name=" + appName);
+                PourLog(warnings, "OOXML " + tag + "：宿主 Name=" + appName);
                 if (!LooksLikeWppApp(app))
                 {
-                    PourLog(warnings, "OOXML 修点：非 WPP 宿主（" + appName + "），跳过");
+                    PourLog(warnings, "OOXML " + tag + "：非 WPP 宿主（" + appName + "），跳过");
                     return false;
                 }
-
-                PourLog(warnings, "OOXML 修点：WPP 宿主确认");
 
                 int shapeId = Convert.ToInt32(WppCom.GetProperty(shape, "Id") ?? 0);
                 int slideIndex = Convert.ToInt32(WppCom.GetProperty(slide, "SlideIndex") ?? 0);
-                PourLog(warnings, "OOXML 修点：shapeId=" + shapeId + " slideIndex=" + slideIndex);
+                PourLog(warnings, "OOXML " + tag + "：shapeId=" + shapeId + " slideIndex=" + slideIndex);
                 if (shapeId < 1 || slideIndex < 1)
                 {
-                    PourLog(warnings, "OOXML 修点：shapeId/slideIndex 非法 " + shapeId + "/" + slideIndex);
+                    PourLog(warnings, "OOXML " + tag + "：shapeId/slideIndex 非法 " + shapeId + "/" + slideIndex);
                     return false;
                 }
 
                 tempPath = Path.Combine(
                     Path.GetTempPath(),
                     "ew-wpp-chart-" + Guid.NewGuid().ToString("N") + ".pptx");
-                PourLog(warnings, "OOXML 修点：SaveCopyAs → " + tempPath);
+                PourLog(warnings, "OOXML " + tag + "：SaveCopyAs → " + tempPath);
                 try
                 {
                     WppCom.Invoke(pres, "SaveCopyAs", tempPath);
@@ -102,27 +250,25 @@ namespace WordAddIn1.PresentationHost
 
                 if (!File.Exists(tempPath))
                 {
-                    PourLog(warnings, "OOXML 修点：SaveCopyAs 未落盘 " + tempPath);
+                    PourLog(warnings, "OOXML " + tag + "：SaveCopyAs 未落盘 " + tempPath);
                     return false;
                 }
 
-                PourLog(warnings, "OOXML 修点：副本已落盘 " + tempPath + " size=" + new FileInfo(tempPath).Length);
+                PourLog(warnings, "OOXML " + tag + "：副本已落盘 " + tempPath + " size=" + new FileInfo(tempPath).Length);
 
-                if (!TryRewriteChartXmlInPackage(tempPath, slideIndex, shapeId, grid, warnings))
+                if (!TryRewriteChartXmlInPackage(tempPath, slideIndex, shapeId, rewrite, warnings, tag))
                 {
                     return false;
                 }
 
-                PourLog(warnings, "OOXML 修点：打开副本 " + tempPath);
+                PourLog(warnings, "OOXML " + tag + "：打开副本 " + tempPath);
                 object presentations = WppCom.GetProperty(app, "Presentations");
                 copyPres = TryOpenCopyPresentation(presentations, tempPath, warnings);
                 if (copyPres == null)
                 {
-                    PourLog(warnings, "OOXML 修点：打开副本失败");
+                    PourLog(warnings, "OOXML " + tag + "：打开副本失败");
                     return false;
                 }
-
-                PourLog(warnings, "OOXML 修点：副本已打开");
 
                 object copySlides = WppCom.GetProperty(copyPres, "Slides");
                 object copySlide = WppCom.GetIndexed(copySlides, slideIndex);
@@ -140,47 +286,42 @@ namespace WordAddIn1.PresentationHost
 
                 if (copyChartShape == null)
                 {
-                    PourLog(warnings, "OOXML 修点：副本里找不到 shapeId=" + shapeId);
+                    PourLog(warnings, "OOXML " + tag + "：副本里找不到 shapeId=" + shapeId);
                     return false;
                 }
 
-                int copyPts = ReadSeriesRowCount(TryGetChart(copyChartShape));
-                PourLog(warnings, "OOXML 修点：副本图点数=" + copyPts + "（稿要 " + grid.Rows.Count + "）");
-                if (copyPts != grid.Rows.Count)
+                if (acceptCopy != null && !acceptCopy(copyChartShape))
                 {
+                    PourLog(warnings, "OOXML " + tag + "：副本图验收未过");
                     return false;
                 }
 
-                PourLog(warnings, "OOXML 修点：Copy 副本图");
+                PourLog(warnings, "OOXML " + tag + "：Copy 副本图");
                 WppCom.Invoke(copyChartShape, "Copy");
                 object shapes = WppCom.GetProperty(slide, "Shapes");
                 object pasted = TryPasteChart(shapes, warnings);
                 if (pasted == null)
                 {
-                    PourLog(warnings, "OOXML 修点：粘贴回原页失败");
+                    PourLog(warnings, "OOXML " + tag + "：粘贴回原页失败");
                     return false;
                 }
 
-                PourLog(warnings, "OOXML 修点：已粘贴回原页");
-
                 TryCopyBox(shape, pasted);
-                object pastedChart = TryGetChart(pasted);
-                int livePts = ReadSeriesRowCount(pastedChart);
-                PourLog(warnings, "OOXML 修点：贴回后点数=" + livePts);
-                if (livePts != grid.Rows.Count)
+                if (acceptCopy != null && !acceptCopy(pasted))
                 {
+                    PourLog(warnings, "OOXML " + tag + "：贴回后验收未过");
                     TryDelete(pasted);
                     return false;
                 }
 
                 TryDelete(shape);
                 newShape = pasted;
-                PourLog(warnings, "OOXML 修点完成：删旧图，新图 " + livePts + " 点");
+                PourLog(warnings, "OOXML " + tag + "完成");
                 return true;
             }
             catch (Exception ex)
             {
-                PourLog(warnings, "OOXML 修点失败: " + FormatComError(ex));
+                PourLog(warnings, "OOXML " + tag + "失败: " + FormatComError(ex));
                 return false;
             }
             finally
@@ -423,8 +564,9 @@ namespace WordAddIn1.PresentationHost
             string pptxPath,
             int slideIndex,
             int shapeId,
-            PptHtmlChartGrid grid,
-            List<string> warnings)
+            Func<XDocument, List<string>, bool> rewrite,
+            List<string> warnings,
+            string tag)
         {
             string slidePart = "ppt/slides/slide" + slideIndex.ToString(CultureInfo.InvariantCulture) + ".xml";
             string slideRels = "ppt/slides/_rels/slide" + slideIndex.ToString(CultureInfo.InvariantCulture) + ".xml.rels";
@@ -438,7 +580,7 @@ namespace WordAddIn1.PresentationHost
                     ZipArchiveEntry relsEntry = FindEntry(zip, slideRels);
                     if (slideEntry == null || relsEntry == null)
                     {
-                        PourLog(warnings, "OOXML 修点：缺 slide 部件 " + slidePart);
+                        PourLog(warnings, "OOXML " + tag + "：缺 slide 部件 " + slidePart);
                         return false;
                     }
 
@@ -451,7 +593,7 @@ namespace WordAddIn1.PresentationHost
                     string relId = FindChartRelId(slideDoc, shapeId);
                     if (string.IsNullOrEmpty(relId))
                     {
-                        PourLog(warnings, "OOXML 修点：slide 里找不到 shapeId=" + shapeId + " 的 chart 关系");
+                        PourLog(warnings, "OOXML " + tag + "：slide 里找不到 shapeId=" + shapeId + " 的 chart 关系");
                         return false;
                     }
 
@@ -464,7 +606,7 @@ namespace WordAddIn1.PresentationHost
                     string target = FindRelTarget(relsDoc, relId);
                     if (string.IsNullOrEmpty(target))
                     {
-                        PourLog(warnings, "OOXML 修点：rels 里找不到 " + relId);
+                        PourLog(warnings, "OOXML " + tag + "：rels 里找不到 " + relId);
                         return false;
                     }
 
@@ -472,7 +614,7 @@ namespace WordAddIn1.PresentationHost
                     ZipArchiveEntry chartEntry = FindEntry(zip, chartPart);
                     if (chartEntry == null)
                     {
-                        PourLog(warnings, "OOXML 修点：缺 chart 部件 " + chartPart);
+                        PourLog(warnings, "OOXML " + tag + "：缺 chart 部件 " + chartPart);
                         return false;
                     }
 
@@ -482,7 +624,7 @@ namespace WordAddIn1.PresentationHost
                         chartDoc = XDocument.Load(s);
                     }
 
-                    if (!RewriteChartSeries(chartDoc, grid, warnings))
+                    if (!rewrite(chartDoc, warnings))
                     {
                         return false;
                     }
@@ -495,12 +637,12 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
 
-                PourLog(warnings, "OOXML 修点：已改 " + chartPart + " → " + grid.Rows.Count + " 点");
+                PourLog(warnings, "OOXML " + tag + "：已改 " + chartPart);
                 return true;
             }
             catch (Exception ex)
             {
-                PourLog(warnings, "OOXML 修点改包失败: " + FormatComError(ex));
+                PourLog(warnings, "OOXML " + tag + "改包失败: " + FormatComError(ex));
                 return false;
             }
             finally
