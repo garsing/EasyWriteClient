@@ -63,7 +63,9 @@ namespace WordAddIn1.PresentationHost
             TryReadValueScale(chart, format);
             TryReadExplosion(chart, format);
             ChartStyleSnap snap = TryCaptureStyle(chart);
+            LogAxisFormats(chart, null, "读COM");
             TryEnrichSnapFromOoxml(shape, snap);
+            LogAxisFormats(chart, null, "读OOXML后");
 
             if (!TryReadGrid(chart, out PptHtmlChartGrid grid, out error))
             {
@@ -72,6 +74,9 @@ namespace WordAddIn1.PresentationHost
 
             ProjectSnapToFormat(format, snap);
             ProjectSnapToColumns(grid, snap);
+            PourLog(null, "轴格式 投影 cat=" + (format.AxisXStyle == null ? "-" : (format.AxisXStyle.Format ?? format.AxisXFormat ?? "null"))
+                + " val=" + (format.AxisYStyle == null ? "-" : (format.AxisYStyle.Format ?? "null"))
+                + " val2=" + (format.AxisY2Style == null ? "-" : (format.AxisY2Style.Format ?? "null")));
             model = new PptHtmlChartReadModel
             {
                 Format = format,

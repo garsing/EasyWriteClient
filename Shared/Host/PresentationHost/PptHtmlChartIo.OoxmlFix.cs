@@ -95,6 +95,7 @@ namespace WordAddIn1.PresentationHost
                 TryWriteAreaFill(chart, "ChartArea", snap.ChartAreaFillVisible, snap.ChartAreaFillRgb);
                 TryWriteAreaFill(chart, "PlotArea", snap.PlotFillVisible, snap.PlotFillRgb);
                 PourLog(warnings, "OOXML 钉皮：贴回后重钉绘图区/图表区填充");
+                LogAxisFormats(chart, warnings, "钉皮后");
             }
         }
 

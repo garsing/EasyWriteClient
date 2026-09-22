@@ -197,11 +197,13 @@ namespace WordAddIn1.PresentationHost
             {
                 TryInheritSeriesStructure(chart, snap);
                 TryApplyChartTheme(chart, snap);
+                LogAxisFormats(chart, warnings, "主题后");
                 TryInheritTitleAndLegend(chart, snap, warnings, deferTitleOff);
                 TryWriteAreaFill(chart, "ChartArea", snap.ChartAreaFillVisible, snap.ChartAreaFillRgb);
                 TryWriteAreaFill(chart, "PlotArea", snap.PlotFillVisible, snap.PlotFillRgb);
                 TryApplyChartGroup(chart, snap);
                 TryInheritAxes(chart, snap, grid, format, warnings);
+                LogAxisFormats(chart, warnings, "套轴后");
                 TryInheritColors(chart, snap, warnings);
                 TryInheritSeriesLineAndMarker(chart, snap, warnings);
                 TryRestorePieChartType(chart, snap);
@@ -214,6 +216,8 @@ namespace WordAddIn1.PresentationHost
                     TryApplyPieExplosion(chart, snap.Explosion.Value, warnings);
                     TryRestorePieChartType(chart, snap);
                 }
+
+                LogAxisFormats(chart, warnings, "套回末");
             }
             catch (Exception ex)
             {
@@ -349,13 +353,17 @@ namespace WordAddIn1.PresentationHost
             PptHtmlChartFormat format,
             List<string> warnings)
         {
+            PourLog(warnings, "轴格式 快照 cat=" + (snap.Category == null ? "-" : (snap.Category.NumberFormat ?? "null"))
+                + " val=" + (snap.Value == null ? "-" : (snap.Value.NumberFormat ?? "null"))
+                + " val2=" + (snap.ValueSecondary == null ? "-" : (snap.ValueSecondary.NumberFormat ?? "null")));
             HideDeletedAxes(chart, snap);
-            TryApplyAxis(chart, XlCategory, XlPrimary, snap.Category);
-            TryApplyAxis(chart, XlValue, XlPrimary, snap.Value);
-            TryApplyAxis(chart, XlValue, XlSecondary, snap.ValueSecondary);
+            TryApplyAxis(chart, XlCategory, XlPrimary, snap.Category, warnings);
+            TryApplyAxis(chart, XlValue, XlPrimary, snap.Value, warnings);
+            TryApplyAxis(chart, XlValue, XlSecondary, snap.ValueSecondary, warnings);
             if (snap.Category != null && snap.Category.Deleted != true)
             {
                 EnsureCategoryAxisLabels(chart, grid);
+                LogAxisFormats(chart, warnings, "分类名后");
             }
 
             EnsureGridlinesMatchSnap(chart, snap, format, warnings);
@@ -448,10 +456,10 @@ namespace WordAddIn1.PresentationHost
                         snap.TickFontName = Convert.ToString(name);
                     }
 
-                    object fmt = ticks == null ? null : WppCom.GetProperty(ticks, "NumberFormat");
-                    if (fmt != null)
+                    string fmt = ResolveTickNumberFormat(ticks);
+                    if (!string.IsNullOrEmpty(fmt))
                     {
-                        snap.NumberFormat = Convert.ToString(fmt);
+                        snap.NumberFormat = fmt;
                     }
                 }
                 catch (Exception)
@@ -541,7 +549,7 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static void TryApplyAxis(object chart, int axisType, int group, AxisStyleSnap snap)
+        private static void TryApplyAxis(object chart, int axisType, int group, AxisStyleSnap snap, List<string> warnings = null)
         {
             if (snap == null)
             {
@@ -596,6 +604,8 @@ namespace WordAddIn1.PresentationHost
                 // 只写轴结构。字色/轴线整次套回最后一层，避免 NumberFormat 之后的 COM 按风格掀掉。
                 if (ticks != null)
                 {
+                    string want = axisType == XlCategory ? "@" : snap.NumberFormat;
+                    string before = ReadTickNumberFormat(ticks);
                     if (axisType == XlCategory)
                     {
                         WppCom.TrySetProperty(ticks, "NumberFormat", "@");
@@ -603,6 +613,14 @@ namespace WordAddIn1.PresentationHost
                     else if (!string.IsNullOrEmpty(snap.NumberFormat))
                     {
                         WppCom.TrySetProperty(ticks, "NumberFormat", snap.NumberFormat);
+                    }
+
+                    if (!string.IsNullOrEmpty(want))
+                    {
+                        PourLog(warnings, "写轴格式 " + AxisFormatTag(axisType, group)
+                            + " want=" + want
+                            + " before=" + (before ?? "null")
+                            + " after=" + DescribeTickNumberFormat(ticks));
                     }
                 }
 
@@ -2052,6 +2070,7 @@ namespace WordAddIn1.PresentationHost
             TryInheritOneAxisChrome(chart, XlCategory, XlPrimary, snap.Category);
             TryInheritOneAxisChrome(chart, XlValue, XlPrimary, snap.Value);
             TryInheritOneAxisChrome(chart, XlValue, XlSecondary, snap.ValueSecondary);
+            LogAxisFormats(chart, warnings, "轴皮后");
         }
 
         private static void TryInheritOneAxisChrome(object chart, int axisType, int group, AxisStyleSnap snap)
@@ -2246,6 +2265,7 @@ namespace WordAddIn1.PresentationHost
             }
 
             TryInvoke(chart, "Refresh");
+            LogAxisFormats(chart, warnings, "Refresh后");
         }
 
         private static List<GradientStopSnap> TryReadGradientStops(object fill, List<string> warnings = null, string tag = null)
@@ -2686,6 +2706,147 @@ namespace WordAddIn1.PresentationHost
             {
                 return null;
             }
+        }
+
+        private static void LogAxisFormats(object chart, List<string> warnings, string tag)
+        {
+            PourLog(warnings, "轴格式 " + (tag ?? "?") + " " + DescribeLiveAxisFormats(chart));
+        }
+
+        private static string DescribeLiveAxisFormats(object chart)
+        {
+            if (chart == null)
+            {
+                return "chart=null";
+            }
+
+            return "cat=" + DescribeOneAxisFormat(chart, XlCategory, XlPrimary)
+                + " val=" + DescribeOneAxisFormat(chart, XlValue, XlPrimary)
+                + " val2=" + DescribeOneAxisFormat(chart, XlValue, XlSecondary);
+        }
+
+        private static string AxisFormatTag(int axisType, int group)
+        {
+            if (axisType == XlCategory)
+            {
+                return "cat";
+            }
+
+            return group == XlSecondary ? "val2" : "val";
+        }
+
+        private static string DescribeOneAxisFormat(object chart, int axisType, int group)
+        {
+            try
+            {
+                object axis = TryInvoke(chart, "Axes", axisType, group);
+                if (axis == null)
+                {
+                    return "null";
+                }
+
+                object ticks = WppCom.GetProperty(axis, "TickLabels");
+                return DescribeTickNumberFormat(ticks);
+            }
+            catch (Exception ex)
+            {
+                return "err:" + ex.Message;
+            }
+        }
+
+        private static string DescribeTickNumberFormat(object ticks)
+        {
+            if (ticks == null)
+            {
+                return "ticks=null";
+            }
+
+            string fmt = ReadTickNumberFormat(ticks) ?? "null";
+            object linked = null;
+            try
+            {
+                linked = WppCom.GetProperty(ticks, "NumberFormatLinked");
+            }
+            catch (Exception)
+            {
+            }
+
+            string loc = null;
+            try
+            {
+                object raw = WppCom.GetProperty(ticks, "NumberFormatLocal");
+                loc = raw == null ? null : Convert.ToString(raw);
+            }
+            catch (Exception)
+            {
+            }
+
+            return fmt + "/link=" + (linked == null ? "?" : Convert.ToString(linked))
+                + (string.IsNullOrEmpty(loc) || loc == fmt ? "" : "/loc=" + loc);
+        }
+
+        private static string ReadTickNumberFormat(object ticks)
+        {
+            if (ticks == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                object fmt = WppCom.GetProperty(ticks, "NumberFormat");
+                return fmt == null ? null : Convert.ToString(fmt);
+            }
+            catch (Exception)
+            {
+                return "err";
+            }
+        }
+
+        /// <summary>
+        /// PPT 的 NumberFormat 就是真值。WPP 该口常固定 General，真值在 NumberFormatLocal
+        ///（默认是 G/通用格式）。只在读适配里跟字段，写路径仍钉 @ / 0.00。
+        /// </summary>
+        private static string ResolveTickNumberFormat(object ticks)
+        {
+            string fmt = ReadTickNumberFormat(ticks);
+            if (!IsGeneralNumberFormat(fmt))
+            {
+                return fmt;
+            }
+
+            string loc = null;
+            try
+            {
+                object raw = WppCom.GetProperty(ticks, "NumberFormatLocal");
+                loc = raw == null ? null : Convert.ToString(raw);
+            }
+            catch (Exception)
+            {
+            }
+
+            if (IsGeneralNumberFormat(loc))
+            {
+                return "General";
+            }
+
+            return string.IsNullOrWhiteSpace(loc) ? fmt : loc;
+        }
+
+        private static bool IsGeneralNumberFormat(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw) || raw == "err")
+            {
+                return true;
+            }
+
+            string t = raw.Trim();
+            if (string.Equals(t, "General", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return t.IndexOf("通用格式", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static void StyleLog(List<string> warnings, string message)
