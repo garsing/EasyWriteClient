@@ -468,24 +468,13 @@ namespace WordAddIn1.PresentationHost
         private static bool AreSameApplication(object dest, object source, out string error)
         {
             error = null;
-            try
+            if (WppCom.AreSameProcess(dest, source))
             {
-                object destApp = WppCom.GetProperty(dest, "Application");
-                object sourceApp = WppCom.GetProperty(source, "Application");
-                object destHwnd = destApp == null ? null : WppCom.GetProperty(destApp, "HWND");
-                object sourceHwnd = sourceApp == null ? null : WppCom.GetProperty(sourceApp, "HWND");
-                if (destHwnd != null && sourceHwnd != null
-                    && Convert.ToInt32(destHwnd) != Convert.ToInt32(sourceHwnd))
-                {
-                    error = "源头与目标不在同一演示文稿应用内";
-                    return false;
-                }
-            }
-            catch (Exception)
-            {
+                return true;
             }
 
-            return true;
+            error = "源头与目标不在同一演示文稿应用内";
+            return false;
         }
 
         private static bool TryDelete(

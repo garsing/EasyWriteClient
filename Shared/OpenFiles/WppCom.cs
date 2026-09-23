@@ -128,6 +128,101 @@ namespace WordAddIn1.OpenFiles
             return TryReadHwnd(target, out hwnd);
         }
 
+        /// <summary>
+        /// 同一 WPP 进程即可。第二份稿常是另一 HWND，不能只比窗口。
+        /// </summary>
+        public static bool AreSameProcess(object destPresentation, object sourcePresentation)
+        {
+            if (destPresentation == null || sourcePresentation == null)
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(destPresentation, sourcePresentation))
+            {
+                return true;
+            }
+
+            try
+            {
+                object destApp = GetProperty(destPresentation, "Application");
+                object sourceApp = GetProperty(sourcePresentation, "Application");
+                if (destApp == null || sourceApp == null)
+                {
+                    return false;
+                }
+
+                if (TryGetProcessId(destApp, out uint destPid)
+                    && TryGetProcessId(sourceApp, out uint sourcePid))
+                {
+                    return destPid == sourcePid;
+                }
+
+                return PresentationBelongsToApp(destApp, sourcePresentation)
+                    || PresentationBelongsToApp(sourceApp, destPresentation);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        private static bool TryGetProcessId(object app, out uint pid)
+        {
+            pid = 0;
+            if (!TryReadHwnd(app, out int hwnd) || hwnd == 0)
+            {
+                return false;
+            }
+
+            GetWindowThreadProcessId(new IntPtr(hwnd), out pid);
+            return pid != 0;
+        }
+
+        private static bool PresentationBelongsToApp(object app, object presentation)
+        {
+            if (app == null || presentation == null)
+            {
+                return false;
+            }
+
+            string wantFull = TryReadFullName(presentation);
+            string wantName = TryReadName(presentation);
+            foreach (object one in EnumeratePresentations(app))
+            {
+                if (one == null)
+                {
+                    continue;
+                }
+
+                if (ReferenceEquals(one, presentation))
+                {
+                    return true;
+                }
+
+                string full = TryReadFullName(one);
+                if (!string.IsNullOrEmpty(wantFull)
+                    && !string.IsNullOrEmpty(full)
+                    && string.Equals(full, wantFull, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                string name = TryReadName(one);
+                if (string.IsNullOrEmpty(wantFull)
+                    && !string.IsNullOrEmpty(wantName)
+                    && string.Equals(name, wantName, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public static IEnumerable<object> EnumeratePresentations(object app)
         {
             if (app == null)

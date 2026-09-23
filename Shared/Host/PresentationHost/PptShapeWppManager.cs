@@ -563,33 +563,7 @@ namespace WordAddIn1.PresentationHost
 
         private static bool SameApplication(object dest, object source)
         {
-            if (dest == null || source == null)
-            {
-                return false;
-            }
-
-            if (ReferenceEquals(dest, source))
-            {
-                return true;
-            }
-
-            try
-            {
-                object destApp = WppCom.GetProperty(dest, "Application");
-                object sourceApp = WppCom.GetProperty(source, "Application");
-                object destHwnd = destApp == null ? null : WppCom.GetProperty(destApp, "HWND");
-                object sourceHwnd = sourceApp == null ? null : WppCom.GetProperty(sourceApp, "HWND");
-                if (destHwnd == null || sourceHwnd == null)
-                {
-                    return destApp != null && sourceApp != null;
-                }
-
-                return Convert.ToInt32(destHwnd) == Convert.ToInt32(sourceHwnd);
-            }
-            catch (Exception)
-            {
-                return false;
-            }
+            return WppCom.AreSameProcess(dest, source);
         }
 
         private static bool IsGroupShape(object shape)
