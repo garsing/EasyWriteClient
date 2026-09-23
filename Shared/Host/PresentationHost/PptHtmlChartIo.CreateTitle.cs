@@ -60,7 +60,6 @@ namespace WordAddIn1.PresentationHost
                     height,
                     xlType,
                     grid,
-                    format,
                     warnings,
                     chartStyle,
                     newLayout,
@@ -79,88 +78,42 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                try
-                {
-                    if (applyHtmlChrome)
-                    {
-                        if (!TryApplyFormat(pastedChart, format, warnings, out error))
-                        {
-                            TryDelete(shape);
-                            shape = null;
-                            return false;
-                        }
-
-                        ChartStyleSnap htmlSnap = SnapFromFormat(format, grid);
-                        EnsureDisplaySwitches(oldSnap: null, format, htmlSnap, warnings);
-                        FinishLineChartLayout(pastedChart, xlType, format, warnings);
-                        TryApplyStyleSnap(pastedChart, htmlSnap, warnings, grid, format);
-                        TryInheritAxisChrome(pastedChart, htmlSnap, warnings);
-                        EnsureNewPieVariesByCategory(pastedChart, grid, warnings);
-                        TryApplyPieExplosionFromFormat(pastedChart, format, warnings);
-                        TryRestorePieChartType(pastedChart, htmlSnap);
-                    }
-                    else
-                    {
-                        EnsureCategoryAxisLabels(pastedChart, grid);
-                    }
-
-                    return true;
-                }
-                finally
-                {
-                    DismissChartExcelUiForChart(pastedChart);
-                }
+                return TryFinishNewChart(
+                    ref shape,
+                    ref pastedChart,
+                    grid,
+                    format,
+                    xlType,
+                    applyHtmlChrome,
+                    warnings,
+                    out error);
             }
 
-            try
-            {
-                PourLog(warnings, "即将 AddChart2 style=" + chartStyle
-                    + " xl=" + xlType
-                    + " newLayout=" + newLayout
-                    + " box=" + left.ToString("0.#", CultureInfo.InvariantCulture) + ","
-                    + top.ToString("0.#", CultureInfo.InvariantCulture) + " "
-                    + width.ToString("0.#", CultureInfo.InvariantCulture) + "x"
-                    + height.ToString("0.#", CultureInfo.InvariantCulture));
-                try
-                {
-                    shape = WppCom.Invoke(
-                        shapes,
-                        "AddChart2",
-                        chartStyle,
-                        xlType,
-                        left,
-                        top,
-                        width,
-                        height,
-                        newLayout);
-                    PourLog(warnings, "AddChart2(newLayout) 返回 " + (shape == null ? "null" : "ok"));
-                }
-                catch (Exception ex1)
-                {
-                    PourLog(warnings, "AddChart2(newLayout) 失败: " + ex1.Message);
-                    try
-                    {
-                        shape = WppCom.Invoke(shapes, "AddChart2", chartStyle, xlType, left, top, width, height);
-                        PourLog(warnings, "AddChart2 返回 " + (shape == null ? "null" : "ok"));
-                    }
-                    catch (Exception ex2)
-                    {
-                        PourLog(warnings, "AddChart2 失败: " + ex2.Message);
-                        shape = WppCom.Invoke(shapes, "AddChart", xlType, left, top, width, height);
-                        PourLog(warnings, "AddChart 返回 " + (shape == null ? "null" : "ok"));
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                error = "创建图表失败: " + ex.Message;
-                PourLog(warnings, error);
-                return false;
-            }
-
+            PourLog(warnings, "即将 AddChart2 style=" + chartStyle
+                + " xl=" + xlType
+                + " newLayout=" + newLayout
+                + " box=" + left.ToString("0.#", CultureInfo.InvariantCulture) + ","
+                + top.ToString("0.#", CultureInfo.InvariantCulture) + " "
+                + width.ToString("0.#", CultureInfo.InvariantCulture) + "x"
+                + height.ToString("0.#", CultureInfo.InvariantCulture));
+            shape = TryAddChartOnShapes(
+                shapes,
+                left,
+                top,
+                width,
+                height,
+                xlType,
+                chartStyle,
+                newLayout,
+                warnings,
+                out error);
             if (shape == null)
             {
-                error = "创建图表失败";
+                if (string.IsNullOrEmpty(error))
+                {
+                    error = "创建图表失败";
+                }
+
                 return false;
             }
 
@@ -175,40 +128,46 @@ namespace WordAddIn1.PresentationHost
             PourLog(warnings, "建图后取 Chart " + (chart == null ? "null" : "ok")
                 + " | " + DescribeLiveSeries(chart));
             DismissChartExcelUiForChart(chart);
-            try
+            if (!TryPourGrid(chart, grid, out error, warnings))
             {
-                if (HostAvoidsChartDataCom(chart))
+                if (TryFixSeriesViaOoxml(shape, grid, warnings, out shape))
                 {
-                    PourLog(warnings, "PPT 灌数走 OOXML，不打开 ChartData");
-                    if (!TryFixSeriesViaOoxml(shape, grid, warnings, out object poured) || poured == null)
-                    {
-                        TryDelete(shape);
-                        shape = null;
-                        error = "PPT 灌数 OOXML 失败";
-                        return false;
-                    }
-
-                    shape = poured;
                     chart = TryGetChart(shape);
-                    PourLog(warnings, "OOXML 灌数后 " + DescribeLiveSeries(chart)
+                    PourLog(warnings, "OOXML 修点后 " + DescribeLiveSeries(chart)
                         + " | " + DescribeSeriesExtra(chart));
                 }
-                else if (!TryPourGrid(chart, grid, out error, warnings))
+                else
                 {
-                    if (TryFixSeriesViaOoxml(shape, grid, warnings, out shape))
-                    {
-                        chart = TryGetChart(shape);
-                        PourLog(warnings, "OOXML 修点后 " + DescribeLiveSeries(chart)
-                            + " | " + DescribeSeriesExtra(chart));
-                    }
-                    else
-                    {
-                        TryDelete(shape);
-                        shape = null;
-                        return false;
-                    }
+                    TryDelete(shape);
+                    shape = null;
+                    return false;
                 }
+            }
 
+            return TryFinishNewChart(
+                ref shape,
+                ref chart,
+                grid,
+                format,
+                xlType,
+                applyHtmlChrome,
+                warnings,
+                out error);
+        }
+
+        private static bool TryFinishNewChart(
+            ref object shape,
+            ref object chart,
+            PptHtmlChartGrid grid,
+            PptHtmlChartFormat format,
+            int xlType,
+            bool applyHtmlChrome,
+            List<string> warnings,
+            out string error)
+        {
+            error = null;
+            try
+            {
                 if (applyHtmlChrome)
                 {
                     if (!TryApplyFormat(chart, format, warnings, out error))
@@ -225,7 +184,6 @@ namespace WordAddIn1.PresentationHost
                     TryApplyStyleSnap(chart, htmlSnap, warnings, grid, format);
                     TryInheritAxisChrome(chart, htmlSnap, warnings);
                     EnsureNewPieVariesByCategory(chart, grid, warnings);
-                    // VaryByCategory 可能重建瓣点，爆炸须在其后按当前点数再写。
                     TryApplyPieExplosionFromFormat(chart, format, warnings);
                     TryRestorePieChartType(chart, htmlSnap);
                     TryStripWppSrgbTintAfterChrome(ref shape, ref chart, htmlSnap, warnings);
@@ -251,7 +209,6 @@ namespace WordAddIn1.PresentationHost
             float height,
             int xlType,
             PptHtmlChartGrid grid,
-            PptHtmlChartFormat format,
             List<string> warnings,
             int chartStyle,
             bool newLayout,
