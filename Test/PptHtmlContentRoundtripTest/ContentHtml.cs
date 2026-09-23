@@ -100,22 +100,215 @@ namespace PptHtmlContentRoundtripTest
                 + PieMarkup(8, 28, 36, 40));
         }
 
-        public static string PieChart(double left = 8, double top = 28, double width = 36, double height = 40)
+        public static string PieChart(
+            double left = 8,
+            double top = 28,
+            double width = 36,
+            double height = 40,
+            string[] categories = null,
+            string[] values = null,
+            string seriesName = "份额")
         {
-            return Section(PieMarkup(left, top, width, height));
+            return Section(ChartFrag("pie2d", left, top, width, height, categories, values, seriesName));
+        }
+
+        public static string ChartCreate(
+            string chartType,
+            double left = 52,
+            double top = 22,
+            double width = 42,
+            double height = 50,
+            string[] categories = null,
+            string[] values = null)
+        {
+            return Section(ChartFrag(chartType, left, top, width, height, categories, values));
+        }
+
+        public static string ChartUpdate(
+            string shapeId,
+            string[] categories,
+            string[] values,
+            string seriesName = "份额",
+            string seriesType = "pie2d")
+        {
+            var sb = new StringBuilder();
+            sb.Append("  <div ShapeId=\"").Append(shapeId).Append("\">\n");
+            sb.Append(ChartTableInner(categories, values, seriesName, seriesType));
+            sb.Append("  </div>");
+            return Section(sb.ToString());
+        }
+
+        public static string MixParts(params string[] parts)
+        {
+            return Section(string.Join("\n", parts ?? Array.Empty<string>()));
+        }
+
+        /// <summary>同页标题 + 页表（不含图）。</summary>
+        public static string MixTitleTable(string title, string[][] cells)
+        {
+            return MixParts(MixTitleMarkup(title), MixPageTableMarkup(cells));
+        }
+
+        /// <summary>同页标题 + 页表 + 饼。</summary>
+        public static string MixTitleTablePie(
+            string title,
+            string[][] pageCells,
+            string[] categories = null,
+            string[] values = null)
+        {
+            return MixParts(
+                MixTitleMarkup(title),
+                MixPageTableMarkup(pageCells),
+                ChartFrag("pie2d", 52, 22, 42, 50, categories, values));
+        }
+
+        /// <summary>同页标题 + 图 + 饼。</summary>
+        public static string MixTitlePicPie(
+            string title,
+            string picturePath,
+            string[] categories = null,
+            string[] values = null)
+        {
+            return MixParts(
+                MixTitleMarkup(title),
+                MixPicMarkup(picturePath, 6, 22, 36, 50),
+                ChartFrag("pie2d", 48, 22, 46, 50, categories, values));
+        }
+
+        public static string MixTitleTablePic(string title, string[][] pageCells, string picturePath)
+        {
+            return MixParts(
+                MixTitleMarkup(title),
+                MixPageTableMarkup(pageCells, 6, 22, 28, 50),
+                MixPicMarkup(picturePath, 36, 22, 20, 50));
+        }
+
+        public static string MixTitleTablePicPie(
+            string title,
+            string[][] pageCells,
+            string picturePath,
+            string[] categories = null,
+            string[] values = null)
+        {
+            return MixParts(
+                MixTitleMarkup(title),
+                MixPageTableMarkup(pageCells, 6, 22, 28, 50),
+                MixPicMarkup(picturePath, 36, 22, 20, 50),
+                ChartFrag("pie2d", 58, 22, 36, 50, categories, values));
+        }
+
+        public static string MixTitleMarkup(string title)
+        {
+            return "  <div data-shape-type=\"textbox\" style=\""
+                + Geo(6, 6, 50, 12)
+                + "\" data-font-size=\"22pt\" data-font-bold=\"true\">"
+                + Escape(title)
+                + "</div>";
+        }
+
+        public static string MixPageTableMarkup(
+            string[][] cells,
+            double left = 6,
+            double top = 22,
+            double width = 42,
+            double height = 50)
+        {
+            var sb = new StringBuilder();
+            sb.Append("  <table data-shape-type=\"table\" style=\"")
+                .Append(Geo(left, top, width, height))
+                .Append("\">\n");
+            AppendRows(sb, cells);
+            sb.Append("  </table>");
+            return sb.ToString();
+        }
+
+        public static string MixPicMarkup(
+            string picturePath,
+            double left = 6,
+            double top = 22,
+            double width = 36,
+            double height = 50)
+        {
+            return "  <img data-shape-type=\"picture\" data-src=\""
+                + EscapeAttr(picturePath)
+                + "\" style=\""
+                + Geo(left, top, width, height)
+                + "\" />";
+        }
+
+        public static string ChartFrag(
+            string chartType,
+            double left,
+            double top,
+            double width,
+            double height,
+            string[] categories = null,
+            string[] values = null,
+            string seriesName = null)
+        {
+            string type = string.IsNullOrEmpty(chartType) ? "pie2d" : chartType;
+            bool pie = type.IndexOf("pie", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (string.IsNullOrEmpty(seriesName))
+            {
+                seriesName = pie ? "份额" : "规模";
+            }
+
+            return "  <div data-shape-type=\"chart\" data-chart-type=\""
+                + EscapeAttr(type)
+                + "\" data-legend=\""
+                + (pie ? "right" : "none")
+                + "\" style=\""
+                + Geo(left, top, width, height)
+                + "\">\n"
+                + ChartTableInner(categories, values, seriesName, type)
+                + "  </div>";
         }
 
         private static string PieMarkup(double left, double top, double width, double height)
         {
-            return "  <div data-shape-type=\"chart\" data-chart-type=\"pie2d\" data-legend=\"right\" style=\""
-                + Geo(left, top, width, height) + "\">\n"
-                + "    <table>\n"
-                + "      <tr><th data-col=\"category\"> </th><th data-col=\"value\" data-series-type=\"pie2d\">份额</th></tr>\n"
-                + "      <tr><td>A</td><td>40</td></tr>\n"
-                + "      <tr><td>B</td><td>35</td></tr>\n"
-                + "      <tr><td>C</td><td>25</td></tr>\n"
-                + "    </table>\n"
-                + "  </div>";
+            return ChartFrag("pie2d", left, top, width, height);
+        }
+
+        private static string ChartTableInner(
+            string[] categories,
+            string[] values,
+            string seriesName,
+            string seriesType)
+        {
+            if (categories == null || categories.Length == 0)
+            {
+                categories = new[] { "A", "B", "C" };
+            }
+
+            if (values == null || values.Length == 0)
+            {
+                values = new[] { "40", "35", "25" };
+            }
+
+            if (string.IsNullOrEmpty(seriesType))
+            {
+                seriesType = "pie2d";
+            }
+
+            int n = Math.Min(categories.Length, values.Length);
+            var sb = new StringBuilder();
+            sb.Append("    <table>\n");
+            sb.Append("      <tr><th data-col=\"category\"> </th><th data-col=\"value\" data-series-type=\"")
+                .Append(EscapeAttr(seriesType))
+                .Append("\">")
+                .Append(Escape(seriesName ?? "份额"))
+                .Append("</th></tr>\n");
+            for (int i = 0; i < n; i++)
+            {
+                sb.Append("      <tr><td>")
+                    .Append(Escape(categories[i] ?? ""))
+                    .Append("</td><td>")
+                    .Append(Escape(values[i] ?? ""))
+                    .Append("</td></tr>\n");
+            }
+
+            sb.Append("    </table>\n");
+            return sb.ToString();
         }
 
         public static string TableCreate(

@@ -26,6 +26,7 @@ namespace PptHtmlContentRoundtripTest
             AddPictureMatrixCases(list, ref page);
             AddMixCases(list, ref page);
             AddGroupCases(list, ref page);
+            AddMixChartCases(list, ref page);
 
             return list;
         }

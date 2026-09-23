@@ -16,6 +16,7 @@ namespace PptHtmlContentRoundtripTest
         public object Slide { get; set; }
         public string SlideId { get; set; }
         public string Rpc { get; set; }
+        public ContentAssets Assets { get; set; }
 
         public bool TryApply(string html, bool allowCreate, out List<string> ids, out string error)
         {
@@ -44,6 +45,11 @@ namespace PptHtmlContentRoundtripTest
         {
             // 对齐 F_read_ppt_html 默认：骨架，不是 full 导出。
             return TryRead(null, false, out result, out error);
+        }
+
+        public bool TryReadFullPage(out PptHtmlReadResult result, out string error)
+        {
+            return TryRead(null, true, out result, out error);
         }
 
         public bool TryReadShape(string shapeId, out PptHtmlReadResult result, out string error)
@@ -587,14 +593,16 @@ namespace PptHtmlContentRoundtripTest
             string slideId,
             ContentCase one,
             string tag,
-            bool wpp)
+            bool wpp,
+            ContentAssets assets = null)
         {
             var session = new ContentGroupSession
             {
                 Wpp = wpp,
                 Presentation = presentation,
                 Slide = slide,
-                SlideId = slideId
+                SlideId = slideId,
+                Assets = assets
             };
 
             string mismatch;

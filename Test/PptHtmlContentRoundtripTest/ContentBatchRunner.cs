@@ -291,7 +291,7 @@ namespace PptHtmlContentRoundtripTest
 
             if (one.GroupRun != null)
             {
-                return ContentGroupHarness.Run(run, pres, slide, slideId, one, tag, wpp: false);
+                return ContentGroupHarness.Run(run, pres, slide, slideId, one, tag, wpp: false, assets: assets);
             }
 
             string createHtml;

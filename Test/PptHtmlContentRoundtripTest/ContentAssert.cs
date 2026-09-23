@@ -226,6 +226,223 @@ namespace PptHtmlContentRoundtripTest
             return rows;
         }
 
+        public static string ChartLooksPie(PptHtmlShapeNode node)
+        {
+            return ChartLooksType(node, "pie");
+        }
+
+        public static string ChartLooksType(PptHtmlShapeNode node, string expectContains)
+        {
+            if (node == null)
+            {
+                return "无 chart";
+            }
+
+            if (!string.Equals(node.ShapeType, "chart", StringComparison.OrdinalIgnoreCase))
+            {
+                return "不是 chart: " + node.ShapeType;
+            }
+
+            if (string.IsNullOrEmpty(expectContains))
+            {
+                return null;
+            }
+
+            string type = node.ChartFormat?.ChartType;
+            if (!string.IsNullOrEmpty(type)
+                && type.IndexOf(expectContains, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return "期望 " + expectContains + " 实际 " + type;
+            }
+
+            return null;
+        }
+
+        public static int CountType(PptHtmlReadResult result, string shapeType)
+        {
+            int n = 0;
+            if (result?.Shapes == null || string.IsNullOrEmpty(shapeType))
+            {
+                return 0;
+            }
+
+            for (int i = 0; i < result.Shapes.Count; i++)
+            {
+                PptHtmlShapeNode node = result.Shapes[i];
+                if (node != null
+                    && string.Equals(node.ShapeType, shapeType, StringComparison.OrdinalIgnoreCase))
+                {
+                    n++;
+                }
+            }
+
+            return n;
+        }
+
+        public static PptHtmlShapeNode FindNthByType(PptHtmlReadResult result, string shapeType, int index)
+        {
+            if (result?.Shapes == null || string.IsNullOrEmpty(shapeType) || index < 0)
+            {
+                return null;
+            }
+
+            int seen = 0;
+            for (int i = 0; i < result.Shapes.Count; i++)
+            {
+                PptHtmlShapeNode node = result.Shapes[i];
+                if (node == null
+                    || !string.Equals(node.ShapeType, shapeType, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (seen == index)
+                {
+                    return node;
+                }
+
+                seen++;
+            }
+
+            return null;
+        }
+
+        /// <summary>图表内嵌表须出现这些类目（页表勿混进来）。值按数字比，容 0.51。</summary>
+        public static string ChartDataMismatch(
+            PptHtmlShapeNode node,
+            string[] categories,
+            string[] values = null,
+            string typeHint = null)
+        {
+            string typed = ChartLooksType(node, typeHint);
+            if (typed != null)
+            {
+                return typed;
+            }
+
+            if (string.IsNullOrWhiteSpace(node.InnerHtml))
+            {
+                return "chart 无内嵌表";
+            }
+
+            List<List<string>> rows = ParseInnerTable(node.InnerHtml);
+            var texts = new List<string>();
+            for (int r = 0; r < rows.Count; r++)
+            {
+                List<string> row = rows[r];
+                if (row == null)
+                {
+                    continue;
+                }
+
+                for (int c = 0; c < row.Count; c++)
+                {
+                    texts.Add(NormText(row[c]));
+                }
+            }
+
+            if (categories != null)
+            {
+                for (int i = 0; i < categories.Length; i++)
+                {
+                    string cat = NormText(categories[i]);
+                    if (string.IsNullOrEmpty(cat))
+                    {
+                        continue;
+                    }
+
+                    bool hit = false;
+                    for (int t = 0; t < texts.Count; t++)
+                    {
+                        if (string.Equals(texts[t], cat, StringComparison.Ordinal))
+                        {
+                            hit = true;
+                            break;
+                        }
+                    }
+
+                    if (!hit)
+                    {
+                        return "chart 缺类目 " + cat;
+                    }
+                }
+            }
+
+            if (values != null)
+            {
+                for (int i = 0; i < values.Length; i++)
+                {
+                    if (!GridHasNumber(texts, values[i]))
+                    {
+                        return "chart 缺数值 " + values[i];
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        public static bool GridHasText(PptHtmlShapeNode node, string text)
+        {
+            if (node == null || string.IsNullOrEmpty(text))
+            {
+                return false;
+            }
+
+            List<List<string>> rows = ParseInnerTable(node.InnerHtml);
+            string want = NormText(text);
+            for (int r = 0; r < rows.Count; r++)
+            {
+                List<string> row = rows[r];
+                if (row == null)
+                {
+                    continue;
+                }
+
+                for (int c = 0; c < row.Count; c++)
+                {
+                    if (string.Equals(NormText(row[c]), want, StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool GridHasNumber(IList<string> texts, string expect)
+        {
+            if (texts == null || string.IsNullOrEmpty(expect))
+            {
+                return false;
+            }
+
+            if (!double.TryParse(expect, NumberStyles.Float, CultureInfo.InvariantCulture, out double want))
+            {
+                for (int i = 0; i < texts.Count; i++)
+                {
+                    if (string.Equals(texts[i], NormText(expect), StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            for (int i = 0; i < texts.Count; i++)
+            {
+                if (double.TryParse(texts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out double got)
+                    && Math.Abs(got - want) <= 0.51)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public static string AttachPictureSrc(
             PowerPoint.Presentation presentation,
             PptHtmlReadResult result,
