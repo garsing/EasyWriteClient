@@ -27,6 +27,7 @@ namespace PptHtmlContentRoundtripTest
             }
 
             plan.AllowCreate = allowCreate;
+            ContentHtml.ResolvePicturePaths(plan);
             PptHtmlApplyResult result;
             bool ok = Wpp
                 ? PptHtmlWppApplier.TryApply(Presentation, plan, "grp-test-wpp", out result, out error)

@@ -381,8 +381,28 @@ namespace WordAddIn1.PresentationHost
             if (!TryVerifyPouredGrid(newChart, useGrid, out error, warnings))
             {
                 StyleLog(warnings, "套回后数据对不上，再按新建图灌数: " + (error ?? ""));
-                if (!TryPourGrid(newChart, useGrid, out error, warnings)
-                    || !TryVerifyPouredGrid(newChart, useGrid, out error, warnings))
+                bool poured = false;
+                if (HostAvoidsChartDataCom(newChart))
+                {
+                    if (TryFixSeriesViaOoxml(newShape, useGrid, warnings, out object fixedShape)
+                        && fixedShape != null)
+                    {
+                        newShape = fixedShape;
+                        newChart = TryGetChart(newShape);
+                        poured = TryVerifyPouredGrid(newChart, useGrid, out error, warnings);
+                    }
+                    else if (string.IsNullOrEmpty(error))
+                    {
+                        error = "PPT 换数 OOXML 失败";
+                    }
+                }
+                else
+                {
+                    poured = TryPourGrid(newChart, useGrid, out error, warnings)
+                        && TryVerifyPouredGrid(newChart, useGrid, out error, warnings);
+                }
+
+                if (!poured)
                 {
                     TryDelete(newShape);
                     newShape = null;

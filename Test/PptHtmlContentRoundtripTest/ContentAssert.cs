@@ -21,6 +21,34 @@ namespace PptHtmlContentRoundtripTest
             return s.Replace("\r", "").Replace("\v", "").TrimEnd();
         }
 
+        public static PptHtmlShapeNode FindContentTextbox(PptHtmlReadResult result)
+        {
+            if (result?.Shapes == null)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < result.Shapes.Count; i++)
+            {
+                PptHtmlShapeNode n = result.Shapes[i];
+                if (n == null
+                    || !string.Equals(n.ShapeType, "textbox", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(n.Text)
+                    && n.Text.IndexOf("B1P", StringComparison.Ordinal) >= 0)
+                {
+                    continue;
+                }
+
+                return n;
+            }
+
+            return null;
+        }
+
         public static PptHtmlShapeNode FindByType(PptHtmlReadResult result, string shapeType)
         {
             if (result?.Shapes == null)
@@ -318,6 +346,13 @@ namespace PptHtmlContentRoundtripTest
             if (typed != null)
             {
                 return typed;
+            }
+
+            // 柱/条/折系列 XValues 常是 1/2/3，不拿类目字母卡混排。
+            if (!string.IsNullOrEmpty(typeHint)
+                && typeHint.IndexOf("pie", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                categories = null;
             }
 
             if (string.IsNullOrWhiteSpace(node.InnerHtml))

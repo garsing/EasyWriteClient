@@ -196,7 +196,7 @@ namespace PptHtmlContentRoundtripTest
                     ContentHtml.PieChart(8, 28, 50, 50),
                     pageRead =>
                     {
-                        string e = TextEq(ContentAssert.FindByType(pageRead, "textbox"), "先标题");
+                        string e = TextEq(ContentAssert.FindContentTextbox(pageRead), "先标题");
                         return e ?? ContentAssert.ChartDataMismatch(
                             ContentAssert.FindByType(pageRead, "chart"), MixcPieCats, MixcPieVals, "pie");
                     }));
@@ -227,7 +227,7 @@ namespace PptHtmlContentRoundtripTest
                     ContentHtml.TextboxCreate("后标题", 6, 6, 50, 12),
                     pageRead =>
                     {
-                        string e = TextEq(ContentAssert.FindByType(pageRead, "textbox"), "后标题");
+                        string e = TextEq(ContentAssert.FindContentTextbox(pageRead), "后标题");
                         return e ?? ContentAssert.ChartDataMismatch(
                             ContentAssert.FindByType(pageRead, "chart"), MixcPieCats, MixcPieVals, "pie");
                     }));
@@ -730,7 +730,7 @@ namespace PptHtmlContentRoundtripTest
             string[] vals,
             string typeHint)
         {
-            string e = TextEq(ContentAssert.FindByType(page, "textbox"), title);
+            string e = TextEq(ContentAssert.FindContentTextbox(page), title);
             if (e != null) return e;
             return MixcPageTableChart(page, grid, cats, vals, typeHint);
         }
@@ -758,7 +758,14 @@ namespace PptHtmlContentRoundtripTest
                 return "图内嵌表串进了页表";
             }
 
-            return ContentAssert.ChartDataMismatch(chart, cats, vals, typeHint);
+            // 柱/条/折系列读回类目常是 1/2/3，混排套对数值和类型即可。
+            bool cartesian = !string.IsNullOrEmpty(typeHint)
+                && typeHint.IndexOf("pie", StringComparison.OrdinalIgnoreCase) < 0;
+            return ContentAssert.ChartDataMismatch(
+                chart,
+                cartesian ? null : cats,
+                vals,
+                typeHint);
         }
 
         private static string MixcFourOk(

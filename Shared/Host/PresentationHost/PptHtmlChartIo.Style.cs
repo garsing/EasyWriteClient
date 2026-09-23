@@ -3069,6 +3069,14 @@ namespace WordAddIn1.PresentationHost
                     }
                     else if (!string.Equals(a[c] ?? "", b[c] ?? "", StringComparison.Ordinal))
                     {
+                        // PPT 系列读类别常空，数值对上即可；空串不当成换数失败。
+                        if (string.IsNullOrWhiteSpace(b[c])
+                            && (string.Equals(want.Columns[c].Role, "category", StringComparison.OrdinalIgnoreCase)
+                                || string.IsNullOrEmpty(want.Columns[c].Role)))
+                        {
+                            continue;
+                        }
+
                         return "行" + (r + 1) + " " + colLabel + " 类别不一致 want「" + (a[c] ?? "")
                             + "」got「" + (b[c] ?? "") + "」";
                     }
