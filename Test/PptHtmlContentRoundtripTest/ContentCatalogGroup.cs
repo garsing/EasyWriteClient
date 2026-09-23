@@ -617,9 +617,11 @@ namespace PptHtmlContentRoundtripTest
                     return "叶子拷组应失败";
                 }
 
-                return err != null && err.IndexOf("group", StringComparison.OrdinalIgnoreCase) >= 0
-                    ? null
-                    : "文案不对: " + err;
+                // 内组拷贝走 OOXML 后，叶子不再回英文 "group"，而是「找不到 ShapeId 组 …」
+                bool mentionsGroup = err != null
+                    && (err.IndexOf("group", StringComparison.OrdinalIgnoreCase) >= 0
+                        || err.IndexOf("组", StringComparison.Ordinal) >= 0);
+                return mentionsGroup ? null : "文案不对: " + err;
             });
 
             AddGroup(list, ref page, "grp-neg-dup-size", s =>
