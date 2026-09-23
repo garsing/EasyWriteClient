@@ -92,6 +92,98 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
+        /// PPT 脏会话里 ChartData.Activate 会 RPC 弄死稿。WPP 仍走 ChartData。
+        /// 不能复用 LooksLikeWppApp：PowerPoint 也有 ProductCode，会被误判成 WPP。
+        /// </summary>
+        private static bool HostAvoidsChartDataCom(object chart)
+        {
+            return HostAvoidsFromApp(TryGetChartHostApp(chart));
+        }
+
+        private static bool HostAvoidsFromShapes(object shapes)
+        {
+            return HostAvoidsFromApp(TryGetShapesHostApp(shapes));
+        }
+
+        private static bool HostAvoidsFromApp(object app)
+        {
+            if (app == null)
+            {
+                return true;
+            }
+
+            try
+            {
+                if (WppCom.GetProperty(app, "WpsPresentation") != null)
+                {
+                    return false;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            string name = TryPropString(app, "Name") ?? "";
+            if (name.IndexOf("wps", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("wpp", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static object TryGetShapesHostApp(object shapes)
+        {
+            if (shapes == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                object slide = WppCom.GetProperty(shapes, "Parent");
+                object pres = slide == null ? null : WppCom.GetProperty(slide, "Parent");
+                return pres == null ? null : WppCom.GetProperty(pres, "Application");
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static object TryGetChartHostApp(object chart)
+        {
+            if (chart == null)
+            {
+                return null;
+            }
+
+            // 必须用 Presentation.Application：WPP 的 chart.Application.Name 会报 PowerPoint。
+            try
+            {
+                object pres = TryGetShapePresentation(TryGetChartShape(chart));
+                object app = pres == null ? null : WppCom.GetProperty(pres, "Application");
+                if (app != null)
+                {
+                    return app;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                return WppCom.GetProperty(chart, "Application");
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// 单次 chart 操作后：藏 COM + 关 HWND；AddChart2 常在返回后才画出编辑框，须轮询。
         /// </summary>
         private static void DismissChartExcelUiForChart(object chart)
@@ -1138,7 +1230,18 @@ namespace WordAddIn1.PresentationHost
             }
 
             PourLog(warnings, "校验 " + DescribeWantGrid(want) + " | " + DescribeLiveSeries(chart));
-            if (!TryReadGridFromEmbeddedSheet(chart, want.Columns.Count, want.Rows.Count, out PptHtmlChartGrid live, out string readErr)
+            PptHtmlChartGrid live;
+            string readErr;
+            if (HostAvoidsChartDataCom(chart))
+            {
+                if (!TryReadGridFromSeries(chart, out live, out readErr) || live == null || !live.IsPourable)
+                {
+                    error = "无法回读系列校验: " + (readErr ?? "?");
+                    PourLog(warnings, "校验失败 " + error);
+                    return false;
+                }
+            }
+            else if (!TryReadGridFromEmbeddedSheet(chart, want.Columns.Count, want.Rows.Count, out live, out readErr)
                 && !TryReadGridFromEmbeddedSheetAuto(chart, out live, out readErr))
             {
                 error = "无法回读内嵌表校验: " + (readErr ?? "?");

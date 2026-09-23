@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Text;
 using System.Xml.Linq;
 using WordAddIn1.OpenFiles;
 
@@ -14,7 +15,8 @@ namespace WordAddIn1.PresentationHost
     /// 兜底：SaveCopyAs → 改 chart XML 的 c:f / c:ptCount / c:pt → 打开副本把图 Copy 回原页。
     /// 写自定义 RGB 后同一套路剥 srgbClr 上的 tint/shade（默认 ChartStyle 会扣，COM 清不掉）。
     /// 渐变/标记色/线色 COM 写不稳、读常空：同一趟把 c:spPr / c:marker 钉进 XML。
-    /// 只在 WPP 走；PPT 仍走 ListObject Resize / COM 写色。
+    /// PPT 灌数也走这条：同时改内嵌 xlsx，不 ChartData.Activate（脏会话会 RPC 弄死稿）。
+    /// 钉皮仍只在 WPP 走。
     /// </summary>
     internal static partial class PptHtmlChartIo
     {
@@ -49,10 +51,12 @@ namespace WordAddIn1.PresentationHost
             return TryEditChartXmlAndCopyBack(
                 shape,
                 warnings,
-                "修点",
+                "灌数",
                 (doc, w) => RewriteChartSeries(doc, grid, w),
                 copyShape => ReadSeriesRowCount(TryGetChart(copyShape)) == want,
-                out newShape);
+                out newShape,
+                allowPpt: true,
+                embedGrid: grid);
         }
 
         /// <summary>
@@ -977,7 +981,9 @@ namespace WordAddIn1.PresentationHost
             string tag,
             Func<XDocument, List<string>, bool> rewrite,
             Func<object, bool> acceptCopy,
-            out object newShape)
+            out object newShape,
+            bool allowPpt = false,
+            PptHtmlChartGrid embedGrid = null)
         {
             newShape = null;
             if (shape == null || rewrite == null)
@@ -1005,7 +1011,7 @@ namespace WordAddIn1.PresentationHost
                 app = WppCom.GetProperty(pres, "Application");
                 string appName = TryPropString(app, "Name") ?? "";
                 PourLog(warnings, "OOXML " + tag + "：宿主 Name=" + appName);
-                if (!LooksLikeWppApp(app))
+                if (!LooksLikeWppApp(app) && !allowPpt)
                 {
                     PourLog(warnings, "OOXML " + tag + "：非 WPP 宿主（" + appName + "），跳过");
                     return false;
@@ -1022,7 +1028,8 @@ namespace WordAddIn1.PresentationHost
 
                 tempPath = Path.Combine(
                     Path.GetTempPath(),
-                    "ew-wpp-chart-" + Guid.NewGuid().ToString("N") + ".pptx");
+                    (LooksLikeWppApp(app) ? "ew-wpp-chart-" : "ew-ppt-chart-")
+                    + Guid.NewGuid().ToString("N") + ".pptx");
                 PourLog(warnings, "OOXML " + tag + "：SaveCopyAs → " + tempPath);
                 try
                 {
@@ -1050,7 +1057,7 @@ namespace WordAddIn1.PresentationHost
 
                 PourLog(warnings, "OOXML " + tag + "：副本已落盘 " + tempPath + " size=" + new FileInfo(tempPath).Length);
 
-                if (!TryRewriteChartXmlInPackage(tempPath, slideIndex, shapeId, rewrite, warnings, tag))
+                if (!TryRewriteChartXmlInPackage(tempPath, slideIndex, shapeId, rewrite, warnings, tag, embedGrid))
                 {
                     return false;
                 }
@@ -1360,7 +1367,8 @@ namespace WordAddIn1.PresentationHost
             int shapeId,
             Func<XDocument, List<string>, bool> rewrite,
             List<string> warnings,
-            string tag)
+            string tag,
+            PptHtmlChartGrid embedGrid = null)
         {
             string tempOut = pptxPath + ".fix";
             try
@@ -1380,6 +1388,12 @@ namespace WordAddIn1.PresentationHost
                     }
 
                     if (!rewrite(chartDoc, warnings))
+                    {
+                        return false;
+                    }
+
+                    if (embedGrid != null
+                        && !TryWriteEmbeddedWorkbook(zip, chartPart, embedGrid, warnings, tag))
                     {
                         return false;
                     }
@@ -1561,8 +1575,25 @@ namespace WordAddIn1.PresentationHost
             List<XElement> series = chartDoc.Descendants(CNs + "ser").ToList();
             if (series.Count == 0)
             {
-                PourLog(warnings, "OOXML 修点：chart 无 c:ser");
+                PourLog(warnings, "OOXML 灌数：chart 无 c:ser");
                 return false;
+            }
+
+            int wantSeries = CountValueColumns(grid);
+            XElement serParent = series[0].Parent;
+            while (serParent != null && series.Count < wantSeries)
+            {
+                XElement clone = new XElement(series[0]);
+                SetSerIdxOrder(clone, series.Count);
+                serParent.Add(clone);
+                series.Add(clone);
+            }
+
+            while (series.Count > wantSeries && wantSeries > 0)
+            {
+                int lastSer = series.Count - 1;
+                series[lastSer].Remove();
+                series.RemoveAt(lastSer);
             }
 
             int si = 0;
@@ -1650,6 +1681,282 @@ namespace WordAddIn1.PresentationHost
                 pt.SetAttributeValue("idx", i.ToString(CultureInfo.InvariantCulture));
                 pt.Add(new XElement(CNs + "v", points[i] ?? ""));
                 cache.Add(pt);
+            }
+        }
+
+        private static void SetSerIdxOrder(XElement ser, int idx)
+        {
+            if (ser == null)
+            {
+                return;
+            }
+
+            string text = idx.ToString(CultureInfo.InvariantCulture);
+            XElement idxEl = ser.Element(CNs + "idx") ?? LocalChild(ser, "idx");
+            if (idxEl != null)
+            {
+                idxEl.SetAttributeValue("val", text);
+            }
+
+            XElement orderEl = ser.Element(CNs + "order") ?? LocalChild(ser, "order");
+            if (orderEl != null)
+            {
+                orderEl.SetAttributeValue("val", text);
+            }
+        }
+
+        private static bool TryWriteEmbeddedWorkbook(
+            ZipArchive pptx,
+            string chartPart,
+            PptHtmlChartGrid grid,
+            List<string> warnings,
+            string tag)
+        {
+            if (pptx == null || string.IsNullOrEmpty(chartPart) || grid == null || !grid.IsPourable)
+            {
+                return false;
+            }
+
+            string relsPart = ChartRelsPart(chartPart);
+            ZipArchiveEntry relsEntry = FindEntry(pptx, relsPart);
+            if (relsEntry == null)
+            {
+                PourLog(warnings, "OOXML " + tag + "：缺 chart rels " + relsPart);
+                return false;
+            }
+
+            XDocument relsDoc;
+            using (Stream s = relsEntry.Open())
+            {
+                relsDoc = XDocument.Load(s);
+            }
+
+            string target = FindEmbeddingTarget(relsDoc);
+            if (string.IsNullOrEmpty(target))
+            {
+                PourLog(warnings, "OOXML " + tag + "：chart rels 里没有内嵌 xlsx");
+                return false;
+            }
+
+            string embedPart = ResolveZipPath(chartPart, target);
+            if (string.IsNullOrEmpty(embedPart))
+            {
+                PourLog(warnings, "OOXML " + tag + "：内嵌路径无法解析 " + target);
+                return false;
+            }
+
+            byte[] bytes = BuildMinimalChartWorkbook(grid);
+            ZipArchiveEntry old = FindEntry(pptx, embedPart);
+            if (old != null)
+            {
+                old.Delete();
+            }
+
+            ZipArchiveEntry fresh = pptx.CreateEntry(embedPart);
+            using (Stream s = fresh.Open())
+            {
+                s.Write(bytes, 0, bytes.Length);
+            }
+
+            PourLog(warnings, "OOXML " + tag + "：已写内嵌表 " + embedPart
+                + " " + grid.Rows.Count + "x" + grid.Columns.Count);
+            return true;
+        }
+
+        private static string ChartRelsPart(string chartPart)
+        {
+            string path = (chartPart ?? "").Replace('\\', '/');
+            int slash = path.LastIndexOf('/');
+            if (slash < 0)
+            {
+                return "_rels/" + path + ".rels";
+            }
+
+            return path.Substring(0, slash) + "/_rels/" + path.Substring(slash + 1) + ".rels";
+        }
+
+        private static string FindEmbeddingTarget(XDocument relsDoc)
+        {
+            if (relsDoc == null)
+            {
+                return null;
+            }
+
+            foreach (XElement rel in relsDoc.Descendants(RelPkgNs + "Relationship"))
+            {
+                string target = (string)rel.Attribute("Target") ?? "";
+                if (target.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)
+                    || target.EndsWith(".xls", StringComparison.OrdinalIgnoreCase))
+                {
+                    return target;
+                }
+            }
+
+            foreach (XElement rel in relsDoc.Descendants(RelPkgNs + "Relationship"))
+            {
+                string type = (string)rel.Attribute("Type") ?? "";
+                if (type.IndexOf("/package", StringComparison.OrdinalIgnoreCase) >= 0
+                    || type.IndexOf("/oleObject", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return (string)rel.Attribute("Target");
+                }
+            }
+
+            return null;
+        }
+
+        private static string ResolveZipPath(string fromPart, string target)
+        {
+            if (string.IsNullOrEmpty(fromPart) || string.IsNullOrEmpty(target))
+            {
+                return null;
+            }
+
+            string dir = fromPart.Replace('\\', '/');
+            int slash = dir.LastIndexOf('/');
+            dir = slash < 0 ? "" : dir.Substring(0, slash);
+            string combined = (dir.Length == 0 ? target : dir + "/" + target).Replace('\\', '/');
+            var parts = new List<string>();
+            foreach (string p in combined.Split('/'))
+            {
+                if (p.Length == 0 || p == ".")
+                {
+                    continue;
+                }
+
+                if (p == "..")
+                {
+                    if (parts.Count > 0)
+                    {
+                        parts.RemoveAt(parts.Count - 1);
+                    }
+
+                    continue;
+                }
+
+                parts.Add(p);
+            }
+
+            return string.Join("/", parts);
+        }
+
+        private static byte[] BuildMinimalChartWorkbook(PptHtmlChartGrid grid)
+        {
+            using (var ms = new MemoryStream())
+            {
+                using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, true))
+                {
+                    WriteZipXml(zip, "[Content_Types].xml",
+                        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+                        + "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+                        + "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+                        + "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+                        + "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>"
+                        + "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"
+                        + "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>"
+                        + "</Types>");
+                    WriteZipXml(zip, "_rels/.rels",
+                        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+                        + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+                        + "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>"
+                        + "</Relationships>");
+                    WriteZipXml(zip, "xl/workbook.xml",
+                        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+                        + "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" "
+                        + "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
+                        + "<sheets><sheet name=\"Sheet1\" sheetId=\"1\" r:id=\"rId1\"/></sheets>"
+                        + "</workbook>");
+                    WriteZipXml(zip, "xl/_rels/workbook.xml.rels",
+                        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+                        + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+                        + "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>"
+                        + "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>"
+                        + "</Relationships>");
+                    WriteZipXml(zip, "xl/styles.xml",
+                        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+                        + "<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">"
+                        + "<fonts count=\"1\"><font><sz val=\"11\"/><name val=\"Calibri\"/></font></fonts>"
+                        + "<fills count=\"1\"><fill><patternFill patternType=\"none\"/></fill></fills>"
+                        + "<borders count=\"1\"><border/></borders>"
+                        + "<cellXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellXfs>"
+                        + "</styleSheet>");
+                    WriteZipXml(zip, "xl/worksheets/sheet1.xml", BuildSheetXml(grid));
+                }
+
+                return ms.ToArray();
+            }
+        }
+
+        private static string BuildSheetXml(PptHtmlChartGrid grid)
+        {
+            int cols = grid.Columns.Count;
+            int lastRow = grid.Rows.Count + 1;
+            string lastCol = ColLetter(cols);
+            var sb = new StringBuilder();
+            sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
+            sb.Append("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">");
+            sb.Append("<dimension ref=\"A1:").Append(lastCol).Append(lastRow.ToString(CultureInfo.InvariantCulture)).Append("\"/>");
+            sb.Append("<sheetData>");
+            sb.Append(BuildSheetRow(1, cols, c => grid.Columns[c].Name ?? "", numeric: false));
+            for (int r = 0; r < grid.Rows.Count; r++)
+            {
+                List<string> row = grid.Rows[r];
+                sb.Append(BuildSheetRow(r + 2, cols, c => row != null && c < row.Count ? (row[c] ?? "") : "", numeric: true));
+            }
+
+            sb.Append("</sheetData></worksheet>");
+            return sb.ToString();
+        }
+
+        private static string BuildSheetRow(int rowIndex, int cols, Func<int, string> cellText, bool numeric)
+        {
+            var sb = new StringBuilder();
+            string r = rowIndex.ToString(CultureInfo.InvariantCulture);
+            sb.Append("<row r=\"").Append(r).Append("\">");
+            for (int c = 0; c < cols; c++)
+            {
+                string raw = cellText(c) ?? "";
+                string addr = ColLetter(c + 1) + r;
+                if (numeric && c > 0
+                    && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double n))
+                {
+                    sb.Append("<c r=\"").Append(addr).Append("\"><v>")
+                        .Append(n.ToString(CultureInfo.InvariantCulture))
+                        .Append("</v></c>");
+                }
+                else
+                {
+                    sb.Append("<c r=\"").Append(addr).Append("\" t=\"inlineStr\"><is><t>")
+                        .Append(XmlText(raw))
+                        .Append("</t></is></c>");
+                }
+            }
+
+            sb.Append("</row>");
+            return sb.ToString();
+        }
+
+        private static string XmlText(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return "";
+            }
+
+            return value
+                .Replace("&", "&amp;")
+                .Replace("<", "&lt;")
+                .Replace(">", "&gt;")
+                .Replace("\"", "&quot;");
+        }
+
+        private static void WriteZipXml(ZipArchive zip, string name, string xml)
+        {
+            ZipArchiveEntry entry = zip.CreateEntry(name, CompressionLevel.Optimal);
+            using (Stream s = entry.Open())
+            using (var writer = new StreamWriter(s, new UTF8Encoding(false)))
+            {
+                writer.Write(xml);
             }
         }
 

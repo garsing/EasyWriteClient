@@ -98,6 +98,13 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            if (HostAvoidsChartDataCom(chart))
+            {
+                error = "PPT 灌数走 OOXML，不打开 ChartData";
+                PourLog(warnings, error);
+                return false;
+            }
+
             PourLog(warnings, "开始灌数（写 ChartData 内嵌表） " + DescribeWantGrid(grid));
             object excelApp = null;
             try

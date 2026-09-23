@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -48,6 +49,69 @@ namespace WordAddIn1.PresentationHost
             }
 
             PrepareChartExcelUiSuppression();
+            if (HostAvoidsFromShapes(shapes))
+            {
+                PourLog(warnings, "PPT 在空白稿建图再贴回，避免原稿 AddChart2/ChartData");
+                if (!TryCreateChartOffLiveDeck(
+                    shapes,
+                    left,
+                    top,
+                    width,
+                    height,
+                    xlType,
+                    grid,
+                    format,
+                    warnings,
+                    chartStyle,
+                    newLayout,
+                    out shape,
+                    out error))
+                {
+                    return false;
+                }
+
+                object pastedChart = TryGetChart(shape);
+                if (pastedChart == null)
+                {
+                    TryDelete(shape);
+                    shape = null;
+                    error = "PPT 贴回后无法访问 Chart";
+                    return false;
+                }
+
+                try
+                {
+                    if (applyHtmlChrome)
+                    {
+                        if (!TryApplyFormat(pastedChart, format, warnings, out error))
+                        {
+                            TryDelete(shape);
+                            shape = null;
+                            return false;
+                        }
+
+                        ChartStyleSnap htmlSnap = SnapFromFormat(format, grid);
+                        EnsureDisplaySwitches(oldSnap: null, format, htmlSnap, warnings);
+                        FinishLineChartLayout(pastedChart, xlType, format, warnings);
+                        TryApplyStyleSnap(pastedChart, htmlSnap, warnings, grid, format);
+                        TryInheritAxisChrome(pastedChart, htmlSnap, warnings);
+                        EnsureNewPieVariesByCategory(pastedChart, grid, warnings);
+                        TryApplyPieExplosionFromFormat(pastedChart, format, warnings);
+                        TryRestorePieChartType(pastedChart, htmlSnap);
+                    }
+                    else
+                    {
+                        EnsureCategoryAxisLabels(pastedChart, grid);
+                    }
+
+                    return true;
+                }
+                finally
+                {
+                    DismissChartExcelUiForChart(pastedChart);
+                }
+            }
+
             try
             {
                 PourLog(warnings, "即将 AddChart2 style=" + chartStyle
@@ -113,7 +177,23 @@ namespace WordAddIn1.PresentationHost
             DismissChartExcelUiForChart(chart);
             try
             {
-                if (!TryPourGrid(chart, grid, out error, warnings))
+                if (HostAvoidsChartDataCom(chart))
+                {
+                    PourLog(warnings, "PPT 灌数走 OOXML，不打开 ChartData");
+                    if (!TryFixSeriesViaOoxml(shape, grid, warnings, out object poured) || poured == null)
+                    {
+                        TryDelete(shape);
+                        shape = null;
+                        error = "PPT 灌数 OOXML 失败";
+                        return false;
+                    }
+
+                    shape = poured;
+                    chart = TryGetChart(shape);
+                    PourLog(warnings, "OOXML 灌数后 " + DescribeLiveSeries(chart)
+                        + " | " + DescribeSeriesExtra(chart));
+                }
+                else if (!TryPourGrid(chart, grid, out error, warnings))
                 {
                     if (TryFixSeriesViaOoxml(shape, grid, warnings, out shape))
                     {
@@ -163,6 +243,235 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private static bool TryCreateChartOffLiveDeck(
+            object destShapes,
+            float left,
+            float top,
+            float width,
+            float height,
+            int xlType,
+            PptHtmlChartGrid grid,
+            PptHtmlChartFormat format,
+            List<string> warnings,
+            int chartStyle,
+            bool newLayout,
+            out object shape,
+            out string error)
+        {
+            shape = null;
+            error = null;
+            object destSlide = destShapes == null ? null : WppCom.GetProperty(destShapes, "Parent");
+            object destPres = destSlide == null ? null : WppCom.GetProperty(destSlide, "Parent");
+            object app = destPres == null ? null : WppCom.GetProperty(destPres, "Application");
+            object presentations = app == null ? null : WppCom.GetProperty(app, "Presentations");
+            if (destPres == null || presentations == null)
+            {
+                error = "PPT 旁路建图：没有 Presentation";
+                return false;
+            }
+
+            string tempPath = Path.Combine(
+                Path.GetTempPath(),
+                "ew-ppt-chart-blank-" + Guid.NewGuid().ToString("N") + ".pptx");
+            object blank = null;
+            object blankShape = null;
+            object excelApp = null;
+            try
+            {
+                try
+                {
+                    WppCom.Invoke(destPres, "SaveCopyAs", tempPath);
+                }
+                catch (Exception)
+                {
+                    WppCom.Invoke(destPres, "SaveCopyAs", tempPath, 24);
+                }
+
+                if (!File.Exists(tempPath))
+                {
+                    error = "PPT 旁路建图：SaveCopyAs 未落盘";
+                    return false;
+                }
+
+                blank = TryOpenCopyPresentation(presentations, tempPath, warnings);
+                if (blank == null)
+                {
+                    error = "PPT 旁路建图：打不开副本";
+                    return false;
+                }
+
+                object slides = WppCom.GetProperty(blank, "Slides");
+                int destIndex = 1;
+                try
+                {
+                    destIndex = Convert.ToInt32(WppCom.GetProperty(destSlide, "SlideIndex") ?? 1);
+                }
+                catch (Exception)
+                {
+                }
+
+                int slideCount = Convert.ToInt32(WppCom.GetProperty(slides, "Count") ?? 0);
+                if (destIndex < 1 || destIndex > slideCount)
+                {
+                    destIndex = slideCount < 1 ? 1 : slideCount;
+                }
+
+                object slide = WppCom.GetIndexed(slides, destIndex);
+                object blankShapes = slide == null ? null : WppCom.GetProperty(slide, "Shapes");
+                if (blankShapes == null)
+                {
+                    error = "PPT 旁路建图：副本页不存在";
+                    return false;
+                }
+
+                blankShape = TryAddChartOnShapes(
+                    blankShapes,
+                    left,
+                    top,
+                    width,
+                    height,
+                    xlType,
+                    chartStyle,
+                    newLayout,
+                    warnings,
+                    out error);
+                if (blankShape == null)
+                {
+                    if (string.IsNullOrEmpty(error))
+                    {
+                        error = "PPT 旁路建图：AddChart 失败";
+                    }
+
+                    return false;
+                }
+
+                object chart = TryGetChart(blankShape);
+                if (chart == null)
+                {
+                    error = "PPT 旁路建图：无法访问 Chart";
+                    return false;
+                }
+
+                PourLog(warnings, "空白稿已建图，在副本上灌 ChartData");
+                if (!TryPourViaChartData(chart, grid, out excelApp, out error, warnings))
+                {
+                    PourLog(warnings, "空白稿 ChartData 失败，改 OOXML: " + (error ?? ""));
+                    if (!TryFixSeriesViaOoxml(blankShape, grid, warnings, out object poured) || poured == null)
+                    {
+                        error = "PPT 旁路建图灌数失败: " + (error ?? "");
+                        return false;
+                    }
+
+                    blankShape = poured;
+                    chart = TryGetChart(blankShape);
+                }
+
+                HideEmbeddedExcel(excelApp);
+                DismissChartExcelUi();
+                WppCom.Invoke(blankShape, "Copy");
+                shape = TryPasteChart(destShapes, warnings);
+                if (shape == null)
+                {
+                    error = "PPT 旁路建图：贴回原页失败";
+                    return false;
+                }
+
+                TryCopyBox(blankShape, shape);
+                PourLog(warnings, "空白稿图已贴回 " + DescribeLiveSeries(TryGetChart(shape)));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "PPT 旁路建图失败: " + ex.Message;
+                PourLog(warnings, error);
+                shape = null;
+                return false;
+            }
+            finally
+            {
+                HideEmbeddedExcel(excelApp);
+                TryClosePresentation(blank);
+                try
+                {
+                    if (!string.IsNullOrEmpty(tempPath) && File.Exists(tempPath))
+                    {
+                        File.Delete(tempPath);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        private static object TryAddChartOnShapes(
+            object shapes,
+            float left,
+            float top,
+            float width,
+            float height,
+            int xlType,
+            int chartStyle,
+            bool newLayout,
+            List<string> warnings,
+            out string error)
+        {
+            error = null;
+            try
+            {
+                if (newLayout)
+                {
+                    try
+                    {
+                        return WppCom.Invoke(shapes, "AddChart2", chartStyle, xlType, left, top, width, height, newLayout);
+                    }
+                    catch (Exception ex1)
+                    {
+                        PourLog(warnings, "AddChart2(newLayout) 失败: " + ex1.Message);
+                    }
+                }
+
+                try
+                {
+                    return WppCom.Invoke(shapes, "AddChart2", chartStyle, xlType, left, top, width, height);
+                }
+                catch (Exception ex2)
+                {
+                    PourLog(warnings, "AddChart2 失败: " + ex2.Message);
+                    return WppCom.Invoke(shapes, "AddChart", xlType, left, top, width, height);
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "创建图表失败: " + ex.Message;
+                return null;
+            }
+        }
+
+        private static void TryClosePresentation(object presentation)
+        {
+            if (presentation == null)
+            {
+                return;
+            }
+
+            try
+            {
+                WppCom.TrySetProperty(presentation, "Saved", true);
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                WppCom.Invoke(presentation, "Close");
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         private static object TryGetChart(object shape)
         {
             if (shape == null)
@@ -196,6 +505,12 @@ namespace WordAddIn1.PresentationHost
         {
             grid = null;
             error = null;
+            // PPT 开 ChartData 会把脏会话的稿打穿；读系列缓存，不 Activate。
+            if (HostAvoidsChartDataCom(chart))
+            {
+                return TryReadGridFromSeries(chart, out grid, out error) && grid != null && grid.IsPourable;
+            }
+
             // I8：未外链时优先 ChartData 内嵌表；外链图禁止开 Workbook（会弹「链接的文件不可用」），改读 Series。
             string embeddedErr = null;
             bool fromSheet = !IsChartDataLinked(chart)
