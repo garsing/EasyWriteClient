@@ -130,7 +130,7 @@ namespace WordAddIn1
             };
         }
 
-        private static bool TryRejectForeignArgs(
+        internal static bool TryRejectForeignArgs(
             string action,
             Dictionary<string, object> args,
             out string error)

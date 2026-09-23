@@ -15,6 +15,9 @@ namespace PptHtmlContentRoundtripTest
         public string ExpectApplyErrorContains { get; set; }
         public Func<ContentAssertContext, string> Match { get; set; }
         public bool ContentOnly { get; set; }
+
+        /// <summary>非空则走组/拷组脚本，不走普通 HTML 往返。</summary>
+        public Func<ContentGroupSession, string> GroupRun { get; set; }
     }
 
     internal sealed class ContentAssets

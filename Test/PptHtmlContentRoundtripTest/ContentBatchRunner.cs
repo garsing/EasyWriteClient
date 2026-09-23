@@ -157,6 +157,7 @@ namespace PptHtmlContentRoundtripTest
                     }
 
                     bool retry = false;
+                    bool ran = false;
                     try
                     {
                         PowerPoint.Slide slide = pres.Slides.Add(
@@ -164,6 +165,7 @@ namespace PptHtmlContentRoundtripTest
                             PowerPoint.PpSlideLayout.ppLayoutBlank);
                         TryAddCaseLabel(slide, tag);
                         string rpc = RunOneSlide(run, pres, slide, one, assets, outDir, tag);
+                        ran = true;
                         if (rpc != null)
                         {
                             retry = true;
@@ -172,8 +174,14 @@ namespace PptHtmlContentRoundtripTest
                         {
                             SaveQuiet(pres, path);
                             sinceRecycle++;
+                            int pages = TrySlideCount(pres);
                             Console.WriteLine("  … " + (i + 1) + "/" + cases.Count
-                                + " 页=" + pres.Slides.Count);
+                                + " 页=" + (pages >= 0 ? pages.ToString(CultureInfo.InvariantCulture) : "?"));
+                            if (pages < 0)
+                            {
+                                CloseQuiet(pres);
+                                pres = null;
+                            }
                         }
                     }
                     catch (Exception ex)
@@ -181,6 +189,18 @@ namespace PptHtmlContentRoundtripTest
                         if (IsRpcText(ex.Message))
                         {
                             retry = true;
+                        }
+                        else if (IsDeadPres(ex.Message))
+                        {
+                            if (!ran)
+                            {
+                                retry = true;
+                            }
+                            else
+                            {
+                                CloseQuiet(pres);
+                                pres = null;
+                            }
                         }
                         else
                         {
@@ -267,6 +287,11 @@ namespace PptHtmlContentRoundtripTest
 
                 run.CaseFail(tag, "取 SlideID 失败: " + ex.Message);
                 return null;
+            }
+
+            if (one.GroupRun != null)
+            {
+                return ContentGroupHarness.Run(run, pres, slide, slideId, one, tag, wpp: false);
             }
 
             string createHtml;
@@ -744,6 +769,35 @@ namespace PptHtmlContentRoundtripTest
             {
                 return false;
             }
+        }
+
+        private static int TrySlideCount(PowerPoint.Presentation pres)
+        {
+            if (pres == null)
+            {
+                return -1;
+            }
+
+            try
+            {
+                return pres.Slides.Count;
+            }
+            catch
+            {
+                return -1;
+            }
+        }
+
+        private static bool IsDeadPres(string message)
+        {
+            if (string.IsNullOrEmpty(message))
+            {
+                return false;
+            }
+
+            return message.IndexOf("Object does not exist", StringComparison.OrdinalIgnoreCase) >= 0
+                || message.IndexOf("对象不存在", StringComparison.OrdinalIgnoreCase) >= 0
+                || message.IndexOf("unknown member", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool IsRpcText(string message)

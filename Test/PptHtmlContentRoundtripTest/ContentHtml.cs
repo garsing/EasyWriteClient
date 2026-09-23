@@ -58,6 +58,66 @@ namespace PptHtmlContentRoundtripTest
             return Section(sb.ToString());
         }
 
+        public static string TwoTextboxes(
+            string a = "源标题",
+            string b = "源正文",
+            double aLeft = 8,
+            double aTop = 18,
+            double bLeft = 8,
+            double bTop = 48)
+        {
+            return Section(
+                "  <div data-shape-type=\"textbox\" style=\"" + Geo(aLeft, aTop, 28, 12) + "\">"
+                + Escape(a) + "</div>\n"
+                + "  <div data-shape-type=\"textbox\" style=\"" + Geo(bLeft, bTop, 28, 12) + "\">"
+                + Escape(b) + "</div>");
+        }
+
+        public static string ThreeTextboxes()
+        {
+            return Section(
+                "  <div data-shape-type=\"textbox\" style=\"" + Geo(8, 16, 22, 10) + "\">内组甲</div>\n"
+                + "  <div data-shape-type=\"textbox\" style=\"" + Geo(8, 32, 22, 10) + "\">内组乙</div>\n"
+                + "  <div data-shape-type=\"textbox\" style=\"" + Geo(40, 20, 22, 10) + "\">外组丙</div>");
+        }
+
+        public static string NestedGroups()
+        {
+            return Section(
+                "  <div data-shape-type=\"group\" style=\"" + Geo(6, 12, 60, 40) + "\">\n"
+                + "    <div data-shape-type=\"group\" style=\"" + Geo(8, 14, 24, 30) + "\">\n"
+                + "      <div data-shape-type=\"textbox\" style=\"" + Geo(8, 16, 22, 10) + "\">内组甲</div>\n"
+                + "      <div data-shape-type=\"textbox\" style=\"" + Geo(8, 32, 22, 10) + "\">内组乙</div>\n"
+                + "    </div>\n"
+                + "    <div data-shape-type=\"textbox\" style=\"" + Geo(40, 20, 22, 10) + "\">外组丙</div>\n"
+                + "  </div>");
+        }
+
+        public static string TitleAndPie()
+        {
+            return Section(
+                "  <div data-shape-type=\"textbox\" style=\"" + Geo(8, 12, 30, 10) + "\">组内标题</div>\n"
+                + PieMarkup(8, 28, 36, 40));
+        }
+
+        public static string PieChart(double left = 8, double top = 28, double width = 36, double height = 40)
+        {
+            return Section(PieMarkup(left, top, width, height));
+        }
+
+        private static string PieMarkup(double left, double top, double width, double height)
+        {
+            return "  <div data-shape-type=\"chart\" data-chart-type=\"pie2d\" data-legend=\"right\" style=\""
+                + Geo(left, top, width, height) + "\">\n"
+                + "    <table>\n"
+                + "      <tr><th data-col=\"category\"> </th><th data-col=\"value\" data-series-type=\"pie2d\">份额</th></tr>\n"
+                + "      <tr><td>A</td><td>40</td></tr>\n"
+                + "      <tr><td>B</td><td>35</td></tr>\n"
+                + "      <tr><td>C</td><td>25</td></tr>\n"
+                + "    </table>\n"
+                + "  </div>";
+        }
+
         public static string TableCreate(
             string[][] cells,
             double left = 8,
