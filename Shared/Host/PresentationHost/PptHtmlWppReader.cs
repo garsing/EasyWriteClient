@@ -674,7 +674,7 @@ namespace WordAddIn1.PresentationHost
                     groupId,
                     out List<PptHtmlGroupXmlChild> xmlKids,
                     out _)
-                && XmlKidsHaveGroup(xmlKids))
+                && PptHtmlGroupXmlChild.HasGroup(xmlKids))
             {
                 return AppendWppKidsFromXml(
                     xmlKids,
@@ -825,6 +825,9 @@ namespace WordAddIn1.PresentationHost
             out string error)
         {
             error = null;
+            List<PptHtmlGroupXmlChild> innerKids;
+            List<int> leaves;
+            PptHtmlGroupIo.TryGetDirectGroupChildrenWpp(pres, slideIndex, groupId, out innerKids, out leaves);
             List<PptHtmlShapeNode> groupKids = null;
             bool depthCapped = false;
             if (mode == GroupReadMode.FullTree
@@ -833,9 +836,7 @@ namespace WordAddIn1.PresentationHost
             {
                 groupKids = new List<PptHtmlShapeNode>();
                 int childLayer = IsSkeletonMode(mode) ? expandLayer + 1 : 0;
-                List<PptHtmlGroupXmlChild> innerKids;
-                if (PptHtmlGroupIo.TryGetDirectGroupChildrenWpp(pres, slideIndex, groupId, out innerKids, out _)
-                    && innerKids != null)
+                if (innerKids != null)
                 {
                     if (!AppendWppKidsFromXml(
                         innerKids,
@@ -862,9 +863,6 @@ namespace WordAddIn1.PresentationHost
             {
                 depthCapped = true;
             }
-
-            List<int> leaves;
-            PptHtmlGroupIo.TryGetDirectGroupChildrenWpp(pres, slideIndex, groupId, out _, out leaves);
             double left;
             double top;
             double width;
@@ -886,24 +884,6 @@ namespace WordAddIn1.PresentationHost
                 DepthCapped = depthCapped
             });
             return true;
-        }
-
-        private static bool XmlKidsHaveGroup(List<PptHtmlGroupXmlChild> kids)
-        {
-            if (kids == null)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < kids.Count; i++)
-            {
-                if (kids[i].IsGroup)
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         private static Dictionary<int, object> BuildWppLeafMap(object group)

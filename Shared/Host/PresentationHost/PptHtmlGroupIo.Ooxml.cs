@@ -104,7 +104,6 @@ namespace WordAddIn1.PresentationHost
                     width,
                     height,
                     out int newGroupId,
-                    out string wrappedKinds,
                     out error))
                 {
                     return false;
@@ -119,28 +118,7 @@ namespace WordAddIn1.PresentationHost
                 PowerPoint.Shape source = FindTopLevelPpt(copy.Slides[slideIndex].Shapes, newGroupId);
                 if (source == null)
                 {
-                    error = "OOXML 编组：副本里找不到新组 id=" + newGroupId + " wrapped=" + wrappedKinds;
-                    return false;
-                }
-
-                string probePath = tempPath + ".after-open.pptx";
-                try
-                {
-                    copy.SaveCopyAs(probePath, PowerPoint.PpSaveAsFileType.ppSaveAsOpenXMLPresentation);
-                }
-                catch (Exception)
-                {
-                    probePath = null;
-                }
-
-                bool xmlAlive = !string.IsNullOrEmpty(probePath)
-                    && XmlGroupHasChildGroup(probePath, slideIndex, newGroupId);
-                TryDeleteFile(probePath);
-                if (!xmlAlive && !NestLooksAlivePpt(source))
-                {
-                    error = "OOXML 编组：打开副本后 XML/COM 都不见内组 wrapped=" + wrappedKinds
-                        + " source=" + DescribePptGroupItems(source)
-                        + " parents=" + DescribePptParents(source);
+                    error = "OOXML 编组：副本里找不到新组 id=" + newGroupId;
                     return false;
                 }
 
@@ -162,21 +140,12 @@ namespace WordAddIn1.PresentationHost
                 {
                 }
 
-                if (!NestLooksAlivePpt(created) && !xmlAlive)
-                {
-                    error = "OOXML 编组：贴回后内组仍不在 wrapped=" + wrappedKinds
-                        + " source=" + DescribePptGroupItems(source)
-                        + " pasted=" + DescribePptGroupItems(created);
-                    TryDeletePpt(created);
-                    return false;
-                }
-
                 for (int i = 0; i < members.Count; i++)
                 {
                     TryDeletePpt(members[i]);
                 }
 
-                PptHtmlGroupIo.InvalidateGroupTreeCache();
+                InvalidateGroupTreeCache();
                 group = created;
                 return true;
             }
@@ -266,13 +235,11 @@ namespace WordAddIn1.PresentationHost
                     width,
                     height,
                     out int newGroupId,
-                    out string wrappedKinds,
                     out error))
                 {
                     return false;
                 }
 
-                bool xmlAlive = wrappedKinds.IndexOf("grpSp", StringComparison.OrdinalIgnoreCase) >= 0;
                 object presentations = WppCom.GetProperty(app, "Presentations");
                 copy = TryOpenCopyWpp(presentations, tempPath, out error);
                 if (copy == null)
@@ -286,14 +253,7 @@ namespace WordAddIn1.PresentationHost
                 object source = FindTopLevelWpp(copyShapes, newGroupId);
                 if (source == null)
                 {
-                    error = "OOXML 编组：副本里找不到新组 id=" + newGroupId + " wrapped=" + wrappedKinds;
-                    return false;
-                }
-
-                if (!xmlAlive && !NestLooksAliveWpp(source))
-                {
-                    error = "OOXML 编组：打开副本后 XML/COM 都不见内组 wrapped=" + wrappedKinds
-                        + " source=" + DescribeWppGroupItems(source);
+                    error = "OOXML 编组：副本里找不到新组 id=" + newGroupId;
                     return false;
                 }
 
@@ -313,14 +273,6 @@ namespace WordAddIn1.PresentationHost
                 }
                 catch (Exception)
                 {
-                }
-
-                if (!NestLooksAliveWpp(pasted) && !xmlAlive)
-                {
-                    error = "OOXML 编组：贴回后内组仍不在 wrapped=" + wrappedKinds
-                        + " pasted=" + DescribeWppGroupItems(pasted);
-                    TryDeleteWpp(pasted);
-                    return false;
                 }
 
                 for (int i = 0; i < members.Count; i++)
@@ -368,11 +320,9 @@ namespace WordAddIn1.PresentationHost
             double width,
             double height,
             out int newGroupId,
-            out string wrappedKinds,
             out string error)
         {
             newGroupId = 0;
-            wrappedKinds = "";
             error = null;
             try
             {
@@ -406,7 +356,6 @@ namespace WordAddIn1.PresentationHost
                         width,
                         height,
                         out newGroupId,
-                        out wrappedKinds,
                         out error))
                     {
                         return false;
@@ -438,11 +387,9 @@ namespace WordAddIn1.PresentationHost
             double width,
             double height,
             out int newGroupId,
-            out string wrappedKinds,
             out string error)
         {
             newGroupId = 0;
-            wrappedKinds = "";
             error = null;
             if (doc == null || doc.Root == null)
             {
@@ -493,13 +440,6 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            var kinds = new List<string>();
-            for (int i = 0; i < memberEls.Count; i++)
-            {
-                kinds.Add(memberEls[i].Name.LocalName + ":" + ReadOwnShapeId(memberEls[i]));
-            }
-
-            wrappedKinds = string.Join(",", kinds.ToArray());
             newGroupId = MaxCnvPrId(doc.Root) + 1;
             long originX = ToEmuLong(left);
             long originY = ToEmuLong(top);
@@ -682,59 +622,6 @@ namespace WordAddIn1.PresentationHost
             off.SetAttributeValue("y", y.ToString(CultureInfo.InvariantCulture));
         }
 
-        private static void ShiftOwnXfrmOff(XElement shapeEl, long originX, long originY)
-        {
-            if (shapeEl == null)
-            {
-                return;
-            }
-
-            XElement xfrm = FindOwnXfrm(shapeEl);
-            if (xfrm == null)
-            {
-                return;
-            }
-
-            ShiftOffEl(xfrm.Element(ANs + "off") ?? xfrm.Element(PNs + "off"), originX, originY);
-        }
-
-        private static XElement FindOwnXfrm(XElement shapeEl)
-        {
-            string local = shapeEl.Name.LocalName;
-            if (local == "grpSp")
-            {
-                XElement grpSpPr = shapeEl.Element(PNs + "grpSpPr");
-                return grpSpPr == null ? null : (grpSpPr.Element(ANs + "xfrm") ?? grpSpPr.Element(PNs + "xfrm"));
-            }
-
-            if (local == "graphicFrame")
-            {
-                return shapeEl.Element(PNs + "xfrm") ?? shapeEl.Element(ANs + "xfrm");
-            }
-
-            foreach (XElement child in shapeEl.Elements())
-            {
-                string name = child.Name.LocalName;
-                if (name != "spPr" && name != "xfrm")
-                {
-                    continue;
-                }
-
-                if (name == "xfrm")
-                {
-                    return child;
-                }
-
-                XElement xfrm = child.Element(ANs + "xfrm") ?? child.Element(PNs + "xfrm");
-                if (xfrm != null)
-                {
-                    return xfrm;
-                }
-            }
-
-            return null;
-        }
-
         private static long ReadLongAttr(XElement el, string name)
         {
             string raw = el == null ? null : (string)el.Attribute(name);
@@ -746,41 +633,6 @@ namespace WordAddIn1.PresentationHost
             }
 
             return value;
-        }
-
-        private static string DescribePptParents(PowerPoint.Shape group)
-        {
-            try
-            {
-                int outerId = group.Id;
-                PowerPoint.GroupShapes items = group.GroupItems;
-                var parts = new List<string>();
-                int count = items.Count;
-                for (int i = 1; i <= count; i++)
-                {
-                    PowerPoint.Shape child = items[i];
-                    string parentText = "-";
-                    try
-                    {
-                        PowerPoint.Shape parent = child.ParentGroup;
-                        parentText = parent == null
-                            ? "null"
-                            : (((int)parent.Type) + ":" + parent.Id + (parent.Id == outerId ? "=outer" : ""));
-                    }
-                    catch (Exception ex)
-                    {
-                        parentText = ex.Message;
-                    }
-
-                    parts.Add(child.Id + "->" + parentText);
-                }
-
-                return count + "[" + string.Join(",", parts.ToArray()) + "]";
-            }
-            catch (Exception ex)
-            {
-                return ex.Message;
-            }
         }
 
         private static bool TryReadPptBox(
@@ -1485,243 +1337,6 @@ namespace WordAddIn1.PresentationHost
             catch (Exception)
             {
                 return "wpp:" + Guid.NewGuid().ToString("N");
-            }
-        }
-
-        private static bool XmlGroupHasChildGroup(string pptxPath, int slideIndex, int groupId)
-        {
-            if (string.IsNullOrEmpty(pptxPath) || !File.Exists(pptxPath) || groupId < 1)
-            {
-                return false;
-            }
-
-            try
-            {
-                using (ZipArchive zip = ZipFile.OpenRead(pptxPath))
-                {
-                    List<string> slides = ListSlidePartPaths(zip);
-                    if (slideIndex < 1 || slideIndex > slides.Count)
-                    {
-                        return false;
-                    }
-
-                    ZipArchiveEntry entry = FindZipEntry(zip, slides[slideIndex - 1]);
-                    if (entry == null)
-                    {
-                        return false;
-                    }
-
-                    XDocument doc;
-                    using (Stream stream = entry.Open())
-                    {
-                        doc = XDocument.Load(stream);
-                    }
-
-                    XElement grp = FindGrpSpById(doc.Root, groupId);
-                    if (grp == null)
-                    {
-                        return false;
-                    }
-
-                    foreach (XElement child in grp.Elements())
-                    {
-                        if (child.Name == (PNs + "grpSp") || child.Name.LocalName == "grpSp")
-                        {
-                            return true;
-                        }
-                    }
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            return false;
-        }
-
-        private static XElement FindGrpSpById(XElement root, int groupId)
-        {
-            if (root == null)
-            {
-                return null;
-            }
-
-            foreach (XElement el in root.Descendants(PNs + "grpSp"))
-            {
-                if (ReadOwnShapeId(el) == groupId)
-                {
-                    return el;
-                }
-            }
-
-            return null;
-        }
-
-        private static bool NestLooksAlivePpt(PowerPoint.Shape group)
-        {
-            if (group == null)
-            {
-                return false;
-            }
-
-            if (HasGroupItemPpt(group))
-            {
-                return true;
-            }
-
-            try
-            {
-                int outerId = group.Id;
-                PowerPoint.GroupShapes items = group.GroupItems;
-                int count = items.Count;
-                for (int i = 1; i <= count; i++)
-                {
-                    try
-                    {
-                        PowerPoint.Shape parent = items[i].ParentGroup;
-                        if (parent != null && parent.Id != outerId && IsGroupShape(parent))
-                        {
-                            return true;
-                        }
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            return false;
-        }
-
-        private static bool NestLooksAliveWpp(object group)
-        {
-            if (group == null)
-            {
-                return false;
-            }
-
-            if (HasGroupItemWpp(group))
-            {
-                return true;
-            }
-
-            try
-            {
-                int outerId = Convert.ToInt32(WppCom.GetProperty(group, "Id") ?? 0);
-                object items = WppCom.GetProperty(group, "GroupItems");
-                int count = Convert.ToInt32(WppCom.GetProperty(items, "Count") ?? 0);
-                for (int i = 1; i <= count; i++)
-                {
-                    try
-                    {
-                        object child = WppCom.GetIndexed(items, i);
-                        object parent = child == null ? null : WppCom.GetProperty(child, "ParentGroup");
-                        object rawParentId = parent == null ? null : WppCom.GetProperty(parent, "Id");
-                        if (rawParentId != null
-                            && Convert.ToInt32(rawParentId) != outerId
-                            && IsWppGroup(parent))
-                        {
-                            return true;
-                        }
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            return false;
-        }
-
-        private static bool HasGroupItemPpt(PowerPoint.Shape group)
-        {
-            try
-            {
-                PowerPoint.GroupShapes items = group.GroupItems;
-                int count = items.Count;
-                for (int i = 1; i <= count; i++)
-                {
-                    if (IsGroupShape(items[i]))
-                    {
-                        return true;
-                    }
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            return false;
-        }
-
-        private static bool HasGroupItemWpp(object group)
-        {
-            try
-            {
-                object items = WppCom.GetProperty(group, "GroupItems");
-                int count = Convert.ToInt32(WppCom.GetProperty(items, "Count") ?? 0);
-                for (int i = 1; i <= count; i++)
-                {
-                    if (IsWppGroup(WppCom.GetIndexed(items, i)))
-                    {
-                        return true;
-                    }
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            return false;
-        }
-
-        private static string DescribePptGroupItems(PowerPoint.Shape group)
-        {
-            try
-            {
-                PowerPoint.GroupShapes items = group.GroupItems;
-                var parts = new List<string>();
-                int count = items.Count;
-                for (int i = 1; i <= count; i++)
-                {
-                    PowerPoint.Shape child = items[i];
-                    parts.Add(((int)child.Type) + ":" + child.Id);
-                }
-
-                return count + "[" + string.Join(",", parts.ToArray()) + "]";
-            }
-            catch (Exception ex)
-            {
-                return ex.Message;
-            }
-        }
-
-        private static string DescribeWppGroupItems(object group)
-        {
-            try
-            {
-                object items = WppCom.GetProperty(group, "GroupItems");
-                int count = Convert.ToInt32(WppCom.GetProperty(items, "Count") ?? 0);
-                var parts = new List<string>();
-                for (int i = 1; i <= count; i++)
-                {
-                    object child = WppCom.GetIndexed(items, i);
-                    object type = child == null ? null : WppCom.GetProperty(child, "Type");
-                    object rawId = child == null ? null : WppCom.GetProperty(child, "Id");
-                    parts.Add((type ?? "?") + ":" + (rawId ?? "-"));
-                }
-
-                return count + "[" + string.Join(",", parts.ToArray()) + "]";
-            }
-            catch (Exception ex)
-            {
-                return ex.Message;
             }
         }
 

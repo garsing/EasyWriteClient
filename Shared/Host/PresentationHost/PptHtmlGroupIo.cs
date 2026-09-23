@@ -10,6 +10,24 @@ namespace WordAddIn1.PresentationHost
     {
         public int Id;
         public bool IsGroup;
+
+        public static bool HasGroup(IList<PptHtmlGroupXmlChild> kids)
+        {
+            if (kids == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < kids.Count; i++)
+            {
+                if (kids[i].IsGroup)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 
     internal static partial class PptHtmlGroupIo
@@ -211,15 +229,15 @@ namespace WordAddIn1.PresentationHost
 
             try
             {
-                object range = WppCom.Invoke(shapes, "Range", new object[] { names });
-                if (range == null)
-                {
-                    error = "WPP Range 失败";
-                    return false;
-                }
-
                 if (!hasInnerGroup)
                 {
+                    object range = WppCom.Invoke(shapes, "Range", new object[] { names });
+                    if (range == null)
+                    {
+                        error = "WPP Range 失败";
+                        return false;
+                    }
+
                     group = WppCom.Invoke(range, "Group");
                     return group != null;
                 }
