@@ -1,12 +1,21 @@
 using System;
 using System.Collections.Generic;
+using Office = Microsoft.Office.Core;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 using WordAddIn1.OpenFiles;
 
 namespace WordAddIn1.PresentationHost
 {
-    internal static class PptHtmlGroupIo
+    internal sealed class PptHtmlGroupXmlChild
     {
+        public int Id;
+        public bool IsGroup;
+    }
+
+    internal static partial class PptHtmlGroupIo
+    {
+        private const int MsoGroup = 6;
+
         public static bool TryGroupPowerPoint(
             PowerPoint.Slide slide,
             IList<PowerPoint.Shape> members,
@@ -27,15 +36,15 @@ namespace WordAddIn1.PresentationHost
                 {
                     PowerPoint.Shape only = members[0];
                     PowerPoint.Shape backing = slide.Shapes.AddShape(
-                        Microsoft.Office.Core.MsoAutoShapeType.msoShapeRectangle,
+                        Office.MsoAutoShapeType.msoShapeRectangle,
                         only.Left,
                         only.Top,
                         Math.Max(1f, only.Width),
                         Math.Max(1f, only.Height));
                     try
                     {
-                        backing.Fill.Visible = Microsoft.Office.Core.MsoTriState.msoFalse;
-                        backing.Line.Visible = Microsoft.Office.Core.MsoTriState.msoFalse;
+                        backing.Fill.Visible = Office.MsoTriState.msoFalse;
+                        backing.Line.Visible = Office.MsoTriState.msoFalse;
                     }
                     catch (Exception)
                     {
@@ -44,14 +53,58 @@ namespace WordAddIn1.PresentationHost
                     members = new List<PowerPoint.Shape> { backing, only };
                 }
 
-                var names = new object[members.Count];
-                for (int i = 0; i < members.Count; i++)
+                return TryGroupPowerPointMembers(slide, members, out group, out error);
+            }
+            catch (Exception ex)
+            {
+                error = "COM Group 失败: " + ex.Message;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 管形状 / 新建组共用。成员都是叶子走 Range.Group；已有组则 OOXML 包一层，避免拍平。
+        /// </summary>
+        public static bool TryGroupPowerPointMembers(
+            PowerPoint.Slide slide,
+            IList<PowerPoint.Shape> members,
+            out PowerPoint.Shape group,
+            out string error)
+        {
+            group = null;
+            error = null;
+            if (slide == null || members == null || members.Count < 2)
+            {
+                error = "Group 需要至少两个子形状";
+                return false;
+            }
+
+            var names = new object[members.Count];
+            bool hasInnerGroup = false;
+            for (int i = 0; i < members.Count; i++)
+            {
+                if (members[i] == null)
                 {
-                    names[i] = members[i].Name;
+                    error = "Group 成员不能为空";
+                    return false;
                 }
 
-                group = slide.Shapes.Range(names).Group();
-                return group != null;
+                names[i] = members[i].Name;
+                if (IsGroupShape(members[i]))
+                {
+                    hasInnerGroup = true;
+                }
+            }
+
+            try
+            {
+                if (!hasInnerGroup)
+                {
+                    group = slide.Shapes.Range(names).Group();
+                    return group != null;
+                }
+
+                return TryGroupNestedByOoxmlPpt(slide, members, out group, out error);
             }
             catch (Exception ex)
             {
@@ -109,19 +162,137 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
 
-                var names = new object[members.Count];
-                for (int i = 0; i < members.Count; i++)
-                {
-                    names[i] = WppCom.GetProperty(members[i], "Name");
-                }
-
-                object range = WppCom.Invoke(shapes, "Range", new object[] { names });
-                group = WppCom.Invoke(range, "Group");
-                return group != null;
+                return TryGroupWppMembers(slide, members, out group, out error);
             }
             catch (Exception ex)
             {
                 error = "WPP Group 失败: " + ex.Message;
+                return false;
+            }
+        }
+
+        public static bool TryGroupWppMembers(
+            object slide,
+            IList<object> members,
+            out object group,
+            out string error)
+        {
+            group = null;
+            error = null;
+            if (slide == null || members == null || members.Count < 2)
+            {
+                error = "Group 需要至少两个子形状";
+                return false;
+            }
+
+            object shapes = WppCom.GetProperty(slide, "Shapes");
+            if (shapes == null)
+            {
+                error = "无法读取 Shapes";
+                return false;
+            }
+
+            var names = new object[members.Count];
+            bool hasInnerGroup = false;
+            for (int i = 0; i < members.Count; i++)
+            {
+                if (members[i] == null)
+                {
+                    error = "Group 成员不能为空";
+                    return false;
+                }
+
+                names[i] = WppCom.GetProperty(members[i], "Name");
+                if (IsWppGroup(members[i]))
+                {
+                    hasInnerGroup = true;
+                }
+            }
+
+            try
+            {
+                object range = WppCom.Invoke(shapes, "Range", new object[] { names });
+                if (range == null)
+                {
+                    error = "WPP Range 失败";
+                    return false;
+                }
+
+                if (!hasInnerGroup)
+                {
+                    group = WppCom.Invoke(range, "Group");
+                    return group != null;
+                }
+
+                return TryGroupNestedByOoxmlWpp(slide, members, out group, out error);
+            }
+            catch (Exception ex)
+            {
+                error = "WPP Group 失败: " + ex.Message;
+                return false;
+            }
+        }
+
+        public static bool TryCopyGroupPowerPoint(PowerPoint.Slide slide, int groupId, out string error)
+        {
+            error = null;
+            if (slide == null || groupId < 1)
+            {
+                error = "拷组：slide/id 无效";
+                return false;
+            }
+
+            PowerPoint.Shape top = FindTopLevelPpt(slide.Shapes, groupId);
+            if (IsGroupShape(top))
+            {
+                top.Copy();
+                return true;
+            }
+
+            return TryCopyInnerGroupByUngroupPpt(slide, groupId, out error);
+        }
+
+        public static bool TryCopyGroupWpp(object slide, int groupId, out string error)
+        {
+            error = null;
+            if (slide == null || groupId < 1)
+            {
+                error = "拷组：slide/id 无效";
+                return false;
+            }
+
+            object shapes = WppCom.GetProperty(slide, "Shapes");
+            object top = FindTopLevelWpp(shapes, groupId);
+            if (IsWppGroup(top))
+            {
+                WppCom.Invoke(top, "Copy");
+                return true;
+            }
+
+            return TryCopyInnerGroupByUngroupWpp(slide, groupId, out error);
+        }
+
+        private static bool IsGroupShape(PowerPoint.Shape shape)
+        {
+            try
+            {
+                return shape != null && (int)shape.Type == MsoGroup;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool IsWppGroup(object shape)
+        {
+            try
+            {
+                object type = WppCom.GetProperty(shape, "Type");
+                return type != null && Convert.ToInt32(type) == MsoGroup;
+            }
+            catch (Exception)
+            {
                 return false;
             }
         }

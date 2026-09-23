@@ -164,7 +164,6 @@ namespace WordAddIn1.PresentationHost
             }
 
             var members = new List<PowerPoint.Shape>();
-            var names = new List<object>();
             var seen = new HashSet<int>();
             foreach (string raw in request.ShapeIds)
             {
@@ -196,7 +195,6 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 members.Add(top);
-                names.Add(top.Name);
             }
 
             if (members.Count < 2)
@@ -218,10 +216,10 @@ namespace WordAddIn1.PresentationHost
                     alertsSet = true;
                 }
 
-                group = slide.Shapes.Range(names.ToArray()).Group();
-                if (group == null)
+                if (!PptHtmlGroupIo.TryGroupPowerPointMembers(slide, members, out group, out error)
+                    || group == null)
                 {
-                    error = "COM Group 失败";
+                    error = string.IsNullOrEmpty(error) ? "COM Group 失败" : error;
                     return false;
                 }
 
@@ -318,16 +316,13 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            PowerPoint.Shape sourceShape = FindShapeById(sourceSlide.Shapes, comId);
-            if (sourceShape == null)
+            if (!PptHtmlGroupIo.TryCopyGroupPowerPoint(sourceSlide, comId, out error))
             {
-                error = "页内找不到 ShapeId=" + request.ShapeId + "（slide_id=" + sourceSlideId + "）";
-                return false;
-            }
+                if (string.IsNullOrEmpty(error))
+                {
+                    error = "页内找不到 ShapeId=" + request.ShapeId + "（slide_id=" + sourceSlideId + "）";
+                }
 
-            if (!IsGroupShape(sourceShape))
-            {
-                error = "只能拷贝 group，请先 group";
                 return false;
             }
 
@@ -360,7 +355,6 @@ namespace WordAddIn1.PresentationHost
                     alertsSet = true;
                 }
 
-                sourceShape.Copy();
                 PowerPoint.ShapeRange range = destSlide.Shapes.Paste();
                 if (range == null || range.Count < 1)
                 {
@@ -387,6 +381,7 @@ namespace WordAddIn1.PresentationHost
                 pasted.Left = left;
                 pasted.Top = top;
 
+                PptHtmlGroupIo.InvalidateGroupTreeCache();
                 result = BaseResult(destChannelId, "duplicate_group", destSlideId);
                 result.GroupShapeId = PptShapeId.FormatShape(destSlideId, pasted.Id);
                 result.SourceSlideId = sourceSlideId;

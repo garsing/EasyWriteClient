@@ -737,6 +737,34 @@ namespace WordAddIn1.PresentationHost
             out string error)
         {
             error = null;
+            Dictionary<int, PowerPoint.Shape> leafMap = BuildPptLeafMap(group);
+            if (leafMap != null
+                && TryGetPptPresSlide(group, out PowerPoint.Presentation pres, out int slideIndex, out int groupId)
+                && PptHtmlGroupIo.TryGetDirectGroupChildren(
+                    pres,
+                    slideIndex,
+                    groupId,
+                    out List<PptHtmlGroupXmlChild> xmlKids,
+                    out _)
+                && XmlKidsHaveGroup(xmlKids))
+            {
+                return AppendPptKidsFromXml(
+                    xmlKids,
+                    leafMap,
+                    pres,
+                    slideIndex,
+                    slideId,
+                    slideWidth,
+                    slideHeight,
+                    childMode,
+                    childExpandLayer,
+                    output,
+                    ref pageTextTruncated,
+                    ref truncatedReason,
+                    fontDbg,
+                    out error);
+            }
+
             PowerPoint.GroupShapes items;
             int count;
             try
@@ -784,6 +812,307 @@ namespace WordAddIn1.PresentationHost
             }
 
             return true;
+        }
+
+        private static bool AppendPptKidsFromXml(
+            List<PptHtmlGroupXmlChild> xmlKids,
+            Dictionary<int, PowerPoint.Shape> leafMap,
+            PowerPoint.Presentation pres,
+            int slideIndex,
+            string slideId,
+            float slideWidth,
+            float slideHeight,
+            GroupReadMode childMode,
+            int childExpandLayer,
+            List<PptHtmlShapeNode> output,
+            ref bool pageTextTruncated,
+            ref string truncatedReason,
+            PptHtmlReadDebug fontDbg,
+            out string error)
+        {
+            error = null;
+            for (int i = 0; i < xmlKids.Count; i++)
+            {
+                PptHtmlGroupXmlChild kid = xmlKids[i];
+                if (kid.IsGroup)
+                {
+                    if (!AppendPptXmlGroupShell(
+                        kid.Id,
+                        leafMap,
+                        pres,
+                        slideIndex,
+                        slideId,
+                        slideWidth,
+                        slideHeight,
+                        childMode,
+                        childExpandLayer,
+                        output,
+                        ref pageTextTruncated,
+                        ref truncatedReason,
+                        fontDbg,
+                        out error))
+                    {
+                        return error == null;
+                    }
+
+                    continue;
+                }
+
+                PowerPoint.Shape leaf;
+                if (!leafMap.TryGetValue(kid.Id, out leaf) || leaf == null)
+                {
+                    continue;
+                }
+
+                if (!AppendNode(
+                    leaf,
+                    slideId,
+                    slideWidth,
+                    slideHeight,
+                    childMode,
+                    childExpandLayer,
+                    output,
+                    ref pageTextTruncated,
+                    ref truncatedReason,
+                    fontDbg,
+                    out error))
+                {
+                    return error == null;
+                }
+            }
+
+            return output.Count > 0;
+        }
+
+        private static bool AppendPptXmlGroupShell(
+            int groupId,
+            Dictionary<int, PowerPoint.Shape> leafMap,
+            PowerPoint.Presentation pres,
+            int slideIndex,
+            string slideId,
+            float slideWidth,
+            float slideHeight,
+            GroupReadMode mode,
+            int expandLayer,
+            List<PptHtmlShapeNode> output,
+            ref bool pageTextTruncated,
+            ref string truncatedReason,
+            PptHtmlReadDebug fontDbg,
+            out string error)
+        {
+            error = null;
+            List<PptHtmlShapeNode> groupKids = null;
+            bool depthCapped = false;
+            if (mode == GroupReadMode.FullTree
+                || IsUnlimited(mode)
+                || (IsSkeletonMode(mode) && expandLayer < PptHtmlReadResult.SkeletonMaxDepth))
+            {
+                groupKids = new List<PptHtmlShapeNode>();
+                int childLayer = IsSkeletonMode(mode) ? expandLayer + 1 : 0;
+                List<PptHtmlGroupXmlChild> innerKids;
+                if (PptHtmlGroupIo.TryGetDirectGroupChildren(pres, slideIndex, groupId, out innerKids, out _)
+                    && innerKids != null)
+                {
+                    if (!AppendPptKidsFromXml(
+                        innerKids,
+                        leafMap,
+                        pres,
+                        slideIndex,
+                        slideId,
+                        slideWidth,
+                        slideHeight,
+                        mode,
+                        childLayer,
+                        groupKids,
+                        ref pageTextTruncated,
+                        ref truncatedReason,
+                        fontDbg,
+                        out error)
+                        && error != null)
+                    {
+                        return false;
+                    }
+                }
+            }
+            else if (IsSkeletonMode(mode))
+            {
+                depthCapped = true;
+            }
+
+            List<int> leaves;
+            PptHtmlGroupIo.TryGetDirectGroupChildren(pres, slideIndex, groupId, out _, out leaves);
+            if (!TryUnionPptLeafBox(leafMap, leaves, out float left, out float top, out float width, out float height))
+            {
+                left = top = 0;
+                width = height = 1;
+            }
+
+            output.Add(new PptHtmlShapeNode
+            {
+                ShapeId = "sid" + slideId + "-s" + groupId.ToString(CultureInfo.InvariantCulture),
+                ShapeType = "group",
+                Tag = "div",
+                Style = PptHtmlGeom.StyleFromSlidePoints(left, top, width, height, slideWidth, slideHeight),
+                Text = "",
+                Children = groupKids,
+                DepthCapped = depthCapped
+            });
+            return true;
+        }
+
+        private static bool XmlKidsHaveGroup(List<PptHtmlGroupXmlChild> kids)
+        {
+            if (kids == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < kids.Count; i++)
+            {
+                if (kids[i].IsGroup)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static Dictionary<int, PowerPoint.Shape> BuildPptLeafMap(PowerPoint.Shape group)
+        {
+            var map = new Dictionary<int, PowerPoint.Shape>();
+            try
+            {
+                PowerPoint.GroupShapes items = group.GroupItems;
+                int count = items.Count;
+                for (int i = 1; i <= count; i++)
+                {
+                    try
+                    {
+                        PowerPoint.Shape child = items[i];
+                        map[child.Id] = child;
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+
+            return map;
+        }
+
+        private static bool TryUnionPptLeafBox(
+            Dictionary<int, PowerPoint.Shape> leafMap,
+            List<int> leafIds,
+            out float left,
+            out float top,
+            out float width,
+            out float height)
+        {
+            left = top = width = height = 0;
+            if (leafMap == null || leafIds == null || leafIds.Count == 0)
+            {
+                return false;
+            }
+
+            float minL = float.MaxValue;
+            float minT = float.MaxValue;
+            float maxR = float.MinValue;
+            float maxB = float.MinValue;
+            bool any = false;
+            for (int i = 0; i < leafIds.Count; i++)
+            {
+                PowerPoint.Shape shape;
+                if (!leafMap.TryGetValue(leafIds[i], out shape) || shape == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    float l = shape.Left;
+                    float t = shape.Top;
+                    float r = l + shape.Width;
+                    float b = t + shape.Height;
+                    if (l < minL)
+                    {
+                        minL = l;
+                    }
+
+                    if (t < minT)
+                    {
+                        minT = t;
+                    }
+
+                    if (r > maxR)
+                    {
+                        maxR = r;
+                    }
+
+                    if (b > maxB)
+                    {
+                        maxB = b;
+                    }
+
+                    any = true;
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            if (!any)
+            {
+                return false;
+            }
+
+            left = minL;
+            top = minT;
+            width = Math.Max(1f, maxR - minL);
+            height = Math.Max(1f, maxB - minT);
+            return true;
+        }
+
+        private static bool TryGetPptPresSlide(
+            PowerPoint.Shape shape,
+            out PowerPoint.Presentation presentation,
+            out int slideIndex,
+            out int groupId)
+        {
+            presentation = null;
+            slideIndex = 0;
+            groupId = 0;
+            try
+            {
+                groupId = shape.Id;
+                object parent = shape.Parent;
+                PowerPoint.Slide slide = parent as PowerPoint.Slide;
+                if (slide == null)
+                {
+                    PowerPoint.Shapes shapes = parent as PowerPoint.Shapes;
+                    if (shapes != null)
+                    {
+                        slide = shapes.Parent as PowerPoint.Slide;
+                    }
+                }
+
+                if (slide == null)
+                {
+                    return false;
+                }
+
+                slideIndex = slide.SlideIndex;
+                presentation = slide.Parent as PowerPoint.Presentation;
+                return presentation != null && slideIndex > 0;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         private static bool AppendNode(

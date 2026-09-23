@@ -192,7 +192,6 @@ namespace WordAddIn1.PresentationHost
             }
 
             var members = new List<object>();
-            var names = new List<object>();
             var seen = new HashSet<int>();
             foreach (string raw in request.ShapeIds)
             {
@@ -224,7 +223,6 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 members.Add(top);
-                names.Add(WppCom.GetProperty(top, "Name"));
             }
 
             if (members.Count < 2)
@@ -239,11 +237,10 @@ namespace WordAddIn1.PresentationHost
             try
             {
                 alertsSet = TrySilenceAlerts(presentation, out prevAlerts);
-                object range = WppCom.Invoke(shapes, "Range", new object[] { names.ToArray() });
-                group = WppCom.Invoke(range, "Group");
-                if (group == null)
+                if (!PptHtmlGroupIo.TryGroupWppMembers(slide, members, out group, out error)
+                    || group == null)
                 {
-                    error = "WPP Group 失败";
+                    error = string.IsNullOrEmpty(error) ? "WPP Group 失败" : error;
                     return false;
                 }
 
@@ -365,16 +362,13 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            object sourceShape = FindShapeById(sourceShapes, comId);
-            if (sourceShape == null)
+            if (!PptHtmlGroupIo.TryCopyGroupWpp(sourceSlide, comId, out error))
             {
-                error = "页内找不到 ShapeId=" + request.ShapeId + "（slide_id=" + sourceSlideId + "）";
-                return false;
-            }
+                if (string.IsNullOrEmpty(error))
+                {
+                    error = "页内找不到 ShapeId=" + request.ShapeId + "（slide_id=" + sourceSlideId + "）";
+                }
 
-            if (!IsGroupShape(sourceShape))
-            {
-                error = "只能拷贝 group，请先 group";
                 return false;
             }
 
@@ -401,7 +395,6 @@ namespace WordAddIn1.PresentationHost
             try
             {
                 alertsSet = TrySilenceAlerts(dest, out prevAlerts);
-                WppCom.Invoke(sourceShape, "Copy");
                 object pastedRaw = WppCom.Invoke(destShapes, "Paste");
                 pasted = FirstPastedShape(pastedRaw, destShapes);
                 if (pasted == null)
@@ -444,6 +437,7 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                PptHtmlGroupIo.InvalidateGroupTreeCache();
                 result = BaseResult(destChannelId, "duplicate_group", destSlideId);
                 result.GroupShapeId = PptShapeId.FormatShape(destSlideId, Convert.ToInt32(rawId));
                 result.SourceSlideId = sourceSlideId;

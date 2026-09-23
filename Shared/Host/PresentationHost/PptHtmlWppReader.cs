@@ -665,6 +665,34 @@ namespace WordAddIn1.PresentationHost
             out string error)
         {
             error = null;
+            Dictionary<int, object> leafMap = BuildWppLeafMap(group);
+            if (leafMap != null
+                && TryGetWppPresSlide(group, out object pres, out int slideIndex, out int groupId)
+                && PptHtmlGroupIo.TryGetDirectGroupChildrenWpp(
+                    pres,
+                    slideIndex,
+                    groupId,
+                    out List<PptHtmlGroupXmlChild> xmlKids,
+                    out _)
+                && XmlKidsHaveGroup(xmlKids))
+            {
+                return AppendWppKidsFromXml(
+                    xmlKids,
+                    leafMap,
+                    pres,
+                    slideIndex,
+                    slideId,
+                    slideWidth,
+                    slideHeight,
+                    childMode,
+                    childExpandLayer,
+                    output,
+                    ref pageTextTruncated,
+                    ref truncatedReason,
+                    fontDbg,
+                    out error);
+            }
+
             object items;
             int count;
             try
@@ -708,6 +736,319 @@ namespace WordAddIn1.PresentationHost
             }
 
             return true;
+        }
+
+        private static bool AppendWppKidsFromXml(
+            List<PptHtmlGroupXmlChild> xmlKids,
+            Dictionary<int, object> leafMap,
+            object pres,
+            int slideIndex,
+            string slideId,
+            double slideWidth,
+            double slideHeight,
+            GroupReadMode childMode,
+            int childExpandLayer,
+            List<PptHtmlShapeNode> output,
+            ref bool pageTextTruncated,
+            ref string truncatedReason,
+            PptHtmlReadDebug fontDbg,
+            out string error)
+        {
+            error = null;
+            for (int i = 0; i < xmlKids.Count; i++)
+            {
+                PptHtmlGroupXmlChild kid = xmlKids[i];
+                if (kid.IsGroup)
+                {
+                    if (!AppendWppXmlGroupShell(
+                        kid.Id,
+                        leafMap,
+                        pres,
+                        slideIndex,
+                        slideId,
+                        slideWidth,
+                        slideHeight,
+                        childMode,
+                        childExpandLayer,
+                        output,
+                        ref pageTextTruncated,
+                        ref truncatedReason,
+                        fontDbg,
+                        out error))
+                    {
+                        return error == null;
+                    }
+
+                    continue;
+                }
+
+                object leaf;
+                if (!leafMap.TryGetValue(kid.Id, out leaf) || leaf == null)
+                {
+                    continue;
+                }
+
+                if (!AppendNode(
+                    leaf,
+                    slideId,
+                    slideWidth,
+                    slideHeight,
+                    childMode,
+                    childExpandLayer,
+                    output,
+                    ref pageTextTruncated,
+                    ref truncatedReason,
+                    fontDbg,
+                    out error))
+                {
+                    return error == null;
+                }
+            }
+
+            return output.Count > 0;
+        }
+
+        private static bool AppendWppXmlGroupShell(
+            int groupId,
+            Dictionary<int, object> leafMap,
+            object pres,
+            int slideIndex,
+            string slideId,
+            double slideWidth,
+            double slideHeight,
+            GroupReadMode mode,
+            int expandLayer,
+            List<PptHtmlShapeNode> output,
+            ref bool pageTextTruncated,
+            ref string truncatedReason,
+            PptHtmlReadDebug fontDbg,
+            out string error)
+        {
+            error = null;
+            List<PptHtmlShapeNode> groupKids = null;
+            bool depthCapped = false;
+            if (mode == GroupReadMode.FullTree
+                || IsUnlimited(mode)
+                || (IsSkeletonMode(mode) && expandLayer < PptHtmlReadResult.SkeletonMaxDepth))
+            {
+                groupKids = new List<PptHtmlShapeNode>();
+                int childLayer = IsSkeletonMode(mode) ? expandLayer + 1 : 0;
+                List<PptHtmlGroupXmlChild> innerKids;
+                if (PptHtmlGroupIo.TryGetDirectGroupChildrenWpp(pres, slideIndex, groupId, out innerKids, out _)
+                    && innerKids != null)
+                {
+                    if (!AppendWppKidsFromXml(
+                        innerKids,
+                        leafMap,
+                        pres,
+                        slideIndex,
+                        slideId,
+                        slideWidth,
+                        slideHeight,
+                        mode,
+                        childLayer,
+                        groupKids,
+                        ref pageTextTruncated,
+                        ref truncatedReason,
+                        fontDbg,
+                        out error)
+                        && error != null)
+                    {
+                        return false;
+                    }
+                }
+            }
+            else if (IsSkeletonMode(mode))
+            {
+                depthCapped = true;
+            }
+
+            List<int> leaves;
+            PptHtmlGroupIo.TryGetDirectGroupChildrenWpp(pres, slideIndex, groupId, out _, out leaves);
+            double left;
+            double top;
+            double width;
+            double height;
+            if (!TryUnionWppLeafBox(leafMap, leaves, out left, out top, out width, out height))
+            {
+                left = top = 0;
+                width = height = 1;
+            }
+
+            output.Add(new PptHtmlShapeNode
+            {
+                ShapeId = "sid" + slideId + "-s" + groupId.ToString(CultureInfo.InvariantCulture),
+                ShapeType = "group",
+                Tag = "div",
+                Style = PptHtmlGeom.StyleFromSlidePoints(left, top, width, height, slideWidth, slideHeight),
+                Text = "",
+                Children = groupKids,
+                DepthCapped = depthCapped
+            });
+            return true;
+        }
+
+        private static bool XmlKidsHaveGroup(List<PptHtmlGroupXmlChild> kids)
+        {
+            if (kids == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < kids.Count; i++)
+            {
+                if (kids[i].IsGroup)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static Dictionary<int, object> BuildWppLeafMap(object group)
+        {
+            var map = new Dictionary<int, object>();
+            try
+            {
+                object items = WppCom.GetProperty(group, "GroupItems");
+                int count = Convert.ToInt32(WppCom.GetProperty(items, "Count") ?? 0);
+                for (int i = 1; i <= count; i++)
+                {
+                    object child = WppCom.GetIndexed(items, i);
+                    object rawId = child == null ? null : WppCom.GetProperty(child, "Id");
+                    if (rawId != null)
+                    {
+                        map[Convert.ToInt32(rawId)] = child;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+
+            return map;
+        }
+
+        private static bool TryUnionWppLeafBox(
+            Dictionary<int, object> leafMap,
+            List<int> leafIds,
+            out double left,
+            out double top,
+            out double width,
+            out double height)
+        {
+            left = top = width = height = 0;
+            if (leafMap == null || leafIds == null || leafIds.Count == 0)
+            {
+                return false;
+            }
+
+            double minL = double.MaxValue;
+            double minT = double.MaxValue;
+            double maxR = double.MinValue;
+            double maxB = double.MinValue;
+            bool any = false;
+            for (int i = 0; i < leafIds.Count; i++)
+            {
+                object shape;
+                if (!leafMap.TryGetValue(leafIds[i], out shape) || shape == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    double l = Convert.ToDouble(WppCom.GetProperty(shape, "Left"));
+                    double t = Convert.ToDouble(WppCom.GetProperty(shape, "Top"));
+                    double r = l + Convert.ToDouble(WppCom.GetProperty(shape, "Width"));
+                    double b = t + Convert.ToDouble(WppCom.GetProperty(shape, "Height"));
+                    if (l < minL)
+                    {
+                        minL = l;
+                    }
+
+                    if (t < minT)
+                    {
+                        minT = t;
+                    }
+
+                    if (r > maxR)
+                    {
+                        maxR = r;
+                    }
+
+                    if (b > maxB)
+                    {
+                        maxB = b;
+                    }
+
+                    any = true;
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            if (!any)
+            {
+                return false;
+            }
+
+            left = minL;
+            top = minT;
+            width = Math.Max(1.0, maxR - minL);
+            height = Math.Max(1.0, maxB - minT);
+            return true;
+        }
+
+        private static bool TryGetWppPresSlide(
+            object shape,
+            out object presentation,
+            out int slideIndex,
+            out int groupId)
+        {
+            presentation = null;
+            slideIndex = 0;
+            groupId = 0;
+            try
+            {
+                object rawId = WppCom.GetProperty(shape, "Id");
+                if (rawId == null)
+                {
+                    return false;
+                }
+
+                groupId = Convert.ToInt32(rawId);
+                object parent = WppCom.GetProperty(shape, "Parent");
+                object slide = parent;
+                object maybeShapes = parent;
+                object slideFromShapes = maybeShapes == null ? null : WppCom.GetProperty(maybeShapes, "Parent");
+                if (WppCom.GetProperty(slide, "SlideIndex") == null && slideFromShapes != null)
+                {
+                    slide = slideFromShapes;
+                }
+
+                if (slide == null)
+                {
+                    return false;
+                }
+
+                object rawIndex = WppCom.GetProperty(slide, "SlideIndex");
+                if (rawIndex == null)
+                {
+                    return false;
+                }
+
+                slideIndex = Convert.ToInt32(rawIndex);
+                presentation = WppCom.GetProperty(slide, "Parent");
+                return presentation != null && slideIndex > 0;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         private static bool AppendNode(
