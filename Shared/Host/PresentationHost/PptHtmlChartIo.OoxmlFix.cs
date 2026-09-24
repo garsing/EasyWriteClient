@@ -1971,5 +1971,207 @@ namespace WordAddIn1.PresentationHost
             return zip.Entries.FirstOrDefault(x =>
                 string.Equals(x.FullName.Replace('\\', '/'), fullName, StringComparison.OrdinalIgnoreCase));
         }
+
+        /// <summary>COM Series 半活时：SaveCopyAs 读 chart XML 的 c:pt（图上缓存，不是再 Activate）。</summary>
+        private static bool TryReadGridFromOoxmlCopy(object chart, out PptHtmlChartGrid grid, out string error)
+        {
+            grid = null;
+            error = null;
+            object shape = TryGetChartShape(chart);
+            if (shape == null)
+            {
+                error = "OOXML 读数：没有 Shape";
+                return false;
+            }
+
+            object slide = TryGetShapeSlide(shape);
+            object pres = TryGetShapePresentation(shape);
+            if (slide == null || pres == null)
+            {
+                error = "OOXML 读数：没有稿";
+                return false;
+            }
+
+            int shapeId;
+            int slideIndex;
+            try
+            {
+                shapeId = Convert.ToInt32(WppCom.GetProperty(shape, "Id") ?? 0);
+                slideIndex = Convert.ToInt32(WppCom.GetProperty(slide, "SlideIndex") ?? 0);
+            }
+            catch (Exception ex)
+            {
+                error = "OOXML 读数：取 id 失败: " + ex.Message;
+                return false;
+            }
+
+            if (shapeId < 1 || slideIndex < 1)
+            {
+                error = "OOXML 读数：shapeId/slideIndex 非法";
+                return false;
+            }
+
+            string tempPath = Path.Combine(
+                Path.GetTempPath(),
+                "ew-chart-read-" + Guid.NewGuid().ToString("N") + ".pptx");
+            try
+            {
+                try
+                {
+                    WppCom.Invoke(pres, "SaveCopyAs", tempPath);
+                }
+                catch (Exception)
+                {
+                    WppCom.Invoke(pres, "SaveCopyAs", tempPath, 24);
+                }
+
+                if (!File.Exists(tempPath))
+                {
+                    error = "OOXML 读数：SaveCopyAs 未落盘";
+                    return false;
+                }
+
+                var warnings = new List<string>();
+                if (!TryReadChartDocFromPptx(tempPath, slideIndex, shapeId, warnings, "读数", out XDocument chartDoc)
+                    || chartDoc == null)
+                {
+                    error = "OOXML 读数：打不开 chart 部件";
+                    return false;
+                }
+
+                return TryParseGridFromChartDoc(chartDoc, out grid, out error);
+            }
+            catch (Exception ex)
+            {
+                error = "OOXML 读数失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(tempPath))
+                    {
+                        File.Delete(tempPath);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        private static bool TryParseGridFromChartDoc(XDocument chartDoc, out PptHtmlChartGrid grid, out string error)
+        {
+            grid = null;
+            error = null;
+            List<XElement> series = chartDoc.Descendants(CNs + "ser").ToList();
+            if (series.Count == 0)
+            {
+                error = "OOXML 读数：无 c:ser";
+                return false;
+            }
+
+            List<string> cats = ReadCachePoints(series[0], "cat");
+            if (cats.Count == 0)
+            {
+                error = "OOXML 读数：无类别点";
+                return false;
+            }
+
+            var columns = new List<PptHtmlChartColumn>
+            {
+                new PptHtmlChartColumn { Role = "category", Name = "类别" }
+            };
+            var seriesValues = new List<List<string>>();
+            int useSeries = Math.Min(series.Count, MaxCols - 1);
+            for (int i = 0; i < useSeries; i++)
+            {
+                string name = ReadSerName(series[i]);
+                columns.Add(new PptHtmlChartColumn
+                {
+                    Role = "value",
+                    Name = string.IsNullOrEmpty(name) ? ("系列" + (i + 1)) : name
+                });
+                List<string> vals = ReadCachePoints(series[i], "val");
+                seriesValues.Add(vals);
+            }
+
+            int useRows = Math.Min(cats.Count, MaxRows - 1);
+            var rows = new List<List<string>>();
+            for (int r = 0; r < useRows; r++)
+            {
+                var row = new List<string> { cats[r] };
+                for (int s = 0; s < seriesValues.Count; s++)
+                {
+                    row.Add(r < seriesValues[s].Count ? seriesValues[s][r] : "");
+                }
+
+                rows.Add(row);
+            }
+
+            grid = new PptHtmlChartGrid
+            {
+                Columns = columns,
+                Rows = rows,
+                Truncated = cats.Count + 1 > MaxRows || series.Count + 1 > MaxCols
+            };
+            if (!grid.IsPourable)
+            {
+                error = "OOXML 读数：网格不可灌";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static string ReadSerName(XElement ser)
+        {
+            if (ser == null)
+            {
+                return "";
+            }
+
+            XElement tx = ser.Element(CNs + "tx") ?? LocalChild(ser, "tx");
+            if (tx == null)
+            {
+                return "";
+            }
+
+            XElement v = tx.Descendants(CNs + "v").FirstOrDefault() ?? tx.Descendants().FirstOrDefault(e => e.Name.LocalName == "v");
+            return v == null ? "" : (v.Value ?? "").Trim();
+        }
+
+        private static List<string> ReadCachePoints(XElement ser, string kind)
+        {
+            var pts = new List<string>();
+            if (ser == null)
+            {
+                return pts;
+            }
+
+            XElement parent = ser.Element(CNs + kind) ?? LocalChild(ser, kind);
+            if (parent == null)
+            {
+                return pts;
+            }
+
+            XElement cache = parent.Descendants(CNs + "strCache").FirstOrDefault()
+                ?? parent.Descendants(CNs + "numCache").FirstOrDefault()
+                ?? parent.Descendants().FirstOrDefault(e =>
+                    e.Name.LocalName == "strCache" || e.Name.LocalName == "numCache");
+            if (cache == null)
+            {
+                return pts;
+            }
+
+            foreach (XElement pt in cache.Elements().Where(e => e.Name.LocalName == "pt"))
+            {
+                XElement v = pt.Element(CNs + "v") ?? pt.Elements().FirstOrDefault(e => e.Name.LocalName == "v");
+                pts.Add(v == null ? "" : (v.Value ?? ""));
+            }
+
+            return pts;
+        }
     }
 }

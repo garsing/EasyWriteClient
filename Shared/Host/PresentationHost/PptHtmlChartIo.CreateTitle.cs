@@ -462,13 +462,41 @@ namespace WordAddIn1.PresentationHost
         {
             grid = null;
             error = null;
-            // PPT 开 ChartData 会把脏会话的稿打穿；读系列缓存，不 Activate。
-            if (HostAvoidsChartDataCom(chart))
+            // 先 Series。PPT 禁止 Activate；WPP 从页上再取的 Chart 常被误判成 PPT（Application.Name=PowerPoint），
+            // 系列失败后仍走 OOXML 读 c:pt，不开表。
+            if (TryReadGridFromSeries(chart, out grid, out error) && grid != null && grid.IsPourable)
             {
-                return TryReadGridFromSeries(chart, out grid, out error) && grid != null && grid.IsPourable;
+                return true;
             }
 
-            // I8：未外链时优先 ChartData 内嵌表；外链图禁止开 Workbook（会弹「链接的文件不可用」），改读 Series。
+            string seriesErr = error;
+            bool avoidSheet = HostAvoidsChartDataCom(chart);
+            if (avoidSheet)
+            {
+                if (TryReadGridFromOoxmlCopy(chart, out grid, out error) && grid != null && grid.IsPourable)
+                {
+                    return true;
+                }
+
+                if (!string.IsNullOrEmpty(seriesErr))
+                {
+                    error = seriesErr;
+                }
+
+                return false;
+            }
+
+            if (TryWakeAndReadSeries(chart, out grid, out error) && grid != null && grid.IsPourable)
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(error))
+            {
+                seriesErr = error;
+            }
+
+            // 系列仍没有：未外链再开内嵌表（外链会弹「链接的文件不可用」）。
             string embeddedErr = null;
             bool fromSheet = !IsChartDataLinked(chart)
                 && TryReadGridFromEmbeddedSheetAuto(chart, out grid, out embeddedErr)
@@ -480,12 +508,16 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
-            if (TryReadGridFromSeries(chart, out grid, out error) && grid != null && grid.IsPourable)
+            if (TryReadGridFromOoxmlCopy(chart, out grid, out error) && grid != null && grid.IsPourable)
             {
                 return true;
             }
 
-            if (!string.IsNullOrEmpty(embeddedErr))
+            if (!string.IsNullOrEmpty(seriesErr))
+            {
+                error = seriesErr;
+            }
+            else if (!string.IsNullOrEmpty(embeddedErr))
             {
                 error = embeddedErr;
             }
@@ -495,6 +527,30 @@ namespace WordAddIn1.PresentationHost
             }
 
             return false;
+        }
+
+        private static bool TryWakeAndReadSeries(
+            object chart,
+            out PptHtmlChartGrid grid,
+            out string error)
+        {
+            grid = null;
+            error = null;
+            try
+            {
+                object chartData = WppCom.GetProperty(chart, "ChartData");
+                TryActivateChartData(chartData);
+                PumpChartUi(120);
+            }
+            catch (Exception)
+            {
+            }
+
+            bool ok = TryReadGridFromSeries(chart, out grid, out error)
+                && grid != null
+                && grid.IsPourable;
+            DismissChartExcelUiForChart(chart);
+            return ok;
         }
 
         private static bool TryReadGridFromSeries(object chart, out PptHtmlChartGrid grid, out string error)

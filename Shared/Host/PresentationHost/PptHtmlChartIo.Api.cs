@@ -43,6 +43,20 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            // WPP 从 Shapes 再取到的 Chart，不 Select 时 SeriesCollection 常直接炸。
+            if (!HostAvoidsChartDataCom(chart))
+            {
+                try
+                {
+                    WppCom.Invoke(shape, "Select");
+                }
+                catch (Exception)
+                {
+                }
+
+                PumpChartUi(80);
+            }
+
             var format = new PptHtmlChartFormat();
             try
             {
