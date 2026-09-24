@@ -232,7 +232,6 @@ namespace WordAddIn1.PresentationHost
                 "ew-ppt-chart-blank-" + Guid.NewGuid().ToString("N") + ".pptx");
             object blank = null;
             object blankShape = null;
-            object excelApp = null;
             try
             {
                 try
@@ -309,22 +308,16 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                PourLog(warnings, "空白稿已建图，在副本上灌 ChartData");
-                if (!TryPourViaChartData(chart, grid, out excelApp, out error, warnings))
+                PourLog(warnings, "空白稿已建图，副本灌数走 OOXML，不打开 ChartData");
+                DismissChartExcelUiForChart(chart);
+                DismissChartExcelUi();
+                if (!TryFixSeriesViaOoxml(blankShape, grid, warnings, out object poured) || poured == null)
                 {
-                    PourLog(warnings, "空白稿 ChartData 失败，改 OOXML: " + (error ?? ""));
-                    if (!TryFixSeriesViaOoxml(blankShape, grid, warnings, out object poured) || poured == null)
-                    {
-                        error = "PPT 旁路建图灌数失败: " + (error ?? "");
-                        return false;
-                    }
-
-                    blankShape = poured;
-                    chart = TryGetChart(blankShape);
+                    error = "PPT 旁路建图灌数失败: OOXML 失败";
+                    return false;
                 }
 
-                HideEmbeddedExcel(excelApp);
-                DismissChartExcelUi();
+                blankShape = poured;
                 WppCom.Invoke(blankShape, "Copy");
                 shape = TryPasteChart(destShapes, warnings);
                 if (shape == null)
@@ -346,7 +339,6 @@ namespace WordAddIn1.PresentationHost
             }
             finally
             {
-                HideEmbeddedExcel(excelApp);
                 TryClosePresentation(blank);
                 try
                 {
