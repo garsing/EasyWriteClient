@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -15,7 +16,12 @@ namespace PptHtmlContentRoundtripTest
     {
         private const int RecycleEvery = 6;
 
-        public static void Run(TestRun run, int? onlyBatch, string outDir, IList<string> nameFilters)
+        public static void Run(
+            TestRun run,
+            int? onlyBatch,
+            string outDir,
+            IList<string> nameFilters,
+            bool failFast = false)
         {
             Directory.CreateDirectory(outDir);
             ContentAssets assets = ContentAssetsIo.Ensure(Path.Combine(outDir, "assets"));
@@ -23,6 +29,11 @@ namespace PptHtmlContentRoundtripTest
             if (nameFilters != null && nameFilters.Count > 0)
             {
                 Console.WriteLine("过滤用例名含: " + string.Join(", ", nameFilters));
+            }
+
+            if (failFast)
+            {
+                Console.WriteLine("失败即停");
             }
 
             for (int batch = 1; batch <= ContentCatalog.BatchCount; batch++)
@@ -37,7 +48,11 @@ namespace PptHtmlContentRoundtripTest
                     continue;
                 }
 
-                RunBatch(run, all, batch, outDir, assets, nameFilters);
+                RunBatch(run, all, batch, outDir, assets, nameFilters, failFast);
+                if (failFast && run.CasesFailed > 0)
+                {
+                    break;
+                }
             }
         }
 
@@ -81,7 +96,8 @@ namespace PptHtmlContentRoundtripTest
             int batch,
             string outDir,
             ContentAssets assets,
-            IList<string> nameFilters)
+            IList<string> nameFilters,
+            bool failFast = false)
         {
             string path = Path.Combine(outDir, "content-batch-" + batch + ".pptx");
             Console.WriteLine();
@@ -164,7 +180,7 @@ namespace PptHtmlContentRoundtripTest
                             pres.Slides.Count + 1,
                             PowerPoint.PpSlideLayout.ppLayoutBlank);
                         TryAddCaseLabel(slide, tag);
-                        string rpc = RunOneSlide(run, pres, slide, one, assets, outDir, tag);
+                        string rpc = RunOneSlide(run, app, pres, slide, one, assets, outDir, tag);
                         ran = true;
                         if (rpc != null)
                         {
@@ -176,7 +192,8 @@ namespace PptHtmlContentRoundtripTest
                             sinceRecycle++;
                             int pages = TrySlideCount(pres);
                             Console.WriteLine("  … " + (i + 1) + "/" + cases.Count
-                                + " 页=" + (pages >= 0 ? pages.ToString(CultureInfo.InvariantCulture) : "?"));
+                                + " 页=" + (pages >= 0 ? pages.ToString(CultureInfo.InvariantCulture) : "?")
+                                + " " + DescribePptSession(app));
                             if (pages < 0)
                             {
                                 CloseQuiet(pres);
@@ -209,6 +226,12 @@ namespace PptHtmlContentRoundtripTest
                         }
                     }
 
+                    if (failFast && run.CasesFailed > 0)
+                    {
+                        Console.WriteLine("  失败即停，余下 " + (cases.Count - i - 1) + " 条不跑");
+                        break;
+                    }
+
                     if (!retry)
                     {
                         continue;
@@ -229,7 +252,7 @@ namespace PptHtmlContentRoundtripTest
                             pres.Slides.Count + 1,
                             PowerPoint.PpSlideLayout.ppLayoutBlank);
                         TryAddCaseLabel(slide, tag);
-                        string rpc = RunOneSlide(run, pres, slide, one, assets, outDir, tag);
+                        string rpc = RunOneSlide(run, app, pres, slide, one, assets, outDir, tag);
                         if (rpc != null)
                         {
                             run.CaseFail(tag, "重启后仍断开: " + rpc);
@@ -266,6 +289,7 @@ namespace PptHtmlContentRoundtripTest
         /// <returns>RPC 死信，否则 null。</returns>
         private static string RunOneSlide(
             TestRun run,
+            PowerPoint.Application app,
             PowerPoint.Presentation pres,
             PowerPoint.Slide slide,
             ContentCase one,
@@ -362,7 +386,7 @@ namespace PptHtmlContentRoundtripTest
                     return error;
                 }
 
-                run.CaseFail(tag, "新建后读回失败: " + error);
+                run.CaseFail(tag, "新建后读回失败: " + error + " " + DescribePptSession(app));
                 return null;
             }
 
@@ -434,7 +458,7 @@ namespace PptHtmlContentRoundtripTest
                         return error;
                     }
 
-                    run.CaseFail(tag, "换数后读回失败: " + error);
+                    run.CaseFail(tag, "换数后读回失败: " + error + " " + DescribePptSession(app));
                     return null;
                 }
             }
@@ -793,6 +817,46 @@ namespace PptHtmlContentRoundtripTest
             catch
             {
                 return -1;
+            }
+        }
+
+        private static string DescribePptSession(PowerPoint.Application app)
+        {
+            int excel = 0;
+            try
+            {
+                excel = Process.GetProcessesByName("EXCEL").Length;
+            }
+            catch
+            {
+            }
+
+            if (app == null)
+            {
+                return "会话 app=null excel=" + excel;
+            }
+
+            try
+            {
+                int n = app.Presentations.Count;
+                var names = new List<string>();
+                for (int i = 1; i <= n; i++)
+                {
+                    try
+                    {
+                        names.Add(app.Presentations[i].Name);
+                    }
+                    catch (Exception ex)
+                    {
+                        names.Add("[" + i + "死:" + ex.Message + "]");
+                    }
+                }
+
+                return "会话 稿=" + n + " [" + string.Join(",", names) + "] excel=" + excel;
+            }
+            catch (Exception ex)
+            {
+                return "会话 读失败:" + ex.Message + " excel=" + excel;
             }
         }
 

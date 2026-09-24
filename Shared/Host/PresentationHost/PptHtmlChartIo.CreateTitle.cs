@@ -227,6 +227,8 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            PourLog(warnings, "旁路开始 " + DescribeHostSession(app) + " 原稿=" + DescribePresAlive(destPres));
+
             string tempPath = Path.Combine(
                 Path.GetTempPath(),
                 "ew-ppt-chart-blank-" + Guid.NewGuid().ToString("N") + ".pptx");
@@ -330,7 +332,8 @@ namespace WordAddIn1.PresentationHost
 
                 TryClosePresentation(blank);
                 blank = null;
-                PourLog(warnings, "旁路稿已关，磁盘改包 原稿=" + DescribePresAlive(destPres));
+                PourLog(warnings, "旁路稿已关，磁盘改包 原稿=" + DescribePresAlive(destPres)
+                    + " " + DescribeHostSession(app));
 
                 if (!TryRewritePackageThenOpenChart(
                     presentations,

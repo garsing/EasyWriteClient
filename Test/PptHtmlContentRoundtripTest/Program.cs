@@ -13,6 +13,7 @@ namespace PptHtmlContentRoundtripTest
             var run = new TestRun();
             bool parseOnly = HasFlag(args, "--parse-only");
             bool formalOnly = HasFlag(args, "--formal-only");
+            bool failFast = HasFlag(args, "--fail-fast");
             bool useWpp = IsWppHost(args);
             int? batch = TryParseBatch(args);
             IList<string> nameFilters = ParseCaseFilters(args);
@@ -40,7 +41,7 @@ namespace PptHtmlContentRoundtripTest
                 }
                 else
                 {
-                    ContentBatchRunner.Run(run, batch, outDir, nameFilters);
+                    ContentBatchRunner.Run(run, batch, outDir, nameFilters, failFast);
                 }
 
                 Console.WriteLine();

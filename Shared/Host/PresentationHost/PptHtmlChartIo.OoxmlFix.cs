@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
@@ -1208,6 +1209,48 @@ namespace WordAddIn1.PresentationHost
             return null;
         }
 
+        private static string DescribeHostSession(object app)
+        {
+            int excel = 0;
+            try
+            {
+                excel = Process.GetProcessesByName("EXCEL").Length;
+            }
+            catch (Exception)
+            {
+            }
+
+            if (app == null)
+            {
+                return "会话 app=null excel=" + excel;
+            }
+
+            try
+            {
+                object presentations = WppCom.GetProperty(app, "Presentations");
+                int n = presentations == null ? -1 : Convert.ToInt32(WppCom.GetProperty(presentations, "Count") ?? -1);
+                var names = new List<string>();
+                for (int i = 1; i <= n; i++)
+                {
+                    try
+                    {
+                        object one = WppCom.GetIndexed(presentations, i);
+                        names.Add(Convert.ToString(WppCom.GetProperty(one, "Name") ?? "?"));
+                    }
+                    catch (Exception ex)
+                    {
+                        names.Add("[" + i + "死:" + ex.Message + "]");
+                    }
+                }
+
+                return "会话 稿=" + n + " [" + string.Join(",", names) + "] excel=" + excel;
+            }
+            catch (Exception ex)
+            {
+                return "会话 读失败:" + FormatComError(ex) + " excel=" + excel;
+            }
+        }
+
         private static string DescribePresAlive(object pres)
         {
             if (pres == null)
@@ -1512,13 +1555,18 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            PourLog(warnings, "OOXML " + tag + "：打开改包稿 " + pptxPath);
+            object app = WppCom.GetProperty(presentations, "Application")
+                ?? WppCom.GetProperty(presentations, "Parent");
+            PourLog(warnings, "OOXML " + tag + "：打开改包稿前 " + DescribeHostSession(app) + " " + pptxPath);
             openedPres = TryOpenCopyPresentation(presentations, pptxPath, warnings);
             if (openedPres == null)
             {
-                error = "OOXML " + tag + "：打开改包稿失败";
+                error = "OOXML " + tag + "：打开改包稿失败 " + DescribeHostSession(app);
                 return false;
             }
+
+            PourLog(warnings, "OOXML " + tag + "：打开改包稿后 " + DescribeHostSession(app)
+                + " 改包稿=" + DescribePresAlive(openedPres));
 
             chartShape = TryFindShapeById(openedPres, slideIndex, shapeId);
             if (chartShape == null)
