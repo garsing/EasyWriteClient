@@ -1232,13 +1232,23 @@ namespace WordAddIn1.PresentationHost
             PourLog(warnings, "校验 " + DescribeWantGrid(want) + " | " + DescribeLiveSeries(chart));
             PptHtmlChartGrid live;
             string readErr;
+            bool liveFromOoxml = false;
             if (HostAvoidsChartDataCom(chart))
             {
                 if (!TryReadGridFromSeries(chart, out live, out readErr) || live == null || !live.IsPourable)
                 {
-                    error = "无法回读系列校验: " + (readErr ?? "?");
-                    PourLog(warnings, "校验失败 " + error);
-                    return false;
+                    string seriesErr = readErr;
+                    if (!TryReadGridFromOoxmlCopy(chart, out live, out readErr)
+                        || live == null
+                        || !live.IsPourable)
+                    {
+                        error = "无法回读系列校验: " + (seriesErr ?? readErr ?? "?");
+                        PourLog(warnings, "校验失败 " + error);
+                        return false;
+                    }
+
+                    liveFromOoxml = true;
+                    PourLog(warnings, "校验 Series 失败，改读 OOXML");
                 }
             }
             else if (!TryReadGridFromEmbeddedSheet(chart, want.Columns.Count, want.Rows.Count, out live, out readErr)
@@ -1249,15 +1259,22 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            PourLog(warnings, "校验读回 " + DescribeGridCompact(live, "内嵌表"));
+            PourLog(warnings, "校验读回 " + DescribeGridCompact(live, liveFromOoxml ? "OOXML" : "内嵌表"));
             string mismatch = FindFirstGridMismatch(want, live, compareNames: false);
             if (mismatch != null)
             {
                 error = "图表内嵌表与稿不一致: " + mismatch;
                 PourLog(warnings, "校验失败 " + mismatch);
                 PourLog(warnings, "校验对照 稿=" + DescribeGridCompact(want, "稿")
-                    + " | 内嵌表=" + DescribeGridCompact(live, "内嵌表"));
+                    + " | 读回=" + DescribeGridCompact(live, liveFromOoxml ? "OOXML" : "内嵌表"));
                 return false;
+            }
+
+            // OOXML c:pt 已对上稿；WPP 误判 PPT 时 Series COM 常炸，再数点数只会假失败。
+            if (liveFromOoxml)
+            {
+                PourLog(warnings, "校验通过（OOXML 与稿一致）");
+                return true;
             }
 
             int seriesRows = ReadSeriesRowCount(chart);
