@@ -540,7 +540,15 @@ namespace PptHtmlContentRoundtripTest
                 return "";
             }
 
-            return " warnings=[" + string.Join("; ", result.Warnings) + "]";
+            List<string> w = result.Warnings;
+            int take = w.Count < 24 ? w.Count : 24;
+            var tail = new List<string>();
+            for (int i = w.Count - take; i < w.Count; i++)
+            {
+                tail.Add(w[i]);
+            }
+
+            return " warnings尾" + take + "/" + w.Count + "=[" + string.Join(" | ", tail) + "]";
         }
 
         private static void SkipRest(TestRun run, List<ContentCase> cases, int from, string reason)

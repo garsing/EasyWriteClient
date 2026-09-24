@@ -172,9 +172,9 @@ namespace WordAddIn1.PresentationHost
                             ref unchanged,
                             out error))
                     {
+                        result = FailResult(channelId, plan, warnings);
                         if (dbg != null)
                         {
-                            result = FailResult(channelId, plan, warnings);
                             AttachDebug(result, dbg, plan.SlideId);
                         }
 
@@ -225,16 +225,10 @@ namespace WordAddIn1.PresentationHost
             catch (Exception ex)
             {
                 error = "应用 HTML 失败: " + ex.Message;
+                result = FailResult(channelId, plan, warnings);
                 if (dbg != null)
                 {
                     dbg.Line("EXCEPTION: " + ex);
-                    result = new PptHtmlApplyResult
-                    {
-                        ChannelId = channelId,
-                        Kind = "ppt",
-                        SlideId = plan.SlideId,
-                        Warnings = warnings
-                    };
                     AttachDebug(result, dbg, plan.SlideId);
                 }
 

@@ -398,7 +398,7 @@ namespace WordAddIn1.PresentationHost
                 bool poured = false;
                 if (HostAvoidsChartDataCom(newChart))
                 {
-                    if (TryFixSeriesViaOoxml(newShape, useGrid, warnings, out object fixedShape)
+                    if (TryFixSeriesViaOoxml(newShape, useGrid, warnings, out object fixedShape, out string ooxmlErr)
                         && fixedShape != null)
                     {
                         newShape = fixedShape;
@@ -407,7 +407,7 @@ namespace WordAddIn1.PresentationHost
                     }
                     else if (string.IsNullOrEmpty(error))
                     {
-                        error = "PPT 换数 OOXML 失败";
+                        error = string.IsNullOrEmpty(ooxmlErr) ? "PPT 换数 OOXML 失败" : ooxmlErr;
                     }
                 }
                 else

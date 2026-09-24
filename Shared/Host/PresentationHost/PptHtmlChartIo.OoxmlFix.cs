@@ -39,11 +39,14 @@ namespace WordAddIn1.PresentationHost
             object shape,
             PptHtmlChartGrid grid,
             List<string> warnings,
-            out object newShape)
+            out object newShape,
+            out string error)
         {
             newShape = null;
+            error = null;
             if (shape == null || grid == null || !grid.IsPourable)
             {
+                error = "OOXML 灌数：shape/grid 不可灌";
                 return false;
             }
 
@@ -53,8 +56,20 @@ namespace WordAddIn1.PresentationHost
                 warnings,
                 "灌数",
                 (doc, w) => RewriteChartSeries(doc, grid, w),
-                copyShape => ReadSeriesRowCount(TryGetChart(copyShape)) == want,
+                copyShape =>
+                {
+                    int got = ReadSeriesRowCount(TryGetChart(copyShape));
+                    if (got == want)
+                    {
+                        return true;
+                    }
+
+                    PourLog(warnings, "OOXML 灌数：系列点=" + got + " 稿行=" + want
+                        + " | " + DescribeLiveSeries(TryGetChart(copyShape)));
+                    return false;
+                },
                 out newShape,
+                out error,
                 allowPpt: true,
                 embedGrid: grid);
         }
@@ -86,7 +101,8 @@ namespace WordAddIn1.PresentationHost
                     return pinned || stripped;
                 },
                 null,
-                out object next)
+                out object next,
+                out _)
                 || next == null)
             {
                 return;
@@ -982,12 +998,15 @@ namespace WordAddIn1.PresentationHost
             Func<XDocument, List<string>, bool> rewrite,
             Func<object, bool> acceptCopy,
             out object newShape,
+            out string error,
             bool allowPpt = false,
             PptHtmlChartGrid embedGrid = null)
         {
             newShape = null;
+            error = null;
             if (shape == null || rewrite == null)
             {
+                error = "OOXML " + tag + "：shape/rewrite 空";
                 return false;
             }
 
@@ -997,6 +1016,14 @@ namespace WordAddIn1.PresentationHost
             object copyPres = null;
             object copyChartShape = null;
             string tempPath = null;
+            string fail = null;
+            bool Fail(string detail)
+            {
+                fail = "OOXML " + tag + "：" + detail;
+                PourLog(warnings, fail);
+                return false;
+            }
+
             try
             {
                 PourLog(warnings, "OOXML " + tag + "：进入");
@@ -1004,8 +1031,7 @@ namespace WordAddIn1.PresentationHost
                 pres = TryGetShapePresentation(shape);
                 if (slide == null || pres == null)
                 {
-                    PourLog(warnings, "OOXML " + tag + "：取不到 slide/presentation");
-                    return false;
+                    return Fail("取不到 slide/presentation");
                 }
 
                 app = WppCom.GetProperty(pres, "Application");
@@ -1013,8 +1039,7 @@ namespace WordAddIn1.PresentationHost
                 PourLog(warnings, "OOXML " + tag + "：宿主 Name=" + appName);
                 if (!LooksLikeWppApp(app) && !allowPpt)
                 {
-                    PourLog(warnings, "OOXML " + tag + "：非 WPP 宿主（" + appName + "），跳过");
-                    return false;
+                    return Fail("非 WPP 宿主（" + appName + "），跳过");
                 }
 
                 int shapeId = Convert.ToInt32(WppCom.GetProperty(shape, "Id") ?? 0);
@@ -1022,8 +1047,7 @@ namespace WordAddIn1.PresentationHost
                 PourLog(warnings, "OOXML " + tag + "：shapeId=" + shapeId + " slideIndex=" + slideIndex);
                 if (shapeId < 1 || slideIndex < 1)
                 {
-                    PourLog(warnings, "OOXML " + tag + "：shapeId/slideIndex 非法 " + shapeId + "/" + slideIndex);
-                    return false;
+                    return Fail("shapeId/slideIndex 非法 " + shapeId + "/" + slideIndex);
                 }
 
                 tempPath = Path.Combine(
@@ -1044,75 +1068,83 @@ namespace WordAddIn1.PresentationHost
                     }
                     catch (Exception ex2)
                     {
-                        PourLog(warnings, "SaveCopyAs(2参) 失败: " + FormatComError(ex2));
-                        return false;
+                        return Fail("SaveCopyAs 失败: " + FormatComError(ex2));
                     }
                 }
 
                 if (!File.Exists(tempPath))
                 {
-                    PourLog(warnings, "OOXML " + tag + "：SaveCopyAs 未落盘 " + tempPath);
-                    return false;
+                    return Fail("SaveCopyAs 未落盘");
                 }
 
                 PourLog(warnings, "OOXML " + tag + "：副本已落盘 " + tempPath + " size=" + new FileInfo(tempPath).Length);
 
-                if (!TryRewriteChartXmlInPackage(tempPath, slideIndex, shapeId, rewrite, warnings, tag, embedGrid))
-                {
-                    return false;
-                }
-
-                PourLog(warnings, "OOXML " + tag + "：打开副本 " + tempPath);
                 object presentations = WppCom.GetProperty(app, "Presentations");
-                copyPres = TryOpenCopyPresentation(presentations, tempPath, warnings);
-                if (copyPres == null)
+                if (!TryRewritePackageThenOpenChart(
+                    presentations,
+                    tempPath,
+                    slideIndex,
+                    shapeId,
+                    rewrite,
+                    embedGrid,
+                    warnings,
+                    tag,
+                    out copyPres,
+                    out copyChartShape,
+                    out fail))
                 {
-                    PourLog(warnings, "OOXML " + tag + "：打开副本失败");
-                    return false;
-                }
-
-                object copySlides = WppCom.GetProperty(copyPres, "Slides");
-                object copySlide = WppCom.GetIndexed(copySlides, slideIndex);
-                object copyShapes = WppCom.GetProperty(copySlide, "Shapes");
-                int copyCount = Convert.ToInt32(WppCom.GetProperty(copyShapes, "Count") ?? 0);
-                for (int i = 1; i <= copyCount; i++)
-                {
-                    object s = WppCom.GetIndexed(copyShapes, i);
-                    if (Convert.ToInt32(WppCom.GetProperty(s, "Id") ?? 0) == shapeId)
-                    {
-                        copyChartShape = s;
-                        break;
-                    }
-                }
-
-                if (copyChartShape == null)
-                {
-                    PourLog(warnings, "OOXML " + tag + "：副本里找不到 shapeId=" + shapeId);
+                    error = fail;
                     return false;
                 }
 
                 if (acceptCopy != null && !acceptCopy(copyChartShape))
                 {
-                    PourLog(warnings, "OOXML " + tag + "：副本图验收未过");
-                    return false;
+                    return Fail("副本图验收未过 " + (LastPourLine(warnings) ?? ""));
                 }
 
-                PourLog(warnings, "OOXML " + tag + "：Copy 副本图");
-                WppCom.Invoke(copyChartShape, "Copy");
-                object shapes = WppCom.GetProperty(slide, "Shapes");
+                PourLog(warnings, "OOXML " + tag + "：贴回前 旁路稿=" + DescribePresAlive(pres)
+                    + " 旁路页=" + DescribeSlideAlive(slide)
+                    + " 改包稿=" + DescribePresAlive(copyPres)
+                    + " 改包图=" + DescribeShapeAlive(copyChartShape));
+                try
+                {
+                    WppCom.Invoke(copyChartShape, "Copy");
+                    PourLog(warnings, "OOXML " + tag + "：Copy 已调用 改包稿=" + DescribePresAlive(copyPres)
+                        + " 旁路页=" + DescribeSlideAlive(slide));
+                }
+                catch (Exception ex)
+                {
+                    return Fail("Copy 副本图失败: " + FormatComError(ex)
+                        + " 旁路页=" + DescribeSlideAlive(slide)
+                        + " 改包稿=" + DescribePresAlive(copyPres));
+                }
+
+                object shapes;
+                try
+                {
+                    shapes = WppCom.GetProperty(slide, "Shapes");
+                    PourLog(warnings, "OOXML " + tag + "：已取旁路页 Shapes "
+                        + (shapes == null ? "null" : "ok")
+                        + " 旁路页=" + DescribeSlideAlive(slide));
+                }
+                catch (Exception ex)
+                {
+                    return Fail("取旁路页 Shapes 失败: " + FormatComError(ex)
+                        + " 旁路稿=" + DescribePresAlive(pres));
+                }
+
                 object pasted = TryPasteChart(shapes, warnings);
                 if (pasted == null)
                 {
-                    PourLog(warnings, "OOXML " + tag + "：粘贴回原页失败");
-                    return false;
+                    return Fail("粘贴回旁路页失败 旁路稿=" + DescribePresAlive(pres)
+                        + " 旁路页=" + DescribeSlideAlive(slide));
                 }
 
                 TryCopyBox(shape, pasted);
                 if (acceptCopy != null && !acceptCopy(pasted))
                 {
-                    PourLog(warnings, "OOXML " + tag + "：贴回后验收未过");
                     TryDelete(pasted);
-                    return false;
+                    return Fail("贴回后验收未过 " + (LastPourLine(warnings) ?? ""));
                 }
 
                 TryDelete(shape);
@@ -1122,11 +1154,17 @@ namespace WordAddIn1.PresentationHost
             }
             catch (Exception ex)
             {
-                PourLog(warnings, "OOXML " + tag + "失败: " + FormatComError(ex));
+                Fail("异常: " + FormatComError(ex) + " 原稿=" + DescribePresAlive(pres));
+                error = fail;
                 return false;
             }
             finally
             {
+                if (error == null && fail != null)
+                {
+                    error = fail;
+                }
+
                 if (copyPres != null)
                 {
                     try
@@ -1148,6 +1186,81 @@ namespace WordAddIn1.PresentationHost
                     {
                     }
                 }
+            }
+        }
+
+        private static string LastPourLine(List<string> warnings)
+        {
+            if (warnings == null || warnings.Count == 0)
+            {
+                return null;
+            }
+
+            for (int i = warnings.Count - 1; i >= 0; i--)
+            {
+                string one = warnings[i];
+                if (!string.IsNullOrEmpty(one))
+                {
+                    return one;
+                }
+            }
+
+            return null;
+        }
+
+        private static string DescribePresAlive(object pres)
+        {
+            if (pres == null)
+            {
+                return "pres=null";
+            }
+
+            try
+            {
+                object name = WppCom.GetProperty(pres, "Name");
+                return name == null ? "活(Name空)" : "活(" + name + ")";
+            }
+            catch (Exception ex)
+            {
+                return "死:" + FormatComError(ex);
+            }
+        }
+
+        private static string DescribeSlideAlive(object slide)
+        {
+            if (slide == null)
+            {
+                return "slide=null";
+            }
+
+            try
+            {
+                object idx = WppCom.GetProperty(slide, "SlideIndex");
+                object shapes = WppCom.GetProperty(slide, "Shapes");
+                int n = shapes == null ? -1 : Convert.ToInt32(WppCom.GetProperty(shapes, "Count") ?? -1);
+                return "slide活(idx=" + idx + " n=" + n + ")";
+            }
+            catch (Exception ex)
+            {
+                return "slide死:" + FormatComError(ex);
+            }
+        }
+
+        private static string DescribeShapeAlive(object shape)
+        {
+            if (shape == null)
+            {
+                return "shape=null";
+            }
+
+            try
+            {
+                object id = WppCom.GetProperty(shape, "Id");
+                return id == null ? "shape活(Id空)" : "shape活(id=" + id + ")";
+            }
+            catch (Exception ex)
+            {
+                return "shape死:" + FormatComError(ex);
             }
         }
 
@@ -1359,6 +1472,93 @@ namespace WordAddIn1.PresentationHost
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// 磁盘改包后再 Open。调用方须先关掉要改的那份稿，避免原稿+旁路+改包三份同时开。
+        /// </summary>
+        private static bool TryRewritePackageThenOpenChart(
+            object presentations,
+            string pptxPath,
+            int slideIndex,
+            int shapeId,
+            Func<XDocument, List<string>, bool> rewrite,
+            PptHtmlChartGrid embedGrid,
+            List<string> warnings,
+            string tag,
+            out object openedPres,
+            out object chartShape,
+            out string error)
+        {
+            openedPres = null;
+            chartShape = null;
+            error = null;
+            if (presentations == null || string.IsNullOrEmpty(pptxPath) || rewrite == null)
+            {
+                error = "OOXML " + tag + "：改包参数空";
+                return false;
+            }
+
+            if (!TryRewriteChartXmlInPackage(
+                pptxPath,
+                slideIndex,
+                shapeId,
+                rewrite,
+                warnings,
+                tag,
+                embedGrid))
+            {
+                error = LastPourLine(warnings) ?? ("OOXML " + tag + "：改包失败");
+                return false;
+            }
+
+            PourLog(warnings, "OOXML " + tag + "：打开改包稿 " + pptxPath);
+            openedPres = TryOpenCopyPresentation(presentations, pptxPath, warnings);
+            if (openedPres == null)
+            {
+                error = "OOXML " + tag + "：打开改包稿失败";
+                return false;
+            }
+
+            chartShape = TryFindShapeById(openedPres, slideIndex, shapeId);
+            if (chartShape == null)
+            {
+                error = "OOXML " + tag + "：改包稿找不到 shapeId=" + shapeId;
+                TryClosePresentation(openedPres);
+                openedPres = null;
+                return false;
+            }
+
+            return true;
+        }
+
+        private static object TryFindShapeById(object presentation, int slideIndex, int shapeId)
+        {
+            if (presentation == null || slideIndex < 1 || shapeId < 1)
+            {
+                return null;
+            }
+
+            try
+            {
+                object slides = WppCom.GetProperty(presentation, "Slides");
+                object slide = WppCom.GetIndexed(slides, slideIndex);
+                object shapes = slide == null ? null : WppCom.GetProperty(slide, "Shapes");
+                int count = shapes == null ? 0 : Convert.ToInt32(WppCom.GetProperty(shapes, "Count") ?? 0);
+                for (int i = 1; i <= count; i++)
+                {
+                    object s = WppCom.GetIndexed(shapes, i);
+                    if (Convert.ToInt32(WppCom.GetProperty(s, "Id") ?? 0) == shapeId)
+                    {
+                        return s;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return null;
         }
 
         private static bool TryRewriteChartXmlInPackage(

@@ -130,7 +130,7 @@ namespace WordAddIn1.PresentationHost
             DismissChartExcelUiForChart(chart);
             if (!TryPourGrid(chart, grid, out error, warnings))
             {
-                if (TryFixSeriesViaOoxml(shape, grid, warnings, out shape))
+                if (TryFixSeriesViaOoxml(shape, grid, warnings, out shape, out _))
                 {
                     chart = TryGetChart(shape);
                     PourLog(warnings, "OOXML 修点后 " + DescribeLiveSeries(chart)
@@ -232,6 +232,7 @@ namespace WordAddIn1.PresentationHost
                 "ew-ppt-chart-blank-" + Guid.NewGuid().ToString("N") + ".pptx");
             object blank = null;
             object blankShape = null;
+            object pouredPres = null;
             try
             {
                 try
@@ -308,26 +309,72 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                PourLog(warnings, "空白稿已建图，副本灌数走 OOXML，不打开 ChartData");
+                int shapeId = Convert.ToInt32(WppCom.GetProperty(blankShape, "Id") ?? 0);
+                PourLog(warnings, "空白稿已建图，先关旁路再改包 原稿="
+                    + DescribePresAlive(destPres)
+                    + " shapeId=" + shapeId
+                    + " slideIndex=" + destIndex);
                 DismissChartExcelUiForChart(chart);
                 DismissChartExcelUi();
-                if (!TryFixSeriesViaOoxml(blankShape, grid, warnings, out object poured) || poured == null)
+                if (shapeId < 1)
                 {
-                    error = "PPT 旁路建图灌数失败: OOXML 失败";
+                    error = "PPT 旁路建图：shapeId 非法";
                     return false;
                 }
 
-                blankShape = poured;
-                WppCom.Invoke(blankShape, "Copy");
+                if (!TrySavePresentationTo(blank, tempPath, warnings))
+                {
+                    error = "PPT 旁路建图：旁路稿存盘失败";
+                    return false;
+                }
+
+                TryClosePresentation(blank);
+                blank = null;
+                PourLog(warnings, "旁路稿已关，磁盘改包 原稿=" + DescribePresAlive(destPres));
+
+                if (!TryRewritePackageThenOpenChart(
+                    presentations,
+                    tempPath,
+                    destIndex,
+                    shapeId,
+                    (doc, w) => RewriteChartSeries(doc, grid, w),
+                    grid,
+                    warnings,
+                    "灌数",
+                    out pouredPres,
+                    out object pouredShape,
+                    out string ooxmlErr)
+                    || pouredShape == null)
+                {
+                    error = "PPT 旁路建图灌数失败: "
+                        + (string.IsNullOrEmpty(ooxmlErr) ? "OOXML 失败" : ooxmlErr)
+                        + " 原稿=" + DescribePresAlive(destPres);
+                    return false;
+                }
+
+                PourLog(warnings, "改包稿已开，贴回原稿 原稿=" + DescribePresAlive(destPres)
+                    + " 改包图=" + DescribeShapeAlive(pouredShape));
+                try
+                {
+                    WppCom.Invoke(pouredShape, "Copy");
+                }
+                catch (Exception ex)
+                {
+                    error = "PPT 旁路建图：Copy 改包图失败: " + FormatComError(ex)
+                        + " 原稿=" + DescribePresAlive(destPres);
+                    return false;
+                }
+
                 shape = TryPasteChart(destShapes, warnings);
                 if (shape == null)
                 {
-                    error = "PPT 旁路建图：贴回原页失败";
+                    error = "PPT 旁路建图：贴回原页失败 原稿=" + DescribePresAlive(destPres);
                     return false;
                 }
 
-                TryCopyBox(blankShape, shape);
-                PourLog(warnings, "空白稿图已贴回 " + DescribeLiveSeries(TryGetChart(shape)));
+                TryCopyBox(pouredShape, shape);
+                PourLog(warnings, "空白稿图已贴回 " + DescribeLiveSeries(TryGetChart(shape))
+                    + " 原稿=" + DescribePresAlive(destPres));
                 return true;
             }
             catch (Exception ex)
@@ -339,6 +386,7 @@ namespace WordAddIn1.PresentationHost
             }
             finally
             {
+                TryClosePresentation(pouredPres);
                 TryClosePresentation(blank);
                 try
                 {
@@ -395,6 +443,46 @@ namespace WordAddIn1.PresentationHost
                 error = "创建图表失败: " + ex.Message;
                 return null;
             }
+        }
+
+        private static bool TrySavePresentationTo(object presentation, string path, List<string> warnings)
+        {
+            if (presentation == null || string.IsNullOrEmpty(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                WppCom.Invoke(presentation, "Save");
+                if (File.Exists(path))
+                {
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                PourLog(warnings, "旁路 Save 失败: " + FormatComError(ex));
+            }
+
+            try
+            {
+                WppCom.Invoke(presentation, "SaveCopyAs", path);
+            }
+            catch (Exception)
+            {
+                try
+                {
+                    WppCom.Invoke(presentation, "SaveCopyAs", path, 24);
+                }
+                catch (Exception ex)
+                {
+                    PourLog(warnings, "旁路 SaveCopyAs 失败: " + FormatComError(ex));
+                    return false;
+                }
+            }
+
+            return File.Exists(path);
         }
 
         private static void TryClosePresentation(object presentation)
