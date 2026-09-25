@@ -77,16 +77,26 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 HashSet<string> need = CollectSlideThemeClosure(map, replacements, slidePart);
+                if (replacements != null)
+                {
+                    foreach (string key in replacements.Keys)
+                    {
+                        need.Add(NormPart(key));
+                    }
+                }
+
                 if (need.Count < 4)
                 {
                     error = "瘦包闭包太小";
                     return false;
                 }
 
-                byte[] presXml = RewritePresentationOneSlide(
-                    ReadPart(map, replacements, "ppt/presentation.xml"), slidePart, map, replacements);
                 byte[] presRels = RewritePresentationRels(
                     ReadPart(map, replacements, "ppt/_rels/presentation.xml.rels"), need);
+                byte[] presXml = StripOrphanRids(
+                    RewritePresentationOneSlide(
+                        ReadPart(map, replacements, "ppt/presentation.xml"), slidePart, map, replacements),
+                    presRels);
                 byte[] types = RewriteContentTypes(
                     ReadPart(map, replacements, "[Content_Types].xml"), need);
                 if (presXml == null || presRels == null || types == null)
@@ -95,42 +105,77 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                var blobs = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+                foreach (string part in need)
+                {
+                    if (part.Equals("ppt/presentation.xml", StringComparison.OrdinalIgnoreCase)
+                        || part.Equals("ppt/_rels/presentation.xml.rels", StringComparison.OrdinalIgnoreCase)
+                        || part.Equals("[Content_Types].xml", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    byte[] overlay = ReadPart(map, replacements, part);
+                    if (overlay == null)
+                    {
+                        continue;
+                    }
+
+                    if (part.EndsWith(".rels", StringComparison.OrdinalIgnoreCase))
+                    {
+                        overlay = FilterRelsToNeed(overlay, OwnerOfRels(part), need);
+                    }
+
+                    blobs[part] = overlay;
+                }
+
+                foreach (string part in blobs.Keys.ToList())
+                {
+                    if (part.EndsWith(".rels", StringComparison.OrdinalIgnoreCase)
+                        || !part.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    byte[] rels;
+                    if (blobs.TryGetValue(RelsOf(part), out rels))
+                    {
+                        blobs[part] = StripOrphanRids(blobs[part], rels);
+                    }
+                }
+
                 using (FileStream fs = File.Create(slimPath))
                 using (var zout = new ZipArchive(fs, ZipArchiveMode.Create))
                 {
-                    foreach (string part in need.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+                    foreach (KeyValuePair<string, byte[]> kv in blobs.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
                     {
-                        if (part.Equals("ppt/presentation.xml", StringComparison.OrdinalIgnoreCase)
-                            || part.Equals("ppt/_rels/presentation.xml.rels", StringComparison.OrdinalIgnoreCase)
-                            || part.Equals("[Content_Types].xml", StringComparison.OrdinalIgnoreCase))
+                        if (kv.Key.Equals("_rels/.rels", StringComparison.OrdinalIgnoreCase)
+                            || kv.Key.Equals("[Content_Types].xml", StringComparison.OrdinalIgnoreCase))
                         {
+                            WriteZipStored(zout, kv.Key, kv.Value);
                             continue;
                         }
 
-                        byte[] overlay = LookupReplacement(replacements, part);
-                        if (overlay != null)
-                        {
-                            WriteZipBytes(zout, part, overlay);
-                            continue;
-                        }
-
-                        ZipArchiveEntry src;
-                        if (!map.TryGetValue(part, out src))
-                        {
-                            continue;
-                        }
-
-                        CopyZipEntry(src, zout, part);
+                        WriteZipBytes(zout, kv.Key, kv.Value);
                     }
 
                     WriteZipBytes(zout, "ppt/presentation.xml", presXml);
                     WriteZipBytes(zout, "ppt/_rels/presentation.xml.rels", presRels);
-                    WriteZipBytes(zout, "[Content_Types].xml", types);
+                    WriteZipStored(zout, "[Content_Types].xml", types);
                 }
 
                 if (!File.Exists(slimPath) || new FileInfo(slimPath).Length < 64)
                 {
                     error = "瘦包未写出";
+                    TryDeleteFile(slimPath);
+                    slimPath = null;
+                    return false;
+                }
+
+                string dangling = FindDanglingRels(slimPath);
+                if (!string.IsNullOrEmpty(dangling))
+                {
+                    error = "瘦包悬空 rels: " + dangling;
                     TryDeleteFile(slimPath);
                     slimPath = null;
                     return false;
@@ -321,11 +366,6 @@ namespace WordAddIn1.PresentationHost
                         continue;
                     }
 
-                    if (n.StartsWith("ppt/fonts/", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
                     if (fromPresRels
                         && (n.StartsWith("ppt/slideMasters/", StringComparison.OrdinalIgnoreCase)
                             || n.StartsWith("ppt/slideLayouts/", StringComparison.OrdinalIgnoreCase)
@@ -385,17 +425,116 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
-            return Encoding.UTF8.GetBytes(XmlBytes(doc));
+            return new UTF8Encoding(false).GetBytes(XmlBytes(doc));
         }
 
         private static byte[] RewritePresentationRels(byte[] relsXml, HashSet<string> need)
+        {
+            return FilterRelsToNeed(relsXml, "ppt/presentation.xml", need);
+        }
+
+        private static byte[] StripOrphanRids(byte[] xml, byte[] relsXml)
+        {
+            if (xml == null || relsXml == null)
+            {
+                return xml;
+            }
+
+            HashSet<string> keep = RelIds(relsXml);
+            XDocument doc;
+            try
+            {
+                doc = XDocument.Parse(Encoding.UTF8.GetString(xml));
+            }
+            catch (Exception)
+            {
+                return xml;
+            }
+
+            if (doc.Root == null)
+            {
+                return xml;
+            }
+
+            foreach (XElement el in doc.Descendants().ToList())
+            {
+                XAttribute rid = el.Attribute(RNs + "id");
+                if (rid == null)
+                {
+                    continue;
+                }
+
+                string id = (string)rid;
+                if (!string.IsNullOrEmpty(id) && !keep.Contains(id))
+                {
+                    el.Remove();
+                }
+            }
+
+            if (doc.Root.Name == PNs + "presentation")
+            {
+                foreach (string lst in new[] { "notesMasterIdLst", "handoutMasterIdLst" })
+                {
+                    XElement n = doc.Root.Element(PNs + lst);
+                    if (n != null && !n.HasElements)
+                    {
+                        n.Remove();
+                    }
+                }
+            }
+
+            return new UTF8Encoding(false).GetBytes(XmlBytes(doc));
+        }
+
+        private static HashSet<string> RelIds(byte[] relsXml)
+        {
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            if (relsXml == null)
+            {
+                return ids;
+            }
+
+            try
+            {
+                XDocument doc = XDocument.Parse(Encoding.UTF8.GetString(relsXml));
+                if (doc.Root == null)
+                {
+                    return ids;
+                }
+
+                foreach (XElement rel in doc.Root.Elements(RelNs + "Relationship"))
+                {
+                    string id = (string)rel.Attribute("Id");
+                    if (!string.IsNullOrEmpty(id))
+                    {
+                        ids.Add(id);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return ids;
+        }
+
+        private static byte[] FilterRelsToNeed(byte[] relsXml, string ownerPart, HashSet<string> need)
         {
             if (relsXml == null)
             {
                 return null;
             }
 
-            XDocument doc = XDocument.Parse(Encoding.UTF8.GetString(relsXml));
+            XDocument doc;
+            try
+            {
+                doc = XDocument.Parse(Encoding.UTF8.GetString(relsXml));
+            }
+            catch (Exception)
+            {
+                return relsXml;
+            }
+
             if (doc.Root == null)
             {
                 return relsXml;
@@ -403,40 +542,20 @@ namespace WordAddIn1.PresentationHost
 
             foreach (XElement rel in doc.Root.Elements(RelNs + "Relationship").ToList())
             {
-                string resolved = ResolvePart("ppt/presentation.xml", (string)rel.Attribute("Target"));
-                string type = (string)rel.Attribute("Type") ?? "";
-                bool isSlide = type.IndexOf("/slide", StringComparison.OrdinalIgnoreCase) >= 0
-                    && type.IndexOf("slideMaster", StringComparison.OrdinalIgnoreCase) < 0
-                    && type.IndexOf("slideLayout", StringComparison.OrdinalIgnoreCase) < 0
-                    && type.IndexOf("notesSlide", StringComparison.OrdinalIgnoreCase) < 0;
-                if (isSlide)
+                string mode = (string)rel.Attribute("TargetMode");
+                if (string.Equals(mode, "External", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (!need.Contains(resolved))
-                    {
-                        rel.Remove();
-                    }
-
                     continue;
                 }
 
-                if (type.IndexOf("/font", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    rel.Remove();
-                    continue;
-                }
-
-                if (!need.Contains(resolved)
-                    && type.IndexOf("theme", StringComparison.OrdinalIgnoreCase) < 0
-                    && type.IndexOf("slideMaster", StringComparison.OrdinalIgnoreCase) < 0
-                    && type.IndexOf("presProps", StringComparison.OrdinalIgnoreCase) < 0
-                    && type.IndexOf("viewProps", StringComparison.OrdinalIgnoreCase) < 0
-                    && type.IndexOf("tableStyles", StringComparison.OrdinalIgnoreCase) < 0)
+                string resolved = ResolvePart(ownerPart, (string)rel.Attribute("Target"));
+                if (!need.Contains(resolved))
                 {
                     rel.Remove();
                 }
             }
 
-            return Encoding.UTF8.GetBytes(XmlBytes(doc));
+            return new UTF8Encoding(false).GetBytes(XmlBytes(doc));
         }
 
         private static byte[] RewriteContentTypes(byte[] typesXml, HashSet<string> need)
@@ -464,7 +583,7 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
-            return Encoding.UTF8.GetBytes(XmlBytes(doc));
+            return new UTF8Encoding(false).GetBytes(XmlBytes(doc));
         }
 
         private static bool IsOtherSlide(string part, string keepSlide)
@@ -663,10 +782,75 @@ namespace WordAddIn1.PresentationHost
 
         private static void WriteZipBytes(ZipArchive zout, string name, byte[] data)
         {
-            ZipArchiveEntry e = zout.CreateEntry(name, CompressionLevel.Fastest);
+            WriteZipBytes(zout, name, data, CompressionLevel.Fastest);
+        }
+
+        private static void WriteZipStored(ZipArchive zout, string name, byte[] data)
+        {
+            WriteZipBytes(zout, name, data, CompressionLevel.NoCompression);
+        }
+
+        private static void WriteZipBytes(ZipArchive zout, string name, byte[] data, CompressionLevel level)
+        {
+            ZipArchiveEntry e = zout.CreateEntry(name, level);
             using (Stream s = e.Open())
             {
                 s.Write(data, 0, data.Length);
+            }
+        }
+
+        private static string FindDanglingRels(string zipPath)
+        {
+            try
+            {
+                using (ZipArchive zip = ZipFile.OpenRead(zipPath))
+                {
+                    var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (ZipArchiveEntry e in zip.Entries)
+                    {
+                        names.Add(NormPart(e.FullName));
+                    }
+
+                    var miss = new List<string>();
+                    foreach (ZipArchiveEntry e in zip.Entries)
+                    {
+                        string part = NormPart(e.FullName);
+                        if (!part.EndsWith(".rels", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        byte[] xml;
+                        using (var ms = new MemoryStream())
+                        {
+                            using (Stream s = e.Open())
+                            {
+                                s.CopyTo(ms);
+                            }
+
+                            xml = ms.ToArray();
+                        }
+
+                        string owner = OwnerOfRels(part);
+                        foreach (string target in RelTargets(xml, owner))
+                        {
+                            if (!names.Contains(NormPart(target)))
+                            {
+                                miss.Add(part + "->" + target);
+                                if (miss.Count >= 8)
+                                {
+                                    return string.Join("; ", miss);
+                                }
+                            }
+                        }
+                    }
+
+                    return miss.Count == 0 ? null : string.Join("; ", miss);
+                }
+            }
+            catch (Exception ex)
+            {
+                return "读瘦包失败:" + ex.Message;
             }
         }
 

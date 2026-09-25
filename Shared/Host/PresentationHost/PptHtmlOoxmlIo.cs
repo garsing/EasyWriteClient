@@ -184,7 +184,17 @@ namespace WordAddIn1.PresentationHost
                 PingDest(warnings, tag + "/Open瘦包" + (copyPres == null ? "失败" : "成功"), destPres);
                 if (copyPres == null && openPath != path)
                 {
-                    Log(warnings, tag + "：瘦包 Open 失败，回退整份");
+                    Log(warnings, tag + "：瘦包 Open 失败（" + (error ?? "?")
+                        + "） path=" + openPath
+                        + " exists=" + File.Exists(openPath)
+                        + " kb=" + (File.Exists(openPath) ? (new FileInfo(openPath).Length / 1024).ToString() : "-"));
+                    try
+                    {
+                        Console.WriteLine("  瘦包 Open 失败：" + (error ?? "?") + " " + openPath);
+                    }
+                    catch (Exception)
+                    {
+                    }
                     TryCloseCopy(copyPres);
                     if (!TryApplyReplacements(path, replacements, out error))
                     {
