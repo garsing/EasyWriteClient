@@ -243,6 +243,7 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                PptHtmlOoxmlIo.PingDest(warnings, "旁路/SaveCopy", destPres);
                 object appForOpen = destPres == null ? null : WppCom.GetProperty(destPres, "Application");
                 blank = PptHtmlOoxmlIo.TryOpenCopy(appForOpen ?? app, tempPath, out error);
                 if (blank == null)
@@ -251,6 +252,7 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                PptHtmlOoxmlIo.PingDest(warnings, "旁路/Open副本", destPres);
                 object slides = WppCom.GetProperty(blank, "Slides");
                 int destIndex = 1;
                 try
@@ -308,8 +310,10 @@ namespace WordAddIn1.PresentationHost
                     + DescribePresAlive(destPres)
                     + " shapeId=" + shapeId
                     + " slideIndex=" + destIndex);
+                PptHtmlOoxmlIo.PingDest(warnings, "旁路/AddChart", destPres);
                 DismissChartExcelUiForChart(chart);
                 DismissChartExcelUi();
+                PptHtmlOoxmlIo.PingDest(warnings, "旁路/DismissExcel", destPres);
                 if (shapeId < 1)
                 {
                     error = "PPT 旁路建图：shapeId 非法";
@@ -324,8 +328,7 @@ namespace WordAddIn1.PresentationHost
 
                 PptHtmlOoxmlIo.TryCloseCopy(blank);
                 blank = null;
-                PourLog(warnings, "旁路稿已关，磁盘改包 原稿=" + DescribePresAlive(destPres)
-                    + " " + DescribeHostSession(app));
+                PptHtmlOoxmlIo.PingDest(warnings, "旁路/关副本", destPres);
 
                 object pouredShape = null;
                 object pastedShape = null;

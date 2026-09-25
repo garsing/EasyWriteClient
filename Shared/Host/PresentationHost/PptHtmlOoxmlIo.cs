@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using Office = Microsoft.Office.Core;
@@ -135,6 +136,7 @@ namespace WordAddIn1.PresentationHost
                     }
 
                     Log(warnings, tag + "：副本已落盘 " + path);
+                    PingDest(warnings, tag + "/SaveCopy", destPres);
                 }
 
                 var replacements = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
@@ -159,6 +161,8 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
 
+                PingDest(warnings, tag + "/改zip", destPres);
+
                 if (openPath == path)
                 {
                     if (!TryApplyReplacements(path, replacements, out error))
@@ -175,7 +179,9 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 object app = TryGetApp(destPres);
+                PingDest(warnings, tag + "/Open前", destPres);
                 copyPres = TryOpenCopy(app, openPath, out error, readOnly: true);
+                PingDest(warnings, tag + "/Open瘦包" + (copyPres == null ? "失败" : "成功"), destPres);
                 if (copyPres == null && openPath != path)
                 {
                     Log(warnings, tag + "：瘦包 Open 失败，回退整份");
@@ -191,6 +197,7 @@ namespace WordAddIn1.PresentationHost
                     }
 
                     copyPres = TryOpenCopy(app, path, out error, readOnly: true);
+                    PingDest(warnings, tag + "/Open整份" + (copyPres == null ? "失败" : "成功"), destPres);
                     openSlideIndex = destSlideIndex;
                     openPath = path;
                 }
@@ -227,16 +234,20 @@ namespace WordAddIn1.PresentationHost
                 }
                 catch (Exception ex)
                 {
+                    PingDest(warnings, tag + "/Copy失败", destPres);
                     error = tag + "：Copy 失败: " + ex.Message;
                     return false;
                 }
 
+                PingDest(warnings, tag + "/Copy后", destPres);
                 if (!pasteToDest())
                 {
+                    PingDest(warnings, tag + "/贴回失败", destPres);
                     error = tag + "：贴回失败";
                     return false;
                 }
 
+                PingDest(warnings, tag + "/贴回后", destPres);
                 return true;
             }
             catch (Exception ex)
@@ -493,6 +504,67 @@ namespace WordAddIn1.PresentationHost
             catch (Exception)
             {
                 return null;
+            }
+        }
+
+        public static void PingDest(List<string> warnings, string tag, object destPres)
+        {
+            string dest = destPres == null ? "pres=null" : "活";
+            try
+            {
+                if (destPres != null)
+                {
+                    object name = destPres is PowerPoint.Presentation ppt
+                        ? ppt.Name
+                        : WppCom.GetProperty(destPres, "Name");
+                    dest = name == null ? "活(Name空)" : "活(" + name + ")";
+                }
+            }
+            catch (Exception ex)
+            {
+                dest = "死:" + ex.GetType().Name + ":" + ex.Message;
+            }
+
+            object app = TryGetApp(destPres);
+            string sess = "app=null";
+            int excel = 0;
+            try
+            {
+                excel = Process.GetProcessesByName("EXCEL").Length;
+            }
+            catch (Exception)
+            {
+            }
+
+            if (app != null)
+            {
+                try
+                {
+                    object presentations = app is PowerPoint.Application pptApp
+                        ? pptApp.Presentations
+                        : WppCom.GetProperty(app, "Presentations");
+                    int n = presentations == null
+                        ? -1
+                        : Convert.ToInt32(
+                            app is PowerPoint.Application
+                                ? ((PowerPoint.Application)app).Presentations.Count
+                                : WppCom.GetProperty(presentations, "Count") ?? -1);
+                    sess = "稿=" + n;
+                }
+                catch (Exception ex)
+                {
+                    sess = "稿读失败:" + ex.Message;
+                }
+            }
+
+            string line = "打点 " + tag + " 原稿=" + dest + " " + sess + " excel=" + excel;
+            Log(warnings, line);
+            try
+            {
+                Console.WriteLine("  " + line);
+            }
+            catch (Exception)
+            {
             }
         }
 
