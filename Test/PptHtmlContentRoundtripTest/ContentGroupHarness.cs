@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using WordAddIn1;
 using WordAddIn1.OpenFiles;
 using WordAddIn1.PresentationHost;
@@ -17,10 +18,12 @@ namespace PptHtmlContentRoundtripTest
         public string SlideId { get; set; }
         public string Rpc { get; set; }
         public ContentAssets Assets { get; set; }
+        public List<string> LastWarnings { get; private set; }
 
         public bool TryApply(string html, bool allowCreate, out List<string> ids, out string error)
         {
             ids = new List<string>();
+            LastWarnings = new List<string>();
             if (!ContentHtml.TryParse(html, SlideId, out PptHtmlApplyPlan plan, out error))
             {
                 return false;
@@ -33,6 +36,11 @@ namespace PptHtmlContentRoundtripTest
                 ? PptHtmlWppApplier.TryApply(Presentation, plan, "grp-test-wpp", out result, out error)
                 : PptHtmlPowerPointApplier.TryApply(
                     (PowerPoint.Presentation)Presentation, plan, "grp-test", out result, out error);
+            if (result?.Warnings != null)
+            {
+                LastWarnings.AddRange(result.Warnings);
+            }
+
             if (!ok)
             {
                 return false;
@@ -40,6 +48,154 @@ namespace PptHtmlContentRoundtripTest
 
             ids = CollectIds(result);
             return true;
+        }
+
+        public int SlideCount()
+        {
+            try
+            {
+                if (Wpp)
+                {
+                    object slides = WppCom.GetProperty(Presentation, "Slides");
+                    return Convert.ToInt32(WppCom.GetProperty(slides, "Count") ?? 0);
+                }
+
+                return ((PowerPoint.Presentation)Presentation).Slides.Count;
+            }
+            catch (Exception)
+            {
+                return -1;
+            }
+        }
+
+        public int PresCount()
+        {
+            try
+            {
+                if (Wpp)
+                {
+                    object app = WppCom.GetProperty(Presentation, "Application");
+                    object presentations = WppCom.GetProperty(app, "Presentations");
+                    return Convert.ToInt32(WppCom.GetProperty(presentations, "Count") ?? 0);
+                }
+
+                return ((PowerPoint.Presentation)Presentation).Application.Presentations.Count;
+            }
+            catch (Exception)
+            {
+                return -1;
+            }
+        }
+
+        public bool PresAlive()
+        {
+            try
+            {
+                return SlideCount() >= 1;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        public bool TrySelectSlide(string slideId, out string error)
+        {
+            error = null;
+            if (string.IsNullOrEmpty(slideId))
+            {
+                error = "slideId 空";
+                return false;
+            }
+
+            try
+            {
+                if (Wpp)
+                {
+                    object slides = WppCom.GetProperty(Presentation, "Slides");
+                    int count = Convert.ToInt32(WppCom.GetProperty(slides, "Count") ?? 0);
+                    for (int i = 1; i <= count; i++)
+                    {
+                        object sl = WppCom.GetIndexed(slides, i);
+                        string id = Convert.ToInt32(
+                            WppCom.GetProperty(sl, "SlideID") ?? WppCom.GetProperty(sl, "SlideId"))
+                            .ToString(CultureInfo.InvariantCulture);
+                        if (id == slideId)
+                        {
+                            Slide = sl;
+                            SlideId = slideId;
+                            return true;
+                        }
+                    }
+
+                    error = "WPP 找不到 slide " + slideId;
+                    return false;
+                }
+
+                PowerPoint.Presentation pres = (PowerPoint.Presentation)Presentation;
+                foreach (PowerPoint.Slide sl in pres.Slides)
+                {
+                    if (sl.SlideID.ToString(CultureInfo.InvariantCulture) == slideId)
+                    {
+                        Slide = sl;
+                        SlideId = slideId;
+                        return true;
+                    }
+                }
+
+                error = "PPT 找不到 slide " + slideId;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        public static HashSet<string> SnapshotEwTemp()
+        {
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                string dir = Path.GetTempPath();
+                foreach (string f in Directory.GetFiles(dir, "ew-*.pptx"))
+                {
+                    set.Add(f);
+                }
+
+                foreach (string f in Directory.GetFiles(dir, "*.slim.pptx"))
+                {
+                    set.Add(f);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return set;
+        }
+
+        public static string LeftoverEwTemp(HashSet<string> before)
+        {
+            HashSet<string> after = SnapshotEwTemp();
+            if (before != null)
+            {
+                after.ExceptWith(before);
+            }
+
+            if (after.Count == 0)
+            {
+                return null;
+            }
+
+            var names = new List<string>();
+            foreach (string p in after)
+            {
+                names.Add(Path.GetFileName(p));
+            }
+
+            return "残留临时: " + string.Join(", ", names);
         }
 
         public bool TryReadPage(out PptHtmlReadResult result, out string error)

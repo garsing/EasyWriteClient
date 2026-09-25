@@ -175,7 +175,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 object app = TryGetApp(destPres);
-                copyPres = TryOpenCopy(app, openPath, out error);
+                copyPres = TryOpenCopy(app, openPath, out error, readOnly: true);
                 if (copyPres == null && openPath != path)
                 {
                     Log(warnings, tag + "：瘦包 Open 失败，回退整份");
@@ -190,7 +190,7 @@ namespace WordAddIn1.PresentationHost
                         return false;
                     }
 
-                    copyPres = TryOpenCopy(app, path, out error);
+                    copyPres = TryOpenCopy(app, path, out error, readOnly: true);
                     openSlideIndex = destSlideIndex;
                     openPath = path;
                 }
@@ -267,7 +267,7 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        public static object TryOpenCopy(object app, string path, out string error)
+        public static object TryOpenCopy(object app, string path, out string error, bool readOnly = false)
         {
             error = null;
             if (app == null || string.IsNullOrEmpty(path))
@@ -283,7 +283,7 @@ namespace WordAddIn1.PresentationHost
                 {
                     return pptApp.Presentations.Open(
                         path,
-                        Office.MsoTriState.msoTrue,
+                        readOnly ? Office.MsoTriState.msoTrue : Office.MsoTriState.msoFalse,
                         Office.MsoTriState.msoFalse,
                         Office.MsoTriState.msoTrue);
                 }
@@ -305,6 +305,21 @@ namespace WordAddIn1.PresentationHost
                 return null;
             }
 
+            if (readOnly)
+            {
+                try
+                {
+                    object opened = WppCom.Invoke(presentations, "Open", path, true);
+                    if (opened != null)
+                    {
+                        return opened;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
             try
             {
                 object opened = WppCom.Invoke(presentations, "Open", path);
@@ -320,18 +335,6 @@ namespace WordAddIn1.PresentationHost
             try
             {
                 object opened = WppCom.Invoke(presentations, "Open", path, false, false, false);
-                if (opened != null)
-                {
-                    return opened;
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            try
-            {
-                object opened = WppCom.Invoke(presentations, "Open", path, true);
                 if (opened != null)
                 {
                     return opened;

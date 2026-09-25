@@ -27,6 +27,7 @@ namespace PptHtmlContentRoundtripTest
             AddMixCases(list, ref page);
             AddGroupCases(list, ref page);
             AddMixChartCases(list, ref page);
+            AddOoxmlCases(list, ref page);
 
             return list;
         }
