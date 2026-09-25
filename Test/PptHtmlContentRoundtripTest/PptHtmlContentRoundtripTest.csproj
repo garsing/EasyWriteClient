@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="_probe_*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="Microsoft.Office.Interop.PowerPoint">
       <HintPath>$(OfficePiaDir)\Microsoft.Office.Interop.PowerPoint.dll</HintPath>

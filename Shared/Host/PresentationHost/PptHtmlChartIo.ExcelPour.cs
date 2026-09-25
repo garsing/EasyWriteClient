@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -184,10 +185,12 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
-        /// 单次 chart 操作后：藏 COM + 关 HWND；AddChart2 常在返回后才画出编辑框，须轮询。
+        /// 单次 chart 操作后：关内嵌簿、藏窗、退出没有用户簿的孤儿 Excel。
+        /// AddChart2 常在返回后才画出编辑框，须轮询。
         /// </summary>
         private static void DismissChartExcelUiForChart(object chart)
         {
+            TryCloseChartDataWorkbook(chart);
             TryHideChartExcel(chart);
             DismissChartExcelUi();
         }
@@ -214,8 +217,8 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
-        /// 藏图表拉起的内嵌 Excel，不 Quit，避免弄坏包内 embeddings。
-        /// COM Visible=false 常只藏内容，PowerPoint 会留下空白编辑框，须再关 HWND。
+        /// 藏图表拉起的内嵌 Excel。COM Visible=false 常只藏内容，须再关 HWND。
+        /// 孤儿进程由 DismissChartExcelUi → TryQuitOrphanChartExcel 退。
         /// 不经 Workbook 取 Application：刚 Close 后再取会把表重新 Activate。
         /// </summary>
         private static void TryHideChartExcel(object chart)
@@ -320,6 +323,7 @@ namespace WordAddIn1.PresentationHost
 
         /// <summary>
         /// apply 整页结束后再清一次：AddChart2 常在 COM 返回后才把编辑框画出来。
+        /// 藏完后退出只剩图表簿 / 空壳的 Excel，不碰用户自己的表。
         /// </summary>
         public static void DismissChartExcelUi()
         {
@@ -329,7 +333,7 @@ namespace WordAddIn1.PresentationHost
                 TryCloseChartExcelHwnds(forceClose: i >= 2);
                 if (!HasVisibleChartExcelWindow())
                 {
-                    return;
+                    break;
                 }
 
                 try
@@ -341,6 +345,187 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 Thread.Sleep(80);
+            }
+
+            TryQuitOrphanChartExcel();
+        }
+
+        /// <summary>
+        /// 不 Activate：有 Workbook 就 Close。网格还开着时再 AddChart 会报「图表数据网格已在…打开」。
+        /// </summary>
+        private static void TryCloseChartDataWorkbook(object chart)
+        {
+            if (chart == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object chartData = WppCom.GetProperty(chart, "ChartData");
+                object workbook = chartData == null ? null : WppCom.GetProperty(chartData, "Workbook");
+                if (workbook == null)
+                {
+                    return;
+                }
+
+                try
+                {
+                    WppCom.Invoke(workbook, "Close", false);
+                }
+                catch (Exception)
+                {
+                    try
+                    {
+                        WppCom.Invoke(workbook, "Close");
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                TryReleaseCom(workbook);
+                TryReleaseCom(chartData);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>
+        /// AddChart2 会留下 EXCEL.EXE。GetActiveObject 一次一个，Quit 空壳后再取下一个。
+        /// 见到用户工作簿就停，禁止 Quit 用户表。
+        /// </summary>
+        private static void TryQuitOrphanChartExcel()
+        {
+            foreach (string progId in new[] { "Excel.Application", "Ket.Application", "et.Application" })
+            {
+                for (int n = 0; n < 12; n++)
+                {
+                    object excelApp = null;
+                    try
+                    {
+                        excelApp = Marshal.GetActiveObject(progId);
+                    }
+                    catch (Exception)
+                    {
+                        break;
+                    }
+
+                    if (excelApp == null)
+                    {
+                        break;
+                    }
+
+                    if (HasUserWorkbook(excelApp))
+                    {
+                        TryReleaseCom(excelApp);
+                        break;
+                    }
+
+                    CloseChartWorkbooks(excelApp);
+                    if (WorkbookCount(excelApp) > 0)
+                    {
+                        TryReleaseCom(excelApp);
+                        break;
+                    }
+
+                    try
+                    {
+                        WppCom.TrySetProperty(excelApp, "DisplayAlerts", false);
+                        WppCom.Invoke(excelApp, "Quit");
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    TryReleaseCom(excelApp);
+                    Thread.Sleep(60);
+                }
+            }
+        }
+
+        private static int WorkbookCount(object excelApp)
+        {
+            try
+            {
+                object books = WppCom.GetProperty(excelApp, "Workbooks");
+                return books == null ? -1 : Convert.ToInt32(WppCom.GetProperty(books, "Count") ?? -1);
+            }
+            catch (Exception)
+            {
+                return -1;
+            }
+        }
+
+        private static bool HasUserWorkbook(object excelApp)
+        {
+            try
+            {
+                object books = WppCom.GetProperty(excelApp, "Workbooks");
+                int count = books == null ? 0 : Convert.ToInt32(WppCom.GetProperty(books, "Count") ?? 0);
+                for (int i = 1; i <= count; i++)
+                {
+                    object book = WppCom.GetIndexed(books, i);
+                    if (book != null && !IsChartWorkbook(book))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return false;
+        }
+
+        private static bool IsChartWorkbook(object workbook)
+        {
+            string name = Convert.ToString(WppCom.GetProperty(workbook, "Name") ?? "");
+            string full = Convert.ToString(WppCom.GetProperty(workbook, "FullName") ?? "");
+            if (IsPowerPointChartExcelCaption(name) || IsPowerPointChartExcelCaption(full))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(full)
+                && (full.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)
+                    || full.EndsWith(".xls", StringComparison.OrdinalIgnoreCase)
+                    || full.EndsWith(".xlsm", StringComparison.OrdinalIgnoreCase))
+                && File.Exists(full))
+            {
+                return false;
+            }
+
+            return false;
+        }
+
+        private static void CloseChartWorkbooks(object excelApp)
+        {
+            try
+            {
+                object books = WppCom.GetProperty(excelApp, "Workbooks");
+                int count = books == null ? 0 : Convert.ToInt32(WppCom.GetProperty(books, "Count") ?? 0);
+                for (int i = count; i >= 1; i--)
+                {
+                    object book = WppCom.GetIndexed(books, i);
+                    if (book == null || !IsChartWorkbook(book))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        WppCom.Invoke(book, "Close", false);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+            catch (Exception)
+            {
             }
         }
 

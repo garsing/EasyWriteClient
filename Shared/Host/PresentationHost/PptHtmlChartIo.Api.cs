@@ -304,6 +304,8 @@ namespace WordAddIn1.PresentationHost
                 StyleLog(warnings, "拍旧图样式异常: " + ex.Message);
             }
 
+            DismissChartExcelUiForChart(oldChart);
+
             ChartStyleSnap htmlSnap = SnapFromFormat(useFormat, useGrid);
             ChartStyleSnap snap = MergeReplaceSnap(oldSnap, htmlSnap, useFormat, warnings);
             if (snap == null)
