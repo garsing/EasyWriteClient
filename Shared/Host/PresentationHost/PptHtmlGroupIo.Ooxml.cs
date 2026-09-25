@@ -4,7 +4,6 @@ using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Xml.Linq;
-using Office = Microsoft.Office.Core;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 using WordAddIn1.OpenFiles;
 
@@ -70,10 +69,6 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            string tempPath = Path.Combine(
-                Path.GetTempPath(),
-                "ew-ppt-group-" + Guid.NewGuid().ToString("N") + ".pptx");
-            PowerPoint.Presentation copy = null;
             PowerPoint.PpAlertLevel prevAlerts = PowerPoint.PpAlertLevel.ppAlertsAll;
             bool alertsSet = false;
             try
@@ -88,65 +83,68 @@ namespace WordAddIn1.PresentationHost
                 {
                 }
 
-                pres.SaveCopyAs(tempPath, PowerPoint.PpSaveAsFileType.ppSaveAsOpenXMLPresentation);
-                if (!File.Exists(tempPath))
+                int newGroupId = 0;
+                string wrapErr = null;
+                string pasteErr = null;
+                PowerPoint.Shape createdGroup = null;
+                if (!PptHtmlOoxmlIo.TryRewriteAndCopyBack(
+                    pres,
+                    path => TryWrapMembersInPackage(
+                        path,
+                        slideIndex,
+                        ids,
+                        left,
+                        top,
+                        width,
+                        height,
+                        out newGroupId,
+                        out wrapErr),
+                    copyPres =>
+                    {
+                        PowerPoint.Presentation copy = copyPres as PowerPoint.Presentation;
+                        if (copy == null)
+                        {
+                            return PptHtmlOoxmlIo.TryFindShapeById(copyPres, slideIndex, newGroupId);
+                        }
+
+                        return FindTopLevelPpt(copy.Slides[slideIndex].Shapes, newGroupId);
+                    },
+                    () =>
+                    {
+                        PowerPoint.ShapeRange pasted = slide.Shapes.Paste();
+                        if (pasted == null || pasted.Count < 1)
+                        {
+                            pasteErr = "OOXML 编组：贴回失败";
+                            return false;
+                        }
+
+                        PowerPoint.Shape created = pasted[1];
+                        try
+                        {
+                            created.Left = left;
+                            created.Top = top;
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        for (int i = 0; i < members.Count; i++)
+                        {
+                            TryDeletePpt(members[i]);
+                        }
+
+                        InvalidateGroupTreeCache();
+                        createdGroup = created;
+                        return true;
+                    },
+                    out string pipeErr,
+                    tag: "编组"))
                 {
-                    error = "OOXML 编组：SaveCopyAs 未落盘";
+                    error = wrapErr ?? pasteErr ?? pipeErr;
                     return false;
                 }
 
-                if (!TryWrapMembersInPackage(
-                    tempPath,
-                    slideIndex,
-                    ids,
-                    left,
-                    top,
-                    width,
-                    height,
-                    out int newGroupId,
-                    out error))
-                {
-                    return false;
-                }
-
-                copy = TryOpenCopyPpt(app, tempPath, out error);
-                if (copy == null)
-                {
-                    return false;
-                }
-
-                PowerPoint.Shape source = FindTopLevelPpt(copy.Slides[slideIndex].Shapes, newGroupId);
-                if (source == null)
-                {
-                    error = "OOXML 编组：副本里找不到新组 id=" + newGroupId;
-                    return false;
-                }
-
-                source.Copy();
-                PowerPoint.ShapeRange pasted = slide.Shapes.Paste();
-                if (pasted == null || pasted.Count < 1)
-                {
-                    error = "OOXML 编组：贴回失败";
-                    return false;
-                }
-
-                PowerPoint.Shape created = pasted[1];
-                try
-                {
-                    created.Left = left;
-                    created.Top = top;
-                }
-                catch (Exception)
-                {
-                }
-
-                for (int i = 0; i < members.Count; i++)
-                {
-                    TryDeletePpt(members[i]);
-                }
-
-                InvalidateGroupTreeCache();
-                group = created;
+                group = createdGroup;
                 return true;
             }
             catch (Exception ex)
@@ -156,18 +154,6 @@ namespace WordAddIn1.PresentationHost
             }
             finally
             {
-                if (copy != null)
-                {
-                    try
-                    {
-                        copy.Saved = Office.MsoTriState.msoTrue;
-                        copy.Close();
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-
                 if (alertsSet)
                 {
                     try
@@ -178,8 +164,6 @@ namespace WordAddIn1.PresentationHost
                     {
                     }
                 }
-
-                TryDeleteFile(tempPath);
             }
         }
 
@@ -212,76 +196,70 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            string tempPath = Path.Combine(
-                Path.GetTempPath(),
-                "ew-wpp-group-" + Guid.NewGuid().ToString("N") + ".pptx");
-            object copy = null;
             object prevAlerts = null;
             bool alertsSet = false;
             try
             {
                 alertsSet = TrySilenceWppAlerts(app, out prevAlerts);
-                if (!TrySaveCopyAsWpp(pres, tempPath, out error))
+                int newGroupId = 0;
+                string wrapErr = null;
+                string pasteErr = null;
+                object createdGroup = null;
+                if (!PptHtmlOoxmlIo.TryRewriteAndCopyBack(
+                    pres,
+                    path => TryWrapMembersInPackage(
+                        path,
+                        slideIndex,
+                        ids,
+                        left,
+                        top,
+                        width,
+                        height,
+                        out newGroupId,
+                        out wrapErr),
+                    copyPres =>
+                    {
+                        object copySlides = WppCom.GetProperty(copyPres, "Slides");
+                        object copySlide = WppCom.GetIndexed(copySlides, slideIndex);
+                        object copyShapes = copySlide == null ? null : WppCom.GetProperty(copySlide, "Shapes");
+                        return FindTopLevelWpp(copyShapes, newGroupId);
+                    },
+                    () =>
+                    {
+                        object shapes = WppCom.GetProperty(slide, "Shapes");
+                        object pasted = TryPasteWpp(shapes);
+                        if (pasted == null)
+                        {
+                            pasteErr = "OOXML 编组：贴回失败";
+                            return false;
+                        }
+
+                        try
+                        {
+                            WppCom.TrySetProperty(pasted, "Left", left);
+                            WppCom.TrySetProperty(pasted, "Top", top);
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        for (int i = 0; i < members.Count; i++)
+                        {
+                            TryDeleteWpp(members[i]);
+                        }
+
+                        InvalidateGroupTreeCache();
+                        createdGroup = pasted;
+                        return true;
+                    },
+                    out string pipeErr,
+                    tag: "编组"))
                 {
+                    error = wrapErr ?? pasteErr ?? pipeErr;
                     return false;
                 }
 
-                if (!TryWrapMembersInPackage(
-                    tempPath,
-                    slideIndex,
-                    ids,
-                    left,
-                    top,
-                    width,
-                    height,
-                    out int newGroupId,
-                    out error))
-                {
-                    return false;
-                }
-
-                object presentations = WppCom.GetProperty(app, "Presentations");
-                copy = TryOpenCopyWpp(presentations, tempPath, out error);
-                if (copy == null)
-                {
-                    return false;
-                }
-
-                object copySlides = WppCom.GetProperty(copy, "Slides");
-                object copySlide = WppCom.GetIndexed(copySlides, slideIndex);
-                object copyShapes = copySlide == null ? null : WppCom.GetProperty(copySlide, "Shapes");
-                object source = FindTopLevelWpp(copyShapes, newGroupId);
-                if (source == null)
-                {
-                    error = "OOXML 编组：副本里找不到新组 id=" + newGroupId;
-                    return false;
-                }
-
-                WppCom.Invoke(source, "Copy");
-                object shapes = WppCom.GetProperty(slide, "Shapes");
-                object pasted = TryPasteWpp(shapes);
-                if (pasted == null)
-                {
-                    error = "OOXML 编组：贴回失败";
-                    return false;
-                }
-
-                try
-                {
-                    WppCom.TrySetProperty(pasted, "Left", left);
-                    WppCom.TrySetProperty(pasted, "Top", top);
-                }
-                catch (Exception)
-                {
-                }
-
-                for (int i = 0; i < members.Count; i++)
-                {
-                    TryDeleteWpp(members[i]);
-                }
-
-                InvalidateGroupTreeCache();
-                group = pasted;
+                group = createdGroup;
                 return true;
             }
             catch (Exception ex)
@@ -291,23 +269,10 @@ namespace WordAddIn1.PresentationHost
             }
             finally
             {
-                if (copy != null)
-                {
-                    try
-                    {
-                        WppCom.Invoke(copy, "Close");
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-
                 if (alertsSet)
                 {
                     TryRestoreWppAlerts(app, prevAlerts);
                 }
-
-                TryDeleteFile(tempPath);
             }
         }
 
@@ -780,7 +745,11 @@ namespace WordAddIn1.PresentationHost
             out List<int> leafIds)
         {
             return TryGetDirectGroupChildrenCore(
-                () => SaveCopyAsPpt(presentation),
+                () =>
+                {
+                    string saveError;
+                    return PptHtmlOoxmlIo.TrySaveCopyTemp(presentation, "grptree", out saveError);
+                },
                 BuildPresKeyPpt(presentation),
                 slideIndex,
                 groupId,
@@ -798,11 +767,8 @@ namespace WordAddIn1.PresentationHost
             return TryGetDirectGroupChildrenCore(
                 () =>
                 {
-                    string path = Path.Combine(
-                        Path.GetTempPath(),
-                        "ew-wpp-grptree-" + Guid.NewGuid().ToString("N") + ".pptx");
                     string saveError;
-                    return TrySaveCopyAsWpp(presentation, path, out saveError) ? path : null;
+                    return PptHtmlOoxmlIo.TrySaveCopyTemp(presentation, "grptree", out saveError);
                 },
                 BuildPresKeyWpp(presentation),
                 slideIndex,
@@ -856,16 +822,23 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            string tempPath = Path.Combine(
-                Path.GetTempPath(),
-                "ew-ppt-dupinner-" + Guid.NewGuid().ToString("N") + ".pptx");
+            string tempPath = PptHtmlOoxmlIo.NewTempPath("dupinner");
             PowerPoint.Presentation copy = null;
             try
             {
-                pres.SaveCopyAs(tempPath, PowerPoint.PpSaveAsFileType.ppSaveAsOpenXMLPresentation);
-                copy = TryOpenCopyPpt(app, tempPath, out error);
+                if (!PptHtmlOoxmlIo.TrySaveCopy(pres, tempPath, out error))
+                {
+                    return false;
+                }
+
+                copy = PptHtmlOoxmlIo.TryOpenCopy(app, tempPath, out error) as PowerPoint.Presentation;
                 if (copy == null)
                 {
+                    if (string.IsNullOrEmpty(error))
+                    {
+                        error = "拷内组：打开副本失败";
+                    }
+
                     return false;
                 }
 
@@ -895,19 +868,8 @@ namespace WordAddIn1.PresentationHost
             }
             finally
             {
-                if (copy != null)
-                {
-                    try
-                    {
-                        copy.Saved = Office.MsoTriState.msoTrue;
-                        copy.Close();
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-
-                TryDeleteFile(tempPath);
+                PptHtmlOoxmlIo.TryCloseCopy(copy);
+                PptHtmlOoxmlIo.TryDeleteFile(tempPath);
             }
         }
 
@@ -998,19 +960,16 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            string tempPath = Path.Combine(
-                Path.GetTempPath(),
-                "ew-wpp-dupinner-" + Guid.NewGuid().ToString("N") + ".pptx");
+            string tempPath = PptHtmlOoxmlIo.NewTempPath("dupinner");
             object copy = null;
             try
             {
-                if (!TrySaveCopyAsWpp(pres, tempPath, out error))
+                if (!PptHtmlOoxmlIo.TrySaveCopy(pres, tempPath, out error))
                 {
                     return false;
                 }
 
-                object presentations = WppCom.GetProperty(app, "Presentations");
-                copy = TryOpenCopyWpp(presentations, tempPath, out error);
+                copy = PptHtmlOoxmlIo.TryOpenCopy(app, tempPath, out error);
                 if (copy == null)
                 {
                     return false;
@@ -1046,18 +1005,8 @@ namespace WordAddIn1.PresentationHost
             }
             finally
             {
-                if (copy != null)
-                {
-                    try
-                    {
-                        WppCom.Invoke(copy, "Close");
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-
-                TryDeleteFile(tempPath);
+                PptHtmlOoxmlIo.TryCloseCopy(copy);
+                PptHtmlOoxmlIo.TryDeleteFile(tempPath);
             }
         }
 
@@ -1194,7 +1143,7 @@ namespace WordAddIn1.PresentationHost
                     }
                     finally
                     {
-                        TryDeleteFile(tempPath);
+                        PptHtmlOoxmlIo.TryDeleteFile(tempPath);
                     }
                 }
 
@@ -1302,15 +1251,6 @@ namespace WordAddIn1.PresentationHost
             into[key] = entry;
         }
 
-        private static string SaveCopyAsPpt(PowerPoint.Presentation presentation)
-        {
-            string path = Path.Combine(
-                Path.GetTempPath(),
-                "ew-ppt-grptree-" + Guid.NewGuid().ToString("N") + ".pptx");
-            presentation.SaveCopyAs(path, PowerPoint.PpSaveAsFileType.ppSaveAsOpenXMLPresentation);
-            return path;
-        }
-
         private static string BuildPresKeyPpt(PowerPoint.Presentation presentation)
         {
             try
@@ -1393,81 +1333,6 @@ namespace WordAddIn1.PresentationHost
             return null;
         }
 
-        private static PowerPoint.Presentation TryOpenCopyPpt(
-            PowerPoint.Application app,
-            string path,
-            out string error)
-        {
-            error = null;
-            try
-            {
-                return app.Presentations.Open(
-                    path,
-                    Office.MsoTriState.msoTrue,
-                    Office.MsoTriState.msoFalse,
-                    Office.MsoTriState.msoTrue);
-            }
-            catch (Exception ex)
-            {
-                error = "OOXML 编组：打开副本失败: " + ex.Message;
-                return null;
-            }
-        }
-
-        private static object TryOpenCopyWpp(object presentations, string path, out string error)
-        {
-            error = null;
-            if (presentations == null)
-            {
-                error = "OOXML 编组：没有 Presentations";
-                return null;
-            }
-
-            try
-            {
-                object opened = WppCom.Invoke(presentations, "Open", path);
-                if (opened != null)
-                {
-                    return opened;
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            try
-            {
-                object opened = WppCom.Invoke(presentations, "Open", path, false, false, false);
-                if (opened != null)
-                {
-                    return opened;
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            try
-            {
-                object opened = WppCom.Invoke(presentations, "Open", path, true);
-                if (opened != null)
-                {
-                    return opened;
-                }
-            }
-            catch (Exception ex)
-            {
-                error = "OOXML 编组：打开副本失败: " + ex.Message;
-            }
-
-            if (error == null)
-            {
-                error = "OOXML 编组：打开副本无返回";
-            }
-
-            return null;
-        }
-
         private static object TryPasteWpp(object shapes)
         {
             if (shapes == null)
@@ -1498,35 +1363,6 @@ namespace WordAddIn1.PresentationHost
             {
                 return null;
             }
-        }
-
-        private static bool TrySaveCopyAsWpp(object pres, string path, out string error)
-        {
-            error = null;
-            try
-            {
-                WppCom.Invoke(pres, "SaveCopyAs", path);
-            }
-            catch (Exception)
-            {
-                try
-                {
-                    WppCom.Invoke(pres, "SaveCopyAs", path, 24);
-                }
-                catch (Exception ex)
-                {
-                    error = "OOXML 编组：SaveCopyAs 失败: " + ex.Message;
-                    return false;
-                }
-            }
-
-            if (!File.Exists(path))
-            {
-                error = "OOXML 编组：SaveCopyAs 未落盘";
-                return false;
-            }
-
-            return true;
         }
 
         private static bool TrySilenceWppAlerts(object app, out object prev)
@@ -1586,25 +1422,6 @@ namespace WordAddIn1.PresentationHost
             try
             {
                 WppCom.Invoke(shape, "Delete");
-            }
-            catch (Exception)
-            {
-            }
-        }
-
-        private static void TryDeleteFile(string path)
-        {
-            if (string.IsNullOrEmpty(path))
-            {
-                return;
-            }
-
-            try
-            {
-                if (File.Exists(path))
-                {
-                    File.Delete(path);
-                }
             }
             catch (Exception)
             {

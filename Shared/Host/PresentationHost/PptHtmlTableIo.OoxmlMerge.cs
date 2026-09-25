@@ -85,7 +85,11 @@ namespace WordAddIn1.PresentationHost
                 int slideIndex = slide.SlideIndex;
                 int shapeId = shape.Id;
                 string cacheKey = BuildPresCacheKey(pres);
-                if (!TryEnsureOoxmlCache(cacheKey, () => SaveCopyAsPowerPoint(pres), warnings))
+                if (!TryEnsureOoxmlCache(cacheKey, () =>
+                {
+                    string err;
+                    return PptHtmlOoxmlIo.TrySaveCopyTemp(pres, "merge", out err);
+                }, warnings))
                 {
                     return false;
                 }
@@ -142,7 +146,11 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 string cacheKey = BuildPresCacheKeyWpp(pres);
-                if (!TryEnsureOoxmlCache(cacheKey, () => SaveCopyAsWpp(pres), warnings))
+                if (!TryEnsureOoxmlCache(cacheKey, () =>
+                {
+                    string err;
+                    return PptHtmlOoxmlIo.TrySaveCopyTemp(pres, "merge", out err);
+                }, warnings))
                 {
                     return false;
                 }
@@ -219,7 +227,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (File.Exists(OoxmlCacheTempPath))
                 {
-                    File.Delete(OoxmlCacheTempPath);
+                    PptHtmlOoxmlIo.TryDeleteFile(OoxmlCacheTempPath);
                 }
             }
             catch
@@ -227,32 +235,6 @@ namespace WordAddIn1.PresentationHost
             }
 
             OoxmlCacheTempPath = null;
-        }
-
-        private static string SaveCopyAsPowerPoint(PowerPoint.Presentation presentation)
-        {
-            string path = Path.Combine(
-                Path.GetTempPath(),
-                "ew-ppt-merge-" + Guid.NewGuid().ToString("N") + ".pptx");
-            presentation.SaveCopyAs(path, PowerPoint.PpSaveAsFileType.ppSaveAsOpenXMLPresentation);
-            return path;
-        }
-
-        private static string SaveCopyAsWpp(object presentation)
-        {
-            string path = Path.Combine(
-                Path.GetTempPath(),
-                "ew-wpp-merge-" + Guid.NewGuid().ToString("N") + ".pptx");
-            try
-            {
-                WppCom.Invoke(presentation, "SaveCopyAs", path);
-            }
-            catch
-            {
-                WppCom.Invoke(presentation, "SaveCopyAs", path, 24);
-            }
-
-            return path;
         }
 
         private static string BuildPresCacheKey(PowerPoint.Presentation presentation)
