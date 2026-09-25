@@ -226,8 +226,6 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            PourLog(warnings, "旁路开始 " + DescribeHostSession(app) + " 原稿=" + DescribePresAlive(destPres));
-
             string tempPath = PptHtmlOoxmlIo.NewTempPath("旁路建图");
             object blank = null;
             object blankShape = null;
@@ -243,7 +241,6 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                PptHtmlOoxmlIo.PingDest(warnings, "旁路/SaveCopy", destPres);
                 object appForOpen = destPres == null ? null : WppCom.GetProperty(destPres, "Application");
                 blank = PptHtmlOoxmlIo.TryOpenCopy(appForOpen ?? app, tempPath, out error);
                 if (blank == null)
@@ -252,7 +249,6 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                PptHtmlOoxmlIo.PingDest(warnings, "旁路/Open副本", destPres);
                 object slides = WppCom.GetProperty(blank, "Slides");
                 int destIndex = 1;
                 try
@@ -306,14 +302,10 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 int shapeId = Convert.ToInt32(WppCom.GetProperty(blankShape, "Id") ?? 0);
-                PourLog(warnings, "空白稿已建图，先关旁路再改包 原稿="
-                    + DescribePresAlive(destPres)
-                    + " shapeId=" + shapeId
+                PourLog(warnings, "空白稿已建图，先关旁路再改包 shapeId=" + shapeId
                     + " slideIndex=" + destIndex);
-                PptHtmlOoxmlIo.PingDest(warnings, "旁路/AddChart", destPres);
                 DismissChartExcelUiForChart(chart);
                 DismissChartExcelUi();
-                PptHtmlOoxmlIo.PingDest(warnings, "旁路/DismissExcel", destPres);
                 if (shapeId < 1)
                 {
                     error = "PPT 旁路建图：shapeId 非法";
@@ -328,7 +320,6 @@ namespace WordAddIn1.PresentationHost
 
                 PptHtmlOoxmlIo.TryCloseCopy(blank);
                 blank = null;
-                PptHtmlOoxmlIo.PingDest(warnings, "旁路/关副本", destPres);
 
                 object pouredShape = null;
                 object pastedShape = null;
@@ -368,15 +359,13 @@ namespace WordAddIn1.PresentationHost
                     || pastedShape == null)
                 {
                     error = "PPT 旁路建图灌数失败: "
-                        + (string.IsNullOrEmpty(ooxmlErr) ? "OOXML 失败" : ooxmlErr)
-                        + " 原稿=" + DescribePresAlive(destPres);
+                        + (string.IsNullOrEmpty(ooxmlErr) ? "OOXML 失败" : ooxmlErr);
                     return false;
                 }
 
                 shape = pastedShape;
 
-                PourLog(warnings, "空白稿图已贴回 " + DescribeLiveSeries(TryGetChart(shape))
-                    + " 原稿=" + DescribePresAlive(destPres));
+                PourLog(warnings, "空白稿图已贴回 " + DescribeLiveSeries(TryGetChart(shape)));
                 return true;
             }
             catch (Exception ex)

@@ -18,12 +18,6 @@ namespace PptHtmlContentRoundtripTest
             int? batch = TryParseBatch(args);
             IList<string> nameFilters = ParseCaseFilters(args);
 
-            int probeRounds = TryParseProbeRepeatLean(args);
-            if (probeRounds > 0)
-            {
-                return ProbeRepeatLean.Run(probeRounds, TryParseProbeSeed(args), TryParseProbeRecycle(args));
-            }
-
             Console.WriteLine("约定 HTML · 文本框 / 表格 / 图片 往返测试（P0）");
             Console.WriteLine(useWpp
                 ? "宿主 WPP · 解析契约 + COM 正式用例（WppApplier → WppReader）"
@@ -66,72 +60,6 @@ namespace PptHtmlContentRoundtripTest
             Console.WriteLine();
             Console.WriteLine("断言 通过 " + run.Passed + "  失败 " + run.Failed + "  跳过 " + run.Skipped);
             return run.Failed == 0 && run.CasesFailed == 0 ? 0 : 1;
-        }
-
-        private static int TryParseProbeRepeatLean(string[] args)
-        {
-            if (args == null)
-            {
-                return 0;
-            }
-
-            for (int i = 0; i < args.Length; i++)
-            {
-                string a = args[i] ?? "";
-                if (a.StartsWith("--probe-repeat-lean=", StringComparison.OrdinalIgnoreCase))
-                {
-                    int n;
-                    if (int.TryParse(a.Substring("--probe-repeat-lean=".Length), out n) && n > 0)
-                    {
-                        return n;
-                    }
-                }
-
-                if (string.Equals(a, "--probe-repeat-lean", StringComparison.OrdinalIgnoreCase))
-                {
-                    return 20;
-                }
-            }
-
-            return 0;
-        }
-
-        private static string TryParseProbeRecycle(string[] args)
-        {
-            if (args == null)
-            {
-                return "suite";
-            }
-
-            for (int i = 0; i < args.Length; i++)
-            {
-                string a = args[i] ?? "";
-                if (a.StartsWith("--probe-recycle=", StringComparison.OrdinalIgnoreCase))
-                {
-                    return a.Substring("--probe-recycle=".Length);
-                }
-            }
-
-            return "suite";
-        }
-
-        private static string TryParseProbeSeed(string[] args)
-        {
-            if (args == null)
-            {
-                return null;
-            }
-
-            for (int i = 0; i < args.Length; i++)
-            {
-                string a = args[i] ?? "";
-                if (a.StartsWith("--probe-seed=", StringComparison.OrdinalIgnoreCase))
-                {
-                    return a.Substring("--probe-seed=".Length);
-                }
-            }
-
-            return null;
         }
 
         private static bool HasFlag(string[] args, string flag)
