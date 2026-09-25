@@ -14,14 +14,15 @@ namespace PptHtmlContentRoundtripTest
     /// <summary>一页一场景；走完整 Applier → Reader 管道。</summary>
     internal static class ContentBatchRunner
     {
-        private const int RecycleEvery = 6;
+        private const int RecycleEveryDefault = 6;
 
         public static void Run(
             TestRun run,
             int? onlyBatch,
             string outDir,
             IList<string> nameFilters,
-            bool failFast = false)
+            bool failFast = false,
+            int recycleEvery = RecycleEveryDefault)
         {
             Directory.CreateDirectory(outDir);
             ContentAssets assets = ContentAssetsIo.Ensure(Path.Combine(outDir, "assets"));
@@ -36,6 +37,12 @@ namespace PptHtmlContentRoundtripTest
                 Console.WriteLine("失败即停");
             }
 
+            if (recycleEvery <= 0)
+            {
+                recycleEvery = int.MaxValue;
+                Console.WriteLine("不定期 Quit 回收");
+            }
+
             for (int batch = 1; batch <= ContentCatalog.BatchCount; batch++)
             {
                 if (onlyBatch.HasValue && onlyBatch.Value != batch)
@@ -48,7 +55,7 @@ namespace PptHtmlContentRoundtripTest
                     continue;
                 }
 
-                RunBatch(run, all, batch, outDir, assets, nameFilters, failFast);
+                RunBatch(run, all, batch, outDir, assets, nameFilters, failFast, recycleEvery);
                 if (failFast && run.CasesFailed > 0)
                 {
                     break;
@@ -97,7 +104,8 @@ namespace PptHtmlContentRoundtripTest
             string outDir,
             ContentAssets assets,
             IList<string> nameFilters,
-            bool failFast = false)
+            bool failFast,
+            int recycleEvery)
         {
             string path = Path.Combine(outDir, "content-batch-" + batch + ".pptx");
             Console.WriteLine();
@@ -159,7 +167,7 @@ namespace PptHtmlContentRoundtripTest
 
                         sinceRecycle = 0;
                     }
-                    else if (sinceRecycle >= RecycleEvery)
+                    else if (sinceRecycle >= recycleEvery)
                     {
                         SaveQuiet(pres, path);
                         if (!TryRecycle(ref app, ref pres, path, out string recErr))

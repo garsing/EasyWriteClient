@@ -47,7 +47,13 @@ namespace PptHtmlContentRoundtripTest
                 }
                 else
                 {
-                    ContentBatchRunner.Run(run, batch, outDir, nameFilters, failFast);
+                    ContentBatchRunner.Run(
+                        run,
+                        batch,
+                        outDir,
+                        nameFilters,
+                        failFast,
+                        HasFlag(args, "--no-recycle") ? 0 : 6);
                 }
 
                 Console.WriteLine();
