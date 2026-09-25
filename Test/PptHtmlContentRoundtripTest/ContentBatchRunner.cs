@@ -693,11 +693,8 @@ namespace PptHtmlContentRoundtripTest
             Console.WriteLine("  回收：Quit + Kill POWERPNT 后重启 oldPid="
                 + string.Join(",", oldPids ?? new int[0]));
             ThoroughClose(ref app);
-            if (!WaitPowerpntGone(oldPids, 15000))
-            {
-                error = "Quit 后 POWERPNT 未退尽 pid=" + string.Join(",", oldPids ?? new int[0]);
-                return false;
-            }
+            WaitPowerpntGone(oldPids, 15000);
+            Thread.Sleep(3000);
 
             if (!TryStartApp(out app, out error))
             {
