@@ -332,8 +332,9 @@ namespace WordAddIn1.PresentationHost
                 if (!PptHtmlOoxmlIo.TryRewriteAndCopyBack(
                     destPres,
                     destIndex,
-                    path => TryRewriteChartXmlInPackage(
-                        path,
+                    (zip, parts) => TryRewriteChartXmlInPackage(
+                        zip,
+                        parts,
                         destIndex,
                         shapeId,
                         (doc, w) => RewriteChartSeries(doc, grid, w),

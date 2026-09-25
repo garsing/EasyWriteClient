@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using Office = Microsoft.Office.Core;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 using WordAddIn1.OpenFiles;
@@ -104,7 +105,7 @@ namespace WordAddIn1.PresentationHost
         public static bool TryRewriteAndCopyBack(
             object destPres,
             int destSlideIndex,
-            Func<string, bool> rewrite,
+            Func<ZipArchive, IDictionary<string, byte[]>, bool> rewrite,
             Func<object, int, object> findOnCopy,
             Func<bool> pasteToDest,
             out string error,
@@ -136,25 +137,41 @@ namespace WordAddIn1.PresentationHost
                     Log(warnings, tag + "：副本已落盘 " + path);
                 }
 
-                if (!rewrite(path))
-                {
-                    error = tag + "：改 zip 失败";
-                    return false;
-                }
-
+                var replacements = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
                 string openPath = path;
                 int openSlideIndex = destSlideIndex;
-                string slimErr;
-                if (TrySlimToSlideAndTheme(path, destSlideIndex, out slimPath, out slimErr))
+                string slimErr = null;
+                using (ZipArchive zin = ZipFile.OpenRead(path))
                 {
-                    openPath = slimPath;
-                    openSlideIndex = 1;
-                    Log(warnings, tag + "：已瘦成一页+主题 " + slimPath
-                        + " fromMB=" + Mb(path) + " toMB=" + Mb(slimPath));
+                    if (!rewrite(zin, replacements))
+                    {
+                        error = tag + "：改 zip 失败";
+                        return false;
+                    }
+
+                    if (TrySlimToSlideAndTheme(path, destSlideIndex, zin, replacements, out slimPath, out slimErr))
+                    {
+                        openPath = slimPath;
+                        openSlideIndex = 1;
+                        Log(warnings, tag + "：已瘦成一页+主题 " + slimPath
+                            + " fromMB=" + Mb(path) + " toMB=" + Mb(slimPath)
+                            + " parts=" + replacements.Count);
+                    }
                 }
-                else
+
+                if (openPath == path)
                 {
-                    Log(warnings, tag + "：瘦包未用（" + slimErr + "），仍 Open 整份");
+                    if (!TryApplyReplacements(path, replacements, out error))
+                    {
+                        if (string.IsNullOrEmpty(error))
+                        {
+                            error = tag + "：回写整份失败";
+                        }
+
+                        return false;
+                    }
+
+                    Log(warnings, tag + "：瘦包未用（" + slimErr + "），已回写整份再 Open");
                 }
 
                 object app = TryGetApp(destPres);
@@ -163,6 +180,16 @@ namespace WordAddIn1.PresentationHost
                 {
                     Log(warnings, tag + "：瘦包 Open 失败，回退整份");
                     TryCloseCopy(copyPres);
+                    if (!TryApplyReplacements(path, replacements, out error))
+                    {
+                        if (string.IsNullOrEmpty(error))
+                        {
+                            error = tag + "：回退整份回写失败";
+                        }
+
+                        return false;
+                    }
+
                     copyPres = TryOpenCopy(app, path, out error);
                     openSlideIndex = destSlideIndex;
                     openPath = path;

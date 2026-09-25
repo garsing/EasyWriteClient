@@ -20,15 +20,36 @@ namespace WordAddIn1.PresentationHost
         private static readonly XNamespace CtNs =
             "http://schemas.openxmlformats.org/package/2006/content-types";
 
+        internal static void PutReplacement(IDictionary<string, byte[]> replacements, string part, byte[] data)
+        {
+            if (replacements == null || string.IsNullOrEmpty(part) || data == null)
+            {
+                return;
+            }
+
+            replacements[NormPart(part)] = data;
+        }
+
+        internal static byte[] XmlPartBytes(XDocument doc)
+        {
+            using (var ms = new MemoryStream())
+            {
+                doc.Save(ms);
+                return ms.ToArray();
+            }
+        }
+
         private static bool TrySlimToSlideAndTheme(
             string srcPath,
             int slideNo,
+            ZipArchive zin,
+            IDictionary<string, byte[]> replacements,
             out string slimPath,
             out string error)
         {
             slimPath = null;
             error = null;
-            if (string.IsNullOrEmpty(srcPath) || !File.Exists(srcPath) || slideNo < 1)
+            if (string.IsNullOrEmpty(srcPath) || zin == null || slideNo < 1)
             {
                 error = "瘦包参数无效";
                 return false;
@@ -38,66 +59,73 @@ namespace WordAddIn1.PresentationHost
             TryDeleteFile(slimPath);
             try
             {
-                using (ZipArchive zin = ZipFile.OpenRead(srcPath))
+                var map = new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
+                foreach (ZipArchiveEntry e in zin.Entries)
                 {
-                    var map = new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
-                    foreach (ZipArchiveEntry e in zin.Entries)
+                    if (string.IsNullOrEmpty(e.Name) && e.FullName.EndsWith("/"))
                     {
-                        if (string.IsNullOrEmpty(e.Name) && e.FullName.EndsWith("/"))
+                        continue;
+                    }
+
+                    map[NormPart(e.FullName)] = e;
+                }
+
+                string slidePart;
+                if (!TryResolveSlidePart(map, replacements, slideNo, out slidePart, out error))
+                {
+                    return false;
+                }
+
+                HashSet<string> need = CollectSlideThemeClosure(map, replacements, slidePart);
+                if (need.Count < 4)
+                {
+                    error = "瘦包闭包太小";
+                    return false;
+                }
+
+                byte[] presXml = RewritePresentationOneSlide(
+                    ReadPart(map, replacements, "ppt/presentation.xml"), slidePart, map, replacements);
+                byte[] presRels = RewritePresentationRels(
+                    ReadPart(map, replacements, "ppt/_rels/presentation.xml.rels"), need);
+                byte[] types = RewriteContentTypes(
+                    ReadPart(map, replacements, "[Content_Types].xml"), need);
+                if (presXml == null || presRels == null || types == null)
+                {
+                    error = "瘦包改 presentation/Content_Types 失败";
+                    return false;
+                }
+
+                using (FileStream fs = File.Create(slimPath))
+                using (var zout = new ZipArchive(fs, ZipArchiveMode.Create))
+                {
+                    foreach (string part in need.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+                    {
+                        if (part.Equals("ppt/presentation.xml", StringComparison.OrdinalIgnoreCase)
+                            || part.Equals("ppt/_rels/presentation.xml.rels", StringComparison.OrdinalIgnoreCase)
+                            || part.Equals("[Content_Types].xml", StringComparison.OrdinalIgnoreCase))
                         {
                             continue;
                         }
 
-                        map[NormPart(e.FullName)] = e;
-                    }
-
-                    string slidePart;
-                    if (!TryResolveSlidePart(map, slideNo, out slidePart, out error))
-                    {
-                        return false;
-                    }
-
-                    HashSet<string> need = CollectSlideThemeClosure(map, slidePart);
-                    if (need.Count < 4)
-                    {
-                        error = "瘦包闭包太小";
-                        return false;
-                    }
-
-                    byte[] presXml = RewritePresentationOneSlide(ReadPart(map, "ppt/presentation.xml"), slidePart, map);
-                    byte[] presRels = RewritePresentationRels(ReadPart(map, "ppt/_rels/presentation.xml.rels"), need);
-                    byte[] types = RewriteContentTypes(ReadPart(map, "[Content_Types].xml"), need);
-                    if (presXml == null || presRels == null || types == null)
-                    {
-                        error = "瘦包改 presentation/Content_Types 失败";
-                        return false;
-                    }
-
-                    using (FileStream fs = File.Create(slimPath))
-                    using (var zout = new ZipArchive(fs, ZipArchiveMode.Create))
-                    {
-                        foreach (string part in need.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+                        byte[] overlay = LookupReplacement(replacements, part);
+                        if (overlay != null)
                         {
-                            if (part.Equals("ppt/presentation.xml", StringComparison.OrdinalIgnoreCase)
-                                || part.Equals("ppt/_rels/presentation.xml.rels", StringComparison.OrdinalIgnoreCase)
-                                || part.Equals("[Content_Types].xml", StringComparison.OrdinalIgnoreCase))
-                            {
-                                continue;
-                            }
-
-                            ZipArchiveEntry src;
-                            if (!map.TryGetValue(part, out src))
-                            {
-                                continue;
-                            }
-
-                            CopyZipEntry(src, zout, part);
+                            WriteZipBytes(zout, part, overlay);
+                            continue;
                         }
 
-                        WriteZipBytes(zout, "ppt/presentation.xml", presXml);
-                        WriteZipBytes(zout, "ppt/_rels/presentation.xml.rels", presRels);
-                        WriteZipBytes(zout, "[Content_Types].xml", types);
+                        ZipArchiveEntry src;
+                        if (!map.TryGetValue(part, out src))
+                        {
+                            continue;
+                        }
+
+                        CopyZipEntry(src, zout, part);
                     }
+
+                    WriteZipBytes(zout, "ppt/presentation.xml", presXml);
+                    WriteZipBytes(zout, "ppt/_rels/presentation.xml.rels", presRels);
+                    WriteZipBytes(zout, "[Content_Types].xml", types);
                 }
 
                 if (!File.Exists(slimPath) || new FileInfo(slimPath).Length < 64)
@@ -119,16 +147,69 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private static bool TryApplyReplacements(
+            string path,
+            IDictionary<string, byte[]> replacements,
+            out string error)
+        {
+            error = null;
+            if (string.IsNullOrEmpty(path) || replacements == null || replacements.Count == 0)
+            {
+                return true;
+            }
+
+            try
+            {
+                using (ZipArchive zip = ZipFile.Open(path, ZipArchiveMode.Update))
+                {
+                    foreach (KeyValuePair<string, byte[]> kv in replacements)
+                    {
+                        if (kv.Value == null)
+                        {
+                            continue;
+                        }
+
+                        string name = kv.Key;
+                        ZipArchiveEntry old = null;
+                        foreach (ZipArchiveEntry e in zip.Entries)
+                        {
+                            if (NormPart(e.FullName).Equals(NormPart(name), StringComparison.OrdinalIgnoreCase))
+                            {
+                                old = e;
+                                break;
+                            }
+                        }
+
+                        if (old != null)
+                        {
+                            name = old.FullName;
+                            old.Delete();
+                        }
+
+                        WriteZipBytes(zip, name, kv.Value);
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
         private static bool TryResolveSlidePart(
             Dictionary<string, ZipArchiveEntry> map,
+            IDictionary<string, byte[]> replacements,
             int slideNo,
             out string slidePart,
             out string error)
         {
             slidePart = null;
             error = null;
-            byte[] pres = ReadPart(map, "ppt/presentation.xml");
-            byte[] rels = ReadPart(map, "ppt/_rels/presentation.xml.rels");
+            byte[] pres = ReadPart(map, replacements, "ppt/presentation.xml");
+            byte[] rels = ReadPart(map, replacements, "ppt/_rels/presentation.xml.rels");
             if (pres == null || rels == null)
             {
                 error = "没有 presentation.xml";
@@ -156,14 +237,14 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 slidePart = ResolvePart("ppt/presentation.xml", (string)rel.Attribute("Target"));
-                if (map.ContainsKey(slidePart))
+                if (HasPart(map, replacements, slidePart))
                 {
                     return true;
                 }
             }
 
             string fallback = "ppt/slides/slide" + slideNo + ".xml";
-            if (map.ContainsKey(fallback))
+            if (HasPart(map, replacements, fallback))
             {
                 slidePart = fallback;
                 return true;
@@ -175,6 +256,7 @@ namespace WordAddIn1.PresentationHost
 
         private static HashSet<string> CollectSlideThemeClosure(
             Dictionary<string, ZipArchiveEntry> map,
+            IDictionary<string, byte[]> replacements,
             string slidePart)
         {
             var need = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -189,7 +271,7 @@ namespace WordAddIn1.PresentationHost
 
                 q.Enqueue(p);
                 string rels = RelsOf(p);
-                if (map.ContainsKey(rels) && need.Add(rels))
+                if (HasPart(map, replacements, rels) && need.Add(rels))
                 {
                     q.Enqueue(rels);
                 }
@@ -209,7 +291,7 @@ namespace WordAddIn1.PresentationHost
                 "docProps/app.xml"
             })
             {
-                if (map.ContainsKey(extra))
+                if (HasPart(map, replacements, extra))
                 {
                     add(extra);
                 }
@@ -223,7 +305,7 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
-                byte[] xml = ReadPart(map, part);
+                byte[] xml = ReadPart(map, replacements, part);
                 if (xml == null)
                 {
                     continue;
@@ -263,7 +345,8 @@ namespace WordAddIn1.PresentationHost
         private static byte[] RewritePresentationOneSlide(
             byte[] presXml,
             string slidePart,
-            Dictionary<string, ZipArchiveEntry> map)
+            Dictionary<string, ZipArchiveEntry> map,
+            IDictionary<string, byte[]> replacements)
         {
             if (presXml == null)
             {
@@ -277,7 +360,7 @@ namespace WordAddIn1.PresentationHost
                 return presXml;
             }
 
-            byte[] relBytes = ReadPart(map, "ppt/_rels/presentation.xml.rels");
+            byte[] relBytes = ReadPart(map, replacements, "ppt/_rels/presentation.xml.rels");
             XDocument relDoc = relBytes == null ? null : XDocument.Parse(Encoding.UTF8.GetString(relBytes));
             string keepRid = null;
             if (relDoc != null && relDoc.Root != null)
@@ -514,10 +597,45 @@ namespace WordAddIn1.PresentationHost
             return relsPart;
         }
 
-        private static byte[] ReadPart(Dictionary<string, ZipArchiveEntry> map, string part)
+        private static byte[] LookupReplacement(IDictionary<string, byte[]> replacements, string part)
         {
+            if (replacements == null || string.IsNullOrEmpty(part))
+            {
+                return null;
+            }
+
+            byte[] data;
+            if (replacements.TryGetValue(NormPart(part), out data))
+            {
+                return data;
+            }
+
+            return null;
+        }
+
+        private static bool HasPart(
+            Dictionary<string, ZipArchiveEntry> map,
+            IDictionary<string, byte[]> replacements,
+            string part)
+        {
+            part = NormPart(part);
+            return LookupReplacement(replacements, part) != null
+                || (map != null && map.ContainsKey(part));
+        }
+
+        private static byte[] ReadPart(
+            Dictionary<string, ZipArchiveEntry> map,
+            IDictionary<string, byte[]> replacements,
+            string part)
+        {
+            byte[] overlay = LookupReplacement(replacements, part);
+            if (overlay != null)
+            {
+                return overlay;
+            }
+
             ZipArchiveEntry e;
-            if (!map.TryGetValue(part, out e))
+            if (map == null || !map.TryGetValue(NormPart(part), out e))
             {
                 return null;
             }

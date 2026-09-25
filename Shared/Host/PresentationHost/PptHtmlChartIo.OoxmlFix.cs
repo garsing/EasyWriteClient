@@ -1020,8 +1020,9 @@ namespace WordAddIn1.PresentationHost
                 if (!PptHtmlOoxmlIo.TryRewriteAndCopyBack(
                     pres,
                     slideIndex,
-                    path => TryRewriteChartXmlInPackage(
-                        path,
+                    (zip, parts) => TryRewriteChartXmlInPackage(
+                        zip,
+                        parts,
                         slideIndex,
                         shapeId,
                         rewrite,
@@ -1382,7 +1383,8 @@ namespace WordAddIn1.PresentationHost
         }
 
         private static bool TryRewriteChartXmlInPackage(
-            string pptxPath,
+            ZipArchive zip,
+            IDictionary<string, byte[]> replacements,
             int slideIndex,
             int shapeId,
             Func<XDocument, List<string>, bool> rewrite,
@@ -1390,70 +1392,44 @@ namespace WordAddIn1.PresentationHost
             string tag,
             PptHtmlChartGrid embedGrid = null)
         {
-            string tempOut = pptxPath + ".fix";
             try
             {
-                using (ZipArchive zip = ZipFile.Open(pptxPath, ZipArchiveMode.Update))
+                if (zip == null || replacements == null)
                 {
-                    if (!TryOpenChartDocInZip(
-                        zip,
-                        slideIndex,
-                        shapeId,
-                        warnings,
-                        tag,
-                        out XDocument chartDoc,
-                        out string chartPart))
-                    {
-                        return false;
-                    }
-
-                    if (!rewrite(chartDoc, warnings))
-                    {
-                        return false;
-                    }
-
-                    if (embedGrid != null
-                        && !TryWriteEmbeddedWorkbook(zip, chartPart, embedGrid, warnings, tag))
-                    {
-                        return false;
-                    }
-
-                    ZipArchiveEntry chartEntry = FindEntry(zip, chartPart);
-                    if (chartEntry == null)
-                    {
-                        return false;
-                    }
-
-                    string fullName = chartEntry.FullName;
-                    chartEntry.Delete();
-                    ZipArchiveEntry fresh = zip.CreateEntry(fullName);
-                    using (Stream s = fresh.Open())
-                    {
-                        chartDoc.Save(s);
-                    }
-
-                    PourLog(warnings, "OOXML " + tag + "：已改 " + chartPart);
+                    return false;
                 }
 
+                if (!TryOpenChartDocInZip(
+                    zip,
+                    slideIndex,
+                    shapeId,
+                    warnings,
+                    tag,
+                    out XDocument chartDoc,
+                    out string chartPart))
+                {
+                    return false;
+                }
+
+                if (!rewrite(chartDoc, warnings))
+                {
+                    return false;
+                }
+
+                if (embedGrid != null
+                    && !TryWriteEmbeddedWorkbook(zip, replacements, chartPart, embedGrid, warnings, tag))
+                {
+                    return false;
+                }
+
+                PptHtmlOoxmlIo.PutReplacement(replacements, chartPart, PptHtmlOoxmlIo.XmlPartBytes(chartDoc));
+                PourLog(warnings, "OOXML " + tag + "：已改 " + chartPart);
                 return true;
             }
             catch (Exception ex)
             {
                 PourLog(warnings, "OOXML " + tag + "改包失败: " + FormatComError(ex));
                 return false;
-            }
-            finally
-            {
-                try
-                {
-                    if (File.Exists(tempOut))
-                    {
-                        File.Delete(tempOut);
-                    }
-                }
-                catch (Exception)
-                {
-                }
             }
         }
 
@@ -1727,6 +1703,7 @@ namespace WordAddIn1.PresentationHost
 
         private static bool TryWriteEmbeddedWorkbook(
             ZipArchive pptx,
+            IDictionary<string, byte[]> replacements,
             string chartPart,
             PptHtmlChartGrid grid,
             List<string> warnings,
@@ -1766,18 +1743,7 @@ namespace WordAddIn1.PresentationHost
             }
 
             byte[] bytes = BuildMinimalChartWorkbook(grid);
-            ZipArchiveEntry old = FindEntry(pptx, embedPart);
-            if (old != null)
-            {
-                old.Delete();
-            }
-
-            ZipArchiveEntry fresh = pptx.CreateEntry(embedPart);
-            using (Stream s = fresh.Open())
-            {
-                s.Write(bytes, 0, bytes.Length);
-            }
-
+            PptHtmlOoxmlIo.PutReplacement(replacements, embedPart, bytes);
             PourLog(warnings, "OOXML " + tag + "：已写内嵌表 " + embedPart
                 + " " + grid.Rows.Count + "x" + grid.Columns.Count);
             return true;

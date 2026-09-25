@@ -90,8 +90,9 @@ namespace WordAddIn1.PresentationHost
                 if (!PptHtmlOoxmlIo.TryRewriteAndCopyBack(
                     pres,
                     slideIndex,
-                    path => TryWrapMembersInPackage(
-                        path,
+                    (zip, parts) => TryWrapMembersInPackage(
+                        zip,
+                        parts,
                         slideIndex,
                         ids,
                         left,
@@ -209,8 +210,9 @@ namespace WordAddIn1.PresentationHost
                 if (!PptHtmlOoxmlIo.TryRewriteAndCopyBack(
                     pres,
                     slideIndex,
-                    path => TryWrapMembersInPackage(
-                        path,
+                    (zip, parts) => TryWrapMembersInPackage(
+                        zip,
+                        parts,
                         slideIndex,
                         ids,
                         left,
@@ -279,7 +281,8 @@ namespace WordAddIn1.PresentationHost
         }
 
         private static bool TryWrapMembersInPackage(
-            string pptxPath,
+            ZipArchive zip,
+            IDictionary<string, byte[]> replacements,
             int slideIndex,
             IList<int> memberIds,
             double left,
@@ -293,50 +296,46 @@ namespace WordAddIn1.PresentationHost
             error = null;
             try
             {
-                using (ZipArchive zip = ZipFile.Open(pptxPath, ZipArchiveMode.Update))
+                if (zip == null || replacements == null)
                 {
-                    List<string> slides = ListSlidePartPaths(zip);
-                    if (slideIndex < 1 || slideIndex > slides.Count)
-                    {
-                        error = "OOXML 编组：slideIndex=" + slideIndex + " 超出 " + slides.Count;
-                        return false;
-                    }
-
-                    ZipArchiveEntry entry = FindZipEntry(zip, slides[slideIndex - 1]);
-                    if (entry == null)
-                    {
-                        error = "OOXML 编组：找不到 " + slides[slideIndex - 1];
-                        return false;
-                    }
-
-                    XDocument doc;
-                    using (Stream stream = entry.Open())
-                    {
-                        doc = XDocument.Load(stream);
-                    }
-
-                    if (!TryWrapMembersInSlideXml(
-                        doc,
-                        memberIds,
-                        left,
-                        top,
-                        width,
-                        height,
-                        out newGroupId,
-                        out error))
-                    {
-                        return false;
-                    }
-
-                    string fullName = entry.FullName;
-                    entry.Delete();
-                    ZipArchiveEntry fresh = zip.CreateEntry(fullName, CompressionLevel.Optimal);
-                    using (Stream stream = fresh.Open())
-                    {
-                        doc.Save(stream);
-                    }
+                    error = "OOXML 编组：zip 空";
+                    return false;
                 }
 
+                List<string> slides = ListSlidePartPaths(zip);
+                if (slideIndex < 1 || slideIndex > slides.Count)
+                {
+                    error = "OOXML 编组：slideIndex=" + slideIndex + " 超出 " + slides.Count;
+                    return false;
+                }
+
+                ZipArchiveEntry entry = FindZipEntry(zip, slides[slideIndex - 1]);
+                if (entry == null)
+                {
+                    error = "OOXML 编组：找不到 " + slides[slideIndex - 1];
+                    return false;
+                }
+
+                XDocument doc;
+                using (Stream stream = entry.Open())
+                {
+                    doc = XDocument.Load(stream);
+                }
+
+                if (!TryWrapMembersInSlideXml(
+                    doc,
+                    memberIds,
+                    left,
+                    top,
+                    width,
+                    height,
+                    out newGroupId,
+                    out error))
+                {
+                    return false;
+                }
+
+                PptHtmlOoxmlIo.PutReplacement(replacements, entry.FullName, PptHtmlOoxmlIo.XmlPartBytes(doc));
                 return true;
             }
             catch (Exception ex)
