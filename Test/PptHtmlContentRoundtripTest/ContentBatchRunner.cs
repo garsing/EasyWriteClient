@@ -42,6 +42,10 @@ namespace PptHtmlContentRoundtripTest
                 recycleEvery = int.MaxValue;
                 Console.WriteLine("不定期 Quit 回收");
             }
+            else
+            {
+                Console.WriteLine("每 " + recycleEvery + " 条 Quit + Kill POWERPNT 后重启");
+            }
 
             for (int batch = 1; batch <= ContentCatalog.BatchCount; batch++)
             {
@@ -290,7 +294,7 @@ namespace PptHtmlContentRoundtripTest
             finally
             {
                 CloseQuiet(pres);
-                SoftQuit(ref app);
+                ThoroughClose(ref app);
             }
         }
 
@@ -685,15 +689,22 @@ namespace PptHtmlContentRoundtripTest
             SaveQuiet(pres, path);
             CloseQuiet(pres);
             pres = null;
-            SoftQuit(ref app);
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            Thread.Sleep(900);
+            int[] oldPids = PowerpntPids();
+            Console.WriteLine("  回收：Quit + Kill POWERPNT 后重启 oldPid="
+                + string.Join(",", oldPids ?? new int[0]));
+            ThoroughClose(ref app);
+            if (!WaitPowerpntGone(oldPids, 15000))
+            {
+                error = "Quit 后 POWERPNT 未退尽 pid=" + string.Join(",", oldPids ?? new int[0]);
+                return false;
+            }
 
             if (!TryStartApp(out app, out error))
             {
                 return false;
             }
+
+            Console.WriteLine("  回收完成 newPid=" + string.Join(",", PowerpntPids()));
 
             try
             {
@@ -771,6 +782,15 @@ namespace PptHtmlContentRoundtripTest
             TryRelease(pres);
         }
 
+        private static void ThoroughClose(ref PowerPoint.Application app)
+        {
+            int[] pids = PowerpntPids();
+            SoftQuit(ref app);
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            KillPowerpnt(pids);
+        }
+
         private static void SoftQuit(ref PowerPoint.Application app)
         {
             if (app == null)
@@ -780,7 +800,7 @@ namespace PptHtmlContentRoundtripTest
 
             try
             {
-                if (IsAppAlive(app) && app.Presentations.Count == 0)
+                if (IsAppAlive(app))
                 {
                     app.Quit();
                 }
@@ -791,6 +811,85 @@ namespace PptHtmlContentRoundtripTest
 
             TryRelease(app);
             app = null;
+        }
+
+        private static int[] PowerpntPids()
+        {
+            try
+            {
+                Process[] ps = Process.GetProcessesByName("POWERPNT");
+                var ids = new int[ps.Length];
+                for (int i = 0; i < ps.Length; i++)
+                {
+                    ids[i] = ps[i].Id;
+                }
+
+                return ids;
+            }
+            catch
+            {
+                return new int[0];
+            }
+        }
+
+        private static void KillPowerpnt(int[] pids)
+        {
+            if (pids == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < pids.Length; i++)
+            {
+                try
+                {
+                    Process.GetProcessById(pids[i]).Kill();
+                    Console.WriteLine("  回收已 Kill POWERPNT pid=" + pids[i]);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private static bool WaitPowerpntGone(int[] pids, int timeoutMs)
+        {
+            if (pids == null || pids.Length == 0)
+            {
+                return true;
+            }
+
+            var sw = Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                bool any = false;
+                for (int i = 0; i < pids.Length; i++)
+                {
+                    try
+                    {
+                        using (Process p = Process.GetProcessById(pids[i]))
+                        {
+                            if (!p.HasExited)
+                            {
+                                any = true;
+                                break;
+                            }
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (!any)
+                {
+                    return true;
+                }
+
+                Thread.Sleep(200);
+            }
+
+            return false;
         }
 
         private static bool IsAppAlive(PowerPoint.Application app)
