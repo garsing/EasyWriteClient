@@ -10,7 +10,7 @@ namespace WordAddIn1.PresentationHost
     /// <summary>
     /// 统一整份 SaveCopyAs：读包不 Open；改包贴回改完 zip 才 Open，只 Copy 目标形状。
     /// </summary>
-    internal static class PptHtmlOoxmlIo
+    internal static partial class PptHtmlOoxmlIo
     {
         public static bool TrySaveCopy(object presentation, string path, out string error)
         {
@@ -103,8 +103,9 @@ namespace WordAddIn1.PresentationHost
 
         public static bool TryRewriteAndCopyBack(
             object destPres,
+            int destSlideIndex,
             Func<string, bool> rewrite,
-            Func<object, object> findOnCopy,
+            Func<object, int, object> findOnCopy,
             Func<bool> pasteToDest,
             out string error,
             string alreadySavedPath = null,
@@ -114,10 +115,11 @@ namespace WordAddIn1.PresentationHost
             error = null;
             object copyPres = null;
             string path = alreadySavedPath;
+            string slimPath = null;
             bool ownPath = string.IsNullOrEmpty(alreadySavedPath);
             try
             {
-                if (destPres == null || rewrite == null || findOnCopy == null || pasteToDest == null)
+                if (destPres == null || destSlideIndex < 1 || rewrite == null || findOnCopy == null || pasteToDest == null)
                 {
                     error = tag + "：参数空";
                     return false;
@@ -140,8 +142,32 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                string openPath = path;
+                int openSlideIndex = destSlideIndex;
+                string slimErr;
+                if (TrySlimToSlideAndTheme(path, destSlideIndex, out slimPath, out slimErr))
+                {
+                    openPath = slimPath;
+                    openSlideIndex = 1;
+                    Log(warnings, tag + "：已瘦成一页+主题 " + slimPath
+                        + " fromMB=" + Mb(path) + " toMB=" + Mb(slimPath));
+                }
+                else
+                {
+                    Log(warnings, tag + "：瘦包未用（" + slimErr + "），仍 Open 整份");
+                }
+
                 object app = TryGetApp(destPres);
-                copyPres = TryOpenCopy(app, path, out error);
+                copyPres = TryOpenCopy(app, openPath, out error);
+                if (copyPres == null && openPath != path)
+                {
+                    Log(warnings, tag + "：瘦包 Open 失败，回退整份");
+                    TryCloseCopy(copyPres);
+                    copyPres = TryOpenCopy(app, path, out error);
+                    openSlideIndex = destSlideIndex;
+                    openPath = path;
+                }
+
                 if (copyPres == null)
                 {
                     if (string.IsNullOrEmpty(error))
@@ -152,8 +178,8 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                Log(warnings, tag + "：已 Open 改包稿");
-                object source = findOnCopy(copyPres);
+                Log(warnings, tag + "：已 Open 改包稿 slide=" + openSlideIndex);
+                object source = findOnCopy(copyPres, openSlideIndex);
                 if (source == null)
                 {
                     error = tag + "：改包稿找不到目标形状";
@@ -194,10 +220,23 @@ namespace WordAddIn1.PresentationHost
             finally
             {
                 TryCloseCopy(copyPres);
+                TryDeleteFile(slimPath);
                 if (ownPath)
                 {
                     TryDeleteFile(path);
                 }
+            }
+        }
+
+        private static string Mb(string path)
+        {
+            try
+            {
+                return (new FileInfo(path).Length / 1024.0 / 1024.0).ToString("0.00");
+            }
+            catch (Exception)
+            {
+                return "?";
             }
         }
 

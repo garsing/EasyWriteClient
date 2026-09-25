@@ -331,6 +331,7 @@ namespace WordAddIn1.PresentationHost
                 object pastedShape = null;
                 if (!PptHtmlOoxmlIo.TryRewriteAndCopyBack(
                     destPres,
+                    destIndex,
                     path => TryRewriteChartXmlInPackage(
                         path,
                         destIndex,
@@ -339,9 +340,9 @@ namespace WordAddIn1.PresentationHost
                         warnings,
                         "灌数",
                         grid),
-                    copyPres =>
+                    (copyPres, openSlide) =>
                     {
-                        pouredShape = PptHtmlOoxmlIo.TryFindShapeById(copyPres, destIndex, shapeId);
+                        pouredShape = PptHtmlOoxmlIo.TryFindShapeById(copyPres, openSlide, shapeId);
                         return pouredShape;
                     },
                     () =>

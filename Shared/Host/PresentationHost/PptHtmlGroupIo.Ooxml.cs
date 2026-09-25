@@ -89,6 +89,7 @@ namespace WordAddIn1.PresentationHost
                 PowerPoint.Shape createdGroup = null;
                 if (!PptHtmlOoxmlIo.TryRewriteAndCopyBack(
                     pres,
+                    slideIndex,
                     path => TryWrapMembersInPackage(
                         path,
                         slideIndex,
@@ -99,15 +100,15 @@ namespace WordAddIn1.PresentationHost
                         height,
                         out newGroupId,
                         out wrapErr),
-                    copyPres =>
+                    (copyPres, openSlide) =>
                     {
                         PowerPoint.Presentation copy = copyPres as PowerPoint.Presentation;
                         if (copy == null)
                         {
-                            return PptHtmlOoxmlIo.TryFindShapeById(copyPres, slideIndex, newGroupId);
+                            return PptHtmlOoxmlIo.TryFindShapeById(copyPres, openSlide, newGroupId);
                         }
 
-                        return FindTopLevelPpt(copy.Slides[slideIndex].Shapes, newGroupId);
+                        return FindTopLevelPpt(copy.Slides[openSlide].Shapes, newGroupId);
                     },
                     () =>
                     {
@@ -207,6 +208,7 @@ namespace WordAddIn1.PresentationHost
                 object createdGroup = null;
                 if (!PptHtmlOoxmlIo.TryRewriteAndCopyBack(
                     pres,
+                    slideIndex,
                     path => TryWrapMembersInPackage(
                         path,
                         slideIndex,
@@ -217,10 +219,10 @@ namespace WordAddIn1.PresentationHost
                         height,
                         out newGroupId,
                         out wrapErr),
-                    copyPres =>
+                    (copyPres, openSlide) =>
                     {
                         object copySlides = WppCom.GetProperty(copyPres, "Slides");
-                        object copySlide = WppCom.GetIndexed(copySlides, slideIndex);
+                        object copySlide = WppCom.GetIndexed(copySlides, openSlide);
                         object copyShapes = copySlide == null ? null : WppCom.GetProperty(copySlide, "Shapes");
                         return FindTopLevelWpp(copyShapes, newGroupId);
                     },

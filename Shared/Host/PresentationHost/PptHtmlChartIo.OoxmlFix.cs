@@ -1019,6 +1019,7 @@ namespace WordAddIn1.PresentationHost
                 object pastedShape = null;
                 if (!PptHtmlOoxmlIo.TryRewriteAndCopyBack(
                     pres,
+                    slideIndex,
                     path => TryRewriteChartXmlInPackage(
                         path,
                         slideIndex,
@@ -1027,9 +1028,9 @@ namespace WordAddIn1.PresentationHost
                         warnings,
                         tag,
                         embedGrid),
-                    copyPres =>
+                    (copyPres, openSlide) =>
                     {
-                        copyChartShape = PptHtmlOoxmlIo.TryFindShapeById(copyPres, slideIndex, shapeId);
+                        copyChartShape = PptHtmlOoxmlIo.TryFindShapeById(copyPres, openSlide, shapeId);
                         if (copyChartShape == null)
                         {
                             return null;
