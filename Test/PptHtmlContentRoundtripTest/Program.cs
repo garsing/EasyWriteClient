@@ -21,7 +21,7 @@ namespace PptHtmlContentRoundtripTest
             int probeRounds = TryParseProbeRepeatLean(args);
             if (probeRounds > 0)
             {
-                return ProbeRepeatLean.Run(probeRounds, TryParseProbeSeed(args));
+                return ProbeRepeatLean.Run(probeRounds, TryParseProbeSeed(args), TryParseProbeRecycle(args));
             }
 
             Console.WriteLine("约定 HTML · 文本框 / 表格 / 图片 往返测试（P0）");
@@ -94,6 +94,25 @@ namespace PptHtmlContentRoundtripTest
             }
 
             return 0;
+        }
+
+        private static string TryParseProbeRecycle(string[] args)
+        {
+            if (args == null)
+            {
+                return "suite";
+            }
+
+            for (int i = 0; i < args.Length; i++)
+            {
+                string a = args[i] ?? "";
+                if (a.StartsWith("--probe-recycle=", StringComparison.OrdinalIgnoreCase))
+                {
+                    return a.Substring("--probe-recycle=".Length);
+                }
+            }
+
+            return "suite";
         }
 
         private static string TryParseProbeSeed(string[] args)

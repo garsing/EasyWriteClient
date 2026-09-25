@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
@@ -16,9 +17,15 @@ namespace PptHtmlContentRoundtripTest
         private static readonly string[] Cats2 = { "X", "Y", "Z" };
         private static readonly string[] Vals2 = { "10", "20", "70" };
 
-        public static int Run(int rounds, string seedPath)
+        public static int Run(int rounds, string seedPath, string recycleMode)
         {
+            if (string.IsNullOrEmpty(recycleMode))
+            {
+                recycleMode = "suite";
+            }
+
             Console.WriteLine("探针 · 产品 apply 连跑 lean 标题+饼 换数 rounds=" + rounds
+                + " recycle=" + recycleMode
                 + " seed=" + (string.IsNullOrEmpty(seedPath) ? "(new)" : seedPath));
             PowerPoint.Application app = null;
             PowerPoint.Presentation dest = null;
@@ -127,7 +134,7 @@ namespace PptHtmlContentRoundtripTest
 
                     if (i % 6 == 0 && i < rounds)
                     {
-                        if (!TryRecycleLikeSuite(ref app, ref dest, destPath, session))
+                        if (!TryRecycleLikeSuite(ref app, ref dest, destPath, session, recycleMode))
                         {
                             Console.WriteLine("R" + i + " 回收失败");
                             Ping("R" + i + " recycle-fail", app, dest);
@@ -207,8 +214,11 @@ namespace PptHtmlContentRoundtripTest
             ref PowerPoint.Application app,
             ref PowerPoint.Presentation dest,
             string destPath,
-            ContentGroupSession session)
+            ContentGroupSession session,
+            string mode)
         {
+            int oldPid = FirstPowerpntPid();
+            Console.WriteLine("  recycle mode=" + mode + " pptPid=" + oldPid + " pptN=" + PowerpntCount());
             try
             {
                 dest.Save();
@@ -223,37 +233,78 @@ namespace PptHtmlContentRoundtripTest
             dest = null;
             session.Presentation = null;
             session.Slide = null;
-            try
+
+            bool sameApp = string.Equals(mode, "sameapp", StringComparison.OrdinalIgnoreCase);
+            if (!sameApp)
             {
-                if (app != null && app.Presentations.Count == 0)
+                try
                 {
-                    app.Quit();
+                    if (app != null && app.Presentations.Count == 0)
+                    {
+                        app.Quit();
+                    }
                 }
-            }
-            catch
-            {
+                catch
+                {
+                }
+
+                if (!string.Equals(mode, "nofinal", StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        if (app != null)
+                        {
+                            Marshal.FinalReleaseComObject(app);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                app = null;
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                if (string.Equals(mode, "waitdead", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(mode, "kill", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (string.Equals(mode, "kill", StringComparison.OrdinalIgnoreCase) && PidAlive(oldPid))
+                    {
+                        try
+                        {
+                            Process.GetProcessById(oldPid).Kill();
+                            Console.WriteLine("  recycle killed pid=" + oldPid);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine("  recycle kill: " + ex.Message);
+                        }
+                    }
+
+                    int waited = WaitPowerpntGone(oldPid, 15000);
+                    Console.WriteLine("  recycle wait " + waited + "ms still=" + PidAlive(oldPid)
+                        + " pptN=" + PowerpntCount());
+                }
+                else
+                {
+                    System.Threading.Thread.Sleep(900);
+                    Console.WriteLine("  recycle slept 900ms oldPid=" + oldPid
+                        + " still=" + PidAlive(oldPid) + " pptN=" + PowerpntCount());
+                }
             }
 
             try
             {
-                if (app != null)
+                if (app == null)
                 {
-                    Marshal.FinalReleaseComObject(app);
+                    app = new PowerPoint.Application();
+                    app.Visible = Office.MsoTriState.msoTrue;
+                    app.DisplayAlerts = PowerPoint.PpAlertLevel.ppAlertsNone;
                 }
-            }
-            catch
-            {
-            }
 
-            app = null;
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            System.Threading.Thread.Sleep(900);
-            try
-            {
-                app = new PowerPoint.Application();
-                app.Visible = Office.MsoTriState.msoTrue;
-                app.DisplayAlerts = PowerPoint.PpAlertLevel.ppAlertsNone;
+                int newPid = FirstPowerpntPid();
+                Console.WriteLine("  recycle newApp pptPid=" + newPid
+                    + " samePid=" + (newPid != 0 && newPid == oldPid));
                 dest = app.Presentations.Open(
                     destPath,
                     Office.MsoTriState.msoFalse,
@@ -269,6 +320,65 @@ namespace PptHtmlContentRoundtripTest
                 Console.WriteLine("  recycle Open: " + ex.Message);
                 return false;
             }
+        }
+
+        private static int FirstPowerpntPid()
+        {
+            try
+            {
+                Process[] ps = Process.GetProcessesByName("POWERPNT");
+                return ps.Length == 0 ? 0 : ps[0].Id;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private static int PowerpntCount()
+        {
+            try
+            {
+                return Process.GetProcessesByName("POWERPNT").Length;
+            }
+            catch
+            {
+                return -1;
+            }
+        }
+
+        private static bool PidAlive(int pid)
+        {
+            if (pid <= 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                Process.GetProcessById(pid);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static int WaitPowerpntGone(int oldPid, int timeoutMs)
+        {
+            var sw = Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                if (oldPid <= 0 || !PidAlive(oldPid))
+                {
+                    return (int)sw.ElapsedMilliseconds;
+                }
+
+                System.Threading.Thread.Sleep(200);
+            }
+
+            return (int)sw.ElapsedMilliseconds;
         }
 
         private static bool DestDead(PowerPoint.Application app, PowerPoint.Presentation dest)
