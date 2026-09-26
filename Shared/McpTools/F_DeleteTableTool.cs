@@ -8,7 +8,7 @@ using Word = Microsoft.Office.Interop.Word;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 按 table_id 删除整张表格；删后光标落原表后沿，供 F_create_table_from_xml 重建。
+    /// 按 table_id 删除整张表格；删后光标落原表开头，供 F_create_table_from_xml 重建。
     /// 经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_DeleteTableTool
@@ -54,14 +54,12 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = resolveError };
                     }
 
-                    int rows = targetTable.Rows.Count;
-                    int columns = targetTable.Columns.Count;
-                    int endPos = targetTable.Range.End;
+                    int startPos = TryGetRangeStart(targetTable);
                     bool hadNestedTables = TableHasNestedTables(targetTable);
 
                     System.Diagnostics.Debug.WriteLine(
-                        $"[DeleteTable] 即将删除 table_id={tableId}, endPos={endPos}, " +
-                        $"rows×cols={rows}×{columns}, had_nested_tables={hadNestedTables}");
+                        $"[DeleteTable] 即将删除 table_id={tableId}, startPos={startPos}, " +
+                        $"had_nested_tables={hadNestedTables}");
 
                     try
                     {
@@ -72,29 +70,27 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = $"删除表格失败：{ex.Message}" };
                     }
 
+                    bool mappingRefreshed = true;
                     try
                     {
                         WordReader.ReadWord(document);
                     }
                     catch (Exception ex)
                     {
-                        return new ToolResult { Success = false, Error = $"删表后刷新映射失败：{ex.Message}" };
+                        mappingRefreshed = false;
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[DeleteTable] 删后刷新映射失败（表已删，不回滚）: {ex.Message}");
                     }
 
-                    Word.Application app = wordApplication as Word.Application;
-                    if (app != null)
-                    {
-                        int docEnd = document.Content.End;
-                        int pos = endPos < 0 ? 0 : (endPos > docEnd ? docEnd : endPos);
-                        Word.Range afterTableRange = document.Range(pos, pos);
-                        PostModifyNavigateHelper.NavigateAfterEnd(
-                            app, afterTableRange, $"delete_table:{tableId}");
-                    }
+                    bool cursorMoved = TryNavigateToStart(
+                        wordApplication as Word.Application, document, startPos, tableId);
 
-                    string message = BuildSuccessMessage(tableId, rows, columns, hadNestedTables);
+                    string message = BuildSuccessMessage(
+                        tableId, hadNestedTables, cursorMoved, mappingRefreshed);
 
                     System.Diagnostics.Debug.WriteLine(
-                        $"[DeleteTable] 成功 table_id={tableId}, 光标落点 endPos={endPos}");
+                        $"[DeleteTable] 成功 table_id={tableId}, 光标落点 startPos={startPos}, " +
+                        $"cursor_moved={cursorMoved}, mapping_refreshed={mappingRefreshed}");
 
                     await Task.CompletedTask;
 
@@ -105,8 +101,6 @@ namespace WordAddIn1
                         {
                             table_deleted = true,
                             table_id = tableId,
-                            rows = rows,
-                            columns = columns,
                             had_nested_tables = hadNestedTables,
                             message = message,
                         },
@@ -118,6 +112,50 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = $"执行失败: {ex.Message}" };
                 }
             };
+        }
+
+        private static int TryGetRangeStart(Word.Table table)
+        {
+            try
+            {
+                return table.Range.Start;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DeleteTable] 读取 Range.Start 失败: {ex.Message}");
+                return -1;
+            }
+        }
+
+        /// <summary>
+        /// 删后落到原表开头（D7）。Word 合法光标上限是 Content.End - 1。
+        /// 落点失败不得让已成功的 Delete 整单失败（否则 checkpoint 会把表灌回来）。
+        /// </summary>
+        private static bool TryNavigateToStart(
+            Word.Application app,
+            Word.Document document,
+            int startPos,
+            string tableId)
+        {
+            if (app == null || document == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                int maxPos = Math.Max(0, document.Content.End - 1);
+                int pos = startPos < 0 ? maxPos : Math.Min(Math.Max(0, startPos), maxPos);
+                Word.Range atStart = document.Range(pos, pos);
+                return PostModifyNavigateHelper.NavigateAfterEnd(
+                    app, atStart, $"delete_table:{tableId}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[DeleteTable] 移光标失败（表已删，不回滚）: {ex.Message}");
+                return false;
+            }
         }
 
         private static bool TableHasNestedTables(Word.Table table)
@@ -148,15 +186,33 @@ namespace WordAddIn1
             return false;
         }
 
-        private static string BuildSuccessMessage(string tableId, int rows, int columns, bool hadNestedTables)
+        private static string BuildSuccessMessage(
+            string tableId,
+            bool hadNestedTables,
+            bool cursorMoved,
+            bool mappingRefreshed)
         {
             var sb = new StringBuilder();
-            sb.Append($"表格 {tableId} 已删除（原 {rows} 行 × {columns} 列）。");
-            sb.Append("光标已停留在被删表格原后沿处。");
-            sb.Append("请在此位置调用 F_create_table_from_xml 重建新表（无需传入 target）。");
+            sb.Append($"表格 {tableId} 已删除。");
+
+            if (cursorMoved)
+            {
+                sb.Append("光标已停留在被删表格原开头处。");
+                sb.Append("请在此位置调用 F_create_table_from_xml 重建新表（无需传入 target）。");
+            }
+            else
+            {
+                sb.Append("未能将光标移到原表开头。请自行定位后调用 F_create_table_from_xml 重建新表（无需传入 target）。");
+            }
+
             if (hadNestedTables)
             {
                 sb.Append("（该表内曾含嵌套子表，已随本表一并删除。）");
+            }
+
+            if (!mappingRefreshed)
+            {
+                sb.Append("删后映射刷新失败，建议调用 F_get_document_content。");
             }
 
             return sb.ToString();
