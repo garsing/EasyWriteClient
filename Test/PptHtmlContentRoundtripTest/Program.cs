@@ -44,6 +44,10 @@ namespace PptHtmlContentRoundtripTest
                 {
                     SlideManageRunner.Run(run, nameFilters, useWpp);
                 }
+                else if (ShapeDeleteRunner.Wants(nameFilters))
+                {
+                    ShapeDeleteRunner.Run(run, nameFilters, useWpp);
+                }
                 else if (CaptureShapeRunner.Wants(nameFilters))
                 {
                     CaptureShapeRunner.Run(run, nameFilters, useWpp);
