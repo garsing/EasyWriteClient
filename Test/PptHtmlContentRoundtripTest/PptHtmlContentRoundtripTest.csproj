@@ -22,7 +22,7 @@
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <None Include="..\..\..\docs\测试\ppt搜索\页内节点搜索\_query_gold.json" Link="_query_gold.json">
+    <None Include="..\..\..\docs\测试\ppt测试\ppt搜索\页内节点搜索\_query_gold.json" Link="_query_gold.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

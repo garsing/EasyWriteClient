@@ -1201,6 +1201,13 @@ namespace WordAddIn1.PresentationHost
                         textTruncated = tableTrunc;
                     }
                 }
+                else if (mode == GroupReadMode.SearchPage && typeName == "chart")
+                {
+                    if (PptHtmlChartIo.TryReadSearchTitle(shape, out string chartTitle))
+                    {
+                        text = chartTitle;
+                    }
+                }
                 else if (typeName != "picture" && typeName != "group" && !PptShapeTypeMap.IsNonEditable(typeName))
                 {
                     text = TryReadText(shape);

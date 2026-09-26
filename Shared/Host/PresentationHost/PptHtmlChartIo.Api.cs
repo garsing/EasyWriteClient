@@ -32,6 +32,22 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        /// <summary>搜索档：只取可见标题，不读内嵌表。</summary>
+        public static bool TryReadSearchTitle(object shape, out string title)
+        {
+            title = "";
+            object chart = TryGetChart(shape);
+            if (chart == null)
+            {
+                return false;
+            }
+
+            var format = new PptHtmlChartFormat();
+            TryReadTitle(chart, format);
+            title = (format.Title ?? "").Trim();
+            return title.Length > 0;
+        }
+
         public static bool TryRead(object shape, out PptHtmlChartReadModel model, out string error)
         {
             model = null;

@@ -36,6 +36,14 @@ namespace PptHtmlContentRoundtripTest
                 {
                     FixtureSearchRunner.Run(run, nameFilters, useWpp);
                 }
+                else if (CaptureShapeRunner.Wants(nameFilters))
+                {
+                    CaptureShapeRunner.Run(run, nameFilters, useWpp);
+                }
+                else if (SyntheticSearchRunner.Wants(nameFilters))
+                {
+                    SyntheticSearchRunner.Run(run, nameFilters, useWpp);
+                }
                 else
                 {
                     string outDir = Path.Combine(

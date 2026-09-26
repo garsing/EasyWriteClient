@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using Newtonsoft.Json.Linq;
+using WordAddIn1.OpenFiles;
 using WordAddIn1.PresentationHost;
 using Office = Microsoft.Office.Core;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
@@ -13,12 +15,6 @@ namespace PptHtmlContentRoundtripTest
     {
         public static void Run(TestRun run, IList<string> nameFilters, bool useWpp)
         {
-            if (useWpp)
-            {
-                Console.WriteLine("真稿 query 本波先跑 PPT。WPP 另开。");
-                return;
-            }
-
             string goldPath = FindFile("_query_gold.json");
             string pptx = FindFile("易写7.24-2.pptx");
             if (goldPath == null || pptx == null)
@@ -31,7 +27,7 @@ namespace PptHtmlContentRoundtripTest
 
             List<FxCase> all = LoadGold(goldPath);
             List<FxCase> cases = Filter(all, nameFilters);
-            Console.WriteLine("真稿 query · " + pptx);
+            Console.WriteLine((useWpp ? "真稿 query · WPP · " : "真稿 query · PPT · ") + pptx);
             Console.WriteLine("金标 " + all.Count + " 过滤后 " + cases.Count);
             if (cases.Count == 0)
             {
@@ -51,6 +47,21 @@ namespace PptHtmlContentRoundtripTest
                 list.Add(one);
             }
 
+            if (useWpp)
+            {
+                RunWpp(run, pptx, bySlide);
+            }
+            else
+            {
+                RunPpt(run, pptx, bySlide);
+            }
+        }
+
+        private static void RunPpt(
+            TestRun run,
+            string pptx,
+            Dictionary<int, List<FxCase>> bySlide)
+        {
             PowerPoint.Application app = null;
             PowerPoint.Presentation pres = null;
             try
@@ -71,36 +82,21 @@ namespace PptHtmlContentRoundtripTest
                     Office.MsoTriState.msoFalse,
                     Office.MsoTriState.msoTrue);
                 Console.WriteLine("已打开 页=" + pres.Slides.Count);
-
-                foreach (KeyValuePair<int, List<FxCase>> kv in bySlide)
+                bool ReadPpt(string slideId, out PptHtmlReadResult tree, out string readErr)
                 {
-                    string slideId = kv.Key.ToString();
-                    Console.WriteLine("--- slideId=" + slideId + " " + kv.Value.Count + " 条 ---");
-                    if (!PptHtmlPowerPointReader.TryRead(
-                            pres,
-                            slideId,
-                            "fx",
-                            "ppt",
-                            null,
-                            false,
-                            true,
-                            out PptHtmlReadResult tree,
-                            out string readErr)
-                        || tree == null)
-                    {
-                        for (int i = 0; i < kv.Value.Count; i++)
-                        {
-                            run.CaseFail(kv.Value[i].Id, "读页失败: " + (readErr ?? "?"));
-                        }
-
-                        continue;
-                    }
-
-                    for (int i = 0; i < kv.Value.Count; i++)
-                    {
-                        RunOne(run, tree.Shapes, kv.Value[i]);
-                    }
+                    return PptHtmlPowerPointReader.TryRead(
+                        pres,
+                        slideId,
+                        "fx",
+                        "ppt",
+                        null,
+                        false,
+                        true,
+                        out tree,
+                        out readErr);
                 }
+
+                RunBySlide(run, bySlide, ReadPpt);
             }
             catch (Exception ex)
             {
@@ -129,6 +125,123 @@ namespace PptHtmlContentRoundtripTest
                 }
                 catch
                 {
+                }
+            }
+        }
+
+        private static void RunWpp(
+            TestRun run,
+            string pptx,
+            Dictionary<int, List<FxCase>> bySlide)
+        {
+            object app = null;
+            object pres = null;
+            try
+            {
+                if (!WppCom.TryCreateApplication(out app, out string startErr))
+                {
+                    run.CaseFail("srch-fx-", startErr);
+                    return;
+                }
+
+                object presentations = WppCom.GetProperty(app, "Presentations");
+                try
+                {
+                    pres = WppCom.Invoke(presentations, "Open", pptx, true, false, true);
+                }
+                catch
+                {
+                    pres = WppCom.Invoke(presentations, "Open", pptx);
+                }
+
+                if (pres == null)
+                {
+                    run.CaseFail("srch-fx-", "WPP 打开真稿失败");
+                    return;
+                }
+
+                object slides = WppCom.GetProperty(pres, "Slides");
+                int pageCount = Convert.ToInt32(WppCom.GetProperty(slides, "Count") ?? 0);
+                Console.WriteLine("已打开 页=" + pageCount.ToString(CultureInfo.InvariantCulture));
+                bool ReadWpp(string slideId, out PptHtmlReadResult tree, out string readErr)
+                {
+                    return PptHtmlWppReader.TryRead(
+                        pres,
+                        slideId,
+                        "fx-wpp",
+                        "wpp",
+                        null,
+                        false,
+                        true,
+                        out tree,
+                        out readErr);
+                }
+
+                RunBySlide(run, bySlide, ReadWpp);
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("srch-fx-", "打开或搜索失败: " + ex.Message);
+            }
+            finally
+            {
+                try
+                {
+                    if (pres != null)
+                    {
+                        WppCom.TrySetProperty(pres, "Saved", true);
+                        WppCom.Invoke(pres, "Close");
+                    }
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    if (app != null)
+                    {
+                        object presentations = WppCom.GetProperty(app, "Presentations");
+                        int n = Convert.ToInt32(WppCom.GetProperty(presentations, "Count") ?? 0);
+                        if (n == 0)
+                        {
+                            WppCom.Invoke(app, "Quit");
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private delegate bool TryReadSlide(
+            string slideId,
+            out PptHtmlReadResult tree,
+            out string readErr);
+
+        private static void RunBySlide(
+            TestRun run,
+            Dictionary<int, List<FxCase>> bySlide,
+            TryReadSlide read)
+        {
+            foreach (KeyValuePair<int, List<FxCase>> kv in bySlide)
+            {
+                string slideId = kv.Key.ToString(CultureInfo.InvariantCulture);
+                Console.WriteLine("--- slideId=" + slideId + " " + kv.Value.Count + " 条 ---");
+                if (!read(slideId, out PptHtmlReadResult tree, out string readErr) || tree == null)
+                {
+                    for (int i = 0; i < kv.Value.Count; i++)
+                    {
+                        run.CaseFail(kv.Value[i].Id, "读页失败: " + (readErr ?? "?"));
+                    }
+
+                    continue;
+                }
+
+                for (int i = 0; i < kv.Value.Count; i++)
+                {
+                    RunOne(run, tree.Shapes, kv.Value[i]);
                 }
             }
         }
@@ -518,6 +631,7 @@ namespace PptHtmlContentRoundtripTest
                 string[] hits =
                 {
                     Path.Combine(dir, name),
+                    Path.Combine(dir, "docs", "测试", "ppt测试", "ppt搜索", "页内节点搜索", name),
                     Path.Combine(dir, "docs", "测试", "ppt搜索", "页内节点搜索", name)
                 };
                 for (int h = 0; h < hits.Length; h++)
