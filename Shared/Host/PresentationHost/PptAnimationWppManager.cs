@@ -161,7 +161,20 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            // WPP：AddEffect 之后原 Sequence RCW 的 Count 仍为 0，再读会把进程打挂。必须重取。
+            if (!TryGetMainSequence(slide, out sequence, out error))
+            {
+                error = "添加动画后无法读取时间线: " + error;
+                return false;
+            }
+
             var effects = ReadEffects(sequence, slideId, null, out List<string> warnings);
+            if (effects.Count < 1)
+            {
+                error = "WPS 演示 AddEffect 后时间线未增加效果";
+                return false;
+            }
+
             result = BuildResult(channelId, "wpp", "add", slideId, effects, 1, 0, warnings);
             return true;
         }
@@ -220,6 +233,12 @@ namespace WordAddIn1.PresentationHost
             int added = 0;
             foreach (Planned one in plannedList)
             {
+                if (!TryGetMainSequence(slide, out sequence, out error))
+                {
+                    error = "替换动画时无法读取时间线: " + error;
+                    return false;
+                }
+
                 object shape = FindShapeById(shapes, one.ComId);
                 if (!TryAddEffect(sequence, shape, one, out error))
                 {
@@ -227,6 +246,12 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 added++;
+            }
+
+            if (!TryGetMainSequence(slide, out sequence, out error))
+            {
+                error = "替换动画后无法读取时间线: " + error;
+                return false;
             }
 
             var effects = ReadEffects(sequence, slideId, null, out List<string> warnings);
@@ -260,6 +285,12 @@ namespace WordAddIn1.PresentationHost
             }
 
             int cleared = ClearSequence(sequence, filterComId);
+            if (!TryGetMainSequence(slide, out sequence, out error))
+            {
+                error = "清除动画后无法读取时间线: " + error;
+                return false;
+            }
+
             var effects = ReadEffects(sequence, slideId, filterComId, out List<string> warnings);
             result = BuildResult(channelId, "wpp", "clear", slideId, effects, 0, cleared, warnings);
             return true;
@@ -433,7 +464,16 @@ namespace WordAddIn1.PresentationHost
         {
             warnings = new List<string>();
             var list = new List<PresentationAnimationEffectSpec>();
-            int count = Convert.ToInt32(WppCom.GetProperty(sequence, "Count"));
+            int count;
+            try
+            {
+                count = Convert.ToInt32(WppCom.GetProperty(sequence, "Count"));
+            }
+            catch (Exception ex)
+            {
+                warnings.Add("读取 MainSequence.Count 失败: " + ex.Message);
+                return list;
+            }
             for (int i = 1; i <= count; i++)
             {
                 try
