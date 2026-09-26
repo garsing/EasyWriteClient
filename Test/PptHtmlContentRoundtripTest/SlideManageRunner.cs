@@ -11,7 +11,7 @@ using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 namespace PptHtmlContentRoundtripTest
 {
     /// <summary>F_manage_ppt_slide。前缀 sld-。</summary>
-    internal static class SlideManageRunner
+    internal static partial class SlideManageRunner
     {
         public static bool Wants(IList<string> nameFilters)
         {
@@ -37,6 +37,7 @@ namespace PptHtmlContentRoundtripTest
         {
             Console.WriteLine(useWpp ? "管页 · WPP" : "管页 · PPT");
             RunParse(run, nameFilters);
+            RunExtraParse(run, nameFilters);
             if (NeedCom(nameFilters))
             {
                 RunCom(run, nameFilters, useWpp);
@@ -57,7 +58,7 @@ namespace PptHtmlContentRoundtripTest
             string[] com =
             {
                 "sld-neg-bad-action", "sld-add-", "sld-dup-", "sld-del-",
-                "sld-move-", "sld-reorder-"
+                "sld-move-", "sld-reorder-", "sld-e-"
             };
             for (int i = 0; i < com.Length; i++)
             {
@@ -414,6 +415,7 @@ namespace PptHtmlContentRoundtripTest
             RunReorder(run, filters, deck);
             RunCross(run, filters, deck, openSecond);
             RunHidden(run, filters, deck);
+            RunExtra(run, filters, deck, openSecond);
         }
 
         private static void RunAdd(TestRun run, IList<string> filters, Deck deck)
@@ -1979,10 +1981,23 @@ namespace PptHtmlContentRoundtripTest
                     continue;
                 }
 
+                int index = 0;
+                if (one.TryGetValue("index", out object ix) && ix != null)
+                {
+                    try
+                    {
+                        index = Convert.ToInt32(ix, CultureInfo.InvariantCulture);
+                    }
+                    catch
+                    {
+                    }
+                }
+
                 list.Add(new CreatedRow
                 {
                     Source = one.TryGetValue("source_slide_id", out object s) ? Convert.ToString(s) ?? "" : "",
-                    NewId = one.TryGetValue("slide_id", out object n) ? Convert.ToString(n) ?? "" : ""
+                    NewId = one.TryGetValue("slide_id", out object n) ? Convert.ToString(n) ?? "" : "",
+                    Index = index
                 });
             }
 
@@ -2032,6 +2047,7 @@ namespace PptHtmlContentRoundtripTest
         {
             public string Source;
             public string NewId;
+            public int Index;
         }
 
         private sealed class KindStub : IOperationChannel
