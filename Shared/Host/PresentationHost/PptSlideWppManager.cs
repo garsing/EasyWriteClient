@@ -360,11 +360,7 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            if (TryGetIndex(created) != toIndex)
-            {
-                WppCom.Invoke(created, "MoveTo", toIndex);
-            }
-
+            MoveSlideTo(created, toIndex);
             return true;
         }
 
@@ -399,11 +395,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 ApplyKeepSourceFormatting(source, created);
-                if (TryGetIndex(created) != toIndex)
-                {
-                    WppCom.Invoke(created, "MoveTo", toIndex);
-                }
-
+                MoveSlideTo(created, toIndex);
                 return true;
             }
             catch (Exception ex)
@@ -607,7 +599,7 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
-            WppCom.Invoke(slide, "MoveTo", toIndex);
+            MoveSlideTo(slide, toIndex);
             focusIndex = TryGetIndex(slide);
             return true;
         }
@@ -675,10 +667,7 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                if (TryGetIndex(slide) != targetPos)
-                {
-                    WppCom.Invoke(slide, "MoveTo", targetPos);
-                }
+                MoveSlideTo(slide, targetPos);
             }
 
             return true;
@@ -812,6 +801,46 @@ namespace WordAddIn1.PresentationHost
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// WPP 的 <c>Slide.MoveTo(n)</c> 在 n 等于当前 Count 时会落到倒数第二格；
+        /// 要落到最后一格须再试 <c>n+1</c>。先按目标下标调，对不上再补一次。
+        /// </summary>
+        private static void MoveSlideTo(object slide, int toIndex)
+        {
+            if (slide == null || toIndex < 1 || TryGetIndex(slide) == toIndex)
+            {
+                return;
+            }
+
+            try
+            {
+                WppCom.Invoke(slide, "MoveTo", toIndex);
+            }
+            catch (Exception)
+            {
+            }
+
+            if (TryGetIndex(slide) == toIndex)
+            {
+                return;
+            }
+
+            try
+            {
+                WppCom.Invoke(slide, "MoveTo", toIndex + 1);
+            }
+            catch (Exception)
+            {
+                try
+                {
+                    WppCom.Invoke(slide, "MoveTo", toIndex);
+                }
+                catch (Exception)
+                {
+                }
+            }
         }
 
         private static int TryGetIndex(object slide)

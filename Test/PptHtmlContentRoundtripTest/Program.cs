@@ -40,6 +40,10 @@ namespace PptHtmlContentRoundtripTest
                 {
                     OverviewRunner.Run(run, nameFilters, useWpp);
                 }
+                else if (SlideManageRunner.Wants(nameFilters))
+                {
+                    SlideManageRunner.Run(run, nameFilters, useWpp);
+                }
                 else if (CaptureShapeRunner.Wants(nameFilters))
                 {
                     CaptureShapeRunner.Run(run, nameFilters, useWpp);
