@@ -36,6 +36,10 @@ namespace PptHtmlContentRoundtripTest
                 {
                     FixtureSearchRunner.Run(run, nameFilters, useWpp);
                 }
+                else if (OverviewRunner.Wants(nameFilters))
+                {
+                    OverviewRunner.Run(run, nameFilters, useWpp);
+                }
                 else if (CaptureShapeRunner.Wants(nameFilters))
                 {
                     CaptureShapeRunner.Run(run, nameFilters, useWpp);
