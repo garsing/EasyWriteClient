@@ -797,7 +797,7 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 保存表格格式到文件（仅 General）。
+        /// 保存表格格式到文件（General + 省略 Data + Properties/Merge）。
         /// </summary>
         private static async Task<(bool Success, string XmlContent)> SaveTableFormat(
             TableExtractDto dto,
@@ -805,7 +805,7 @@ namespace WordAddIn1
         {
             try
             {
-                string xmlContent = TableFormatXmlBuilder.BuildGeneralOnly(dto);
+                string xmlContent = TableFormatXmlBuilder.BuildGeneralWithOmitData(dto);
                 return await TableFormatFileHelper.SaveXmlAsync(filename, xmlContent);
             }
             catch (Exception)

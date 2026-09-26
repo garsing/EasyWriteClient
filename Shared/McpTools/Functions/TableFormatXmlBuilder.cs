@@ -79,18 +79,119 @@ namespace WordAddIn1
 
             if (dto.Data != null && dto.Data.Count > 0)
             {
-                tableChildren.Add(
-                    new XElement(
-                        "Data",
-                        dto.Data.Select(row => new XElement(
-                            "Row",
-                            (row ?? new List<string>()).Select(BuildCellElement)))));
+                tableChildren.Add(BuildOmitDataElement(dto));
             }
 
             XDocument xmlDoc = new XDocument(
                 new XElement("TableConfig", new XElement("Table", tableChildren)));
 
             return xmlDoc.ToString();
+        }
+
+        public static string BuildGeneralWithOmitData(TableExtractDto dto)
+        {
+            dto = dto ?? new TableExtractDto();
+            XDocument generalDoc = XDocument.Parse(BuildGeneralOnly(dto));
+            XDocument dataDoc = XDocument.Parse(BuildDataOnly(dto));
+            XElement root = generalDoc.Root;
+            XElement table = dataDoc.Root?.Element("Table");
+            if (root != null && table != null)
+            {
+                root.Add(table);
+            }
+
+            return generalDoc.ToString();
+        }
+
+        private static XElement BuildOmitDataElement(TableExtractDto dto)
+        {
+            int cols = dto.Cols;
+            if (cols <= 0 && dto.Data != null)
+            {
+                foreach (List<string> row in dto.Data)
+                {
+                    if (row != null && row.Count > cols)
+                    {
+                        cols = row.Count;
+                    }
+                }
+            }
+
+            var rowEls = new List<XElement>();
+            for (int r = 0; r < dto.Data.Count; r++)
+            {
+                List<string> row = dto.Data[r] ?? new List<string>();
+                var cells = new List<XElement>();
+                int colCount = cols > 0 ? cols : row.Count;
+                for (int c = 1; c <= colCount; c++)
+                {
+                    if (TableMergeHelper.IsMergeContinuation(r + 1, c, dto.Merge))
+                    {
+                        continue;
+                    }
+
+                    string text = c - 1 < row.Count ? row[c - 1] : "";
+                    XElement cellEl = BuildCellElement(text);
+                    int rowSpan;
+                    int colSpan;
+                    TryGetMergeSpan(r + 1, c, dto.Merge, out rowSpan, out colSpan);
+                    if (rowSpan > 1)
+                    {
+                        cellEl.SetAttributeValue("rowspan", rowSpan);
+                    }
+
+                    if (colSpan > 1)
+                    {
+                        cellEl.SetAttributeValue("colspan", colSpan);
+                    }
+
+                    cells.Add(cellEl);
+                }
+
+                rowEls.Add(new XElement("Row", cells.Cast<object>().ToArray()));
+            }
+
+            return new XElement("Data", rowEls.Cast<object>().ToArray());
+        }
+
+        private static void TryGetMergeSpan(
+            int row,
+            int col,
+            List<List<int>> merge,
+            out int rowSpan,
+            out int colSpan)
+        {
+            rowSpan = 1;
+            colSpan = 1;
+            if (merge == null)
+            {
+                return;
+            }
+
+            foreach (List<int> item in merge)
+            {
+                if (item == null || item.Count < 4)
+                {
+                    continue;
+                }
+
+                if (item[0] == row && item[1] == col)
+                {
+                    rowSpan = item[2] - item[0] + 1;
+                    colSpan = item[3] - item[1] + 1;
+                    if (rowSpan < 1)
+                    {
+                        rowSpan = 1;
+                    }
+
+                    if (colSpan < 1)
+                    {
+                        colSpan = 1;
+                    }
+
+                    return;
+                }
+            }
         }
 
         private static XElement BuildCellElement(string cellContent)

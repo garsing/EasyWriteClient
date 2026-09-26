@@ -22,6 +22,7 @@ namespace WordAddIn1
     /// CSV转XML工具
     /// 将CSV文件转换为XML格式的data节点
     /// </summary>
+    /// <summary>2026-09-27 不注册。表 Data 请用 F_write_file 直接写省略网格。</summary>
     public static class F_CsvToXmlTool
     {
         /// <summary>

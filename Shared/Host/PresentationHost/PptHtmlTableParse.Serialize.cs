@@ -43,7 +43,6 @@ namespace WordAddIn1.PresentationHost
                     PptHtmlTableCell cell = grid.CellAt(r, c);
                     if (cell == null || cell.IsCovered)
                     {
-                        sb.Append("<td></td>");
                         continue;
                     }
 

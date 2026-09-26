@@ -135,7 +135,7 @@ namespace WordAddIn1.PresentationHost
 
                     if (cursor >= cols)
                     {
-                        error = "合并占位不合法（第 " + (r + 1) + " 行槽位溢出）";
+                        error = "第 " + (r + 1) + " 行多写了占用槽";
                         return false;
                     }
 
@@ -143,7 +143,7 @@ namespace WordAddIn1.PresentationHost
                     int cs = Math.Max(1, raw.ColSpan);
                     if (r + rs > rows || cursor + cs > cols)
                     {
-                        error = "合并占位不合法（越界 rowspan/colspan）";
+                        error = "第 " + (r + 1) + " 行合并越界（rowspan=" + rs + "，colspan=" + cs + "）";
                         return false;
                     }
 
@@ -153,7 +153,8 @@ namespace WordAddIn1.PresentationHost
                         {
                             if (occupied[r + i, cursor + j])
                             {
-                                error = "合并占位不合法（重叠）";
+                                error = "第 " + (r + 1) + " 行第 " + (cursor + 1) + " 列与已有合并重叠（rowspan="
+                                    + rs + "，colspan=" + cs + "）";
                                 return false;
                             }
 
@@ -200,7 +201,7 @@ namespace WordAddIn1.PresentationHost
                 {
                     if (!occupied[r, c])
                     {
-                        error = "合并占位不合法（第 " + (r + 1) + " 行缺占位格）";
+                        error = "第 " + (r + 1) + " 行可见格未铺满逻辑列";
                         return false;
                     }
                 }

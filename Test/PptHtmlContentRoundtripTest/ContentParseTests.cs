@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using WordAddIn1.PresentationHost;
 
 namespace PptHtmlContentRoundtripTest
@@ -8,10 +9,13 @@ namespace PptHtmlContentRoundtripTest
     {
         public static void Run(TestRun run)
         {
+            TableHtmlGridTest.Run(run);
             ParseTextbox(run);
             ParseTable(run);
             ParseTableMerge(run);
             ParseTableRejectBadMerge(run);
+            ParseTableSerializeOmitsCovered(run);
+            ParseTableRejectExtraCoveredTd(run);
             ParseChartRejectTableEnhance(run);
             ParsePictureAbsolute(run);
             ParseRejectHttp(run);
@@ -109,9 +113,77 @@ namespace PptHtmlContentRoundtripTest
                 "无列宽");
         }
 
+        private static void ParseTableSerializeOmitsCovered(TestRun run)
+        {
+            string html = ContentHtml.Section(
+                "  <table data-shape-type=\"table\" style=\""
+                + ContentHtml.Geo(8, 35, 45, 30)
+                + "\">\n"
+                + "    <tr><th colspan=\"2\">头</th></tr>\n"
+                + "    <tr><td>a</td><td>b</td></tr>\n"
+                + "  </table>");
+            if (!ContentHtml.TryParse(html, "1", out PptHtmlApplyPlan plan, out string error))
+            {
+                run.Fail("parse-serialize-omit", error);
+                return;
+            }
+
+            var sb = new StringBuilder();
+            PptHtmlTableParse.AppendInnerHtml(sb, plan.Nodes[0].TableGrid, "");
+            string inner = sb.ToString();
+            run.Expect(
+                "serialize-omit 有 colspan",
+                inner.IndexOf("colspan=\"2\"", System.StringComparison.OrdinalIgnoreCase) >= 0,
+                inner);
+            int coveredEmpty = CountOccurrences(inner, "<td></td>");
+            run.Expect("serialize-omit 无覆盖空 td", coveredEmpty == 0, "empty-td=" + coveredEmpty + " " + inner);
+        }
+
+        private static void ParseTableRejectExtraCoveredTd(TestRun run)
+        {
+            string html = ContentHtml.Section(
+                "  <table data-shape-type=\"table\" style=\""
+                + ContentHtml.Geo(8, 35, 45, 30)
+                + "\">\n"
+                + "    <tr><td rowspan=\"2\">a</td><td>b</td></tr>\n"
+                + "    <tr><td></td><td>c</td></tr>\n"
+                + "  </table>");
+            bool ok = ContentHtml.TryParse(html, "1", out _, out string error);
+            run.Expect("parse-extra-td 应失败", !ok, ok ? "应失败" : ("error=" + error));
+            run.Expect(
+                "parse-extra-td 文案",
+                error != null
+                    && error.IndexOf("多写了占用槽", System.StringComparison.Ordinal) >= 0
+                    && error.IndexOf("缺占位格", System.StringComparison.Ordinal) < 0
+                    && error.IndexOf("补空 td", System.StringComparison.Ordinal) < 0,
+                "error=" + error);
+        }
+
+        private static int CountOccurrences(string text, string token)
+        {
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(token))
+            {
+                return 0;
+            }
+
+            int count = 0;
+            int start = 0;
+            while (true)
+            {
+                int i = text.IndexOf(token, start, System.StringComparison.Ordinal);
+                if (i < 0)
+                {
+                    return count;
+                }
+
+                count++;
+                start = i + token.Length;
+            }
+        }
+
         private static void ParseTableRejectBadMerge(TestRun run)
         {
-            // 第二行缺格 → 占位不合法
+            // 第二行缺可见格 → 未铺满
             string html = ContentHtml.Section(
                 "  <table data-shape-type=\"table\" style=\""
                 + ContentHtml.Geo(8, 35, 45, 30)

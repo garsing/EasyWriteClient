@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using WordAddIn1.DocumentHost;
@@ -375,110 +374,70 @@ namespace WordAddIn1
                         Style = styleConfig?.TableStyle ?? "",
                     };
 
-                    // 解析Data
+                    // 解析 Data（HTML 省略写法；忽略 Properties/Cols/Merge）
                     var dataElement = tableElement.Element("Data");
                     if (dataElement != null)
                     {
-                        config.Data = new List<List<string>>();
-                        config.Merge = new List<List<int>>();
-                        
-                        int rowIndex = 0; // 从0开始，转换为1-based时需要+1
-                        int cols = 0; // 列数（由于占位符，每行的Cell数量应该相同）
-                        
+                        var visibleRows = new List<IList<TableHtmlVisibleCell>>();
                         foreach (var rowElement in dataElement.Elements("Row"))
                         {
-                            var row = new List<string>();
-                            int colIndex = 0; // 从0开始，转换为1-based时需要+1
-                            int currentRow = rowIndex + 1; // 1-based行号
-                            
+                            var visible = new List<TableHtmlVisibleCell>();
                             foreach (var cellElement in rowElement.Elements("Cell"))
                             {
-                                // 获取包含HTML标签的原始内容
-                                // 如果Cell有子元素（如span），使用Nodes()获取所有子节点的字符串表示
-                                // 如果Cell只有文本，使用Value获取文本内容
                                 string cellValue;
                                 if (cellElement.HasElements)
                                 {
-                                    // 有子元素时，将所有子节点转换为字符串并连接
                                     cellValue = string.Join("", cellElement.Nodes().Select(n => n.ToString()));
                                 }
                                 else
                                 {
-                                    // 只有文本时，直接使用Value
                                     cellValue = cellElement.Value ?? "";
                                 }
-                                
-                                System.Diagnostics.Debug.WriteLine($"[ParseXmlFile] Cell内容解析: HasElements={cellElement.HasElements}");
-                                System.Diagnostics.Debug.WriteLine($"[ParseXmlFile]   Value='{cellElement.Value}'");
-                                System.Diagnostics.Debug.WriteLine($"[ParseXmlFile]   解析后内容='{cellValue}'");
-                                
-                                row.Add(cellValue);
-                                
-                                // 读取 rowspan 和 colspan 属性
+
+                                int rowspan = 1;
+                                int colspan = 1;
                                 string rowspanStr = cellElement.Attribute("rowspan")?.Value;
                                 string colspanStr = cellElement.Attribute("colspan")?.Value;
-                                
-                                // 如果存在 rowspan 或 colspan，计算合并范围
-                                if (!string.IsNullOrEmpty(rowspanStr) || !string.IsNullOrEmpty(colspanStr))
+                                if (!string.IsNullOrEmpty(rowspanStr) && int.TryParse(rowspanStr, out int rspan))
                                 {
-                                    // startRow, startCol 就是该 Cell 的索引位置
-                                    int startRow = currentRow;
-                                    int startCol = colIndex + 1;
-                                    
-                                    // 解析 rowspan 和 colspan 值
-                                    int rowspan = 1;
-                                    int colspan = 1;
-                                    if (!string.IsNullOrEmpty(rowspanStr) && int.TryParse(rowspanStr, out int rspan))
-                                    {
-                                        rowspan = rspan;
-                                    }
-                                    if (!string.IsNullOrEmpty(colspanStr) && int.TryParse(colspanStr, out int cspan))
-                                    {
-                                        colspan = cspan;
-                                    }
-                                    
-                                    // 计算结束行列
-                                    // rowspan="2" 表示合并2行（包括自己），所以 endRow = startRow + rowspan - 1
-                                    // colspan="4" 表示合并4列（包括自己），所以 endCol = startCol + colspan - 1
-                                    int endRow = startRow + rowspan - 1;
-                                    int endCol = startCol + colspan - 1;
-                                    
-                                    // 只有当实际需要合并时才添加（rowspan > 1 或 colspan > 1）
-                                    if (endRow > startRow || endCol > startCol)
-                                    {
-                                        config.Merge.Add(new List<int> { startRow, startCol, endRow, endCol });
-                                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 从Cell属性解析合并信息: row={startRow}, col={startCol}, rowspan={rowspanStr}, colspan={colspanStr}, 合并范围=[{startRow},{startCol},{endRow},{endCol}]");
-                                    }
+                                    rowspan = rspan;
                                 }
-                                
-                                // 更新列索引（每个Cell都占一列，包括占位符）
-                                colIndex++;
+
+                                if (!string.IsNullOrEmpty(colspanStr) && int.TryParse(colspanStr, out int cspan))
+                                {
+                                    colspan = cspan;
+                                }
+
+                                visible.Add(new TableHtmlVisibleCell
+                                {
+                                    Text = cellValue,
+                                    RowSpan = rowspan,
+                                    ColSpan = colspan,
+                                });
                             }
-                            
-                            // 第一行时记录列数，后续行应该相同（因为有占位符）
-                            if (rowIndex == 0)
-                            {
-                                cols = colIndex;
-                            }
-                            else if (colIndex != cols)
-                            {
-                                System.Diagnostics.Debug.WriteLine($"[DEBUG] 警告: 第{rowIndex + 1}行的Cell数量({colIndex})与第一行({cols})不一致");
-                            }
-                            
-                            config.Data.Add(row);
-                            rowIndex++;
+
+                            visibleRows.Add(visible);
                         }
-                        
-                        // 根据Data中的实际行数和列数设置Rows和Cols
-                        config.Table.Rows = config.Data.Count;
-                        config.Table.Cols = cols;
-                        
-                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 从Data计算表格尺寸: Rows={config.Table.Rows}, Cols={config.Table.Cols}");
-                        
-                        // 如果设置了StyleConfig，需要根据实际行数调整HeaderRows
+
+                        if (!TableHtmlGrid.TryExpand(visibleRows, out TableHtmlGridResult grid) || !grid.Ok)
+                        {
+                            return new ParseResult
+                            {
+                                Config = null,
+                                Error = string.IsNullOrEmpty(grid.Error) ? "表格 Data 铺格失败" : grid.Error,
+                            };
+                        }
+
+                        config.Data = grid.RectangularData;
+                        config.Merge = grid.Merge;
+                        config.Table.Rows = grid.RowCount;
+                        config.Table.Cols = grid.ColCount;
+
                         if (config.Table.StyleConfig != null)
                         {
-                            config.Table.StyleConfig.HeaderRows = Math.Max(1, Math.Min(config.Table.StyleConfig.HeaderRows, config.Table.Rows));
+                            config.Table.StyleConfig.HeaderRows = Math.Max(
+                                1,
+                                Math.Min(config.Table.StyleConfig.HeaderRows, config.Table.Rows));
                         }
                     }
                 }
@@ -538,10 +497,6 @@ namespace WordAddIn1
 
                 if (config.Table.ColWidths != null && config.Table.ColWidths.Count > 0)
                 {
-                    if (config.Table.ColWidths.Count > config.Table.Cols)
-                    {
-                        errors.Add($"Table.ColWidths数组长度({config.Table.ColWidths.Count})大于列数({config.Table.Cols})");
-                    }
                     for (int i = 0; i < config.Table.ColWidths.Count; i++)
                     {
                         if (config.Table.ColWidths[i] <= 0)
@@ -628,161 +583,10 @@ namespace WordAddIn1
 
             if (errors.Count > 0)
             {
-                string error = string.Join("; ", errors);
-                string gridDiagnostic = BuildGridDiagnosticBlock(config, errors);
-                if (!string.IsNullOrEmpty(gridDiagnostic))
-                {
-                    error += gridDiagnostic;
-                }
-
-                return new ValidationResult { IsValid = false, Error = error };
+                return new ValidationResult { IsValid = false, Error = string.Join("; ", errors) };
             }
 
             return new ValidationResult { IsValid = true, Error = null };
-        }
-
-        private static bool HasGridRelatedErrors(List<string> errors)
-        {
-            if (errors == null || errors.Count == 0)
-            {
-                return false;
-            }
-
-            foreach (string item in errors)
-            {
-                if (item == null)
-                {
-                    continue;
-                }
-
-                if (item.Contains("Table.Cols")
-                    || item.Contains("ColWidths")
-                    || item.Contains("Data第")
-                    || item.Contains("行列数"))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// 网格不一致时的诊断说明（不修改 config，仅辅助 LLM 修正 XML）。
-        /// </summary>
-        private static string BuildGridDiagnosticBlock(TableConfig config, List<string> errors)
-        {
-            if (config?.Table == null || config.Data == null || !HasGridRelatedErrors(errors))
-            {
-                return null;
-            }
-
-            int firstRowCols = config.Table.Cols;
-            int maxRowCells = 0;
-            foreach (List<string> row in config.Data)
-            {
-                if (row != null && row.Count > maxRowCells)
-                {
-                    maxRowCells = row.Count;
-                }
-            }
-
-            int colWidthsCount = config.Table.ColWidths?.Count ?? 0;
-            int mergeMaxEndCol = 0;
-            if (config.Merge != null)
-            {
-                foreach (List<int> mergeItem in config.Merge)
-                {
-                    if (mergeItem != null && mergeItem.Count >= 4)
-                    {
-                        mergeMaxEndCol = Math.Max(mergeMaxEndCol, mergeItem[3]);
-                    }
-                }
-            }
-
-            int inferred = Math.Max(Math.Max(maxRowCells, colWidthsCount), mergeMaxEndCol);
-            if (inferred <= 0)
-            {
-                return null;
-            }
-
-            bool hasInconsistency = inferred != firstRowCols
-                || (colWidthsCount > 0 && colWidthsCount != firstRowCols)
-                || config.Data.Any(row => row != null && row.Count != firstRowCols);
-
-            if (!hasInconsistency)
-            {
-                return null;
-            }
-
-            var sb = new StringBuilder();
-            sb.AppendLine();
-            sb.Append("  推断逻辑列数应为 ").Append(inferred).Append("（依据：");
-            var basisParts = new List<string>();
-            if (colWidthsCount > 0)
-            {
-                basisParts.Add($"ColWidths={colWidthsCount}");
-            }
-
-            if (maxRowCells > 0)
-            {
-                basisParts.Add($"Data 各行最大 Cell 数={maxRowCells}");
-            }
-
-            if (mergeMaxEndCol > 0)
-            {
-                basisParts.Add($"Merge 最大 endCol={mergeMaxEndCol}");
-            }
-
-            sb.Append(string.Join("，", basisParts)).AppendLine("）");
-            sb.Append("  当前 Table.Cols=").Append(firstRowCols).AppendLine("（取自第 1 行 Cell 数）");
-
-            int headerRowsHint = config.Table.StyleConfig?.HeaderRows ?? 3;
-            for (int r = 0; r < config.Data.Count; r++)
-            {
-                List<string> row = config.Data[r];
-                if (row == null)
-                {
-                    continue;
-                }
-
-                int count = row.Count;
-                if (count == inferred)
-                {
-                    continue;
-                }
-
-                if (count < inferred)
-                {
-                    int deficit = inferred - count;
-                    sb.Append("  第 ").Append(r + 1).Append(" 行：").Append(count)
-                        .Append(" 个 Cell，缺 ").Append(deficit).Append(" 个");
-                    if (r == 0)
-                    {
-                        sb.Append("。可能原因：colspan 后未补空 <Cell/>");
-                    }
-                    else if (r < headerRowsHint)
-                    {
-                        sb.Append("。可能原因：上方 rowspan 占位缺失");
-                    }
-                    else
-                    {
-                        sb.Append("。可能原因：合并占位缺失");
-                    }
-
-                    sb.AppendLine();
-                }
-                else
-                {
-                    sb.Append("  第 ").Append(r + 1).Append(" 行：").Append(count)
-                        .Append(" 个 Cell，多 ").Append(count - inferred)
-                        .Append(" 个（可能多写了 Cell）").AppendLine();
-                }
-            }
-
-            sb.Append("  修复：每行补齐至 ").Append(inferred)
-                .Append(" 个 Cell（含空占位）；或重写 XML 参考 F_write_file 工具描述中的示例。");
-            return sb.ToString();
         }
 
         /// <summary>

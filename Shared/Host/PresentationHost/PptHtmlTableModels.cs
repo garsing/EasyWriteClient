@@ -58,7 +58,7 @@ namespace WordAddIn1.PresentationHost
 
         public int ColSpan { get; set; } = 1;
 
-        /// <summary>被合并占位的格（HTML 空 td）。</summary>
+        /// <summary>被合并覆盖的逻辑格（读回不写标签）。</summary>
         public bool IsCovered { get; set; }
 
         public bool IsHeader { get; set; }
