@@ -1256,8 +1256,14 @@ namespace WordAddIn1.PresentationHost
             }
             else if (PptShapeTypeMap.ShouldRasterizeAsPicture(typeName))
             {
-                rasterizedFrom = typeName;
-                typeName = "picture";
+                // 搜索档：有正文的异形不过滤，保留原类型并读 Text。
+                bool keepForSearch = mode == GroupReadMode.SearchPage
+                    && !string.IsNullOrWhiteSpace(TryReadText(shape));
+                if (!keepForSearch)
+                {
+                    rasterizedFrom = typeName;
+                    typeName = "picture";
+                }
             }
 
             if ((mode == GroupReadMode.SkeletonCompact || mode == GroupReadMode.SkeletonContent)

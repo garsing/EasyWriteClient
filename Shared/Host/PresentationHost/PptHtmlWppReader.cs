@@ -1168,8 +1168,13 @@ namespace WordAddIn1.PresentationHost
             }
             else if (PptShapeTypeMap.ShouldRasterizeAsPicture(typeName))
             {
-                rasterizedFrom = typeName;
-                typeName = "picture";
+                bool keepForSearch = mode == GroupReadMode.SearchPage
+                    && !string.IsNullOrWhiteSpace(TryReadText(shape));
+                if (!keepForSearch)
+                {
+                    rasterizedFrom = typeName;
+                    typeName = "picture";
+                }
             }
 
             if ((mode == GroupReadMode.SkeletonCompact || mode == GroupReadMode.SkeletonContent)
