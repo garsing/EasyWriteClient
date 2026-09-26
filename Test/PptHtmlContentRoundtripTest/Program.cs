@@ -48,6 +48,10 @@ namespace PptHtmlContentRoundtripTest
                 {
                     ShapeDeleteRunner.Run(run, nameFilters, useWpp);
                 }
+                else if (PageImageRunner.Wants(nameFilters))
+                {
+                    PageImageRunner.Run(run, nameFilters, useWpp);
+                }
                 else if (CaptureShapeRunner.Wants(nameFilters))
                 {
                     CaptureShapeRunner.Run(run, nameFilters, useWpp);
