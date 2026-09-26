@@ -18,6 +18,74 @@ namespace WordAddIn1.PresentationHost
             return sb.ToString();
         }
 
+        /// <summary>搜索用：格子正文空格拼接，不扫 chart 内嵌表。</summary>
+        public static string JoinSearchText(PptHtmlTableGrid grid, out bool truncated)
+        {
+            truncated = false;
+            if (grid == null || grid.Cells == null)
+            {
+                return "";
+            }
+
+            var sb = new StringBuilder();
+            for (int i = 0; i < grid.Cells.Count; i++)
+            {
+                PptHtmlTableCell cell = grid.Cells[i];
+                if (cell == null || cell.IsCovered)
+                {
+                    continue;
+                }
+
+                AppendSearchPiece(sb, cell.Text, ref truncated);
+                if (truncated)
+                {
+                    break;
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        internal static void AppendSearchPiece(StringBuilder sb, string raw, ref bool truncated)
+        {
+            string piece = NormalizeSearchCell(raw);
+            if (piece.Length == 0)
+            {
+                return;
+            }
+
+            if (sb.Length > 0)
+            {
+                sb.Append(' ');
+            }
+
+            int room = PptHtmlReadResult.MaxTextChars - sb.Length;
+            if (room <= 0)
+            {
+                truncated = true;
+                return;
+            }
+
+            if (piece.Length > room)
+            {
+                sb.Append(piece, 0, room);
+                truncated = true;
+                return;
+            }
+
+            sb.Append(piece);
+        }
+
+        internal static string NormalizeSearchCell(string raw)
+        {
+            if (string.IsNullOrEmpty(raw))
+            {
+                return "";
+            }
+
+            return raw.Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ').Trim();
+        }
+
         private static float[] NormalizePcts(float[] pcts)
         {
             float sum = 0;

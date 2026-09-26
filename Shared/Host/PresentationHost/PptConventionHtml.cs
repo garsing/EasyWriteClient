@@ -478,6 +478,11 @@ namespace WordAddIn1.PresentationHost
                     .Append("\"");
             }
 
+            if (node.TextFromTable)
+            {
+                sb.Append(" data-text-from=\"table\"");
+            }
+
             if (node.SearchArea.HasValue)
             {
                 sb.Append(" data-area=\"")

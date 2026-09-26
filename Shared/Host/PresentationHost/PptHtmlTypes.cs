@@ -15,6 +15,9 @@ namespace WordAddIn1.PresentationHost
 
         public string Text { get; set; }
 
+        /// <summary>搜索档：Text 由表内格子拼出；节点仍是 table。apply 忽略。</summary>
+        public bool TextFromTable { get; set; }
+
         /// <summary>table 时用；已是内部 HTML（无外层 table 标签时由序列化包）。</summary>
         public string InnerHtml { get; set; }
 

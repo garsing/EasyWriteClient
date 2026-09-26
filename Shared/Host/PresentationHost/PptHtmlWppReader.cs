@@ -1181,12 +1181,22 @@ namespace WordAddIn1.PresentationHost
             bool slim = IsSlim(mode);
             string text = "";
             bool textTruncated = false;
+            bool textFromTable = false;
             string innerHtml = null;
             PptHtmlChartFormat chartFormat = null;
             PptHtmlTableStyleSnap tableStyleForNode = null;
             if (slim)
             {
-                if (typeName != "picture" && typeName != "group" && !PptShapeTypeMap.IsNonEditable(typeName))
+                if (mode == GroupReadMode.SearchPage && typeName == "table")
+                {
+                    if (PptHtmlTableIo.TryReadSearchText(shape, out string tableText, out bool tableTrunc))
+                    {
+                        text = tableText;
+                        textFromTable = tableText.Length > 0;
+                        textTruncated = tableTrunc;
+                    }
+                }
+                else if (typeName != "picture" && typeName != "group" && !PptShapeTypeMap.IsNonEditable(typeName))
                 {
                     text = TryReadText(shape);
                     if (mode != GroupReadMode.SearchPage)
@@ -1224,6 +1234,13 @@ namespace WordAddIn1.PresentationHost
                     tableWarnings))
                 {
                     innerHtml = PptHtmlTableIo.BuildInnerHtml(tableGrid);
+                    text = PptHtmlTableIo.JoinSearchText(tableGrid, out bool tableTextTrunc);
+                    textFromTable = text.Length > 0;
+                    if (tableTextTrunc)
+                    {
+                        textTruncated = true;
+                    }
+
                     if (tableStyle != null && tableStyle.Truncated)
                     {
                         textTruncated = true;
@@ -1236,6 +1253,15 @@ namespace WordAddIn1.PresentationHost
                 else
                 {
                     innerHtml = TryBuildTableInner(shape, out textTruncated);
+                    if (PptHtmlTableIo.TryReadSearchText(shape, out string tableText, out bool tableTextTrunc))
+                    {
+                        text = tableText;
+                        textFromTable = tableText.Length > 0;
+                        if (tableTextTrunc)
+                        {
+                            textTruncated = true;
+                        }
+                    }
                 }
             }
             else if (typeName != "picture" && !PptShapeTypeMap.IsNonEditable(typeName))
@@ -1343,6 +1369,7 @@ namespace WordAddIn1.PresentationHost
                 Tag = typeName == "group" ? "div" : tag,
                 Style = style,
                 Text = typeName == "group" ? "" : text,
+                TextFromTable = textFromTable,
                 InnerHtml = innerHtml,
                 Editable = editable,
                 Fill = typeName == "group" ? null : fill,

@@ -102,6 +102,47 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        /// <summary>搜索档轻量读：只要格子字。</summary>
+        public static bool TryReadSearchText(object shape, out string text, out bool truncated)
+        {
+            text = "";
+            truncated = false;
+            if (shape == null || !IsTruthy(WppCom.GetProperty(shape, "HasTable")))
+            {
+                return false;
+            }
+
+            try
+            {
+                object table = WppCom.GetProperty(shape, "Table");
+                int rows = Convert.ToInt32(WppCom.GetProperty(WppCom.GetProperty(table, "Rows"), "Count"));
+                int cols = Convert.ToInt32(WppCom.GetProperty(WppCom.GetProperty(table, "Columns"), "Count"));
+                int useRows = Math.Min(rows, PptHtmlTableGrid.MaxRows);
+                int useCols = Math.Min(cols, PptHtmlTableGrid.MaxCols);
+                var sb = new StringBuilder();
+                for (int r = 1; r <= useRows; r++)
+                {
+                    for (int c = 1; c <= useCols; c++)
+                    {
+                        object cell = WppCom.Invoke(table, "Cell", r, c);
+                        AppendSearchPiece(sb, ReadCellTextWpp(cell), ref truncated);
+                        if (truncated)
+                        {
+                            text = sb.ToString();
+                            return true;
+                        }
+                    }
+                }
+
+                text = sb.ToString();
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static bool TryApply(
             object shape,
             PptHtmlTableGrid grid,

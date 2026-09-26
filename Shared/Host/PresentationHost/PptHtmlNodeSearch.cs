@@ -771,6 +771,10 @@ namespace WordAddIn1.PresentationHost
             else
             {
                 sb.Append("页内节点搜索：命中 ").Append(leafCount).Append(" 条叶子（最多 ").Append(maxHits).Append("）。");
+                if (ForestHasTextFromTable(forest))
+                {
+                    sb.Append("text 命中含表格时，系统自动带出表内文字；节点仍是 table（data-text-from=table），不要当成 textbox。");
+                }
             }
 
             if (!matchAny && clauseCount >= 2 && leafCount == 0)
@@ -839,6 +843,7 @@ namespace WordAddIn1.PresentationHost
                 outNode.Style = detail.Style;
             }
 
+            outNode.TextFromTable = detail.TextFromTable;
             if (wantText)
             {
                 outNode.Text = detail.Text ?? "";
@@ -1295,6 +1300,7 @@ namespace WordAddIn1.PresentationHost
                 Tag = src != null ? src.Tag : null,
                 Style = src != null ? src.Style : null,
                 Text = text,
+                TextFromTable = src != null && src.TextFromTable,
                 Z = src != null ? src.Z : null,
                 Rotation = src != null ? src.Rotation : null,
                 RasterizedFrom = src != null ? src.RasterizedFrom : null,
@@ -1303,6 +1309,39 @@ namespace WordAddIn1.PresentationHost
                 SearchArea = src != null ? src.SearchArea : null,
                 SearchAreaRank = src != null ? src.SearchAreaRank : null
             };
+        }
+
+        private static bool ForestHasTextFromTable(IList<PptHtmlShapeNode> nodes)
+        {
+            if (nodes == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                if (NodeHasTextFromTable(nodes[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool NodeHasTextFromTable(PptHtmlShapeNode node)
+        {
+            if (node == null)
+            {
+                return false;
+            }
+
+            if (node.TextFromTable)
+            {
+                return true;
+            }
+
+            return ForestHasTextFromTable(node.Children);
         }
 
         private static PptHtmlShapeNode CloneGroupShell(PptHtmlShapeNode src)
