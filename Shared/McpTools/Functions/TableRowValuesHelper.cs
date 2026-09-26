@@ -76,6 +76,70 @@ namespace WordAddIn1
             return slots;
         }
 
+        /// <summary>
+        /// 丢掉 canResolve 为 false 的槽（合并占位 / COM 访问不到）。不进 slots、不算 empty_count。
+        /// </summary>
+        public static List<TableRowSlot> KeepResolvableSlots(
+            IList<TableRowSlot> slots,
+            Func<int, int, bool> canResolve)
+        {
+            var kept = new List<TableRowSlot>();
+            if (slots == null)
+            {
+                return kept;
+            }
+
+            foreach (TableRowSlot slot in slots)
+            {
+                if (slot == null)
+                {
+                    continue;
+                }
+
+                bool resolvable = canResolve == null || canResolve(slot.Row, slot.Col);
+                if (!resolvable)
+                {
+                    EasyWriteDiagnostics.LogTableRowValues(
+                        $"[TableRowValues] 跳过不可写槽 ({slot.Row},{slot.Col})",
+                        verboseOnly: true);
+                    continue;
+                }
+
+                kept.Add(slot);
+            }
+
+            return kept;
+        }
+
+        /// <summary>
+        /// 读/写共用：Merge 延续格 + 解析失败格都不进列表。table 为 null 时不过滤（单测 Preflight）。
+        /// </summary>
+        public static List<TableRowSlot> EnumerateWritableRowSlots(
+            Word.Table table,
+            int row,
+            int colCount,
+            List<List<int>> merge)
+        {
+            List<TableRowSlot> slots = EnumerateRowSlots(row, colCount, merge);
+            if (table == null)
+            {
+                return slots;
+            }
+
+            return KeepResolvableSlots(slots, (r, c) => TryResolveCell(table, r, c) != null);
+        }
+
+        /// <summary>解析失败且本次值为空 → 跳过，不当失败（需求 D6）。</summary>
+        public static bool ShouldSkipUnresolvableWrite(bool cellMissing, string newValue)
+        {
+            return cellMissing && IsSlotEmpty(newValue);
+        }
+
+        public static string BuildUnresolvableCellError(int row, int col)
+        {
+            return $"无法访问单元格({row},{col})";
+        }
+
         public static TableRowValuesReadResult ReadAllRows(Word.Table table)
         {
             var result = new TableRowValuesReadResult();
@@ -109,7 +173,7 @@ namespace WordAddIn1
                 {
                     for (int row = 1; row <= rows; row++)
                     {
-                        List<TableRowSlot> slots = EnumerateRowSlots(row, cols, merge);
+                        List<TableRowSlot> slots = EnumerateWritableRowSlots(table, row, cols, merge);
                         var values = new List<string>();
                         var slotMeta = new List<Dictionary<string, object>>();
                         int slotIndex = 0;
@@ -117,7 +181,12 @@ namespace WordAddIn1
                         foreach (TableRowSlot slot in slots)
                         {
                             Word.Cell cell = TryResolveCell(table, slot.Row, slot.Col);
-                            string plainText = cell == null ? "" : TableCellContentWriter.GetCellPlainText(cell);
+                            if (cell == null)
+                            {
+                                continue;
+                            }
+
+                            string plainText = TableCellContentWriter.GetCellPlainText(cell);
                             bool empty = IsSlotEmpty(plainText);
                             if (empty)
                             {
@@ -203,7 +272,7 @@ namespace WordAddIn1
                     return false;
                 }
 
-                List<TableRowSlot> slots = EnumerateRowSlots(spec.Row, colCount, merge);
+                List<TableRowSlot> slots = EnumerateWritableRowSlots(table, spec.Row, colCount, merge);
                 List<string> slotTexts = table == null
                     ? CreateAllEmptySlotTexts(slots.Count)
                     : ReadRowSlotTexts(table, slots);
@@ -426,7 +495,12 @@ namespace WordAddIn1
             Word.Cell cell = TryResolveCell(table, slot.Row, slot.Col);
             if (cell == null)
             {
-                error = $"无法访问单元格({slot.Row},{slot.Col})";
+                if (ShouldSkipUnresolvableWrite(true, newValue))
+                {
+                    return true;
+                }
+
+                error = BuildUnresolvableCellError(slot.Row, slot.Col);
                 return false;
             }
 
@@ -503,7 +577,7 @@ namespace WordAddIn1
             {
                 foreach (TableRowWriteSpec spec in specs)
                 {
-                    List<TableRowSlot> slots = EnumerateRowSlots(spec.Row, colCount, merge);
+                    List<TableRowSlot> slots = EnumerateWritableRowSlots(table, spec.Row, colCount, merge);
                     if (!ApplyEmptySlotWrite(table, spec, slots, result, writeCellSw, applyFormatSw))
                     {
                         return result;
@@ -699,7 +773,12 @@ namespace WordAddIn1
             Word.Cell cell = TryResolveCell(table, slot.Row, slot.Col);
             if (cell == null)
             {
-                error = "无法访问单元格";
+                if (ShouldSkipUnresolvableWrite(true, value))
+                {
+                    return true;
+                }
+
+                error = BuildUnresolvableCellError(slot.Row, slot.Col);
                 return false;
             }
 
