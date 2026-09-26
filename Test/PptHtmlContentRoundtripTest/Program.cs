@@ -32,22 +32,29 @@ namespace PptHtmlContentRoundtripTest
 
             if (!parseOnly)
             {
-                string outDir = Path.Combine(
-                    AppDomain.CurrentDomain.BaseDirectory,
-                    useWpp ? "content-batches-wpp" : "content-batches");
-                if (useWpp)
+                if (FixtureSearchRunner.WantsFixture(nameFilters))
                 {
-                    ContentBatchRunnerWpp.Run(run, batch, outDir, nameFilters);
+                    FixtureSearchRunner.Run(run, nameFilters, useWpp);
                 }
                 else
                 {
-                    ContentBatchRunner.Run(
-                        run,
-                        batch,
-                        outDir,
-                        nameFilters,
-                        failFast,
-                        HasFlag(args, "--no-recycle") ? 0 : 6);
+                    string outDir = Path.Combine(
+                        AppDomain.CurrentDomain.BaseDirectory,
+                        useWpp ? "content-batches-wpp" : "content-batches");
+                    if (useWpp)
+                    {
+                        ContentBatchRunnerWpp.Run(run, batch, outDir, nameFilters);
+                    }
+                    else
+                    {
+                        ContentBatchRunner.Run(
+                            run,
+                            batch,
+                            outDir,
+                            nameFilters,
+                            failFast,
+                            HasFlag(args, "--no-recycle") ? 0 : 6);
+                    }
                 }
 
                 Console.WriteLine();
