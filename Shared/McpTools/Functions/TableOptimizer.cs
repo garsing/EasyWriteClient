@@ -95,7 +95,7 @@ namespace WordAddIn1
         }
         public class OptimizationConfig
         {
-            public float MinFontSize { get; set; } = 3f;
+            public float MinFontSize { get; set; } = 7.5f;
             public float MaxFontSize { get; set; } = DefaultOptimizationMaxFontSize;
             public float FontStep { get; set; } = 0.5f;
             public float MinColumnWidth { get; set; } = 30f;
