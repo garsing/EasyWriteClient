@@ -333,10 +333,10 @@ namespace WordAddIn1
 
                 foreach (var row in csvData)
                 {
-                    var rowElement = new XElement("Row");
+                    var rowElement = TableMarkupTags.NewTr();
                     foreach (var cell in row)
                     {
-                        rowElement.Add(new XElement("Cell", cell));
+                        rowElement.Add(TableMarkupTags.NewTd(cell));
                     }
                     dataElement.Add(rowElement);
                 }

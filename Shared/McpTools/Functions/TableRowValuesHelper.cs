@@ -424,7 +424,7 @@ namespace WordAddIn1
 
             parts.Add(
                 "hint: values 只填本行 empty=true 的槽，长度须等于 empty_count；不想填传 \"\"。"
-                + "勿使用 anchor，勿按 getContent 的 <table><cell> HTML 或 colspan 凑个数");
+                + "勿使用 anchor，勿按 getContent 的 <table><td>/<th> HTML 或 colspan 凑个数");
             parts.Add("改已有内容用 F_process_document_actions（§三），勿用 apply 覆盖");
 
             return string.Join("；", parts);

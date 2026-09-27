@@ -148,7 +148,7 @@ namespace WordAddIn1
                     cells.Add(cellEl);
                 }
 
-                rowEls.Add(new XElement("Row", cells.Cast<object>().ToArray()));
+                rowEls.Add(TableMarkupTags.NewTr(cells.Cast<object>().ToArray()));
             }
 
             return new XElement("Data", rowEls.Cast<object>().ToArray());
@@ -198,10 +198,10 @@ namespace WordAddIn1
         {
             if (string.IsNullOrEmpty(cellContent))
             {
-                return new XElement("Cell");
+                return TableMarkupTags.NewTd();
             }
 
-            return new XElement("Cell", cellContent);
+            return TableMarkupTags.NewTd(cellContent);
         }
     }
 }

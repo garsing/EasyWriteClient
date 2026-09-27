@@ -34,7 +34,7 @@ namespace WordAddIn1
 
             if (rows == null || rows.Count == 0)
             {
-                result.Error = "缺少 Data 或没有任何 Row";
+                result.Error = "缺少 Data 或没有任何行";
                 return false;
             }
 
@@ -63,7 +63,7 @@ namespace WordAddIn1
                 {
                     if (cell == null)
                     {
-                        result.Error = "第 " + (r + 1) + " 行存在空 Cell";
+                        result.Error = "第 " + (r + 1) + " 行存在空格";
                         return false;
                     }
 
@@ -222,7 +222,7 @@ namespace WordAddIn1
             return true;
         }
 
-        /// <summary>colspan=N 后再写 N-1 个空 Cell，视为占位写法。</summary>
+        /// <summary>colspan=N 后再写 N-1 个空格，视为占位写法。</summary>
         private static bool HasColspanPlaceholders(
             IList<TableHtmlVisibleCell> row,
             int row1Based,

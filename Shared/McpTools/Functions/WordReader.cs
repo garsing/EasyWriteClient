@@ -1584,7 +1584,7 @@ namespace WordAddIn1
                     var cells = row.Elements(w + "tc").ToList();
                     LogExtractVerbose($"[DEBUG] 处理第 {mergeContext.CurrentRowIndex + 1} 行，共 {cells.Count} 个单元格");
                     
-                    result += "<row>";  // 添加行开始标签
+                    result += "<" + TableMarkupTags.Tr + ">";
                     
                     // 处理该行的所有单元格
                     foreach (var cell in cells)
@@ -1592,7 +1592,7 @@ namespace WordAddIn1
                         result += ProcessCellWithMerge(cell, w, document, mergeContext, rowspanMap, docPath, imageSaveDir, fileHash);
                     }
                     
-                    result += "</row>\n";  // 闭合行标签，添加换行符
+                    result += "</" + TableMarkupTags.Tr + ">\n";
                 }
             }
             catch (Exception ex)
@@ -1745,9 +1745,9 @@ namespace WordAddIn1
                 }
                 
                 // 6. 输出带合并信息的 cell 标签
-                result = $"<cell{attrStr}>";
+                result = $"<{TableMarkupTags.Td}{attrStr}>";
                 result += cellContent;  // 递归提取的内容
-                result += "</cell>\n";
+                result += $"</{TableMarkupTags.Td}>\n";
                 
                 // 6. 更新逻辑列索引（重要！必须加上colspan）
                 mergeContext.CurrentLogicalColumnIndex += colspan;
@@ -1764,7 +1764,7 @@ namespace WordAddIn1
                 {
                     cellContent += "\r";
                 }
-                result = $"<cell>{cellContent}</cell>\n";
+                result = $"<{TableMarkupTags.Td}>{cellContent}</{TableMarkupTags.Td}>\n";
             }
             
             return result;

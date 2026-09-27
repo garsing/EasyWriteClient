@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -184,7 +185,7 @@ namespace WordAddIn1
                     var tableRoot = XElement.Parse(tableXml);
                     if (TableXmlHelper.IsSingleCellTableXml(tableRoot))
                     {
-                        XElement cell = tableRoot.Element("row")?.Element("cell");
+                        XElement cell = TableMarkupTags.GridCells(TableMarkupTags.GridRows(tableRoot).FirstOrDefault()).FirstOrDefault();
                         if (cell != null)
                         {
                             resultParts.Add(ExtractCellInner(cell));

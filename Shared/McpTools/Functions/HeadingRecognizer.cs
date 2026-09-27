@@ -682,12 +682,11 @@ namespace WordAddIn1
 
             string s = RemoveLeafTableBlocks(text);
 
-            // 先在每个 </cell> 前补 \r，再删标签（保证单元格边界在分割时成为独立行）
-            s = Regex.Replace(s, @"</cell\s*>", "\r</cell>", RegexOptions.IgnoreCase);
-            // <image .../>、<table ...>、<row>、<cell ...>、及对应闭合标签
+            // 先在每个 </td>/</th> 前补 \r，再删标签（保证单元格边界在分割时成为独立行）
+            s = Regex.Replace(s, TableMarkupTags.CloseCellPattern, "\r$0", RegexOptions.IgnoreCase);
             s = Regex.Replace(
                 s,
-                @"<image(?:\s+[^>]*)?/>|<table(?:\s+[^>]*)?>|<row(?:\s+[^>]*)?>|<cell(?:\s+[^>]*)?>|</table\s*>|</row\s*>|</cell\s*>",
+                TableMarkupTags.StructureTagRegex(),
                 "",
                 RegexOptions.IgnoreCase);
             return s;
@@ -706,7 +705,7 @@ namespace WordAddIn1
             bodyLines = new List<Dictionary<string, object>>();
 
             Debug.WriteLine("");
-            Debug.WriteLine("========== [HeadingRecognizer] 经去标签与 </cell> 前补 \\r 后，按 Regex.Split(@\"\\r\\n|\\r|\\n\") 分割 ==========");
+            Debug.WriteLine("========== [HeadingRecognizer] 经去标签与 </td>/</th> 前补 \\r 后，按 Regex.Split(@\"\\r\\n|\\r|\\n\") 分割 ==========");
             Debug.WriteLine($"分割段总数: {lines.Length}（含空段；\\r\\n 与 \\r、\\n 均为分隔符）");
 
             for (int lineNum = 0; lineNum < lines.Length; lineNum++)

@@ -378,11 +378,16 @@ namespace WordAddIn1
                     var dataElement = tableElement.Element("Data");
                     if (dataElement != null)
                     {
+                        if (TableMarkupTags.TryGetLegacyGridError(dataElement, out string legacyError))
+                        {
+                            return new ParseResult { Config = null, Error = legacyError };
+                        }
+
                         var visibleRows = new List<IList<TableHtmlVisibleCell>>();
-                        foreach (var rowElement in dataElement.Elements("Row"))
+                        foreach (var rowElement in TableMarkupTags.GridRows(dataElement))
                         {
                             var visible = new List<TableHtmlVisibleCell>();
-                            foreach (var cellElement in rowElement.Elements("Cell"))
+                            foreach (var cellElement in TableMarkupTags.GridCells(rowElement))
                             {
                                 string cellValue;
                                 if (cellElement.HasElements)

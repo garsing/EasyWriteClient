@@ -38,7 +38,9 @@ namespace WordAddIn1.SpreadsheetHost
                         continue;
                     }
 
-                    sb.Append("<row r=\"");
+                    sb.Append("<");
+                    sb.Append(WordAddIn1.TableMarkupTags.Tr);
+                    sb.Append(" r=\"");
                     sb.Append(row.RowNumber);
                     sb.Append("\">");
                     if (row.Cells != null)
@@ -50,7 +52,9 @@ namespace WordAddIn1.SpreadsheetHost
                                 continue;
                             }
 
-                            sb.Append("<cell addr=\"");
+                            sb.Append("<");
+                            sb.Append(WordAddIn1.TableMarkupTags.Td);
+                            sb.Append(" addr=\"");
                             sb.Append(EscapeAttr(cell.Addr ?? ""));
                             sb.Append("\"");
                             if (!string.IsNullOrEmpty(cell.Area) && cell.Area != cell.Addr)
@@ -84,11 +88,15 @@ namespace WordAddIn1.SpreadsheetHost
 
                             sb.Append(">");
                             sb.Append(EscapeText(cell.Text ?? ""));
-                            sb.Append("</cell>");
+                            sb.Append("</");
+                            sb.Append(WordAddIn1.TableMarkupTags.Td);
+                            sb.Append(">");
                         }
                     }
 
-                    sb.Append("</row>");
+                    sb.Append("</");
+                    sb.Append(WordAddIn1.TableMarkupTags.Tr);
+                    sb.Append(">");
                 }
             }
 

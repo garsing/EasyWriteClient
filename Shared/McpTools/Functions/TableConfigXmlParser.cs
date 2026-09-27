@@ -217,10 +217,15 @@ namespace WordAddIn1
                     }
                 }
 
-                foreach (XElement rowElement in dataElement.Elements("Row"))
+                if (TableMarkupTags.TryGetLegacyGridError(dataElement, out string legacyError))
+                {
+                    return new ParseDataResult { Config = null, Error = legacyError };
+                }
+
+                foreach (XElement rowElement in TableMarkupTags.GridRows(dataElement))
                 {
                     var row = new List<string>();
-                    foreach (XElement cellElement in rowElement.Elements("Cell"))
+                    foreach (XElement cellElement in TableMarkupTags.GridCells(rowElement))
                     {
                         row.Add(ParseCellElementValue(cellElement));
                     }

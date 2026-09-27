@@ -159,7 +159,7 @@ namespace WordAddIn1
         {
             // 定义五个开始标志的正则表达式
             string bodyPattern = @"<body(?:\s+[^>]*)?>";
-            string cellPattern = @"<cell(?:\s+[^>]*)?>";
+            string cellPattern = TableMarkupTags.OpenCellPattern;
             string tableClosePattern = @"</table\s*>";  // </table> 不再包含换行符
             string imagePattern = @"<image\s+[^>]*/>\r";  // 必须是 <image />\r，必须带回车符
             string chartClosePattern = @"</Chart\s*>\r";  // 必须是 </Chart>\r，必须带回车符
@@ -289,7 +289,7 @@ namespace WordAddIn1
             {
                 // 开始标志：<cell>，结束标志：<table> 或 </cell> 或 <image />\r 或 <Chart>
                 int tablePos = FindTagPosition(text, "table", false, startPos);
-                int cellClosePos = FindTagPosition(text, "cell", true, startPos);
+                int cellClosePos = TableMarkupTags.FindCloseCell(text, startPos);
                 int imagePos = FindImageTagPosition(text, startPos);
                 int chartPos = FindChartTagPosition(text, startPos);
 
@@ -320,7 +320,7 @@ namespace WordAddIn1
             else if (startType == 3)
             {
                 // 开始标志：</table>，结束标志：</cell> 或 </body> 或 <table> 或 <image />\r 或 <Chart>
-                int cellClosePos = FindTagPosition(text, "cell", true, startPos);
+                int cellClosePos = TableMarkupTags.FindCloseCell(text, startPos);
                 int bodyClosePos = FindTagPosition(text, "body", true, startPos);
                 int tablePos = FindTagPosition(text, "table", false, startPos);
                 int imagePos = FindImageTagPosition(text, startPos);
@@ -360,7 +360,7 @@ namespace WordAddIn1
             {
                 // 开始标志：<image />\r，结束标志：<table> 或 </cell> 或 </body> 或 <image />\r 或 <Chart>
                 int tablePos = FindTagPosition(text, "table", false, startPos);
-                int cellClosePos = FindTagPosition(text, "cell", true, startPos);
+                int cellClosePos = TableMarkupTags.FindCloseCell(text, startPos);
                 int bodyClosePos = FindTagPosition(text, "body", true, startPos);
                 int imagePos = FindImageTagPosition(text, startPos);
                 int chartPos = FindChartTagPosition(text, startPos);
@@ -398,7 +398,7 @@ namespace WordAddIn1
             else if (startType == 5)
             {
                 // 开始标志：</Chart>\r，结束标志：</cell> 或 </body> 或 <table> 或 <image />\r 或 <Chart>
-                int cellClosePos = FindTagPosition(text, "cell", true, startPos);
+                int cellClosePos = TableMarkupTags.FindCloseCell(text, startPos);
                 int bodyClosePos = FindTagPosition(text, "body", true, startPos);
                 int tablePos = FindTagPosition(text, "table", false, startPos);
                 int imagePos = FindImageTagPosition(text, startPos);
@@ -919,8 +919,9 @@ namespace WordAddIn1
 
             // 第二步半：移除 </cell>、</row> 和 </table> 后面的换行符 \n
             ExtractDetailLog(detailLog, "🔧 第二步半：移除表格与图表标签后的换行符...");
-            readText = Regex.Replace(readText, @"</cell>\n", "</cell>");
-            readText = Regex.Replace(readText, @"</row>\n", "</row>");
+            readText = Regex.Replace(readText, @"</td>\n", "</td>");
+            readText = Regex.Replace(readText, @"</th>\n", "</th>");
+            readText = Regex.Replace(readText, @"</tr>\n", "</tr>");
             readText = Regex.Replace(readText, @"</table>\n", "</table>");
             readText = Regex.Replace(readText, @"</Chart>\n", "</Chart>");
             readText = Regex.Replace(readText, @"<Chart>\n", "<Chart>");
