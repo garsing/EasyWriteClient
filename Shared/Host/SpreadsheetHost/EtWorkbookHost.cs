@@ -817,6 +817,32 @@ namespace WordAddIn1.SpreadsheetHost
             };
         }
 
+        private static bool IsEtMergeContinuation(object cell, int sheetRow, int sheetCol)
+        {
+            try
+            {
+                object mergeCells = EtCom.GetProperty(cell, "MergeCells");
+                if (mergeCells == null || !Convert.ToBoolean(mergeCells))
+                {
+                    return false;
+                }
+
+                object area = EtCom.GetProperty(cell, "MergeArea");
+                if (area == null)
+                {
+                    return false;
+                }
+
+                int areaRow = Convert.ToInt32(EtCom.GetProperty(area, "Row"));
+                int areaCol = Convert.ToInt32(EtCom.GetProperty(area, "Column"));
+                return sheetRow != areaRow || sheetCol != areaCol;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
         private static bool TrySkipMergedContinuation(
             object cell,
             int sheetRow,
@@ -1030,6 +1056,11 @@ namespace WordAddIn1.SpreadsheetHost
                             continue;
                         }
 
+                        if (IsEtMergeContinuation(cell, firstRow + r, firstCol + c))
+                        {
+                            continue;
+                        }
+
                         SpreadsheetWritePlanner.ClassifyCell(
                             grid[r][c],
                             out bool clearOnly,
@@ -1042,6 +1073,10 @@ namespace WordAddIn1.SpreadsheetHost
                         else if (isFormula)
                         {
                             EtCom.TrySetProperty(cell, "Formula", Convert.ToString(value));
+                        }
+                        else if (SpreadsheetWritePlanner.IsEqualsLiteralText(false, value))
+                        {
+                            EtCom.TrySetProperty(cell, "Formula", "'" + Convert.ToString(value));
                         }
                         else
                         {

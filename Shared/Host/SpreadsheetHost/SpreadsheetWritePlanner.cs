@@ -191,6 +191,20 @@ namespace WordAddIn1.SpreadsheetHost
         }
 
         /// <summary>
+        /// 去撇后的文本仍以 = 开头：必须当文本写，不能走 Value2（Excel 会当成公式）。
+        /// </summary>
+        public static bool IsEqualsLiteralText(bool isFormula, object value)
+        {
+            if (isFormula || value == null)
+            {
+                return false;
+            }
+
+            string text = Convert.ToString(value);
+            return !string.IsNullOrEmpty(text) && text.StartsWith("=", StringComparison.Ordinal);
+        }
+
+        /// <summary>
         /// 合并区非左上角：CSV 必须为空（空白视为空）。
         /// </summary>
         public static bool IsEmptyForMergeCheck(string raw)

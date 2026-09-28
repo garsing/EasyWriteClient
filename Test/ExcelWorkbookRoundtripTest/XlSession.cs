@@ -24,6 +24,7 @@ namespace ExcelWorkbookRoundtripTest
             F_OpenDocumentTool.Register(_tools, null);
             F_GetWorkbookContentTool.Register(_tools, null);
             F_ReadExcelRangeTool.Register(_tools, null);
+            F_WriteExcelRangeTool.Register(_tools, null);
         }
 
         public bool Et { get; }
@@ -69,7 +70,8 @@ namespace ExcelWorkbookRoundtripTest
             string channelId,
             string sheet,
             string range = null,
-            string content = null)
+            string content = null,
+            string exportCsv = null)
         {
             var args = new Dictionary<string, object>
             {
@@ -86,7 +88,119 @@ namespace ExcelWorkbookRoundtripTest
                 args["content"] = content;
             }
 
+            if (exportCsv != null)
+            {
+                args["export_csv"] = exportCsv;
+            }
+
             return Call("F_read_excel_range", args);
+        }
+
+        public ToolResult Write(
+            string channelId,
+            string sheet,
+            string range,
+            string csvPath = null,
+            bool clear = false)
+        {
+            var args = new Dictionary<string, object>
+            {
+                ["sheet"] = sheet,
+                ["range"] = range
+            };
+            if (!string.IsNullOrEmpty(channelId))
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (clear)
+            {
+                args["clear"] = true;
+            }
+            else if (csvPath != null)
+            {
+                args["csv_filename"] = csvPath;
+            }
+
+            return Call("F_write_excel_range", args);
+        }
+
+        public string NewCsvPath()
+        {
+            return Path.Combine(
+                Path.GetTempPath(),
+                "ew-xlw-" + Guid.NewGuid().ToString("N") + ".csv");
+        }
+
+        public string WriteCsv(params string[] lines)
+        {
+            string path = NewCsvPath();
+            File.WriteAllText(
+                path,
+                string.Join("\r\n", lines ?? new string[0]),
+                new System.Text.UTF8Encoding(true));
+            return path;
+        }
+
+        public bool SeedCell(IOperationChannel ch, string sheetName, string a1, object value)
+        {
+            return WithNamedSheet(ch, sheetName, ws => SetCell(ws, a1, value));
+        }
+
+        public bool SeedNumberFormat(IOperationChannel ch, string sheetName, string a1, string format)
+        {
+            return WithNamedSheet(ch, sheetName, ws =>
+            {
+                object range = GetRange(ws, a1);
+                if (range is Excel.Range excel)
+                {
+                    excel.NumberFormat = format;
+                    return;
+                }
+
+                EtCom.TrySetProperty(range, "NumberFormat", format);
+            });
+        }
+
+        public string ReadNumberFormat(IOperationChannel ch, string sheetName, string a1)
+        {
+            string format = null;
+            WithNamedSheet(ch, sheetName, ws =>
+            {
+                object range = GetRange(ws, a1);
+                if (range is Excel.Range excel)
+                {
+                    format = Convert.ToString(excel.NumberFormat ?? "");
+                    return;
+                }
+
+                format = Convert.ToString(EtCom.GetProperty(range, "NumberFormat") ?? "");
+            });
+            return format ?? "";
+        }
+
+        public bool CellHasFormula(IOperationChannel ch, string sheetName, string a1)
+        {
+            bool has = false;
+            WithNamedSheet(ch, sheetName, ws =>
+            {
+                object range = GetRange(ws, a1);
+                if (range is Excel.Range excel)
+                {
+                    has = excel.HasFormula;
+                    return;
+                }
+
+                try
+                {
+                    object raw = EtCom.GetProperty(range, "HasFormula");
+                    has = raw != null && Convert.ToBoolean(raw);
+                }
+                catch
+                {
+                }
+            });
+            return has;
         }
 
         public bool TryGetChannel(string channelId, out IOperationChannel channel)

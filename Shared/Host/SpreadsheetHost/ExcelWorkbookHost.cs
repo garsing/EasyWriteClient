@@ -1044,7 +1044,8 @@ namespace WordAddIn1.SpreadsheetHost
             }
 
             bool anyFormula = false;
-            for (int r = 0; r < csvRows && !anyFormula; r++)
+            bool anyEqualsText = false;
+            for (int r = 0; r < csvRows && (!anyFormula || !anyEqualsText); r++)
             {
                 for (int c = 0; c < csvCols; c++)
                 {
@@ -1052,11 +1053,14 @@ namespace WordAddIn1.SpreadsheetHost
                         grid[r][c],
                         out _,
                         out bool isFormula,
-                        out _);
+                        out object classified);
                     if (isFormula)
                     {
                         anyFormula = true;
-                        break;
+                    }
+                    else if (SpreadsheetWritePlanner.IsEqualsLiteralText(false, classified))
+                    {
+                        anyEqualsText = true;
                     }
                 }
             }
@@ -1064,7 +1068,7 @@ namespace WordAddIn1.SpreadsheetHost
             try
             {
                 Excel.Range target = sheet.Range[actualRange];
-                if (!anyFormula)
+                if (!anyFormula && !anyEqualsText)
                 {
                     var values = new object[csvRows, csvCols];
                     for (int r = 0; r < csvRows; r++)
@@ -1106,6 +1110,10 @@ namespace WordAddIn1.SpreadsheetHost
                             else if (isFormula)
                             {
                                 cell.Formula = Convert.ToString(value);
+                            }
+                            else if (SpreadsheetWritePlanner.IsEqualsLiteralText(false, value))
+                            {
+                                cell.Formula = "'" + Convert.ToString(value);
                             }
                             else
                             {

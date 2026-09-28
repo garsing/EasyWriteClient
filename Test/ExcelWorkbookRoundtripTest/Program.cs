@@ -13,13 +13,33 @@ namespace ExcelWorkbookRoundtripTest
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             ChannelHost.Kind = ChannelHostKind.Desktop;
             bool useEt = IsEtHost(args);
-            Console.WriteLine("Excel / ET 打开 + 概览 + 读一块（xl-）");
+            string caseFilter = GetCaseFilter(args);
+            bool runWrite = ShouldRun(caseFilter, "xlw-");
+            bool runRead = ShouldRun(caseFilter, "xl-") && !runWrite;
+            if (string.IsNullOrEmpty(caseFilter))
+            {
+                runWrite = true;
+                runRead = false;
+            }
+
+            Console.WriteLine(runWrite
+                ? "Excel / ET 写区域（xlw-）"
+                : "Excel / ET 打开 + 概览 + 读一块（xl-）");
             Console.WriteLine(useEt ? "宿主 ET · WPS 表格" : "宿主 Excel · Microsoft Excel");
             Console.WriteLine();
 
             var run = new TestRun();
             var sw = Stopwatch.StartNew();
-            XlCases.Run(run, useEt);
+            if (runRead)
+            {
+                XlCases.Run(run, useEt);
+            }
+
+            if (runWrite)
+            {
+                XlwCases.Run(run, useEt);
+            }
+
             sw.Stop();
 
             Console.WriteLine();
@@ -29,6 +49,35 @@ namespace ExcelWorkbookRoundtripTest
                 + "  （目标 30）");
             Console.WriteLine("ELAPSED_SEC=" + sw.Elapsed.TotalSeconds.ToString("F1"));
             return run.CasesFailed == 0 ? 0 : 1;
+        }
+
+        private static string GetCaseFilter(string[] args)
+        {
+            if (args == null)
+            {
+                return "";
+            }
+
+            for (int i = 0; i < args.Length; i++)
+            {
+                string a = args[i] ?? "";
+                if (a.StartsWith("--case=", StringComparison.OrdinalIgnoreCase))
+                {
+                    return a.Substring(7).Trim();
+                }
+            }
+
+            return "";
+        }
+
+        private static bool ShouldRun(string caseFilter, string prefix)
+        {
+            if (string.IsNullOrEmpty(caseFilter))
+            {
+                return false;
+            }
+
+            return caseFilter.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsEtHost(string[] args)
