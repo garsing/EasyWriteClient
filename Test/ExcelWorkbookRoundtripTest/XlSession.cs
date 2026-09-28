@@ -27,6 +27,8 @@ namespace ExcelWorkbookRoundtripTest
             F_WriteExcelRangeTool.Register(_tools, null);
             F_ApplyExcelStructureTool.Register(_tools, null);
             F_ManageExcelSheetTool.Register(_tools, null);
+            F_ApplyExcelFormatTool.Register(_tools, null);
+            F_GetExcelFormatTool.Register(_tools, null);
         }
 
         public bool Et { get; }
@@ -199,6 +201,49 @@ namespace ExcelWorkbookRoundtripTest
             return Call("F_manage_excel_sheet", args);
         }
 
+        public ToolResult ApplyFormat(
+            string channelId,
+            string sheet,
+            string range,
+            Dictionary<string, object> format)
+        {
+            var args = new Dictionary<string, object>
+            {
+                ["range"] = range,
+                ["format"] = format ?? new Dictionary<string, object>()
+            };
+            if (!string.IsNullOrEmpty(channelId))
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (sheet != null)
+            {
+                args["sheet"] = sheet;
+            }
+
+            return Call("F_apply_excel_format", args);
+        }
+
+        public ToolResult GetFormat(string channelId, string sheet, string range)
+        {
+            var args = new Dictionary<string, object>
+            {
+                ["range"] = range
+            };
+            if (!string.IsNullOrEmpty(channelId))
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (sheet != null)
+            {
+                args["sheet"] = sheet;
+            }
+
+            return Call("F_get_excel_format", args);
+        }
+
         public string NewCsvPath()
         {
             return Path.Combine(
@@ -275,6 +320,23 @@ namespace ExcelWorkbookRoundtripTest
                 }
             });
             return has;
+        }
+
+        public object ReadValue2(IOperationChannel ch, string sheetName, string a1)
+        {
+            object value = null;
+            WithNamedSheet(ch, sheetName, ws =>
+            {
+                object range = GetRange(ws, a1);
+                if (range is Excel.Range excel)
+                {
+                    value = excel.Value2;
+                    return;
+                }
+
+                value = EtCom.GetProperty(range, "Value2");
+            });
+            return value;
         }
 
         public bool TryGetChannel(string channelId, out IOperationChannel channel)

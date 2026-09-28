@@ -14,19 +14,25 @@ namespace ExcelWorkbookRoundtripTest
             ChannelHost.Kind = ChannelHostKind.Desktop;
             bool useEt = IsEtHost(args);
             string caseFilter = GetCaseFilter(args);
+            bool runFmt = ShouldRun(caseFilter, "xlf-");
             bool runManage = ShouldRun(caseFilter, "xlm-");
             bool runStruct = ShouldRun(caseFilter, "xls-");
             bool runWrite = ShouldRun(caseFilter, "xlw-");
-            bool runRead = ShouldRun(caseFilter, "xl-") && !runWrite && !runStruct && !runManage;
+            bool runRead = ShouldRun(caseFilter, "xl-") && !runWrite && !runStruct && !runManage && !runFmt;
             if (string.IsNullOrEmpty(caseFilter))
             {
-                runManage = true;
+                runFmt = true;
+                runManage = false;
                 runStruct = false;
                 runWrite = false;
                 runRead = false;
             }
 
-            if (runManage)
+            if (runFmt)
+            {
+                Console.WriteLine("Excel / ET 套格式（xlf-）");
+            }
+            else if (runManage)
             {
                 Console.WriteLine("Excel / ET 管表（xlm-）");
             }
@@ -65,6 +71,11 @@ namespace ExcelWorkbookRoundtripTest
             if (runManage)
             {
                 XlmCases.Run(run, useEt);
+            }
+
+            if (runFmt)
+            {
+                XlfCases.Run(run, useEt);
             }
 
             sw.Stop();
