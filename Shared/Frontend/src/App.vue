@@ -121,6 +121,7 @@ import {
   appendChatAttachmentsToUserContent,
   snapshotAttachments,
   stripChatAttachmentsAppendix,
+  stripVisionPersistNotes,
   normalizeHistoryAttachments
 } from './utils/chatAttachments.js'
 import {
@@ -852,8 +853,9 @@ function normalizeHistoryMessage(m) {
   const role = m.role || 'system'
   let content = m.content || ''
   if (role === 'user') {
-    content = stripChatAttachmentsAppendix(content)
-    content = stripSelectedOpenFilesAppendix(content)
+    content = stripVisionPersistNotes(
+      stripSelectedOpenFilesAppendix(stripChatAttachmentsAppendix(content))
+    )
   }
 
   if (Array.isArray(m.segments) && m.segments.length > 0) {
@@ -861,7 +863,9 @@ function normalizeHistoryMessage(m) {
       if (role === 'user' && seg?.type === 'text' && typeof seg.content === 'string') {
         return {
           ...seg,
-          content: stripSelectedOpenFilesAppendix(stripChatAttachmentsAppendix(seg.content))
+          content: stripVisionPersistNotes(
+            stripSelectedOpenFilesAppendix(stripChatAttachmentsAppendix(seg.content))
+          )
         }
       }
       return seg

@@ -39,7 +39,7 @@
       ref="contentRef"
       class="message-content"
     >
-      <div class="message-text">{{ message.content }}</div>
+      <div class="message-text">{{ displayContent }}</div>
     </div>
     <ImageLightbox
       v-if="preview"
@@ -51,7 +51,9 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { stripChatAttachmentsAppendix, stripVisionPersistNotes } from '../utils/chatAttachments.js'
+import { stripSelectedOpenFilesAppendix } from '../utils/selectedOpenFiles.js'
 import { resolveFileAppIconByName } from '../utils/openFileAppIcon.js'
 import { isImageFileName, loadKbImageThumbUrl } from '../utils/kbImageThumb.js'
 import ImageLightbox from './ImageLightbox.vue'
@@ -61,6 +63,14 @@ const props = defineProps({
     type: Object,
     required: true
   }
+})
+
+const displayContent = computed(() => {
+  const raw = props.message?.content
+  if (typeof raw !== 'string') return ''
+  return stripVisionPersistNotes(
+    stripSelectedOpenFilesAppendix(stripChatAttachmentsAppendix(raw))
+  )
 })
 
 const thumbUrls = ref({})

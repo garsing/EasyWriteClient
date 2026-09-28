@@ -25,6 +25,29 @@ export function stripChatAttachmentsAppendix (content) {
   return content
 }
 
+const VISION_DISPLAY_DROP = new Set([
+  '[图片附件已用于视觉分析]',
+  '[图片附件已用于视觉分析，图像未持久化]',
+  '[页面截图已落盘]',
+  '[文件图片已落盘]',
+  '[页面截图已用于视觉分析，图像未持久化]',
+  '[文件图片已用于视觉分析，图像未持久化]',
+  '[vision_turn_consumed]'
+])
+
+/** 历史/展示：去掉落库用的 consume / path，不进气泡。 */
+export function stripVisionPersistNotes (content) {
+  if (!content || typeof content !== 'string') return content || ''
+  const kept = content.split(/\r?\n/).filter((line) => {
+    const t = line.trim().replace(/^-\s*/, '')
+    if (!t) return true
+    if (VISION_DISPLAY_DROP.has(t)) return false
+    if (/^path:\s*conversation_vision\//i.test(t)) return false
+    return true
+  })
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
 export function snapshotAttachments (items) {
   return (items || [])
     .filter((x) => x.phase === 'ready' && x.storageDocUuid)
