@@ -31,6 +31,7 @@ namespace ExcelWorkbookRoundtripTest
             F_GetExcelFormatTool.Register(_tools, null);
             F_ApplyExcelConditionalFormatTool.Register(_tools, null);
             F_ExcelPivotTool.Register(_tools, null);
+            F_ExcelChartTool.Register(_tools, null);
         }
 
         public bool Et { get; }
@@ -340,6 +341,69 @@ namespace ExcelWorkbookRoundtripTest
             }
 
             return Call("F_excel_pivot", args);
+        }
+
+        public ToolResult Chart(
+            string channelId,
+            string action,
+            Dictionary<string, object> dest = null,
+            string xml = null,
+            string chartName = null,
+            string scope = null,
+            string sheet = null)
+        {
+            var args = new Dictionary<string, object>();
+            if (!string.IsNullOrEmpty(channelId))
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (action != null)
+            {
+                args["action"] = action;
+            }
+
+            if (dest != null)
+            {
+                args["dest"] = dest;
+            }
+
+            if (xml != null)
+            {
+                args["xml_content"] = xml;
+            }
+
+            if (chartName != null)
+            {
+                args["chart_name"] = chartName;
+            }
+
+            if (scope != null)
+            {
+                args["scope"] = scope;
+            }
+
+            if (sheet != null)
+            {
+                args["sheet"] = sheet;
+            }
+
+            return Call("F_excel_chart", args);
+        }
+
+        public bool SeedSales(IOperationChannel ch, string sheetName)
+        {
+            return WithNamedSheet(ch, sheetName, ws =>
+            {
+                SetCell(ws, "A1", "年份");
+                SetCell(ws, "B1", "销量");
+                SetCell(ws, "A2", 2024);
+                SetCell(ws, "B2", 10);
+                SetCell(ws, "A3", 2025);
+                SetCell(ws, "B3", 20);
+                SetCell(ws, "A4", 2026);
+                SetCell(ws, "B4", 30);
+            });
         }
 
         public bool SeedDetail(IOperationChannel ch, string sheetName)

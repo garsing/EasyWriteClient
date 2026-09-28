@@ -778,12 +778,23 @@ namespace WordAddIn1.SpreadsheetHost
                     return false;
                 }
 
-                Excel.Range src = srcSheet.Range[bind.SourceRangeA1];
-                Excel.XlRowCol plotBy = string.Equals(bind.PlotBy, "rows", StringComparison.OrdinalIgnoreCase)
-                    ? Excel.XlRowCol.xlRows
-                    : Excel.XlRowCol.xlColumns;
-                chart.SetSourceData(src, plotBy);
-                return true;
+                if (!SpreadsheetChartParse.TryExpandSourceToColumns(
+                        bind,
+                        out List<SpreadsheetChartColumnBind> columns,
+                        out error))
+                {
+                    return false;
+                }
+
+                FillSourceSeriesNamesExcel(srcSheet, bind, columns);
+                bind = new SpreadsheetChartDataBind
+                {
+                    Mode = "header",
+                    Columns = columns,
+                    PlotBy = bind.PlotBy,
+                    SourceSheet = bind.SourceSheet,
+                    SourceRangeA1 = bind.SourceRangeA1
+                };
             }
 
             // header mode
@@ -833,6 +844,52 @@ namespace WordAddIn1.SpreadsheetHost
             }
 
             return true;
+        }
+
+        private static void FillSourceSeriesNamesExcel(
+            Excel.Worksheet srcSheet,
+            SpreadsheetChartDataBind source,
+            List<SpreadsheetChartColumnBind> columns)
+        {
+            if (srcSheet == null
+                || source == null
+                || columns == null
+                || !A1Address.TryParseRange(
+                    source.SourceRangeA1,
+                    out int fr,
+                    out int fc,
+                    out _,
+                    out _,
+                    out _))
+            {
+                return;
+            }
+
+            bool byRows = string.Equals(source.PlotBy, "rows", StringComparison.OrdinalIgnoreCase);
+            int i = 0;
+            foreach (SpreadsheetChartColumnBind col in columns)
+            {
+                if (col == null || col.Type != "value")
+                {
+                    continue;
+                }
+
+                i++;
+                int row = byRows ? fr + i : fr;
+                int colIdx = byRows ? fc : fc + i;
+                try
+                {
+                    object raw = srcSheet.Range[A1Address.Cell(row, colIdx)].Value2;
+                    string name = Convert.ToString(raw);
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        col.Name = name.Trim();
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
         }
 
         private static void ApplyColumnColors(
@@ -1384,19 +1441,16 @@ namespace WordAddIn1.SpreadsheetHost
                         (Excel.XlChartType)Convert.ToInt32(typeObj));
                 }
 
-                object tl = EtCom.GetProperty(co, "TopLeftCell");
-                object br = EtCom.GetProperty(co, "BottomRightCell");
-                string a = Convert.ToString(EtCom.Invoke(tl, "Address", false, false));
-                string b = Convert.ToString(EtCom.Invoke(br, "Address", false, false));
-                if (!string.IsNullOrEmpty(a) && !string.IsNullOrEmpty(b))
+                if (TryReadEtChartDest(co, out string dest))
                 {
-                    info.DestRange = a + ":" + b;
+                    info.DestRange = dest;
                 }
             }
             catch (Exception)
             {
             }
 
+            TryFillSourceFromEtSeries(EtCom.GetProperty(co, "Chart"), info);
             return info;
         }
 
@@ -1575,6 +1629,12 @@ namespace WordAddIn1.SpreadsheetHost
                 }
 
                 FillResultFromEt(partial, EtCom.TryReadName(destSheet), chartHost);
+                if (string.IsNullOrEmpty(partial.DestRange)
+                    && !string.IsNullOrEmpty(request.DestRangeA1))
+                {
+                    partial.DestRange = request.DestRangeA1;
+                }
+
                 return true;
             }
             catch (Exception ex)
@@ -1774,62 +1834,23 @@ namespace WordAddIn1.SpreadsheetHost
                     return false;
                 }
 
-                object src = EtGetSheetRange(srcSheet, bind.SourceRangeA1);
-                if (src == null)
+                if (!SpreadsheetChartParse.TryExpandSourceToColumns(
+                        bind,
+                        out List<SpreadsheetChartColumnBind> columns,
+                        out error))
                 {
-                    error = "无法解析源区域 Range: " + bind.SourceSheet + "!" + bind.SourceRangeA1;
                     return false;
                 }
 
-                int plotBy = string.Equals(bind.PlotBy, "rows", StringComparison.OrdinalIgnoreCase)
-                    ? SpreadsheetChartParse.XlRows
-                    : SpreadsheetChartParse.XlColumns;
-
-                Exception last = null;
-                try
+                FillSourceSeriesNamesEt(srcSheet, bind, columns);
+                bind = new SpreadsheetChartDataBind
                 {
-                    EtCom.InvokeFlex(chart, "SetSourceData", src, plotBy);
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    last = ex;
-                }
-
-                try
-                {
-                    EtCom.Invoke(chart, "SetSourceData", src, plotBy);
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    last = ex;
-                }
-
-                // 部分 et 只接受单参数
-                try
-                {
-                    EtCom.InvokeFlex(chart, "SetSourceData", src);
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    last = ex;
-                }
-
-                try
-                {
-                    EtCom.Invoke(chart, "SetSourceData", src);
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    last = ex;
-                }
-
-                error = "SetSourceData 失败: " + FormatError(last);
-                LogChartEtError(error, last);
-                return false;
+                    Mode = "header",
+                    Columns = columns,
+                    PlotBy = bind.PlotBy,
+                    SourceSheet = bind.SourceSheet,
+                    SourceRangeA1 = bind.SourceRangeA1
+                };
             }
 
             object seriesColl = EtCom.GetProperty(chart, "SeriesCollection")
@@ -1894,6 +1915,53 @@ namespace WordAddIn1.SpreadsheetHost
             }
 
             return true;
+        }
+
+        private static void FillSourceSeriesNamesEt(
+            object srcSheet,
+            SpreadsheetChartDataBind source,
+            List<SpreadsheetChartColumnBind> columns)
+        {
+            if (srcSheet == null
+                || source == null
+                || columns == null
+                || !A1Address.TryParseRange(
+                    source.SourceRangeA1,
+                    out int fr,
+                    out int fc,
+                    out _,
+                    out _,
+                    out _))
+            {
+                return;
+            }
+
+            bool byRows = string.Equals(source.PlotBy, "rows", StringComparison.OrdinalIgnoreCase);
+            int i = 0;
+            foreach (SpreadsheetChartColumnBind col in columns)
+            {
+                if (col == null || col.Type != "value")
+                {
+                    continue;
+                }
+
+                i++;
+                int row = byRows ? fr + i : fr;
+                int colIdx = byRows ? fc : fc + i;
+                try
+                {
+                    object cell = EtGetSheetRange(srcSheet, A1Address.Cell(row, colIdx));
+                    object raw = cell == null ? null : EtCom.GetProperty(cell, "Value2");
+                    string name = Convert.ToString(raw);
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        col.Name = name.Trim();
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
         }
 
         private static void TryApplyFormatEt(object chart, ChartInfo info, List<string> warnings)
@@ -1981,11 +2049,12 @@ namespace WordAddIn1.SpreadsheetHost
             {
             }
 
-            SpreadsheetChartDataBind dataBind = null;
+            string sheetName = EtCom.TryReadName(sheet) ?? "";
+            SpreadsheetChartDataBind dataBind = TryReadDataBindFromEt(chart, sheetName);
             string name = Convert.ToString(EtCom.GetProperty(co, "Name")) ?? "";
             partial.Scope = request.Scope;
             partial.XmlContent = SpreadsheetChartParse.BuildExtractXml(format, dataBind, request.Scope, name);
-            FillResultFromEt(partial, EtCom.TryReadName(sheet), co);
+            FillResultFromEt(partial, sheetName, co);
             return true;
         }
 
@@ -2071,17 +2140,274 @@ namespace WordAddIn1.SpreadsheetHost
                         (Excel.XlChartType)Convert.ToInt32(typeObj));
                 }
 
-                object tl = EtCom.GetProperty(co, "TopLeftCell");
-                object br = EtCom.GetProperty(co, "BottomRightCell");
-                string a = Convert.ToString(EtCom.Invoke(tl, "Address", false, false));
-                string b = Convert.ToString(EtCom.Invoke(br, "Address", false, false));
-                if (!string.IsNullOrEmpty(a) && !string.IsNullOrEmpty(b))
+                if (TryReadEtChartDest(co, out string dest))
                 {
-                    partial.DestRange = a + ":" + b;
+                    partial.DestRange = dest;
                 }
             }
             catch (Exception)
             {
+            }
+        }
+
+        private static bool TryReadEtChartDest(object co, out string destRange)
+        {
+            destRange = null;
+            if (co == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                object tl = EtCom.GetProperty(co, "TopLeftCell");
+                object br = EtCom.GetProperty(co, "BottomRightCell");
+                int r1 = Convert.ToInt32(EtCom.GetProperty(tl, "Row"));
+                int c1 = Convert.ToInt32(EtCom.GetProperty(tl, "Column"));
+                int r2 = Convert.ToInt32(EtCom.GetProperty(br, "Row"));
+                int c2 = Convert.ToInt32(EtCom.GetProperty(br, "Column"));
+                destRange = A1Address.Range(r1, c1, r2, c2);
+                return !string.IsNullOrEmpty(destRange);
+            }
+            catch (Exception)
+            {
+            }
+
+            string a = EtReadRangeA1(EtCom.GetProperty(co, "TopLeftCell"));
+            string b = EtReadRangeA1(EtCom.GetProperty(co, "BottomRightCell"));
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b))
+            {
+                return false;
+            }
+
+            destRange = string.Equals(a, b, StringComparison.OrdinalIgnoreCase) ? a : a + ":" + b;
+            return true;
+        }
+
+        private static string EtReadRangeA1(object range)
+        {
+            if (range == null)
+            {
+                return "";
+            }
+
+            try
+            {
+                object addr = EtCom.InvokeFlex(range, "Address", false, false);
+                string s = Convert.ToString(addr);
+                if (!string.IsNullOrEmpty(s))
+                {
+                    return s.Replace("$", "");
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                return (Convert.ToString(EtCom.GetProperty(range, "Address")) ?? "").Replace("$", "");
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+        }
+
+        private static SpreadsheetChartDataBind TryReadDataBindFromEt(object chart, string fallbackSheet)
+        {
+            var columns = new List<SpreadsheetChartColumnBind>();
+            if (chart == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                object sc = EtCom.GetProperty(chart, "SeriesCollection")
+                    ?? EtCom.InvokeFlex(chart, "SeriesCollection");
+                if (sc == null)
+                {
+                    return null;
+                }
+
+                int count = Convert.ToInt32(EtCom.GetProperty(sc, "Count"));
+                for (int i = 1; i <= count; i++)
+                {
+                    object series = EtCom.GetIndexed(sc, i)
+                        ?? EtCom.InvokeFlex(sc, "Item", i)
+                        ?? EtCom.InvokeFlex(chart, "SeriesCollection", i);
+                    if (series == null)
+                    {
+                        continue;
+                    }
+
+                    string formula = Convert.ToString(EtCom.GetProperty(series, "Formula") ?? "");
+                    Match m = SeriesFormulaRegex.Match(formula ?? "");
+                    if (m.Success)
+                    {
+                        if (i == 1)
+                        {
+                            TryAddEtFormulaColumn(
+                                columns,
+                                "category",
+                                m.Groups["cats"].Value,
+                                fallbackSheet,
+                                "类别");
+                        }
+
+                        TryAddEtFormulaColumn(
+                            columns,
+                            "value",
+                            m.Groups["vals"].Value,
+                            fallbackSheet,
+                            Convert.ToString(EtCom.GetProperty(series, "Name")));
+                        continue;
+                    }
+
+                    if (i == 1)
+                    {
+                        TryAddEtRangeColumn(
+                            columns,
+                            "category",
+                            EtCom.GetProperty(series, "XValues"),
+                            fallbackSheet,
+                            "类别");
+                    }
+
+                    TryAddEtRangeColumn(
+                        columns,
+                        "value",
+                        EtCom.GetProperty(series, "Values"),
+                        fallbackSheet,
+                        Convert.ToString(EtCom.GetProperty(series, "Name")));
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            if (columns.Count == 0)
+            {
+                return null;
+            }
+
+            return new SpreadsheetChartDataBind
+            {
+                Mode = "header",
+                Columns = columns,
+                PlotBy = "columns"
+            };
+        }
+
+        private static void TryAddEtFormulaColumn(
+            List<SpreadsheetChartColumnBind> columns,
+            string type,
+            string formulaPart,
+            string fallbackSheet,
+            string name)
+        {
+            if (columns == null || string.IsNullOrWhiteSpace(formulaPart))
+            {
+                return;
+            }
+
+            if (TrySplitSheetRange(formulaPart.Trim(), out string sheet, out string range))
+            {
+                columns.Add(new SpreadsheetChartColumnBind
+                {
+                    Type = type,
+                    Sheet = sheet,
+                    RangeA1 = range,
+                    Name = name
+                });
+                return;
+            }
+
+            string a1 = formulaPart.Trim().Replace("$", "");
+            if (A1Address.TryParseRange(a1, out _, out _, out _, out _, out _))
+            {
+                columns.Add(new SpreadsheetChartColumnBind
+                {
+                    Type = type,
+                    Sheet = fallbackSheet,
+                    RangeA1 = a1,
+                    Name = name
+                });
+            }
+        }
+
+        private static void TryAddEtRangeColumn(
+            List<SpreadsheetChartColumnBind> columns,
+            string type,
+            object rangeObj,
+            string fallbackSheet,
+            string name)
+        {
+            if (columns == null || rangeObj == null)
+            {
+                return;
+            }
+
+            string addr = EtReadRangeA1(rangeObj);
+            if (string.IsNullOrEmpty(addr))
+            {
+                return;
+            }
+
+            string sheet = fallbackSheet;
+            string a1 = addr;
+            if (TrySplitSheetRange(addr, out string sh, out string rg))
+            {
+                sheet = sh;
+                a1 = rg;
+            }
+            else
+            {
+                try
+                {
+                    object parent = EtCom.GetProperty(rangeObj, "Parent");
+                    string parentName = EtCom.TryReadName(parent);
+                    if (!string.IsNullOrEmpty(parentName))
+                    {
+                        sheet = parentName;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            columns.Add(new SpreadsheetChartColumnBind
+            {
+                Type = type,
+                Sheet = sheet,
+                RangeA1 = a1,
+                Name = name
+            });
+        }
+
+        private static void TryFillSourceFromEtSeries(object chart, SpreadsheetChartInfo info)
+        {
+            if (chart == null || info == null)
+            {
+                return;
+            }
+
+            SpreadsheetChartDataBind bind = TryReadDataBindFromEt(chart, info.Sheet);
+            if (bind?.Columns == null)
+            {
+                return;
+            }
+
+            foreach (SpreadsheetChartColumnBind col in bind.Columns)
+            {
+                if (col != null && col.Type == "value" && !string.IsNullOrEmpty(col.RangeA1))
+                {
+                    info.SourceSheet = col.Sheet;
+                    info.SourceRange = col.RangeA1;
+                    return;
+                }
             }
         }
 

@@ -728,6 +728,88 @@ namespace WordAddIn1.SpreadsheetHost
             return -1;
         }
 
+        /// <summary>
+        /// 与 PPT 图一致：Source 当表读。首行表头，plotBy=columns 时首列分类、其余为系列。
+        /// 不用 SetSourceData（数值首列会被 Excel 当成第二系列）。
+        /// </summary>
+        public static bool TryExpandSourceToColumns(
+            SpreadsheetChartDataBind bind,
+            out List<SpreadsheetChartColumnBind> columns,
+            out string error)
+        {
+            columns = null;
+            error = null;
+            if (bind == null
+                || string.IsNullOrWhiteSpace(bind.SourceSheet)
+                || string.IsNullOrWhiteSpace(bind.SourceRangeA1))
+            {
+                error = "Source 须带 sheet 与 range";
+                return false;
+            }
+
+            if (!A1Address.TryParseRange(
+                    bind.SourceRangeA1,
+                    out int fr,
+                    out int fc,
+                    out int lr,
+                    out int lc,
+                    out error))
+            {
+                return false;
+            }
+
+            int rows = lr - fr + 1;
+            int cols = lc - fc + 1;
+            if (rows < 2 || cols < 2)
+            {
+                error = "Source 须至少 2 行 2 列（首行表头，首列分类）";
+                return false;
+            }
+
+            columns = new List<SpreadsheetChartColumnBind>();
+            bool byRows = string.Equals(bind.PlotBy, "rows", StringComparison.OrdinalIgnoreCase);
+            if (byRows)
+            {
+                columns.Add(new SpreadsheetChartColumnBind
+                {
+                    Type = "category",
+                    Sheet = bind.SourceSheet,
+                    RangeA1 = A1Address.Range(fr, fc + 1, fr, lc),
+                    Name = "类别"
+                });
+                for (int r = fr + 1; r <= lr; r++)
+                {
+                    columns.Add(new SpreadsheetChartColumnBind
+                    {
+                        Type = "value",
+                        Sheet = bind.SourceSheet,
+                        RangeA1 = A1Address.Range(r, fc + 1, r, lc)
+                    });
+                }
+
+                return true;
+            }
+
+            columns.Add(new SpreadsheetChartColumnBind
+            {
+                Type = "category",
+                Sheet = bind.SourceSheet,
+                RangeA1 = A1Address.Range(fr + 1, fc, lr, fc),
+                Name = "类别"
+            });
+            for (int c = fc + 1; c <= lc; c++)
+            {
+                columns.Add(new SpreadsheetChartColumnBind
+                {
+                    Type = "value",
+                    Sheet = bind.SourceSheet,
+                    RangeA1 = A1Address.Range(fr + 1, c, lr, c)
+                });
+            }
+
+            return true;
+        }
+
         public static Dictionary<string, object> ChartInfoToWire(SpreadsheetChartInfo info)
         {
             var d = new Dictionary<string, object>

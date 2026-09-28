@@ -14,6 +14,7 @@ namespace ExcelWorkbookRoundtripTest
             ChannelHost.Kind = ChannelHostKind.Desktop;
             bool useEt = IsEtHost(args);
             string caseFilter = GetCaseFilter(args);
+            bool runChart = ShouldRun(caseFilter, "xlg-");
             bool runPivot = ShouldRun(caseFilter, "xlp-");
             bool runCond = ShouldRun(caseFilter, "xlc-");
             bool runFmt = ShouldRun(caseFilter, "xlf-");
@@ -21,10 +22,11 @@ namespace ExcelWorkbookRoundtripTest
             bool runStruct = ShouldRun(caseFilter, "xls-");
             bool runWrite = ShouldRun(caseFilter, "xlw-");
             bool runRead = ShouldRun(caseFilter, "xl-")
-                && !runWrite && !runStruct && !runManage && !runFmt && !runCond && !runPivot;
+                && !runWrite && !runStruct && !runManage && !runFmt && !runCond && !runPivot && !runChart;
             if (string.IsNullOrEmpty(caseFilter))
             {
-                runPivot = true;
+                runChart = true;
+                runPivot = false;
                 runCond = false;
                 runFmt = false;
                 runManage = false;
@@ -33,7 +35,11 @@ namespace ExcelWorkbookRoundtripTest
                 runRead = false;
             }
 
-            if (runPivot)
+            if (runChart)
+            {
+                Console.WriteLine("Excel / ET 图（xlg-）");
+            }
+            else if (runPivot)
             {
                 Console.WriteLine("Excel / ET 透视（xlp-）");
             }
@@ -99,6 +105,11 @@ namespace ExcelWorkbookRoundtripTest
             if (runPivot)
             {
                 XlpCases.Run(run, useEt);
+            }
+
+            if (runChart)
+            {
+                XlgCases.Run(run, useEt);
             }
 
             sw.Stop();
