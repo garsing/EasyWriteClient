@@ -45,9 +45,9 @@ namespace WordAddIn1.SpreadsheetHost
             bool reused = false;
             try
             {
-                object books = EtCom.GetProperty(app, "Workbooks");
                 if (createBlank)
                 {
+                    object books = EtCom.GetProperty(app, "Workbooks");
                     book = EtCom.Invoke(books, "Add");
                     EtCom.Invoke(book, "SaveAs", fullPath);
                     created = true;
@@ -62,6 +62,7 @@ namespace WordAddIn1.SpreadsheetHost
                     }
                     else
                     {
+                        object books = EtCom.GetProperty(app, "Workbooks");
                         book = EtCom.Invoke(books, "Open", fullPath);
                     }
 

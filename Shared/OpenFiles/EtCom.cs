@@ -166,7 +166,8 @@ namespace WordAddIn1.OpenFiles
             }
             finally
             {
-                ComRelease.Safe(books);
+                // 集合 RCW 只减一次，避免 FinalRelease 拆掉后续 Open 仍在用的 Workbooks 包装
+                ComRelease.ReleaseOnce(books);
             }
         }
 
