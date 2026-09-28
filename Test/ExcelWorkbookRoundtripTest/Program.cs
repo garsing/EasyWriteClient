@@ -14,17 +14,28 @@ namespace ExcelWorkbookRoundtripTest
             ChannelHost.Kind = ChannelHostKind.Desktop;
             bool useEt = IsEtHost(args);
             string caseFilter = GetCaseFilter(args);
+            bool runStruct = ShouldRun(caseFilter, "xls-");
             bool runWrite = ShouldRun(caseFilter, "xlw-");
-            bool runRead = ShouldRun(caseFilter, "xl-") && !runWrite;
+            bool runRead = ShouldRun(caseFilter, "xl-") && !runWrite && !runStruct;
             if (string.IsNullOrEmpty(caseFilter))
             {
-                runWrite = true;
+                runStruct = true;
+                runWrite = false;
                 runRead = false;
             }
 
-            Console.WriteLine(runWrite
-                ? "Excel / ET 写区域（xlw-）"
-                : "Excel / ET 打开 + 概览 + 读一块（xl-）");
+            if (runStruct)
+            {
+                Console.WriteLine("Excel / ET 格子结构（xls-）");
+            }
+            else if (runWrite)
+            {
+                Console.WriteLine("Excel / ET 写区域（xlw-）");
+            }
+            else
+            {
+                Console.WriteLine("Excel / ET 打开 + 概览 + 读一块（xl-）");
+            }
             Console.WriteLine(useEt ? "宿主 ET · WPS 表格" : "宿主 Excel · Microsoft Excel");
             Console.WriteLine();
 
@@ -38,6 +49,11 @@ namespace ExcelWorkbookRoundtripTest
             if (runWrite)
             {
                 XlwCases.Run(run, useEt);
+            }
+
+            if (runStruct)
+            {
+                XlsCases.Run(run, useEt);
             }
 
             sw.Stop();

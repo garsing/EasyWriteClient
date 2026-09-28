@@ -25,6 +25,7 @@ namespace ExcelWorkbookRoundtripTest
             F_GetWorkbookContentTool.Register(_tools, null);
             F_ReadExcelRangeTool.Register(_tools, null);
             F_WriteExcelRangeTool.Register(_tools, null);
+            F_ApplyExcelStructureTool.Register(_tools, null);
         }
 
         public bool Et { get; }
@@ -123,6 +124,36 @@ namespace ExcelWorkbookRoundtripTest
             }
 
             return Call("F_write_excel_range", args);
+        }
+
+        public ToolResult Structure(
+            string channelId,
+            string sheet,
+            string action,
+            string range,
+            int? count = null)
+        {
+            var args = new Dictionary<string, object>
+            {
+                ["action"] = action,
+                ["range"] = range
+            };
+            if (!string.IsNullOrEmpty(channelId))
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (sheet != null)
+            {
+                args["sheet"] = sheet;
+            }
+
+            if (count.HasValue)
+            {
+                args["count"] = count.Value;
+            }
+
+            return Call("F_apply_excel_structure", args);
         }
 
         public string NewCsvPath()
