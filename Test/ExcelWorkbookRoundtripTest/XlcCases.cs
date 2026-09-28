@@ -14,6 +14,7 @@ namespace ExcelWorkbookRoundtripTest
             RunNeg(run, s);
             RunApply(run, s);
             RunIntersect(run, s);
+            RunSolid(run, s);
         }
 
         private static void RunNeg(TestRun run, XlSession s)
@@ -536,6 +537,173 @@ namespace ExcelWorkbookRoundtripTest
                 return g.Success && string.Equals(Str(g, "sheet"), "利润表", StringComparison.Ordinal)
                     ? null
                     : (g.Success ? "list sheet=" + Str(g, "sheet") : g.Error);
+            });
+        }
+
+        private static void RunSolid(TestRun run, XlSession s)
+        {
+            WithBook(run, s, "xlc-list-less-span", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult r = s.CondFormat(id, name, "C2:C10", "replace_all", LessRule());
+                if (!r.Success || Int(r, "rules_count") != 1)
+                {
+                    return r.Success ? "rules_count=" + Int(r, "rules_count") : r.Error;
+                }
+
+                ToolResult g = s.CondFormat(id, name, "C2:C10", "list");
+                return g.Success && Int(g, "rules_count") == 1 && HasOp(g, "less")
+                    && HasFormulaField(g, "formula1", "0")
+                    ? null
+                    : (g.Error ?? "less 多格被 Formula2 丢掉");
+            });
+
+            WithBook(run, s, "xlc-list-not-equal", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                if (!s.SeedCell(ch, name, "A1", "甲"))
+                {
+                    return "铺底失败";
+                }
+
+                ToolResult r = s.CondFormat(id, name, "A1", "replace_all", CellValue("not_equal", "\"乙\""));
+                if (!r.Success)
+                {
+                    return r.Error;
+                }
+
+                ToolResult g = s.CondFormat(id, name, "A1", "list");
+                return g.Success && HasOp(g, "not_equal")
+                    ? null
+                    : (g.Error ?? "not_equal 回读丢掉");
+            });
+
+            WithBook(run, s, "xlc-geq", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult r = s.CondFormat(id, name, "B2:B8", "replace_all", CellValue("greater_or_equal", "10"));
+                if (!r.Success || Int(r, "rules_count") != 1)
+                {
+                    return r.Success ? "rules_count=" + Int(r, "rules_count") : r.Error;
+                }
+
+                ToolResult g = s.CondFormat(id, name, "B2:B8", "list");
+                return g.Success && HasOp(g, "greater_or_equal") && HasFormulaField(g, "formula1", "10")
+                    ? null
+                    : (g.Error ?? "greater_or_equal 回读丢掉");
+            });
+
+            WithBook(run, s, "xlc-leq", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult r = s.CondFormat(id, name, "B2:B8", "replace_all", CellValue("less_or_equal", "0"));
+                if (!r.Success)
+                {
+                    return r.Error;
+                }
+
+                ToolResult g = s.CondFormat(id, name, "B2:B8", "list");
+                return g.Success && HasOp(g, "less_or_equal")
+                    ? null
+                    : (g.Error ?? "less_or_equal 回读丢掉");
+            });
+
+            WithBook(run, s, "xlc-not-between", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                if (!s.SeedCell(ch, name, "B2", 5))
+                {
+                    return "铺底失败";
+                }
+
+                ToolResult r = s.CondFormat(id, name, "B2", "replace_all", CellValue(
+                    "not_between", "1", "10"));
+                if (!r.Success)
+                {
+                    return r.Error;
+                }
+
+                ToolResult g = s.CondFormat(id, name, "B2", "list");
+                return g.Success && HasOp(g, "not_between")
+                    && HasFormulaField(g, "formula1", "1")
+                    && HasFormulaField(g, "formula2", "10")
+                    ? null
+                    : (g.Error ?? "not_between 回读不对");
+            });
+
+            WithBook(run, s, "xlc-formula-no-shift", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                if (!s.SeedCell(ch, name, "C2", -1) || !s.SeedCell(ch, name, "C3", 1)
+                    || !s.SeedCell(ch, name, "C4", 1))
+                {
+                    return "铺底失败";
+                }
+
+                ToolResult r = s.CondFormat(id, name, "A2:D5", "add", FormulaRule("=$C2<0"));
+                if (!r.Success)
+                {
+                    return r.Error;
+                }
+
+                ToolResult g = s.CondFormat(id, name, "A2:D5", "list");
+                string formula = Str(FirstRule(g), "formula");
+                if (!g.Success || !HasType(g, "formula") || !Has(formula, "C2") || Has(formula, "C3"))
+                {
+                    return g.Success ? "公式错位 " + formula : g.Error;
+                }
+
+                return SameNumber(s, ch, name, "C2", -1) && SameNumber(s, ch, name, "C3", 1)
+                    ? null
+                    : "值被改了";
+            });
+
+            WithBook(run, s, "xlc-replace-disjoint", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult a = s.CondFormat(id, name, "A1:A10", "add", LessRule());
+                if (!a.Success)
+                {
+                    return a.Error;
+                }
+
+                ToolResult r = s.CondFormat(id, name, "C1:C10", "replace_all", CellValue("greater", "10"));
+                if (!r.Success)
+                {
+                    return r.Error;
+                }
+
+                ToolResult colA = s.CondFormat(id, name, "A1:A10", "list");
+                ToolResult colC = s.CondFormat(id, name, "C1:C10", "list");
+                if (!colA.Success || Int(colA, "rules_count") != 1 || !HasOp(colA, "less"))
+                {
+                    return colA.Error ?? "A 列规则被 replace 误伤";
+                }
+
+                return colC.Success && HasOp(colC, "greater") && !HasOp(colC, "less")
+                    ? null
+                    : (colC.Error ?? "C 列不是 greater");
+            });
+
+            WithBook(run, s, "xlc-clear-span-less", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult add = s.CondFormat(id, name, "C2:C20", "replace_all", LessRule());
+                if (!add.Success || Int(add, "rules_count") != 1)
+                {
+                    return add.Success ? "挂上后 count=" + Int(add, "rules_count") : add.Error;
+                }
+
+                ToolResult r = s.CondFormat(id, name, "C2:C20", "clear");
+                if (!r.Success || Int(r, "cleared_count") < 1)
+                {
+                    return r.Success ? "cleared=" + Int(r, "cleared_count") : r.Error;
+                }
+
+                ToolResult g = s.CondFormat(id, name, "C2:C20", "list");
+                return g.Success && Int(g, "rules_count") == 0
+                    ? null
+                    : (g.Error ?? "clear 多格 less 后仍看得到");
             });
         }
 

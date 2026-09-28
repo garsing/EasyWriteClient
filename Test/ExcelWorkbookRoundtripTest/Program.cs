@@ -93,10 +93,11 @@ namespace ExcelWorkbookRoundtripTest
             sw.Stop();
 
             Console.WriteLine();
+            int target = runCond ? 38 : 30;
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
                 + "  跳过 " + run.CasesSkipped
-                + "  （目标 30）");
+                + "  （目标 " + target + "）");
             Console.WriteLine("ELAPSED_SEC=" + sw.Elapsed.TotalSeconds.ToString("F1"));
             return run.CasesFailed == 0 ? 0 : 1;
         }
