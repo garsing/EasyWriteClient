@@ -8,8 +8,6 @@ namespace WordAddIn1.SpreadsheetHost
 {
     internal static class EtWorkbookHost
     {
-        private const int XlChart = -4109;
-
         public static bool TryOpen(
             string fullPath,
             bool createBlank,
@@ -586,17 +584,10 @@ namespace WordAddIn1.SpreadsheetHost
                         continue;
                     }
 
-                    try
+                    if (EtCom.IsChartSheet(candidate))
                     {
-                        object type = EtCom.GetProperty(candidate, "Type");
-                        if (type != null && Convert.ToInt32(type) == XlChart)
-                        {
-                            error = "sheet_type=chart，无法按格子读取";
-                            return false;
-                        }
-                    }
-                    catch (Exception)
-                    {
+                        error = "sheet_type=chart，无法按格子读取";
+                        return false;
                     }
 
                     sheet = candidate;
@@ -679,17 +670,10 @@ namespace WordAddIn1.SpreadsheetHost
             {
             }
 
-            try
+            if (EtCom.IsChartSheet(sheet))
             {
-                object type = EtCom.GetProperty(sheet, "Type");
-                if (type != null && Convert.ToInt32(type) == XlChart)
-                {
-                    info.SheetType = "chart";
-                    return info;
-                }
-            }
-            catch (Exception)
-            {
+                info.SheetType = "chart";
+                return info;
             }
 
             object used = null;
@@ -1142,17 +1126,10 @@ namespace WordAddIn1.SpreadsheetHost
                             return false;
                         }
 
-                        try
+                        if (EtCom.IsChartSheet(beforeObj))
                         {
-                            object type = EtCom.GetProperty(beforeObj, "Type");
-                            if (type != null && Convert.ToInt32(type) == XlChart)
-                            {
-                                error = "before 须为普通工作表名（不能是图表 sheet）";
-                                return false;
-                            }
-                        }
-                        catch (Exception)
-                        {
+                            error = "before 须为普通工作表名（不能是图表 sheet）";
+                            return false;
                         }
 
                         created = EtCom.Invoke(worksheets, "Add", beforeObj);

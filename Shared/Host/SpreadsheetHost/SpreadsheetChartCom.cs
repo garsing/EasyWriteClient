@@ -2289,19 +2289,7 @@ namespace WordAddIn1.SpreadsheetHost
 
         private static bool IsEtWorksheet(object sheet)
         {
-            try
-            {
-                object typeObj = EtCom.GetProperty(sheet, "Type");
-                if (typeObj != null && Convert.ToInt32(typeObj) == -4109)
-                {
-                    return false;
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            return true;
+            return !EtCom.IsChartSheet(sheet);
         }
 
         private static bool TryGetEtWorksheet(

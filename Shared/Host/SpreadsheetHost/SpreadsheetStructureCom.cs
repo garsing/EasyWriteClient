@@ -645,17 +645,10 @@ namespace WordAddIn1.SpreadsheetHost
                     continue;
                 }
 
-                try
+                if (EtCom.IsChartSheet(candidate))
                 {
-                    object typeObj = EtCom.GetProperty(candidate, "Type");
-                    if (typeObj != null && Convert.ToInt32(typeObj) == -4109)
-                    {
-                        error = "sheet_type=chart，无法操作格子结构";
-                        return false;
-                    }
-                }
-                catch (Exception)
-                {
+                    error = "sheet_type=chart，无法操作格子结构";
+                    return false;
                 }
 
                 sheet = candidate;

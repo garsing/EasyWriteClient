@@ -232,6 +232,75 @@ namespace WordAddIn1.OpenFiles
             }
         }
 
+        /// <summary>
+        /// ET 图表 sheet 的 Type 常是 3（图表类型），不是 Excel 的 xlChart=-4109。
+        /// 以 Charts 集合归属为准，避免把整页图标签当成普通表。
+        /// </summary>
+        public static bool IsChartSheet(object sheet)
+        {
+            if (sheet == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                object type = GetProperty(sheet, "Type");
+                if (type != null && Convert.ToInt32(type) == -4109)
+                {
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            string name = TryReadName(sheet);
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            object book = null;
+            try
+            {
+                book = GetProperty(sheet, "Parent");
+            }
+            catch (Exception)
+            {
+            }
+
+            if (book == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                object charts = GetProperty(book, "Charts");
+                if (charts == null)
+                {
+                    return false;
+                }
+
+                int count = Convert.ToInt32(GetProperty(charts, "Count"));
+                for (int i = 1; i <= count; i++)
+                {
+                    object chart = GetIndexed(charts, i);
+                    if (chart != null
+                        && string.Equals(TryReadName(chart), name, StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return false;
+        }
+
         public static void TrySetProperty(object target, string name, object value)
         {
             if (target == null || string.IsNullOrEmpty(name))

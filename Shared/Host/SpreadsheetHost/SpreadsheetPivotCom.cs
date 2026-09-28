@@ -1018,17 +1018,10 @@ namespace WordAddIn1.SpreadsheetHost
                 if (!string.IsNullOrEmpty(sheetFilter))
                 {
                     sheetFound = true;
-                    try
+                    if (EtCom.IsChartSheet(sheet))
                     {
-                        object type = EtCom.GetProperty(sheet, "Type");
-                        if (type != null && Convert.ToInt32(type) == -4109)
-                        {
-                            error = "sheet_type=chart，无法列出透视表";
-                            return false;
-                        }
-                    }
-                    catch (Exception)
-                    {
+                        error = "sheet_type=chart，无法列出透视表";
+                        return false;
                     }
                 }
 
@@ -2568,17 +2561,10 @@ namespace WordAddIn1.SpreadsheetHost
                         continue;
                     }
 
-                    try
+                    if (EtCom.IsChartSheet(candidate))
                     {
-                        object type = EtCom.GetProperty(candidate, "Type");
-                        if (type != null && Convert.ToInt32(type) == -4109)
-                        {
-                            error = "sheet_type=chart，无法操作透视表";
-                            return false;
-                        }
-                    }
-                    catch (Exception)
-                    {
+                        error = "sheet_type=chart，无法操作透视表";
+                        return false;
                     }
 
                     sheet = candidate;

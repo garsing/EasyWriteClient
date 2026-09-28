@@ -288,7 +288,7 @@ namespace ExcelWorkbookRoundtripTest
 
                 if (!string.Equals(Convert.ToString(chart["sheet_type"]), "chart", StringComparison.Ordinal))
                 {
-                    return "SKIP: 宿主 Charts.Add 未建成图表 sheet（" + chart["sheet_type"] + "）";
+                    return "sheet_type=" + chart["sheet_type"] + "（应为 chart）";
                 }
 
                 if (!string.IsNullOrEmpty(Convert.ToString(chart["used_range"] ?? ""))
@@ -427,10 +427,14 @@ namespace ExcelWorkbookRoundtripTest
 
                 ToolResult ov = s.Overview(id);
                 Dictionary<string, object> chart = ov.Success ? SheetNamed(ov, chartName) : null;
-                if (chart == null
-                    || !string.Equals(Convert.ToString(chart["sheet_type"]), "chart", StringComparison.Ordinal))
+                if (chart == null)
                 {
-                    return "SKIP: 宿主没有图表 sheet，无法验读失败";
+                    return "概览未列出 " + chartName;
+                }
+
+                if (!string.Equals(Convert.ToString(chart["sheet_type"]), "chart", StringComparison.Ordinal))
+                {
+                    return "sheet_type=" + chart["sheet_type"] + "（应为 chart）";
                 }
 
                 ToolResult r = s.Read(id, chartName, "A1");
