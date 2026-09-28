@@ -14,6 +14,7 @@ namespace ExcelWorkbookRoundtripTest
             RunNeg(run, s);
             RunLife(run, s);
             RunGuard(run, s);
+            RunSolid(run, s);
         }
 
         private static void RunNeg(TestRun run, XlSession s)
@@ -522,6 +523,220 @@ namespace ExcelWorkbookRoundtripTest
             });
         }
 
+        private static void RunSolid(TestRun run, XlSession s)
+        {
+            WithBook(run, s, "xlg-num-cat", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                if (!s.SeedSales(ch, name))
+                {
+                    return "铺底失败";
+                }
+
+                ToolResult created = CreateCol(s, id, name, "销量图");
+                if (!created.Success)
+                {
+                    return created.Error;
+                }
+
+                ToolResult ex = s.Chart(id, "extract", chartName: "销量图", scope: "all");
+                string xml = Str(ex, "xml_content");
+                if (!ex.Success)
+                {
+                    return ex.Error;
+                }
+
+                bool hasCat = Has(xml, "type=\"category\"") || Has(xml, "<Source");
+                bool hasVal = Has(xml, "B2") || Has(xml, "B2:B4") || Has(xml, "B2:B");
+                return hasCat && hasVal && Has(xml, "A2")
+                    ? null
+                    : "数值年份应是分类不是系列 " + xml;
+            });
+
+            WithBook(run, s, "xlg-extract-data", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                if (!s.SeedSales(ch, name))
+                {
+                    return "铺底失败";
+                }
+
+                ToolResult created = CreateCol(s, id, name, "销量图");
+                if (!created.Success)
+                {
+                    return created.Error;
+                }
+
+                ToolResult ex = s.Chart(id, "extract", chartName: "销量图", scope: "data");
+                string xml = Str(ex, "xml_content");
+                return ex.Success
+                    && !Has(xml, "<Rows")
+                    && (Has(xml, "<Source") || Has(xml, "<Column") || Has(xml, "<Header"))
+                    && (Has(xml, "A2") || Has(xml, "B2"))
+                    ? null
+                    : (ex.Error ?? ("data 无单元格绑定 " + xml));
+            });
+
+            WithBook(run, s, "xlg-dest-rect", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                if (!s.SeedSales(ch, name))
+                {
+                    return "铺底失败";
+                }
+
+                ToolResult created = CreateCol(s, id, name, "销量图", "E2:K18");
+                if (!created.Success)
+                {
+                    return created.Error;
+                }
+
+                string createdDest = Str(created, "dest_range");
+                ToolResult g = s.Chart(id, "list");
+                string listed = Str(FindName(g, "销量图"), "dest_range");
+                return g.Success
+                    && Has(createdDest, "E2")
+                    && Has(createdDest, ":")
+                    && Has(listed, "E2")
+                    && Has(listed, ":")
+                    ? null
+                    : (g.Error ?? ("dest 空或对不上 create=" + createdDest + " list=" + listed));
+            });
+
+            WithBook(run, s, "xlg-apply-expand", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                if (!s.SeedSales(ch, name)
+                    || !s.SeedCell(ch, name, "A5", 2027)
+                    || !s.SeedCell(ch, name, "B5", 40))
+                {
+                    return "铺底失败";
+                }
+
+                ToolResult created = CreateCol(s, id, name, "销量图");
+                if (!created.Success)
+                {
+                    return created.Error;
+                }
+
+                ToolResult ap = s.Chart(
+                    id,
+                    "apply",
+                    xml: SourceXml(name, "A1:B5"),
+                    chartName: "销量图",
+                    scope: "data");
+                if (!ap.Success)
+                {
+                    return ap.Error;
+                }
+
+                ToolResult ex = s.Chart(id, "extract", chartName: "销量图", scope: "data");
+                string xml = Str(ex, "xml_content");
+                object raw = s.ReadValue2(ch, name, "B5");
+                return ex.Success
+                    && NearNumber(raw, 40)
+                    && (Has(xml, "A5") || Has(xml, "B5") || Has(xml, "A1:B5") || Has(xml, "A2:A5") || Has(xml, "B2:B5"))
+                    ? null
+                    : (ex.Error ?? ("扩行后绑定没跟上 " + xml));
+            });
+
+            WithBook(run, s, "xlg-neg-add-series", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                if (!s.SeedSales(ch, name)
+                    || !s.SeedCell(ch, name, "C1", "库存")
+                    || !s.SeedCell(ch, name, "C2", 1)
+                    || !s.SeedCell(ch, name, "C3", 2)
+                    || !s.SeedCell(ch, name, "C4", 3))
+                {
+                    return "铺底失败";
+                }
+
+                ToolResult created = CreateCol(s, id, name, "销量图");
+                if (!created.Success)
+                {
+                    return created.Error;
+                }
+
+                ToolResult r = s.Chart(
+                    id,
+                    "apply",
+                    xml: SourceXml(name, "A1:C4"),
+                    chartName: "销量图",
+                    scope: "data");
+                return r.Success
+                    ? "加列应失败"
+                    : (Has(r.Error, "系列") ? null : r.Error);
+            });
+
+            WithBook(run, s, "xlg-two-series", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                if (!s.SeedSales(ch, name)
+                    || !s.SeedCell(ch, name, "C1", "库存")
+                    || !s.SeedCell(ch, name, "C2", 1)
+                    || !s.SeedCell(ch, name, "C3", 2)
+                    || !s.SeedCell(ch, name, "C4", 3))
+                {
+                    return "铺底失败";
+                }
+
+                ToolResult created = s.Chart(
+                    id,
+                    "create",
+                    Dest(name, "E2:K18"),
+                    SourceXml(name, "A1:C4"),
+                    "双列图");
+                if (!created.Success)
+                {
+                    return created.Error;
+                }
+
+                ToolResult ex = s.Chart(id, "extract", chartName: "双列图", scope: "data");
+                string xml = Str(ex, "xml_content");
+                return ex.Success
+                    && (Has(xml, "B2") || Has(xml, "<Source"))
+                    && (Has(xml, "C2") || Has(xml, "A1:C4") || Has(xml, "C2:C4"))
+                    ? null
+                    : (ex.Error ?? ("双系列绑定不对 " + xml));
+            });
+
+            WithBook(run, s, "xlg-line", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                if (!s.SeedSales(ch, name))
+                {
+                    return "铺底失败";
+                }
+
+                ToolResult created = s.Chart(
+                    id,
+                    "create",
+                    Dest(name, "E2:K18"),
+                    SourceXml(name, "A1:B4", "line"),
+                    "折线");
+                if (!created.Success)
+                {
+                    return created.Error;
+                }
+
+                ToolResult ex = s.Chart(id, "extract", chartName: "折线", scope: "format");
+                string xml = Str(ex, "xml_content");
+                return ex.Success && Has(xml, "line")
+                    ? null
+                    : (ex.Error ?? ("Type 不是 line " + xml));
+            });
+
+            WithBook(run, s, "xlg-src-thin", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult r = s.Chart(id, "create", Dest(name, "E2:K18"), SourceXml(name, "A1:B1"));
+                return r.Success
+                    ? "1 行 Source 应失败"
+                    : (Has(r.Error, "2") || Has(r.Error, "行") || Has(r.Error, "列") ? null : r.Error);
+            });
+        }
+
         private static ToolResult CreateCol(
             XlSession s,
             string id,
@@ -541,9 +756,9 @@ namespace ExcelWorkbookRoundtripTest
             };
         }
 
-        private static string SourceXml(string sheet, string range = "A1:B4")
+        private static string SourceXml(string sheet, string range = "A1:B4", string type = "column_clustered")
         {
-            return "<ChartConfig><Chart><Type>column_clustered</Type><Title>销量</Title>"
+            return "<ChartConfig><Chart><Type>" + type + "</Type><Title>销量</Title>"
                 + "<DataTable><Source sheet=\"" + sheet + "\" range=\"" + range
                 + "\" plotBy=\"columns\"/></DataTable></Chart></ChartConfig>";
         }
