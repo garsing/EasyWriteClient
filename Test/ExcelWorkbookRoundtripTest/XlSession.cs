@@ -29,6 +29,7 @@ namespace ExcelWorkbookRoundtripTest
             F_ManageExcelSheetTool.Register(_tools, null);
             F_ApplyExcelFormatTool.Register(_tools, null);
             F_GetExcelFormatTool.Register(_tools, null);
+            F_ApplyExcelConditionalFormatTool.Register(_tools, null);
         }
 
         public bool Et { get; }
@@ -242,6 +243,42 @@ namespace ExcelWorkbookRoundtripTest
             }
 
             return Call("F_get_excel_format", args);
+        }
+
+        public ToolResult CondFormat(
+            string channelId,
+            string sheet,
+            string range,
+            string action,
+            Dictionary<string, object> rule = null)
+        {
+            var args = new Dictionary<string, object>();
+            if (!string.IsNullOrEmpty(channelId))
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (sheet != null)
+            {
+                args["sheet"] = sheet;
+            }
+
+            if (range != null)
+            {
+                args["range"] = range;
+            }
+
+            if (action != null)
+            {
+                args["action"] = action;
+            }
+
+            if (rule != null)
+            {
+                args["rule"] = rule;
+            }
+
+            return Call("F_apply_excel_conditional_format", args);
         }
 
         public string NewCsvPath()

@@ -579,34 +579,33 @@ namespace WordAddIn1.SpreadsheetHost
                 {
                     SpreadsheetConditionalFormatParse.TryMapOperator(
                         rule.Operator, out int xlOp, out bool needs2);
-                    if (needs2)
-                    {
-                        fc = EtCom.Invoke(
-                            fcs,
-                            "Add",
-                            SpreadsheetConditionalFormatParse.XlCellValue,
-                            xlOp,
-                            rule.Formula1,
-                            rule.Formula2);
-                    }
-                    else
-                    {
-                        fc = EtCom.Invoke(
-                            fcs,
-                            "Add",
-                            SpreadsheetConditionalFormatParse.XlCellValue,
-                            xlOp,
-                            rule.Formula1);
-                    }
+                    // ET 晚绑定 Add 必须带齐 Type/Operator/Formula1/Formula2，省略 Formula2 时规则挂不上。
+                    fc = EtCom.InvokeFlex(
+                        fcs,
+                        "Add",
+                        SpreadsheetConditionalFormatParse.XlCellValue,
+                        xlOp,
+                        rule.Formula1,
+                        needs2 ? (object)rule.Formula2 : Type.Missing);
                 }
                 else
                 {
-                    fc = EtCom.Invoke(
+                    // ET 公式相对引用跟活动格走，不是跟 AppliesTo 左上角。先选中目标区，避免 =$C2 被错成 =$C3。
+                    try
+                    {
+                        EtCom.InvokeFlex(target, "Select");
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    fc = EtCom.InvokeFlex(
                         fcs,
                         "Add",
                         SpreadsheetConditionalFormatParse.XlExpression,
                         Type.Missing,
-                        rule.Formula);
+                        rule.Formula,
+                        Type.Missing);
                 }
             }
             catch (Exception ex)
@@ -714,7 +713,13 @@ namespace WordAddIn1.SpreadsheetHost
                     }
 
                     info.Formula1 = Convert.ToString(EtCom.GetProperty(raw, "Formula1"));
-                    info.Formula2 = Convert.ToString(EtCom.GetProperty(raw, "Formula2"));
+                    try
+                    {
+                        info.Formula2 = Convert.ToString(EtCom.GetProperty(raw, "Formula2"));
+                    }
+                    catch (Exception)
+                    {
+                    }
                 }
                 else if (type == SpreadsheetConditionalFormatParse.XlExpression)
                 {
@@ -726,32 +731,38 @@ namespace WordAddIn1.SpreadsheetHost
                     info.Type = "other";
                 }
 
-                object interior = EtCom.GetProperty(raw, "Interior");
-                if (interior != null
-                    && TryColorToHex(EtCom.GetProperty(interior, "Color"), out string fill))
+                try
                 {
-                    info.Format.FillColorHex = fill;
+                    object interior = EtCom.GetProperty(raw, "Interior");
+                    if (interior != null
+                        && TryColorToHex(EtCom.GetProperty(interior, "Color"), out string fill))
+                    {
+                        info.Format.FillColorHex = fill;
+                    }
+                }
+                catch (Exception)
+                {
                 }
 
-                object font = EtCom.GetProperty(raw, "Font");
-                if (font != null)
+                try
                 {
-                    if (TryColorToHex(EtCom.GetProperty(font, "Color"), out string fontHex))
+                    object font = EtCom.GetProperty(raw, "Font");
+                    if (font != null)
                     {
-                        info.Format.FontColorHex = fontHex;
-                    }
+                        if (TryColorToHex(EtCom.GetProperty(font, "Color"), out string fontHex))
+                        {
+                            info.Format.FontColorHex = fontHex;
+                        }
 
-                    object bold = EtCom.GetProperty(font, "Bold");
-                    if (bold != null && !(bold is DBNull))
-                    {
-                        try
+                        object bold = EtCom.GetProperty(font, "Bold");
+                        if (bold != null && !(bold is DBNull))
                         {
                             info.Format.Bold = Convert.ToBoolean(bold);
                         }
-                        catch (Exception)
-                        {
-                        }
                     }
+                }
+                catch (Exception)
+                {
                 }
 
                 return true;
