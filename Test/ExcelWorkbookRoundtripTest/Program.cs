@@ -14,16 +14,18 @@ namespace ExcelWorkbookRoundtripTest
             ChannelHost.Kind = ChannelHostKind.Desktop;
             bool useEt = IsEtHost(args);
             string caseFilter = GetCaseFilter(args);
+            bool runPivot = ShouldRun(caseFilter, "xlp-");
             bool runCond = ShouldRun(caseFilter, "xlc-");
             bool runFmt = ShouldRun(caseFilter, "xlf-");
             bool runManage = ShouldRun(caseFilter, "xlm-");
             bool runStruct = ShouldRun(caseFilter, "xls-");
             bool runWrite = ShouldRun(caseFilter, "xlw-");
             bool runRead = ShouldRun(caseFilter, "xl-")
-                && !runWrite && !runStruct && !runManage && !runFmt && !runCond;
+                && !runWrite && !runStruct && !runManage && !runFmt && !runCond && !runPivot;
             if (string.IsNullOrEmpty(caseFilter))
             {
-                runCond = true;
+                runPivot = true;
+                runCond = false;
                 runFmt = false;
                 runManage = false;
                 runStruct = false;
@@ -31,7 +33,11 @@ namespace ExcelWorkbookRoundtripTest
                 runRead = false;
             }
 
-            if (runCond)
+            if (runPivot)
+            {
+                Console.WriteLine("Excel / ET 透视（xlp-）");
+            }
+            else if (runCond)
             {
                 Console.WriteLine("Excel / ET 条件格式（xlc-）");
             }
@@ -88,6 +94,11 @@ namespace ExcelWorkbookRoundtripTest
             if (runCond)
             {
                 XlcCases.Run(run, useEt);
+            }
+
+            if (runPivot)
+            {
+                XlpCases.Run(run, useEt);
             }
 
             sw.Stop();

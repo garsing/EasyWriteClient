@@ -30,6 +30,7 @@ namespace ExcelWorkbookRoundtripTest
             F_ApplyExcelFormatTool.Register(_tools, null);
             F_GetExcelFormatTool.Register(_tools, null);
             F_ApplyExcelConditionalFormatTool.Register(_tools, null);
+            F_ExcelPivotTool.Register(_tools, null);
         }
 
         public bool Et { get; }
@@ -279,6 +280,85 @@ namespace ExcelWorkbookRoundtripTest
             }
 
             return Call("F_apply_excel_conditional_format", args);
+        }
+
+        public ToolResult Pivot(
+            string channelId,
+            string action,
+            Dictionary<string, object> source = null,
+            Dictionary<string, object> dest = null,
+            IList<string> rows = null,
+            IList<string> columns = null,
+            IList<Dictionary<string, object>> values = null,
+            string name = null,
+            string sheet = null)
+        {
+            var args = new Dictionary<string, object>();
+            if (!string.IsNullOrEmpty(channelId))
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (action != null)
+            {
+                args["action"] = action;
+            }
+
+            if (source != null)
+            {
+                args["source"] = source;
+            }
+
+            if (dest != null)
+            {
+                args["dest"] = dest;
+            }
+
+            if (rows != null)
+            {
+                args["rows"] = new List<string>(rows);
+            }
+
+            if (columns != null)
+            {
+                args["columns"] = new List<string>(columns);
+            }
+
+            if (values != null)
+            {
+                args["values"] = new List<Dictionary<string, object>>(values);
+            }
+
+            if (name != null)
+            {
+                args["name"] = name;
+            }
+
+            if (sheet != null)
+            {
+                args["sheet"] = sheet;
+            }
+
+            return Call("F_excel_pivot", args);
+        }
+
+        public bool SeedDetail(IOperationChannel ch, string sheetName)
+        {
+            return WithNamedSheet(ch, sheetName, ws =>
+            {
+                SetCell(ws, "A1", "地区");
+                SetCell(ws, "B1", "产品");
+                SetCell(ws, "C1", "金额");
+                SetCell(ws, "A2", "东");
+                SetCell(ws, "B2", "甲");
+                SetCell(ws, "C2", 10);
+                SetCell(ws, "A3", "西");
+                SetCell(ws, "B3", "甲");
+                SetCell(ws, "C3", 20);
+                SetCell(ws, "A4", "东");
+                SetCell(ws, "B4", "乙");
+                SetCell(ws, "C4", 30);
+            });
         }
 
         public string NewCsvPath()
