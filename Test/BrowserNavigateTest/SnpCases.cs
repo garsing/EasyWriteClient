@@ -244,9 +244,7 @@ namespace BrowserNavigateTest
             string inner = Tree(ex);
             if (ex.Success)
             {
-                Ok(run, "snp-ifr-sandbox",
-                    inner.Contains("Example Domain") || inner.Contains("More information"),
-                    "展开成功但回的是外壳树");
+                Ok(run, "snp-ifr-sandbox", LooksLikeExampleCom(inner), "展开成功但回的是外壳树");
                 return;
             }
 
@@ -368,6 +366,19 @@ namespace BrowserNavigateTest
 
             run.CaseFail(failId, r.Success ? "无短 channel_id" : (r.Error ?? "打开失败"));
             return null;
+        }
+
+        private static bool LooksLikeExampleCom(string tree)
+        {
+            if (string.IsNullOrEmpty(tree))
+            {
+                return false;
+            }
+
+            return tree.IndexOf("Example Domain", StringComparison.Ordinal) >= 0
+                || tree.IndexOf("More information", StringComparison.Ordinal) >= 0
+                || tree.IndexOf("documentation examples", StringComparison.OrdinalIgnoreCase) >= 0
+                || tree.IndexOf("This domain is for use", StringComparison.Ordinal) >= 0;
         }
 
         private static void Ok(TestRun run, string id, bool pass, string reason)

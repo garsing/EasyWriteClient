@@ -446,7 +446,7 @@ namespace WordAddIn1.BrowserHost
                 return BrowserSnapshotResult.Fail("无法读取 iframe（无子 frame）");
             }
 
-            return await SnapshotDocumentAsync(
+            BrowserSnapshotResult expanded = await SnapshotDocumentAsync(
                     channel,
                     form,
                     childId,
@@ -455,6 +455,17 @@ namespace WordAddIn1.BrowserHost
                     refId,
                     frameMap)
                 .ConfigureAwait(true);
+            if (expanded != null
+                && expanded.Success
+                && BrowserFrameResolver.TreeStillParentShell(
+                    expanded.Snapshot,
+                    form.CurrentTitle,
+                    prior.Name))
+            {
+                return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
+            }
+
+            return expanded;
         }
 
         /// <summary>拍某一文档层的整棵 overview（壳走 SnapshotAsync(ref=null)）。</summary>
@@ -528,6 +539,11 @@ namespace WordAddIn1.BrowserHost
             {
                 return BrowserSnapshotResult.Fail(
                     string.IsNullOrWhiteSpace(built.Error) ? "无法读取 iframe 内容" : built.Error);
+            }
+
+            if (BrowserFrameResolver.TreeStillParentShell(built.TreeText, form.CurrentTitle))
+            {
+                return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
             }
 
             BrowserFrameResolver.Stamp(built, frameId, frameMap, ax.SessionId);

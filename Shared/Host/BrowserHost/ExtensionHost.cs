@@ -693,6 +693,7 @@ namespace WordAddIn1.BrowserHost
             {
                 int? targetFrame = null;
                 bool expandingFrame = false;
+                BrowserRefEntry prior = null;
                 string mode = string.IsNullOrWhiteSpace(refId) ? "overview" : "detail";
                 if (forceFrameId.HasValue)
                 {
@@ -701,7 +702,7 @@ namespace WordAddIn1.BrowserHost
                 }
                 else if (!string.IsNullOrWhiteSpace(refId))
                 {
-                    if (!BrowserRefStore.TryGet(channel.ChannelId, refId.Trim(), out BrowserRefEntry prior)
+                    if (!BrowserRefStore.TryGet(channel.ChannelId, refId.Trim(), out prior)
                         || prior == null)
                     {
                         return BrowserSnapshotResult.Fail("ref 无效或已过期，请重新 F_browser_snapshot");
@@ -733,12 +734,33 @@ namespace WordAddIn1.BrowserHost
                     ["dom_supplement"] = expandingFrame ? null : domSupplement
                 };
                 JObject result = await RpcAsync(channel.TabUuid, "rpc.snapshot", req).ConfigureAwait(true);
-
                 string snapshot = (string)result["snapshot"] ?? "";
-                bool truncated = result["truncated"]?.Value<bool>() ?? false;
-                string truncatedReason = (string)result["truncated_reason"];
                 string pageUrl = (string)result["url"] ?? channel.Url;
                 string title = (string)result["title"] ?? channel.Title;
+                if (expandingFrame)
+                {
+                    string parentTitle = title ?? channel.Title;
+                    string frameName = prior.Name;
+                    for (int i = 0; i < 4
+                        && BrowserFrameResolver.TreeStillParentShell(snapshot, parentTitle, frameName);
+                        i++)
+                    {
+                        await Task.Delay(400).ConfigureAwait(true);
+                        result = await RpcAsync(channel.TabUuid, "rpc.snapshot", req).ConfigureAwait(true);
+                        snapshot = (string)result["snapshot"] ?? "";
+                        pageUrl = (string)result["url"] ?? channel.Url;
+                        title = (string)result["title"] ?? channel.Title;
+                        parentTitle = title ?? channel.Title;
+                    }
+
+                    if (BrowserFrameResolver.TreeStillParentShell(snapshot, parentTitle, frameName))
+                    {
+                        return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
+                    }
+                }
+
+                bool truncated = result["truncated"]?.Value<bool>() ?? false;
+                string truncatedReason = (string)result["truncated_reason"];
                 channel.UpdatePage(pageUrl, title, true);
 
                 var map = new Dictionary<string, BrowserRefEntry>(StringComparer.OrdinalIgnoreCase);

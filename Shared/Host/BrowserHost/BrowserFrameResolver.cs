@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -135,40 +136,107 @@ namespace WordAddIn1.BrowserHost
                 return null;
             }
 
+            BrowserFrameMap map = await LoadAsync(form).ConfigureAwait(true);
+            string parentUrl = form.CurrentUrl;
+            string parentTitle = form.CurrentTitle;
+            bool isRoot = string.IsNullOrWhiteSpace(frameId)
+                || string.Equals(frameId, map.RootFrameId, StringComparison.Ordinal);
+
+            if (!isRoot)
+            {
+                await WaitForChildUrlAsync(form, frameId, parentUrl).ConfigureAwait(true);
+                map = await LoadAsync(form).ConfigureAwait(true);
+            }
+
             if (!string.IsNullOrWhiteSpace(existingSessionId))
             {
                 BrowserFrameAxResult fromSession = await TryGetAxOnSessionAsync(form, existingSessionId, depth)
                     .ConfigureAwait(true);
-                if (fromSession != null)
+                if (IsUsableFrameAx(fromSession, isRoot, parentTitle, parentUrl))
                 {
                     return fromSession;
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(frameId))
+            string childUrl = null;
+            if (!isRoot)
+            {
+                map.UrlByFrame.TryGetValue(frameId, out childUrl);
+            }
+
+            bool sameOrigin = isRoot || OriginsMatch(childUrl, parentUrl);
+
+            if (!isRoot && !sameOrigin)
+            {
+                string sessionId = await TryAttachOopifAsync(form, frameId, parentUrl).ConfigureAwait(true);
+                if (string.IsNullOrWhiteSpace(sessionId))
+                {
+                    return null;
+                }
+
+                BrowserFrameAxResult attached = await TryGetAxOnSessionAsync(form, sessionId, depth)
+                    .ConfigureAwait(true);
+                if (IsUsableFrameAx(attached, false, parentTitle, parentUrl))
+                {
+                    return attached;
+                }
+
+                return null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(frameId) || isRoot)
             {
                 try
                 {
                     string json = await form
-                        .GetAccessibilityTreeJsonAsync(depth, frameId)
+                        .GetAccessibilityTreeJsonAsync(depth, isRoot ? null : frameId)
                         .ConfigureAwait(true);
-                    if (HasNodes(json))
+                    BrowserFrameAxResult local = HasNodes(json)
+                        ? new BrowserFrameAxResult { Json = json }
+                        : null;
+                    if (IsUsableFrameAx(local, isRoot, parentTitle, parentUrl))
                     {
-                        return new BrowserFrameAxResult { Json = json };
+                        return local;
                     }
                 }
                 catch
                 {
                 }
+            }
 
-                string sessionId = await TryAttachOopifAsync(form, frameId).ConfigureAwait(true);
+            if (!isRoot)
+            {
+                string sessionId = await TryAttachOopifAsync(form, frameId, parentUrl).ConfigureAwait(true);
                 if (!string.IsNullOrWhiteSpace(sessionId))
                 {
-                    return await TryGetAxOnSessionAsync(form, sessionId, depth).ConfigureAwait(true);
+                    BrowserFrameAxResult attached = await TryGetAxOnSessionAsync(form, sessionId, depth)
+                        .ConfigureAwait(true);
+                    if (IsUsableFrameAx(attached, false, parentTitle, parentUrl))
+                    {
+                        return attached;
+                    }
                 }
             }
 
             return null;
+        }
+
+        /// <summary>展开后树仍是外壳（根标题还是父页，或展开的那行 iframe 还在）→ 没进去。</summary>
+        public static bool TreeStillParentShell(string treeText, string parentTitle, string frameName = null)
+        {
+            if (string.IsNullOrWhiteSpace(treeText))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(parentTitle)
+                && HeadLines(treeText, 12).IndexOf(parentTitle, StringComparison.Ordinal) >= 0
+                && HasIframeRow(treeText))
+            {
+                return true;
+            }
+
+            return HasIframeNamed(treeText, frameName);
         }
 
         private static async System.Threading.Tasks.Task<BrowserFrameAxResult> TryGetAxOnSessionAsync(
@@ -206,7 +274,8 @@ namespace WordAddIn1.BrowserHost
 
         private static async System.Threading.Tasks.Task<string> TryAttachOopifAsync(
             YiWriteBrowserForm form,
-            string frameId)
+            string frameId,
+            string parentUrl)
         {
             string wantUrl = null;
             try
@@ -216,6 +285,11 @@ namespace WordAddIn1.BrowserHost
             }
             catch
             {
+            }
+
+            if (!IsHttpUrl(wantUrl) || OriginsMatch(wantUrl, parentUrl))
+            {
+                return null;
             }
 
             JArray targets;
@@ -243,14 +317,15 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 string type = (string)t["type"] ?? "";
-                if (!string.Equals(type, "iframe", StringComparison.OrdinalIgnoreCase)
-                    && !string.Equals(type, "page", StringComparison.OrdinalIgnoreCase))
+                bool isIframe = string.Equals(type, "iframe", StringComparison.OrdinalIgnoreCase);
+                bool isPage = string.Equals(type, "page", StringComparison.OrdinalIgnoreCase);
+                if (!isIframe && !isPage)
                 {
                     continue;
                 }
 
                 string tUrl = (string)t["url"] ?? "";
-                if (!string.IsNullOrWhiteSpace(wantUrl) && !UrlsLooselyMatch(tUrl, wantUrl))
+                if (OriginsMatch(tUrl, parentUrl) || !UrlsLooselyMatch(tUrl, wantUrl))
                 {
                     continue;
                 }
@@ -283,6 +358,222 @@ namespace WordAddIn1.BrowserHost
             }
 
             return null;
+        }
+
+        private static async System.Threading.Tasks.Task WaitForChildUrlAsync(
+            YiWriteBrowserForm form,
+            string frameId,
+            string parentUrl)
+        {
+            for (int i = 0; i < 12; i++)
+            {
+                BrowserFrameMap map = await LoadAsync(form).ConfigureAwait(true);
+                string url;
+                if (map.UrlByFrame.TryGetValue(frameId, out url)
+                    && IsHttpUrl(url)
+                    && !UrlsLooselyMatch(url, parentUrl))
+                {
+                    return;
+                }
+
+                await System.Threading.Tasks.Task.Delay(250).ConfigureAwait(true);
+            }
+        }
+
+        private static bool IsUsableFrameAx(
+            BrowserFrameAxResult ax,
+            bool isRoot,
+            string parentTitle,
+            string parentUrl)
+        {
+            if (ax == null || !HasNodes(ax.Json))
+            {
+                return false;
+            }
+
+            if (isRoot)
+            {
+                return true;
+            }
+
+            return !AxLooksLikeParentDocument(ax.Json, parentTitle, parentUrl);
+        }
+
+        private static bool AxLooksLikeParentDocument(string json, string parentTitle, string parentUrl)
+        {
+            if (string.IsNullOrWhiteSpace(parentTitle))
+            {
+                return false;
+            }
+
+            return string.Equals(ReadAxRootName(json), parentTitle, StringComparison.Ordinal);
+        }
+
+        private static string ReadAxRootName(string json)
+        {
+            return ReadAxRootField(json, name: true);
+        }
+
+        private static string ReadAxRootUrl(string json)
+        {
+            return ReadAxRootField(json, name: false);
+        }
+
+        private static string ReadAxRootField(string json, bool name)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return "";
+            }
+
+            try
+            {
+                JArray nodes = JObject.Parse(json)["nodes"] as JArray;
+                if (nodes == null)
+                {
+                    return "";
+                }
+
+                foreach (JToken token in nodes)
+                {
+                    JObject jo = token as JObject;
+                    if (jo == null)
+                    {
+                        continue;
+                    }
+
+                    string role = ReadAxValue(jo["role"]);
+                    if (!string.Equals(role, "RootWebArea", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(role, "WebArea", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    return name
+                        ? ReadAxValue(jo["name"])
+                        : ReadAxNamedProperty(jo["properties"], "url");
+                }
+            }
+            catch
+            {
+            }
+
+            return "";
+        }
+
+        private static string ReadAxValue(JToken t)
+        {
+            if (t == null || t.Type == JTokenType.Null)
+            {
+                return "";
+            }
+
+            JObject o = t as JObject;
+            if (o != null && o["value"] != null && o["value"].Type != JTokenType.Null)
+            {
+                return Convert.ToString(o["value"]) ?? "";
+            }
+
+            return Convert.ToString(t) ?? "";
+        }
+
+        private static string ReadAxNamedProperty(JToken propertiesToken, string propertyName)
+        {
+            JArray props = propertiesToken as JArray;
+            if (props == null || string.IsNullOrEmpty(propertyName))
+            {
+                return "";
+            }
+
+            foreach (JToken p in props)
+            {
+                JObject po = p as JObject;
+                if (po == null)
+                {
+                    continue;
+                }
+
+                string pname = Convert.ToString(po["name"]) ?? "";
+                if (string.Equals(pname, propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return ReadAxValue(po["value"]);
+                }
+            }
+
+            return "";
+        }
+
+        private static bool OriginsMatch(string a, string b)
+        {
+            Uri ua;
+            Uri ub;
+            if (!Uri.TryCreate(a ?? "", UriKind.Absolute, out ua)
+                || !Uri.TryCreate(b ?? "", UriKind.Absolute, out ub))
+            {
+                return false;
+            }
+
+            return string.Equals(ua.Scheme, ub.Scheme, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(ua.Host, ub.Host, StringComparison.OrdinalIgnoreCase)
+                && ua.Port == ub.Port;
+        }
+
+        private static bool IsHttpUrl(string url)
+        {
+            Uri u;
+            return Uri.TryCreate(url ?? "", UriKind.Absolute, out u)
+                && (string.Equals(u.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(u.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static string HeadLines(string text, int maxLines)
+        {
+            if (string.IsNullOrEmpty(text) || maxLines < 1)
+            {
+                return "";
+            }
+
+            int seen = 0;
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (text[i] != '\n')
+                {
+                    continue;
+                }
+
+                seen++;
+                if (seen >= maxLines)
+                {
+                    return text.Substring(0, i);
+                }
+            }
+
+            return text;
+        }
+
+        private static bool HasIframeRow(string tree)
+        {
+            if (string.IsNullOrEmpty(tree))
+            {
+                return false;
+            }
+
+            return tree.IndexOf("Iframe ", StringComparison.OrdinalIgnoreCase) >= 0
+                || tree.IndexOf("- iframe", StringComparison.OrdinalIgnoreCase) >= 0
+                || tree.IndexOf("- Iframe", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool HasIframeNamed(string tree, string frameName)
+        {
+            if (string.IsNullOrEmpty(tree) || string.IsNullOrWhiteSpace(frameName))
+            {
+                return false;
+            }
+
+            return Regex.IsMatch(
+                tree,
+                @"iframe[^\r\n]*""" + Regex.Escape(frameName.Trim()) + @"""",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         }
 
         private static void WalkFrameTree(JObject tree, BrowserFrameMap map, string parentId)

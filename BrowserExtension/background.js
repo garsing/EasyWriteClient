@@ -363,6 +363,22 @@ async function getTopFrameId(tabId) {
   }
 }
 
+async function waitFrameHttpUrl(tabId, frameId) {
+  for (let i = 0; i < 12; i++) {
+    try {
+      const frames = await chrome.webNavigation.getAllFrames({ tabId });
+      const hit = (frames || []).find((f) => f && f.frameId === frameId);
+      const url = String((hit && hit.url) || "");
+      if (/^https?:\/\//i.test(url)) {
+        return;
+      }
+    } catch (_) {
+      /* retry */
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
 async function annotateIframes(tabId, parentChromeFrameId, nodes) {
   if (!nodes) return;
   let frames;
@@ -415,9 +431,17 @@ async function snapshotTab(msg) {
   const frameId = msg.frame_id != null && msg.frame_id !== ""
     ? Number(msg.frame_id)
     : null;
+  const topFrame = await getTopFrameId(tabId);
+  const expanding = String(msg.mode || "") === "frame";
+  if (expanding && frameId != null && Number.isFinite(frameId) && frameId === topFrame) {
+    throw new Error("无法读取 iframe（未对齐到子 frame）");
+  }
+  if (expanding && frameId != null && Number.isFinite(frameId)) {
+    await waitFrameHttpUrl(tabId, frameId);
+  }
   const targetFrame = frameId != null && Number.isFinite(frameId)
     ? frameId
-    : await getTopFrameId(tabId);
+    : topFrame;
   await ensureContentScript(tabId, frameId != null && Number.isFinite(frameId) ? frameId : undefined);
   const resp = await sendToTab(tabId, {
     type: "snapshot",
