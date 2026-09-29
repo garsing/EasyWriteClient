@@ -71,6 +71,17 @@ namespace WordAddIn1
             _registry = new WsMethodRegistry(_wordApplication);
         }
 
+        /// <summary>本进程已注册的 F_*（测试短套经 Desktop 管道调用）。</summary>
+        public Task<ToolResult> InvokeToolNameAsync(string toolName, Dictionary<string, object> args)
+        {
+            if (_registry == null)
+            {
+                return Task.FromResult(new ToolResult { Success = false, Error = "Desktop 工具未就绪" });
+            }
+
+            return _registry.InvokeToolNameAsync(toolName, args);
+        }
+
         public async Task ConnectAsync(string httpBaseUrl, string accessToken, string username)
         {
             if (string.IsNullOrWhiteSpace(accessToken) || string.IsNullOrWhiteSpace(username))

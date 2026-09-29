@@ -18,13 +18,12 @@ namespace BrowserNavigateTest
 
         private static void RunNeg(TestRun run, NavSession s)
         {
-            ChannelRegistry.ClearAll();
             ExpectFail(run, "nav-neg-no-url", s.Call(new Dictionary<string, object>()), "url");
             ExpectFail(run, "nav-neg-empty-url", s.Nav("   "), "url");
-            ExpectFail(run, "nav-neg-file", s.Nav("file:///C:/Windows/win.ini"), "http");
-            ExpectFail(run, "nav-neg-javascript", s.Nav("javascript:alert(1)"), "http");
-            ExpectFail(run, "nav-neg-about", s.Nav("about:blank"), "http");
-            ExpectFail(run, "nav-neg-chrome-scheme", s.Nav("chrome://extensions"), "http");
+            ExpectFail(run, "nav-neg-file", s.Nav("file:///C:/Windows/win.ini", host: "yiwrite"), "http");
+            ExpectFail(run, "nav-neg-javascript", s.Nav("javascript:alert(1)", host: "yiwrite"), "http");
+            ExpectFail(run, "nav-neg-about", s.Nav("about:blank", host: "yiwrite"), "http");
+            ExpectFail(run, "nav-neg-chrome-scheme", s.Nav("chrome://extensions", host: "yiwrite"), "http");
             ExpectFail(run, "nav-neg-bad-host", s.Nav("https://example.com", host: "360"), "host");
             ExpectFail(
                 run,
@@ -37,17 +36,13 @@ namespace BrowserNavigateTest
                 s.Nav("https://example.com", host: "edge", visible: false),
                 "visible");
 
-            ChannelRegistry.ClearAll();
-            ChannelRegistry.Register(new FakeWordChannel(), setAsDefault: true);
             ExpectFail(run, "nav-neg-wrong-kind", s.Nav("https://example.com", channelId: "w1"), "渠道");
-            ChannelRegistry.ClearAll();
             ExpectFail(run, "nav-neg-unknown-id", s.Nav("https://example.com", channelId: "b999"), "渠道");
         }
 
         private static string RunAgent(TestRun run, NavSession s, NavHttp http)
         {
-            ChannelRegistry.ClearAll();
-            ToolResult opened = s.Nav(http.One);
+            ToolResult opened = s.Nav(http.One, host: "yiwrite");
             if (!opened.Success)
             {
                 run.CaseFail("nav-agent-open", opened.Error ?? "打开失败");
@@ -202,7 +197,6 @@ namespace BrowserNavigateTest
 
         private static void RunAttach(TestRun run, NavSession s, NavHttp http, string agentId)
         {
-            NavSession.WaitForBridge(5000);
             ToolResult chrome = s.Nav(http.One, host: "chrome", visible: true);
             if (!chrome.Success)
             {

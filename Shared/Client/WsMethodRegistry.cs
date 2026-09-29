@@ -109,6 +109,28 @@ namespace WordAddIn1
             return names;
         }
 
+        public Task<ToolResult> InvokeToolNameAsync(string toolName, Dictionary<string, object> parameters)
+        {
+            if (string.IsNullOrWhiteSpace(toolName))
+            {
+                return Task.FromResult(new ToolResult { Success = false, Error = "tool is required" });
+            }
+
+            foreach (KeyValuePair<string, string> kv in _methodToToolName)
+            {
+                if (string.Equals(kv.Value, toolName, StringComparison.Ordinal))
+                {
+                    return InvokeRawAsync(kv.Key, parameters);
+                }
+            }
+
+            return Task.FromResult(new ToolResult
+            {
+                Success = false,
+                Error = "unknown tool '" + toolName + "'"
+            });
+        }
+
         public async Task<ToolResult> InvokeRawAsync(string method, Dictionary<string, object> parameters)
         {
             if (string.IsNullOrWhiteSpace(method))

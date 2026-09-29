@@ -1,9 +1,6 @@
 using System;
 using System.Diagnostics;
-using System.Threading;
-using System.Windows.Forms;
 using WordAddIn1;
-using WordAddIn1.BrowserHost;
 
 namespace BrowserNavigateTest
 {
@@ -13,20 +10,21 @@ namespace BrowserNavigateTest
         private static int Main(string[] args)
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
-            ChannelHost.Kind = ChannelHostKind.Desktop;
-            ExtensionHost.EnsureStarted();
-            NavSession.WaitForBridge(8000);
 
             string host = GetHost(args);
             Console.WriteLine("浏览器 渠道 + navigate（nav-）");
+            Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
             Console.WriteLine(
                 string.Equals(host, "attach", StringComparison.OrdinalIgnoreCase)
                     ? "宿主 attach · Chrome / Edge 扩展"
                     : "宿主 agent · 易写 WebView2");
             Console.WriteLine();
+
+            if (!DesktopToolPipe.TryWaitUntilAvailable(8000))
+            {
+                Console.WriteLine("连不上易写 Desktop。请先打开易写应用（需含 DesktopTools 管道的新版本），再跑本套。");
+                return 1;
+            }
 
             int chromeBefore = CountProc("chrome");
             int edgeBefore = CountProc("msedge");

@@ -79,6 +79,13 @@ namespace EasyWriteClient.Desktop
                 catch (Exception)
                 {
                 }
+                try
+                {
+                    DesktopToolPipe.Stop();
+                }
+                catch (Exception)
+                {
+                }
                 _toolOutput?.Dispose();
                 _toolOutput = null;
                 if (_wsClient != null)
@@ -906,6 +913,51 @@ namespace EasyWriteClient.Desktop
             }
 
             _wsClient.SetWordApplication(wordApp);
+            StartDesktopToolPipe();
+        }
+
+        /// <summary>短套经命名管道调用本进程 F_*，与 Chrome 扩展同一桥。</summary>
+        private void StartDesktopToolPipe()
+        {
+            DesktopToolPipe.Start((tool, args) => InvokeToolOnUiAsync(tool, args));
+        }
+
+        private Task<ToolResult> InvokeToolOnUiAsync(string tool, Dictionary<string, object> args)
+        {
+            if (IsDisposed)
+            {
+                return Task.FromResult(new ToolResult { Success = false, Error = "Desktop 已关闭" });
+            }
+
+            if (!InvokeRequired)
+            {
+                return InvokeToolOnUiCoreAsync(tool, args);
+            }
+
+            var tcs = new TaskCompletionSource<ToolResult>();
+            BeginInvoke(new Action(async () =>
+            {
+                try
+                {
+                    ToolResult r = await InvokeToolOnUiCoreAsync(tool, args).ConfigureAwait(true);
+                    tcs.TrySetResult(r);
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetResult(new ToolResult { Success = false, Error = ex.Message });
+                }
+            }));
+            return tcs.Task;
+        }
+
+        private Task<ToolResult> InvokeToolOnUiCoreAsync(string tool, Dictionary<string, object> args)
+        {
+            if (_wsClient == null)
+            {
+                return Task.FromResult(new ToolResult { Success = false, Error = "Desktop 工具未就绪" });
+            }
+
+            return _wsClient.InvokeToolNameAsync(tool, args);
         }
 
         private void OnWsServerUiMessage(string type, Dictionary<string, object> msg)
