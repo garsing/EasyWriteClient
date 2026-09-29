@@ -10,9 +10,13 @@ namespace BrowserNavigateTest
         private static int Main(string[] args)
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
+            string caseFilter = GetArg(args, "--case=");
+            bool runSnp = string.IsNullOrEmpty(caseFilter)
+                || caseFilter.StartsWith("snp-", StringComparison.OrdinalIgnoreCase);
+            bool runNav = caseFilter.StartsWith("nav-", StringComparison.OrdinalIgnoreCase);
 
             string host = GetHost(args);
-            Console.WriteLine("浏览器 渠道 + navigate（nav-）");
+            Console.WriteLine(runSnp ? "浏览器 snapshot + iframe（snp-）" : "浏览器 渠道 + navigate（nav-）");
             Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
             Console.WriteLine(
                 string.Equals(host, "attach", StringComparison.OrdinalIgnoreCase)
@@ -30,41 +34,62 @@ namespace BrowserNavigateTest
             int edgeBefore = CountProc("msedge");
             var run = new TestRun();
             var sw = Stopwatch.StartNew();
-            using (var http = new NavHttp())
+            if (runNav)
             {
-                NavCases.Run(run, http, chromeBefore, edgeBefore);
+                using (var http = new NavHttp())
+                {
+                    NavCases.Run(run, http, chromeBefore, edgeBefore);
+                }
+            }
+            else
+            {
+                using (var http = new FixtureHttp())
+                {
+                    SnpCases.Run(
+                        run,
+                        http,
+                        string.Equals(host, "attach", StringComparison.OrdinalIgnoreCase),
+                        chromeBefore,
+                        edgeBefore);
+                }
             }
 
             sw.Stop();
+            int target = runSnp ? 46 : 30;
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
                 + "  跳过 " + run.CasesSkipped
-                + "  （目标 30）");
+                + "  （目标 " + target + "）");
             Console.WriteLine("ELAPSED_SEC=" + sw.Elapsed.TotalSeconds.ToString("F1"));
             return run.CasesFailed == 0 ? 0 : 1;
         }
 
-        private static string GetHost(string[] args)
+        private static string GetArg(string[] args, string prefix)
         {
             if (args == null)
             {
-                return "agent";
+                return "";
             }
 
             for (int i = 0; i < args.Length; i++)
             {
                 string a = args[i] ?? "";
-                if (a.StartsWith("--host=", StringComparison.OrdinalIgnoreCase))
+                if (a.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 {
-                    string v = a.Substring(7).Trim().ToLowerInvariant();
-                    if (v == "attach" || v == "chrome" || v == "edge")
-                    {
-                        return "attach";
-                    }
-
-                    return "agent";
+                    return a.Substring(prefix.Length).Trim();
                 }
+            }
+
+            return "";
+        }
+
+        private static string GetHost(string[] args)
+        {
+            string v = GetArg(args, "--host=");
+            if (v == "attach" || v == "chrome" || v == "edge")
+            {
+                return "attach";
             }
 
             return "agent";

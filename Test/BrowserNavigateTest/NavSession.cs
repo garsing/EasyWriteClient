@@ -48,6 +48,30 @@ namespace BrowserNavigateTest
             return Call(args);
         }
 
+        public ToolResult Snap(
+            string channelId = null,
+            string refId = null,
+            string domSupplement = null)
+        {
+            var args = new Dictionary<string, object>();
+            if (channelId != null)
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (refId != null)
+            {
+                args["ref"] = refId;
+            }
+
+            if (domSupplement != null)
+            {
+                args["dom_supplement"] = domSupplement;
+            }
+
+            return DesktopToolPipe.Call("F_browser_snapshot", args);
+        }
+
         public static bool IsShortId(string id)
         {
             return !string.IsNullOrEmpty(id)
