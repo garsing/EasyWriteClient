@@ -241,9 +241,12 @@ namespace BrowserNavigateTest
             }
 
             ToolResult ex = s.Snap(id, fr);
-            if (ex.Success && (Tree(ex).Contains("我的得分") || Tree(ex).Contains("评教结果")))
+            string inner = Tree(ex);
+            if (ex.Success)
             {
-                run.CaseFail("snp-ifr-sandbox", "沙箱展开装成功");
+                Ok(run, "snp-ifr-sandbox",
+                    inner.Contains("Example Domain") || inner.Contains("More information"),
+                    "展开成功但回的是外壳树");
                 return;
             }
 
