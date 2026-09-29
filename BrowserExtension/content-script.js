@@ -128,6 +128,8 @@
       if (tag === "iframe" || tag === "frame") return tag;
       if (/^h[1-6]$/.test(tag)) return "heading";
       if (tag === "li") return "listitem";
+      if (tag === "tr") return "row";
+      if (tag === "td" || tag === "th") return "cell";
       return tag || "generic";
     }
 
@@ -168,6 +170,10 @@
     function nameOf(el) {
       const tag = (el.tagName || "").toLowerCase();
       const t = (s) => String(s || "").replace(/\s+/g, " ").trim();
+      if (isDataRow(el)) {
+        const row = rowName(el);
+        if (row) return row;
+      }
       if (tag === "iframe" || tag === "frame") {
         const aria = el.getAttribute("aria-label");
         if (t(aria)) return t(aria);
@@ -362,6 +368,33 @@
       }
     }
 
+    function isIgnoredAriaRole(role) {
+      const r = String(role || "").toLowerCase();
+      return r === "none" || r === "presentation";
+    }
+
+    function isDataRow(el) {
+      if (!el || el.nodeType !== 1) return false;
+      const tag = (el.tagName || "").toLowerCase();
+      if (tag === "tr") return true;
+      const role = (el.getAttribute("role") || "").toLowerCase();
+      if (role === "row") return true;
+      const cls = classNameOf(el);
+      return /\bel-table__row\b/.test(cls) || /\bant-table-row\b/.test(cls);
+    }
+
+    function rowName(el) {
+      const cells = el.querySelectorAll
+        ? el.querySelectorAll("td, th, [role='cell'], [role='gridcell'], [role='columnheader']")
+        : [];
+      const parts = [];
+      for (let i = 0; i < cells.length && parts.length < 6; i++) {
+        const n = (ownText(cells[i]) || String(cells[i].innerText || "").replace(/\s+/g, " ").trim());
+        if (n && n.length <= 40) parts.push(n);
+      }
+      return parts.join(" ").slice(0, 80);
+    }
+
     function hasClickHint(el) {
       if (!el || el.nodeType !== 1) return false;
       if (el.getAttribute && el.getAttribute("onclick")) return true;
@@ -421,7 +454,9 @@
         return true;
       }
       if (el.isContentEditable) return true;
-      if (el.getAttribute("role")) return true;
+      if (isDataRow(el)) return true;
+      const ariaRole = el.getAttribute("role");
+      if (ariaRole && !isIgnoredAriaRole(ariaRole)) return true;
       if (/^h[1-6]$/.test(tag)) return true;
       return false;
     }

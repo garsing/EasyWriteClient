@@ -67,3 +67,4 @@ cd EasyWriteClient\BrowserExtension
 - **0.1.14** 起 combobox 行带 options=（最多 8 项）；select 找不到选项时会列出可选原文。须重新加载扩展。
 - **0.1.15** 起 interact 优先用宿主 css_path（避免 iframe 里本地 eN 指到壳上旧节点）；select 未落到 `<select>` 时不再暗示「请改用 select」。须重新加载扩展。
 - **0.1.16** 起中间栏短文案 + `cursor:pointer` / `onclick` / `tabindex>=0` 也进树（不再只认左侧 240px）。须重新加载扩展。
+- **0.1.17** 起表格每一行进树（`tr` / `role=row` / `.el-table__row`）；`role=none` 不再整表截成一行名字。须重新加载扩展。

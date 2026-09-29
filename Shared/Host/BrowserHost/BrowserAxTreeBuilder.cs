@@ -31,7 +31,13 @@ namespace WordAddIn1.BrowserHost
 
         private static readonly HashSet<string> StructureRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "heading", "RootWebArea", "WebArea", "banner", "navigation", "main", "contentinfo"
+            "heading", "RootWebArea", "WebArea", "banner", "navigation", "main", "contentinfo",
+            "row", "cell", "gridcell", "columnheader", "rowheader"
+        };
+
+        private static readonly HashSet<string> RowRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "row", "LayoutTableRow"
         };
 
         private static readonly HashSet<string> FrameRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -400,6 +406,11 @@ namespace WordAddIn1.BrowserHost
                 return true;
             }
 
+            if (RowRoles.Contains(role) && !string.IsNullOrWhiteSpace(node.Name))
+            {
+                return true;
+            }
+
             return false;
         }
 
@@ -409,8 +420,9 @@ namespace WordAddIn1.BrowserHost
                 || string.Equals(role, "LineBreak", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(role, "generic", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(role, "Group", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(role, "none", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(role, "presentation", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(role, "LayoutTable", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(role, "LayoutTableRow", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(role, "LayoutTableCell", StringComparison.OrdinalIgnoreCase);
         }
 

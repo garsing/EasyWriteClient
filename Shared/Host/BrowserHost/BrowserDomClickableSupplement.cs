@@ -103,6 +103,23 @@ namespace WordAddIn1.BrowserHost
         role='button';
       }
     }
+    if (!kind && !hidden){
+      var rowRole=((el.getAttribute&&el.getAttribute('role'))||'').toLowerCase();
+      if (tag==='tr' || rowRole==='row' || /\bel-table__row\b/.test(classNameOf(el)) || /\bant-table-row\b/.test(classNameOf(el))){
+        var cells=el.querySelectorAll?el.querySelectorAll(""td, th, [role='cell'], [role='gridcell']""):[];
+        var parts=[];
+        for (var ci=0; ci<cells.length && parts.length<6; ci++){
+          var ct=ownText(cells[ci]) || String(cells[ci].innerText||'').replace(/\s+/g,' ').trim();
+          if (ct && ct.length<=40) parts.push(ct);
+        }
+        var rn=parts.join(' ').slice(0,80);
+        if (rn){
+          kind='row';
+          name=rn;
+          role='row';
+        }
+      }
+    }
     if (!kind) continue;
     var mark='yw'+items.length;
     try { el.setAttribute('data-yw-clk', mark); } catch (e2) { continue; }
