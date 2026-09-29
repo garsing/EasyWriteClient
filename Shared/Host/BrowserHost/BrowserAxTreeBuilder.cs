@@ -145,7 +145,7 @@ namespace WordAddIn1.BrowserHost
             string truncatedReason = null;
             var visited = new HashSet<string>(StringComparer.Ordinal);
 
-            void Walk(string nodeId, int depth)
+            void Walk(string nodeId, int depth, string inheritName)
             {
                 if (truncated || string.IsNullOrEmpty(nodeId) || !byId.TryGetValue(nodeId, out AxNode node))
                 {
@@ -172,9 +172,22 @@ namespace WordAddIn1.BrowserHost
                     || IsDetailRevealName(node.Name);
                 if (node.Ignored && !IsRootLike(node.Role) && !FrameRoles.Contains(peekRole) && !hoverReveal)
                 {
+                    string ignName = SanitizeAccessibleName(node.Name ?? "");
+                    if (LooksLikeCardGroup(ignName, node, byId))
+                    {
+                        AppendLine(sb, depth, peekRole, ignName, null, note: null);
+                        string next = ignName;
+                        foreach (string child in node.ChildIds)
+                        {
+                            Walk(child, depth + 1, next);
+                        }
+
+                        return;
+                    }
+
                     foreach (string child in node.ChildIds)
                     {
-                        Walk(child, depth);
+                        Walk(child, depth, inheritName);
                     }
 
                     return;
@@ -184,6 +197,14 @@ namespace WordAddIn1.BrowserHost
 
                 string role = peekRole;
                 string name = SanitizeAccessibleName(ResolveFrameName(node, role));
+                if (string.IsNullOrWhiteSpace(name)
+                    && string.Equals(role, "link", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(inheritName)
+                    && HasImageDescendant(node, byId))
+                {
+                    name = inheritName;
+                }
+
                 node.Name = name;
 
                 if (FrameRoles.Contains(role))
@@ -217,7 +238,8 @@ namespace WordAddIn1.BrowserHost
                     return;
                 }
 
-                bool wantRef = ShouldAssignRef(node, refs.Count);
+                bool namedGroup = LooksLikeCardGroup(name, node, byId) && IsNoiseRole(role);
+                bool wantRef = ShouldAssignRef(node, refs.Count) && !namedGroup;
                 string refId = null;
                 if (wantRef && refs.Count < MaxRefNodes && node.BackendDomNodeId.HasValue)
                 {
@@ -243,6 +265,7 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 bool print = wantRef
+                    || namedGroup
                     || inputLike
                     || StructureRoles.Contains(role)
                     || (!string.IsNullOrWhiteSpace(name) && !IsNoiseRole(role))
@@ -262,6 +285,9 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 int childDepth = print ? depth + 1 : depth;
+                string childInherit = namedGroup && !string.IsNullOrWhiteSpace(name)
+                    ? name
+                    : inheritName;
                 foreach (string child in node.ChildIds)
                 {
                     if (truncated)
@@ -269,11 +295,11 @@ namespace WordAddIn1.BrowserHost
                         break;
                     }
 
-                    Walk(child, childDepth);
+                    Walk(child, childDepth, childInherit);
                 }
             }
 
-            Walk(startId, 0);
+            Walk(startId, 0, null);
 
             // 临时关闭：AX 树第二遍补全可输入控件（与 DOM 补查对照实验）
             // if (!truncated)
@@ -412,6 +438,65 @@ namespace WordAddIn1.BrowserHost
             }
 
             return false;
+        }
+
+        private static bool LooksLikeCardGroup(string name, AxNode node, Dictionary<string, AxNode> byId)
+        {
+            if (string.IsNullOrWhiteSpace(name) || name.Trim().Length < 8 || node == null)
+            {
+                return false;
+            }
+
+            int links = CountRoleDescendants(node, byId, "link", maxCount: 9);
+            return links >= 1 && links <= 8;
+        }
+
+        private static bool HasImageDescendant(AxNode node, Dictionary<string, AxNode> byId)
+        {
+            return CountRoleDescendants(node, byId, "image", maxCount: 1) > 0
+                || CountRoleDescendants(node, byId, "img", maxCount: 1) > 0;
+        }
+
+        private static int CountRoleDescendants(
+            AxNode node,
+            Dictionary<string, AxNode> byId,
+            string role,
+            int maxCount)
+        {
+            if (node == null || byId == null || string.IsNullOrEmpty(role) || maxCount < 1)
+            {
+                return 0;
+            }
+
+            var stack = new Stack<string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string id in node.ChildIds)
+            {
+                stack.Push(id);
+            }
+
+            int count = 0;
+            int budget = 80;
+            while (stack.Count > 0 && budget-- > 0 && count < maxCount)
+            {
+                string id = stack.Pop();
+                if (string.IsNullOrEmpty(id) || !seen.Add(id) || !byId.TryGetValue(id, out AxNode child))
+                {
+                    continue;
+                }
+
+                if (string.Equals(child.Role ?? "", role, StringComparison.OrdinalIgnoreCase))
+                {
+                    count++;
+                }
+
+                foreach (string next in child.ChildIds)
+                {
+                    stack.Push(next);
+                }
+            }
+
+            return count;
         }
 
         private static bool IsNoiseRole(string role)

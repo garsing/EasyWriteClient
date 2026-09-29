@@ -81,7 +81,8 @@ namespace WordAddIn1.BrowserHost
       kind='hidden_detail';
       name=own||shortInner||'button';
       role='button';
-    } else if (isImgtextCard(el) || (!hidden && isPointerCard(el, st))){
+    } else if ((isImgtextCard(el) || (!hidden && isPointerCard(el, st)))
+        && !(el.querySelector && el.querySelector('a[href], [role=link]'))){
       kind='card';
       var alt=(el.querySelector('img')&&el.querySelector('img').alt)||'';
       name=(own||'').slice(0,40) || alt || inner.slice(0,40) || '卡片';

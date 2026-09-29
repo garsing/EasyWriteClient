@@ -748,10 +748,20 @@ namespace WordAddIn1.BrowserHost
     else t.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
   }
 
+  function imageHrefLink(el) {
+    if (!el || !el.querySelector) return null;
+    var img = el.querySelector('a[href] img');
+    return img && img.closest ? img.closest('a[href]') : null;
+  }
+
   var t = this;
   var tag = (this.tagName || '').toUpperCase();
   var role = '';
   try { role = ((this.getAttribute && this.getAttribute('role')) || '').toLowerCase(); } catch (eR) {}
+  if (tag !== 'A' && role !== 'link' && tag !== 'BUTTON' && role !== 'button') {
+    var imgA = imageHrefLink(this);
+    if (imgA) t = imgA;
+  }
   var isImg = tag === 'IMG' || role === 'img' || role === 'image';
   if (isImg) {
     try {

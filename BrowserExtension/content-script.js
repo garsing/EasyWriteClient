@@ -341,6 +341,43 @@
       return null;
     }
 
+    function isNativeInteractive(el) {
+      const tag = ((el && el.tagName) || "").toLowerCase();
+      if (["a", "button", "input", "textarea", "select"].indexOf(tag) >= 0) return true;
+      const role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase();
+      return role === "link" || role === "button";
+    }
+
+    function isCardGroup(el) {
+      if (!el || el.nodeType !== 1 || isNativeInteractive(el) || !el.querySelector) return false;
+      if (!el.querySelector("a[href], [role='link']")) return false;
+      if (!el.querySelector("img") && !isPointerCard(el)) return false;
+      const n = nameOf(el);
+      if (!n || n.length < 8) return false;
+      try {
+        const w = el.offsetWidth;
+        const h = el.offsetHeight;
+        if (w < 100 || h < 60 || w > 720 || h > 900) return false;
+      } catch (_) {
+        return false;
+      }
+      const links = el.querySelectorAll("a[href], [role='link']");
+      return links.length >= 1 && links.length <= 8;
+    }
+
+    function closestCardGroup(el) {
+      let p = el;
+      while (p && p.nodeType === 1 && p !== document.body) {
+        if (isCardGroup(p)) return p;
+        p = p.parentElement;
+      }
+      return null;
+    }
+
+    function isOutermostCardGroup(el) {
+      return isCardGroup(el) && !closestCardGroup(el.parentElement);
+    }
+
     function isShortOwnText(el) {
       const own = ownText(el);
       return own.length >= 2 && own.length <= 16;
@@ -444,7 +481,10 @@
 
     function interesting(el) {
       const tag = (el.tagName || "").toLowerCase();
-      if (hasDetailLabel(el) || isImgtextBtn(el) || isPointerCard(el)
+      if (isOutermostCardGroup(el)) return true;
+      if (isPointerCard(el) && closestCardGroup(el.parentElement)) return false;
+      if (hasDetailLabel(el) || isImgtextBtn(el)
+        || (isPointerCard(el) && !el.querySelector("a[href], [role='link']"))
         || isPointerLabel(el) || hasClickHint(el)) return true;
       if (tag === "img" && !closestPointerCard(el.parentElement)) return true;
       if (["a", "button", "input", "textarea", "select", "label", "iframe", "frame"].indexOf(tag) >= 0) {
@@ -469,39 +509,47 @@
       }
       if (shouldSkip(el)) return;
 
-      if (interesting(el) || depth === 0) {
-        const ref = nextRef();
+      const groupOnly = isOutermostCardGroup(el);
+      const print = interesting(el) || depth === 0;
+      if (print) {
         const role = roleOf(el);
-        const name = nameOf(el);
-        const val = valueOf(el);
+        let name = nameOf(el);
+        const tag = (el.tagName || "").toLowerCase();
+        if (!name && tag === "a" && el.querySelector && el.querySelector("img")) {
+          const g = closestCardGroup(el);
+          if (g) name = nameOf(g);
+        }
         const indent = "  ".repeat(Math.min(depth, 12));
         let line = indent + "- " + role;
         if (name) line += ' "' + name.replace(/"/g, "'") + '"';
-        line += " [ref=" + ref + "]";
-        if (val != null) line += ' value="' + String(val).replace(/"/g, "'") + '"';
-        const opts = optionsOf(el);
-        if (opts) line += " options=" + opts;
-        if (el.tagName && el.tagName.toLowerCase() === "input" && (el.getAttribute("type") || "") === "password") {
-          line += " (password)";
-        }
-        if ((isHoverRevealControl(el) || hasDetailLabel(el) || isImgtextBtn(el))
-          && (isHoverHiddenStyle(el) || (window.getComputedStyle(el).display === "none"))) {
-          line += " (隐藏)";
+        if (!groupOnly) {
+          const ref = nextRef();
+          line += " [ref=" + ref + "]";
+          const val = valueOf(el);
+          if (val != null) line += ' value="' + String(val).replace(/"/g, "'") + '"';
+          const opts = optionsOf(el);
+          if (opts) line += " options=" + opts;
+          if (tag === "input" && (el.getAttribute("type") || "") === "password") {
+            line += " (password)";
+          }
+          if ((isHoverRevealControl(el) || hasDetailLabel(el) || isImgtextBtn(el))
+            && (isHoverHiddenStyle(el) || (window.getComputedStyle(el).display === "none"))) {
+            line += " (隐藏)";
+          }
+          const rec = {
+            role,
+            name,
+            cssPath: cssPath(el),
+            probe: probeOf(el),
+            tag
+          };
+          if (tag === "iframe" || tag === "frame") {
+            rec.src = el.getAttribute("src") || el.src || "";
+            rec.iframeIndex = iframeIndexOf(el);
+          }
+          nodes[ref] = rec;
         }
         lines.push(line);
-        const tag = (el.tagName || "").toLowerCase();
-        const rec = {
-          role,
-          name,
-          cssPath: cssPath(el),
-          probe: probeOf(el),
-          tag
-        };
-        if (tag === "iframe" || tag === "frame") {
-          rec.src = el.getAttribute("src") || el.src || "";
-          rec.iframeIndex = iframeIndexOf(el);
-        }
-        nodes[ref] = rec;
 
         if (lines.join("\n").length > MAX_CHARS) {
           truncated = true;
@@ -515,8 +563,9 @@
       }
 
       const children = el.children ? Array.from(el.children) : [];
+      const childDepth = print ? depth + 1 : depth;
       for (let i = 0; i < children.length; i++) {
-        walk(children[i], depth + 1);
+        walk(children[i], childDepth);
         if (truncated) return;
       }
     }
@@ -758,10 +807,20 @@
     return { ok: true };
   }
 
+  function imageHrefLink(el) {
+    if (!el || !el.querySelector) return null;
+    const img = el.querySelector("a[href] img");
+    return img && img.closest ? img.closest("a[href]") : null;
+  }
+
   function resolveClickTarget(el) {
     if (!el) return el;
     const tag = (el.tagName || "").toLowerCase();
     const role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase();
+    if (tag !== "a" && role !== "link" && tag !== "button" && role !== "button") {
+      const imgA = imageHrefLink(el);
+      if (imgA) return imgA;
+    }
     const isImg = tag === "img" || role === "img" || role === "image";
     if (!isImg) return el;
     try {
