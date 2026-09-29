@@ -88,10 +88,19 @@ namespace WordAddIn1.BrowserHost
       role='generic';
     } else if (!hidden && st && st.cursor==='pointer' && own.length>=2 && own.length<=16){
       var rect=el.getBoundingClientRect();
-      if (rect.left>=0 && rect.left<240 && rect.width>0 && rect.height>0){
-        kind='menu';
+      if (rect.width>0 && rect.height>0){
+        kind='pointer_label';
         name=own;
-        role='menuitem';
+        role='button';
+      }
+    } else if (!hidden && own.length>=2 && own.length<=16){
+      var hint=!!(el.getAttribute&&el.getAttribute('onclick'));
+      var ti=el.getAttribute&&el.getAttribute('tabindex');
+      if (!hint && ti!=null && ti!=='' && !isNaN(Number(ti)) && Number(ti)>=0) hint=true;
+      if (hint){
+        kind='click_hint';
+        name=own;
+        role='button';
       }
     }
     if (!kind) continue;

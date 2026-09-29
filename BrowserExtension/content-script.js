@@ -335,17 +335,42 @@
       return null;
     }
 
-    function isPointerMenu(el) {
+    function isShortOwnText(el) {
+      const own = ownText(el);
+      return own.length >= 2 && own.length <= 16;
+    }
+
+    function isVisibleBox(el, st) {
+      if (!st || st.display === "none" || st.visibility === "hidden") return false;
       try {
-        const st = window.getComputedStyle(el);
-        if (!st || st.cursor !== "pointer" || st.display === "none") return false;
-        const own = ownText(el);
-        if (own.length < 2 || own.length > 16) return false;
         const rect = el.getBoundingClientRect();
-        return rect.left >= 0 && rect.left < 240 && rect.width > 0 && rect.height > 0;
+        return rect.width > 0 && rect.height > 0;
       } catch (_) {
         return false;
       }
+    }
+
+    /// 人能点的短标签：pointer + 自己有短文案。不限左侧（中间栏 Tab 也要进树）。
+    function isPointerLabel(el) {
+      try {
+        const st = window.getComputedStyle(el);
+        if (!st || st.cursor !== "pointer") return false;
+        if (!isShortOwnText(el)) return false;
+        return isVisibleBox(el, st);
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function hasClickHint(el) {
+      if (!el || el.nodeType !== 1) return false;
+      if (el.getAttribute && el.getAttribute("onclick")) return true;
+      if (typeof el.onclick === "function") return true;
+      const ti = el.getAttribute ? el.getAttribute("tabindex") : null;
+      if (ti != null && ti !== "" && !isNaN(Number(ti)) && Number(ti) >= 0 && isShortOwnText(el)) {
+        return true;
+      }
+      return false;
     }
 
     function isHoverHiddenStyle(el) {
@@ -386,7 +411,8 @@
 
     function interesting(el) {
       const tag = (el.tagName || "").toLowerCase();
-      if (hasDetailLabel(el) || isImgtextBtn(el) || isPointerCard(el) || isPointerMenu(el)) return true;
+      if (hasDetailLabel(el) || isImgtextBtn(el) || isPointerCard(el)
+        || isPointerLabel(el) || hasClickHint(el)) return true;
       if (tag === "img" && !closestPointerCard(el.parentElement)) return true;
       if (["a", "button", "input", "textarea", "select", "label", "iframe", "frame"].indexOf(tag) >= 0) {
         return true;
