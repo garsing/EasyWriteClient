@@ -67,6 +67,21 @@ namespace WordAddIn1.BrowserHost
             string refId,
             string domSupplement = null)
         {
+            if (string.IsNullOrWhiteSpace(refId))
+            {
+                if (!BrowserDomInputSupplement.TryResolveSelector(
+                    domSupplement,
+                    out _,
+                    out string normalized,
+                    out string domErr))
+                {
+                    return Task.FromResult(
+                        BrowserSnapshotResult.Fail(domErr ?? "dom_supplement 无效"));
+                }
+
+                domSupplement = normalized;
+            }
+
             if (channel != null
                 && string.Equals(channel.Track, "attach", StringComparison.OrdinalIgnoreCase))
             {
