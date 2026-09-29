@@ -320,7 +320,15 @@
       return /\bimgtext\b/.test(classNameOf(el)) && !!(el.querySelector && el.querySelector("img"));
     }
 
+    function isNativeInteractive(el) {
+      const tag = ((el && el.tagName) || "").toLowerCase();
+      if (["a", "button", "input", "textarea", "select"].indexOf(tag) >= 0) return true;
+      const role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase();
+      return role === "link" || role === "button";
+    }
+
     function isPointerCard(el) {
+      if (isNativeInteractive(el)) return false;
       if (isImgtextCard(el)) return true;
       try {
         const st = window.getComputedStyle(el);
@@ -339,13 +347,6 @@
         p = p.parentElement;
       }
       return null;
-    }
-
-    function isNativeInteractive(el) {
-      const tag = ((el && el.tagName) || "").toLowerCase();
-      if (["a", "button", "input", "textarea", "select"].indexOf(tag) >= 0) return true;
-      const role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase();
-      return role === "link" || role === "button";
     }
 
     function isCardGroup(el) {
@@ -396,6 +397,7 @@
     /// 人能点的短标签：pointer + 自己有短文案。不限左侧（中间栏 Tab 也要进树）。
     function isPointerLabel(el) {
       try {
+        if (closestCardGroup(el)) return false;
         const st = window.getComputedStyle(el);
         if (!st || st.cursor !== "pointer") return false;
         if (!isShortOwnText(el)) return false;
@@ -481,13 +483,14 @@
 
     function interesting(el) {
       const tag = (el.tagName || "").toLowerCase();
+      if (isNativeInteractive(el)) return true;
       if (isOutermostCardGroup(el)) return true;
       if (isPointerCard(el) && closestCardGroup(el.parentElement)) return false;
       if (hasDetailLabel(el) || isImgtextBtn(el)
         || (isPointerCard(el) && !el.querySelector("a[href], [role='link']"))
         || isPointerLabel(el) || hasClickHint(el)) return true;
       if (tag === "img" && !closestPointerCard(el.parentElement)) return true;
-      if (["a", "button", "input", "textarea", "select", "label", "iframe", "frame"].indexOf(tag) >= 0) {
+      if (["label", "iframe", "frame"].indexOf(tag) >= 0) {
         return true;
       }
       if (tag === "area" && (el.getAttribute("alt") || el.title || el.getAttribute("aria-label"))) {
