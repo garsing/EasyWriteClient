@@ -93,7 +93,9 @@ namespace WordAddIn1.BrowserHost
             Task<BrowserCapturedDownload> waitTask = form.BeginExpectDownloadAsync(DefaultTimeout);
             try
             {
-                await BrowserInteractEngine.ClickAsync(form, backendNodeId, sessionId).ConfigureAwait(true);
+                await BrowserInteractEngine
+                    .ClickAsync(form, backendNodeId, sessionId, ConfigManager.GetBrowserClickMode())
+                    .ConfigureAwait(true);
             }
             catch
             {

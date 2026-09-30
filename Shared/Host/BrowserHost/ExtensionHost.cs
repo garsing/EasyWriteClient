@@ -857,6 +857,12 @@ namespace WordAddIn1.BrowserHost
 
             if (entry != null && BrowserRiskGuard.IsFrameRole(entry))
             {
+                if (string.Equals(act, "hover", StringComparison.Ordinal))
+                {
+                    return BrowserInteractResult.Fail(
+                        "请用 action=click 展开 iframe，不要 hover 结构行。");
+                }
+
                 if (!string.Equals(act, "click", StringComparison.Ordinal))
                 {
                     return BrowserInteractResult.Fail(
@@ -919,7 +925,9 @@ namespace WordAddIn1.BrowserHost
                     ["key"] = key,
                     ["option"] = option,
                     ["frame_id"] = entry != null ? entry.AttachFrameId : null,
-                    ["css_path"] = entry != null ? entry.AttachCssPath : null
+                    ["css_path"] = entry != null ? entry.AttachCssPath : null,
+                    ["click_mode"] = ConfigManager.GetBrowserClickMode(),
+                    ["attach_pointer"] = ConfigManager.GetBrowserAttachPointer()
                 };
                 JObject result = await RpcAsync(channel.TabUuid, "rpc.interact", req).ConfigureAwait(true);
                 string pageUrl = (string)result["url"] ?? channel.Url;
@@ -1042,7 +1050,9 @@ namespace WordAddIn1.BrowserHost
                         ["tab_uuid"] = channel.TabUuid,
                         ["ref"] = refId,
                         ["frame_id"] = entry.AttachFrameId,
-                        ["css_path"] = entry.AttachCssPath
+                        ["css_path"] = entry.AttachCssPath,
+                        ["click_mode"] = ConfigManager.GetBrowserClickMode(),
+                        ["attach_pointer"] = ConfigManager.GetBrowserAttachPointer()
                     }).ConfigureAwait(true);
 
                 BrowserDownloadFileResult imported = await ImportDownloadedFileAsync(result).ConfigureAwait(true);

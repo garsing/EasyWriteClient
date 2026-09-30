@@ -31,7 +31,7 @@
       case "download_prep":
         return doDownloadPrep(msg.ref, msg.css_path);
       case "download_click":
-        return doDownloadClick(msg.ref, msg.css_path);
+        return doDownloadClick(msg);
       default:
         return { ok: false, error: "unknown: " + msg.type };
     }
@@ -746,12 +746,15 @@
     return text ? (tag + " " + text) : tag;
   }
 
-  function hitTestError(t) {
-    if (isForceClickTarget(t)) return null;
+  function hitTestError(t, opts) {
+    const hover = !!(opts && opts.hover);
+    if (!hover && isForceClickTarget(t)) return null;
     let r = { width: 0, height: 0, left: 0, top: 0 };
     try { r = t.getBoundingClientRect(); } catch (_) {}
     if (r.width <= 0 || r.height <= 0) {
-      return "点击被挡住：目标没有可点区域。";
+      return hover
+        ? "没有可悬停区域。请悬停可见的父节点或卡片。"
+        : "点击被挡住：目标没有可点区域。";
     }
     const x = r.left + r.width / 2;
     const y = r.top + r.height / 2;
@@ -801,12 +804,125 @@
     return { ok: true };
   }
 
-  function clickWithHitTest(el) {
+  function normalizeClickMode(v) {
+    return String(v || "").toLowerCase() === "legacy" ? "legacy" : "pointer";
+  }
+
+  function normalizeAttachPointer(v) {
+    return String(v || "").toLowerCase() === "cdp" ? "cdp" : "synthetic";
+  }
+
+  function boxCenter(t) {
+    let r = { width: 0, height: 0, left: 0, top: 0 };
+    try { r = t.getBoundingClientRect(); } catch (_) {}
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height };
+  }
+
+  function toTopViewport(x, y) {
+    let ox = x;
+    let oy = y;
+    try {
+      let win = window;
+      while (win !== win.top) {
+        const frame = win.frameElement;
+        if (!frame) break;
+        const r = frame.getBoundingClientRect();
+        ox += r.left;
+        oy += r.top;
+        win = win.parent;
+      }
+    } catch (_) {}
+    return { x: ox, y: oy };
+  }
+
+  function fireSyntheticClick(t, x, y) {
+    const down = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, buttons: 1 };
+    const up = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, buttons: 0 };
+    try { t.dispatchEvent(new MouseEvent("mousemove", down)); } catch (_) {}
+    try {
+      if (typeof PointerEvent === "function") {
+        t.dispatchEvent(new PointerEvent("pointermove", Object.assign({}, down, { pointerId: 1, pointerType: "mouse" })));
+      }
+    } catch (_) {}
+    try { t.dispatchEvent(new MouseEvent("mousedown", down)); } catch (_) {}
+    try {
+      if (typeof PointerEvent === "function") {
+        t.dispatchEvent(new PointerEvent("pointerdown", Object.assign({}, down, { pointerId: 1, pointerType: "mouse" })));
+      }
+    } catch (_) {}
+    try { t.dispatchEvent(new MouseEvent("mouseup", up)); } catch (_) {}
+    try {
+      if (typeof PointerEvent === "function") {
+        t.dispatchEvent(new PointerEvent("pointerup", Object.assign({}, up, { pointerId: 1, pointerType: "mouse" })));
+      }
+    } catch (_) {}
+    try { t.dispatchEvent(new MouseEvent("click", up)); } catch (_) {}
+  }
+
+  function fireSyntheticHover(t, x, y) {
+    const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+    try { t.dispatchEvent(new MouseEvent("mousemove", opts)); } catch (_) {}
+    try {
+      if (typeof PointerEvent === "function") {
+        t.dispatchEvent(new PointerEvent("pointermove", Object.assign({}, opts, { pointerId: 1, pointerType: "mouse" })));
+      }
+    } catch (_) {}
+  }
+
+  async function requestCdpPointer(kind, x, y) {
+    const top = toTopViewport(x, y);
+    const resp = await chrome.runtime.sendMessage({
+      type: "yiwrite.pointer",
+      kind,
+      x: top.x,
+      y: top.y
+    });
+    if (!resp || !resp.ok) {
+      throw new Error("未授予调试权限或无法附加调试器，无法使用 CDP 点击。");
+    }
+  }
+
+  async function clickWithPointer(el, clickMode, attachPointer) {
     const err = hitTestError(el);
     if (err) return { ok: false, error: err };
     try { el.focus && el.focus(); } catch (_) {}
-    if (typeof el.click === "function") el.click();
-    else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    if (clickMode === "legacy") {
+      if (typeof el.click === "function") el.click();
+      else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      return { ok: true };
+    }
+    const box = boxCenter(el);
+    if (box.w <= 0 || box.h <= 0) {
+      if (isForceClickTarget(el)) {
+        if (typeof el.click === "function") el.click();
+        else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+        return { ok: true };
+      }
+      return { ok: false, error: "点击被挡住：目标没有可点区域。" };
+    }
+    if (attachPointer === "cdp") {
+      await requestCdpPointer("click", box.x, box.y);
+      try {
+        el.dispatchEvent(new MouseEvent("click", {
+          bubbles: true, cancelable: true, view: window,
+          clientX: box.x, clientY: box.y, buttons: 0
+        }));
+      } catch (_) {}
+      return { ok: true };
+    }
+    fireSyntheticClick(el, box.x, box.y);
+    return { ok: true };
+  }
+
+  async function hoverTarget(el, attachPointer) {
+    const err = hitTestError(el, { hover: true });
+    if (err) return { ok: false, error: err };
+    const box = boxCenter(el);
+    if (attachPointer === "cdp") {
+      await requestCdpPointer("hover", box.x, box.y);
+    }
+    fireSyntheticHover(el, box.x, box.y);
+    await new Promise((resolve) => setTimeout(resolve, 150));
     return { ok: true };
   }
 
@@ -816,14 +932,10 @@
     return img && img.closest ? img.closest("a[href]") : null;
   }
 
-  function resolveClickTarget(el) {
+  function resolveImageAncestor(el) {
     if (!el) return el;
     const tag = (el.tagName || "").toLowerCase();
     const role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase();
-    if (tag !== "a" && role !== "link" && tag !== "button" && role !== "button") {
-      const imgA = imageHrefLink(el);
-      if (imgA) return imgA;
-    }
     const isImg = tag === "img" || role === "img" || role === "image";
     if (!isImg) return el;
     try {
@@ -849,7 +961,22 @@
     return el;
   }
 
-  function doInteract(msg) {
+  function resolveClickTarget(el) {
+    if (!el) return el;
+    const tag = (el.tagName || "").toLowerCase();
+    const role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase();
+    if (tag !== "a" && role !== "link" && tag !== "button" && role !== "button") {
+      const imgA = imageHrefLink(el);
+      if (imgA) return imgA;
+    }
+    return resolveImageAncestor(el);
+  }
+
+  function resolveHoverTarget(el) {
+    return resolveImageAncestor(el);
+  }
+
+  async function doInteract(msg) {
     const action = (msg.action || "").toLowerCase();
     if (action === "scroll" && !msg.ref) {
       const dir = (msg.direction || "down").toLowerCase();
@@ -860,7 +987,11 @@
     }
 
     const { el, entry } = resolveRef(msg.ref, msg.css_path);
-    const target = action === "click" ? resolveClickTarget(el) : el;
+    const target = action === "click"
+      ? resolveClickTarget(el)
+      : action === "hover"
+        ? resolveHoverTarget(el)
+        : el;
     if (looksLikeFileChooser(el) || looksLikeFileChooser(target)) {
       throw new Error("本批不支持文件选择。请用户自己在窗里选文件。");
     }
@@ -877,9 +1008,19 @@
     target.scrollIntoView({ block: "center", inline: "nearest" });
 
     if (action === "click") {
-      const clicked = clickWithHitTest(target);
+      const clicked = await clickWithPointer(
+        target,
+        normalizeClickMode(msg.click_mode),
+        normalizeAttachPointer(msg.attach_pointer)
+      );
       if (!clicked.ok) return clicked;
       return { ok: true, message: "clicked", probe: entry.probe };
+    }
+
+    if (action === "hover") {
+      const hovered = await hoverTarget(target, normalizeAttachPointer(msg.attach_pointer));
+      if (!hovered.ok) return hovered;
+      return { ok: true, message: "hovered", probe: entry.probe };
     }
 
     if (action === "type") {
@@ -1076,13 +1217,17 @@
     return { ok: true, href, probe };
   }
 
-  function doDownloadClick(ref, cssPathHint) {
-    const { el } = resolveRef(ref, cssPathHint);
+  async function doDownloadClick(msg) {
+    const { el } = resolveRef(msg.ref, msg.css_path);
     const target = resolveClickTarget(el);
     if (looksLikeFileChooser(el) || looksLikeFileChooser(target)) {
       throw new Error("本批不支持文件选择。请用户自己在窗里选文件。");
     }
     try { target.scrollIntoView({ block: "center" }); } catch (_) {}
-    return clickWithHitTest(target);
+    return clickWithPointer(
+      target,
+      normalizeClickMode(msg.click_mode),
+      normalizeAttachPointer(msg.attach_pointer)
+    );
   }
 })();

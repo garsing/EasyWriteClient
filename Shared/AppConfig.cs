@@ -22,6 +22,8 @@ namespace WordAddIn1
         public WorkspaceSettings Workspace { get; set; }
         /// <summary>侧栏「打开文件」可监视应用白名单（无总开关）。</summary>
         public OpenFilesSettings OpenFiles { get; set; }
+        /// <summary>浏览器 click / hover 点法。模型不可见。</summary>
+        public BrowserSettings Browser { get; set; }
 
         public AppConfig()
         {
@@ -119,6 +121,13 @@ namespace WordAddIn1
             {
                 Apps = new List<OpenFilesAppEntry>();
             }
+        }
+
+        /// <summary>浏览器指针。缺省 / 非法值：ClickMode=pointer，AttachPointer=synthetic。</summary>
+        public class BrowserSettings
+        {
+            public string ClickMode { get; set; }
+            public string AttachPointer { get; set; }
         }
 
         public class OpenFilesAppEntry
@@ -251,6 +260,20 @@ namespace WordAddIn1
                     }
                 }
             }
+
+            if (config.Browser == null)
+            {
+                config.Browser = new AppConfig.BrowserSettings
+                {
+                    ClickMode = "pointer",
+                    AttachPointer = "synthetic"
+                };
+            }
+            else
+            {
+                config.Browser.ClickMode = NormalizeBrowserClickMode(config.Browser.ClickMode);
+                config.Browser.AttachPointer = NormalizeBrowserAttachPointer(config.Browser.AttachPointer);
+            }
         }
 
         /// <summary>首次生成 / 随包推荐配置：预置 word + wps + excel + et（不是 Normalize 兜底）。</summary>
@@ -358,8 +381,47 @@ namespace WordAddIn1
                 {
                     Mode = "sessions"
                 },
-                OpenFiles = CreateDefaultOpenFilesSettings()
+                OpenFiles = CreateDefaultOpenFilesSettings(),
+                Browser = new AppConfig.BrowserSettings
+                {
+                    ClickMode = "pointer",
+                    AttachPointer = "synthetic"
+                }
             };
+        }
+
+        /// <summary>click 点法。缺省 / 非法 = pointer。模型不可见。</summary>
+        public static string GetBrowserClickMode()
+        {
+            return NormalizeBrowserClickMode(Config?.Browser?.ClickMode);
+        }
+
+        /// <summary>attach 指针通道。缺省 / 非法 = synthetic。模型不可见。</summary>
+        public static string GetBrowserAttachPointer()
+        {
+            return NormalizeBrowserAttachPointer(Config?.Browser?.AttachPointer);
+        }
+
+        public static string NormalizeBrowserClickMode(string value)
+        {
+            if (!string.IsNullOrWhiteSpace(value)
+                && string.Equals(value.Trim(), "legacy", StringComparison.OrdinalIgnoreCase))
+            {
+                return "legacy";
+            }
+
+            return "pointer";
+        }
+
+        public static string NormalizeBrowserAttachPointer(string value)
+        {
+            if (!string.IsNullOrWhiteSpace(value)
+                && string.Equals(value.Trim(), "cdp", StringComparison.OrdinalIgnoreCase))
+            {
+                return "cdp";
+            }
+
+            return "synthetic";
         }
 
         public static AppConfig.DocumentActionsAmbiguitySettings GetDocumentActionsAmbiguitySettings()

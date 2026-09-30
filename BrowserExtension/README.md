@@ -70,3 +70,4 @@ cd EasyWriteClient\BrowserExtension
 - **0.1.17** 起表格每一行进树（`tr` / `role=row` / `.el-table__row`）；`role=none` 不再整表截成一行名字。须重新加载扩展。
 - **0.1.19** 起商品卡保留父子：外壳只印名字不发 ref，图上的 `a` 继承卡名；点壳时改点里面带图的链接。评教那种没有 `a` 的卡仍给整卡 ref。须重新加载扩展。
 - **0.1.20** 起卡内图上的 `<a>` 不再被当成「内层 pointer-card」丢掉；卡里继承来的 `cursor:pointer` 短文案不再人人发 ref。须重新加载扩展。
+- **0.1.21** 起 click 默认按盒中心发指针四下；新增 `action=hover`；attach 默认同帧合成，可切 CDP（会黄条）。须重新加载扩展。

@@ -6,7 +6,7 @@ using WordAddIn1.BrowserHost;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 易写浏览页内交互：click / type / scroll / press / select。
+    /// 易写浏览页内交互：click / hover / type / scroll / press / select。
     /// </summary>
     public static class F_BrowserInteractTool
     {
@@ -30,7 +30,7 @@ namespace WordAddIn1
                     string action = TryGetString(args, "action");
                     if (string.IsNullOrWhiteSpace(action))
                     {
-                        return Fail("必须提供 action（click|type|scroll|press|select）");
+                        return Fail("必须提供 action（click|hover|type|scroll|press|select）");
                     }
 
                     string channelId = TryGetString(args, "channel_id");

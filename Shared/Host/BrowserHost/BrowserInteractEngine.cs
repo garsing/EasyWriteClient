@@ -5,9 +5,10 @@ using Newtonsoft.Json.Linq;
 
 namespace WordAddIn1.BrowserHost
 {
-    /// <summary>WebView2 CDP：click / type / scroll / press / select。</summary>
+    /// <summary>WebView2 CDP：click / hover / type / scroll / press / select。</summary>
     internal static class BrowserInteractEngine
     {
+        internal const int HoverSettleMs = 150;
         public static async Task<DomNodeProbe> ProbeAsync(
             YiWriteBrowserForm form,
             int backendNodeId,
@@ -169,62 +170,52 @@ namespace WordAddIn1.BrowserHost
         public static async Task ClickAsync(
             YiWriteBrowserForm form,
             int backendNodeId,
+            string sessionId = null,
+            string clickMode = null)
+        {
+            string mode = ConfigManager.NormalizeBrowserClickMode(clickMode);
+            string objectId = await ResolveObjectIdAsync(form, backendNodeId, sessionId).ConfigureAwait(true);
+            string resultJson = await CallFunctionOnAsync(
+                form,
+                objectId,
+                PointerPrepareJs,
+                BuildCallObject(new JObject
+                {
+                    ["kind"] = "click",
+                    ["mode"] = mode
+                }),
+                sessionId).ConfigureAwait(true);
+            ThrowIfJsNotOk(resultJson, "点击被挡住");
+            if (string.Equals(mode, "legacy", StringComparison.Ordinal)
+                || ReadJsFallback(resultJson))
+            {
+                return;
+            }
+
+            ReadJsPoint(resultJson, out double x, out double y);
+            await DispatchCdpClickAsync(form, objectId, x, y, sessionId).ConfigureAwait(true);
+        }
+
+        public static async Task HoverAsync(
+            YiWriteBrowserForm form,
+            int backendNodeId,
             string sessionId = null)
         {
             string objectId = await ResolveObjectIdAsync(form, backendNodeId, sessionId).ConfigureAwait(true);
             string resultJson = await CallFunctionOnAsync(
                 form,
                 objectId,
-                ClickWithHitTestJs,
-                null,
+                PointerPrepareJs,
+                BuildCallObject(new JObject
+                {
+                    ["kind"] = "hover",
+                    ["mode"] = "pointer"
+                }),
                 sessionId).ConfigureAwait(true);
-            ThrowIfJsNotOk(resultJson, "点击被挡住");
-
-            // 临时关闭：点击后短等导航
-            // try
-            // {
-            //     await form.WaitNavigationAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true);
-            // }
-            // catch
-            // {
-            // }
-
-            /* 增强版（完整鼠标序列 + closest a[href] + 等导航）暂存对照：
-            await CallFunctionOnAsync(
-                form,
-                objectId,
-                @"function() {
-  this.scrollIntoView({block:'center', inline:'center'});
-  var t = this;
-  try {
-    if (t.closest) {
-      var a = t.closest('a[href]');
-      if (a) t = a;
-    }
-  } catch (e) {}
-  function fire(type) {
-    try {
-      t.dispatchEvent(new MouseEvent(type, {bubbles:true, cancelable:true, view:window, buttons:1}));
-    } catch (e2) {}
-  }
-  fire('pointerdown');
-  fire('mousedown');
-  fire('mouseup');
-  fire('click');
-  try {
-    if (typeof t.click === 'function') t.click();
-  } catch (e3) {}
-  return !!(t && (t.href || t.tagName));
-}",
-                null).ConfigureAwait(true);
-            try
-            {
-                await form.WaitNavigationAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true);
-            }
-            catch
-            {
-            }
-            */
+            ThrowIfJsNotOk(resultJson, "没有可悬停区域。请悬停可见的父节点或卡片。");
+            ReadJsPoint(resultJson, out double x, out double y);
+            await DispatchCdpHoverAsync(form, objectId, x, y, sessionId).ConfigureAwait(true);
+            await Task.Delay(HoverSettleMs).ConfigureAwait(true);
         }
 
         public static async Task TypeAsync(
@@ -686,8 +677,8 @@ namespace WordAddIn1.BrowserHost
             return k;
         }
 
-        private const string ClickWithHitTestJs =
-            @"function() {
+        private const string PointerPrepareJs =
+            @"function(opts) {
   function classNameOf(el) {
     var c = el && el.className;
     if (c && typeof c === 'object' && c.baseVal != null) return String(c.baseVal);
@@ -748,6 +739,12 @@ namespace WordAddIn1.BrowserHost
     else t.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
   }
 
+  opts = opts || {};
+  var kind = String(opts.kind || 'click');
+  var mode = String(opts.mode || 'pointer');
+  var isHover = kind === 'hover';
+  var isLegacy = !isHover && mode === 'legacy';
+
   function imageHrefLink(el) {
     if (!el || !el.querySelector) return null;
     var img = el.querySelector('a[href] img');
@@ -758,7 +755,7 @@ namespace WordAddIn1.BrowserHost
   var tag = (this.tagName || '').toUpperCase();
   var role = '';
   try { role = ((this.getAttribute && this.getAttribute('role')) || '').toLowerCase(); } catch (eR) {}
-  if (tag !== 'A' && role !== 'link' && tag !== 'BUTTON' && role !== 'button') {
+  if (!isHover && tag !== 'A' && role !== 'link' && tag !== 'BUTTON' && role !== 'button') {
     var imgA = imageHrefLink(this);
     if (imgA) t = imgA;
   }
@@ -788,17 +785,26 @@ namespace WordAddIn1.BrowserHost
     } catch (eC) {}
   }
   try { t.scrollIntoView({block:'center', inline:'center'}); } catch (eV) {}
-  if (isForceTarget(t)) {
-    doClick(t);
-    return { ok: true };
-  }
+  var force = !isHover && isForceTarget(t);
   var r = { width: 0, height: 0, left: 0, top: 0 };
   try { r = t.getBoundingClientRect(); } catch (eB) {}
-  if (r.width <= 0 || r.height <= 0) {
-    return { ok: false, error: '点击被挡住：目标没有可点区域。' };
-  }
   var x = r.left + r.width / 2;
   var y = r.top + r.height / 2;
+  if (force) {
+    if (isLegacy || r.width <= 0 || r.height <= 0) {
+      doClick(t);
+      return { ok: true, fallback: true };
+    }
+    return { ok: true, x: x, y: y };
+  }
+  if (r.width <= 0 || r.height <= 0) {
+    return {
+      ok: false,
+      error: isHover
+        ? '没有可悬停区域。请悬停可见的父节点或卡片。'
+        : '点击被挡住：目标没有可点区域。'
+    };
+  }
   var hit = null;
   try { hit = document.elementFromPoint(x, y); } catch (eH) {}
   if (!hit) {
@@ -807,8 +813,11 @@ namespace WordAddIn1.BrowserHost
   if (!isOnTarget(hit, t)) {
     return { ok: false, error: '点击被挡住：挡在上面的是「' + previewHit(hit) + '」。请先操作该蒙层（如接受 Cookie / 关闭），再点原来的目标。' };
   }
-  doClick(t);
-  return { ok: true };
+  if (isLegacy) {
+    doClick(t);
+    return { ok: true };
+  }
+  return { ok: true, x: x, y: y };
 }";
 
         private const string ScrollIntoOverflowJs =
@@ -937,6 +946,149 @@ namespace WordAddIn1.BrowserHost
         private static string BuildCallArgs(string value)
         {
             var arr = new JArray { new JObject { ["value"] = value ?? "" } };
+            return arr.ToString(Newtonsoft.Json.Formatting.None);
+        }
+
+        private static string BuildCallObject(JObject value)
+        {
+            var arr = new JArray { new JObject { ["value"] = value ?? new JObject() } };
+            return arr.ToString(Newtonsoft.Json.Formatting.None);
+        }
+
+        private static bool ReadJsFallback(string resultJson)
+        {
+            try
+            {
+                var jo = JObject.Parse(resultJson ?? "{}");
+                var v = jo["result"]?["value"] as JObject;
+                return v != null
+                    && v["fallback"] != null
+                    && v["fallback"].Type == JTokenType.Boolean
+                    && (bool)v["fallback"];
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void ReadJsPoint(string resultJson, out double x, out double y)
+        {
+            x = 0;
+            y = 0;
+            try
+            {
+                var jo = JObject.Parse(resultJson ?? "{}");
+                var v = jo["result"]?["value"] as JObject;
+                if (v == null || v["x"] == null || v["y"] == null)
+                {
+                    throw new InvalidOperationException("目标没有可点区域");
+                }
+
+                x = (double)v["x"];
+                y = (double)v["y"];
+            }
+            catch (InvalidOperationException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("无法读取点击坐标: " + (ex.Message ?? ""));
+            }
+        }
+
+        private static async Task DispatchCdpMouseAsync(
+            YiWriteBrowserForm form,
+            string sessionId,
+            string type,
+            double x,
+            double y,
+            bool pressed)
+        {
+            var payload = new JObject
+            {
+                ["type"] = type,
+                ["x"] = Math.Round(x, 2),
+                ["y"] = Math.Round(y, 2),
+                ["pointerType"] = "mouse"
+            };
+            if (string.Equals(type, "mousePressed", StringComparison.Ordinal)
+                || string.Equals(type, "mouseReleased", StringComparison.Ordinal))
+            {
+                payload["button"] = "left";
+                payload["clickCount"] = 1;
+                payload["buttons"] = pressed ? 1 : 0;
+            }
+
+            await form.CallCdpAsync(
+                    "Input.dispatchMouseEvent",
+                    payload.ToString(Newtonsoft.Json.Formatting.None),
+                    sessionId)
+                .ConfigureAwait(true);
+        }
+
+        private static async Task DispatchCdpClickAsync(
+            YiWriteBrowserForm form,
+            string objectId,
+            double x,
+            double y,
+            string sessionId)
+        {
+            await DispatchCdpMouseAsync(form, sessionId, "mouseMoved", x, y, false).ConfigureAwait(true);
+            await DispatchCdpMouseAsync(form, sessionId, "mousePressed", x, y, true).ConfigureAwait(true);
+            await DispatchCdpMouseAsync(form, sessionId, "mouseReleased", x, y, false).ConfigureAwait(true);
+            await CallFunctionOnAsync(
+                form,
+                objectId,
+                @"function(x, y) {
+  try {
+    this.dispatchEvent(new MouseEvent('click', {
+      bubbles: true, cancelable: true, view: window,
+      clientX: x, clientY: y, buttons: 0
+    }));
+  } catch (e) {}
+  return true;
+}",
+                BuildCallArgsPair(x, y),
+                sessionId).ConfigureAwait(true);
+        }
+
+        private static async Task DispatchCdpHoverAsync(
+            YiWriteBrowserForm form,
+            string objectId,
+            double x,
+            double y,
+            string sessionId)
+        {
+            await DispatchCdpMouseAsync(form, sessionId, "mouseMoved", x, y, false).ConfigureAwait(true);
+            await CallFunctionOnAsync(
+                form,
+                objectId,
+                @"function(x, y) {
+  var opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+  try { this.dispatchEvent(new MouseEvent('mousemove', opts)); } catch (e0) {}
+  try {
+    if (typeof PointerEvent === 'function') {
+      this.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true, cancelable: true, view: window,
+        clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse'
+      }));
+    }
+  } catch (e1) {}
+  return true;
+}",
+                BuildCallArgsPair(x, y),
+                sessionId).ConfigureAwait(true);
+        }
+
+        private static string BuildCallArgsPair(double x, double y)
+        {
+            var arr = new JArray
+            {
+                new JObject { ["value"] = x },
+                new JObject { ["value"] = y }
+            };
             return arr.ToString(Newtonsoft.Json.Formatting.None);
         }
 

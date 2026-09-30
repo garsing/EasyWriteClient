@@ -577,7 +577,7 @@ namespace WordAddIn1.BrowserHost
                 null);
         }
 
-        /// <summary>页内交互：五 action；结构行展开走 OkExpanded，其它成功后按所在层自动拍树。</summary>
+        /// <summary>页内交互：click / hover / type / scroll / press / select；结构行展开走 OkExpanded，其它成功后按所在层自动拍树。</summary>
         public static async Task<BrowserInteractResult> InteractAsync(
             BrowserChannel channel,
             string action,
@@ -603,9 +603,9 @@ namespace WordAddIn1.BrowserHost
             }
 
             string act = (action ?? "").Trim().ToLowerInvariant();
-            if (act != "click" && act != "type" && act != "scroll" && act != "press" && act != "select")
+            if (act != "click" && act != "hover" && act != "type" && act != "scroll" && act != "press" && act != "select")
             {
-                return BrowserInteractResult.Fail("action 须为 click|type|scroll|press|select");
+                return BrowserInteractResult.Fail("action 须为 click|hover|type|scroll|press|select");
             }
 
             YiWriteBrowserForm form;
@@ -622,7 +622,7 @@ namespace WordAddIn1.BrowserHost
             try
             {
                 BrowserRefEntry entry = null;
-                bool needRef = act == "click" || act == "type" || act == "select"
+                bool needRef = act == "click" || act == "hover" || act == "type" || act == "select"
                     || (act == "scroll" && !string.IsNullOrWhiteSpace(refId))
                     || (act == "press" && !string.IsNullOrWhiteSpace(refId));
 
@@ -640,6 +640,12 @@ namespace WordAddIn1.BrowserHost
 
                     if (BrowserRiskGuard.IsFrameRole(entry))
                     {
+                        if (act == "hover")
+                        {
+                            return BrowserInteractResult.Fail(
+                                "请用 action=click 展开 iframe，不要 hover 结构行。");
+                        }
+
                         if (act != "click")
                         {
                             return BrowserInteractResult.Fail(
@@ -698,7 +704,18 @@ namespace WordAddIn1.BrowserHost
                         return BrowserInteractResult.Fail(risk);
                     }
 
-                    await BrowserInteractEngine.ClickAsync(form, entry.BackendDomNodeId.Value, sessionId)
+                    await BrowserInteractEngine
+                        .ClickAsync(
+                            form,
+                            entry.BackendDomNodeId.Value,
+                            sessionId,
+                            ConfigManager.GetBrowserClickMode())
+                        .ConfigureAwait(true);
+                }
+                else if (act == "hover")
+                {
+                    await BrowserInteractEngine
+                        .HoverAsync(form, entry.BackendDomNodeId.Value, sessionId)
                         .ConfigureAwait(true);
                 }
                 else if (act == "type")

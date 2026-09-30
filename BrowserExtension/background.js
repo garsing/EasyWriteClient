@@ -8,6 +8,79 @@ let port = null;
 let browserKind = detectBrowserKind();
 let reconnectTimer = null;
 const pendingRpc = new Map();
+const CDP_FAIL = "未授予调试权限或无法附加调试器，无法使用 CDP 点击。";
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.type !== "yiwrite.pointer") {
+    return;
+  }
+  const tabId = sender.tab && sender.tab.id;
+  dispatchCdpPointer(tabId, msg.kind, msg.x, msg.y)
+    .then(() => sendResponse({ ok: true }))
+    .catch((e) => sendResponse({
+      ok: false,
+      error: String((e && e.message) || e || CDP_FAIL)
+    }));
+  return true;
+});
+
+async function ensureDebuggerPermission() {
+  try {
+    const have = await chrome.permissions.contains({ permissions: ["debugger"] });
+    if (have) {
+      return true;
+    }
+    return await chrome.permissions.request({ permissions: ["debugger"] });
+  } catch (_) {
+    return false;
+  }
+}
+
+async function dispatchCdpPointer(tabId, kind, x, y) {
+  if (!tabId) {
+    throw new Error(CDP_FAIL);
+  }
+  const granted = await ensureDebuggerPermission();
+  if (!granted) {
+    throw new Error(CDP_FAIL);
+  }
+  const target = { tabId };
+  try {
+    await chrome.debugger.attach(target, "1.3");
+  } catch (_) {
+    throw new Error(CDP_FAIL);
+  }
+  try {
+    const send = (params) => chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", params);
+    const px = Number(x);
+    const py = Number(y);
+    await send({ type: "mouseMoved", x: px, y: py, pointerType: "mouse" });
+    if (kind === "click") {
+      await send({
+        type: "mousePressed",
+        x: px,
+        y: py,
+        button: "left",
+        clickCount: 1,
+        buttons: 1,
+        pointerType: "mouse"
+      });
+      await send({
+        type: "mouseReleased",
+        x: px,
+        y: py,
+        button: "left",
+        clickCount: 1,
+        buttons: 0,
+        pointerType: "mouse"
+      });
+    }
+  } finally {
+    try {
+      await chrome.debugger.detach(target);
+    } catch (_) {}
+  }
+}
 
 function detectBrowserKind() {
   try {
@@ -482,7 +555,9 @@ async function interactTab(msg) {
     direction: msg.direction,
     key: msg.key,
     option: msg.option,
-    css_path: msg.css_path || null
+    css_path: msg.css_path || null,
+    click_mode: msg.click_mode || null,
+    attach_pointer: msg.attach_pointer || null
   }, frameId != null && Number.isFinite(frameId) ? frameId : undefined);
   if (!resp || !resp.ok) {
     throw new Error((resp && resp.error) || "interact 失败");
@@ -538,7 +613,9 @@ async function downloadTab(msg) {
   const click = await sendToTab(tabId, {
     type: "download_click",
     ref: msg.ref,
-    css_path: msg.css_path || null
+    css_path: msg.css_path || null,
+    click_mode: msg.click_mode || null,
+    attach_pointer: msg.attach_pointer || null
   }, frameId != null && Number.isFinite(frameId) ? frameId : undefined);
   if (!click || !click.ok) {
     throw new Error((click && click.error) || "点击下载失败");
