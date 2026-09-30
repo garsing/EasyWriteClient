@@ -755,11 +755,20 @@ namespace WordAddIn1.BrowserHost
   var tag = (this.tagName || '').toUpperCase();
   var role = '';
   try { role = ((this.getAttribute && this.getAttribute('role')) || '').toLowerCase(); } catch (eR) {}
+  var isImg = tag === 'IMG' || role === 'img' || role === 'image';
+  if (isImg && !isHover && !isLegacy) {
+    try { this.scrollIntoView({block:'center', inline:'center'}); } catch (eIv) {}
+    var ir = { width: 0, height: 0, left: 0, top: 0 };
+    try { ir = this.getBoundingClientRect(); } catch (eIb) {}
+    if (ir.width <= 0 || ir.height <= 0) {
+      return { ok: false, error: '点击被挡住：目标没有可点区域。' };
+    }
+    return { ok: true, x: ir.left + ir.width / 2, y: ir.top + ir.height / 2 };
+  }
   if (!isHover && tag !== 'A' && role !== 'link' && tag !== 'BUTTON' && role !== 'button') {
     var imgA = imageHrefLink(this);
     if (imgA) t = imgA;
   }
-  var isImg = tag === 'IMG' || role === 'img' || role === 'image';
   if (isImg) {
     try {
       if (this.closest) {
@@ -1042,8 +1051,11 @@ namespace WordAddIn1.BrowserHost
                 form,
                 objectId,
                 @"function(x, y) {
+  var hit = null;
+  try { hit = document.elementFromPoint(x, y); } catch (eH) {}
+  var n = hit || this;
   try {
-    this.dispatchEvent(new MouseEvent('click', {
+    n.dispatchEvent(new MouseEvent('click', {
       bubbles: true, cancelable: true, view: window,
       clientX: x, clientY: y, buttons: 0
     }));

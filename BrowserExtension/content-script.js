@@ -859,6 +859,13 @@
     return String(v || "").toLowerCase() === "cdp" ? "cdp" : "synthetic";
   }
 
+  function isImageNode(el) {
+    const tag = ((el && el.tagName) || "").toUpperCase();
+    let role = "";
+    try { role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase(); } catch (_) {}
+    return tag === "IMG" || role === "img" || role === "image";
+  }
+
   function boxCenter(t) {
     let r = { width: 0, height: 0, left: 0, top: 0 };
     try { r = t.getBoundingClientRect(); } catch (_) {}
@@ -929,9 +936,20 @@
     }
   }
 
-  async function clickWithPointer(el, clickMode, attachPointer) {
-    const err = hitTestError(el);
-    if (err) return { ok: false, error: err };
+  function hitAt(x, y, fallback) {
+    try {
+      return document.elementFromPoint(x, y) || fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  async function clickWithPointer(el, clickMode, attachPointer, opts) {
+    const skipHit = !!(opts && opts.skipHit);
+    if (!skipHit) {
+      const err = hitTestError(el);
+      if (err) return { ok: false, error: err };
+    }
     try { el.focus && el.focus(); } catch (_) {}
     if (clickMode === "legacy") {
       if (typeof el.click === "function") el.click();
@@ -947,17 +965,18 @@
       }
       return { ok: false, error: "点击被挡住：目标没有可点区域。" };
     }
+    const receiver = skipHit ? hitAt(box.x, box.y, el) : el;
     if (attachPointer === "cdp") {
       await requestCdpPointer("click", box.x, box.y);
       try {
-        el.dispatchEvent(new MouseEvent("click", {
+        receiver.dispatchEvent(new MouseEvent("click", {
           bubbles: true, cancelable: true, view: window,
           clientX: box.x, clientY: box.y, buttons: 0
         }));
       } catch (_) {}
       return { ok: true };
     }
-    fireSyntheticClick(el, box.x, box.y);
+    fireSyntheticClick(receiver, box.x, box.y);
     return { ok: true };
   }
 
@@ -1055,10 +1074,16 @@
     target.scrollIntoView({ block: "center", inline: "nearest" });
 
     if (action === "click") {
+      const mode = normalizeClickMode(msg.click_mode);
+      const regionImage = mode !== "legacy" && isImageNode(el);
+      if (regionImage) {
+        try { el.scrollIntoView({ block: "center", inline: "nearest" }); } catch (_) {}
+      }
       const clicked = await clickWithPointer(
-        target,
-        normalizeClickMode(msg.click_mode),
-        normalizeAttachPointer(msg.attach_pointer)
+        regionImage ? el : target,
+        mode,
+        normalizeAttachPointer(msg.attach_pointer),
+        { skipHit: regionImage }
       );
       if (!clicked.ok) return clicked;
       return { ok: true, message: "clicked", probe: entry.probe };
