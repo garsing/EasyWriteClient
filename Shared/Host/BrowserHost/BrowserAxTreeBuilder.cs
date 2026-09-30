@@ -145,7 +145,7 @@ namespace WordAddIn1.BrowserHost
             string truncatedReason = null;
             var visited = new HashSet<string>(StringComparer.Ordinal);
 
-            void Walk(string nodeId, int depth, string inheritName)
+            void Walk(string nodeId, int depth, string inheritName, bool inCardGroup)
             {
                 if (truncated || string.IsNullOrEmpty(nodeId) || !byId.TryGetValue(nodeId, out AxNode node))
                 {
@@ -170,7 +170,9 @@ namespace WordAddIn1.BrowserHost
                 string peekRole = string.IsNullOrWhiteSpace(node.Role) ? "generic" : node.Role;
                 bool hoverReveal = HoverRevealRoles.Contains(peekRole)
                     || IsDetailRevealName(node.Name);
-                if (node.Ignored && !IsRootLike(node.Role) && !FrameRoles.Contains(peekRole) && !hoverReveal)
+                bool ignoredImageInCard = inCardGroup && IsImageRole(peekRole);
+                if (node.Ignored && !IsRootLike(node.Role) && !FrameRoles.Contains(peekRole)
+                    && !hoverReveal && !ignoredImageInCard)
                 {
                     string ignName = SanitizeAccessibleName(node.Name ?? "");
                     if (LooksLikeCardGroup(ignName, node, byId))
@@ -179,7 +181,7 @@ namespace WordAddIn1.BrowserHost
                         string next = ignName;
                         foreach (string child in node.ChildIds)
                         {
-                            Walk(child, depth + 1, next);
+                            Walk(child, depth + 1, next, true);
                         }
 
                         return;
@@ -187,7 +189,7 @@ namespace WordAddIn1.BrowserHost
 
                     foreach (string child in node.ChildIds)
                     {
-                        Walk(child, depth, inheritName);
+                        Walk(child, depth, inheritName, inCardGroup);
                     }
 
                     return;
@@ -201,6 +203,14 @@ namespace WordAddIn1.BrowserHost
                     && string.Equals(role, "link", StringComparison.OrdinalIgnoreCase)
                     && !string.IsNullOrWhiteSpace(inheritName)
                     && HasImageDescendant(node, byId))
+                {
+                    name = inheritName;
+                }
+
+                if (string.IsNullOrWhiteSpace(name)
+                    && inCardGroup
+                    && IsImageRole(role)
+                    && !string.IsNullOrWhiteSpace(inheritName))
                 {
                     name = inheritName;
                 }
@@ -239,7 +249,8 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 bool namedGroup = LooksLikeCardGroup(name, node, byId) && IsNoiseRole(role);
-                bool wantRef = ShouldAssignRef(node, refs.Count) && !namedGroup;
+                bool cardPic = inCardGroup && IsImageRole(role);
+                bool wantRef = (ShouldAssignRef(node, refs.Count) || cardPic) && !namedGroup;
                 string refId = null;
                 if (wantRef && refs.Count < MaxRefNodes && node.BackendDomNodeId.HasValue)
                 {
@@ -266,6 +277,7 @@ namespace WordAddIn1.BrowserHost
 
                 bool print = wantRef
                     || namedGroup
+                    || cardPic
                     || inputLike
                     || StructureRoles.Contains(role)
                     || (!string.IsNullOrWhiteSpace(name) && !IsNoiseRole(role))
@@ -288,6 +300,7 @@ namespace WordAddIn1.BrowserHost
                 string childInherit = namedGroup && !string.IsNullOrWhiteSpace(name)
                     ? name
                     : inheritName;
+                bool childInCard = inCardGroup || namedGroup;
                 foreach (string child in node.ChildIds)
                 {
                     if (truncated)
@@ -295,11 +308,11 @@ namespace WordAddIn1.BrowserHost
                         break;
                     }
 
-                    Walk(child, childDepth, childInherit);
+                    Walk(child, childDepth, childInherit, childInCard);
                 }
             }
 
-            Walk(startId, 0, null);
+            Walk(startId, 0, null, false);
 
             // 临时关闭：AX 树第二遍补全可输入控件（与 DOM 补查对照实验）
             // if (!truncated)
@@ -449,6 +462,13 @@ namespace WordAddIn1.BrowserHost
 
             int links = CountRoleDescendants(node, byId, "link", maxCount: 9);
             return links >= 1 && links <= 8;
+        }
+
+        private static bool IsImageRole(string role)
+        {
+            return string.Equals(role, "image", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(role, "img", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(role, "Image", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool HasImageDescendant(AxNode node, Dictionary<string, AxNode> byId)
