@@ -250,7 +250,14 @@ namespace WordAddIn1.BrowserHost
 
                 bool namedGroup = LooksLikeCardGroup(name, node, byId) && IsNoiseRole(role);
                 bool cardPic = inCardGroup && IsImageRole(role);
-                bool wantRef = (ShouldAssignRef(node, refs.Count) || cardPic) && !namedGroup;
+                bool cardText = inCardGroup
+                    && !namedGroup
+                    && !string.IsNullOrWhiteSpace(name)
+                    && name.Trim().Length >= 2
+                    && name.Trim().Length <= 40
+                    && (string.Equals(role, "StaticText", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(role, "text", StringComparison.OrdinalIgnoreCase));
+                bool wantRef = (ShouldAssignRef(node, refs.Count) || cardPic || cardText) && !namedGroup;
                 string refId = null;
                 if (wantRef && refs.Count < MaxRefNodes && node.BackendDomNodeId.HasValue)
                 {

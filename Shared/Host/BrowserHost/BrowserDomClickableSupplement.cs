@@ -82,26 +82,13 @@ namespace WordAddIn1.BrowserHost
     }
     return null;
   }
-  function isPicHotspot(el){
-    if (!el || !el.querySelector || !el.querySelector('img')) return false;
-    var tag=(el.tagName||'').toLowerCase();
-    if (tag==='a'||tag==='button') return false;
+  function isCardCoverImg(el){
+    if (!el || (el.tagName||'').toLowerCase()!=='img') return false;
     try {
-      var w=el.offsetWidth, h=el.offsetHeight;
-      if (w<80||h<60||w>720||h>720) return false;
-    } catch (eP) { return false; }
+      var r=el.getBoundingClientRect();
+      if (r.width<40||r.height<40) return false;
+    } catch (eI) { return false; }
     return !!closestCardGroup(el.parentElement);
-  }
-  function isOutermostPic(el){
-    if (!isPicHotspot(el)) return false;
-    var card=closestCardGroup(el.parentElement);
-    if (!card) return false;
-    var p=el.parentElement;
-    while (p && p!==card){
-      if (isPicHotspot(p)) return false;
-      p=p.parentElement;
-    }
-    return true;
   }
   var items=[];
   var all=document.querySelectorAll('body *');
@@ -134,11 +121,10 @@ namespace WordAddIn1.BrowserHost
       var alt=(el.querySelector('img')&&el.querySelector('img').alt)||'';
       name=(own||'').slice(0,40) || alt || inner.slice(0,40) || '卡片';
       role='generic';
-    } else if (!hidden && isOutermostPic(el)){
+    } else if (!hidden && isCardCoverImg(el)){
       kind='pic';
-      var g=closestCardGroup(el.parentElement);
-      var alt2=(el.querySelector('img')&&el.querySelector('img').alt)||'';
-      name=(own||'').slice(0,40) || (g&&nameOf(g)||'').slice(0,40) || alt2 || '商品图';
+      var g2=closestCardGroup(el.parentElement);
+      name=(el.alt||'').slice(0,40) || (g2&&nameOf(g2)||'').slice(0,40) || '商品图';
       role='image';
     } else if (!hidden && st && st.cursor==='pointer' && own.length>=2 && own.length<=16){
       var rect=el.getBoundingClientRect();

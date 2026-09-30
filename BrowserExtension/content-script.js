@@ -379,29 +379,39 @@
       return isCardGroup(el) && !closestCardGroup(el.parentElement);
     }
 
-    function isPicHotspot(el) {
-      if (!el || el.nodeType !== 1 || isNativeInteractive(el) || !el.querySelector) return false;
-      if (!el.querySelector("img")) return false;
-      try {
-        const w = el.offsetWidth;
-        const h = el.offsetHeight;
-        if (w < 80 || h < 60 || w > 720 || h > 720) return false;
-      } catch (_) {
-        return false;
-      }
+    function inCardNotShell(el) {
       return !!closestCardGroup(el.parentElement);
     }
 
-    function isOutermostPicHotspot(el) {
-      if (!isPicHotspot(el)) return false;
-      const card = closestCardGroup(el.parentElement);
-      if (!card) return false;
-      let p = el.parentElement;
-      while (p && p !== card) {
-        if (isPicHotspot(p)) return false;
-        p = p.parentElement;
+    function isVisibleImage(el) {
+      if (!el || (el.tagName || "").toLowerCase() !== "img") return false;
+      try {
+        const r = el.getBoundingClientRect();
+        return r.width >= 40 && r.height >= 40;
+      } catch (_) {
+        return false;
       }
-      return true;
+    }
+
+    function isNamedIcon(el) {
+      if (!el || el.nodeType !== 1 || isNativeInteractive(el)) return false;
+      const tag = (el.tagName || "").toLowerCase();
+      if (tag !== "svg" && tag !== "i" && tag !== "use" && tag !== "path") return false;
+      const n = (
+        (el.getAttribute && (el.getAttribute("aria-label") || el.getAttribute("title")))
+        || (el.querySelector && el.querySelector("title") && el.querySelector("title").textContent)
+        || ""
+      ).replace(/\s+/g, " ").trim();
+      return n.length > 0;
+    }
+
+    function isTextLeaf(el) {
+      if (!el || isNativeInteractive(el)) return false;
+      if (el.querySelector && el.querySelector("img, a, button, input, select, textarea, svg")) {
+        return false;
+      }
+      const own = ownText(el);
+      return own.length >= 2 && own.length <= 40;
     }
 
     function isShortOwnText(el) {
@@ -510,7 +520,11 @@
       const tag = (el.tagName || "").toLowerCase();
       if (isNativeInteractive(el)) return true;
       if (isOutermostCardGroup(el)) return true;
-      if (isOutermostPicHotspot(el)) return true;
+      if (inCardNotShell(el)) {
+        if (hasDetailLabel(el) || isImgtextBtn(el)) return true;
+        if (isVisibleImage(el) || isNamedIcon(el) || isTextLeaf(el)) return true;
+        return false;
+      }
       if (isPointerCard(el) && closestCardGroup(el.parentElement)) return false;
       if (hasDetailLabel(el) || isImgtextBtn(el)
         || (isPointerCard(el) && !el.querySelector("a[href], [role='link']"))
@@ -541,19 +555,19 @@
       const groupOnly = isOutermostCardGroup(el);
       const print = interesting(el) || depth === 0;
       if (print) {
-        let role = roleOf(el);
-        if (isOutermostPicHotspot(el) && (!role || role === "generic" || role === "group")) {
-          role = "image";
-        }
+        const role = roleOf(el);
         let name = nameOf(el);
         const tag = (el.tagName || "").toLowerCase();
         if (!name && tag === "a" && el.querySelector && el.querySelector("img")) {
           const g = closestCardGroup(el);
           if (g) name = nameOf(g);
         }
-        if (!name && isOutermostPicHotspot(el)) {
-          const g = closestCardGroup(el.parentElement);
-          if (g) name = nameOf(g);
+        if (!name && isVisibleImage(el)) {
+          name = (el.getAttribute("alt") || "").trim();
+          if (!name) {
+            const g = closestCardGroup(el);
+            if (g) name = nameOf(g);
+          }
         }
         const indent = "  ".repeat(Math.min(depth, 12));
         let line = indent + "- " + role;
