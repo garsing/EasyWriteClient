@@ -806,6 +806,7 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 BrowserRefStore.Replace(channel.ChannelId, map);
+                TryLogAttachSnapshotDiag(pageUrl, map);
 
                 return BrowserSnapshotResult.Ok(
                     channel,
@@ -930,6 +931,7 @@ namespace WordAddIn1.BrowserHost
                     ["attach_pointer"] = ConfigManager.GetBrowserAttachPointer()
                 };
                 JObject result = await RpcAsync(channel.TabUuid, "rpc.interact", req).ConfigureAwait(true);
+                TryLogAttachClickDiag(refId, entry, req, result);
                 string pageUrl = (string)result["url"] ?? channel.Url;
                 string title = (string)result["title"] ?? channel.Title;
                 channel.UpdatePage(pageUrl, title, true);
@@ -1274,6 +1276,133 @@ namespace WordAddIn1.BrowserHost
                     };
                 }
             }
+        }
+
+        private static void TryLogAttachSnapshotDiag(
+            string pageUrl,
+            Dictionary<string, BrowserRefEntry> map)
+        {
+            try
+            {
+                if (map == null || map.Count == 0)
+                {
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(pageUrl)
+                    || pageUrl.IndexOf("list.jd.com", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    return;
+                }
+
+                var byCss = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+                foreach (KeyValuePair<string, BrowserRefEntry> kv in map)
+                {
+                    string css = kv.Value != null ? kv.Value.AttachCssPath : null;
+                    if (string.IsNullOrEmpty(css))
+                    {
+                        continue;
+                    }
+
+                    List<string> ids;
+                    if (!byCss.TryGetValue(css, out ids))
+                    {
+                        ids = new List<string>();
+                        byCss[css] = ids;
+                    }
+
+                    ids.Add(kv.Key);
+                }
+
+                var sb = new System.Text.StringBuilder();
+                sb.Append(DateTime.Now.ToString("s", CultureInfo.InvariantCulture));
+                sb.Append(" SNAP url=").Append(pageUrl).Append(" refs=").Append(map.Count);
+                sb.Append(Environment.NewLine);
+                foreach (KeyValuePair<string, BrowserRefEntry> kv in map)
+                {
+                    BrowserRefEntry e = kv.Value;
+                    if (e == null)
+                    {
+                        continue;
+                    }
+
+                    bool image = string.Equals(e.Role, "image", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(e.Role, "img", StringComparison.OrdinalIgnoreCase);
+                    bool price = !string.IsNullOrEmpty(e.Name)
+                        && e.Name.IndexOf("价格区间", StringComparison.Ordinal) >= 0;
+                    if (!image && !price)
+                    {
+                        continue;
+                    }
+
+                    string css = e.AttachCssPath ?? "";
+                    List<string> dups;
+                    int dupCount = byCss.TryGetValue(css, out dups) ? dups.Count : 0;
+                    string name = e.Name ?? "";
+                    if (name.Length > 36)
+                    {
+                        name = name.Substring(0, 36);
+                    }
+
+                    sb.Append("  ").Append(kv.Key)
+                        .Append(" role=").Append(e.Role ?? "")
+                        .Append(" dups=").Append(dupCount)
+                        .Append(" css=").Append(css)
+                        .Append(" name=").Append(name)
+                        .Append(Environment.NewLine);
+                    if (dupCount > 1 && dups != null)
+                    {
+                        sb.Append("    share=").Append(string.Join(",", dups))
+                            .Append(Environment.NewLine);
+                    }
+                }
+
+                AppendAttachDiag(sb.ToString());
+            }
+            catch
+            {
+            }
+        }
+
+        private static void TryLogAttachClickDiag(
+            string refId,
+            BrowserRefEntry entry,
+            JObject req,
+            JObject result)
+        {
+            try
+            {
+                string name = entry != null ? entry.Name : null;
+                if (!string.IsNullOrEmpty(name) && name.Length > 36)
+                {
+                    name = name.Substring(0, 36);
+                }
+
+                string line = DateTime.Now.ToString("s", CultureInfo.InvariantCulture)
+                    + " CLICK ref=" + (refId ?? "")
+                    + " role=" + (entry != null ? entry.Role : "")
+                    + " name=" + (name ?? "")
+                    + " css=" + ((string)req?["css_path"] ?? "")
+                    + " ext=" + ((string)result?["ext_version"] ?? "")
+                    + " resolved=" + ((string)result?["resolved"] ?? "")
+                    + " hit_at=" + ((string)result?["hit_at"] ?? "")
+                    + " path=" + ((string)result?["path"] ?? "")
+                    + Environment.NewLine;
+                AppendAttachDiag(line);
+            }
+            catch
+            {
+            }
+        }
+
+        private static void AppendAttachDiag(string text)
+        {
+            string dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "YiWrite",
+                "logs");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "attach-click-diag.log"), text, System.Text.Encoding.UTF8);
         }
 
         private sealed class AttachTabInfo

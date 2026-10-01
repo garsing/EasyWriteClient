@@ -924,7 +924,9 @@
   }
 
   async function requestCdpPointer(kind, x, y) {
-    const top = toTopViewport(x, y);
+    const top = kind === "prepare" || kind === "detach"
+      ? { x: 0, y: 0 }
+      : toTopViewport(x, y);
     const resp = await chrome.runtime.sendMessage({
       type: "yiwrite.pointer",
       kind,
@@ -936,12 +938,46 @@
     }
   }
 
+  function viewportHeight() {
+    try {
+      if (window.visualViewport && window.visualViewport.height) {
+        return window.visualViewport.height;
+      }
+    } catch (_) {}
+    return window.innerHeight;
+  }
+
+  function sleepMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function waitForDebuggerViewport() {
+    const before = viewportHeight();
+    const deadline = Date.now() + 350;
+    while (Date.now() < deadline) {
+      await sleepMs(16);
+      if (Math.abs(viewportHeight() - before) >= 8) {
+        await sleepMs(32);
+        return;
+      }
+    }
+  }
+
   function hitAt(x, y, fallback) {
     try {
       return document.elementFromPoint(x, y) || fallback;
     } catch (_) {
       return fallback;
     }
+  }
+
+  function emptyBoxFallback(el) {
+    if (isForceClickTarget(el)) {
+      if (typeof el.click === "function") el.click();
+      else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      return { ok: true };
+    }
+    return { ok: false, error: "点击被挡住：目标没有可点区域。" };
   }
 
   async function clickWithPointer(el, clickMode, attachPointer, opts) {
@@ -958,24 +994,34 @@
     }
     const box = boxCenter(el);
     if (box.w <= 0 || box.h <= 0) {
-      if (isForceClickTarget(el)) {
-        if (typeof el.click === "function") el.click();
-        else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      return emptyBoxFallback(el);
+    }
+    if (attachPointer === "cdp") {
+      await requestCdpPointer("prepare", 0, 0);
+      try {
+        await waitForDebuggerViewport();
+        if (!skipHit) {
+          const err = hitTestError(el);
+          if (err) return { ok: false, error: err };
+        }
+        const live = boxCenter(el);
+        if (live.w <= 0 || live.h <= 0) {
+          return emptyBoxFallback(el);
+        }
+        const receiver = skipHit ? hitAt(live.x, live.y, el) : el;
+        await requestCdpPointer("click", live.x, live.y);
+        try {
+          receiver.dispatchEvent(new MouseEvent("click", {
+            bubbles: true, cancelable: true, view: window,
+            clientX: live.x, clientY: live.y, buttons: 0
+          }));
+        } catch (_) {}
         return { ok: true };
+      } finally {
+        try { await requestCdpPointer("detach", 0, 0); } catch (_) {}
       }
-      return { ok: false, error: "点击被挡住：目标没有可点区域。" };
     }
     const receiver = skipHit ? hitAt(box.x, box.y, el) : el;
-    if (attachPointer === "cdp") {
-      await requestCdpPointer("click", box.x, box.y);
-      try {
-        receiver.dispatchEvent(new MouseEvent("click", {
-          bubbles: true, cancelable: true, view: window,
-          clientX: box.x, clientY: box.y, buttons: 0
-        }));
-      } catch (_) {}
-      return { ok: true };
-    }
     fireSyntheticClick(receiver, box.x, box.y);
     return { ok: true };
   }
@@ -983,10 +1029,22 @@
   async function hoverTarget(el, attachPointer) {
     const err = hitTestError(el, { hover: true });
     if (err) return { ok: false, error: err };
-    const box = boxCenter(el);
     if (attachPointer === "cdp") {
-      await requestCdpPointer("hover", box.x, box.y);
+      await requestCdpPointer("prepare", 0, 0);
+      try {
+        await waitForDebuggerViewport();
+        const again = hitTestError(el, { hover: true });
+        if (again) return { ok: false, error: again };
+        const live = boxCenter(el);
+        await requestCdpPointer("hover", live.x, live.y);
+        fireSyntheticHover(el, live.x, live.y);
+      } finally {
+        try { await requestCdpPointer("detach", 0, 0); } catch (_) {}
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      return { ok: true };
     }
+    const box = boxCenter(el);
     fireSyntheticHover(el, box.x, box.y);
     await new Promise((resolve) => setTimeout(resolve, 150));
     return { ok: true };
@@ -1086,7 +1144,16 @@
         { skipHit: regionImage }
       );
       if (!clicked.ok) return clicked;
-      return { ok: true, message: "clicked", probe: entry.probe };
+      const used = regionImage ? el : target;
+      const box = boxCenter(used);
+      return {
+        ok: true,
+        message: "clicked",
+        probe: entry.probe,
+        resolved: previewHit(used),
+        hit_at: previewHit(hitAt(box.x, box.y, used)),
+        path: String(msg.css_path || entry.cssPath || "")
+      };
     }
 
     if (action === "hover") {

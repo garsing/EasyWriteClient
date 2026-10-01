@@ -32,6 +32,23 @@ async function ensureDebuggerPermission() {
   }
 }
 
+async function attachDebugger(target) {
+  try {
+    await chrome.debugger.attach(target, "1.3");
+  } catch (e) {
+    const msg = String((e && e.message) || e || "");
+    if (!/already attached/i.test(msg)) {
+      throw new Error(CDP_FAIL);
+    }
+  }
+}
+
+async function detachDebugger(target) {
+  try {
+    await chrome.debugger.detach(target);
+  } catch (_) {}
+}
+
 async function dispatchCdpPointer(tabId, kind, x, y) {
   if (!tabId) {
     throw new Error(CDP_FAIL);
@@ -41,10 +58,13 @@ async function dispatchCdpPointer(tabId, kind, x, y) {
     throw new Error(CDP_FAIL);
   }
   const target = { tabId };
-  try {
-    await chrome.debugger.attach(target, "1.3");
-  } catch (_) {
-    throw new Error(CDP_FAIL);
+  if (kind === "detach") {
+    await detachDebugger(target);
+    return;
+  }
+  await attachDebugger(target);
+  if (kind === "prepare") {
+    return;
   }
   try {
     const send = (params) => chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", params);
@@ -72,9 +92,7 @@ async function dispatchCdpPointer(tabId, kind, x, y) {
       });
     }
   } finally {
-    try {
-      await chrome.debugger.detach(target);
-    } catch (_) {}
+    await detachDebugger(target);
   }
 }
 
@@ -563,7 +581,11 @@ async function interactTab(msg) {
     url: tab.url || "",
     title: tab.title || "",
     message: resp.message || "ok",
-    probe: resp.probe || null
+    probe: resp.probe || null,
+    resolved: resp.resolved || "",
+    hit_at: resp.hit_at || "",
+    path: resp.path || "",
+    ext_version: chrome.runtime.getManifest().version
   };
 }
 

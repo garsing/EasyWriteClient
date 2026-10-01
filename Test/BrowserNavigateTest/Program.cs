@@ -10,6 +10,11 @@ namespace BrowserNavigateTest
         private static int Main(string[] args)
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
+            if (string.Equals(GetArg(args, "--probe="), "jd-list", StringComparison.OrdinalIgnoreCase))
+            {
+                return JdListClickProbe.Run();
+            }
+
             string caseFilter = GetArg(args, "--case=");
             bool runSnp = string.IsNullOrEmpty(caseFilter)
                 || caseFilter.StartsWith("snp-", StringComparison.OrdinalIgnoreCase);

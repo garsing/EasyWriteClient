@@ -72,6 +72,25 @@ namespace BrowserNavigateTest
             return DesktopToolPipe.Call("F_browser_snapshot", args);
         }
 
+        public ToolResult Interact(string channelId, string action, string refId)
+        {
+            var args = new Dictionary<string, object>
+            {
+                ["action"] = action ?? "click"
+            };
+            if (channelId != null)
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (refId != null)
+            {
+                args["ref"] = refId;
+            }
+
+            return DesktopToolPipe.Call("F_browser_interact", args);
+        }
+
         public static bool IsShortId(string id)
         {
             return !string.IsNullOrEmpty(id)
