@@ -738,6 +738,17 @@ namespace WordAddIn1.BrowserHost
     if (typeof t.click === 'function') t.click();
     else t.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
   }
+  function scrollIfNeeded(el) {
+    if (!el || !el.getBoundingClientRect) return;
+    try {
+      var box = el.getBoundingClientRect();
+      var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+      var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+      var visible = box.width > 1 && box.height > 1
+        && box.bottom > 0 && box.right > 0 && box.top < vh && box.left < vw;
+      if (!visible) el.scrollIntoView({block:'nearest', inline:'nearest'});
+    } catch (eSc) {}
+  }
 
   opts = opts || {};
   var kind = String(opts.kind || 'click');
@@ -757,7 +768,7 @@ namespace WordAddIn1.BrowserHost
   try { role = ((this.getAttribute && this.getAttribute('role')) || '').toLowerCase(); } catch (eR) {}
   var isImg = tag === 'IMG' || role === 'img' || role === 'image';
   if (isImg && !isHover && !isLegacy) {
-    try { this.scrollIntoView({block:'center', inline:'center'}); } catch (eIv) {}
+    scrollIfNeeded(this);
     var ir = { width: 0, height: 0, left: 0, top: 0 };
     try { ir = this.getBoundingClientRect(); } catch (eIb) {}
     if (ir.width <= 0 || ir.height <= 0) {
@@ -793,7 +804,7 @@ namespace WordAddIn1.BrowserHost
       }
     } catch (eC) {}
   }
-  try { t.scrollIntoView({block:'center', inline:'center'}); } catch (eV) {}
+  scrollIfNeeded(t);
   var force = !isHover && isForceTarget(t);
   var r = { width: 0, height: 0, left: 0, top: 0 };
   try { r = t.getBoundingClientRect(); } catch (eB) {}
@@ -1058,8 +1069,14 @@ namespace WordAddIn1.BrowserHost
                     form,
                     objectId,
                     @"function(x, y) {
+  if (!this || !this.isConnected) return false;
   var hit = null;
   try { hit = document.elementFromPoint(x, y); } catch (eH) {}
+  var same = !hit || hit === this;
+  try {
+    same = same || (this.contains && this.contains(hit)) || (hit.contains && hit.contains(this));
+  } catch (eC) {}
+  if (!same) return false;
   var n = hit || this;
   try {
     n.dispatchEvent(new MouseEvent('click', {

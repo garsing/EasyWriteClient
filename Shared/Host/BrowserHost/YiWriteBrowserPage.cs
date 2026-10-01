@@ -13,14 +13,8 @@ namespace WordAddIn1.BrowserHost
     /// </summary>
     internal sealed class YiWriteBrowserPage : IDisposable
     {
-        private const string RelayoutJs =
-            "(function(){try{window.dispatchEvent(new Event('resize'));" +
-            "if(window.jQuery){window.jQuery(window).trigger('resize');}}catch(e){}})();";
-
         private bool _disposed;
         private EventHandler<CoreWebView2DownloadStartingEventArgs> _downloadStartingHandler;
-        private EventHandler<CoreWebView2NavigationCompletedEventArgs> _navigationCompletedHandler;
-        private int _relayoutSeq;
 
         public YiWriteBrowserPage(string tabUuid)
         {
@@ -130,13 +124,6 @@ namespace WordAddIn1.BrowserHost
             core.DocumentTitleChanged += OnDocumentTitleChanged;
             core.NewWindowRequested += OnNewWindowRequested;
             core.WindowCloseRequested += OnWindowCloseRequested;
-            if (_navigationCompletedHandler == null)
-            {
-                _navigationCompletedHandler = OnNavigationCompleted;
-            }
-
-            core.NavigationCompleted -= _navigationCompletedHandler;
-            core.NavigationCompleted += _navigationCompletedHandler;
 
             if (_downloadStartingHandler == null)
             {
@@ -287,11 +274,6 @@ namespace WordAddIn1.BrowserHost
                     core.DocumentTitleChanged -= OnDocumentTitleChanged;
                     core.NewWindowRequested -= OnNewWindowRequested;
                     core.WindowCloseRequested -= OnWindowCloseRequested;
-                    if (_navigationCompletedHandler != null)
-                    {
-                        core.NavigationCompleted -= _navigationCompletedHandler;
-                    }
-
                     if (_downloadStartingHandler != null)
                     {
                         core.DownloadStarting -= _downloadStartingHandler;
@@ -367,70 +349,6 @@ namespace WordAddIn1.BrowserHost
             {
                 handler(this, e);
             }
-        }
-
-        private void OnNavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
-        {
-            if (e != null && e.IsSuccess)
-            {
-                RequestRelayout();
-            }
-        }
-
-        /// <summary>
-        /// 老页常按当时窗宽算一次布局；隐藏加载或内容区比 Chrome 窄时会挤歪。
-        /// 页面可见后再派发 resize，让 EasyUI / 表格布局按真实客户区重排。
-        /// </summary>
-        internal void RequestRelayout()
-        {
-            if (_disposed)
-            {
-                return;
-            }
-
-            int seq = ++_relayoutSeq;
-            _ = RelayoutAfterVisibleAsync(seq);
-        }
-
-        private async Task RelayoutAfterVisibleAsync(int seq)
-        {
-            try
-            {
-                await Task.Delay(80).ConfigureAwait(true);
-                if (_disposed || seq != _relayoutSeq)
-                {
-                    return;
-                }
-
-                await FireRelayoutScriptAsync().ConfigureAwait(true);
-                await Task.Delay(240).ConfigureAwait(true);
-                if (_disposed || seq != _relayoutSeq)
-                {
-                    return;
-                }
-
-                await FireRelayoutScriptAsync().ConfigureAwait(true);
-            }
-            catch
-            {
-            }
-        }
-
-        private async Task FireRelayoutScriptAsync()
-        {
-            CoreWebView2 core = Core;
-            if (core == null || _disposed)
-            {
-                return;
-            }
-
-            string url = CurrentUrl ?? "";
-            if (url.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            await core.ExecuteScriptAsync(RelayoutJs).ConfigureAwait(true);
         }
 
         private static void ApplyChromeUserAgent(CoreWebView2 core)
