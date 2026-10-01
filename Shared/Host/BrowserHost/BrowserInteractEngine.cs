@@ -171,8 +171,15 @@ namespace WordAddIn1.BrowserHost
             YiWriteBrowserForm form,
             int backendNodeId,
             string sessionId = null,
-            string clickMode = null)
+            string clickMode = null,
+            string role = null)
         {
+            if (IsCheckLikeRole(role))
+            {
+                await ToggleCheckAsync(form, backendNodeId, sessionId).ConfigureAwait(true);
+                return;
+            }
+
             string mode = ConfigManager.NormalizeBrowserClickMode(clickMode);
             string objectId = await ResolveObjectIdAsync(form, backendNodeId, sessionId).ConfigureAwait(true);
             string resultJson = await CallFunctionOnAsync(
@@ -1046,6 +1053,71 @@ namespace WordAddIn1.BrowserHost
                     payload.ToString(Newtonsoft.Json.Formatting.None),
                     sessionId)
                 .ConfigureAwait(true);
+        }
+
+        private static bool IsCheckLikeRole(string role)
+        {
+            if (string.IsNullOrWhiteSpace(role))
+            {
+                return false;
+            }
+
+            return string.Equals(role, "checkbox", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(role, "radio", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(role, "switch", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(role, "checkable", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(role, "menuitemcheckbox", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(role, "menuitemradio", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Vue / Element 复选框的真实 input 常是 0 盒。指针打在「我的学生」文案上不会改 checked。
+        /// 对原生 input 或包裹 label 发一次 click。
+        /// </summary>
+        private static async Task ToggleCheckAsync(
+            YiWriteBrowserForm form,
+            int backendNodeId,
+            string sessionId)
+        {
+            string objectId = await ResolveObjectIdAsync(form, backendNodeId, sessionId).ConfigureAwait(true);
+            string resultJson = await CallFunctionOnAsync(
+                form,
+                objectId,
+                @"function() {
+  function findInput(el) {
+    if (!el) return null;
+    var tag = (el.tagName || '').toUpperCase();
+    var typ = String(el.type || '').toLowerCase();
+    if (tag === 'INPUT' && (typ === 'checkbox' || typ === 'radio')) return el;
+    try {
+      var q = el.querySelector && el.querySelector('input[type=checkbox], input[type=radio]');
+      if (q) return q;
+    } catch (e0) {}
+    try {
+      var lab = el.closest && el.closest('label');
+      if (lab) {
+        var q2 = lab.querySelector && lab.querySelector('input[type=checkbox], input[type=radio]');
+        if (q2) return q2;
+        var id = lab.htmlFor || (lab.getAttribute && lab.getAttribute('for')) || '';
+        if (id) {
+          var by = document.getElementById(id);
+          if (by && (by.type === 'checkbox' || by.type === 'radio')) return by;
+        }
+      }
+    } catch (e1) {}
+    return null;
+  }
+  var t = findInput(this) || this;
+  try { if (t.focus) t.focus(); } catch (eF) {}
+  try {
+    if (typeof t.click === 'function') t.click();
+    else t.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
+  } catch (eC) {}
+  return { ok: true };
+}",
+                null,
+                sessionId).ConfigureAwait(true);
+            ThrowIfJsNotOk(resultJson, "无法切换复选框");
         }
 
         private static async Task DispatchCdpClickAsync(

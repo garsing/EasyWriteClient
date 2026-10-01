@@ -862,7 +862,8 @@ namespace WordAddIn1.BrowserHost
                             form,
                             entry.BackendDomNodeId.Value,
                             sessionId,
-                            ConfigManager.GetBrowserClickMode())
+                            ConfigManager.GetBrowserClickMode(),
+                            entry.Role)
                         .ConfigureAwait(true);
                 }
                 else if (act == "hover")
