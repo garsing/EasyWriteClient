@@ -1047,6 +1047,17 @@ namespace WordAddIn1.BrowserHost
             await DispatchCdpMouseAsync(form, sessionId, "mouseMoved", x, y, false).ConfigureAwait(true);
             await DispatchCdpMouseAsync(form, sessionId, "mousePressed", x, y, true).ConfigureAwait(true);
             await DispatchCdpMouseAsync(form, sessionId, "mouseReleased", x, y, false).ConfigureAwait(true);
+            if (form.HasNewWindowDuringTool)
+            {
+                return;
+            }
+
+            await Task.Delay(120).ConfigureAwait(true);
+            if (form.HasNewWindowDuringTool)
+            {
+                return;
+            }
+
             await CallFunctionOnAsync(
                 form,
                 objectId,

@@ -31,6 +31,7 @@ namespace WordAddIn1.BrowserHost
 
         private readonly List<YiWriteBrowserPage> _pages = new List<YiWriteBrowserPage>();
         private readonly List<string> _openedDuringTool = new List<string>();
+        private int _newWindowsDuringTool;
         private readonly Panel _client;
         private readonly YiWriteBrowserTabStrip _tabStrip;
         private readonly YiWriteBrowserAddressBar _addressBar;
@@ -260,9 +261,15 @@ namespace WordAddIn1.BrowserHost
             if (_toolPinDepth == 0)
             {
                 _openedDuringTool.Clear();
+                _newWindowsDuringTool = 0;
             }
 
             _toolPinDepth++;
+        }
+
+        internal bool HasNewWindowDuringTool
+        {
+            get { return _newWindowsDuringTool > 0; }
         }
 
         internal bool TryTakeOpenedToolTab(out string tabUuid)
@@ -632,6 +639,11 @@ namespace WordAddIn1.BrowserHost
         private void OnPageNewWindowRequested(object sender, CoreWebView2NewWindowRequestedEventArgs e)
         {
             e.Handled = true;
+            if (_toolPinDepth > 0)
+            {
+                _newWindowsDuringTool++;
+            }
+
             CoreWebView2Deferral deferral = e.GetDeferral();
             _ = CompleteNewWindowAsync(e, deferral);
         }
