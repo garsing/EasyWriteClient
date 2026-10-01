@@ -40,6 +40,8 @@ namespace WordAddIn1.BrowserHost
         private int _hotTab = -1;
         private bool _hotClose;
         private bool _hotPlus;
+        private bool _captionAwaitDrag;
+        private Point _captionDownScreen;
 
         public YiWriteBrowserTabStrip(float dpiScale)
         {
@@ -181,6 +183,26 @@ namespace WordAddIn1.BrowserHost
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
+            if (_captionAwaitDrag && e.Button == MouseButtons.Left)
+            {
+                int dx = Cursor.Position.X - _captionDownScreen.X;
+                int dy = Cursor.Position.Y - _captionDownScreen.Y;
+                if (dx * dx + dy * dy >= 16)
+                {
+                    _captionAwaitDrag = false;
+                    Capture = false;
+                    YiWriteBrowserForm dragForm = FindForm() as YiWriteBrowserForm;
+                    if (dragForm != null && dragForm.IsCustomMaximized)
+                    {
+                        dragForm.ToggleMaximizeRestore();
+                    }
+
+                    BeginCaptionDrag();
+                }
+
+                return;
+            }
+
             HitTest(e.Location, out int tab, out bool close, out bool plus);
             if (tab == _hotTab && close == _hotClose && plus == _hotPlus)
             {
@@ -273,11 +295,20 @@ namespace WordAddIn1.BrowserHost
 
             if (form.IsCustomMaximized)
             {
-                form.ToggleMaximizeRestore();
+                _captionAwaitDrag = true;
+                _captionDownScreen = Cursor.Position;
+                Capture = true;
+                return;
             }
 
-            ReleaseCapture();
-            SendMessage(form.Handle, WmNclButtonDown, (IntPtr)HtCaption, IntPtr.Zero);
+            BeginCaptionDrag();
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            _captionAwaitDrag = false;
+            Capture = false;
         }
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
@@ -299,6 +330,18 @@ namespace WordAddIn1.BrowserHost
             {
                 handler(this, EventArgs.Empty);
             }
+        }
+
+        private void BeginCaptionDrag()
+        {
+            YiWriteBrowserForm form = FindForm() as YiWriteBrowserForm;
+            if (form == null)
+            {
+                return;
+            }
+
+            ReleaseCapture();
+            SendMessage(form.Handle, WmNclButtonDown, (IntPtr)HtCaption, IntPtr.Zero);
         }
 
         private void DrawTab(Graphics g, int index, Rectangle bounds)
