@@ -238,6 +238,7 @@ namespace WordAddIn1.BrowserHost
             {
             }
 
+            page.RequestRelayout();
             _addressDirty = false;
             SyncAddressBar();
             UpdateWindowTitle();
