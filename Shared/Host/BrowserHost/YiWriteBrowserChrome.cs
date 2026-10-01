@@ -866,13 +866,24 @@ namespace WordAddIn1.BrowserHost
                     case YiWriteBrowserNavKind.Reload:
                         float r = s * 1.28f;
                         var ring = new RectangleF(cx - r, cy - r, r * 2f, r * 2f);
-                        const float startDeg = 28f;
-                        const float sweepDeg = 302f;
+                        const float startDeg = 350f;
+                        const float sweepDeg = 280f;
                         g.DrawArc(pen, ring, startDeg, sweepDeg);
-                        double endRad = (startDeg + sweepDeg) * Math.PI / 180.0;
+                        double endRad = 270.0 * Math.PI / 180.0;
                         float ex = cx + r * (float)Math.Cos(endRad);
                         float ey = cy + r * (float)Math.Sin(endRad);
-                        g.DrawLine(pen, ex, ey, ex - r * 0.78f, ey);
+                        float head = r * 0.72f;
+                        float half = r * 0.42f;
+                        using (var fill = new SolidBrush(icon))
+                        {
+                            g.FillPolygon(fill, new[]
+                            {
+                                new PointF(ex + head, ey),
+                                new PointF(ex - half * 0.15f, ey - half),
+                                new PointF(ex - half * 0.15f, ey + half)
+                            });
+                        }
+
                         break;
                 }
             }
