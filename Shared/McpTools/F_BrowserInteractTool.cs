@@ -104,6 +104,16 @@ namespace WordAddIn1
                         data["ref"] = result.Ref;
                     }
 
+                    if (result.OpenedNewTab && result.Channel != null)
+                    {
+                        data["opened_tab"] = true;
+                        data["opened_channel_id"] = ChannelRegistry.ToPublicId(result.Channel.ChannelId);
+                        if (!string.IsNullOrWhiteSpace(result.FromChannelId))
+                        {
+                            data["from_channel_id"] = ChannelRegistry.ToPublicId(result.FromChannelId);
+                        }
+                    }
+
                     BrowserResnapshotAfterAction.WriteSnapshotFields(
                         data,
                         result.ExpandedFrame,

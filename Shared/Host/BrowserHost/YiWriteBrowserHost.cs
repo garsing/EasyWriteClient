@@ -205,6 +205,7 @@ namespace WordAddIn1.BrowserHost
                 return false;
             }
 
+            form.PinToolPage(tabUuid);
             return true;
         }
 
@@ -355,6 +356,10 @@ namespace WordAddIn1.BrowserHost
             {
                 return BrowserCaptureResult.Fail("截取可视区失败: " + ex.Message);
             }
+            finally
+            {
+                form.UnpinToolPage();
+            }
         }
 
         /// <summary>读页 snapshot：overview 或按 ref detail。</summary>
@@ -383,6 +388,8 @@ namespace WordAddIn1.BrowserHost
                 return BrowserSnapshotResult.Fail(prepError ?? "引擎不可用");
             }
 
+            try
+            {
             bool isDetail = !string.IsNullOrWhiteSpace(refId);
             BrowserRefEntry prior = null;
             if (isDetail)
@@ -517,6 +524,11 @@ namespace WordAddIn1.BrowserHost
             {
                 return BrowserSnapshotResult.Fail("取无障碍树失败: " + ex.Message);
             }
+            }
+            finally
+            {
+                form.UnpinToolPage();
+            }
         }
 
         internal static async Task<BrowserSnapshotResult> ExpandFrameAsync(
@@ -591,6 +603,8 @@ namespace WordAddIn1.BrowserHost
                 return BrowserSnapshotResult.Fail(prepError ?? "引擎不可用");
             }
 
+            try
+            {
             BrowserFrameMap frameMap = await BrowserFrameResolver.LoadAsync(form).ConfigureAwait(true);
             if (!string.IsNullOrWhiteSpace(frameMap.RootFrameId)
                 && string.Equals(layer.FrameId, frameMap.RootFrameId, StringComparison.Ordinal))
@@ -607,6 +621,11 @@ namespace WordAddIn1.BrowserHost
                     null,
                     frameMap)
                 .ConfigureAwait(true);
+            }
+            finally
+            {
+                form.UnpinToolPage();
+            }
         }
 
         internal static async Task<BrowserSnapshotResult> SnapshotDocumentAsync(
@@ -903,25 +922,60 @@ namespace WordAddIn1.BrowserHost
                         .ConfigureAwait(true);
                 }
 
-                try
+                BrowserChannel snapChannel = channel;
+                BrowserResnapshotLayer snapLayer = BrowserResnapshotLayer.FromEntry(entry);
+                string extraMessage = null;
+                if (act == "click" && form.TryTakeOpenedToolTab(out string openedUuid))
                 {
-                    channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, channel.Visible);
+                    await form.WaitPageHttpAsync(openedUuid, TimeSpan.FromSeconds(8)).ConfigureAwait(true);
+                    snapChannel = ChannelRegistry.CreateOrGetBrowserAgent(openedUuid, setAsDefault: true);
+                    YiWriteBrowserPage opened = form.TryGetPage(openedUuid);
+                    if (opened != null)
+                    {
+                        snapChannel.UpdatePage(opened.CurrentUrl, opened.DisplayTitle, true);
+                    }
+
+                    HostCallbacks.RaiseBrowserOpenFileUpsert(
+                        snapChannel.SidebarItemId(),
+                        snapChannel.ChannelId,
+                        snapChannel.TryGetDisplayName() ?? snapChannel.Url,
+                        snapChannel.Url);
+                    snapLayer = BrowserResnapshotLayer.Shell();
+                    extraMessage = "点击成功。已新开标签，新渠道为 "
+                        + ChannelRegistry.ToPublicId(snapChannel.ChannelId)
+                        + "。原渠道 "
+                        + ChannelRegistry.ToPublicId(channel.ChannelId)
+                        + " 未跳转。请使用本次返回的新 ref。";
                 }
-                catch
+                else
                 {
+                    try
+                    {
+                        channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, channel.Visible);
+                    }
+                    catch
+                    {
+                    }
                 }
 
                 return await BrowserResnapshotAfterAction
                     .CompleteInteractAsync(
-                        channel,
+                        snapChannel,
                         act,
                         string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
-                        BrowserResnapshotLayer.FromEntry(entry))
+                        snapLayer,
+                        extraMessage,
+                        extraMessage != null,
+                        extraMessage != null ? channel.ChannelId : null)
                     .ConfigureAwait(true);
             }
             catch (Exception ex)
             {
                 return BrowserInteractResult.Fail("F_browser_interact 失败: " + ex.Message);
+            }
+            finally
+            {
+                form.UnpinToolPage();
             }
         }
 
@@ -1074,6 +1128,10 @@ namespace WordAddIn1.BrowserHost
             {
                 return BrowserDownloadResult.Fail(ex.Message ?? "download 失败");
             }
+            finally
+            {
+                form.UnpinToolPage();
+            }
         }
     }
 
@@ -1211,6 +1269,8 @@ namespace WordAddIn1.BrowserHost
         public bool RefsInvalidated { get; private set; }
         public bool ExpandedFrame { get; private set; }
         public bool Resnapshot { get; private set; }
+        public bool OpenedNewTab { get; private set; }
+        public string FromChannelId { get; private set; }
         public string Mode { get; private set; }
         public string Snapshot { get; private set; }
         public bool Truncated { get; private set; }
@@ -1242,7 +1302,9 @@ namespace WordAddIn1.BrowserHost
             string action,
             string refId,
             string message,
-            BrowserSnapshotResult snap)
+            BrowserSnapshotResult snap,
+            bool openedNewTab = false,
+            string fromChannelId = null)
         {
             return new BrowserInteractResult
             {
@@ -1256,6 +1318,8 @@ namespace WordAddIn1.BrowserHost
                 RefsInvalidated = false,
                 ExpandedFrame = false,
                 Resnapshot = true,
+                OpenedNewTab = openedNewTab,
+                FromChannelId = fromChannelId,
                 Snapshot = snap != null ? snap.Snapshot : "",
                 Mode = snap != null && !string.IsNullOrWhiteSpace(snap.Mode) ? snap.Mode : "overview",
                 Truncated = snap != null && snap.Truncated,
@@ -1267,7 +1331,9 @@ namespace WordAddIn1.BrowserHost
             BrowserChannel channel,
             string action,
             string refId,
-            string message)
+            string message,
+            bool openedNewTab = false,
+            string fromChannelId = null)
         {
             return new BrowserInteractResult
             {
@@ -1280,6 +1346,8 @@ namespace WordAddIn1.BrowserHost
                 Message = message ?? "",
                 RefsInvalidated = true,
                 Resnapshot = false,
+                OpenedNewTab = openedNewTab,
+                FromChannelId = fromChannelId,
             };
         }
 

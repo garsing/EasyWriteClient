@@ -38,7 +38,10 @@ namespace WordAddIn1.BrowserHost
             BrowserChannel channel,
             string action,
             string refId,
-            BrowserResnapshotLayer layer)
+            BrowserResnapshotLayer layer,
+            string extraMessage = null,
+            bool openedNewTab = false,
+            string fromChannelId = null)
         {
             BrowserSnapshotResult snap = await TryCaptureAsync(channel, layer).ConfigureAwait(true);
             if (IsUsable(snap))
@@ -47,8 +50,10 @@ namespace WordAddIn1.BrowserHost
                     channel,
                     action,
                     refId,
-                    SuccessMessage(action),
-                    snap);
+                    string.IsNullOrWhiteSpace(extraMessage) ? SuccessMessage(action) : extraMessage,
+                    snap,
+                    openedNewTab,
+                    fromChannelId);
             }
 
             if (channel != null)
@@ -56,7 +61,16 @@ namespace WordAddIn1.BrowserHost
                 BrowserRefStore.Clear(channel.ChannelId);
             }
 
-            return BrowserInteractResult.OkMissedTree(channel, action, refId, MissedTreeHint);
+            string missed = string.IsNullOrWhiteSpace(extraMessage)
+                ? MissedTreeHint
+                : extraMessage + " " + MissedTreeHint;
+            return BrowserInteractResult.OkMissedTree(
+                channel,
+                action,
+                refId,
+                missed,
+                openedNewTab,
+                fromChannelId);
         }
 
         public static async Task<BrowserDownloadResult> CompleteDownloadAsync(

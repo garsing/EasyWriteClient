@@ -472,8 +472,14 @@ namespace WordAddIn1.BrowserHost
 
         private static GraphicsPath RoundedTopRect(Rectangle bounds, int radius)
         {
-            int r = Math.Max(1, Math.Min(radius, Math.Min(bounds.Width, bounds.Height) / 2));
             var path = new GraphicsPath();
+            if (bounds.Width < 2 || bounds.Height < 2)
+            {
+                path.AddRectangle(bounds);
+                return path;
+            }
+
+            int r = Math.Max(1, Math.Min(radius, Math.Min(bounds.Width, bounds.Height) / 2));
             path.AddArc(bounds.X, bounds.Y, r * 2, r * 2, 180, 90);
             path.AddArc(bounds.Right - r * 2, bounds.Y, r * 2, r * 2, 270, 90);
             path.AddLine(bounds.Right, bounds.Bottom, bounds.X, bounds.Bottom);
@@ -620,8 +626,14 @@ namespace WordAddIn1.BrowserHost
 
         private static GraphicsPath RoundedRect(Rectangle bounds, int radius)
         {
-            int r = Math.Max(1, Math.Min(radius, Math.Min(bounds.Width, bounds.Height) / 2));
             var path = new GraphicsPath();
+            if (bounds.Width < 2 || bounds.Height < 2)
+            {
+                path.AddRectangle(bounds);
+                return path;
+            }
+
+            int r = Math.Max(1, Math.Min(radius, Math.Min(bounds.Width, bounds.Height) / 2));
             path.AddArc(bounds.X, bounds.Y, r * 2, r * 2, 180, 90);
             path.AddArc(bounds.Right - r * 2, bounds.Y, r * 2, r * 2, 270, 90);
             path.AddArc(bounds.Right - r * 2, bounds.Bottom - r * 2, r * 2, r * 2, 0, 90);

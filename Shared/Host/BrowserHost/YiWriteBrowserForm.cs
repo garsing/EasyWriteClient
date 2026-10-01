@@ -30,6 +30,7 @@ namespace WordAddIn1.BrowserHost
         private const int HtBottomRight = 17;
 
         private readonly List<YiWriteBrowserPage> _pages = new List<YiWriteBrowserPage>();
+        private readonly List<string> _openedDuringTool = new List<string>();
         private readonly Panel _client;
         private readonly YiWriteBrowserTabStrip _tabStrip;
         private readonly YiWriteBrowserAddressBar _addressBar;
@@ -40,6 +41,8 @@ namespace WordAddIn1.BrowserHost
 
         private CoreWebView2Environment _env;
         private YiWriteBrowserPage _front;
+        private YiWriteBrowserPage _toolPage;
+        private int _toolPinDepth;
         private bool _coreReady;
         private bool _closing;
         private bool _agentVisible;
@@ -127,12 +130,25 @@ namespace WordAddIn1.BrowserHost
 
         public string CurrentUrl
         {
-            get { return _front != null ? (_front.CurrentUrl ?? "") : ""; }
+            get
+            {
+                YiWriteBrowserPage page = ActivePage;
+                return page != null ? (page.CurrentUrl ?? "") : "";
+            }
         }
 
         public string CurrentTitle
         {
-            get { return _front != null ? (_front.CurrentTitle ?? "") : ""; }
+            get
+            {
+                YiWriteBrowserPage page = ActivePage;
+                return page != null ? (page.CurrentTitle ?? "") : "";
+            }
+        }
+
+        private YiWriteBrowserPage ActivePage
+        {
+            get { return _toolPage ?? _front; }
         }
 
         public int PageCount
@@ -208,7 +224,8 @@ namespace WordAddIn1.BrowserHost
                 YiWriteBrowserPage item = _pages[i];
                 if (item?.WebView != null && !item.WebView.IsDisposed)
                 {
-                    item.WebView.Visible = item == page;
+                    // 工具钉住的页保持可见，避免点完后被切走导致宽高变 0、后续 CDP 炸掉
+                    item.WebView.Visible = item == page || item == _toolPage;
                 }
             }
 
@@ -226,6 +243,86 @@ namespace WordAddIn1.BrowserHost
             RebuildTabStrip();
             YiWriteBrowserHost.NotifyTabActivated(page.TabUuid);
             return true;
+        }
+
+        /// <summary>
+        /// 工具进行中钉住目标页：页内新开标签会切前台，但 CDP / 坐标仍打在钉住的页上。
+        /// </summary>
+        internal void PinToolPage(string tabUuid)
+        {
+            YiWriteBrowserPage page = TryGetPage(tabUuid);
+            if (page == null)
+            {
+                return;
+            }
+
+            _toolPage = page;
+            if (_toolPinDepth == 0)
+            {
+                _openedDuringTool.Clear();
+            }
+
+            _toolPinDepth++;
+        }
+
+        internal bool TryTakeOpenedToolTab(out string tabUuid)
+        {
+            tabUuid = null;
+            if (_openedDuringTool.Count == 0)
+            {
+                return false;
+            }
+
+            tabUuid = _openedDuringTool[_openedDuringTool.Count - 1];
+            _openedDuringTool.Clear();
+            return !string.IsNullOrWhiteSpace(tabUuid);
+        }
+
+        internal async Task WaitPageHttpAsync(string tabUuid, TimeSpan timeout)
+        {
+            YiWriteBrowserPage page = TryGetPage(tabUuid);
+            if (page == null)
+            {
+                return;
+            }
+
+            DateTime deadline = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < deadline)
+            {
+                string url = page.CurrentUrl ?? "";
+                if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                    || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                await Task.Delay(150).ConfigureAwait(true);
+            }
+        }
+
+        internal void UnpinToolPage()
+        {
+            if (_toolPinDepth > 0)
+            {
+                _toolPinDepth--;
+            }
+
+            if (_toolPinDepth <= 0)
+            {
+                _toolPinDepth = 0;
+                _toolPage = null;
+                if (_front != null)
+                {
+                    for (int i = 0; i < _pages.Count; i++)
+                    {
+                        YiWriteBrowserPage item = _pages[i];
+                        if (item?.WebView != null && !item.WebView.IsDisposed)
+                        {
+                            item.WebView.Visible = item == _front;
+                        }
+                    }
+                }
+            }
         }
 
         public async Task NavigateAsync(string url, bool visible, string tabUuid)
@@ -259,24 +356,24 @@ namespace WordAddIn1.BrowserHost
             await page.NavigateAsync(url).ConfigureAwait(true);
         }
 
-        /// <summary>取无障碍树 JSON（CDP）；frameId 空=根。调用前须 ActivateTab 到目标页。</summary>
+        /// <summary>取无障碍树 JSON（CDP）；frameId 空=根。打钉住的工具页，否则前台页。</summary>
         public Task<string> GetAccessibilityTreeJsonAsync(
             int depth = BrowserAxTreeBuilder.DefaultDepth,
             string frameId = null)
         {
-            return RequireFrontPage().GetAccessibilityTreeJsonAsync(depth, frameId);
+            return RequireActivePage().GetAccessibilityTreeJsonAsync(depth, frameId);
         }
 
-        /// <summary>调用 CDP。调用前须 ActivateTab 到目标页。</summary>
+        /// <summary>调用 CDP。打钉住的工具页，否则前台页。</summary>
         public Task<string> CallCdpAsync(string methodName, string parametersAsJson, string sessionId = null)
         {
-            return RequireFrontPage().CallCdpAsync(methodName, parametersAsJson, sessionId);
+            return RequireActivePage().CallCdpAsync(methodName, parametersAsJson, sessionId);
         }
 
         /// <summary>等待下一次导航完成；超时返回 false（未导航也算超时）。</summary>
         public Task<bool> WaitNavigationAsync(TimeSpan timeout)
         {
-            YiWriteBrowserPage page = _front;
+            YiWriteBrowserPage page = ActivePage;
             if (page == null)
             {
                 return Task.FromResult(false);
@@ -328,7 +425,7 @@ namespace WordAddIn1.BrowserHost
         internal async Task<CoreWebView2Cookie[]> GetCookiesAsync(string uri)
         {
             await EnsureCoreAsync().ConfigureAwait(true);
-            YiWriteBrowserPage page = _front;
+            YiWriteBrowserPage page = ActivePage;
             if (page == null)
             {
                 return Array.Empty<CoreWebView2Cookie>();
@@ -475,6 +572,11 @@ namespace WordAddIn1.BrowserHost
             page.NewWindowRequested += OnPageNewWindowRequested;
             page.DownloadStarting += OnDownloadStarting;
             _pages.Add(page);
+            if (_toolPinDepth > 0)
+            {
+                _openedDuringTool.Add(page.TabUuid);
+            }
+
             RebuildTabStrip();
             if (registerChannel)
             {
@@ -694,19 +796,20 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
-        private YiWriteBrowserPage RequireFrontPage()
+        private YiWriteBrowserPage RequireActivePage()
         {
             if (_closing || IsDisposed)
             {
                 throw new InvalidOperationException("浏览窗已关闭");
             }
 
-            if (_front == null)
+            YiWriteBrowserPage page = ActivePage;
+            if (page == null)
             {
                 throw new InvalidOperationException("没有可用的标签页");
             }
 
-            return _front;
+            return page;
         }
 
         private void SyncAddressBar()
@@ -1165,6 +1268,18 @@ namespace WordAddIn1.BrowserHost
                 if (oldMax != null)
                 {
                     oldMax.Dispose();
+                }
+
+                return;
+            }
+
+            if (Width < _cornerRadius * 2 || Height < _cornerRadius * 2)
+            {
+                Region oldSmall = Region;
+                Region = null;
+                if (oldSmall != null)
+                {
+                    oldSmall.Dispose();
                 }
 
                 return;
