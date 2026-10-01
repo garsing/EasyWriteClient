@@ -9,10 +9,10 @@ import imageAppIcon from '../assets/images/image.png'
 
 const GROUP_ORDER = [
   'word',
-  'wps',
   'excel',
-  'et',
   'ppt',
+  'wps',
+  'et',
   'wpp',
   'image',
   'chrome',
@@ -83,10 +83,10 @@ export function resolveOpenFileAppGroupIcon (groupKey) {
 /** 侧栏「打开文件」常驻九行（无图片 / 其他）。 */
 export const PERSISTENT_OPEN_FILE_GROUP_KEYS = [
   'word',
-  'wps',
   'excel',
-  'et',
   'ppt',
+  'wps',
+  'et',
   'wpp',
   'chrome',
   'edge',
