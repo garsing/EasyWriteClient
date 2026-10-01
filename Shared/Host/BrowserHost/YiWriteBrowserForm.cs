@@ -89,6 +89,11 @@ namespace WordAddIn1.BrowserHost
             _addressBox = _addressBar.Input;
             _addressBox.KeyDown += OnAddressKeyDown;
             _addressBox.TextChanged += OnAddressTextChanged;
+            _addressBar.BackRequested += (s, e) => GoBackFront();
+            _addressBar.ForwardRequested += (s, e) => GoForwardFront();
+            _addressBar.ReloadRequested += (s, e) => ReloadFront();
+            KeyPreview = true;
+            KeyDown += OnBrowserKeyDown;
 
             _client = new Panel
             {
@@ -841,6 +846,67 @@ namespace WordAddIn1.BrowserHost
         private void SyncAddressBar()
         {
             SetAddressText(_front != null ? _front.AddressBarText : "");
+            SyncNavButtons();
+        }
+
+        private void SyncNavButtons()
+        {
+            YiWriteBrowserPage page = _front;
+            bool live = page != null && page.Core != null;
+            _addressBar.SetNavState(
+                live && page.CanGoBack,
+                live && page.CanGoForward,
+                live);
+        }
+
+        private void GoBackFront()
+        {
+            if (_front != null)
+            {
+                _front.GoBack();
+            }
+        }
+
+        private void GoForwardFront()
+        {
+            if (_front != null)
+            {
+                _front.GoForward();
+            }
+        }
+
+        private void ReloadFront()
+        {
+            if (_front != null)
+            {
+                _front.Reload();
+            }
+        }
+
+        private void OnBrowserKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.F5 || (e.Control && e.KeyCode == Keys.R))
+            {
+                ReloadFront();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                return;
+            }
+
+            if (e.Alt && e.KeyCode == Keys.Left)
+            {
+                GoBackFront();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                return;
+            }
+
+            if (e.Alt && e.KeyCode == Keys.Right)
+            {
+                GoForwardFront();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
         }
 
         private void SetAddressText(string text)

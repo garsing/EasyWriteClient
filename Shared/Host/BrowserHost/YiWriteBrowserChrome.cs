@@ -545,6 +545,9 @@ namespace WordAddIn1.BrowserHost
     internal sealed class YiWriteBrowserAddressBar : Panel
     {
         private readonly float _dpi;
+        private readonly YiWriteBrowserNavButton _back;
+        private readonly YiWriteBrowserNavButton _forward;
+        private readonly YiWriteBrowserNavButton _reload;
         private readonly TextBox _input;
         private bool _focused;
 
@@ -552,6 +555,23 @@ namespace WordAddIn1.BrowserHost
         {
             _dpi = dpiScale <= 0 ? 1f : dpiScale;
             DoubleBuffered = true;
+
+            int btn = Scale(32);
+            _back = new YiWriteBrowserNavButton(YiWriteBrowserNavKind.Back, _dpi)
+            {
+                Size = new Size(btn, btn)
+            };
+            _forward = new YiWriteBrowserNavButton(YiWriteBrowserNavKind.Forward, _dpi)
+            {
+                Size = new Size(btn, btn)
+            };
+            _reload = new YiWriteBrowserNavButton(YiWriteBrowserNavKind.Reload, _dpi)
+            {
+                Size = new Size(btn, btn)
+            };
+            _back.Click += (s, e) => Raise(BackRequested);
+            _forward.Click += (s, e) => Raise(ForwardRequested);
+            _reload.Click += (s, e) => Raise(ReloadRequested);
 
             _input = new TextBox
             {
@@ -574,16 +594,44 @@ namespace WordAddIn1.BrowserHost
                 Invalidate();
             };
 
+            Controls.Add(_back);
+            Controls.Add(_forward);
+            Controls.Add(_reload);
             Controls.Add(_input);
             Dock = DockStyle.Top;
             Height = Scale(40);
             BackColor = YiWriteBrowserChromeTheme.Toolbar;
-            Padding = new Padding(Scale(12), Scale(4), Scale(12), Scale(4));
+            Padding = new Padding(Scale(8), Scale(4), Scale(12), Scale(4));
+            SetNavState(false, false, false);
         }
 
         public TextBox Input
         {
             get { return _input; }
+        }
+
+        public event EventHandler BackRequested;
+
+        public event EventHandler ForwardRequested;
+
+        public event EventHandler ReloadRequested;
+
+        public void SetNavState(bool canGoBack, bool canGoForward, bool canReload)
+        {
+            if (_back != null)
+            {
+                _back.Enabled = canGoBack;
+            }
+
+            if (_forward != null)
+            {
+                _forward.Enabled = canGoForward;
+            }
+
+            if (_reload != null)
+            {
+                _reload.Enabled = canReload;
+            }
         }
 
         public void SetSchemeHint(string url)
@@ -599,6 +647,7 @@ namespace WordAddIn1.BrowserHost
                 return;
             }
 
+            LayoutNavButtons();
             Rectangle field = FieldBounds;
             int icon = Scale(18);
             int textLeft = field.X + Scale(10) + icon + Scale(8);
@@ -638,15 +687,47 @@ namespace WordAddIn1.BrowserHost
             DrawLock(g, new Rectangle(field.X + Scale(10), field.Y + (field.Height - Scale(14)) / 2, Scale(14), Scale(14)));
         }
 
+        private void LayoutNavButtons()
+        {
+            if (_back == null)
+            {
+                return;
+            }
+
+            int btn = Scale(32);
+            int gap = Scale(2);
+            int x = Padding.Left;
+            int y = Math.Max(0, (Height - btn) / 2);
+            _back.SetBounds(x, y, btn, btn);
+            x += btn + gap;
+            _forward.SetBounds(x, y, btn, btn);
+            x += btn + gap;
+            _reload.SetBounds(x, y, btn, btn);
+        }
+
+        private int NavClusterWidth
+        {
+            get { return Scale(32) * 3 + Scale(2) * 2 + Scale(8); }
+        }
+
         private Rectangle FieldBounds
         {
             get
             {
+                int left = Padding.Left + NavClusterWidth;
                 return new Rectangle(
-                    Padding.Left,
+                    left,
                     Padding.Top,
-                    Math.Max(8, Width - Padding.Horizontal),
+                    Math.Max(8, Width - left - Padding.Right),
                     Math.Max(8, Height - Padding.Vertical));
+            }
+        }
+
+        private static void Raise(EventHandler handler)
+        {
+            if (handler != null)
+            {
+                handler(null, EventArgs.Empty);
             }
         }
 
@@ -688,6 +769,113 @@ namespace WordAddIn1.BrowserHost
         private int Scale(int value)
         {
             return (int)Math.Round(value * _dpi);
+        }
+    }
+
+    internal enum YiWriteBrowserNavKind
+    {
+        Back,
+        Forward,
+        Reload
+    }
+
+    internal sealed class YiWriteBrowserNavButton : Control
+    {
+        private readonly float _dpi;
+        private readonly YiWriteBrowserNavKind _kind;
+        private bool _hover;
+
+        public YiWriteBrowserNavButton(YiWriteBrowserNavKind kind, float dpiScale)
+        {
+            _kind = kind;
+            _dpi = dpiScale <= 0 ? 1f : dpiScale;
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint
+                | ControlStyles.UserPaint
+                | ControlStyles.OptimizedDoubleBuffer
+                | ControlStyles.ResizeRedraw,
+                true);
+            TabStop = false;
+            BackColor = YiWriteBrowserChromeTheme.Toolbar;
+        }
+
+        protected override void OnEnabledChanged(EventArgs e)
+        {
+            base.OnEnabledChanged(e);
+            Invalidate();
+        }
+
+        protected override void OnMouseEnter(EventArgs e)
+        {
+            _hover = true;
+            Invalidate();
+            base.OnMouseEnter(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            _hover = false;
+            Invalidate();
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.Clear(YiWriteBrowserChromeTheme.Toolbar);
+            if (Enabled && _hover)
+            {
+                int pad = Math.Max(2, (int)Math.Round(2 * _dpi));
+                var oval = new Rectangle(pad, pad, Width - pad * 2, Height - pad * 2);
+                using (var brush = new SolidBrush(YiWriteBrowserChromeTheme.CaptionHover))
+                {
+                    g.FillEllipse(brush, oval);
+                }
+            }
+
+            Color icon = Enabled
+                ? YiWriteBrowserChromeTheme.TextMuted
+                : Color.FromArgb(0xC4, 0xC7, 0xC5);
+            float cx = Width / 2f;
+            float cy = Height / 2f;
+            float s = Math.Min(Width, Height) * 0.16f;
+            using (var pen = new Pen(icon, Math.Max(1.4f, 1.5f * _dpi)))
+            {
+                pen.StartCap = LineCap.Round;
+                pen.EndCap = LineCap.Round;
+                pen.LineJoin = LineJoin.Round;
+                switch (_kind)
+                {
+                    case YiWriteBrowserNavKind.Back:
+                        g.DrawLines(pen, new[]
+                        {
+                            new PointF(cx + s * 0.55f, cy - s * 1.15f),
+                            new PointF(cx - s * 0.75f, cy),
+                            new PointF(cx + s * 0.55f, cy + s * 1.15f)
+                        });
+                        break;
+                    case YiWriteBrowserNavKind.Forward:
+                        g.DrawLines(pen, new[]
+                        {
+                            new PointF(cx - s * 0.55f, cy - s * 1.15f),
+                            new PointF(cx + s * 0.75f, cy),
+                            new PointF(cx - s * 0.55f, cy + s * 1.15f)
+                        });
+                        break;
+                    case YiWriteBrowserNavKind.Reload:
+                        float r = s * 1.28f;
+                        var ring = new RectangleF(cx - r, cy - r, r * 2f, r * 2f);
+                        const float startDeg = 28f;
+                        const float sweepDeg = 302f;
+                        g.DrawArc(pen, ring, startDeg, sweepDeg);
+                        double endRad = (startDeg + sweepDeg) * Math.PI / 180.0;
+                        float ex = cx + r * (float)Math.Cos(endRad);
+                        float ey = cy + r * (float)Math.Sin(endRad);
+                        g.DrawLine(pen, ex, ey, ex - r * 0.78f, ey);
+                        break;
+                }
+            }
         }
     }
 

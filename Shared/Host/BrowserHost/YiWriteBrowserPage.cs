@@ -84,6 +84,38 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
+        public bool CanGoBack
+        {
+            get
+            {
+                try
+                {
+                    CoreWebView2 core = Core;
+                    return core != null && core.CanGoBack;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+        }
+
+        public bool CanGoForward
+        {
+            get
+            {
+                try
+                {
+                    CoreWebView2 core = Core;
+                    return core != null && core.CanGoForward;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+        }
+
         public event EventHandler TitleOrUrlChanged;
 
         public event EventHandler CloseRequested;
@@ -122,6 +154,7 @@ namespace WordAddIn1.BrowserHost
 
             core.SourceChanged += OnSourceChanged;
             core.DocumentTitleChanged += OnDocumentTitleChanged;
+            core.HistoryChanged += OnHistoryChanged;
             core.NewWindowRequested += OnNewWindowRequested;
             core.WindowCloseRequested += OnWindowCloseRequested;
 
@@ -168,6 +201,33 @@ namespace WordAddIn1.BrowserHost
             core.Navigate(url);
             await tcs.Task.ConfigureAwait(true);
             RefreshUrlAndTitle();
+        }
+
+        public void GoBack()
+        {
+            CoreWebView2 core = Core;
+            if (core != null && core.CanGoBack)
+            {
+                core.GoBack();
+            }
+        }
+
+        public void GoForward()
+        {
+            CoreWebView2 core = Core;
+            if (core != null && core.CanGoForward)
+            {
+                core.GoForward();
+            }
+        }
+
+        public void Reload()
+        {
+            CoreWebView2 core = Core;
+            if (core != null)
+            {
+                core.Reload();
+            }
         }
 
         public async Task<string> GetAccessibilityTreeJsonAsync(
@@ -272,6 +332,7 @@ namespace WordAddIn1.BrowserHost
                 {
                     core.SourceChanged -= OnSourceChanged;
                     core.DocumentTitleChanged -= OnDocumentTitleChanged;
+                    core.HistoryChanged -= OnHistoryChanged;
                     core.NewWindowRequested -= OnNewWindowRequested;
                     core.WindowCloseRequested -= OnWindowCloseRequested;
                     if (_downloadStartingHandler != null)
@@ -315,6 +376,11 @@ namespace WordAddIn1.BrowserHost
         }
 
         private void OnSourceChanged(object sender, CoreWebView2SourceChangedEventArgs e)
+        {
+            RefreshUrlAndTitle();
+        }
+
+        private void OnHistoryChanged(object sender, object e)
         {
             RefreshUrlAndTitle();
         }
