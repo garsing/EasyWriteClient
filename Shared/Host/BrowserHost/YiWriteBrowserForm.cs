@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,11 +17,26 @@ namespace WordAddIn1.BrowserHost
     {
         internal const int MaxTabCount = 16;
 
+        private const int WmNcHitTest = 0x84;
+        private const int WmSetCursor = 0x20;
+        private const int HtClient = 1;
+        private const int HtLeft = 10;
+        private const int HtRight = 11;
+        private const int HtTop = 12;
+        private const int HtTopLeft = 13;
+        private const int HtTopRight = 14;
+        private const int HtBottom = 15;
+        private const int HtBottomLeft = 16;
+        private const int HtBottomRight = 17;
+
         private readonly List<YiWriteBrowserPage> _pages = new List<YiWriteBrowserPage>();
         private readonly Panel _client;
-        private readonly FlowLayoutPanel _tabFlow;
+        private readonly YiWriteBrowserTabStrip _tabStrip;
+        private readonly YiWriteBrowserAddressBar _addressBar;
         private readonly TextBox _addressBox;
-        private readonly Button _plusButton;
+        private readonly float _dpiScale;
+        private readonly int _resizeBorder;
+        private readonly int _cornerRadius;
 
         private CoreWebView2Environment _env;
         private YiWriteBrowserPage _front;
@@ -29,6 +45,7 @@ namespace WordAddIn1.BrowserHost
         private bool _agentVisible;
         private bool _addressDirty;
         private bool _syncingAddress;
+        private bool _customMaximized;
         private Rectangle _normalBounds;
         private bool _hasNormalBounds;
         private TaskCompletionSource<BrowserCapturedDownload> _expectDownloadTcs;
@@ -38,72 +55,46 @@ namespace WordAddIn1.BrowserHost
         {
             Text = "易写浏览器";
             StartPosition = FormStartPosition.CenterScreen;
-            Size = PreferredBrowserSize();
-            MinimumSize = new Size(960, 640);
+            AutoScaleMode = AutoScaleMode.None;
+            FormBorderStyle = FormBorderStyle.None;
+            DoubleBuffered = true;
+            SetStyle(ControlStyles.ResizeRedraw, true);
             ShowInTaskbar = true;
             ShowIcon = true;
-            FormBorderStyle = FormBorderStyle.Sizable;
             MinimizeBox = true;
             MaximizeBox = true;
             Icon = LoadAppIcon();
 
-            _tabFlow = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                WrapContents = false,
-                AutoScroll = true,
-                Padding = new Padding(4, 2, 4, 2)
-            };
+            _dpiScale = ReadDpiScale();
+            _resizeBorder = Math.Max(8, (int)Math.Round(8 * _dpiScale));
+            _cornerRadius = Math.Max(8, (int)Math.Round(8 * _dpiScale));
+            MinimumSize = new Size(960, 640);
+            Size = PreferredBrowserSize();
+            BackColor = YiWriteBrowserChromeTheme.Frame;
+            Padding = new Padding(_resizeBorder);
 
-            _plusButton = new Button
-            {
-                Text = "+",
-                Dock = DockStyle.Right,
-                Width = 32,
-                FlatStyle = FlatStyle.Flat,
-                TabStop = false
-            };
-            _plusButton.FlatAppearance.BorderSize = 0;
-            _plusButton.Click += (s, e) => { _ = AddBlankTabAsync(); };
+            _tabStrip = new YiWriteBrowserTabStrip(_dpiScale);
+            _tabStrip.TabActivateRequested += (s, uuid) => ActivateTab(uuid);
+            _tabStrip.TabCloseRequested += (s, uuid) => CloseTab(TryGetPage(uuid));
+            _tabStrip.NewTabRequested += (s, e) => { _ = AddBlankTabAsync(); };
+            _tabStrip.MinimizeRequested += (s, e) => { WindowState = FormWindowState.Minimized; };
+            _tabStrip.MaximizeRequested += (s, e) => ToggleMaximizeRestore();
+            _tabStrip.CloseWindowRequested += (s, e) => Close();
 
-            var tabStrip = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 32
-            };
-            tabStrip.Controls.Add(_tabFlow);
-            tabStrip.Controls.Add(_plusButton);
-
-            _addressBox = new TextBox
-            {
-                Dock = DockStyle.Fill,
-                BorderStyle = BorderStyle.FixedSingle
-            };
+            _addressBar = new YiWriteBrowserAddressBar(_dpiScale);
+            _addressBox = _addressBar.Input;
             _addressBox.KeyDown += OnAddressKeyDown;
             _addressBox.TextChanged += OnAddressTextChanged;
 
-            var addressHost = new Panel
-            {
-                Dock = DockStyle.Fill
-            };
-            addressHost.Padding = new Padding(8, 4, 8, 4);
-            addressHost.Controls.Add(_addressBox);
-
-            var addressStrip = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 30
-            };
-            addressStrip.Controls.Add(addressHost);
-
             _client = new Panel
             {
-                Dock = DockStyle.Fill
+                Dock = DockStyle.Fill,
+                BackColor = Color.White
             };
 
             Controls.Add(_client);
-            Controls.Add(addressStrip);
-            Controls.Add(tabStrip);
+            Controls.Add(_addressBar);
+            Controls.Add(_tabStrip);
 
             FormClosing += OnFormClosing;
             Activated += OnActivated;
@@ -114,7 +105,14 @@ namespace WordAddIn1.BrowserHost
                     _normalBounds = Bounds;
                     _hasNormalBounds = true;
                 }
+
+                ApplyWindowRegion();
             };
+        }
+
+        internal bool IsCustomMaximized
+        {
+            get { return _customMaximized; }
         }
 
         public string TabUuid
@@ -745,82 +743,12 @@ namespace WordAddIn1.BrowserHost
 
         private void RebuildTabStrip()
         {
-            _tabFlow.SuspendLayout();
-            try
-            {
-                _tabFlow.Controls.Clear();
-                for (int i = 0; i < _pages.Count; i++)
-                {
-                    _tabFlow.Controls.Add(CreateTabChip(_pages[i]));
-                }
-            }
-            finally
-            {
-                _tabFlow.ResumeLayout();
-            }
+            _tabStrip.BindPages(_pages, _front);
         }
 
         private void UpdateTabChip(YiWriteBrowserPage page)
         {
-            foreach (Control control in _tabFlow.Controls)
-            {
-                if (control.Tag != page)
-                {
-                    continue;
-                }
-
-                control.BackColor = page == _front ? Color.White : SystemColors.Control;
-                foreach (Control inner in control.Controls)
-                {
-                    Label label = inner as Label;
-                    if (label != null)
-                    {
-                        label.Text = page.DisplayTitle;
-                    }
-                }
-
-                return;
-            }
-
-            RebuildTabStrip();
-        }
-
-        private Control CreateTabChip(YiWriteBrowserPage page)
-        {
-            var chip = new Panel
-            {
-                Height = 24,
-                Width = 168,
-                Margin = new Padding(2, 3, 2, 3),
-                BackColor = page == _front ? Color.White : SystemColors.Control,
-                Tag = page
-            };
-
-            var close = new Button
-            {
-                Text = "×",
-                Dock = DockStyle.Right,
-                Width = 22,
-                FlatStyle = FlatStyle.Flat,
-                TabStop = false
-            };
-            close.FlatAppearance.BorderSize = 0;
-            close.Click += (s, e) => CloseTab(page);
-
-            var title = new Label
-            {
-                Text = page.DisplayTitle,
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                AutoEllipsis = true,
-                Padding = new Padding(6, 0, 0, 0)
-            };
-            title.Click += (s, e) => ActivateTab(page.TabUuid);
-            chip.Click += (s, e) => ActivateTab(page.TabUuid);
-
-            chip.Controls.Add(title);
-            chip.Controls.Add(close);
-            return chip;
+            _tabStrip.BindPages(_pages, _front);
         }
 
         private void ShowTabLimitMessage()
@@ -1036,6 +964,43 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
+        internal void ToggleMaximizeRestore()
+        {
+            if (_customMaximized)
+            {
+                Rectangle restore = _hasNormalBounds ? _normalBounds : new Rectangle(Location, PreferredBrowserSize());
+                if (!IsOnScreen(restore))
+                {
+                    restore = new Rectangle(Screen.FromControl(this).WorkingArea.Location, PreferredBrowserSize());
+                }
+
+                Bounds = restore;
+                _customMaximized = false;
+                Padding = new Padding(_resizeBorder);
+            }
+            else
+            {
+                if (WindowState == FormWindowState.Minimized)
+                {
+                    WindowState = FormWindowState.Normal;
+                }
+
+                if (IsOnScreen(Bounds))
+                {
+                    _normalBounds = Bounds;
+                    _hasNormalBounds = true;
+                }
+
+                Bounds = Screen.FromControl(this).WorkingArea;
+                _customMaximized = true;
+                Padding = Padding.Empty;
+            }
+
+            _tabStrip.SetMaximized(_customMaximized);
+            ApplyWindowRegion();
+            Invalidate();
+        }
+
         private void RestoreOnScreen()
         {
             Opacity = 1;
@@ -1048,7 +1013,11 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
-                WindowState = FormWindowState.Maximized;
+                if (!_customMaximized)
+                {
+                    ToggleMaximizeRestore();
+                }
+
                 BringToFront();
                 Activate();
             }
@@ -1059,10 +1028,178 @@ namespace WordAddIn1.BrowserHost
 
         private void RememberNormalBoundsIfOnScreen()
         {
-            if (WindowState == FormWindowState.Normal && IsOnScreen(Bounds))
+            if (!_customMaximized && WindowState == FormWindowState.Normal && IsOnScreen(Bounds))
             {
                 _normalBounds = Bounds;
                 _hasNormalBounds = true;
+            }
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.Style |= 0x00080000 | 0x00020000 | 0x00010000;
+                return cp;
+            }
+        }
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            base.OnSizeChanged(e);
+            ApplyWindowRegion();
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WmNcHitTest && !_customMaximized && WindowState == FormWindowState.Normal)
+            {
+                int lp = m.LParam.ToInt32();
+                short x = (short)(lp & 0xFFFF);
+                short y = (short)((lp >> 16) & 0xFFFF);
+                Point p = PointToClient(new Point(x, y));
+                int hit = HitTestResize(p);
+                if (hit != HtClient)
+                {
+                    m.Result = (IntPtr)hit;
+                    return;
+                }
+
+                base.WndProc(ref m);
+                return;
+            }
+
+            if (m.Msg == WmSetCursor && !_customMaximized && WindowState == FormWindowState.Normal)
+            {
+                int hit = (int)((long)m.LParam & 0xFFFF);
+                Cursor cursor = CursorForHit(hit);
+                if (cursor != null)
+                {
+                    Cursor.Current = cursor;
+                    m.Result = (IntPtr)1;
+                    return;
+                }
+            }
+
+            base.WndProc(ref m);
+        }
+
+        private int HitTestResize(Point clientPt)
+        {
+            int b = _resizeBorder;
+            bool left = clientPt.X >= 0 && clientPt.X <= b;
+            bool right = clientPt.X >= ClientSize.Width - b && clientPt.X <= ClientSize.Width;
+            bool top = clientPt.Y >= 0 && clientPt.Y <= b;
+            bool bottom = clientPt.Y >= ClientSize.Height - b && clientPt.Y <= ClientSize.Height;
+            if (top && left)
+            {
+                return HtTopLeft;
+            }
+
+            if (top && right)
+            {
+                return HtTopRight;
+            }
+
+            if (bottom && left)
+            {
+                return HtBottomLeft;
+            }
+
+            if (bottom && right)
+            {
+                return HtBottomRight;
+            }
+
+            if (left)
+            {
+                return HtLeft;
+            }
+
+            if (right)
+            {
+                return HtRight;
+            }
+
+            if (top)
+            {
+                return HtTop;
+            }
+
+            if (bottom)
+            {
+                return HtBottom;
+            }
+
+            return HtClient;
+        }
+
+        private static Cursor CursorForHit(int hit)
+        {
+            switch (hit)
+            {
+                case HtLeft:
+                case HtRight:
+                    return Cursors.SizeWE;
+                case HtTop:
+                case HtBottom:
+                    return Cursors.SizeNS;
+                case HtTopLeft:
+                case HtBottomRight:
+                    return Cursors.SizeNWSE;
+                case HtTopRight:
+                case HtBottomLeft:
+                    return Cursors.SizeNESW;
+                default:
+                    return null;
+            }
+        }
+
+        private void ApplyWindowRegion()
+        {
+            if (_customMaximized || WindowState == FormWindowState.Maximized)
+            {
+                Region oldMax = Region;
+                Region = null;
+                if (oldMax != null)
+                {
+                    oldMax.Dispose();
+                }
+
+                return;
+            }
+
+            using (var path = new GraphicsPath())
+            {
+                int d = _cornerRadius * 2;
+                Rectangle r = new Rectangle(0, 0, Width, Height);
+                path.AddArc(r.X, r.Y, d, d, 180, 90);
+                path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+                path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+                path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+                path.CloseFigure();
+                Region old = Region;
+                Region = new Region(path);
+                if (old != null)
+                {
+                    old.Dispose();
+                }
+            }
+        }
+
+        private static float ReadDpiScale()
+        {
+            try
+            {
+                using (Graphics g = Graphics.FromHwnd(IntPtr.Zero))
+                {
+                    return g.DpiX / 96f;
+                }
+            }
+            catch
+            {
+                return 1f;
             }
         }
 
