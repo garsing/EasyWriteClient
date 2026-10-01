@@ -12,6 +12,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Word = Microsoft.Office.Interop.Word;
 using WordAddIn1;
+using WordAddIn1.BrowserHost;
 using WordAddIn1.OpenFiles;
 using WordAddIn1.Terminal;
 
@@ -571,6 +572,7 @@ namespace EasyWriteClient.Desktop
                 return Task.FromResult<object>(new { items });
             });
             _bridge.RegisterHandler("openContainingFolder", HandleOpenContainingFolderAsync);
+            _bridge.RegisterHandler("createOpenFile", HandleCreateOpenFileAsync);
             // 侧栏底栏用户名：轻量查询，不走设置窗体的 getUserSettings（该 handler 只在 UserSettingsForm 注册）
             _bridge.RegisterHandler("getCurrentUser", _ =>
             {
@@ -776,6 +778,42 @@ namespace EasyWriteClient.Desktop
             catch (Exception ex)
             {
                 return Task.FromResult<object>(new { success = false, message = ex.Message });
+            }
+        }
+
+        private async Task<object> HandleCreateOpenFileAsync(object data)
+        {
+            try
+            {
+                JObject jo = data as JObject ?? (data != null ? JObject.FromObject(data) : null);
+                string group = jo?["group"]?.ToString()?.Trim();
+                if (string.IsNullOrEmpty(group))
+                {
+                    return new { success = false, message = "缺少分类" };
+                }
+
+                if (string.Equals(group, "yiwrite", StringComparison.OrdinalIgnoreCase))
+                {
+                    BrowserNavigateResult nav = await YiWriteBrowserHost.AddBlankTabAsync()
+                        .ConfigureAwait(true);
+                    if (nav == null || !nav.Success)
+                    {
+                        return new { success = false, message = nav != null ? nav.Error : "无法打开易写浏览器" };
+                    }
+
+                    return new { success = true };
+                }
+
+                if (!OpenFilesSidebarCreate.TryCreate(group, out string error))
+                {
+                    return new { success = false, message = error ?? "新建失败" };
+                }
+
+                return new { success = true };
+            }
+            catch (Exception ex)
+            {
+                return new { success = false, message = ex.Message };
             }
         }
 

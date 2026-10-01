@@ -80,26 +80,35 @@
               :key="group.key"
               class="open-file-group"
             >
-              <button
-                type="button"
-                class="open-file-group-header"
-                :aria-expanded="isAppGroupExpanded(group.key)"
-                @click="toggleAppGroup(group.key)"
-              >
-                <span
-                  class="open-file-group-chevron"
-                  :class="{ open: isAppGroupExpanded(group.key) }"
-                  aria-hidden="true"
-                >›</span>
-                <img
-                  :src="group.icon"
-                  alt=""
-                  class="open-file-app-icon"
-                  aria-hidden="true"
-                />
-                <span class="open-file-group-label">{{ group.label }}</span>
-                <span class="open-file-group-count">{{ group.items.length }}</span>
-              </button>
+              <div class="open-file-group-header-row">
+                <button
+                  type="button"
+                  class="open-file-group-header"
+                  :aria-expanded="isAppGroupExpanded(group.key)"
+                  @click="toggleAppGroup(group.key)"
+                >
+                  <span
+                    class="open-file-group-chevron"
+                    :class="{ open: isAppGroupExpanded(group.key) }"
+                    aria-hidden="true"
+                  >›</span>
+                  <img
+                    :src="group.icon"
+                    alt=""
+                    class="open-file-app-icon"
+                    aria-hidden="true"
+                  />
+                  <span class="open-file-group-label">{{ group.label }}</span>
+                  <span class="open-file-group-count">{{ group.items.length }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="open-file-group-add"
+                  :aria-label="'新建' + group.label"
+                  title="新建"
+                  @click.stop="onCreatePlusClick($event, group)"
+                >+</button>
+              </div>
               <div
                 v-show="isAppGroupExpanded(group.key)"
                 class="open-file-group-children"
@@ -212,6 +221,21 @@
         复制名称
       </button>
     </div>
+
+    <div
+      v-if="createMenu.visible"
+      class="open-file-ctx-menu"
+      :style="{ top: createMenu.top + 'px', left: createMenu.left + 'px' }"
+      @mousedown.stop
+    >
+      <button
+        type="button"
+        class="open-file-ctx-item"
+        @click="handleCreateNew"
+      >
+        新建
+      </button>
+    </div>
   </aside>
 </template>
 
@@ -224,7 +248,7 @@ import knowledgeBaseIcon from '../assets/images/knowledge_base.png'
 import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
 import userIcon from '../assets/images/avatar.png'
 import { openFileSelectionKey } from '../utils/selectedOpenFiles.js'
-import { groupOpenFilesByApp, resolveOpenFileAppGroupKey } from '../utils/openFileAppIcon.js'
+import { listPersistentOpenFileGroups, resolveOpenFileAppGroupKey } from '../utils/openFileAppIcon.js'
 
 const BROWSER_OPEN_FILE_GROUPS = new Set(['chrome', 'edge', 'yiwrite'])
 
@@ -265,7 +289,7 @@ const displayUsername = computed(() => {
 
 const visibleTasks = computed(() => (isLoggedIn.value ? props.tasks : []))
 
-const openFileGroups = computed(() => groupOpenFilesByApp(props.openFiles))
+const openFileGroups = computed(() => listPersistentOpenFileGroups(props.openFiles))
 
 function isAppGroupExpanded (key) {
   const map = appGroupExpanded.value
@@ -314,6 +338,17 @@ const ctxMenu = ref({
   displayName: ''
 })
 
+const createMenu = ref({
+  visible: false,
+  top: 0,
+  left: 0,
+  group: '',
+  plusRect: null
+})
+
+let createFailTipTimer = null
+const CREATE_FAIL_TIP_MS = 2500
+
 function onTaskListScroll (e) {
   if (!props.hasMore || props.loadingMore || props.loading) return
   const el = e.target
@@ -335,6 +370,7 @@ function isOpenFileSelected (item) {
 function onOpenFileClick (item) {
   hideHoverTip()
   closeFileContextMenu()
+  closeCreateMenu()
   emit('select-open-file', item)
 }
 
@@ -400,8 +436,118 @@ function closeFileContextMenu () {
   }
 }
 
+function closeCreateMenu () {
+  createMenu.value = {
+    ...createMenu.value,
+    visible: false,
+    group: '',
+    plusRect: null
+  }
+}
+
+function closeSidebarPopovers () {
+  closeFileContextMenu()
+  closeCreateMenu()
+  hideCreateFailTip()
+}
+
+function clearCreateFailTipTimer () {
+  if (createFailTipTimer) {
+    clearTimeout(createFailTipTimer)
+    createFailTipTimer = null
+  }
+}
+
+function hideCreateFailTip () {
+  clearCreateFailTipTimer()
+  hideHoverTip()
+}
+
+function placeMenuNearRect (rect, menuW, menuH) {
+  let left = rect.right - menuW
+  let top = rect.bottom + 4
+  if (left < 8) left = 8
+  if (left + menuW > window.innerWidth - 8) {
+    left = Math.max(8, window.innerWidth - menuW - 8)
+  }
+  if (top + menuH > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - menuH - 4)
+  }
+  return { top, left }
+}
+
+function onCreatePlusClick (event, group) {
+  hideHoverTip()
+  closeFileContextMenu()
+  clearCreateFailTipTimer()
+  const key = group?.key || ''
+  if (createMenu.value.visible && createMenu.value.group === key) {
+    closeCreateMenu()
+    return
+  }
+  const el = event.currentTarget
+  const rect = el && typeof el.getBoundingClientRect === 'function'
+    ? el.getBoundingClientRect()
+    : { top: event.clientY, left: event.clientX, right: event.clientX, bottom: event.clientY }
+  const pos = placeMenuNearRect(rect, 128, 44)
+  createMenu.value = {
+    visible: true,
+    top: pos.top,
+    left: pos.left,
+    group: key,
+    plusRect: {
+      top: rect.top,
+      left: rect.left,
+      right: rect.right,
+      bottom: rect.bottom
+    }
+  }
+}
+
+function showCreateFailTip (plusRect, message) {
+  const content = (message || '新建失败').trim()
+  const rect = plusRect || { top: 8, left: 8, right: 40, bottom: 32 }
+  const gap = 6
+  const estimatedHeight = Math.min(160, 24 + Math.ceil(content.length / 16) * 16)
+  const sidebar = document.querySelector('.task-sidebar')
+  const sidebarRect = sidebar?.getBoundingClientRect()
+  const left = sidebarRect ? sidebarRect.left + 8 : rect.left
+  const maxWidth = Math.max(160, (sidebarRect?.width || 240) - 16)
+  let top = rect.bottom + gap
+  if (top + estimatedHeight > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - estimatedHeight - gap)
+  }
+  hoverTip.value = {
+    visible: true,
+    text: content,
+    top,
+    left,
+    maxWidth
+  }
+  clearCreateFailTipTimer()
+  createFailTipTimer = setTimeout(() => {
+    hideCreateFailTip()
+  }, CREATE_FAIL_TIP_MS)
+}
+
+async function handleCreateNew () {
+  const group = createMenu.value.group
+  const plusRect = createMenu.value.plusRect
+  closeCreateMenu()
+  if (!group) return
+  try {
+    const res = await sendMessage('createOpenFile', { group })
+    if (res && res.success === false) {
+      showCreateFailTip(plusRect, res.message || '新建失败')
+    }
+  } catch (e) {
+    showCreateFailTip(plusRect, e?.message || '新建失败')
+  }
+}
+
 function openFileContextMenu (event, item) {
   hideHoverTip()
+  closeCreateMenu()
   const path = (item?.fullPath || item?.full_path || '').trim()
   const canOpenFolder = !isBrowserOpenFile(item)
   const displayName = (item?.displayName || '未命名文档').trim()
@@ -478,13 +624,23 @@ async function handleOpenContainingFolder () {
 }
 
 function onGlobalPointerDown (e) {
-  if (!ctxMenu.value.visible) return
-  const menu = e.target?.closest?.('.open-file-ctx-menu')
-  if (!menu) closeFileContextMenu()
+  if (e.target?.closest?.('.open-file-ctx-menu')) return
+  if (e.target?.closest?.('.open-file-group-add')) {
+    closeFileContextMenu()
+    hideCreateFailTip()
+    return
+  }
+  closeFileContextMenu()
+  closeCreateMenu()
+  hideCreateFailTip()
 }
 
 function onGlobalKeyDown (e) {
-  if (e.key === 'Escape') closeFileContextMenu()
+  if (e.key === 'Escape') {
+    closeFileContextMenu()
+    closeCreateMenu()
+    hideCreateFailTip()
+  }
 }
 
 function onAuthChanged () {
@@ -496,9 +652,9 @@ let offAuthChanged = null
 onMounted(() => {
   window.addEventListener('mousedown', onGlobalPointerDown, true)
   window.addEventListener('keydown', onGlobalKeyDown, true)
-  window.addEventListener('blur', closeFileContextMenu)
-  window.addEventListener('resize', closeFileContextMenu)
-  window.addEventListener('scroll', closeFileContextMenu, true)
+  window.addEventListener('blur', closeSidebarPopovers)
+  window.addEventListener('resize', closeSidebarPopovers)
+  window.addEventListener('scroll', closeSidebarPopovers, true)
   offAuthChanged = onMessage((data) => {
     if (data?.type === 'authChanged') onAuthChanged()
   })
@@ -508,9 +664,10 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('mousedown', onGlobalPointerDown, true)
   window.removeEventListener('keydown', onGlobalKeyDown, true)
-  window.removeEventListener('blur', closeFileContextMenu)
-  window.removeEventListener('resize', closeFileContextMenu)
-  window.removeEventListener('scroll', closeFileContextMenu, true)
+  window.removeEventListener('blur', closeSidebarPopovers)
+  window.removeEventListener('resize', closeSidebarPopovers)
+  window.removeEventListener('scroll', closeSidebarPopovers, true)
+  clearCreateFailTipTimer()
   if (typeof offAuthChanged === 'function') offAuthChanged()
 })
 
@@ -843,11 +1000,19 @@ async function handleOpenSettings () {
   min-width: 0;
 }
 
+.open-file-group-header-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 2px;
+}
+
 .open-file-group-header {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   margin: 0;
   border: none;
   background: transparent;
@@ -858,6 +1023,27 @@ async function handleOpenSettings () {
   color: inherit;
   text-align: left;
   box-sizing: border-box;
+}
+
+.open-file-group-add {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin: 0 6px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #9a978f;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.open-file-group-add:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #1f1e1c;
 }
 
 .open-file-group-header:hover {

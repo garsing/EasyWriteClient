@@ -210,6 +210,44 @@ namespace WordAddIn1.BrowserHost
         }
 
         /// <summary>
+        /// 侧栏新建：无窗则开一扇并落空白页；有窗则本窗再加空白标签。满 16 失败，不弹窗。
+        /// </summary>
+        public static async Task<BrowserNavigateResult> AddBlankTabAsync()
+        {
+            YiWriteBrowserForm form;
+            lock (Gate)
+            {
+                if (_form != null && !_form.IsDisposed && _form.PageCount >= YiWriteBrowserForm.MaxTabCount)
+                {
+                    return BrowserNavigateResult.Fail("标签已满");
+                }
+
+                if (_form == null || _form.IsDisposed)
+                {
+                    _form = new YiWriteBrowserForm();
+                }
+
+                form = _form;
+            }
+
+            try
+            {
+                string error = await form.TryAddBlankTabAsync().ConfigureAwait(true);
+                if (!string.IsNullOrEmpty(error))
+                {
+                    return BrowserNavigateResult.Fail(error);
+                }
+
+                form.TryShowVisible();
+                return BrowserNavigateResult.Ok(null, form.CurrentUrl, form.CurrentTitle, true);
+            }
+            catch (Exception ex)
+            {
+                return BrowserNavigateResult.Fail("无法打开易写浏览器: " + ex.Message);
+            }
+        }
+
+        /// <summary>
         /// 导航：无现窗则新建第一标签；有窗且无 uuid 则打前台标签；有 uuid 则切到该标签再跳转。
         /// </summary>
         public static async Task<BrowserNavigateResult> NavigateAsync(

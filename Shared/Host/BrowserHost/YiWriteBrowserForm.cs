@@ -80,7 +80,7 @@ namespace WordAddIn1.BrowserHost
             _tabStrip = new YiWriteBrowserTabStrip(_dpiScale);
             _tabStrip.TabActivateRequested += (s, uuid) => ActivateTab(uuid);
             _tabStrip.TabCloseRequested += (s, uuid) => CloseTab(TryGetPage(uuid));
-            _tabStrip.NewTabRequested += (s, e) => { _ = AddBlankTabAsync(); };
+            _tabStrip.NewTabRequested += (s, e) => { _ = AddBlankTabFromChromeAsync(); };
             _tabStrip.MinimizeRequested += (s, e) => { WindowState = FormWindowState.Minimized; };
             _tabStrip.MaximizeRequested += (s, e) => ToggleMaximizeRestore();
             _tabStrip.CloseWindowRequested += (s, e) => Close();
@@ -533,17 +533,41 @@ namespace WordAddIn1.BrowserHost
             return true;
         }
 
-        private async Task AddBlankTabAsync()
+        private async Task AddBlankTabFromChromeAsync()
         {
-            if (_closing || IsDisposed)
+            string error = await TryAddBlankTabAsync().ConfigureAwait(true);
+            if (string.IsNullOrEmpty(error))
             {
                 return;
             }
 
+            try
+            {
+                MessageBox.Show(
+                    this,
+                    error,
+                    "易写浏览器",
+                    MessageBoxButtons.OK,
+                    string.Equals(error, "标签已满", StringComparison.Ordinal)
+                        ? MessageBoxIcon.Information
+                        : MessageBoxIcon.Warning);
+            }
+            catch
+            {
+            }
+        }
+
+        /// <summary>成功返回 null；失败返回可展示文案（侧栏调用时不要再弹窗）。</summary>
+        internal async Task<string> TryAddBlankTabAsync()
+        {
+            if (_closing || IsDisposed)
+            {
+                return "浏览器已关闭";
+            }
+
             if (_pages.Count >= MaxTabCount)
             {
-                ShowTabLimitMessage();
-                return;
+                return "标签已满";
             }
 
             try
@@ -565,21 +589,12 @@ namespace WordAddIn1.BrowserHost
                 catch
                 {
                 }
+
+                return null;
             }
             catch (Exception ex)
             {
-                try
-                {
-                    MessageBox.Show(
-                        this,
-                        "无法新建标签: " + ex.Message,
-                        "易写浏览器",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                }
-                catch
-                {
-                }
+                return "无法新建标签: " + ex.Message;
             }
         }
 

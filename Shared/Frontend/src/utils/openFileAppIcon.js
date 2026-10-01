@@ -80,6 +80,39 @@ export function resolveOpenFileAppGroupIcon (groupKey) {
   return GROUP_ICONS[groupKey] || wordAppIcon
 }
 
+/** 侧栏「打开文件」常驻九行（无图片 / 其他）。 */
+export const PERSISTENT_OPEN_FILE_GROUP_KEYS = [
+  'word',
+  'wps',
+  'excel',
+  'et',
+  'ppt',
+  'wpp',
+  'chrome',
+  'edge',
+  'yiwrite'
+]
+
+const PERSISTENT_OPEN_FILE_GROUP_SET = new Set(PERSISTENT_OPEN_FILE_GROUP_KEYS)
+
+/** 侧栏用：永远九行，再把已打开条目填进去。 */
+export function listPersistentOpenFileGroups (items) {
+  const groups = PERSISTENT_OPEN_FILE_GROUP_KEYS.map((key) => ({
+    key,
+    label: resolveOpenFileAppGroupLabel(key),
+    icon: resolveOpenFileAppGroupIcon(key),
+    items: []
+  }))
+  const byKey = new Map(groups.map((g) => [g.key, g]))
+  const list = Array.isArray(items) ? items : []
+  for (const item of list) {
+    const key = resolveOpenFileAppGroupKey(item)
+    if (!PERSISTENT_OPEN_FILE_GROUP_SET.has(key)) continue
+    byKey.get(key).items.push(item)
+  }
+  return groups
+}
+
 /** 将扁平打开文件列表编成应用树（保持各组内原有顺序）。 */
 export function groupOpenFilesByApp (items) {
   const list = Array.isArray(items) ? items : []

@@ -583,7 +583,7 @@ namespace WordAddIn1.BrowserHost
                 || path.Contains("baidu") && targetHost.Contains("baidu");
         }
 
-        private static string ResolveBrowserExe(string kind)
+        internal static string ResolveBrowserExe(string kind)
         {
             var candidates = new List<string>();
             string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
