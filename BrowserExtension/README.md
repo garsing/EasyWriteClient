@@ -75,3 +75,4 @@ cd EasyWriteClient\BrowserExtension
 - **0.1.24** 起 pointer 点封面图按图像素打，叠在图上的热区不当挡住。须重新加载扩展。
 - **0.1.25** 起 `debugger` 改为必选权限（Chrome 不允许把它放进 optional）。重载后详情应能看到调试权；`AttachPointer=cdp` 才能真正 attach。须重新加载扩展。
 - **0.1.26** 起 attach click 会把选中节点 / 命中点短名写入本机 `attach-click-diag.log`（不进工具返回给模型）。须重新加载扩展。
+- **0.1.30** 起 attach CDP 第四下合成 `click` 失败不影响整次成功。须重新加载扩展。

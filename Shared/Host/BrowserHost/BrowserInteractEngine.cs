@@ -1052,16 +1052,12 @@ namespace WordAddIn1.BrowserHost
                 return;
             }
 
-            await Task.Delay(120).ConfigureAwait(true);
-            if (form.HasNewWindowDuringTool)
+            try
             {
-                return;
-            }
-
-            await CallFunctionOnAsync(
-                form,
-                objectId,
-                @"function(x, y) {
+                await CallFunctionOnAsync(
+                    form,
+                    objectId,
+                    @"function(x, y) {
   var hit = null;
   try { hit = document.elementFromPoint(x, y); } catch (eH) {}
   var n = hit || this;
@@ -1073,8 +1069,12 @@ namespace WordAddIn1.BrowserHost
   } catch (e) {}
   return true;
 }",
-                BuildCallArgsPair(x, y),
-                sessionId).ConfigureAwait(true);
+                    BuildCallArgsPair(x, y),
+                    sessionId).ConfigureAwait(true);
+            }
+            catch
+            {
+            }
         }
 
         private static async Task DispatchCdpHoverAsync(

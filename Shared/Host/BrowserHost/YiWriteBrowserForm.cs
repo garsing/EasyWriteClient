@@ -201,8 +201,22 @@ namespace WordAddIn1.BrowserHost
                 "YiWriteBrowserWebView2");
             Directory.CreateDirectory(userData);
 
-            _env = await CoreWebView2Environment.CreateAsync(userDataFolder: userData)
-                .ConfigureAwait(true);
+            try
+            {
+                var options = new CoreWebView2EnvironmentOptions
+                {
+                    Language = "zh-CN"
+                };
+                _env = await CoreWebView2Environment
+                    .CreateAsync(null, userData, options)
+                    .ConfigureAwait(true);
+            }
+            catch
+            {
+                _env = await CoreWebView2Environment.CreateAsync(userDataFolder: userData)
+                    .ConfigureAwait(true);
+            }
+
             _coreReady = true;
         }
 

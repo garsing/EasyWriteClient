@@ -43,7 +43,26 @@ namespace WordAddIn1.BrowserHost
             bool openedNewTab = false,
             string fromChannelId = null)
         {
+            string act = (action ?? "").Trim();
+            if (string.Equals(act, "click", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(act, "hover", StringComparison.OrdinalIgnoreCase))
+            {
+                await Task.Delay(250).ConfigureAwait(true);
+            }
+
             BrowserSnapshotResult snap = await TryCaptureAsync(channel, layer).ConfigureAwait(true);
+            if (string.Equals(act, "click", StringComparison.OrdinalIgnoreCase)
+                && (!IsUsable(snap) || snap.Snapshot.Length < 200))
+            {
+                await Task.Delay(400).ConfigureAwait(true);
+                BrowserSnapshotResult again = await TryCaptureAsync(channel, layer).ConfigureAwait(true);
+                if (IsUsable(again)
+                    && (!IsUsable(snap) || again.Snapshot.Length > snap.Snapshot.Length))
+                {
+                    snap = again;
+                }
+            }
+
             if (IsUsable(snap))
             {
                 return BrowserInteractResult.OkResnapshot(
