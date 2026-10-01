@@ -73,3 +73,4 @@ cd EasyWriteClient\BrowserExtension
 - **0.1.21** 起 click 默认按盒中心发指针四下；新增 `action=hover`；attach 默认同帧合成，可切 CDP（会黄条）。须重新加载扩展。
 - **0.1.23** 起商品卡空盒 / 套娃 div 不发 ref；只给可见图、文字叶、有名图标和原生按钮/链发号。进详情点封面 `image`，不要点「联系客服」。须重新加载扩展。
 - **0.1.24** 起 pointer 点封面图按图像素打，叠在图上的热区不当挡住。须重新加载扩展。
+- **0.1.25** 起 `debugger` 改为必选权限（Chrome 不允许把它放进 optional）。重载后详情应能看到调试权；`AttachPointer=cdp` 才能真正 attach。须重新加载扩展。

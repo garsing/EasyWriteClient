@@ -26,11 +26,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 async function ensureDebuggerPermission() {
   try {
-    const have = await chrome.permissions.contains({ permissions: ["debugger"] });
-    if (have) {
-      return true;
-    }
-    return await chrome.permissions.request({ permissions: ["debugger"] });
+    return await chrome.permissions.contains({ permissions: ["debugger"] });
   } catch (_) {
     return false;
   }
