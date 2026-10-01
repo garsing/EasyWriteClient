@@ -6,7 +6,7 @@ using System.Web.Script.Serialization;
 namespace WordAddIn1.BrowserHost
 {
     /// <summary>
-    /// 易写浏览器 Host（本批仅 WebView2，一窗一页）。
+    /// 易写浏览器 Host（本批仅 WebView2，一窗多标签）。
     /// </summary>
     public static class YiWriteBrowserHost
     {
@@ -45,13 +45,13 @@ namespace WordAddIn1.BrowserHost
             {
                 return _form != null
                     && !_form.IsDisposed
-                    && _form.IsCoreReady
-                    && string.Equals(_form.TabUuid, tabUuid, StringComparison.OrdinalIgnoreCase);
+                    && _form.HasPage(tabUuid);
             }
         }
 
         public static bool TryShowPage(string tabUuid)
         {
+            YiWriteBrowserForm form;
             lock (Gate)
             {
                 if (_form == null || _form.IsDisposed || !_form.IsCoreReady)
@@ -59,39 +59,157 @@ namespace WordAddIn1.BrowserHost
                     return false;
                 }
 
-                if (!string.Equals(_form.TabUuid, tabUuid, StringComparison.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
+                form = _form;
+            }
 
-                return _form.TryShowVisible();
+            if (!form.ActivateTab(tabUuid))
+            {
+                return false;
+            }
+
+            return form.TryShowVisible();
+        }
+
+        public static void NotifyTabOpened(string tabUuid, string url, string title)
+        {
+            if (string.IsNullOrWhiteSpace(tabUuid))
+            {
+                return;
+            }
+
+            BrowserChannel channel = ChannelRegistry.CreateOrGetBrowserAgent(tabUuid.Trim(), setAsDefault: true);
+            channel.UpdatePage(url, title, true);
+            HostCallbacks.RaiseBrowserOpenFileUpsert(
+                channel.SidebarItemId(),
+                channel.ChannelId,
+                channel.TryGetDisplayName() ?? channel.Url,
+                channel.Url);
+        }
+
+        public static void NotifyTabActivated(string tabUuid)
+        {
+            if (string.IsNullOrWhiteSpace(tabUuid))
+            {
+                return;
+            }
+
+            if (ChannelRegistry.TryGetBrowserByTab(tabUuid.Trim(), "agent", out BrowserChannel channel)
+                && channel != null)
+            {
+                ChannelRegistry.SetDefault(channel.ChannelId);
             }
         }
 
-        public static void NotifyFormClosed(string tabUuid)
+        public static void NotifyTabPageChanged(string tabUuid, string url, string title)
+        {
+            if (string.IsNullOrWhiteSpace(tabUuid))
+            {
+                return;
+            }
+
+            if (!ChannelRegistry.TryGetBrowserByTab(tabUuid.Trim(), "agent", out BrowserChannel channel)
+                || channel == null)
+            {
+                return;
+            }
+
+            channel.UpdatePage(url, title, channel.Visible);
+            HostCallbacks.RaiseBrowserOpenFileUpsert(
+                channel.SidebarItemId(),
+                channel.ChannelId,
+                channel.TryGetDisplayName() ?? channel.Url,
+                channel.Url);
+        }
+
+        public static void NotifyTabNavigated(string tabUuid, string url, string title)
+        {
+            if (string.IsNullOrWhiteSpace(tabUuid))
+            {
+                return;
+            }
+
+            BrowserChannel channel = ChannelRegistry.CreateOrGetBrowserAgent(tabUuid.Trim(), setAsDefault: true);
+            channel.UpdatePage(url, title, true);
+            BrowserRefStore.Clear(channel.ChannelId);
+            HostCallbacks.RaiseBrowserOpenFileUpsert(
+                channel.SidebarItemId(),
+                channel.ChannelId,
+                channel.TryGetDisplayName() ?? channel.Url,
+                channel.Url);
+        }
+
+        public static void NotifyTabClosed(string tabUuid)
+        {
+            CloseAgentTabChannel(tabUuid);
+        }
+
+        public static void NotifyTabsClosed(IEnumerable<string> tabUuids)
         {
             lock (Gate)
             {
-                if (_form != null
-                    && string.Equals(_form.TabUuid, tabUuid, StringComparison.OrdinalIgnoreCase))
-                {
-                    _form = null;
-                }
+                _form = null;
             }
 
             HostCallbacks.RaiseClearDesktopTopMost();
 
-            if (!string.IsNullOrWhiteSpace(tabUuid)
-                && ChannelRegistry.TryGetBrowserByTab(tabUuid.Trim(), "agent", out BrowserChannel closed))
+            if (tabUuids == null)
             {
-                BrowserRefStore.Clear(closed.ChannelId);
-                HostCallbacks.RaiseBrowserOpenFileRemove(closed.SidebarItemId());
-                ChannelRegistry.Remove(closed.ChannelId);
+                return;
+            }
+
+            foreach (string uuid in tabUuids)
+            {
+                CloseAgentTabChannel(uuid);
             }
         }
 
+        private static void CloseAgentTabChannel(string tabUuid)
+        {
+            if (string.IsNullOrWhiteSpace(tabUuid))
+            {
+                return;
+            }
+
+            if (!ChannelRegistry.TryGetBrowserByTab(tabUuid.Trim(), "agent", out BrowserChannel closed)
+                || closed == null)
+            {
+                return;
+            }
+
+            BrowserRefStore.Clear(closed.ChannelId);
+            HostCallbacks.RaiseBrowserOpenFileRemove(closed.SidebarItemId());
+            ChannelRegistry.Remove(closed.ChannelId);
+        }
+
+        private static bool TryPrepareFormForTab(
+            string tabUuid,
+            out YiWriteBrowserForm form,
+            out string error)
+        {
+            form = null;
+            error = null;
+            lock (Gate)
+            {
+                form = _form;
+            }
+
+            if (form == null || form.IsDisposed || !form.IsCoreReady)
+            {
+                error = "引擎不可用";
+                return false;
+            }
+
+            if (!form.ActivateTab(tabUuid))
+            {
+                error = "浏览器渠道对应的页面已关闭";
+                return false;
+            }
+
+            return true;
+        }
+
         /// <summary>
-        /// 导航：无现窗则新建；有则同窗跳转（本批一窗一页，复用同一 tab_uuid）。
+        /// 导航：无现窗则新建第一标签；有窗且无 uuid 则打前台标签；有 uuid 则切到该标签再跳转。
         /// </summary>
         public static async Task<BrowserNavigateResult> NavigateAsync(
             string url,
@@ -110,7 +228,7 @@ namespace WordAddIn1.BrowserHost
             }
 
             string tabUuid = string.IsNullOrWhiteSpace(existingTabUuid)
-                ? Guid.NewGuid().ToString("N")
+                ? null
                 : existingTabUuid.Trim();
 
             YiWriteBrowserForm form;
@@ -119,18 +237,20 @@ namespace WordAddIn1.BrowserHost
                 if (_form == null || _form.IsDisposed)
                 {
                     _form = new YiWriteBrowserForm();
+                    if (string.IsNullOrWhiteSpace(tabUuid))
+                    {
+                        tabUuid = Guid.NewGuid().ToString("N");
+                    }
                 }
-                else if (!string.IsNullOrWhiteSpace(existingTabUuid)
-                    && !string.Equals(_form.TabUuid, existingTabUuid.Trim(), StringComparison.OrdinalIgnoreCase))
+                else if (string.IsNullOrWhiteSpace(tabUuid))
                 {
-                    return BrowserNavigateResult.Fail(
-                        "本批仅支持一窗一页；channel_id 与当前易写浏览窗不一致");
+                    tabUuid = string.IsNullOrWhiteSpace(_form.FrontTabUuid)
+                        ? Guid.NewGuid().ToString("N")
+                        : _form.FrontTabUuid;
                 }
-                else if (string.IsNullOrWhiteSpace(existingTabUuid) && _form.IsCoreReady)
+                else if (!_form.HasPage(tabUuid) && _form.PageCount > 0)
                 {
-                    tabUuid = string.IsNullOrWhiteSpace(_form.TabUuid)
-                        ? tabUuid
-                        : _form.TabUuid;
+                    return BrowserNavigateResult.Fail("浏览器渠道对应的页面已关闭");
                 }
 
                 form = _form;
@@ -199,15 +319,9 @@ namespace WordAddIn1.BrowserHost
                 return BrowserCaptureResult.Fail("浏览器渠道对应的页面已关闭: " + channel.ChannelId);
             }
 
-            YiWriteBrowserForm form;
-            lock (Gate)
+            if (!TryPrepareFormForTab(channel.TabUuid, out YiWriteBrowserForm form, out string prepError))
             {
-                form = _form;
-            }
-
-            if (form == null || form.IsDisposed || !form.IsCoreReady)
-            {
-                return BrowserCaptureResult.Fail("引擎不可用");
+                return BrowserCaptureResult.Fail(prepError ?? "引擎不可用");
             }
 
             try
@@ -264,15 +378,9 @@ namespace WordAddIn1.BrowserHost
                 return BrowserSnapshotResult.Fail("浏览器渠道对应的页面已关闭: " + channel.ChannelId);
             }
 
-            YiWriteBrowserForm form;
-            lock (Gate)
+            if (!TryPrepareFormForTab(channel.TabUuid, out YiWriteBrowserForm form, out string prepError))
             {
-                form = _form;
-            }
-
-            if (form == null || form.IsDisposed || !form.IsCoreReady)
-            {
-                return BrowserSnapshotResult.Fail("引擎不可用");
+                return BrowserSnapshotResult.Fail(prepError ?? "引擎不可用");
             }
 
             bool isDetail = !string.IsNullOrWhiteSpace(refId);
@@ -478,15 +586,9 @@ namespace WordAddIn1.BrowserHost
                 return await SnapshotAsync(channel, null, null).ConfigureAwait(true);
             }
 
-            YiWriteBrowserForm form;
-            lock (Gate)
+            if (!TryPrepareFormForTab(channel.TabUuid, out YiWriteBrowserForm form, out string prepError))
             {
-                form = _form;
-            }
-
-            if (form == null || form.IsDisposed || !form.IsCoreReady)
-            {
-                return BrowserSnapshotResult.Fail("引擎不可用");
+                return BrowserSnapshotResult.Fail(prepError ?? "引擎不可用");
             }
 
             BrowserFrameMap frameMap = await BrowserFrameResolver.LoadAsync(form).ConfigureAwait(true);
@@ -608,15 +710,9 @@ namespace WordAddIn1.BrowserHost
                 return BrowserInteractResult.Fail("action 须为 click|hover|type|scroll|press|select");
             }
 
-            YiWriteBrowserForm form;
-            lock (Gate)
+            if (!TryPrepareFormForTab(channel.TabUuid, out YiWriteBrowserForm form, out string prepError))
             {
-                form = _form;
-            }
-
-            if (form == null || form.IsDisposed || !form.IsCoreReady)
-            {
-                return BrowserInteractResult.Fail("引擎不可用");
+                return BrowserInteractResult.Fail(prepError ?? "引擎不可用");
             }
 
             try
@@ -856,15 +952,9 @@ namespace WordAddIn1.BrowserHost
                 return BrowserDownloadResult.Fail("须且仅能提供 ref 或 url 之一");
             }
 
-            YiWriteBrowserForm form;
-            lock (Gate)
+            if (!TryPrepareFormForTab(channel.TabUuid, out YiWriteBrowserForm form, out string prepError))
             {
-                form = _form;
-            }
-
-            if (form == null || form.IsDisposed || !form.IsCoreReady)
-            {
-                return BrowserDownloadResult.Fail("引擎不可用");
+                return BrowserDownloadResult.Fail(prepError ?? "引擎不可用");
             }
 
             try
