@@ -775,6 +775,11 @@
       if (n === t) return true;
       n = parentComposed(n);
     }
+    n = t;
+    while (n) {
+      if (n === hit) return true;
+      n = parentComposed(n);
+    }
     try {
       return !!(t && t.contains && hit && t.contains(hit));
     } catch (_) {

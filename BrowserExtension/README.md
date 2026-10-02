@@ -76,3 +76,4 @@ cd EasyWriteClient\BrowserExtension
 - **0.1.25** 起 `debugger` 改为必选权限（Chrome 不允许把它放进 optional）。重载后详情应能看到调试权；`AttachPointer=cdp` 才能真正 attach。须重新加载扩展。
 - **0.1.26** 起 attach click 会把选中节点 / 命中点短名写入本机 `attach-click-diag.log`（不进工具返回给模型）。须重新加载扩展。
 - **0.1.30** 起 attach CDP 第四下合成 `click` 失败不影响整次成功。须重新加载扩展。
+- **0.1.31** 起点原生日期的年/月/日或日历按钮，不再把外面的 `input` 误报成挡住。须重新加载扩展。

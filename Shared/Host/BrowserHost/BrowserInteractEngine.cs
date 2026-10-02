@@ -729,6 +729,11 @@ namespace WordAddIn1.BrowserHost
       if (n === t) return true;
       n = parentComposed(n);
     }
+    n = t;
+    while (n) {
+      if (n === hit) return true;
+      n = parentComposed(n);
+    }
     try { return !!(t && t.contains && hit && t.contains(hit)); } catch (eC) { return false; }
   }
   function previewHit(hit) {
@@ -1142,13 +1147,28 @@ namespace WordAddIn1.BrowserHost
                     objectId,
                     @"function(x, y) {
   if (!this || !this.isConnected) return false;
+  function parentComposed(el) {
+    if (!el) return null;
+    if (el.assignedSlot) return el.assignedSlot;
+    if (el.parentElement) return el.parentElement;
+    var root = el.getRootNode && el.getRootNode();
+    if (root && root.host) return root.host;
+    return null;
+  }
+  function sameComposed(a, b) {
+    if (!a || !b) return !b;
+    if (a === b) return true;
+    var n = a;
+    while (n) { if (n === b) return true; n = parentComposed(n); }
+    n = b;
+    while (n) { if (n === a) return true; n = parentComposed(n); }
+    try {
+      return !!(a.contains && a.contains(b)) || !!(b.contains && b.contains(a));
+    } catch (eS) { return false; }
+  }
   var hit = null;
   try { hit = document.elementFromPoint(x, y); } catch (eH) {}
-  var same = !hit || hit === this;
-  try {
-    same = same || (this.contains && this.contains(hit)) || (hit.contains && hit.contains(this));
-  } catch (eC) {}
-  if (!same) return false;
+  if (hit && !sameComposed(hit, this)) return false;
   var n = hit || this;
   try {
     n.dispatchEvent(new MouseEvent('click', {

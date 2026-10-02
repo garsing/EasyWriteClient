@@ -20,13 +20,15 @@ namespace WordAddIn1.BrowserHost
             "button", "link", "textbox", "searchbox", "combobox", "checkbox", "radio",
             "switch", "tab", "menuitem", "menuitemcheckbox", "menuitemradio", "option",
             "slider", "spinbutton", "treeitem", "listbox", "checkable",
-            "text field", "search box", "combo box"
+            "text field", "search box", "combo box",
+            "date", "time", "datetime", "date time"
         };
 
         /// <summary>可输入控件：百度等站点常标 ignored，overview 仍须发 ref。</summary>
         private static readonly HashSet<string> InputRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "textbox", "searchbox", "combobox", "text field", "search box", "combo box"
+            "textbox", "searchbox", "combobox", "text field", "search box", "combo box",
+            "date", "time", "datetime", "date time"
         };
 
         private static readonly HashSet<string> StructureRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
