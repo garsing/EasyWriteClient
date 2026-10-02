@@ -356,10 +356,10 @@ namespace WordAddIn1.BrowserHost
 
             if (probe != null
                 && string.Equals(probe.InputType, "submit", StringComparison.OrdinalIgnoreCase)
+                && probe.PageHasPasswordInput
                 && string.IsNullOrWhiteSpace(label))
             {
-                // type=submit 且无名：交给调用方结合 pageHasPassword 再判；此处先不单独拒绝
-                return false;
+                return true;
             }
 
             return false;

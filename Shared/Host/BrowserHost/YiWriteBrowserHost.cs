@@ -844,14 +844,6 @@ namespace WordAddIn1.BrowserHost
                 if (act == "click")
                 {
                     string risk = BrowserRiskGuard.CheckClick(entry, probe);
-                    if (risk == null
-                        && probe != null
-                        && string.Equals(probe.InputType, "submit", StringComparison.OrdinalIgnoreCase)
-                        && probe.PageHasPasswordInput)
-                    {
-                        risk = "已拒绝代点登录/提交/支付；请用户在看得见的窗里自己点击";
-                    }
-
                     if (risk != null)
                     {
                         return BrowserInteractResult.Fail(risk);
