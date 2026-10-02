@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
@@ -19,11 +20,29 @@ namespace WordAddIn1.BrowserHost
                 form,
                 objectId,
                 @"function() {
-  var tag = (this.tagName || '').toUpperCase();
-  var type = (this.getAttribute && this.getAttribute('type')) || this.type || '';
-  var ac = (this.getAttribute && this.getAttribute('autocomplete')) || '';
-  var role = (this.getAttribute && this.getAttribute('role')) || '';
-  var name = (this.getAttribute && (this.getAttribute('aria-label') || this.getAttribute('name') || this.getAttribute('placeholder'))) || '';
+  function parentComposed(el) {
+    if (!el) return null;
+    if (el.assignedSlot) return el.assignedSlot;
+    if (el.parentElement) return el.parentElement;
+    var root = el.getRootNode && el.getRootNode();
+    if (root && root.host) return root.host;
+    return null;
+  }
+  function hostControl(el) {
+    var n = el;
+    while (n) {
+      var tagN = (n.tagName || '').toUpperCase();
+      if (tagN === 'INPUT' || tagN === 'TEXTAREA' || tagN === 'SELECT') return n;
+      n = parentComposed(n);
+    }
+    return el;
+  }
+  var node = hostControl(this);
+  var tag = (node.tagName || '').toUpperCase();
+  var type = (node.getAttribute && node.getAttribute('type')) || node.type || '';
+  var ac = (node.getAttribute && node.getAttribute('autocomplete')) || '';
+  var role = (node.getAttribute && node.getAttribute('role')) || '';
+  var name = (node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('name') || node.getAttribute('placeholder'))) || '';
   var href = '';
   try { href = this.href || (this.getAttribute && this.getAttribute('href')) || ''; } catch (eH) {}
   try {
@@ -51,12 +70,12 @@ namespace WordAddIn1.BrowserHost
   var readOnly = false;
   var ariaDisabled = false;
   try {
-    if (this.disabled) disabled = true;
-    if (this.matches && this.matches(':disabled')) disabled = true;
+    if (node.disabled) disabled = true;
+    if (node.matches && node.matches(':disabled')) disabled = true;
   } catch (eDis) {}
-  try { if (this.readOnly) readOnly = true; } catch (eRo) {}
+  try { if (node.readOnly) readOnly = true; } catch (eRo) {}
   try {
-    var ad = this.getAttribute && this.getAttribute('aria-disabled');
+    var ad = node.getAttribute && node.getAttribute('aria-disabled');
     if (ad != null && String(ad).toLowerCase() !== 'false') ariaDisabled = true;
   } catch (eAd) {}
   var isFileChooser = false;
@@ -233,6 +252,10 @@ namespace WordAddIn1.BrowserHost
         {
             string want = text ?? "";
             string objectId = await ResolveObjectIdAsync(form, backendNodeId, sessionId).ConfigureAwait(true);
+            if (await TryTypeTemporalAsync(form, objectId, want, sessionId).ConfigureAwait(true))
+            {
+                return;
+            }
 
             // 1) 真实聚焦 + 点一下 + 原生 setter 清空（百度等受控框需要）
             string prepJson = await CallFunctionOnAsync(
@@ -337,6 +360,301 @@ namespace WordAddIn1.BrowserHost
                 "function(){ this.focus && this.focus(); }",
                 null,
                 sessionId).ConfigureAwait(true);
+        }
+
+        private const string ProbeTemporalJs =
+            @"function() {
+  function parentComposed(el) {
+    if (!el) return null;
+    if (el.assignedSlot) return el.assignedSlot;
+    if (el.parentElement) return el.parentElement;
+    var root = el.getRootNode && el.getRootNode();
+    if (root && root.host) return root.host;
+    return null;
+  }
+  function hostControl(el) {
+    var n = el;
+    while (n) {
+      var tag = (n.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return n;
+      n = parentComposed(n);
+    }
+    return el;
+  }
+  var t = hostControl(this);
+  var typ = String((t && t.type) || '').toLowerCase();
+  if (!t || (t.tagName || '').toUpperCase() !== 'INPUT'
+      || !/^(date|time|datetime-local|month|week)$/.test(typ)) {
+    return { temporal: false };
+  }
+  var lab = '';
+  try {
+    lab = String((this.getAttribute && (this.getAttribute('aria-label') || ''))
+      || '') + ' ' + String((this.textContent || ''));
+  } catch (eL) {}
+  lab = lab.replace(/\s+/g, ' ').toLowerCase();
+  var segment = '';
+  if (/年|year/.test(lab)) segment = 'year';
+  else if (/月|month/.test(lab) && !/日|day/.test(lab)) segment = 'month';
+  else if (/日|day/.test(lab)) segment = 'day';
+  return { temporal: true, type: typ, current: String(t.value || ''), segment: segment };
+}";
+
+        private const string SetTemporalJs =
+            @"function(text) {
+  function parentComposed(el) {
+    if (!el) return null;
+    if (el.assignedSlot) return el.assignedSlot;
+    if (el.parentElement) return el.parentElement;
+    var root = el.getRootNode && el.getRootNode();
+    if (root && root.host) return root.host;
+    return null;
+  }
+  function hostControl(el) {
+    var n = el;
+    while (n) {
+      var tag = (n.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return n;
+      n = parentComposed(n);
+    }
+    return el;
+  }
+  var t = hostControl(this);
+  if (!t || (t.tagName || '').toUpperCase() !== 'INPUT') {
+    return { ok: false, reason: 'not_temporal' };
+  }
+  try {
+    var desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    if (desc && desc.set) desc.set.call(t, text);
+    else t.value = text;
+  } catch (e) { try { t.value = text; } catch (e2) {} }
+  try { t.dispatchEvent(new Event('input', { bubbles: true })); } catch (eI) {}
+  try { t.dispatchEvent(new Event('change', { bubbles: true })); } catch (eC) {}
+  try { if (t.blur) t.blur(); } catch (eB) {}
+  return { ok: true, value: String(t.value || '') };
+}";
+
+        private static async Task<bool> TryTypeTemporalAsync(
+            YiWriteBrowserForm form,
+            string objectId,
+            string text,
+            string sessionId)
+        {
+            string probeJson = await CallFunctionOnAsync(
+                    form, objectId, ProbeTemporalJs, null, sessionId)
+                .ConfigureAwait(true);
+            if (!TryReadTemporalProbe(probeJson, out string kind, out string current, out string segment))
+            {
+                return false;
+            }
+
+            string normalized = NormalizeTemporalValue(kind, text, current, segment);
+            if (string.IsNullOrEmpty(normalized))
+            {
+                throw new InvalidOperationException(
+                    "日期/时间格式无法识别，请用 YYYY-MM-DD（今天/昨天/明天也可以）");
+            }
+
+            string setJson = await CallFunctionOnAsync(
+                    form, objectId, SetTemporalJs, BuildCallArgs(normalized), sessionId)
+                .ConfigureAwait(true);
+            string got = ReadTypedValue(setJson);
+            if (!string.Equals(got, normalized, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "输入未生效（读回 value=\"" + Truncate(got, 40)
+                    + "\"，期望=\"" + Truncate(normalized, 40) + "\"）");
+            }
+
+            return true;
+        }
+
+        private static bool TryReadTemporalProbe(
+            string resultJson,
+            out string kind,
+            out string current,
+            out string segment)
+        {
+            kind = "";
+            current = "";
+            segment = "";
+            try
+            {
+                var jo = JObject.Parse(resultJson ?? "{}");
+                var v = jo["result"]?["value"] as JObject;
+                if (v == null
+                    || v["temporal"] == null
+                    || v["temporal"].Type != JTokenType.Boolean
+                    || !(bool)v["temporal"])
+                {
+                    return false;
+                }
+
+                kind = ((string)v["type"] ?? "").Trim().ToLowerInvariant();
+                current = (string)v["current"] ?? "";
+                segment = ((string)v["segment"] ?? "").Trim().ToLowerInvariant();
+                return kind.Length > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string NormalizeTemporalValue(
+            string kind,
+            string text,
+            string current,
+            string segment)
+        {
+            string raw = (text ?? "").Trim();
+            if (raw.Length == 0)
+            {
+                return null;
+            }
+
+            DateTime today = DateTime.Now.Date;
+            if (string.Equals(raw, "今天", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "today", StringComparison.OrdinalIgnoreCase))
+            {
+                return FormatTemporal(kind, today, null);
+            }
+
+            if (string.Equals(raw, "昨天", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "yesterday", StringComparison.OrdinalIgnoreCase))
+            {
+                return FormatTemporal(kind, today.AddDays(-1), null);
+            }
+
+            if (string.Equals(raw, "明天", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "tomorrow", StringComparison.OrdinalIgnoreCase))
+            {
+                return FormatTemporal(kind, today.AddDays(1), null);
+            }
+
+            if (string.Equals(kind, "date", StringComparison.OrdinalIgnoreCase))
+            {
+                if (TryParseDateText(raw, out DateTime full))
+                {
+                    return full.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                }
+
+                DateTime basis;
+                if (!DateTime.TryParseExact(
+                    current,
+                    "yyyy-MM-dd",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out basis))
+                {
+                    basis = today;
+                }
+
+                int n;
+                if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out n))
+                {
+                    if (segment == "year" && n >= 1000 && n <= 9999)
+                    {
+                        return new DateTime(n, basis.Month, SafeDay(n, basis.Month, basis.Day))
+                            .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    }
+
+                    if (segment == "month" && n >= 1 && n <= 12)
+                    {
+                        return new DateTime(basis.Year, n, SafeDay(basis.Year, n, basis.Day))
+                            .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    }
+
+                    if (segment == "day" && n >= 1 && n <= 31)
+                    {
+                        return new DateTime(basis.Year, basis.Month, SafeDay(basis.Year, basis.Month, n))
+                            .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    }
+                }
+            }
+
+            if (string.Equals(kind, "month", StringComparison.OrdinalIgnoreCase))
+            {
+                Match m = Regex.Match(raw, @"^(\d{4})[-/\.](\d{1,2})$");
+                if (m.Success)
+                {
+                    return m.Groups[1].Value + "-" + m.Groups[2].Value.PadLeft(2, '0');
+                }
+            }
+
+            if (string.Equals(kind, "time", StringComparison.OrdinalIgnoreCase))
+            {
+                Match tm = Regex.Match(raw, @"^(\d{1,2}):(\d{2})(?::(\d{2}))?$");
+                if (tm.Success)
+                {
+                    string hh = tm.Groups[1].Value.PadLeft(2, '0');
+                    string mm = tm.Groups[2].Value;
+                    return tm.Groups[3].Success ? hh + ":" + mm + ":" + tm.Groups[3].Value : hh + ":" + mm;
+                }
+            }
+
+            if (string.Equals(kind, "datetime-local", StringComparison.OrdinalIgnoreCase))
+            {
+                raw = raw.Replace(' ', 'T');
+                if (Regex.IsMatch(raw, @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}"))
+                {
+                    return raw;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool TryParseDateText(string raw, out DateTime value)
+        {
+            string[] forms =
+            {
+                "yyyy-MM-dd", "yyyy/M/d", "yyyy/MM/dd", "yyyy.M.d", "yyyy.MM.dd",
+                "yyyyMMdd", "yyyy年M月d日", "yyyy年MM月dd日"
+            };
+            return DateTime.TryParseExact(
+                raw,
+                forms,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out value)
+                || DateTime.TryParseExact(
+                    raw,
+                    forms,
+                    CultureInfo.GetCultureInfo("zh-CN"),
+                    DateTimeStyles.None,
+                    out value);
+        }
+
+        private static int SafeDay(int year, int month, int day)
+        {
+            int max = DateTime.DaysInMonth(year, month);
+            if (day < 1)
+            {
+                return 1;
+            }
+
+            return day > max ? max : day;
+        }
+
+        private static string FormatTemporal(string kind, DateTime date, string timePart)
+        {
+            if (string.Equals(kind, "month", StringComparison.OrdinalIgnoreCase))
+            {
+                return date.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+            }
+
+            if (string.Equals(kind, "time", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.IsNullOrEmpty(timePart) ? "00:00" : timePart;
+            }
+
+            if (string.Equals(kind, "datetime-local", StringComparison.OrdinalIgnoreCase))
+            {
+                return date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "T00:00";
+            }
+
+            return date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         }
 
         private static void EnsureTypePrepOk(string resultJson)

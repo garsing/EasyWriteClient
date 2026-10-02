@@ -77,3 +77,4 @@ cd EasyWriteClient\BrowserExtension
 - **0.1.26** 起 attach click 会把选中节点 / 命中点短名写入本机 `attach-click-diag.log`（不进工具返回给模型）。须重新加载扩展。
 - **0.1.30** 起 attach CDP 第四下合成 `click` 失败不影响整次成功。须重新加载扩展。
 - **0.1.31** 起点原生日期的年/月/日或日历按钮，不再把外面的 `input` 误报成挡住。须重新加载扩展。
+- **0.1.32** 起原生日期用 type 写入 `YYYY-MM-DD`（今天/昨天/明天也可），不要点弹出月历格子。须重新加载扩展。

@@ -37,20 +37,153 @@
     }
   }
 
+  function parentComposedTop(el) {
+    if (!el) return null;
+    if (el.assignedSlot) return el.assignedSlot;
+    if (el.parentElement) return el.parentElement;
+    const root = el.getRootNode && el.getRootNode();
+    if (root && root.host) return root.host;
+    return null;
+  }
+
+  function hostControl(el) {
+    let n = el;
+    while (n) {
+      const tag = (n.tagName || "").toUpperCase();
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return n;
+      n = parentComposedTop(n);
+    }
+    return el;
+  }
+
+  function isTemporalInput(el) {
+    if (!el || (el.tagName || "").toUpperCase() !== "INPUT") return false;
+    return /^(date|time|datetime-local|month|week)$/i.test(String(el.type || ""));
+  }
+
+  function pad2(n) {
+    return String(n).padStart(2, "0");
+  }
+
+  function ymd(d) {
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+
+  function parseDateText(raw) {
+    const s = String(raw || "").trim();
+    let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    m = s.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日$/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return null;
+  }
+
+  function normalizeTemporal(kind, text, current, segment) {
+    const raw = String(text || "").trim();
+    if (!raw) return "";
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (raw === "今天" || /^today$/i.test(raw)) return kind === "month" ? ymd(today).slice(0, 7) : ymd(today);
+    if (raw === "昨天" || /^yesterday$/i.test(raw)) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - 1);
+      return kind === "month" ? ymd(d).slice(0, 7) : ymd(d);
+    }
+    if (raw === "明天" || /^tomorrow$/i.test(raw)) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + 1);
+      return kind === "month" ? ymd(d).slice(0, 7) : ymd(d);
+    }
+    if (kind === "date") {
+      const full = parseDateText(raw);
+      if (full && !isNaN(full.getTime())) return ymd(full);
+      let basis = parseDateText(current) || today;
+      const n = Number(raw);
+      if (String(n) === raw || /^-?\d+$/.test(raw)) {
+        if (segment === "year" && n >= 1000 && n <= 9999) {
+          basis = new Date(n, basis.getMonth(), basis.getDate());
+          return ymd(basis);
+        }
+        if (segment === "month" && n >= 1 && n <= 12) {
+          basis = new Date(basis.getFullYear(), n - 1, basis.getDate());
+          return ymd(basis);
+        }
+        if (segment === "day" && n >= 1 && n <= 31) {
+          basis = new Date(basis.getFullYear(), basis.getMonth(), n);
+          return ymd(basis);
+        }
+      }
+    }
+    if (kind === "month") {
+      const m = raw.match(/^(\d{4})[-/](\d{1,2})$/);
+      if (m) return m[1] + "-" + pad2(m[2]);
+    }
+    if (kind === "time" && /^\d{1,2}:\d{2}(:\d{2})?$/.test(raw)) return raw;
+    if (kind === "datetime-local") {
+      const t = raw.replace(" ", "T");
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(t)) return t;
+    }
+    return "";
+  }
+
+  function temporalSegment(el) {
+    let lab = "";
+    try {
+      lab = String((el.getAttribute && el.getAttribute("aria-label")) || "") + " " + String(el.textContent || "");
+    } catch (_) {}
+    lab = lab.replace(/\s+/g, " ").toLowerCase();
+    if (/年|year/.test(lab)) return "year";
+    if (/月|month/.test(lab) && !/日|day/.test(lab)) return "month";
+    if (/日|day/.test(lab)) return "day";
+    return "";
+  }
+
+  function fillTemporalControl(el, text) {
+    const host = hostControl(el);
+    if (!isTemporalInput(host)) return { ok: false, error: "不是日期/时间控件" };
+    const want = normalizeTemporal(
+      String(host.type || "").toLowerCase(),
+      text,
+      host.value || "",
+      temporalSegment(el)
+    );
+    if (!want) {
+      return { ok: false, error: "日期/时间格式无法识别，请用 YYYY-MM-DD（今天/昨天/明天也可以）" };
+    }
+    setNativeValue(host, want);
+    try { host.dispatchEvent(new Event("input", { bubbles: true })); } catch (_) {}
+    try { host.dispatchEvent(new Event("change", { bubbles: true })); } catch (_) {}
+    try { host.blur && host.blur(); } catch (_) {}
+    const got = String(host.value || "");
+    if (got !== want) {
+      return {
+        ok: false,
+        error: "输入未生效（读回 value=" + JSON.stringify(got) + "，期望 " + JSON.stringify(want) + "）"
+      };
+    }
+    return { ok: true, value: got };
+  }
+
   function looksLikeNotEditable(node) {
     if (!node) return false;
-    try {
-      if (node.disabled) return true;
-      if (node.matches && node.matches(":disabled")) return true;
-    } catch (_) {}
-    try {
-      if (node.readOnly) return true;
-    } catch (_) {}
-    try {
-      const ad = node.getAttribute && node.getAttribute("aria-disabled");
-      if (ad != null && String(ad).toLowerCase() !== "false") return true;
-    } catch (_) {}
-    return false;
+    function locked(el) {
+      if (!el) return false;
+      try {
+        if (el.disabled) return true;
+        if (el.matches && el.matches(":disabled")) return true;
+      } catch (_) {}
+      try {
+        if (el.readOnly) return true;
+      } catch (_) {}
+      try {
+        const ad = el.getAttribute && el.getAttribute("aria-disabled");
+        if (ad != null && String(ad).toLowerCase() !== "false") return true;
+      } catch (_) {}
+      return false;
+    }
+    return locked(node) || locked(hostControl(node));
   }
 
   function findSelect(el) {
@@ -1131,7 +1264,7 @@
         throw new Error("这是原生下拉，请用 action=select，option 填选项原文或 value。");
       }
     }
-    if (action === "type" && looksLikeNotEditable(el)) {
+    if (action === "type" && looksLikeNotEditable(el) && !isTemporalInput(hostControl(el))) {
       throw new Error("目标不可编辑");
     }
     target.scrollIntoView({ block: "center", inline: "nearest" });
@@ -1169,6 +1302,18 @@
 
     if (action === "type") {
       const text = msg.text == null ? "" : String(msg.text);
+      const temporalHost = hostControl(el);
+      if (isTemporalInput(temporalHost)) {
+        const filledDate = fillTemporalControl(el, text);
+        if (!filledDate.ok) {
+          throw new Error(filledDate.error || "输入未生效");
+        }
+        return {
+          ok: true,
+          message: "typed value=" + JSON.stringify(filledDate.value),
+          probe: entry.probe
+        };
+      }
       const tag = (el.tagName || "").toLowerCase();
       el.focus();
       try {

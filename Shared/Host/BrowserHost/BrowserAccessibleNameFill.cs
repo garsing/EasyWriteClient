@@ -205,6 +205,131 @@ namespace WordAddIn1.BrowserHost
             built.TreeText = tree;
         }
 
+        private const string ReadTemporalValueJs =
+            @"function() {
+  function parentComposed(el) {
+    if (!el) return null;
+    if (el.assignedSlot) return el.assignedSlot;
+    if (el.parentElement) return el.parentElement;
+    var root = el.getRootNode && el.getRootNode();
+    if (root && root.host) return root.host;
+    return null;
+  }
+  var n = this;
+  while (n) {
+    var tag = (n.tagName || '').toUpperCase();
+    if (tag === 'INPUT') return String(n.value || '');
+    if (n.assignedSlot) { n = n.assignedSlot; continue; }
+    if (n.parentElement) { n = n.parentElement; continue; }
+    var root = n.getRootNode && n.getRootNode();
+    if (root && root.host) { n = root.host; continue; }
+    break;
+  }
+  return '';
+}";
+
+        public static async Task FillTemporalValuesAsync(
+            YiWriteBrowserForm form,
+            BrowserAxBuildResult built,
+            string sessionId)
+        {
+            if (form == null || built == null || built.Refs == null || string.IsNullOrEmpty(built.TreeText))
+            {
+                return;
+            }
+
+            int n = 0;
+            string tree = built.TreeText;
+            foreach (var kv in built.Refs)
+            {
+                if (n >= MaxAttempts)
+                {
+                    break;
+                }
+
+                BrowserRefEntry e = kv.Value;
+                if (e == null || !e.BackendDomNodeId.HasValue)
+                {
+                    continue;
+                }
+
+                string role = e.Role ?? "";
+                if (!string.Equals(role, "date", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(role, "time", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(role, "datetime", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(role, "date time", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                n++;
+                string sid = string.IsNullOrWhiteSpace(e.CdpSessionId) ? sessionId : e.CdpSessionId;
+                try
+                {
+                    string objectId = await BrowserInteractEngine
+                        .ResolveObjectIdAsync(form, e.BackendDomNodeId.Value, sid)
+                        .ConfigureAwait(true);
+                    string json = await BrowserInteractEngine
+                        .CallFunctionOnAsync(form, objectId, ReadTemporalValueJs, null, sid)
+                        .ConfigureAwait(true);
+                    string val = ReadReturnedString(json);
+                    if (string.IsNullOrWhiteSpace(val))
+                    {
+                        continue;
+                    }
+
+                    tree = ReplaceOrInsertValue(tree, kv.Key, val);
+                }
+                catch
+                {
+                }
+            }
+
+            built.TreeText = tree;
+        }
+
+        private static string ReplaceOrInsertValue(string tree, string refId, string value)
+        {
+            if (string.IsNullOrEmpty(tree) || string.IsNullOrEmpty(value))
+            {
+                return tree;
+            }
+
+            string needle = "ref=" + refId;
+            int found = tree.IndexOf(needle, StringComparison.Ordinal);
+            if (found < 0)
+            {
+                return tree;
+            }
+
+            int end = found + needle.Length;
+            if (end < tree.Length && char.IsDigit(tree[end]))
+            {
+                return tree;
+            }
+
+            int lineEnd = tree.IndexOf('\n', found);
+            if (lineEnd < 0)
+            {
+                lineEnd = tree.Length;
+            }
+
+            string line = tree.Substring(found, lineEnd - found);
+            int valAt = line.IndexOf(" value=\"", StringComparison.Ordinal);
+            string quoted = " value=\"" + Escape(value) + "\"";
+            if (valAt >= 0)
+            {
+                int abs = found + valAt;
+                int q2 = tree.IndexOf('"', abs + 8);
+                if (q2 > abs && q2 <= lineEnd)
+                {
+                    return tree.Substring(0, abs) + quoted + tree.Substring(q2 + 1);
+                }
+            }
+
+            return tree.Substring(0, lineEnd) + quoted + tree.Substring(lineEnd);
+        }
+
         /// <summary>树格式：<c>- button ref=e5</c> → <c>- button ref=e5 "设置"</c></summary>
         private static string InsertNameAfterRef(string tree, string refId, string name)
         {
