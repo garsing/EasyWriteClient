@@ -373,15 +373,17 @@ function frameMessageOptions(frameId) {
   return { frameId };
 }
 
+const CONTENT_VER = 35;
+
 async function ensureContentScript(tabId, frameId) {
   const opts = frameMessageOptions(frameId);
   try {
-    if (opts) {
-      await chrome.tabs.sendMessage(tabId, { type: "ping" }, opts);
-    } else {
-      await chrome.tabs.sendMessage(tabId, { type: "ping" });
+    const pong = opts
+      ? await chrome.tabs.sendMessage(tabId, { type: "ping" }, opts)
+      : await chrome.tabs.sendMessage(tabId, { type: "ping" });
+    if (pong && pong.ok && pong.ver === CONTENT_VER) {
+      return;
     }
-    return;
   } catch (_) {
     /* inject */
   }

@@ -2,20 +2,27 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  if (window.__yiwriteContentLoaded) {
+  const CONTENT_VER = 35;
+  if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
+  if (window.__yiwriteOnMsg) {
+    try { chrome.runtime.onMessage.removeListener(window.__yiwriteOnMsg); } catch (_) {}
+  }
+  window.__yiwriteContentVer = CONTENT_VER;
   window.__yiwriteContentLoaded = true;
 
   const MAX_CHARS = 36000;
   const MAX_NODES = 300;
 
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  function onMsg(msg, _sender, sendResponse) {
     handle(msg).then(sendResponse).catch((e) => {
       sendResponse({ ok: false, error: String(e && e.message ? e.message : e) });
     });
     return true;
-  });
+  }
+  window.__yiwriteOnMsg = onMsg;
+  chrome.runtime.onMessage.addListener(onMsg);
 
   async function handle(msg) {
     if (!msg || !msg.type) {
@@ -23,7 +30,7 @@
     }
     switch (msg.type) {
       case "ping":
-        return { ok: true };
+        return { ok: true, ver: CONTENT_VER };
       case "snapshot":
         return doSnapshot(msg);
       case "interact":
@@ -225,6 +232,108 @@
     return null;
   }
 
+  function isTypeableInput(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (el.isContentEditable) return true;
+    const tag = (el.tagName || "").toLowerCase();
+    if (tag === "textarea") return true;
+    if (tag !== "input") return false;
+    const typ = String((el.getAttribute && el.getAttribute("type")) || el.type || "text").toLowerCase();
+    return !/^(button|submit|reset|checkbox|radio|file|image|hidden)$/.test(typ);
+  }
+
+  function onlyTypeableIn(root) {
+    if (!root || !root.querySelectorAll) return null;
+    const list = root.querySelectorAll("input, textarea, [contenteditable='true'], [contenteditable='']");
+    let hit = null;
+    for (let i = 0; i < list.length; i++) {
+      if (!isTypeableInput(list[i])) continue;
+      if (hit) return null;
+      hit = list[i];
+    }
+    return hit;
+  }
+
+  function labelControl(el) {
+    if (!el) return null;
+    try {
+      const lab = (el.tagName || "").toLowerCase() === "label"
+        ? el
+        : (el.closest && el.closest("label"));
+      if (!lab) return null;
+      const id = lab.htmlFor || (lab.getAttribute && lab.getAttribute("for"));
+      if (id) {
+        const by = document.getElementById(id);
+        if (isTypeableInput(by)) return by;
+      }
+      return onlyTypeableIn(lab);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function nameHint(el) {
+    if (!el) return "";
+    try {
+      const aria = el.getAttribute && el.getAttribute("aria-label");
+      if (aria && String(aria).trim()) return String(aria).trim();
+    } catch (_) {}
+    let own = "";
+    const nodes = el.childNodes || [];
+    for (let i = 0; i < nodes.length; i++) {
+      if (nodes[i].nodeType === 3) own += nodes[i].textContent || "";
+    }
+    own = own.replace(/\s+/g, " ").trim();
+    return own.length > 0 && own.length <= 40 ? own : "";
+  }
+
+  function findTypeableByName(hint) {
+    if (!hint) return null;
+    const list = document.querySelectorAll("input, textarea, [contenteditable='true'], [contenteditable='']");
+    const hits = [];
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      if (!isTypeableInput(c)) continue;
+      const an = String((c.getAttribute && (c.getAttribute("aria-label") || c.getAttribute("name"))) || "").trim();
+      if (an && an === hint) hits.push(c);
+    }
+    return hits.length === 1 ? hits[0] : null;
+  }
+
+  function findTypeable(el, entry) {
+    if (!el) return null;
+    const up = hostControl(el);
+    if (isTypeableInput(up)) return up;
+    if (el.isContentEditable) return el;
+    const fromLabel = labelControl(el);
+    if (fromLabel) return fromLabel;
+    const hint = (entry && (entry.name || (entry.probe && entry.probe.accessibleName))) || nameHint(el);
+    const byName = findTypeableByName(hint);
+    if (byName) return byName;
+    const only = onlyTypeableIn(el);
+    if (only) return only;
+    try {
+      const prev = el.previousElementSibling;
+      if (isTypeableInput(prev)) return prev;
+      const next = el.nextElementSibling;
+      if (isTypeableInput(next)) return next;
+      const g = el.closest && el.closest(".input-group");
+      if (g) {
+        const inG = onlyTypeableIn(g);
+        if (inG) return inG;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function looksLikePassword(el) {
+    if (!el) return false;
+    const typ = String((el.getAttribute && el.getAttribute("type")) || el.type || "").toLowerCase();
+    if (typ === "password") return true;
+    const ac = (el.getAttribute && el.getAttribute("autocomplete")) || "";
+    return /password/i.test(ac);
+  }
+
   function looksLikeFileChooser(node) {
     if (!node) return false;
     try {
@@ -321,6 +430,9 @@
     function nameOf(el) {
       const tag = (el.tagName || "").toLowerCase();
       const t = (s) => String(s || "").replace(/\s+/g, " ").trim();
+      if (tag === "html" || tag === "body") {
+        return t(document.title).slice(0, 120);
+      }
       if (isDataRow(el)) {
         const row = rowName(el);
         if (row) return row;
@@ -395,29 +507,34 @@
 
     function probeOf(el) {
       const tag = (el.tagName || "").toLowerCase();
+      const ctrl = labelControl(el);
+      const src = ctrl || el;
+      const srcTag = (src.tagName || "").toLowerCase();
       return {
         tag,
-        inputType: tag === "input" ? (el.getAttribute("type") || "text") : null,
-        autocomplete: el.getAttribute("autocomplete") || null,
+        inputType: srcTag === "input" ? (src.getAttribute("type") || "text") : null,
+        autocomplete: src.getAttribute("autocomplete") || el.getAttribute("autocomplete") || null,
         role: roleOf(el),
         accessibleName: nameOf(el),
-        valueAttr: el.value != null ? String(el.value).slice(0, 200) : null,
-        innerText: (el.innerText || "").replace(/\s+/g, " ").trim().slice(0, 200),
+        valueAttr: src.value != null ? String(src.value).slice(0, 200) : (el.value != null ? String(el.value).slice(0, 200) : null),
+        innerText: (tag === "html" || tag === "body")
+          ? String(document.title || "").replace(/\s+/g, " ").trim().slice(0, 120)
+          : (el.innerText || "").replace(/\s+/g, " ").trim().slice(0, 200),
         href: el.href || el.getAttribute("href") || null,
         dataUrl: el.src || el.getAttribute("src") || null,
         hasDownloadAttr: el.hasAttribute("download"),
         pageHasPasswordInput: !!document.querySelector('input[type="password"]'),
-        isFileChooser: looksLikeFileChooser(el),
+        isFileChooser: looksLikeFileChooser(el) || looksLikeFileChooser(src),
         disabled: (() => {
           try {
-            if (el.disabled) return true;
-            if (el.matches && el.matches(":disabled")) return true;
+            if (src.disabled) return true;
+            if (src.matches && src.matches(":disabled")) return true;
           } catch (_) {}
           return false;
         })(),
-        readOnly: !!el.readOnly,
+        readOnly: !!src.readOnly,
         ariaDisabled: (() => {
-          const ad = el.getAttribute && el.getAttribute("aria-disabled");
+          const ad = src.getAttribute && src.getAttribute("aria-disabled");
           return ad != null && String(ad).toLowerCase() !== "false";
         })()
       };
@@ -1282,10 +1399,20 @@
         throw new Error("这是原生下拉，请用 action=select，option 填选项原文或 value。");
       }
     }
-    if (action === "type" && looksLikeNotEditable(el) && !isTemporalInput(hostControl(el))) {
-      throw new Error("目标不可编辑");
+    let typeTarget = el;
+    if (action === "type") {
+      typeTarget = findTypeable(el, entry);
+      if (!typeTarget) {
+        throw new Error("目标不可输入");
+      }
+      if (looksLikePassword(typeTarget)) {
+        throw new Error("已拒绝向密码框输入；请用户在看得见的窗里自己填写密码");
+      }
+      if (looksLikeNotEditable(typeTarget) && !isTemporalInput(typeTarget)) {
+        throw new Error("目标不可编辑");
+      }
     }
-    target.scrollIntoView({ block: "center", inline: "nearest" });
+    (action === "type" ? typeTarget : target).scrollIntoView({ block: "center", inline: "nearest" });
 
     if (action === "click") {
       const mode = normalizeClickMode(msg.click_mode);
@@ -1320,9 +1447,8 @@
 
     if (action === "type") {
       const text = msg.text == null ? "" : String(msg.text);
-      const temporalHost = hostControl(el);
-      if (isTemporalInput(temporalHost)) {
-        const filledDate = fillTemporalControl(el, text);
+      if (isTemporalInput(typeTarget)) {
+        const filledDate = fillTemporalControl(typeTarget, text);
         if (!filledDate.ok) {
           throw new Error(filledDate.error || "输入未生效");
         }
@@ -1332,20 +1458,20 @@
           probe: entry.probe
         };
       }
-      const tag = (el.tagName || "").toLowerCase();
-      el.focus();
+      const tag = (typeTarget.tagName || "").toLowerCase();
+      typeTarget.focus();
       try {
-        el.click();
+        typeTarget.click();
       } catch (_) {}
 
       if (tag === "input" || tag === "textarea") {
-        const filled = fillTextControl(el, text);
+        const filled = fillTextControl(typeTarget, text);
         if (!filled.ok) {
           throw new Error(filled.error || "输入未生效");
         }
         // Esc 收联想，避免挡「百度一下」
-        el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-        el.dispatchEvent(new KeyboardEvent("keyup", { key: "Escape", bubbles: true }));
+        typeTarget.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        typeTarget.dispatchEvent(new KeyboardEvent("keyup", { key: "Escape", bubbles: true }));
         return {
           ok: true,
           message: "typed value=" + JSON.stringify(filled.value),
@@ -1353,15 +1479,15 @@
         };
       }
 
-      if (el.isContentEditable) {
-        el.focus();
+      if (typeTarget.isContentEditable) {
+        typeTarget.focus();
         document.execCommand("selectAll", false, null);
         document.execCommand("delete", false, null);
         const ok = document.execCommand("insertText", false, text);
         if (!ok) {
-          el.textContent = text;
+          typeTarget.textContent = text;
         }
-        el.dispatchEvent(new InputEvent("input", {
+        typeTarget.dispatchEvent(new InputEvent("input", {
           bubbles: true,
           cancelable: true,
           inputType: "insertText",
