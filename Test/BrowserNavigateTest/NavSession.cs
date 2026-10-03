@@ -120,6 +120,47 @@ namespace BrowserNavigateTest
             return DesktopToolPipe.Call("F_browser_interact", args);
         }
 
+        public ToolResult Download(
+            string channelId = null,
+            string refId = null,
+            string url = null,
+            string path = null)
+        {
+            var args = new Dictionary<string, object>();
+            if (channelId != null)
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (refId != null)
+            {
+                args["ref"] = refId;
+            }
+
+            if (url != null)
+            {
+                args["url"] = url;
+            }
+
+            if (path != null)
+            {
+                args["path"] = path;
+            }
+
+            return DesktopToolPipe.Call("F_browser_download", args);
+        }
+
+        public ToolResult ReadFile(string path)
+        {
+            var args = new Dictionary<string, object>();
+            if (path != null)
+            {
+                args["path"] = path;
+            }
+
+            return DesktopToolPipe.Call("F_read_file", args);
+        }
+
         public static bool IsShortId(string id)
         {
             return !string.IsNullOrEmpty(id)

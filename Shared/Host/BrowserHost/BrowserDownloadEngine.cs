@@ -86,11 +86,13 @@ namespace WordAddIn1.BrowserHost
         public static async Task<BrowserDownloadFileResult> ClickAndCaptureAsync(
             YiWriteBrowserForm form,
             int backendNodeId,
-            string sessionId = null)
+            string sessionId = null,
+            TimeSpan? timeout = null)
         {
             EnsureWorkspaceReady();
 
-            Task<BrowserCapturedDownload> waitTask = form.BeginExpectDownloadAsync(DefaultTimeout);
+            TimeSpan wait = timeout ?? DefaultTimeout;
+            Task<BrowserCapturedDownload> waitTask = form.BeginExpectDownloadAsync(wait);
             try
             {
                 await BrowserInteractEngine

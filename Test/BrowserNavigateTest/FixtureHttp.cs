@@ -31,6 +31,7 @@ namespace BrowserNavigateTest
             _roots["form-controls"] = Path.Combine(repo, "tests", "form-controls");
             _roots["form-extra"] = Path.Combine(repo, "tests", "form-extra");
             _roots["public-example"] = Path.Combine(repo, "tests", "public-example");
+            _roots["download"] = Path.Combine(repo, "tests", "download");
             _roots["real"] = Path.Combine(
                 repo, "docs", "测试", "浏览器测试", "snapshot与iframe", "真实html");
 
@@ -65,6 +66,17 @@ namespace BrowserNavigateTest
         public string Url(string mount, string file)
         {
             return "http://127.0.0.1:" + Port.ToString() + "/" + mount.Trim('/') + "/" + file.TrimStart('/');
+        }
+
+        public string LocalFile(string mount, string file)
+        {
+            string root;
+            if (!_roots.TryGetValue(mount, out root))
+            {
+                return null;
+            }
+
+            return Path.Combine(root, file.TrimStart('/', '\\'));
         }
 
         public string Real(string alias)
@@ -200,7 +212,19 @@ namespace BrowserNavigateTest
 
             byte[] bytes = File.ReadAllBytes(full);
             ctx.Response.StatusCode = 200;
-            ctx.Response.ContentType = "text/html; charset=utf-8";
+            string ext = Path.GetExtension(full);
+            if (string.Equals(ext, ".txt", StringComparison.OrdinalIgnoreCase))
+            {
+                ctx.Response.ContentType = "text/plain; charset=utf-8";
+            }
+            else if (string.Equals(ext, ".png", StringComparison.OrdinalIgnoreCase))
+            {
+                ctx.Response.ContentType = "image/png";
+            }
+            else
+            {
+                ctx.Response.ContentType = "text/html; charset=utf-8";
+            }
             ctx.Response.ContentLength64 = bytes.Length;
             ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
             ctx.Response.Close();

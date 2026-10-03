@@ -1027,6 +1027,25 @@ namespace WordAddIn1.BrowserHost
             string refId,
             string url)
         {
+            YiWriteBrowserForm ui;
+            lock (Gate)
+            {
+                ui = _form;
+            }
+
+            if (ui != null && !ui.IsDisposed && ui.InvokeRequired)
+            {
+                try
+                {
+                    return await ui.RunOnUiAsync(() => DownloadAsync(channel, refId, url))
+                        .ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    return BrowserDownloadResult.Fail(ex.Message ?? "download 失败");
+                }
+            }
+
             if (channel == null)
             {
                 return BrowserDownloadResult.Fail("无浏览器渠道");
@@ -1101,8 +1120,15 @@ namespace WordAddIn1.BrowserHost
                     {
                         try
                         {
+                            TimeSpan wait = probe != null && probe.HasDownloadAttr
+                                ? BrowserDownloadEngine.DefaultTimeout
+                                : TimeSpan.FromSeconds(3);
                             file = await BrowserDownloadEngine
-                                .ClickAndCaptureAsync(form, entry.BackendDomNodeId.Value, entry.CdpSessionId)
+                                .ClickAndCaptureAsync(
+                                    form,
+                                    entry.BackendDomNodeId.Value,
+                                    entry.CdpSessionId,
+                                    wait)
                                 .ConfigureAwait(true);
                         }
                         catch (InvalidOperationException ex)

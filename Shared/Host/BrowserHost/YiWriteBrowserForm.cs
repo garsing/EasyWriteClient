@@ -266,6 +266,52 @@ namespace WordAddIn1.BrowserHost
         }
 
         /// <summary>
+        /// 工作区写锁会把 download 等工具甩到线程池；WebView2 / CDP 必须回到本窗线程。
+        /// </summary>
+        internal Task<T> RunOnUiAsync<T>(Func<Task<T>> func)
+        {
+            if (func == null)
+            {
+                throw new ArgumentNullException(nameof(func));
+            }
+
+            if (IsDisposed || _closing)
+            {
+                var dead = new TaskCompletionSource<T>();
+                dead.SetException(new InvalidOperationException("浏览窗已关闭"));
+                return dead.Task;
+            }
+
+            if (!InvokeRequired)
+            {
+                return func();
+            }
+
+            var tcs = new TaskCompletionSource<T>();
+            try
+            {
+                BeginInvoke(new Action(async () =>
+                {
+                    try
+                    {
+                        T value = await func().ConfigureAwait(true);
+                        tcs.TrySetResult(value);
+                    }
+                    catch (Exception ex)
+                    {
+                        tcs.TrySetException(ex);
+                    }
+                }));
+            }
+            catch (Exception ex)
+            {
+                tcs.TrySetException(ex);
+            }
+
+            return tcs.Task;
+        }
+
+        /// <summary>
         /// 工具进行中钉住目标页：页内新开标签会切前台，但 CDP / 坐标仍打在钉住的页上。
         /// </summary>
         internal void PinToolPage(string tabUuid)
