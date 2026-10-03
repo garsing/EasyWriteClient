@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 36;
+  const CONTENT_VER = 37;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -145,7 +145,12 @@
       const w = raw.match(/^(\d{4})-W(\d{1,2})$/i);
       if (w) return w[1] + "-W" + pad2(w[2]);
     }
-    if (kind === "time" && /^\d{1,2}:\d{2}(:\d{2})?$/.test(raw)) return raw;
+    if (kind === "time") {
+      const tm = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+      if (tm) {
+        return pad2(tm[1]) + ":" + tm[2] + (tm[3] ? ":" + tm[3] : "");
+      }
+    }
     if (kind === "datetime-local") {
       const t = raw.replace(" ", "T");
       if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(t)) return t;
@@ -290,14 +295,19 @@
   function findTypeableByName(hint) {
     if (!hint) return null;
     const list = document.querySelectorAll("input, textarea, [contenteditable='true'], [contenteditable='']");
-    const hits = [];
+    const exact = [];
+    const contained = [];
     for (let i = 0; i < list.length; i++) {
       const c = list[i];
       if (!isTypeableInput(c)) continue;
       const an = String((c.getAttribute && (c.getAttribute("aria-label") || c.getAttribute("name"))) || "").trim();
-      if (an && an === hint) hits.push(c);
+      if (!an) continue;
+      if (an === hint) exact.push(c);
+      else if (an.length >= 2 && hint.indexOf(an) >= 0) contained.push(c);
     }
-    return hits.length === 1 ? hits[0] : null;
+    if (exact.length === 1) return exact[0];
+    if (exact.length === 0 && contained.length === 1) return contained[0];
+    return null;
   }
 
   function findTypeable(el, entry) {

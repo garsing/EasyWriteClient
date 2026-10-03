@@ -404,7 +404,7 @@ function frameMessageOptions(frameId) {
   return { frameId };
 }
 
-const CONTENT_VER = 36;
+const CONTENT_VER = 37;
 
 async function ensureContentScript(tabId, frameId) {
   const opts = frameMessageOptions(frameId);
