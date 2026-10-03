@@ -404,12 +404,12 @@ namespace WordAddIn1
                 },
                 Chrome = new AppConfig.BrowserEngineSettings
                 {
-                    ClickMode = "pointer",
+                    ClickMode = "legacy",
                     AttachPointer = "cdp"
                 },
                 Edge = new AppConfig.BrowserEngineSettings
                 {
-                    ClickMode = "pointer",
+                    ClickMode = "legacy",
                     AttachPointer = "cdp"
                 }
             };
