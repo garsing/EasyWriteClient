@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 37;
+  const CONTENT_VER = 38;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -816,6 +816,8 @@
       }
       if (el.isContentEditable) return true;
       if (isDataRow(el)) return true;
+      const id = String(el.id || "").toLowerCase();
+      if (id === "status" || id === "state" || /(?:^|-)status$/.test(id)) return true;
       const ariaRole = el.getAttribute("role");
       if (ariaRole && !isIgnoredAriaRole(ariaRole)) return true;
       if (/^h[1-6]$/.test(tag)) return true;
