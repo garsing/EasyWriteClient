@@ -175,6 +175,89 @@ namespace WordAddIn1.BrowserHost
   return true;
 })()";
 
+        private const string RowHiddenJs =
+            @"function() {
+  try {
+    var el = this;
+    if (el && el.nodeType !== 1) el = el.parentElement;
+    if (!el) return true;
+    if (el.isConnected === false) return true;
+    var n = el;
+    while (n && n.nodeType === 1) {
+      var st = null;
+      try { st = window.getComputedStyle(n); } catch (e1) {}
+      if (st && (st.display === 'none' || st.visibility === 'hidden')) return true;
+      var cls = (n.className && typeof n.className === 'string') ? n.className : '';
+      if (/\bpanel\b/.test(cls) && !/\bon\b/.test(cls)) return true;
+      n = n.parentElement;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}";
+
+        /// <summary>
+        /// AX 会把 display:none 面板里的表行也发 ref。D5：藏着的表不当可见行。
+        /// </summary>
+        public static async Task PruneHiddenRowsAsync(
+            YiWriteBrowserForm form,
+            BrowserAxBuildResult built,
+            string sessionId)
+        {
+            if (form == null || built == null || !built.Success || built.Refs == null || built.Refs.Count == 0)
+            {
+                return;
+            }
+
+            var drop = new List<string>();
+            foreach (var kv in built.Refs)
+            {
+                BrowserRefEntry e = kv.Value;
+                if (e == null || !e.BackendDomNodeId.HasValue)
+                {
+                    continue;
+                }
+
+                string role = e.Role ?? "";
+                if (!string.Equals(role, "row", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(role, "LayoutTableRow", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string sid = string.IsNullOrWhiteSpace(e.CdpSessionId) ? sessionId : e.CdpSessionId;
+                try
+                {
+                    string objectId = await BrowserInteractEngine
+                        .ResolveObjectIdAsync(form, e.BackendDomNodeId.Value, sid)
+                        .ConfigureAwait(true);
+                    string json = await BrowserInteractEngine
+                        .CallFunctionOnAsync(form, objectId, RowHiddenJs, null, sid)
+                        .ConfigureAwait(true);
+                    if (ReadReturnedBool(json))
+                    {
+                        drop.Add(kv.Key);
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            if (drop.Count == 0)
+            {
+                return;
+            }
+
+            foreach (string id in drop)
+            {
+                built.Refs.Remove(id);
+            }
+
+            built.TreeText = DropRefLines(built.TreeText, drop);
+        }
+
         public static async Task MergeAsync(
             YiWriteBrowserForm form,
             BrowserAxBuildResult built,
@@ -424,6 +507,77 @@ namespace WordAddIn1.BrowserHost
             }
 
             return backend.Value<int>();
+        }
+
+        private static bool ReadReturnedBool(string resultJson)
+        {
+            try
+            {
+                JObject jo = JObject.Parse(resultJson ?? "{}");
+                JToken tok = jo["result"]?["value"];
+                if (tok == null || tok.Type == JTokenType.Null)
+                {
+                    return false;
+                }
+
+                if (tok.Type == JTokenType.Boolean)
+                {
+                    return (bool)tok;
+                }
+
+                return string.Equals(tok.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string DropRefLines(string tree, List<string> refIds)
+        {
+            if (string.IsNullOrEmpty(tree) || refIds == null || refIds.Count == 0)
+            {
+                return tree;
+            }
+
+            var keep = new List<string>();
+            foreach (string line in tree.Replace("\r\n", "\n").Split('\n'))
+            {
+                bool drop = false;
+                for (int i = 0; i < refIds.Count; i++)
+                {
+                    if (LineHasRef(line, refIds[i]))
+                    {
+                        drop = true;
+                        break;
+                    }
+                }
+
+                if (!drop)
+                {
+                    keep.Add(line);
+                }
+            }
+
+            return string.Join("\n", keep.ToArray()).TrimEnd();
+        }
+
+        private static bool LineHasRef(string line, string refId)
+        {
+            if (string.IsNullOrEmpty(line) || string.IsNullOrEmpty(refId))
+            {
+                return false;
+            }
+
+            string needle = "ref=" + refId;
+            int at = line.IndexOf(needle, StringComparison.Ordinal);
+            if (at < 0)
+            {
+                return false;
+            }
+
+            int end = at + needle.Length;
+            return end >= line.Length || !char.IsDigit(line[end]);
         }
 
         private static string JsonEscape(string s)

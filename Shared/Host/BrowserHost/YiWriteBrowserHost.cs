@@ -535,6 +535,9 @@ namespace WordAddIn1.BrowserHost
                     await BrowserDomClickableSupplement
                         .MergeAsync(form, built, stampFrame, sessionId)
                         .ConfigureAwait(true);
+                    await BrowserDomClickableSupplement
+                        .PruneHiddenRowsAsync(form, built, sessionId)
+                        .ConfigureAwait(true);
                 }
 
                 await BrowserAccessibleNameFill
@@ -711,6 +714,9 @@ namespace WordAddIn1.BrowserHost
             BrowserFrameResolver.Stamp(built, frameId, frameMap, ax.SessionId);
             await BrowserDomClickableSupplement
                 .MergeAsync(form, built, frameId, ax.SessionId)
+                .ConfigureAwait(true);
+            await BrowserDomClickableSupplement
+                .PruneHiddenRowsAsync(form, built, ax.SessionId)
                 .ConfigureAwait(true);
             await BrowserAccessibleNameFill
                 .FillEmptyAsync(form, built, ax.SessionId)
