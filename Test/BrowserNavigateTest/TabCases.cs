@@ -4,7 +4,7 @@ using WordAddIn1;
 namespace BrowserNavigateTest
 {
     /// <summary>第 4 波中间栏 Tab / 可点补全，只测 agent。</summary>
-    internal static class TabCases
+    internal static partial class TabCases
     {
         private static readonly string[] AllIds =
         {
@@ -23,6 +23,7 @@ namespace BrowserNavigateTest
             var s = new NavSession();
             RunMain(run, s, http);
             RunHidden(run, s, http);
+            RunExtra(run, s, http);
             int chromeNow = IntCases.CountProc("chrome");
             int edgeNow = IntCases.CountProc("msedge");
             if (chromeNow < chromeBefore || edgeNow < edgeBefore)
@@ -243,7 +244,7 @@ namespace BrowserNavigateTest
             IntCases.Ok(run, "tab-snap-longcard", !LongCardIsShortButton(snap), "长卡片收成短按钮");
         }
 
-        private static string TabRef(string tree, string label)
+        internal static string TabRef(string tree, string label)
         {
             if (label == "项目成员")
             {
@@ -312,7 +313,7 @@ namespace BrowserNavigateTest
             return sb.ToString();
         }
 
-        private static bool VisibleName(string tree, string name)
+        internal static bool VisibleName(string tree, string name)
         {
             if (string.IsNullOrEmpty(tree) || tree.IndexOf(name, StringComparison.Ordinal) < 0)
             {
@@ -337,7 +338,7 @@ namespace BrowserNavigateTest
             return false;
         }
 
-        private static bool LongCardIsShortButton(string tree)
+        internal static bool LongCardIsShortButton(string tree)
         {
             const string prefix = "这是一张很长的可点卡片说明文字";
             if (string.IsNullOrEmpty(tree))
