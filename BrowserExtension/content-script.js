@@ -85,16 +85,30 @@
     if (!raw) return "";
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    if (raw === "今天" || /^today$/i.test(raw)) return kind === "month" ? ymd(today).slice(0, 7) : ymd(today);
+    if (raw === "今天" || /^today$/i.test(raw)) return formatTemporalKind(kind, today);
+    function formatTemporalKind(kind, d) {
+      if (kind === "month") return ymd(d).slice(0, 7);
+      if (kind === "week") return isoWeek(d);
+      if (kind === "time") return "00:00";
+      if (kind === "datetime-local") return ymd(d) + "T00:00";
+      return ymd(d);
+    }
+    function isoWeek(d) {
+      const day = (d.getDay() + 6) % 7;
+      const thu = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 3 - day);
+      const jan4 = new Date(thu.getFullYear(), 0, 4);
+      const week = 1 + Math.round(((thu - jan4) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
+      return thu.getFullYear() + "-W" + pad2(week);
+    }
     if (raw === "昨天" || /^yesterday$/i.test(raw)) {
       const d = new Date(today);
       d.setDate(d.getDate() - 1);
-      return kind === "month" ? ymd(d).slice(0, 7) : ymd(d);
+      return formatTemporalKind(kind, d);
     }
     if (raw === "明天" || /^tomorrow$/i.test(raw)) {
       const d = new Date(today);
       d.setDate(d.getDate() + 1);
-      return kind === "month" ? ymd(d).slice(0, 7) : ymd(d);
+      return formatTemporalKind(kind, d);
     }
     if (kind === "date") {
       const full = parseDateText(raw);
@@ -119,6 +133,10 @@
     if (kind === "month") {
       const m = raw.match(/^(\d{4})[-/](\d{1,2})$/);
       if (m) return m[1] + "-" + pad2(m[2]);
+    }
+    if (kind === "week") {
+      const w = raw.match(/^(\d{4})-W(\d{1,2})$/i);
+      if (w) return w[1] + "-W" + pad2(w[2]);
     }
     if (kind === "time" && /^\d{1,2}:\d{2}(:\d{2})?$/.test(raw)) return raw;
     if (kind === "datetime-local") {

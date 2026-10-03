@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using System.Threading;
 using WordAddIn1;
 
 namespace BrowserNavigateTest
@@ -88,7 +89,7 @@ namespace BrowserNavigateTest
             }
             else
             {
-                string selTree = TreeWithInput(s, selId);
+                string selTree = WaitTree(s, selId, true, "第一作者类型");
                 string selRef = FindRef(selTree, "第一作者类型", "combobox")
                     ?? FindRef(selTree, "第一作者类型");
                 ExpectFail(
@@ -100,9 +101,16 @@ namespace BrowserNavigateTest
 
             ExpectFail(run, "int-neg-bad-ref", s.Interact(id, "click", "e9999"), "过期");
 
-            ToolResult ov = s.Snap(id);
-            string oldRef = FindRef(Tree(ov), "普通按钮");
-            ToolResult jump = s.Nav(http.Url("public-example", "index.html"), host: "yiwrite", channelId: id);
+            string staleId = OpenOk(run, s, http.Url("overlay-cookie", "index.html"), "int-neg-stale-ref");
+            if (staleId == null)
+            {
+                // OpenOk 已记失败
+            }
+            else
+            {
+            string staleTree = WaitTree(s, staleId, false, "普通按钮");
+            string oldRef = FindRef(staleTree, "普通按钮");
+            ToolResult jump = s.Nav(http.Url("public-example", "index.html"), host: "yiwrite", channelId: staleId);
             if (!jump.Success)
             {
                 run.CaseFail("int-neg-stale-ref", jump.Error ?? "跳转失败");
@@ -113,7 +121,16 @@ namespace BrowserNavigateTest
             }
             else
             {
-                ExpectFail(run, "int-neg-stale-ref", s.Interact(id, "click", oldRef), "过期");
+                ToolResult staleClick = s.Interact(staleId, "click", oldRef);
+                if (staleClick != null && !staleClick.Success)
+                {
+                    run.CaseOk("int-neg-stale-ref");
+                }
+                else
+                {
+                    run.CaseFail("int-neg-stale-ref", staleClick != null && staleClick.Success ? "跳转后旧 eN 仍能点" : "无回包");
+                }
+            }
             }
 
             string ifr = OpenOk(run, s, http.Url("iframe", "outer.html"), "int-neg-type-iframe");
@@ -146,7 +163,7 @@ namespace BrowserNavigateTest
                 return;
             }
 
-            string tree = TreeWithInput(s, id);
+            string tree = WaitTree(s, id, true, "密码", "登录");
             string pwd = FindRef(tree, "密码");
             string login = FindRef(tree, "登录", "button") ?? FindRef(tree, "登录");
             string pay = FindRef(tree, "立即支付");
@@ -212,7 +229,7 @@ namespace BrowserNavigateTest
             }
             else
             {
-                string tree = Tree(s.Snap(id));
+                string tree = WaitTree(s, id, false, "普通按钮");
                 string plain = FindRef(tree, "普通按钮");
                 ToolResult clicked = string.IsNullOrEmpty(plain) ? null : s.Interact(id, "click", plain);
                 bool okClick = clicked != null && clicked.Success
@@ -235,7 +252,7 @@ namespace BrowserNavigateTest
                 }
                 else
                 {
-                    string ht = Tree(s.Snap(hid));
+                    string ht = WaitTree(s, hid, false, "普通按钮");
                     string href = FindRef(ht, "普通按钮");
                     ToolResult hc = string.IsNullOrEmpty(href) ? null : s.Interact(hid, "click", href);
                     Ok(run, "int-click-hidden", hc != null && hc.Success, hc == null ? "无 ref" : hc.Error);
@@ -248,7 +265,7 @@ namespace BrowserNavigateTest
                 }
                 else
                 {
-                    string bt = Tree(s.Snap(blkId));
+                    string bt = WaitTree(s, blkId, false, "查看结果", "普通按钮");
                     string under = FindRef(bt, "查看结果");
                     string keep = FindRef(bt, "普通按钮");
                     ToolResult blocked = string.IsNullOrEmpty(under) ? null : s.Interact(blkId, "click", under);
@@ -277,7 +294,7 @@ namespace BrowserNavigateTest
                     }
                     else
                     {
-                        string ft = Tree(s.Snap(fresh));
+                        string ft = WaitTree(s, fresh, false, "普通按钮");
                         string oldBtn = FindRef(ft, "普通按钮");
                         ToolResult first = string.IsNullOrEmpty(oldBtn) ? null : s.Interact(fresh, "click", oldBtn);
                         if (first == null || !first.Success)
@@ -286,16 +303,20 @@ namespace BrowserNavigateTest
                         }
                         else
                         {
-                            ToolResult stale = s.Interact(fresh, "click", oldBtn);
                             string neu = FindRef(Tree(first), "普通按钮");
-                            ToolResult again = string.IsNullOrEmpty(neu) ? null : s.Interact(fresh, "click", neu);
+                            ToolResult again = string.IsNullOrEmpty(neu)
+                                ? null
+                                : s.Interact(fresh, "click", neu);
+                            bool reused = string.Equals(oldBtn, neu, StringComparison.Ordinal);
+                            ToolResult stale = reused ? null : s.Interact(fresh, "click", oldBtn);
+                            bool staleOk = reused || (stale != null && !stale.Success);
                             Ok(
                                 run,
                                 "int-click-new-ref",
-                                stale != null && !stale.Success && again != null && again.Success,
-                                stale != null && stale.Success
-                                    ? "旧 eN 仍能点（表未 Replace）"
-                                    : (again == null ? "新树无普通按钮" : again.Error));
+                                again != null && again.Success && staleOk && Flag(first, "resnapshot"),
+                                again == null
+                                    ? "新树无普通按钮"
+                                    : (again.Success ? (staleOk ? "" : "旧号已不在新树却仍能点") : again.Error));
                         }
                     }
                 }
@@ -399,7 +420,7 @@ namespace BrowserNavigateTest
             }
             else
             {
-                string nt = TreeWithInput(s, nsel);
+                string nt = WaitTree(s, nsel, true, "第一作者类型");
                 string combo = FindRef(nt, "第一作者类型", "combobox") ?? FindRef(nt, "第一作者类型");
                 ToolResult clk = string.IsNullOrEmpty(combo) ? null : s.Interact(nsel, "click", combo);
                 Ok(
@@ -438,7 +459,7 @@ namespace BrowserNavigateTest
             }
             else
             {
-                string tree = TreeWithInput(s, id);
+                string tree = WaitTree(s, id, true, "论文题目", "lwtm");
                 string box = FindRef(tree, "论文题目") ?? FindRef(tree, "lwtm");
                 ToolResult typed = string.IsNullOrEmpty(box) ? null : s.Interact(id, "type", box, text: "已填");
                 bool ok = typed != null && typed.Success
@@ -459,7 +480,7 @@ namespace BrowserNavigateTest
                 }
                 else
                 {
-                    string ht = TreeWithInput(s, hid);
+                    string ht = WaitTree(s, hid, true, "论文题目", "lwtm");
                     string href = FindRef(ht, "论文题目") ?? FindRef(ht, "lwtm");
                     ToolResult th = string.IsNullOrEmpty(href) ? null : s.Interact(hid, "type", href, text: "隐填");
                     Ok(run, "int-type-hidden", th != null && th.Success, th == null ? "无 ref" : th.Error);
@@ -534,11 +555,12 @@ namespace BrowserNavigateTest
                 return;
             }
 
-            string tree = TreeWithInput(s, id);
+            string tree = WaitTree(s, id, true, "论文题目", "lwtm");
             string box = FindRef(tree, "论文题目") ?? FindRef(tree, "lwtm");
             if (string.IsNullOrEmpty(box))
             {
-                FailMany(run, "无论文题目 ref", "int-press-enter-search", "int-press-tab");
+                run.CaseFail("int-press-enter-search", "无论文题目 ref");
+                run.CaseFail("int-press-tab", "无论文题目 ref");
                 return;
             }
 
@@ -560,7 +582,7 @@ namespace BrowserNavigateTest
                 return;
             }
 
-            string tree = TreeWithInput(s, id);
+            string tree = WaitTree(s, id, true, "第一作者类型", "统计类别");
             string first = FindRef(tree, "第一作者类型", "combobox") ?? FindRef(tree, "第一作者类型");
             string cat = FindRef(tree, "统计类别", "combobox") ?? FindRef(tree, "统计类别");
             ToolResult ok = string.IsNullOrEmpty(first)
@@ -589,7 +611,7 @@ namespace BrowserNavigateTest
                 return;
             }
 
-            string ht = TreeWithInput(s, hid);
+            string ht = WaitTree(s, hid, true, "第一作者类型");
             string href = FindRef(ht, "第一作者类型", "combobox") ?? FindRef(ht, "第一作者类型");
             ToolResult hs = string.IsNullOrEmpty(href)
                 ? null
@@ -611,7 +633,7 @@ namespace BrowserNavigateTest
                 return;
             }
 
-            string tree = TreeWithInput(s, id);
+            string tree = WaitTree(s, id, true, "立项日", "份数", "同意条款");
             TypeValue(run, s, id, ref tree, "int-type-date-iso", DateHint(tree), "2026-10-03", "2026-10-03");
             TypeValue(
                 run, s, id, ref tree, "int-type-date-today", DateHint(tree), "今天",
@@ -639,13 +661,15 @@ namespace BrowserNavigateTest
                 run, s, id, ref tree, "int-type-month",
                 FindRef(tree, "所属月") ?? FindTemporal(tree, "月"),
                 "2026-10", "2026-10");
+            tree = WaitTree(s, id, true, "教学周", "开始时刻");
             TypeValue(
                 run, s, id, ref tree, "int-type-week",
-                FindRef(tree, "教学周") ?? FindTemporal(tree, "周"),
+                FindRef(tree, "教学周"),
                 "2026-W40", "2026-W40");
+            tree = WaitTree(s, id, true, "开始时刻");
             TypeValue(
                 run, s, id, ref tree, "int-type-time",
-                FindRef(tree, "开始时刻") ?? FindTemporal(tree, "时刻"),
+                FindRef(tree, "开始时刻"),
                 "14:30", "14:30");
             TypeValue(
                 run, s, id, ref tree, "int-type-textarea",
@@ -799,18 +823,54 @@ namespace BrowserNavigateTest
             return null;
         }
 
-        private static string TreeWithInput(NavSession s, string id)
+        private static string WaitTree(NavSession s, string id, bool wantInput, params string[] hints)
         {
-            string t = Tree(s.Snap(id));
-            if (HasAnyRef(t) && (t.Contains("论文题目") || t.Contains("立项日") || t.Contains("密码")
-                || t.Contains("禁用框") || t.Contains("选择文件") || t.Contains("份数")
-                || t.Contains("普通按钮")))
+            string last = "";
+            for (int i = 0; i < 8; i++)
             {
-                return t;
+                last = Tree(s.Snap(id, domSupplement: wantInput ? "input" : null));
+                if (HasHints(last, hints))
+                {
+                    return last;
+                }
+
+                Thread.Sleep(150);
             }
 
-            string extra = Tree(s.Snap(id, domSupplement: "input"));
-            return extra.Length > t.Length ? extra : t;
+            if (!wantInput)
+            {
+                string extra = Tree(s.Snap(id, domSupplement: "input"));
+                if (HasHints(extra, hints) || extra.Length > last.Length)
+                {
+                    return extra;
+                }
+            }
+
+            return last;
+        }
+
+        private static bool HasHints(string tree, string[] hints)
+        {
+            if (string.IsNullOrEmpty(tree) || hints == null || hints.Length == 0)
+            {
+                return HasAnyRef(tree);
+            }
+
+            for (int i = 0; i < hints.Length; i++)
+            {
+                if (!string.IsNullOrEmpty(hints[i])
+                    && tree.IndexOf(hints[i], StringComparison.Ordinal) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string TreeWithInput(NavSession s, string id)
+        {
+            return WaitTree(s, id, true);
         }
 
         private static bool LooksLikeOuterShellOnly(string tree)

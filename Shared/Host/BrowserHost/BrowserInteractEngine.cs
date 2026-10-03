@@ -582,6 +582,21 @@ namespace WordAddIn1.BrowserHost
                 }
             }
 
+            if (string.Equals(kind, "week", StringComparison.OrdinalIgnoreCase))
+            {
+                Match w = Regex.Match(raw, @"^(\d{4})-W(\d{1,2})$", RegexOptions.IgnoreCase);
+                if (w.Success)
+                {
+                    int ww;
+                    if (int.TryParse(w.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out ww)
+                        && ww >= 1
+                        && ww <= 53)
+                    {
+                        return w.Groups[1].Value + "-W" + ww.ToString("00", CultureInfo.InvariantCulture);
+                    }
+                }
+            }
+
             if (string.Equals(kind, "time", StringComparison.OrdinalIgnoreCase))
             {
                 Match tm = Regex.Match(raw, @"^(\d{1,2}):(\d{2})(?::(\d{2}))?$");
@@ -626,6 +641,18 @@ namespace WordAddIn1.BrowserHost
                     out value);
         }
 
+        private static string FormatIsoWeek(DateTime date)
+        {
+            int offset = ((int)date.DayOfWeek + 6) % 7;
+            DateTime thursday = date.AddDays(3 - offset);
+            int week = CultureInfo.InvariantCulture.Calendar.GetWeekOfYear(
+                thursday,
+                CalendarWeekRule.FirstFourDayWeek,
+                DayOfWeek.Monday);
+            return thursday.Year.ToString("0000", CultureInfo.InvariantCulture)
+                + "-W" + week.ToString("00", CultureInfo.InvariantCulture);
+        }
+
         private static int SafeDay(int year, int month, int day)
         {
             int max = DateTime.DaysInMonth(year, month);
@@ -642,6 +669,11 @@ namespace WordAddIn1.BrowserHost
             if (string.Equals(kind, "month", StringComparison.OrdinalIgnoreCase))
             {
                 return date.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+            }
+
+            if (string.Equals(kind, "week", StringComparison.OrdinalIgnoreCase))
+            {
+                return FormatIsoWeek(date);
             }
 
             if (string.Equals(kind, "time", StringComparison.OrdinalIgnoreCase))
