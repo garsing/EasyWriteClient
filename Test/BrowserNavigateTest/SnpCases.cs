@@ -8,10 +8,13 @@ namespace BrowserNavigateTest
 {
     internal static class SnpCases
     {
-        public static void Run(TestRun run, FixtureHttp http, bool attach, int chromeBefore, int edgeBefore)
+        public static void Run(TestRun run, FixtureHttp http, string navHost, int chromeBefore, int edgeBefore)
         {
             var s = new NavSession();
-            string navHost = attach ? "chrome" : "yiwrite";
+            if (string.IsNullOrEmpty(navHost))
+            {
+                navHost = "yiwrite";
+            }
             RunNeg(run, s, http, navHost);
             RunOverview(run, s, http, navHost);
             RunRealSlim(run, s, http, navHost);
@@ -162,7 +165,8 @@ namespace BrowserNavigateTest
 
         private static void RunHidden(TestRun run, NavSession s, FixtureHttp http)
         {
-            ToolResult n = s.Nav(http.Url("iframe", "outer.html"), host: "yiwrite", visible: false);
+            object vis = IntCases.IsAttachHost() ? true : (object)false;
+            ToolResult n = s.Nav(http.Url("iframe", "outer.html"), host: IntCases.NavHost, visible: vis);
             if (!n.Success)
             {
                 run.CaseFail("snp-ov-hidden", n.Error ?? "打开失败");

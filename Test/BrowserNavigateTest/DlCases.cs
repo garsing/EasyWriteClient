@@ -76,7 +76,7 @@ namespace BrowserNavigateTest
                 }
                 else
                 {
-                    ToolResult jump = s.Nav(http.Url("public-example", "index.html"), host: "yiwrite", channelId: id);
+                    ToolResult jump = s.Nav(http.Url("public-example", "index.html"), host: IntCases.NavHost, channelId: id);
                     if (!jump.Success)
                     {
                         run.CaseFail("dl-neg-stale-ref", jump.Error ?? "跳转失败");

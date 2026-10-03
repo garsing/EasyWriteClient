@@ -24,13 +24,7 @@ namespace BrowserNavigateTest
             bool runSnp = !runInt && !runNav && !runTab && !runDl && !runShot;
 
             string host = GetHost(args);
-            if ((runInt || runTab || runDl || runShot) && string.Equals(host, "attach", StringComparison.OrdinalIgnoreCase))
-            {
-                Console.WriteLine(
-                    (runShot ? "可视区截图" : (runDl ? "download" : (runTab ? "中间栏" : "interact")))
-                    + " 本波只测 agent，忽略 --host=attach");
-                host = "agent";
-            }
+            IntCases.NavHost = host;
 
             Console.WriteLine(
                 runShot
@@ -44,9 +38,11 @@ namespace BrowserNavigateTest
                                 : (runSnp ? "浏览器 snapshot + iframe（snp-）" : "浏览器 渠道 + navigate（nav-）")))));
             Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
             Console.WriteLine(
-                string.Equals(host, "attach", StringComparison.OrdinalIgnoreCase)
-                    ? "宿主 attach · Chrome / Edge 扩展"
-                    : "宿主 agent · 易写 WebView2");
+                host == "chrome"
+                    ? "宿主 attach · Chrome 扩展"
+                    : (host == "edge"
+                        ? "宿主 attach · Edge 扩展"
+                        : "宿主 agent · 易写 WebView2"));
             Console.WriteLine();
 
             if (!DesktopToolPipe.TryWaitUntilAvailable(8000))
@@ -101,7 +97,7 @@ namespace BrowserNavigateTest
                     SnpCases.Run(
                         run,
                         http,
-                        string.Equals(host, "attach", StringComparison.OrdinalIgnoreCase),
+                        host,
                         chromeBefore,
                         edgeBefore);
                 }
@@ -140,12 +136,17 @@ namespace BrowserNavigateTest
         private static string GetHost(string[] args)
         {
             string v = GetArg(args, "--host=");
-            if (v == "attach" || v == "chrome" || v == "edge")
+            if (v == "edge")
             {
-                return "attach";
+                return "edge";
             }
 
-            return "agent";
+            if (v == "attach" || v == "chrome")
+            {
+                return "chrome";
+            }
+
+            return "yiwrite";
         }
 
         private static int CountProc(string name)

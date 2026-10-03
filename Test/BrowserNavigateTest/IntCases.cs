@@ -7,9 +7,18 @@ using WordAddIn1;
 
 namespace BrowserNavigateTest
 {
-    /// <summary>第 3 波 interact，只测 agent。</summary>
+    /// <summary>第 3 波 interact。开页宿主见 <see cref="NavHost"/>。</summary>
     internal static partial class IntCases
     {
+        /// <summary>yiwrite / chrome / edge。attach 不能隐身，OpenOk 会把 visible=false 改成可见。</summary>
+        internal static string NavHost = "yiwrite";
+
+        internal static bool IsAttachHost()
+        {
+            return string.Equals(NavHost, "chrome", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(NavHost, "edge", StringComparison.OrdinalIgnoreCase);
+        }
+
         public static void Run(TestRun run, FixtureHttp http, int chromeBefore, int edgeBefore) // 不关用户 Chrome/Edge
         {
             var s = new NavSession();
@@ -111,7 +120,7 @@ namespace BrowserNavigateTest
             {
             string staleTree = WaitTree(s, staleId, false, "普通按钮");
             string oldRef = FindRef(staleTree, "普通按钮");
-            ToolResult jump = s.Nav(http.Url("public-example", "index.html"), host: "yiwrite", channelId: staleId);
+            ToolResult jump = s.Nav(http.Url("public-example", "index.html"), host: NavHost, channelId: staleId);
             if (!jump.Success)
             {
                 run.CaseFail("int-neg-stale-ref", jump.Error ?? "跳转失败");
@@ -814,7 +823,13 @@ namespace BrowserNavigateTest
             string failId,
             object visible = null)
         {
-            ToolResult r = s.Nav(url, host: "yiwrite", visible: visible);
+            object vis = visible;
+            if (IsAttachHost() && visible is bool && !(bool)visible)
+            {
+                vis = true;
+            }
+
+            ToolResult r = s.Nav(url, host: NavHost, visible: vis);
             if (r.Success && NavSession.IsShortId(Str(r, "channel_id")))
             {
                 return Str(r, "channel_id");

@@ -423,7 +423,7 @@ namespace BrowserNavigateTest
                 if (staleId != null)
                 {
                     string oldBox = FindRef(WaitTree(s, staleId, false, "普通按钮"), "普通按钮");
-                    s.Nav(http.Url("public-example", "index.html"), host: "yiwrite", channelId: staleId);
+                    s.Nav(http.Url("public-example", "index.html"), host: NavHost, channelId: staleId);
                     ToolResult stale = s.Interact(staleId, "type", oldBox, text: "x");
                     Ok(run, "int-neg-type-stale", stale != null && !stale.Success, stale != null && stale.Success ? "跳转后旧 eN 仍能 type" : stale?.Error);
                 }
