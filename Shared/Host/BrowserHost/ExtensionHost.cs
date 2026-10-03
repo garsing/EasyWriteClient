@@ -85,6 +85,26 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
+        public static string GetAttachBrowserKind(string tabUuid)
+        {
+            if (string.IsNullOrWhiteSpace(tabUuid))
+            {
+                return "chrome";
+            }
+
+            lock (Gate)
+            {
+                if (Tabs.TryGetValue(tabUuid.Trim(), out AttachTabInfo info)
+                    && info != null
+                    && !string.IsNullOrWhiteSpace(info.Browser))
+                {
+                    return info.Browser.Trim().ToLowerInvariant();
+                }
+            }
+
+            return "chrome";
+        }
+
         public static bool TryActivateAttachTab(string tabUuid)
         {
             // 不置顶窗口；切标签在各 RPC 内由扩展完成
@@ -916,6 +936,7 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
+                string engine = GetAttachBrowserKind(channel.TabUuid);
                 var req = new JObject
                 {
                     ["tab_uuid"] = channel.TabUuid,
@@ -927,8 +948,8 @@ namespace WordAddIn1.BrowserHost
                     ["option"] = option,
                     ["frame_id"] = entry != null ? entry.AttachFrameId : null,
                     ["css_path"] = entry != null ? entry.AttachCssPath : null,
-                    ["click_mode"] = ConfigManager.GetBrowserClickMode(),
-                    ["attach_pointer"] = ConfigManager.GetBrowserAttachPointer()
+                    ["click_mode"] = ConfigManager.GetBrowserClickMode(engine),
+                    ["attach_pointer"] = ConfigManager.GetBrowserAttachPointer(engine)
                 };
                 JObject result = await RpcAsync(channel.TabUuid, "rpc.interact", req).ConfigureAwait(true);
                 TryLogAttachClickDiag(refId, entry, req, result);
@@ -1044,6 +1065,7 @@ namespace WordAddIn1.BrowserHost
                         .ConfigureAwait(true);
                 }
 
+                string engine = GetAttachBrowserKind(channel.TabUuid);
                 JObject result = await RpcAsync(
                     channel.TabUuid,
                     "rpc.download",
@@ -1053,8 +1075,8 @@ namespace WordAddIn1.BrowserHost
                         ["ref"] = refId,
                         ["frame_id"] = entry.AttachFrameId,
                         ["css_path"] = entry.AttachCssPath,
-                        ["click_mode"] = ConfigManager.GetBrowserClickMode(),
-                        ["attach_pointer"] = ConfigManager.GetBrowserAttachPointer()
+                        ["click_mode"] = ConfigManager.GetBrowserClickMode(engine),
+                        ["attach_pointer"] = ConfigManager.GetBrowserAttachPointer(engine)
                     }).ConfigureAwait(true);
 
                 BrowserDownloadFileResult imported = await ImportDownloadedFileAsync(result).ConfigureAwait(true);

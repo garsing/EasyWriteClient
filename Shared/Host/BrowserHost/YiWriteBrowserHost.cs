@@ -866,7 +866,7 @@ namespace WordAddIn1.BrowserHost
                             form,
                             entry.BackendDomNodeId.Value,
                             sessionId,
-                            ConfigManager.GetBrowserClickMode(),
+                            ConfigManager.GetBrowserClickMode("yiwrite"),
                             entry.Role)
                         .ConfigureAwait(true);
                 }
@@ -1128,7 +1128,8 @@ namespace WordAddIn1.BrowserHost
                                     form,
                                     entry.BackendDomNodeId.Value,
                                     entry.CdpSessionId,
-                                    wait)
+                                    wait,
+                                    "yiwrite")
                                 .ConfigureAwait(true);
                         }
                         catch (InvalidOperationException ex)

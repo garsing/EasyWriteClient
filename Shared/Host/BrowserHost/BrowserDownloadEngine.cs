@@ -87,7 +87,8 @@ namespace WordAddIn1.BrowserHost
             YiWriteBrowserForm form,
             int backendNodeId,
             string sessionId = null,
-            TimeSpan? timeout = null)
+            TimeSpan? timeout = null,
+            string engine = null)
         {
             EnsureWorkspaceReady();
 
@@ -96,7 +97,7 @@ namespace WordAddIn1.BrowserHost
             try
             {
                 await BrowserInteractEngine
-                    .ClickAsync(form, backendNodeId, sessionId, ConfigManager.GetBrowserClickMode())
+                    .ClickAsync(form, backendNodeId, sessionId, ConfigManager.GetBrowserClickMode(engine))
                     .ConfigureAwait(true);
             }
             catch

@@ -123,8 +123,18 @@ namespace WordAddIn1
             }
         }
 
-        /// <summary>浏览器指针。缺省 / 非法值：ClickMode=pointer，AttachPointer=synthetic。</summary>
+        /// <summary>浏览器指针。顶层为缺省；YiWrite / Chrome / Edge 可分开覆盖。</summary>
         public class BrowserSettings
+        {
+            public string ClickMode { get; set; }
+            public string AttachPointer { get; set; }
+            public BrowserEngineSettings YiWrite { get; set; }
+            public BrowserEngineSettings Chrome { get; set; }
+            public BrowserEngineSettings Edge { get; set; }
+        }
+
+        /// <summary>单个浏览器引擎的点法。字段空则继承 Browser 顶层。</summary>
+        public class BrowserEngineSettings
         {
             public string ClickMode { get; set; }
             public string AttachPointer { get; set; }
@@ -263,11 +273,7 @@ namespace WordAddIn1
 
             if (config.Browser == null)
             {
-                config.Browser = new AppConfig.BrowserSettings
-                {
-                    ClickMode = "pointer",
-                    AttachPointer = "synthetic"
-                };
+                config.Browser = CreateDefaultBrowserSettings();
             }
             else
             {
@@ -382,24 +388,90 @@ namespace WordAddIn1
                     Mode = "sessions"
                 },
                 OpenFiles = CreateDefaultOpenFilesSettings(),
-                Browser = new AppConfig.BrowserSettings
+                Browser = CreateDefaultBrowserSettings()
+            };
+        }
+
+        internal static AppConfig.BrowserSettings CreateDefaultBrowserSettings()
+        {
+            return new AppConfig.BrowserSettings
+            {
+                ClickMode = "pointer",
+                AttachPointer = "synthetic",
+                YiWrite = new AppConfig.BrowserEngineSettings
+                {
+                    ClickMode = "pointer"
+                },
+                Chrome = new AppConfig.BrowserEngineSettings
                 {
                     ClickMode = "pointer",
-                    AttachPointer = "synthetic"
+                    AttachPointer = "cdp"
+                },
+                Edge = new AppConfig.BrowserEngineSettings
+                {
+                    ClickMode = "pointer",
+                    AttachPointer = "cdp"
                 }
             };
         }
 
-        /// <summary>click 点法。缺省 / 非法 = pointer。模型不可见。</summary>
-        public static string GetBrowserClickMode()
+        /// <summary>click 点法。engine = yiwrite / chrome / edge；缺省 / 非法 = pointer。模型不可见。</summary>
+        public static string GetBrowserClickMode(string engine = null)
         {
+            AppConfig.BrowserEngineSettings row = GetBrowserEngineSettings(engine);
+            if (row != null && !string.IsNullOrWhiteSpace(row.ClickMode))
+            {
+                return NormalizeBrowserClickMode(row.ClickMode);
+            }
+
             return NormalizeBrowserClickMode(Config?.Browser?.ClickMode);
         }
 
-        /// <summary>attach 指针通道。缺省 / 非法 = synthetic。模型不可见。</summary>
-        public static string GetBrowserAttachPointer()
+        /// <summary>attach 指针通道。仅 chrome / edge 有意义。缺省 / 非法 = synthetic。模型不可见。</summary>
+        public static string GetBrowserAttachPointer(string engine = null)
         {
+            AppConfig.BrowserEngineSettings row = GetBrowserEngineSettings(engine);
+            if (row != null && !string.IsNullOrWhiteSpace(row.AttachPointer))
+            {
+                return NormalizeBrowserAttachPointer(row.AttachPointer);
+            }
+
             return NormalizeBrowserAttachPointer(Config?.Browser?.AttachPointer);
+        }
+
+        public static string NormalizeBrowserEngine(string engine)
+        {
+            string v = (engine ?? "").Trim().ToLowerInvariant();
+            if (v == "chrome")
+            {
+                return "chrome";
+            }
+
+            if (v == "edge" || v == "msedge")
+            {
+                return "edge";
+            }
+
+            return "yiwrite";
+        }
+
+        private static AppConfig.BrowserEngineSettings GetBrowserEngineSettings(string engine)
+        {
+            var browser = Config?.Browser;
+            if (browser == null)
+            {
+                return null;
+            }
+
+            switch (NormalizeBrowserEngine(engine))
+            {
+                case "chrome":
+                    return browser.Chrome;
+                case "edge":
+                    return browser.Edge;
+                default:
+                    return browser.YiWrite;
+            }
         }
 
         public static string NormalizeBrowserClickMode(string value)
