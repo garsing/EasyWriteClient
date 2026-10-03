@@ -72,12 +72,21 @@ namespace BrowserNavigateTest
             return DesktopToolPipe.Call("F_browser_snapshot", args);
         }
 
-        public ToolResult Interact(string channelId, string action, string refId)
+        public ToolResult Interact(
+            string channelId = null,
+            string action = null,
+            string refId = null,
+            string text = null,
+            string key = null,
+            string option = null,
+            string direction = null)
         {
-            var args = new Dictionary<string, object>
+            var args = new Dictionary<string, object>();
+            if (action != null)
             {
-                ["action"] = action ?? "click"
-            };
+                args["action"] = action;
+            }
+
             if (channelId != null)
             {
                 args["channel_id"] = channelId;
@@ -86,6 +95,26 @@ namespace BrowserNavigateTest
             if (refId != null)
             {
                 args["ref"] = refId;
+            }
+
+            if (text != null)
+            {
+                args["text"] = text;
+            }
+
+            if (key != null)
+            {
+                args["key"] = key;
+            }
+
+            if (option != null)
+            {
+                args["option"] = option;
+            }
+
+            if (direction != null)
+            {
+                args["direction"] = direction;
             }
 
             return DesktopToolPipe.Call("F_browser_interact", args);

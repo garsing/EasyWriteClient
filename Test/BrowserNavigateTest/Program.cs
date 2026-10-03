@@ -16,12 +16,21 @@ namespace BrowserNavigateTest
             }
 
             string caseFilter = GetArg(args, "--case=");
-            bool runSnp = string.IsNullOrEmpty(caseFilter)
-                || caseFilter.StartsWith("snp-", StringComparison.OrdinalIgnoreCase);
+            bool runInt = caseFilter.StartsWith("int-", StringComparison.OrdinalIgnoreCase);
             bool runNav = caseFilter.StartsWith("nav-", StringComparison.OrdinalIgnoreCase);
+            bool runSnp = !runInt && !runNav;
 
             string host = GetHost(args);
-            Console.WriteLine(runSnp ? "浏览器 snapshot + iframe（snp-）" : "浏览器 渠道 + navigate（nav-）");
+            if (runInt && string.Equals(host, "attach", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("interact 本波只测 agent，忽略 --host=attach");
+                host = "agent";
+            }
+
+            Console.WriteLine(
+                runInt
+                    ? "浏览器 interact（int-）"
+                    : (runSnp ? "浏览器 snapshot + iframe（snp-）" : "浏览器 渠道 + navigate（nav-）"));
             Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
             Console.WriteLine(
                 string.Equals(host, "attach", StringComparison.OrdinalIgnoreCase)
@@ -39,7 +48,14 @@ namespace BrowserNavigateTest
             int edgeBefore = CountProc("msedge");
             var run = new TestRun();
             var sw = Stopwatch.StartNew();
-            if (runNav)
+            if (runInt)
+            {
+                using (var http = new FixtureHttp())
+                {
+                    IntCases.Run(run, http, chromeBefore, edgeBefore);
+                }
+            }
+            else if (runNav)
             {
                 using (var http = new NavHttp())
                 {
@@ -60,7 +76,7 @@ namespace BrowserNavigateTest
             }
 
             sw.Stop();
-            int target = runSnp ? 46 : 30;
+            int target = runInt ? 59 : (runSnp ? 46 : 30);
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
