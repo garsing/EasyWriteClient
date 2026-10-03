@@ -29,6 +29,7 @@ namespace BrowserNavigateTest
             _roots["overflow-scroll"] = Path.Combine(repo, "tests", "overflow-scroll");
             _roots["d18-risk"] = Path.Combine(repo, "tests", "d18-risk");
             _roots["form-controls"] = Path.Combine(repo, "tests", "form-controls");
+            _roots["form-extra"] = Path.Combine(repo, "tests", "form-extra");
             _roots["public-example"] = Path.Combine(repo, "tests", "public-example");
             _roots["real"] = Path.Combine(
                 repo, "docs", "测试", "浏览器测试", "snapshot与iframe", "真实html");

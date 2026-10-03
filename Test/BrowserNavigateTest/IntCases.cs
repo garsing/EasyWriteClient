@@ -8,7 +8,7 @@ using WordAddIn1;
 namespace BrowserNavigateTest
 {
     /// <summary>第 3 波 interact，只测 agent。</summary>
-    internal static class IntCases
+    internal static partial class IntCases
     {
         public static void Run(TestRun run, FixtureHttp http, int chromeBefore, int edgeBefore) // 不关用户 Chrome/Edge
         {
@@ -22,6 +22,7 @@ namespace BrowserNavigateTest
             RunPress(run, s, http);
             RunSelect(run, s, http);
             RunForm(run, s, http);
+            RunExtra(run, s, http);
             int chromeNow = CountProc("chrome");
             int edgeNow = CountProc("msedge");
             if (chromeNow < chromeBefore || edgeNow < edgeBefore)
@@ -33,7 +34,7 @@ namespace BrowserNavigateTest
             }
         }
 
-        private static void RunNeg(TestRun run, NavSession s, FixtureHttp http)
+        internal static void RunNeg(TestRun run, NavSession s, FixtureHttp http)
         {
             ExpectFail(run, "int-neg-no-action", s.Interact(channelId: "b1"), "action");
             string id = OpenOk(run, s, http.Url("overlay-cookie", "index.html"), "int-neg-bad-action");
@@ -152,7 +153,7 @@ namespace BrowserNavigateTest
             ExpectFail(run, "int-neg-hover-iframe", s.Interact(ifr, "hover", frameRef), "click");
         }
 
-        private static void RunD18(TestRun run, NavSession s, FixtureHttp http)
+        internal static void RunD18(TestRun run, NavSession s, FixtureHttp http)
         {
             string id = OpenOk(run, s, http.Url("d18-risk", "index.html"), "int-d18-type-password");
             if (id == null)
@@ -218,7 +219,7 @@ namespace BrowserNavigateTest
             }
         }
 
-        private static void RunClick(TestRun run, NavSession s, FixtureHttp http)
+        internal static void RunClick(TestRun run, NavSession s, FixtureHttp http)
         {
             string id = OpenOk(run, s, http.Url("overlay-cookie", "index.html"), "int-click-plain");
             if (id == null)
@@ -431,7 +432,7 @@ namespace BrowserNavigateTest
             }
         }
 
-        private static void RunHover(TestRun run, NavSession s, FixtureHttp http)
+        internal static void RunHover(TestRun run, NavSession s, FixtureHttp http)
         {
             string id = OpenOk(run, s, http.Url("hover-card", "index.html"), "int-hover-card");
             if (id == null)
@@ -450,7 +451,7 @@ namespace BrowserNavigateTest
                 hv == null ? "无卡片 ref" : (hv.Error ?? "hover 后树对不上"));
         }
 
-        private static void RunType(TestRun run, NavSession s, FixtureHttp http)
+        internal static void RunType(TestRun run, NavSession s, FixtureHttp http)
         {
             string id = OpenOk(run, s, http.Url("native-select", "index.html"), "int-type-input");
             if (id == null)
@@ -507,7 +508,7 @@ namespace BrowserNavigateTest
                 run, s, dis, "int-type-aria-disabled", FindRef(dt, "无障碍禁用"), "type", "改", "不可编辑");
         }
 
-        private static void RunScroll(TestRun run, NavSession s, FixtureHttp http)
+        internal static void RunScroll(TestRun run, NavSession s, FixtureHttp http)
         {
             string id = OpenOk(run, s, http.Url("overflow-scroll", "index.html"), "int-scroll-window");
             if (id == null)
@@ -546,7 +547,7 @@ namespace BrowserNavigateTest
                 clk.Success ? "滚了但点不到底项" : clk.Error);
         }
 
-        private static void RunPress(TestRun run, NavSession s, FixtureHttp http)
+        internal static void RunPress(TestRun run, NavSession s, FixtureHttp http)
         {
             string id = OpenOk(run, s, http.Url("native-select", "index.html"), "int-press-enter-search");
             if (id == null)
@@ -573,7 +574,7 @@ namespace BrowserNavigateTest
             Ok(run, "int-press-tab", tab.Success, tab.Error);
         }
 
-        private static void RunSelect(TestRun run, NavSession s, FixtureHttp http)
+        internal static void RunSelect(TestRun run, NavSession s, FixtureHttp http)
         {
             string id = OpenOk(run, s, http.Url("native-select", "index.html"), "int-select-text");
             if (id == null)
@@ -619,7 +620,7 @@ namespace BrowserNavigateTest
             Ok(run, "int-select-hidden", hs != null && hs.Success, hs == null ? "无 ref" : hs.Error);
         }
 
-        private static void RunForm(TestRun run, NavSession s, FixtureHttp http)
+        internal static void RunForm(TestRun run, NavSession s, FixtureHttp http)
         {
             string id = OpenOk(run, s, http.Url("form-controls", "index.html"), "int-type-date-iso");
             if (id == null)
@@ -688,7 +689,7 @@ namespace BrowserNavigateTest
             TypeValue(run, s, id, ref tree, "int-type-number", FindRef(tree, "份数"), "3", "3");
         }
 
-        private static void TypeValue(
+        internal static void TypeValue(
             TestRun run,
             NavSession s,
             string id,
@@ -714,7 +715,7 @@ namespace BrowserNavigateTest
             }
         }
 
-        private static void ClickStatus(
+        internal static void ClickStatus(
             TestRun run,
             NavSession s,
             string id,
@@ -741,21 +742,21 @@ namespace BrowserNavigateTest
             }
         }
 
-        private static string DateHint(string tree)
+        internal static string DateHint(string tree)
         {
             return FindRef(tree, "立项日")
                 ?? FindTemporal(tree, "年")
                 ?? FindTemporal(tree, "日");
         }
 
-        private static string FindTemporal(string tree, string hint)
+        internal static string FindTemporal(string tree, string hint)
         {
             return FindRef(tree, hint, "spinbutton")
                 ?? FindRef(tree, hint, "textbox")
                 ?? FindRef(tree, hint);
         }
 
-        private static void ExpectFailAndUnchanged(
+        internal static void ExpectFailAndUnchanged(
             TestRun run,
             NavSession s,
             string id,
@@ -780,7 +781,7 @@ namespace BrowserNavigateTest
                 r != null && r.Success ? "应失败却成功" : (r?.Error ?? "无回包"));
         }
 
-        private static void ExpectFailKeep(
+        internal static void ExpectFailKeep(
             TestRun run,
             NavSession s,
             string id,
@@ -806,7 +807,7 @@ namespace BrowserNavigateTest
             run.CaseFail(caseId, r != null && r.Success ? "应失败却成功" : (r?.Error ?? "无回包"));
         }
 
-        private static string OpenOk(
+        internal static string OpenOk(
             TestRun run,
             NavSession s,
             string url,
@@ -823,7 +824,7 @@ namespace BrowserNavigateTest
             return null;
         }
 
-        private static string WaitTree(NavSession s, string id, bool wantInput, params string[] hints)
+        internal static string WaitTree(NavSession s, string id, bool wantInput, params string[] hints)
         {
             string last = "";
             for (int i = 0; i < 8; i++)
@@ -849,7 +850,7 @@ namespace BrowserNavigateTest
             return last;
         }
 
-        private static bool HasHints(string tree, string[] hints)
+        internal static bool HasHints(string tree, string[] hints)
         {
             if (string.IsNullOrEmpty(tree) || hints == null || hints.Length == 0)
             {
@@ -868,12 +869,12 @@ namespace BrowserNavigateTest
             return false;
         }
 
-        private static string TreeWithInput(NavSession s, string id)
+        internal static string TreeWithInput(NavSession s, string id)
         {
             return WaitTree(s, id, true);
         }
 
-        private static bool LooksLikeOuterShellOnly(string tree)
+        internal static bool LooksLikeOuterShellOnly(string tree)
         {
             if (string.IsNullOrEmpty(tree))
             {
@@ -885,7 +886,7 @@ namespace BrowserNavigateTest
                 && tree.IndexOf("评教结果", StringComparison.Ordinal) < 0;
         }
 
-        private static bool HasLeak(ToolResult r)
+        internal static bool HasLeak(ToolResult r)
         {
             string dump = Tree(r);
             Dictionary<string, object> d = Data(r);
@@ -900,7 +901,7 @@ namespace BrowserNavigateTest
                 || dump.IndexOf("<html", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private static void Ok(TestRun run, string id, bool pass, string reason)
+        internal static void Ok(TestRun run, string id, bool pass, string reason)
         {
             if (pass)
             {
@@ -912,7 +913,7 @@ namespace BrowserNavigateTest
             }
         }
 
-        private static void FailMany(TestRun run, string reason, params string[] ids)
+        internal static void FailMany(TestRun run, string reason, params string[] ids)
         {
             for (int i = 0; i < ids.Length; i++)
             {
@@ -920,7 +921,7 @@ namespace BrowserNavigateTest
             }
         }
 
-        private static void ExpectFail(TestRun run, string id, ToolResult r, string mustContain)
+        internal static void ExpectFail(TestRun run, string id, ToolResult r, string mustContain)
         {
             if (r != null && !r.Success)
             {
@@ -939,7 +940,7 @@ namespace BrowserNavigateTest
             run.CaseFail(id, r != null && r.Success ? "应失败却成功" : "无回包");
         }
 
-        private static bool ContainsAny(string text, params string[] parts)
+        internal static bool ContainsAny(string text, params string[] parts)
         {
             if (string.IsNullOrEmpty(text) || parts == null)
             {
@@ -958,12 +959,12 @@ namespace BrowserNavigateTest
             return false;
         }
 
-        private static Dictionary<string, object> Data(ToolResult r)
+        internal static Dictionary<string, object> Data(ToolResult r)
         {
             return r?.Data as Dictionary<string, object>;
         }
 
-        private static string Str(ToolResult r, string key)
+        internal static string Str(ToolResult r, string key)
         {
             Dictionary<string, object> d = Data(r);
             if (d == null || !d.ContainsKey(key) || d[key] == null)
@@ -974,7 +975,7 @@ namespace BrowserNavigateTest
             return Convert.ToString(d[key]) ?? "";
         }
 
-        private static bool Flag(ToolResult r, string key)
+        internal static bool Flag(ToolResult r, string key)
         {
             Dictionary<string, object> d = Data(r);
             if (d == null || !d.ContainsKey(key) || d[key] == null)
@@ -993,17 +994,17 @@ namespace BrowserNavigateTest
                 || string.Equals(s, "true", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static string Tree(ToolResult r)
+        internal static string Tree(ToolResult r)
         {
             return Str(r, "snapshot");
         }
 
-        private static bool HasAnyRef(string tree)
+        internal static bool HasAnyRef(string tree)
         {
             return Regex.IsMatch(tree ?? "", @"ref=e\d+");
         }
 
-        private static string FindRef(string tree, string hint, string preferRole = null)
+        internal static string FindRef(string tree, string hint, string preferRole = null)
         {
             if (string.IsNullOrEmpty(tree) || string.IsNullOrEmpty(hint))
             {
@@ -1039,7 +1040,7 @@ namespace BrowserNavigateTest
             return fallback;
         }
 
-        private static string FindIframeRef(string tree)
+        internal static string FindIframeRef(string tree)
         {
             foreach (string line in (tree ?? "").Split('\n'))
             {
@@ -1058,7 +1059,7 @@ namespace BrowserNavigateTest
             return null;
         }
 
-        private static int CountProc(string name)
+        internal static int CountProc(string name)
         {
             try
             {
