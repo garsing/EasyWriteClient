@@ -26,12 +26,17 @@ namespace WordAddIn1.BrowserHost
                 return BrowserSnapshotResult.Fail("通道无效。");
             }
 
-            if (string.Equals(channel.Track, "attach", StringComparison.OrdinalIgnoreCase))
+            BrowserOpMode mode = BrowserOpMode.Resolve(channel);
+            if (mode.IsPointer)
             {
-                return await ExtensionHost.SnapshotLayerAsync(channel, layer).ConfigureAwait(true);
+                return mode.IsAttach
+                    ? await AttachPointerHost.SnapshotLayerAsync(channel, layer).ConfigureAwait(true)
+                    : await YiWriteBrowserHost.SnapshotLayerAsync(channel, layer).ConfigureAwait(true);
             }
 
-            return await YiWriteBrowserHost.SnapshotLayerAsync(channel, layer).ConfigureAwait(true);
+            return mode.IsAttach
+                ? await ExtensionHost.SnapshotLayerAsync(channel, layer).ConfigureAwait(true)
+                : await AgentLegacyHost.SnapshotLayerAsync(channel, layer).ConfigureAwait(true);
         }
 
         public static async Task<BrowserInteractResult> CompleteInteractAsync(

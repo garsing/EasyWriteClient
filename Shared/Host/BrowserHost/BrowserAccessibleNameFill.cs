@@ -40,11 +40,11 @@ namespace WordAddIn1.BrowserHost
 }";
 
         public static async Task FillEmptyAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             BrowserAxBuildResult built,
             string sessionId)
         {
-            if (form == null || built == null || built.Refs == null || built.Refs.Count == 0)
+            if (cdp == null || built == null || built.Refs == null || built.Refs.Count == 0)
             {
                 return;
             }
@@ -74,10 +74,10 @@ namespace WordAddIn1.BrowserHost
                 try
                 {
                     string objectId = await BrowserInteractEngine
-                        .ResolveObjectIdAsync(form, e.BackendDomNodeId.Value, sid)
+                        .ResolveObjectIdAsync(cdp, e.BackendDomNodeId.Value, sid)
                         .ConfigureAwait(true);
                     string json = await BrowserInteractEngine
-                        .CallFunctionOnAsync(form, objectId, ReadNameJs, null, sid)
+                        .CallFunctionOnAsync(cdp, objectId, ReadNameJs, null, sid)
                         .ConfigureAwait(true);
                     string name = ReadReturnedString(json);
                     if (string.IsNullOrWhiteSpace(name))
@@ -147,11 +147,11 @@ namespace WordAddIn1.BrowserHost
 }";
 
         public static async Task FillSelectHintsAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             BrowserAxBuildResult built,
             string sessionId)
         {
-            if (form == null || built == null || built.Refs == null || string.IsNullOrEmpty(built.TreeText))
+            if (cdp == null || built == null || built.Refs == null || string.IsNullOrEmpty(built.TreeText))
             {
                 return;
             }
@@ -184,10 +184,10 @@ namespace WordAddIn1.BrowserHost
                 try
                 {
                     string objectId = await BrowserInteractEngine
-                        .ResolveObjectIdAsync(form, e.BackendDomNodeId.Value, sid)
+                        .ResolveObjectIdAsync(cdp, e.BackendDomNodeId.Value, sid)
                         .ConfigureAwait(true);
                     string json = await BrowserInteractEngine
-                        .CallFunctionOnAsync(form, objectId, ReadSelectOptionsJs, null, sid)
+                        .CallFunctionOnAsync(cdp, objectId, ReadSelectOptionsJs, null, sid)
                         .ConfigureAwait(true);
                     string opts = ReadReturnedString(json);
                     if (string.IsNullOrWhiteSpace(opts))
@@ -229,11 +229,11 @@ namespace WordAddIn1.BrowserHost
 }";
 
         public static async Task FillTemporalValuesAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             BrowserAxBuildResult built,
             string sessionId)
         {
-            if (form == null || built == null || built.Refs == null || string.IsNullOrEmpty(built.TreeText))
+            if (cdp == null || built == null || built.Refs == null || string.IsNullOrEmpty(built.TreeText))
             {
                 return;
             }
@@ -267,10 +267,10 @@ namespace WordAddIn1.BrowserHost
                 try
                 {
                     string objectId = await BrowserInteractEngine
-                        .ResolveObjectIdAsync(form, e.BackendDomNodeId.Value, sid)
+                        .ResolveObjectIdAsync(cdp, e.BackendDomNodeId.Value, sid)
                         .ConfigureAwait(true);
                     string json = await BrowserInteractEngine
-                        .CallFunctionOnAsync(form, objectId, ReadTemporalValueJs, null, sid)
+                        .CallFunctionOnAsync(cdp, objectId, ReadTemporalValueJs, null, sid)
                         .ConfigureAwait(true);
                     string val = ReadReturnedString(json);
                     if (string.IsNullOrWhiteSpace(val))

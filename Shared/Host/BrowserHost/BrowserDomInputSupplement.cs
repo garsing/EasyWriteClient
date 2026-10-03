@@ -72,11 +72,11 @@ namespace WordAddIn1.BrowserHost
         }
 
         public static async Task MergeAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             BrowserAxBuildResult built,
             string domSupplementSpec)
         {
-            if (form == null || built == null || !built.Success || built.Refs == null)
+            if (cdp == null || built == null || !built.Success || built.Refs == null)
             {
                 return;
             }
@@ -93,7 +93,7 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
-                string docJson = await form.CallCdpAsync(
+                string docJson = await cdp.CallCdpAsync(
                     "DOM.getDocument",
                     "{\"depth\":0,\"pierce\":true}").ConfigureAwait(true);
                 var doc = JObject.Parse(docJson);
@@ -108,7 +108,7 @@ namespace WordAddIn1.BrowserHost
                     ["nodeId"] = rootId,
                     ["selector"] = selector
                 };
-                string qsJson = await form.CallCdpAsync(
+                string qsJson = await cdp.CallCdpAsync(
                     "DOM.querySelectorAll",
                     qsPayload.ToString(Newtonsoft.Json.Formatting.None)).ConfigureAwait(true);
                 var qs = JObject.Parse(qsJson);
@@ -163,7 +163,7 @@ namespace WordAddIn1.BrowserHost
                     }
 
                     int nodeId = idTok.Value<int>();
-                    string descJson = await form.CallCdpAsync(
+                    string descJson = await cdp.CallCdpAsync(
                         "DOM.describeNode",
                         "{\"nodeId\":" + nodeId.ToString(CultureInfo.InvariantCulture) + ",\"pierce\":true}")
                         .ConfigureAwait(true);

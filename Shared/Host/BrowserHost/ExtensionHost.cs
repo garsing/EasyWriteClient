@@ -1099,12 +1099,46 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
-        private static Task<JObject> RpcAsync(string tabUuid, string type, JObject body)
+        internal static async Task<string> CallCdpAsync(
+            string tabUuid,
+            string methodName,
+            string parametersAsJson,
+            string sessionId = null)
+        {
+            JObject paramsObj;
+            try
+            {
+                paramsObj = string.IsNullOrWhiteSpace(parametersAsJson)
+                    ? new JObject()
+                    : JObject.Parse(parametersAsJson);
+            }
+            catch
+            {
+                paramsObj = new JObject();
+            }
+
+            var req = new JObject
+            {
+                ["tab_uuid"] = tabUuid,
+                ["method"] = methodName ?? "",
+                ["params"] = paramsObj
+            };
+            if (!string.IsNullOrWhiteSpace(sessionId))
+            {
+                req["session_id"] = sessionId.Trim();
+            }
+
+            JObject result = await RpcAsync(tabUuid, "rpc.cdp", req, TimeSpan.FromSeconds(45))
+                .ConfigureAwait(true);
+            return result != null ? result.ToString(Newtonsoft.Json.Formatting.None) : "{}";
+        }
+
+        internal static Task<JObject> RpcAsync(string tabUuid, string type, JObject body)
         {
             return RpcAsync(tabUuid, type, body, TimeSpan.FromSeconds(30));
         }
 
-        private static async Task<JObject> RpcAsync(
+        internal static async Task<JObject> RpcAsync(
             string tabUuid,
             string type,
             JObject body,
@@ -1192,7 +1226,7 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
-        private static DomNodeProbe ProbeFromJson(JObject probe)
+        internal static DomNodeProbe ProbeFromJson(JObject probe)
         {
             return new DomNodeProbe
             {
@@ -1225,7 +1259,7 @@ namespace WordAddIn1.BrowserHost
             return string.IsNullOrWhiteSpace(url) ? "浏览器" : url.Trim();
         }
 
-        private static async Task<BrowserDownloadFileResult> ImportDownloadedFileAsync(JObject result)
+        internal static async Task<BrowserDownloadFileResult> ImportDownloadedFileAsync(JObject result)
         {
             string path = (string)result["filename"];
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
@@ -1255,7 +1289,7 @@ namespace WordAddIn1.BrowserHost
             };
         }
 
-        private static async Task<BrowserDownloadFileResult> FetchUrlPlainAsync(string url)
+        internal static async Task<BrowserDownloadFileResult> FetchUrlPlainAsync(string url)
         {
             if (!Uri.TryCreate(url, UriKind.Absolute, out Uri uri)
                 || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))

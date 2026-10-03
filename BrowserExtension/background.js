@@ -49,6 +49,30 @@ async function detachDebugger(target) {
   } catch (_) {}
 }
 
+async function cdpCommand(msg) {
+  const tabId = parseTabId(msg.tab_uuid);
+  const granted = await ensureDebuggerPermission();
+  if (!granted) {
+    throw new Error(CDP_FAIL);
+  }
+  const method = String(msg.method || "").trim();
+  if (!method) {
+    throw new Error("CDP method 为空");
+  }
+  await attachDebugger({ tabId });
+  const target = { tabId };
+  if (msg.session_id) {
+    target.sessionId = String(msg.session_id);
+  }
+  const params = msg.params && typeof msg.params === "object" ? msg.params : {};
+  try {
+    const result = await chrome.debugger.sendCommand(target, method, params);
+    return result && typeof result === "object" ? result : {};
+  } catch (e) {
+    throw new Error(String((e && e.message) || e || CDP_FAIL));
+  }
+}
+
 async function dispatchCdpPointer(tabId, kind, x, y) {
   if (!tabId) {
     throw new Error(CDP_FAIL);
@@ -213,6 +237,7 @@ function onHostMessage(msg) {
 
   if (type === "rpc.snapshot" || type === "rpc.interact"
     || type === "rpc.navigate" || type === "rpc.download"
+    || type === "rpc.download_wait" || type === "rpc.cdp"
     || type === "rpc.activate_tab" || type === "rpc.screenshot") {
     handleRpc(msg).catch((e) => {
       sendToHost({
@@ -244,6 +269,12 @@ async function handleRpc(msg) {
         break;
       case "rpc.download":
         result = await downloadTab(msg);
+        break;
+      case "rpc.download_wait":
+        result = await waitNextDownload(30000);
+        break;
+      case "rpc.cdp":
+        result = await cdpCommand(msg);
         break;
       case "rpc.screenshot":
         result = await screenshotTab(msg.tab_uuid);

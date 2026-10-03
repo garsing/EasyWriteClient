@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 namespace WordAddIn1.BrowserHost
 {
     /// <summary>
-    /// 浏览器适配层入口：按渠道 track 分流 agent（WebView2）/ attach（扩展）。
+    /// 浏览器适配层入口：navigate / 截图按 track；snapshot / interact / download 按 ClickMode 选树。
     /// </summary>
     public static class BrowserHostAdapter
     {
@@ -82,13 +82,17 @@ namespace WordAddIn1.BrowserHost
                 domSupplement = normalized;
             }
 
-            if (channel != null
-                && string.Equals(channel.Track, "attach", StringComparison.OrdinalIgnoreCase))
+            BrowserOpMode mode = BrowserOpMode.Resolve(channel);
+            if (mode.IsPointer)
             {
-                return ExtensionHost.SnapshotAsync(channel, refId, domSupplement);
+                return mode.IsAttach
+                    ? AttachPointerHost.SnapshotAsync(channel, refId, domSupplement)
+                    : YiWriteBrowserHost.SnapshotAsync(channel, refId, domSupplement);
             }
 
-            return YiWriteBrowserHost.SnapshotAsync(channel, refId, domSupplement);
+            return mode.IsAttach
+                ? ExtensionHost.SnapshotAsync(channel, refId, domSupplement)
+                : AgentLegacyHost.SnapshotAsync(channel, refId, domSupplement);
         }
 
         public static Task<BrowserInteractResult> InteractAsync(
@@ -100,15 +104,21 @@ namespace WordAddIn1.BrowserHost
             string key,
             string option)
         {
-            if (channel != null
-                && string.Equals(channel.Track, "attach", StringComparison.OrdinalIgnoreCase))
+            BrowserOpMode mode = BrowserOpMode.Resolve(channel);
+            if (mode.IsPointer)
             {
-                return ExtensionHost.InteractAsync(
-                    channel, action, refId, text, direction, key, option);
+                return mode.IsAttach
+                    ? AttachPointerHost.InteractAsync(
+                        channel, action, refId, text, direction, key, option)
+                    : YiWriteBrowserHost.InteractAsync(
+                        channel, action, refId, text, direction, key, option);
             }
 
-            return YiWriteBrowserHost.InteractAsync(
-                channel, action, refId, text, direction, key, option);
+            return mode.IsAttach
+                ? ExtensionHost.InteractAsync(
+                    channel, action, refId, text, direction, key, option)
+                : AgentLegacyHost.InteractAsync(
+                    channel, action, refId, text, direction, key, option);
         }
 
         public static Task<BrowserDownloadResult> DownloadAsync(
@@ -116,13 +126,17 @@ namespace WordAddIn1.BrowserHost
             string refId,
             string url)
         {
-            if (channel != null
-                && string.Equals(channel.Track, "attach", StringComparison.OrdinalIgnoreCase))
+            BrowserOpMode mode = BrowserOpMode.Resolve(channel);
+            if (mode.IsPointer)
             {
-                return ExtensionHost.DownloadAsync(channel, refId, url);
+                return mode.IsAttach
+                    ? AttachPointerHost.DownloadAsync(channel, refId, url)
+                    : YiWriteBrowserHost.DownloadAsync(channel, refId, url);
             }
 
-            return YiWriteBrowserHost.DownloadAsync(channel, refId, url);
+            return mode.IsAttach
+                ? ExtensionHost.DownloadAsync(channel, refId, url)
+                : AgentLegacyHost.DownloadAsync(channel, refId, url);
         }
 
         // 兼容旧调用名

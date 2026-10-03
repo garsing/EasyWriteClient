@@ -9,17 +9,17 @@ namespace WordAddIn1.BrowserHost
     /// <summary>agent 轨：iframe 元素 ↔ 子 frameId / OOPIF session。</summary>
     internal static class BrowserFrameResolver
     {
-        public static async System.Threading.Tasks.Task<BrowserFrameMap> LoadAsync(YiWriteBrowserForm form)
+        public static async System.Threading.Tasks.Task<BrowserFrameMap> LoadAsync(IBrowserCdp cdp)
         {
             var map = new BrowserFrameMap();
-            if (form == null)
+            if (cdp == null)
             {
                 return map;
             }
 
             try
             {
-                string treeJson = await form.CallCdpAsync("Page.getFrameTree", "{}").ConfigureAwait(true);
+                string treeJson = await cdp.CallCdpAsync("Page.getFrameTree", "{}").ConfigureAwait(true);
                 JObject root = JObject.Parse(treeJson);
                 WalkFrameTree(root["frameTree"] as JObject, map, parentId: null);
             }
@@ -38,7 +38,7 @@ namespace WordAddIn1.BrowserHost
                 try
                 {
                     var payload = new JObject { ["frameId"] = frameId };
-                    string ownerJson = await form
+                    string ownerJson = await cdp
                         .CallCdpAsync("Page.getFrameOwner", payload.ToString(Formatting.None))
                         .ConfigureAwait(true);
                     JObject owner = JObject.Parse(ownerJson);
@@ -99,11 +99,11 @@ namespace WordAddIn1.BrowserHost
         }
 
         public static async System.Threading.Tasks.Task<string> TryDescribeChildFrameIdAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             int backendNodeId,
             string sessionId = null)
         {
-            if (form == null || backendNodeId == 0)
+            if (cdp == null || backendNodeId == 0)
             {
                 return null;
             }
@@ -111,7 +111,7 @@ namespace WordAddIn1.BrowserHost
             try
             {
                 var payload = new JObject { ["backendNodeId"] = backendNodeId };
-                string json = await form
+                string json = await cdp
                     .CallCdpAsync("DOM.describeNode", payload.ToString(Formatting.None), sessionId)
                     .ConfigureAwait(true);
                 JObject jo = JObject.Parse(json);
@@ -126,31 +126,31 @@ namespace WordAddIn1.BrowserHost
         }
 
         public static async System.Threading.Tasks.Task<BrowserFrameAxResult> GetFrameAxTreeAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             string frameId,
             int depth,
             string existingSessionId = null)
         {
-            if (form == null)
+            if (cdp == null)
             {
                 return null;
             }
 
-            BrowserFrameMap map = await LoadAsync(form).ConfigureAwait(true);
-            string parentUrl = form.CurrentUrl;
-            string parentTitle = form.CurrentTitle;
+            BrowserFrameMap map = await LoadAsync(cdp).ConfigureAwait(true);
+            string parentUrl = cdp.CurrentUrl;
+            string parentTitle = cdp.CurrentTitle;
             bool isRoot = string.IsNullOrWhiteSpace(frameId)
                 || string.Equals(frameId, map.RootFrameId, StringComparison.Ordinal);
 
             if (!isRoot)
             {
-                await WaitForChildUrlAsync(form, frameId, parentUrl).ConfigureAwait(true);
-                map = await LoadAsync(form).ConfigureAwait(true);
+                await WaitForChildUrlAsync(cdp, frameId, parentUrl).ConfigureAwait(true);
+                map = await LoadAsync(cdp).ConfigureAwait(true);
             }
 
             if (!string.IsNullOrWhiteSpace(existingSessionId))
             {
-                BrowserFrameAxResult fromSession = await TryGetAxOnSessionAsync(form, existingSessionId, depth)
+                BrowserFrameAxResult fromSession = await TryGetAxOnSessionAsync(cdp, existingSessionId, depth)
                     .ConfigureAwait(true);
                 if (IsUsableFrameAx(fromSession, isRoot, parentTitle, parentUrl))
                 {
@@ -168,13 +168,13 @@ namespace WordAddIn1.BrowserHost
 
             if (!isRoot && !sameOrigin)
             {
-                string sessionId = await TryAttachOopifAsync(form, frameId, parentUrl).ConfigureAwait(true);
+                string sessionId = await TryAttachOopifAsync(cdp, frameId, parentUrl).ConfigureAwait(true);
                 if (string.IsNullOrWhiteSpace(sessionId))
                 {
                     return null;
                 }
 
-                BrowserFrameAxResult attached = await TryGetAxOnSessionAsync(form, sessionId, depth)
+                BrowserFrameAxResult attached = await TryGetAxOnSessionAsync(cdp, sessionId, depth)
                     .ConfigureAwait(true);
                 if (IsUsableFrameAx(attached, false, parentTitle, parentUrl))
                 {
@@ -188,8 +188,7 @@ namespace WordAddIn1.BrowserHost
             {
                 try
                 {
-                    string json = await form
-                        .GetAccessibilityTreeJsonAsync(depth, isRoot ? null : frameId)
+                    string json = await GetAxTreeJsonAsync(cdp, depth, isRoot ? null : frameId, null)
                         .ConfigureAwait(true);
                     BrowserFrameAxResult local = HasNodes(json)
                         ? new BrowserFrameAxResult { Json = json }
@@ -206,10 +205,10 @@ namespace WordAddIn1.BrowserHost
 
             if (!isRoot)
             {
-                string sessionId = await TryAttachOopifAsync(form, frameId, parentUrl).ConfigureAwait(true);
+                string sessionId = await TryAttachOopifAsync(cdp, frameId, parentUrl).ConfigureAwait(true);
                 if (!string.IsNullOrWhiteSpace(sessionId))
                 {
-                    BrowserFrameAxResult attached = await TryGetAxOnSessionAsync(form, sessionId, depth)
+                    BrowserFrameAxResult attached = await TryGetAxOnSessionAsync(cdp, sessionId, depth)
                         .ConfigureAwait(true);
                     if (IsUsableFrameAx(attached, false, parentTitle, parentUrl))
                     {
@@ -239,8 +238,34 @@ namespace WordAddIn1.BrowserHost
             return HasIframeNamed(treeText, frameName);
         }
 
+        private static async System.Threading.Tasks.Task<string> GetAxTreeJsonAsync(
+            IBrowserCdp cdp,
+            int depth,
+            string frameId,
+            string sessionId)
+        {
+            try
+            {
+                await cdp.CallCdpAsync("Accessibility.enable", "{}", sessionId).ConfigureAwait(true);
+            }
+            catch
+            {
+            }
+
+            int d = depth < 1 ? BrowserAxTreeBuilder.DefaultDepth : depth;
+            var payload = new JObject { ["depth"] = d };
+            if (!string.IsNullOrWhiteSpace(frameId))
+            {
+                payload["frameId"] = frameId.Trim();
+            }
+
+            return await cdp
+                .CallCdpAsync("Accessibility.getFullAXTree", payload.ToString(Formatting.None), sessionId)
+                .ConfigureAwait(true);
+        }
+
         private static async System.Threading.Tasks.Task<BrowserFrameAxResult> TryGetAxOnSessionAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             string sessionId,
             int depth)
         {
@@ -248,7 +273,7 @@ namespace WordAddIn1.BrowserHost
             {
                 try
                 {
-                    await form.CallCdpAsync("Accessibility.enable", "{}", sessionId).ConfigureAwait(true);
+                    await cdp.CallCdpAsync("Accessibility.enable", "{}", sessionId).ConfigureAwait(true);
                 }
                 catch
                 {
@@ -256,7 +281,7 @@ namespace WordAddIn1.BrowserHost
 
                 int d = depth < 1 ? BrowserAxTreeBuilder.DefaultDepth : depth;
                 var payload = new JObject { ["depth"] = d };
-                string json = await form
+                string json = await cdp
                     .CallCdpAsync("Accessibility.getFullAXTree", payload.ToString(Formatting.None), sessionId)
                     .ConfigureAwait(true);
                 if (!HasNodes(json))
@@ -273,14 +298,14 @@ namespace WordAddIn1.BrowserHost
         }
 
         private static async System.Threading.Tasks.Task<string> TryAttachOopifAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             string frameId,
             string parentUrl)
         {
             string wantUrl = null;
             try
             {
-                string treeJson = await form.CallCdpAsync("Page.getFrameTree", "{}").ConfigureAwait(true);
+                string treeJson = await cdp.CallCdpAsync("Page.getFrameTree", "{}").ConfigureAwait(true);
                 wantUrl = FindFrameUrl(JObject.Parse(treeJson)["frameTree"] as JObject, frameId);
             }
             catch
@@ -295,7 +320,7 @@ namespace WordAddIn1.BrowserHost
             JArray targets;
             try
             {
-                string targetsJson = await form.CallCdpAsync("Target.getTargets", "{}").ConfigureAwait(true);
+                string targetsJson = await cdp.CallCdpAsync("Target.getTargets", "{}").ConfigureAwait(true);
                 targets = JObject.Parse(targetsJson)["targetInfos"] as JArray;
             }
             catch
@@ -343,7 +368,7 @@ namespace WordAddIn1.BrowserHost
                         ["targetId"] = targetId,
                         ["flatten"] = true
                     };
-                    string attachJson = await form
+                    string attachJson = await cdp
                         .CallCdpAsync("Target.attachToTarget", attach.ToString(Formatting.None))
                         .ConfigureAwait(true);
                     string sessionId = (string)JObject.Parse(attachJson)["sessionId"];
@@ -361,13 +386,13 @@ namespace WordAddIn1.BrowserHost
         }
 
         private static async System.Threading.Tasks.Task WaitForChildUrlAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             string frameId,
             string parentUrl)
         {
             for (int i = 0; i < 12; i++)
             {
-                BrowserFrameMap map = await LoadAsync(form).ConfigureAwait(true);
+                BrowserFrameMap map = await LoadAsync(cdp).ConfigureAwait(true);
                 string url;
                 if (map.UrlByFrame.TryGetValue(frameId, out url)
                     && IsHttpUrl(url)

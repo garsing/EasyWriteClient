@@ -201,11 +201,11 @@ namespace WordAddIn1.BrowserHost
         /// AX 会把 display:none 面板里的表行也发 ref。D5：藏着的表不当可见行。
         /// </summary>
         public static async Task PruneHiddenRowsAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             BrowserAxBuildResult built,
             string sessionId)
         {
-            if (form == null || built == null || !built.Success || built.Refs == null || built.Refs.Count == 0)
+            if (cdp == null || built == null || !built.Success || built.Refs == null || built.Refs.Count == 0)
             {
                 return;
             }
@@ -230,10 +230,10 @@ namespace WordAddIn1.BrowserHost
                 try
                 {
                     string objectId = await BrowserInteractEngine
-                        .ResolveObjectIdAsync(form, e.BackendDomNodeId.Value, sid)
+                        .ResolveObjectIdAsync(cdp, e.BackendDomNodeId.Value, sid)
                         .ConfigureAwait(true);
                     string json = await BrowserInteractEngine
-                        .CallFunctionOnAsync(form, objectId, RowHiddenJs, null, sid)
+                        .CallFunctionOnAsync(cdp, objectId, RowHiddenJs, null, sid)
                         .ConfigureAwait(true);
                     if (ReadReturnedBool(json))
                     {
@@ -259,12 +259,12 @@ namespace WordAddIn1.BrowserHost
         }
 
         public static async Task MergeAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             BrowserAxBuildResult built,
             string frameId,
             string sessionId)
         {
-            if (form == null || built == null || !built.Success || built.Refs == null)
+            if (cdp == null || built == null || !built.Success || built.Refs == null)
             {
                 return;
             }
@@ -272,8 +272,8 @@ namespace WordAddIn1.BrowserHost
             int? contextId = null;
             try
             {
-                contextId = await TryCreateFrameWorldAsync(form, frameId, sessionId).ConfigureAwait(true);
-                JArray items = await EvaluateArrayAsync(form, CollectJs, contextId, sessionId)
+                contextId = await TryCreateFrameWorldAsync(cdp, frameId, sessionId).ConfigureAwait(true);
+                JArray items = await EvaluateArrayAsync(cdp, CollectJs, contextId, sessionId)
                     .ConfigureAwait(true);
                 if (items == null || items.Count == 0)
                 {
@@ -329,7 +329,7 @@ namespace WordAddIn1.BrowserHost
                         continue;
                     }
 
-                    int? backend = await ResolveMarkedBackendAsync(form, mark, contextId, sessionId)
+                    int? backend = await ResolveMarkedBackendAsync(cdp, mark, contextId, sessionId)
                         .ConfigureAwait(true);
                     if (!backend.HasValue || already.Contains(backend.Value))
                     {
@@ -392,7 +392,7 @@ namespace WordAddIn1.BrowserHost
             {
                 try
                 {
-                    await EvaluateAsync(form, CleanupJs, contextId, sessionId).ConfigureAwait(true);
+                    await EvaluateAsync(cdp, CleanupJs, contextId, sessionId).ConfigureAwait(true);
                 }
                 catch
                 {
@@ -401,7 +401,7 @@ namespace WordAddIn1.BrowserHost
         }
 
         private static async Task<int?> TryCreateFrameWorldAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             string frameId,
             string sessionId)
         {
@@ -417,7 +417,7 @@ namespace WordAddIn1.BrowserHost
                     ["frameId"] = frameId,
                     ["worldName"] = "yiwrite_clickable"
                 };
-                string json = await form
+                string json = await cdp
                     .CallCdpAsync("Page.createIsolatedWorld", payload.ToString(Formatting.None), sessionId)
                     .ConfigureAwait(true);
                 JObject jo = JObject.Parse(json);
@@ -435,19 +435,19 @@ namespace WordAddIn1.BrowserHost
         }
 
         private static async Task<JArray> EvaluateArrayAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             string expression,
             int? contextId,
             string sessionId)
         {
-            string json = await EvaluateAsync(form, expression, contextId, sessionId).ConfigureAwait(true);
+            string json = await EvaluateAsync(cdp, expression, contextId, sessionId).ConfigureAwait(true);
             JObject jo = JObject.Parse(json);
             JToken value = jo["result"]?["value"];
             return value as JArray;
         }
 
         private static async Task<string> EvaluateAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             string expression,
             int? contextId,
             string sessionId)
@@ -463,13 +463,13 @@ namespace WordAddIn1.BrowserHost
                 payload["contextId"] = contextId.Value;
             }
 
-            return await form
+            return await cdp
                 .CallCdpAsync("Runtime.evaluate", payload.ToString(Formatting.None), sessionId)
                 .ConfigureAwait(true);
         }
 
         private static async Task<int?> ResolveMarkedBackendAsync(
-            YiWriteBrowserForm form,
+            IBrowserCdp cdp,
             string mark,
             int? contextId,
             string sessionId)
@@ -485,7 +485,7 @@ namespace WordAddIn1.BrowserHost
                 payload["contextId"] = contextId.Value;
             }
 
-            string json = await form
+            string json = await cdp
                 .CallCdpAsync("Runtime.evaluate", payload.ToString(Formatting.None), sessionId)
                 .ConfigureAwait(true);
             JObject jo = JObject.Parse(json);
@@ -496,7 +496,7 @@ namespace WordAddIn1.BrowserHost
             }
 
             var descPayload = new JObject { ["objectId"] = objectId };
-            string descJson = await form
+            string descJson = await cdp
                 .CallCdpAsync("DOM.describeNode", descPayload.ToString(Formatting.None), sessionId)
                 .ConfigureAwait(true);
             JObject desc = JObject.Parse(descJson);

@@ -181,7 +181,7 @@ namespace WordAddIn1.BrowserHost
             ChannelRegistry.Remove(closed.ChannelId);
         }
 
-        private static bool TryPrepareFormForTab(
+        internal static bool TryPrepareFormForTab(
             string tabUuid,
             out YiWriteBrowserForm form,
             out string error)

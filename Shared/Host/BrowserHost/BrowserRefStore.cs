@@ -75,10 +75,10 @@ namespace WordAddIn1.BrowserHost
 
         public string Name { get; set; }
 
-        /// <summary>扩展附着轨：页内 CSS 路径（仅 attach）。</summary>
+        /// <summary>legacy DOM 树：页内 CSS 路径。</summary>
         public string AttachCssPath { get; set; }
 
-        /// <summary>扩展附着轨：snapshot 时缓存的 DOM 探针。</summary>
+        /// <summary>legacy DOM 树：snapshot 时缓存的 DOM 探针。</summary>
         public DomNodeProbe AttachProbe { get; set; }
 
         /// <summary>该节点所在文档的 CDP frameId（不对 Agent 暴露）。</summary>

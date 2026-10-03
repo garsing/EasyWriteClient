@@ -415,7 +415,7 @@ namespace WordAddIn1
             };
         }
 
-        /// <summary>click 点法。engine = yiwrite / chrome / edge；缺省 / 非法 = pointer。模型不可见。</summary>
+        /// <summary>树 + 操作后端。engine = yiwrite / chrome / edge；pointer=AX/CDP，legacy=DOM。缺省 / 非法 = pointer。模型不可见。</summary>
         public static string GetBrowserClickMode(string engine = null)
         {
             AppConfig.BrowserEngineSettings row = GetBrowserEngineSettings(engine);

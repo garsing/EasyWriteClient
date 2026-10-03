@@ -13,7 +13,7 @@ namespace WordAddIn1.BrowserHost
     /// <summary>
     /// 易写浏览窗：一扇 Form、多标签（每标签一张 WebView2）、地址栏。须在 UI 线程使用。
     /// </summary>
-    public sealed class YiWriteBrowserForm : Form
+    public sealed class YiWriteBrowserForm : Form, IBrowserCdp
     {
         internal const int MaxTabCount = 16;
 
