@@ -877,11 +877,14 @@ namespace WordAddIn1.BrowserHost
             bool needRef = (act != "scroll" && act != "press") || !string.IsNullOrWhiteSpace(refId);
             if (needRef)
             {
-                if (string.IsNullOrWhiteSpace(refId)
-                    || !BrowserRefStore.TryGet(channel.ChannelId, refId, out entry)
-                    || entry == null)
+                if (string.IsNullOrWhiteSpace(refId))
                 {
                     return BrowserInteractResult.Fail("未知 ref；请先 snapshot");
+                }
+
+                if (!BrowserRefStore.TryGet(channel.ChannelId, refId, out entry) || entry == null)
+                {
+                    return BrowserInteractResult.Fail("ref 无效或已过期，请重新 F_browser_snapshot");
                 }
 
                 probe = entry.AttachProbe;

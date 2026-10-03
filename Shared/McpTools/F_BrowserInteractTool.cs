@@ -54,6 +54,16 @@ namespace WordAddIn1
                         }
                     }
 
+                    if (act == "type" && string.IsNullOrEmpty(text))
+                    {
+                        return Fail("type 必须提供 text");
+                    }
+
+                    if (act == "select" && string.IsNullOrWhiteSpace(option))
+                    {
+                        return Fail("select 必须提供 option");
+                    }
+
                     BrowserChannel channel;
                     if (!string.IsNullOrWhiteSpace(channelId))
                     {
