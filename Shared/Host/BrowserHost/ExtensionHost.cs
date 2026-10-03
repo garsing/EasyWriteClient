@@ -717,8 +717,9 @@ namespace WordAddIn1.BrowserHost
                 string mode = string.IsNullOrWhiteSpace(refId) ? "overview" : "detail";
                 if (forceFrameId.HasValue)
                 {
+                    // 回拍同一文档层：只定向到该 frame。mode=frame 表示展开子 iframe，
+                    // Chrome 顶层 frameId 非 0，会被扩展当成「未对齐」直接拒掉。
                     targetFrame = forceFrameId;
-                    mode = "frame";
                 }
                 else if (!string.IsNullOrWhiteSpace(refId))
                 {

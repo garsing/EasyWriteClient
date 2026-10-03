@@ -552,9 +552,10 @@ async function snapshotTab(msg) {
     ? Number(msg.frame_id)
     : null;
   const topFrame = await getTopFrameId(tabId);
-  const expanding = String(msg.mode || "") === "frame";
+  let expanding = String(msg.mode || "") === "frame";
   if (expanding && frameId != null && Number.isFinite(frameId) && frameId === topFrame) {
-    throw new Error("无法读取 iframe（未对齐到子 frame）");
+    // 顶层文档回拍会带上顶 frameId；按整页拍，不要当坏 iframe。
+    expanding = false;
   }
   if (expanding && frameId != null && Number.isFinite(frameId)) {
     await waitFrameHttpUrl(tabId, frameId);

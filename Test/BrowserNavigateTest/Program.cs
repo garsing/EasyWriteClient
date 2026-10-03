@@ -15,6 +15,11 @@ namespace BrowserNavigateTest
                 return JdListClickProbe.Run();
             }
 
+            if (string.Equals(GetArg(args, "--probe="), "chrome-gap", StringComparison.OrdinalIgnoreCase))
+            {
+                return ChromeGapProbe.Run();
+            }
+
             string caseFilter = GetArg(args, "--case=");
             bool runShot = caseFilter.StartsWith("shot-", StringComparison.OrdinalIgnoreCase);
             bool runDl = caseFilter.StartsWith("dl-", StringComparison.OrdinalIgnoreCase);
