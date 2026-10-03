@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 35;
+  const CONTENT_VER = 36;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -1381,6 +1381,17 @@
       const dx = dir === "left" ? -400 : dir === "right" ? 400 : 0;
       window.scrollBy(dx, dy);
       return { ok: true, message: "scrolled " + dir };
+    }
+
+    if (action === "press" && !msg.ref) {
+      const key = msg.key || "Enter";
+      const el = document.activeElement && document.activeElement !== document.body
+        ? document.activeElement
+        : document.documentElement;
+      try { el.focus && el.focus(); } catch (_) {}
+      el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
+      return { ok: true, message: "pressed " + key };
     }
 
     const { el, entry } = resolveRef(msg.ref, msg.css_path);

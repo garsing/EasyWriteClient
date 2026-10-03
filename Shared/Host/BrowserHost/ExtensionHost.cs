@@ -862,10 +862,20 @@ namespace WordAddIn1.BrowserHost
             }
 
             string act = (action ?? "").Trim().ToLowerInvariant();
+            if (act != "click" && act != "hover" && act != "type" && act != "scroll" && act != "press" && act != "select")
+            {
+                return BrowserInteractResult.Fail("action 须为 click|hover|type|scroll|press|select");
+            }
+
+            if (string.Equals(act, "press", StringComparison.Ordinal) && string.IsNullOrWhiteSpace(key))
+            {
+                return BrowserInteractResult.Fail("必须提供 key");
+            }
+
             BrowserRefEntry entry = null;
             DomNodeProbe probe = null;
-            if (!string.Equals(act, "scroll", StringComparison.Ordinal)
-                || !string.IsNullOrWhiteSpace(refId))
+            bool needRef = (act != "scroll" && act != "press") || !string.IsNullOrWhiteSpace(refId);
+            if (needRef)
             {
                 if (string.IsNullOrWhiteSpace(refId)
                     || !BrowserRefStore.TryGet(channel.ChannelId, refId, out entry)

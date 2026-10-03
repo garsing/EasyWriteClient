@@ -81,3 +81,4 @@ cd EasyWriteClient\BrowserExtension
 - **0.1.33** 起 type 从 label / 外壳 / `.input-group` 落到真正的 input、textarea、contenteditable；密码落到框上仍拒绝。须重新加载扩展。
 - **0.1.34** 起扩展 debugger 提供通用 CDP（`rpc.cdp`），供 ClickMode=pointer 时拍 AX 树并走 CDP type/select/press。须重新加载扩展。
 - **0.1.35** 起顶层文档回拍不再按子 iframe 拒绝。须重新加载扩展。
+- **0.1.36** 起 press 可不带 ref（整页按键，与 scroll 相同）。须重新加载扩展。

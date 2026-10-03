@@ -41,9 +41,17 @@ namespace WordAddIn1
                     string option = TryGetString(args, "option");
 
                     string act = action.Trim().ToLowerInvariant();
-                    if (act == "press" && !string.IsNullOrWhiteSpace(key) && !AllowedKeys.Contains(key.Trim()))
+                    if (act == "press")
                     {
-                        return Fail("key 不在白名单: " + key);
+                        if (string.IsNullOrWhiteSpace(key))
+                        {
+                            return Fail("必须提供 key");
+                        }
+
+                        if (!AllowedKeys.Contains(key.Trim()))
+                        {
+                            return Fail("key 不在白名单: " + key);
+                        }
                     }
 
                     BrowserChannel channel;
