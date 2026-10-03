@@ -6,7 +6,7 @@ using WordAddIn1;
 namespace BrowserNavigateTest
 {
     /// <summary>第 5 波 download，只测 agent。</summary>
-    internal static class DlCases
+    internal static partial class DlCases
     {
         public static void Run(TestRun run, FixtureHttp http, int chromeBefore, int edgeBefore)
         {
@@ -17,6 +17,7 @@ namespace BrowserNavigateTest
             RunUrl(run, s, http, txtBytes, pngBytes);
             RunRef(run, s, http, txtBytes);
             RunIframeRowNeg(run, s, http);
+            RunExtra(run, s, http, txtBytes, pngBytes);
             int chromeNow = IntCases.CountProc("chrome");
             int edgeNow = IntCases.CountProc("msedge");
             if (chromeNow < chromeBefore || edgeNow < edgeBefore)

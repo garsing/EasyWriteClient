@@ -96,7 +96,7 @@ namespace BrowserNavigateTest
             }
 
             sw.Stop();
-            int target = runDl ? 30 : (runTab ? 75 : (runInt ? 160 : (runSnp ? 46 : 30)));
+            int target = runDl ? 80 : (runTab ? 75 : (runInt ? 160 : (runSnp ? 46 : 30)));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
