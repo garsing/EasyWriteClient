@@ -47,6 +47,12 @@ namespace WordAddIn1
                         return Fail(kindError);
                     }
 
+                    ToolResult pathInvalid = CapturePathWriter.TryValidatePath(args);
+                    if (pathInvalid != null)
+                    {
+                        return pathInvalid;
+                    }
+
                     if (channel.Kind == ChannelKind.Word || channel.Kind == ChannelKind.Wps)
                     {
                         captured = await CaptureWordAsync(args, wordApplication, pageReq.PageNumber).ConfigureAwait(false);

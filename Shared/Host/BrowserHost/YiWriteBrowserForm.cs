@@ -442,6 +442,12 @@ namespace WordAddIn1.BrowserHost
             return RequireActivePage().CallCdpAsync(methodName, parametersAsJson, sessionId);
         }
 
+        /// <summary>传统截图：WebView2 CapturePreview，不走 CDP。</summary>
+        public Task<byte[]> CapturePreviewJpegAsync()
+        {
+            return RequireActivePage().CapturePreviewJpegAsync();
+        }
+
         /// <summary>等待下一次导航完成；超时返回 false（未导航也算超时）。</summary>
         public Task<bool> WaitNavigationAsync(TimeSpan timeout)
         {

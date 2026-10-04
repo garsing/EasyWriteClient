@@ -87,3 +87,7 @@ cd EasyWriteClient\BrowserExtension
 - **0.1.39** 起 snapshot 收入可见短文本叶子（详情日期、任务列表、资料正文等）。须重新加载扩展。
 - **0.1.40** 起短文本叶子不含整句说明；点了不产生下载的钮 3 秒内回「未产生下载」。须重新加载扩展。
 - **0.1.41** 起可视区截图不再连拍 `captureVisibleTab` 压画质（避免 `MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND`），两次截图间隔至少 600ms。须重新加载扩展。
+- **0.1.42** 起 `image readback failed` 会等 700ms 再截一次；切到标签后先等 200ms 再拍。须重新加载扩展。
+- **0.1.43** 起 `captureVisibleTab` 读回失败时改走 CDP `Page.captureScreenshot`。须重新加载扩展。
+- **0.1.44** 起 Edge 可视区截图直接走 CDP；`captureVisibleTab` 5 秒未返回则放弃。须重新加载扩展。
+- **0.1.45** 起截图是否走 CDP 跟 ClickMode：pointer=CDP，legacy=`captureVisibleTab`。不再按 Chrome/Edge 写死。须重新加载扩展。

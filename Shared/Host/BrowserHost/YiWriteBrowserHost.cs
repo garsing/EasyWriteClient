@@ -365,25 +365,41 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
-                Task<string> cdpTask = form.CallCdpAsync(
-                    "Page.captureScreenshot",
-                    "{\"format\":\"jpeg\",\"quality\":80,\"fromSurface\":true}");
-                Task winner = await Task.WhenAny(cdpTask, Task.Delay(TimeSpan.FromSeconds(20))).ConfigureAwait(true);
-                if (!ReferenceEquals(winner, cdpTask))
+                byte[] jpegBytes;
+                if (string.Equals(
+                    ConfigManager.GetBrowserClickMode("yiwrite"),
+                    "legacy",
+                    StringComparison.Ordinal))
                 {
-                    return BrowserCaptureResult.Fail("截取可视区超时（WebView2 CDP 20 秒未返回）");
+                    jpegBytes = await form.CapturePreviewJpegAsync().ConfigureAwait(true);
+                    if (jpegBytes == null || jpegBytes.Length == 0)
+                    {
+                        return BrowserCaptureResult.Fail("截图无 data");
+                    }
+                }
+                else
+                {
+                    Task<string> cdpTask = form.CallCdpAsync(
+                        "Page.captureScreenshot",
+                        "{\"format\":\"jpeg\",\"quality\":80,\"fromSurface\":true}");
+                    Task winner = await Task.WhenAny(cdpTask, Task.Delay(TimeSpan.FromSeconds(20))).ConfigureAwait(true);
+                    if (!ReferenceEquals(winner, cdpTask))
+                    {
+                        return BrowserCaptureResult.Fail("截取可视区超时（WebView2 CDP 20 秒未返回）");
+                    }
+
+                    string shotJson = await cdpTask.ConfigureAwait(true);
+                    var serializer = new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 };
+                    var shotObj = serializer.Deserialize<Dictionary<string, object>>(shotJson);
+                    if (shotObj == null || !shotObj.ContainsKey("data") || shotObj["data"] == null)
+                    {
+                        return BrowserCaptureResult.Fail("截图无 data");
+                    }
+
+                    jpegBytes = Convert.FromBase64String(shotObj["data"].ToString());
                 }
 
-                string shotJson = await cdpTask.ConfigureAwait(true);
-                var serializer = new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 };
-                var shotObj = serializer.Deserialize<Dictionary<string, object>>(shotJson);
-                if (shotObj == null || !shotObj.ContainsKey("data") || shotObj["data"] == null)
-                {
-                    return BrowserCaptureResult.Fail("截图无 data");
-                }
-
-                byte[] pngBytes = Convert.FromBase64String(shotObj["data"].ToString());
-                using (var stream = new System.IO.MemoryStream(pngBytes))
+                using (var stream = new System.IO.MemoryStream(jpegBytes))
                 using (var bitmap = new System.Drawing.Bitmap(stream))
                 {
                     var image = ImageCaptureCompressor.Compress(bitmap);

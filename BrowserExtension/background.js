@@ -277,7 +277,7 @@ async function handleRpc(msg) {
         result = await cdpCommand(msg);
         break;
       case "rpc.screenshot":
-        result = await screenshotTab(msg.tab_uuid);
+        result = await screenshotTab(msg);
         break;
       default:
         throw new Error("unknown rpc: " + msg.type);
@@ -299,30 +299,49 @@ function sleepMs(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function captureVisibleTabOnce(windowId, quality) {
+  let timer;
+  try {
+    return await Promise.race([
+      chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("captureVisibleTab 超时")), 5000);
+      })
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 async function captureVisibleTabLimited(windowId, quality) {
   const gap = 600 - (Date.now() - lastVisibleCaptureAt);
   if (gap > 0) {
     await sleepMs(gap);
   }
   try {
-    const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
-      format: "jpeg",
-      quality
-    });
+    const dataUrl = await captureVisibleTabOnce(windowId, quality);
     lastVisibleCaptureAt = Date.now();
     return dataUrl;
   } catch (e) {
     const msg = String(e && e.message ? e.message : e);
-    if (!/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota/i.test(msg)) {
+    if (!/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota|readback|超时/i.test(msg)) {
       throw e;
     }
-    await sleepMs(700);
-    const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
-      format: "jpeg",
-      quality
-    });
-    lastVisibleCaptureAt = Date.now();
-    return dataUrl;
+    for (let i = 0; i < 2; i++) {
+      await sleepMs(700);
+      try {
+        const dataUrl = await captureVisibleTabOnce(windowId, quality);
+        lastVisibleCaptureAt = Date.now();
+        return dataUrl;
+      } catch (again) {
+        if (i === 1) {
+          throw again;
+        }
+      }
+    }
+    throw e;
   }
 }
 
@@ -384,7 +403,30 @@ async function activateTab(tabUuid) {
   return { activated: true };
 }
 
-async function screenshotTab(tabUuid) {
+async function captureTabViaCdp(tabId) {
+  const granted = await ensureDebuggerPermission();
+  if (!granted) {
+    throw new Error("Failed to capture tab: image readback failed");
+  }
+  const target = { tabId };
+  await attachDebugger(target);
+  try {
+    const result = await chrome.debugger.sendCommand(target, "Page.captureScreenshot", {
+      format: "jpeg",
+      quality: 70
+    });
+    if (!result || !result.data) {
+      throw new Error("CDP 截图无数据");
+    }
+    return "data:image/jpeg;base64," + result.data;
+  } finally {
+    await detachDebugger(target);
+  }
+}
+
+async function screenshotTab(msg) {
+  const tabUuid = msg.tab_uuid;
+  const clickMode = String(msg.click_mode || "").toLowerCase() === "legacy" ? "legacy" : "pointer";
   const tabId = parseTabId(tabUuid);
   const tab = await chrome.tabs.get(tabId);
   await chrome.tabs.update(tabId, { active: true });
@@ -395,10 +437,13 @@ async function screenshotTab(tabUuid) {
       /* ignore */
     }
   }
-  // captureVisibleTab 每秒最多约 2 次。压画质不要连拍，超大在内存里再压。
+  await sleepMs(400);
+  // 截图后端跟 ClickMode：pointer=CDP，legacy=captureVisibleTab。不按 Chrome/Edge 写死。
   let dataUrl;
   try {
-    dataUrl = await captureVisibleTabLimited(tab.windowId, 70);
+    dataUrl = clickMode === "legacy"
+      ? await captureVisibleTabLimited(tab.windowId, 70)
+      : await captureTabViaCdp(tabId);
     dataUrl = await shrinkJpegDataUrl(dataUrl, 900000);
   } catch (e) {
     const msg = String(e && e.message ? e.message : e);

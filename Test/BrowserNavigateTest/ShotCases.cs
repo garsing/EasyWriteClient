@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using WordAddIn1;
 
 namespace BrowserNavigateTest
@@ -200,8 +201,9 @@ namespace BrowserNavigateTest
 
         private static int IntOf(ToolResult r, string key)
         {
-            object v;
-            if (!IntCases.Data(r).TryGetValue(key, out v) || v == null)
+            object v = null;
+            Dictionary<string, object> d = IntCases.Data(r);
+            if (d == null || !d.TryGetValue(key, out v) || v == null)
             {
                 return 0;
             }

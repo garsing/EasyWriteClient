@@ -644,9 +644,11 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
+                string engine = GetAttachBrowserKind(channel.TabUuid);
                 var req = new JObject
                 {
-                    ["tab_uuid"] = channel.TabUuid
+                    ["tab_uuid"] = channel.TabUuid,
+                    ["click_mode"] = ConfigManager.GetBrowserClickMode(engine)
                 };
                 JObject result = null;
                 Exception last = null;
@@ -667,7 +669,8 @@ namespace WordAddIn1.BrowserHost
                         last = ex;
                         if (attempt == 0
                             && ex.Message != null
-                            && ex.Message.IndexOf("CAPTURE_VISIBLE_TAB", StringComparison.OrdinalIgnoreCase) >= 0)
+                            && (ex.Message.IndexOf("CAPTURE_VISIBLE_TAB", StringComparison.OrdinalIgnoreCase) >= 0
+                                || ex.Message.IndexOf("readback", StringComparison.OrdinalIgnoreCase) >= 0))
                         {
                             await Task.Delay(700).ConfigureAwait(true);
                             continue;

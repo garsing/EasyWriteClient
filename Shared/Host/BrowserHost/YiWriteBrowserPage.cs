@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
@@ -356,6 +357,17 @@ namespace WordAddIn1.BrowserHost
             }
             catch
             {
+            }
+        }
+
+        public async Task<byte[]> CapturePreviewJpegAsync()
+        {
+            CoreWebView2 core = RequireCore();
+            using (var ms = new MemoryStream())
+            {
+                await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Jpeg, ms)
+                    .ConfigureAwait(true);
+                return ms.ToArray();
             }
         }
 

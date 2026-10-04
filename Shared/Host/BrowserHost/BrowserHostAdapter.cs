@@ -4,7 +4,8 @@ using System.Threading.Tasks;
 namespace WordAddIn1.BrowserHost
 {
     /// <summary>
-    /// 浏览器适配层入口：navigate / 截图按 track；snapshot / interact / download 按 ClickMode 选树。
+    /// 浏览器适配层入口：navigate 按 track（页面在哪）。
+    /// snapshot / interact / download / 截图后端按 ClickMode；track 只选传输。
     /// </summary>
     public static class BrowserHostAdapter
     {

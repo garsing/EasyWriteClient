@@ -15,6 +15,22 @@ namespace WordAddIn1
             return !string.IsNullOrWhiteSpace(FilePathResolver.TryGetArg(args, "path"));
         }
 
+        public static ToolResult TryValidatePath(Dictionary<string, object> args)
+        {
+            string raw = FilePathResolver.TryGetArg(args, "path");
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+
+            if (!FilePathResolver.TryResolve(raw.Trim(), out _, out string resolveError))
+            {
+                return Fail(resolveError);
+            }
+
+            return null;
+        }
+
         public static async Task<ToolResult> TryAttachPathAsync(
             Dictionary<string, object> args,
             byte[] bytes,
