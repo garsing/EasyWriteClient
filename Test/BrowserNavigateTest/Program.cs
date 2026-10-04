@@ -71,7 +71,11 @@ namespace BrowserNavigateTest
             {
                 using (var http = new FixtureHttp())
                 {
-                    if (string.Equals(caseFilter, "dl-red", StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(caseFilter, "dl-neg-no-event", StringComparison.OrdinalIgnoreCase))
+                    {
+                        DlCases.RunNoEvent(run, http);
+                    }
+                    else if (string.Equals(caseFilter, "dl-red", StringComparison.OrdinalIgnoreCase))
                     {
                         DlCases.RunRed(run, http);
                     }
@@ -117,7 +121,9 @@ namespace BrowserNavigateTest
 
             sw.Stop();
             int target = runShot ? 30 : (runDl
-                ? (string.Equals(caseFilter, "dl-red", StringComparison.OrdinalIgnoreCase) ? 12 : 80)
+                ? (string.Equals(caseFilter, "dl-neg-no-event", StringComparison.OrdinalIgnoreCase)
+                    ? 1
+                    : (string.Equals(caseFilter, "dl-red", StringComparison.OrdinalIgnoreCase) ? 12 : 80))
                 : (runTab ? 75 : (runInt ? 160 : (runSnp ? 46 : 30))));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed

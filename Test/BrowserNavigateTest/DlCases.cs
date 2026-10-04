@@ -29,6 +29,24 @@ namespace BrowserNavigateTest
             }
         }
 
+        /// <summary>只跑假下载钮负例。</summary>
+        internal static void RunNoEvent(TestRun run, FixtureHttp http)
+        {
+            var s = new NavSession();
+            string id = IntCases.OpenOk(run, s, http.Url("download", "index.html"), "dl-neg-no-event");
+            if (id == null)
+            {
+                return;
+            }
+
+            string tree = IntCases.WaitTree(s, id, false, "下载附件", "普通按钮");
+            IntCases.ExpectFail(
+                run,
+                "dl-neg-no-event",
+                s.Download(id, refId: FindFakeDownload(tree) ?? "e1", path: "browser_dl/neg.txt"),
+                "下载");
+        }
+
         /// <summary>只跑 Chrome attach 上次红的 12 条，不跑整套 80。</summary>
         internal static void RunRed(TestRun run, FixtureHttp http)
         {
