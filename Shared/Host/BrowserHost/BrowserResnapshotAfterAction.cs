@@ -108,7 +108,10 @@ namespace WordAddIn1.BrowserHost
             string refId,
             BrowserResnapshotLayer layer)
         {
-            BrowserSnapshotResult snap = await TryCaptureAsync(channel, layer).ConfigureAwait(true);
+            // 下载走 chrome.downloads，不经页面。Edge 常先抢到下载栏，立刻拍会空树。
+            // interact 点空树会再拍；download 同样先等再拍，空了再试两次。
+            BrowserSnapshotResult snap = await CaptureSettledAsync(channel, layer, 2)
+                .ConfigureAwait(true);
             if (IsUsable(snap))
             {
                 return BrowserDownloadResult.OkResnapshot(
@@ -170,6 +173,27 @@ namespace WordAddIn1.BrowserHost
             {
                 data["resnapshot"] = true;
             }
+        }
+
+        private static async Task<BrowserSnapshotResult> CaptureSettledAsync(
+            BrowserChannel channel,
+            BrowserResnapshotLayer layer,
+            int extraTries)
+        {
+            await Task.Delay(250).ConfigureAwait(true);
+            BrowserSnapshotResult snap = await TryCaptureAsync(channel, layer).ConfigureAwait(true);
+            for (int i = 0; i < extraTries && (!IsUsable(snap) || snap.Snapshot.Length < 200); i++)
+            {
+                await Task.Delay(400).ConfigureAwait(true);
+                BrowserSnapshotResult again = await TryCaptureAsync(channel, layer).ConfigureAwait(true);
+                if (IsUsable(again)
+                    && (!IsUsable(snap) || again.Snapshot.Length > snap.Snapshot.Length))
+                {
+                    snap = again;
+                }
+            }
+
+            return snap;
         }
 
         private static async Task<BrowserSnapshotResult> TryCaptureAsync(
