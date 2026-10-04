@@ -293,6 +293,76 @@ async function handleRpc(msg) {
   }
 }
 
+let lastVisibleCaptureAt = 0;
+
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function captureVisibleTabLimited(windowId, quality) {
+  const gap = 600 - (Date.now() - lastVisibleCaptureAt);
+  if (gap > 0) {
+    await sleepMs(gap);
+  }
+  try {
+    const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
+      format: "jpeg",
+      quality
+    });
+    lastVisibleCaptureAt = Date.now();
+    return dataUrl;
+  } catch (e) {
+    const msg = String(e && e.message ? e.message : e);
+    if (!/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota/i.test(msg)) {
+      throw e;
+    }
+    await sleepMs(700);
+    const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
+      format: "jpeg",
+      quality
+    });
+    lastVisibleCaptureAt = Date.now();
+    return dataUrl;
+  }
+}
+
+async function blobToDataUrl(blob) {
+  const buf = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return "data:image/jpeg;base64," + btoa(bin);
+}
+
+async function shrinkJpegDataUrl(dataUrl, maxChars) {
+  if (!dataUrl || dataUrl.length <= maxChars) {
+    return dataUrl;
+  }
+  if (typeof createImageBitmap !== "function" || typeof OffscreenCanvas !== "function") {
+    return dataUrl;
+  }
+  const blob = await (await fetch(dataUrl)).blob();
+  const bmp = await createImageBitmap(blob);
+  try {
+    let quality = 0.55;
+    let out = dataUrl;
+    while (out.length > maxChars && quality >= 0.32) {
+      const canvas = new OffscreenCanvas(bmp.width, bmp.height);
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(bmp, 0, 0);
+      const next = await canvas.convertToBlob({ type: "image/jpeg", quality });
+      out = await blobToDataUrl(next);
+      quality -= 0.1;
+    }
+    return out;
+  } finally {
+    try { bmp.close(); } catch (_) {}
+  }
+}
+
 function parseTabId(tabUuid) {
   if (!tabUuid || typeof tabUuid !== "string") {
     throw new Error("tab_uuid 无效");
@@ -325,23 +395,11 @@ async function screenshotTab(tabUuid) {
       /* ignore */
     }
   }
-  // captureVisibleTab 要求 host_permissions 含 <all_urls>；仅 http/https 会立刻报
-  // “Either the '<all_urls>' or 'activeTab' permission is required.”
-  // Native Messaging 单条约 1MB；PNG 全页很容易超，用 JPEG 阶梯压到能回传
-  let quality = 70;
+  // captureVisibleTab 每秒最多约 2 次。压画质不要连拍，超大在内存里再压。
   let dataUrl;
   try {
-    dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
-      format: "jpeg",
-      quality
-    });
-    while (dataUrl && dataUrl.length > 900000 && quality > 40) {
-      quality -= 15;
-      dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
-        format: "jpeg",
-        quality
-      });
-    }
+    dataUrl = await captureVisibleTabLimited(tab.windowId, 70);
+    dataUrl = await shrinkJpegDataUrl(dataUrl, 900000);
   } catch (e) {
     const msg = String(e && e.message ? e.message : e);
     if (/all_urls|activeTab/i.test(msg)) {

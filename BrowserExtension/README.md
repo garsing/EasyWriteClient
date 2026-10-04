@@ -86,3 +86,4 @@ cd EasyWriteClient\BrowserExtension
 - **0.1.38** 起 snapshot 收入 `#status` 等状态行，click 后能看见「已点」。须重新加载扩展。
 - **0.1.39** 起 snapshot 收入可见短文本叶子（详情日期、任务列表、资料正文等）。须重新加载扩展。
 - **0.1.40** 起短文本叶子不含整句说明；点了不产生下载的钮 3 秒内回「未产生下载」。须重新加载扩展。
+- **0.1.41** 起可视区截图不再连拍 `captureVisibleTab` 压画质（避免 `MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND`），两次截图间隔至少 600ms。须重新加载扩展。
