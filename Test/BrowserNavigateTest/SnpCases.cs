@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Text.RegularExpressions;
 using WordAddIn1;
 
@@ -336,10 +335,11 @@ namespace BrowserNavigateTest
 
         private static void RunNoQuit(TestRun run, int chromeBefore, int edgeBefore)
         {
-            int chromeNow = CountProc("chrome");
-            int edgeNow = CountProc("msedge");
-            Ok(run, "snp-no-quit", chromeNow >= chromeBefore && edgeNow >= edgeBefore,
-                "chrome " + chromeBefore + "→" + chromeNow + " edge " + edgeBefore + "→" + edgeNow);
+            string chromeDetail;
+            string edgeDetail;
+            bool chromeOk = BrowserAlive.NotQuit("chrome", chromeBefore, out chromeDetail);
+            bool edgeOk = BrowserAlive.NotQuit("msedge", edgeBefore, out edgeDetail);
+            Ok(run, "snp-no-quit", chromeOk && edgeOk, chromeDetail + " " + edgeDetail);
         }
 
         private static void SnapHas(
@@ -568,16 +568,5 @@ namespace BrowserNavigateTest
             return false;
         }
 
-        private static int CountProc(string name)
-        {
-            try
-            {
-                return Process.GetProcessesByName(name).Length;
-            }
-            catch
-            {
-                return 0;
-            }
-        }
     }
 }
