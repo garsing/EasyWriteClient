@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 38;
+  const CONTENT_VER = 39;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -821,6 +821,8 @@
       const ariaRole = el.getAttribute("role");
       if (ariaRole && !isIgnoredAriaRole(ariaRole)) return true;
       if (/^h[1-6]$/.test(tag)) return true;
+      // 可见短文本叶子（详情日期、任务列表、资料正文等）。display:none 的面板已由 shouldSkip 丢掉。
+      if (isTextLeaf(el)) return true;
       return false;
     }
 
