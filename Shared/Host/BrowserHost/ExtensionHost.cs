@@ -650,40 +650,11 @@ namespace WordAddIn1.BrowserHost
                     ["tab_uuid"] = channel.TabUuid,
                     ["click_mode"] = ConfigManager.GetBrowserClickMode(engine)
                 };
-                JObject result = null;
-                Exception last = null;
-                for (int attempt = 0; attempt < 2; attempt++)
-                {
-                    try
-                    {
-                        result = await RpcAsync(
-                            channel.TabUuid,
-                            "rpc.screenshot",
-                            req,
-                            TimeSpan.FromSeconds(45)).ConfigureAwait(true);
-                        last = null;
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        last = ex;
-                        if (attempt == 0
-                            && ex.Message != null
-                            && (ex.Message.IndexOf("CAPTURE_VISIBLE_TAB", StringComparison.OrdinalIgnoreCase) >= 0
-                                || ex.Message.IndexOf("readback", StringComparison.OrdinalIgnoreCase) >= 0))
-                        {
-                            await Task.Delay(700).ConfigureAwait(true);
-                            continue;
-                        }
-
-                        throw;
-                    }
-                }
-
-                if (result == null)
-                {
-                    throw last ?? new InvalidOperationException("扩展截图无回包");
-                }
+                JObject result = await RpcAsync(
+                    channel.TabUuid,
+                    "rpc.screenshot",
+                    req,
+                    TimeSpan.FromSeconds(45)).ConfigureAwait(true);
 
                 string b64 = (string)result["image_base64"];
                 if (string.IsNullOrWhiteSpace(b64))

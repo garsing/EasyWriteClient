@@ -299,50 +299,17 @@ function sleepMs(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function captureVisibleTabOnce(windowId, quality) {
-  let timer;
-  try {
-    return await Promise.race([
-      chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality }),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("captureVisibleTab 超时")), 5000);
-      })
-    ]);
-  } finally {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  }
-}
-
 async function captureVisibleTabLimited(windowId, quality) {
-  const gap = 600 - (Date.now() - lastVisibleCaptureAt);
+  const gap = 1100 - (Date.now() - lastVisibleCaptureAt);
   if (gap > 0) {
     await sleepMs(gap);
   }
-  try {
-    const dataUrl = await captureVisibleTabOnce(windowId, quality);
-    lastVisibleCaptureAt = Date.now();
-    return dataUrl;
-  } catch (e) {
-    const msg = String(e && e.message ? e.message : e);
-    if (!/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota|readback|超时/i.test(msg)) {
-      throw e;
-    }
-    for (let i = 0; i < 2; i++) {
-      await sleepMs(700);
-      try {
-        const dataUrl = await captureVisibleTabOnce(windowId, quality);
-        lastVisibleCaptureAt = Date.now();
-        return dataUrl;
-      } catch (again) {
-        if (i === 1) {
-          throw again;
-        }
-      }
-    }
-    throw e;
-  }
+  const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
+    format: "jpeg",
+    quality
+  });
+  lastVisibleCaptureAt = Date.now();
+  return dataUrl;
 }
 
 async function blobToDataUrl(blob) {
@@ -437,8 +404,7 @@ async function screenshotTab(msg) {
       /* ignore */
     }
   }
-  await sleepMs(400);
-  // 截图后端跟 ClickMode：pointer=CDP，legacy=captureVisibleTab。不按 Chrome/Edge 写死。
+  // 与当初能出图的路径对齐：切标签后立刻拍一次。压画质在内存里做，不连拍。
   let dataUrl;
   try {
     dataUrl = clickMode === "legacy"

@@ -91,3 +91,6 @@ cd EasyWriteClient\BrowserExtension
 - **0.1.43** 起 `captureVisibleTab` 读回失败时改走 CDP `Page.captureScreenshot`。须重新加载扩展。
 - **0.1.44** 起 Edge 可视区截图直接走 CDP；`captureVisibleTab` 5 秒未返回则放弃。须重新加载扩展。
 - **0.1.45** 起截图是否走 CDP 跟 ClickMode：pointer=CDP，legacy=`captureVisibleTab`。不再按 Chrome/Edge 写死。须重新加载扩展。
+- **0.1.46** 起 legacy 截图先卸残留 debugger，切标签后只等 80ms 再 `captureVisibleTab`；readback 再试 3 次。不走 CDP。须重新加载扩展。
+- **0.1.47** 起每次 `captureVisibleTab`（含失败）至少隔 1.1 秒，避免重试把自己打进配额。须重新加载扩展。
+- **0.1.48** 起 legacy 截图回到当初能出图的单次 `captureVisibleTab`（不卸 debugger、不套超时、失败不连着重试）；两次间隔 1.1 秒防配额。ClickMode 仍选后端。须重新加载扩展。
