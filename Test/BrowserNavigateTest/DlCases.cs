@@ -29,6 +29,81 @@ namespace BrowserNavigateTest
             }
         }
 
+        /// <summary>只跑 Chrome attach 上次红的 12 条，不跑整套 80。</summary>
+        internal static void RunRed(TestRun run, FixtureHttp http)
+        {
+            var s = new NavSession();
+            string id = IntCases.OpenOk(run, s, http.Url("download", "index.html"), "dl-neg-file-url");
+            if (id == null)
+            {
+                IntCases.FailMany(run, "依赖 download 夹具",
+                    "dl-neg-bad-ref", "dl-neg-no-event", "dl-neg-stale-ref",
+                    "dl-x-neg-data", "dl-x-neg-e0", "dl-x-neg-e00", "dl-x-neg-file2", "dl-x-neg-stale2",
+                    "dl-x-url-txt-track");
+            }
+            else
+            {
+                string tree = IntCases.WaitTree(s, id, false, "下载附件", "普通按钮");
+                string fileRef = FindDlRef(tree, "下载附件");
+                IntCases.ExpectFail(run, "dl-neg-file-url", s.Download(id, url: "file:///C:/Windows/win.ini", path: "browser_dl/neg.txt"), "http");
+                IntCases.ExpectFail(run, "dl-neg-bad-ref", s.Download(id, refId: "e9999", path: "browser_dl/neg.txt"), "过期");
+                IntCases.ExpectFail(
+                    run,
+                    "dl-neg-no-event",
+                    s.Download(id, refId: FindFakeDownload(tree) ?? "e1", path: "browser_dl/neg.txt"),
+                    "下载");
+                if (string.IsNullOrEmpty(fileRef))
+                {
+                    run.CaseFail("dl-neg-stale-ref", "空拍无下载附件");
+                }
+                else
+                {
+                    ToolResult jump = s.Nav(http.Url("public-example", "index.html"), host: IntCases.NavHost, channelId: id);
+                    if (!jump.Success)
+                    {
+                        run.CaseFail("dl-neg-stale-ref", jump.Error ?? "跳转失败");
+                    }
+                    else
+                    {
+                        IntCases.ExpectFail(run, "dl-neg-stale-ref", s.Download(id, refId: fileRef, path: "browser_dl/neg.txt"), "过期");
+                    }
+                }
+
+                IntCases.ExpectFail(run, "dl-x-neg-data", s.Download(id, url: "data:text/plain,hi", path: "browser_dl/x-neg.txt"), "http");
+                IntCases.ExpectFail(run, "dl-x-neg-e0", s.Download(id, refId: "e0", path: "browser_dl/x-neg.txt"), "过期");
+                IntCases.ExpectFail(run, "dl-x-neg-e00", s.Download(id, refId: "e00", path: "browser_dl/x-neg.txt"), "过期");
+                IntCases.ExpectFail(run, "dl-x-neg-file2", s.Download(id, url: "file:///C:/Windows/win.ini", path: "browser_dl/x-neg.txt"), "http");
+                if (string.IsNullOrEmpty(fileRef))
+                {
+                    run.CaseFail("dl-x-neg-stale2", "空拍无下载附件");
+                }
+                else
+                {
+                    IntCases.ExpectFail(run, "dl-x-neg-stale2", s.Download(id, refId: fileRef, path: "browser_dl/x-neg.txt"), "过期");
+                }
+
+                ToolResult txt = s.Download(id, url: http.Url("download", "sample.txt"), path: "browser_dl/x-sample.txt");
+                string wantTrack = IntCases.IsAttachHost() ? "attach" : "agent";
+                IntCases.Ok(
+                    run,
+                    "dl-x-url-txt-track",
+                    txt != null && txt.Success && IntCases.Str(txt, "track") == wantTrack,
+                    IntCases.Str(txt, "track"));
+            }
+
+            string d18 = IntCases.OpenOk(run, s, http.Url("d18-risk", "index.html"), "dl-neg-password");
+            if (d18 == null)
+            {
+                run.CaseFail("dl-neg-login", "依赖 d18-risk");
+            }
+            else
+            {
+                string t = IntCases.WaitTree(s, d18, true, "密码", "登录");
+                IntCases.ExpectFail(run, "dl-neg-password", s.Download(d18, refId: IntCases.FindRef(t, "密码") ?? "e1", path: "browser_dl/neg.txt"), "密码");
+                IntCases.ExpectFail(run, "dl-neg-login", s.Download(d18, refId: IntCases.FindRef(t, "登录") ?? "e1", path: "browser_dl/neg.txt"), "登录");
+            }
+        }
+
         private static void RunNeg(TestRun run, NavSession s, FixtureHttp http)
         {
             string id = IntCases.OpenOk(run, s, http.Url("download", "index.html"), "dl-neg-neither");

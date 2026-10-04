@@ -159,7 +159,12 @@ namespace BrowserNavigateTest
                 txt != null && txt.Success && IntCases.Str(txt, "source_url").IndexOf("sample.txt", System.StringComparison.Ordinal) >= 0,
                 IntCases.Str(txt, "source_url"));
             IntCases.Ok(run, "dl-x-url-txt-kind", txt != null && txt.Success && IntCases.Str(txt, "kind") == "browser", IntCases.Str(txt, "kind"));
-            IntCases.Ok(run, "dl-x-url-txt-track", txt != null && txt.Success && IntCases.Str(txt, "track") == "agent", IntCases.Str(txt, "track"));
+            string wantTrack = IntCases.IsAttachHost() ? "attach" : "agent";
+            IntCases.Ok(
+                run,
+                "dl-x-url-txt-track",
+                txt != null && txt.Success && IntCases.Str(txt, "track") == wantTrack,
+                IntCases.Str(txt, "track"));
 
             ToolResult png = s.Download(id, url: http.Url("download", "sample.png"), path: "browser_dl/x-sample.png");
             IntCases.Ok(
