@@ -404,7 +404,7 @@ function frameMessageOptions(frameId) {
   return { frameId };
 }
 
-const CONTENT_VER = 39;
+const CONTENT_VER = 40;
 
 async function ensureContentScript(tabId, frameId) {
   const opts = frameMessageOptions(frameId);
@@ -661,7 +661,7 @@ async function downloadTab(msg) {
     return file;
   }
 
-  const downloadPromise = waitNextDownload(30000);
+  const downloadPromise = waitNextDownload(3000);
   const click = await sendToTab(tabId, {
     type: "download_click",
     ref: msg.ref,

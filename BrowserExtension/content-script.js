@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 39;
+  const CONTENT_VER = 40;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -689,7 +689,10 @@
         return false;
       }
       const own = ownText(el);
-      return own.length >= 2 && own.length <= 40;
+      if (own.length < 2 || own.length > 40) return false;
+      // 整句说明不当叶子，避免「密码 / 登录 / 删除必须失败」抢 ref
+      if (/[。！？]/.test(own)) return false;
+      return true;
     }
 
     function isShortOwnText(el) {

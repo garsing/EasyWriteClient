@@ -32,6 +32,16 @@ namespace WordAddIn1
                         return Fail("须且仅能提供 ref 或 url 之一");
                     }
 
+                    if (hasUrl)
+                    {
+                        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out Uri destUri)
+                            || (destUri.Scheme != Uri.UriSchemeHttp
+                                && destUri.Scheme != Uri.UriSchemeHttps))
+                        {
+                            return Fail("url 须为 http/https");
+                        }
+                    }
+
                     if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath dest, out string destError, "path"))
                     {
                         return Fail(destError ?? "必须提供 path");

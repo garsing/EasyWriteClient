@@ -373,18 +373,6 @@ namespace WordAddIn1.BrowserHost
                 || string.Equals(probe?.Tag, "BUTTON", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(probe?.Tag, "A", StringComparison.OrdinalIgnoreCase);
 
-            if (!buttonLike && probe == null && entry == null)
-            {
-                return false;
-            }
-
-            // 方案 A：凡带删除/Delete 的 button/link 一律拒
-            if (!buttonLike)
-            {
-                // 无名 role 但文本像删除按钮
-                buttonLike = ContainsAny(CombinedLabel(entry, probe), DeleteMarkers);
-            }
-
             if (!buttonLike)
             {
                 return false;

@@ -1006,6 +1006,13 @@ namespace WordAddIn1.BrowserHost
             {
                 if (hasUrl)
                 {
+                    if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out Uri destUri)
+                        || (destUri.Scheme != Uri.UriSchemeHttp
+                            && destUri.Scheme != Uri.UriSchemeHttps))
+                    {
+                        return BrowserDownloadResult.Fail("url 须为 http/https");
+                    }
+
                     // 优先扩展 downloads（带 cookie）；失败再纯 HTTP
                     try
                     {
@@ -1052,7 +1059,7 @@ namespace WordAddIn1.BrowserHost
 
                 if (!BrowserRefStore.TryGet(channel.ChannelId, refId, out BrowserRefEntry entry) || entry == null)
                 {
-                    return BrowserDownloadResult.Fail("未知 ref；请先 snapshot");
+                    return BrowserDownloadResult.Fail("ref 无效或已过期，请重新 F_browser_snapshot");
                 }
 
                 DomNodeProbe probe = entry.AttachProbe;

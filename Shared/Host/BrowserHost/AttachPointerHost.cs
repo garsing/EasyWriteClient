@@ -436,7 +436,7 @@ namespace WordAddIn1.BrowserHost
 
                 if (!BrowserRefStore.TryGet(channel.ChannelId, refId, out BrowserRefEntry entry) || entry == null)
                 {
-                    return BrowserDownloadResult.Fail("未知 ref；请先 snapshot");
+                    return BrowserDownloadResult.Fail("ref 无效或已过期，请重新 F_browser_snapshot");
                 }
 
                 if (!entry.BackendDomNodeId.HasValue)
