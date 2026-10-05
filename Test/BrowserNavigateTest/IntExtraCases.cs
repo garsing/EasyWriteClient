@@ -393,10 +393,17 @@ namespace BrowserNavigateTest
             else
             {
                 string tree = WaitTree(s, id, true, "提交", "付款", "安全按钮");
-                ExpectFailAndUnchanged(run, s, id, "int-d18-click-submit", FindRef(tree, "提交"), "click", null, "拒绝");
                 ExpectFailAndUnchanged(run, s, id, "int-d18-click-pay2", FindRef(tree, "付款"), "click", null, "拒绝");
                 ExpectFailAndUnchanged(run, s, id, "int-d18-click-signin", FindRef(tree, "Sign in"), "click", null, "拒绝");
                 ExpectFailAndUnchanged(run, s, id, "int-d18-click-delete-en", FindRef(tree, "Delete"), "click", null, "拒绝");
+                string submit = FindRef(tree, "提交");
+                ToolResult submitted = string.IsNullOrEmpty(submit) ? null : s.Interact(id, "click", submit);
+                Ok(
+                    run,
+                    "int-d18-click-submit",
+                    submitted != null && submitted.Success && Tree(submitted).Contains("提交已点"),
+                    submit == null ? "无提交 ref" : (submitted == null ? "无回包" : submitted.Error));
+                tree = submitted != null && submitted.Success ? Tree(submitted) : tree;
                 string safe = FindRef(tree, "安全按钮");
                 ToolResult ok = string.IsNullOrEmpty(safe) ? null : s.Interact(id, "click", safe);
                 Ok(run, "int-d18-click-safe", ok != null && ok.Success && Tree(ok).Contains("安全按钮已点"), ok == null ? "无安全按钮" : ok.Error);

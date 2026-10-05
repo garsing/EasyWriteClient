@@ -115,7 +115,7 @@ namespace BrowserNavigateTest
             string t = IntCases.WaitTree(s, id, true, "立即支付", "删除", "提交", "付款", "Sign in", "Delete");
             IntCases.ExpectFail(run, "dl-x-neg-pay", s.Download(id, refId: IntCases.FindRef(t, "立即支付") ?? "e1", path: "browser_dl/x-neg.txt"), "支付");
             IntCases.ExpectFail(run, "dl-x-neg-delete", s.Download(id, refId: IntCases.FindRef(t, "删除") ?? "e1", path: "browser_dl/x-neg.txt"), "删除");
-            IntCases.ExpectFail(run, "dl-x-neg-submit", s.Download(id, refId: IntCases.FindRef(t, "提交") ?? "e1", path: "browser_dl/x-neg.txt"), "提交");
+            IntCases.ExpectFail(run, "dl-x-neg-submit", s.Download(id, refId: IntCases.FindRef(t, "提交") ?? "e1", path: "browser_dl/x-neg.txt"), "下载");
             IntCases.ExpectFail(run, "dl-x-neg-pay2", s.Download(id, refId: IntCases.FindRef(t, "付款") ?? "e1", path: "browser_dl/x-neg.txt"), "支付");
             IntCases.ExpectFail(run, "dl-x-neg-signin", s.Download(id, refId: IntCases.FindRef(t, "Sign in") ?? "e1", path: "browser_dl/x-neg.txt"), "登录");
             IntCases.ExpectFail(run, "dl-x-neg-delen", s.Download(id, refId: IntCases.FindRef(t, "Delete") ?? "e1", path: "browser_dl/x-neg.txt"), "删除");

@@ -4,14 +4,13 @@ using System.Linq;
 
 namespace WordAddIn1.BrowserHost
 {
-    /// <summary>D18 启发式：密码 / 提交登录支付 / 删除。</summary>
+    /// <summary>D18 启发式：密码 / 登录支付 / 删除。普通「提交」不拦。</summary>
     internal static class BrowserRiskGuard
     {
         private static readonly string[] LoginSubmitPayMarkers =
         {
             "登录", "登陆", "立即登录", "注册并登录",
             "sign in", "log in", "login", "signin",
-            "提交", "确认提交", "submit",
             "支付", "付款", "结算", "下单", "确认支付", "验证并支付",
             "checkout", "pay now", "place order", "payment"
         };
@@ -95,7 +94,7 @@ namespace WordAddIn1.BrowserHost
 
             if (IsLoginSubmitPayControl(entry, probe))
             {
-                return "已拒绝代点登录/提交/支付；请用户在看得见的窗里自己点击";
+                return "已拒绝代点登录/支付；请用户在看得见的窗里自己点击";
             }
 
             string file = CheckFileChooser(entry, probe);
@@ -233,7 +232,7 @@ namespace WordAddIn1.BrowserHost
 
             if (IsLoginSubmitPayControl(entry, probe))
             {
-                return "已拒绝代点登录/提交/支付；请用户在看得见的窗里自己点击";
+                return "已拒绝代点登录/支付；请用户在看得见的窗里自己点击";
             }
 
             string file = CheckFileChooser(entry, probe);
@@ -309,7 +308,7 @@ namespace WordAddIn1.BrowserHost
 
             if (IsLoginSubmitPayControl(focusEntry, probe))
             {
-                return "已拒绝用 Enter 代提交/登录/支付；请用户自己操作";
+                return "已拒绝用 Enter 代登录/支付；请用户自己操作";
             }
 
             // 焦点在普通输入框，但同页像登录表（有 password）→ 拒绝 Enter 代提交
