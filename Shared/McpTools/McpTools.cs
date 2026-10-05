@@ -74,8 +74,9 @@ namespace WordAddIn1
             F_BrowserInteractTool.Register(toolRegistry, wordApplication);
             F_BrowserDownloadTool.Register(toolRegistry, wordApplication);
             F_SwitchDefaultChannelTool.Register(toolRegistry, wordApplication);
-            F_GetCurrDocChunkDisplayContentTool.Register(toolRegistry, wordApplication);
-            F_GetCurrDocChunkParagraphDisplayContentTool.Register(toolRegistry, wordApplication);
+            // F_get_curr_doc_chunk_* 已下线注册（2026-10）：大文档 API 路线先封住，实现保留，勿再 Register
+            // F_GetCurrDocChunkDisplayContentTool.Register(toolRegistry, wordApplication);
+            // F_GetCurrDocChunkParagraphDisplayContentTool.Register(toolRegistry, wordApplication);
             F_FormatTransferTool.Register(toolRegistry, wordApplication);
             F_ApplyPageSetupTool.Register(toolRegistry, wordApplication);
             F_ProcessDocumentActionsTool.Register(toolRegistry, wordApplication);

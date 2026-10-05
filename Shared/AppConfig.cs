@@ -66,7 +66,7 @@ namespace WordAddIn1
             public List<string> DebugCategories { get; set; }
 
             /// <summary>
-            /// readText 字符数超过此阈值时走后端 API（curr_doc_chunk_and_snapshot），否则本地 ProcessDocumentLocally。默认 60000。
+            /// readText 字符数超过此阈值时本应走后端 API；2026-10 先封住，超阈值报文档太大。默认 60000。
             /// </summary>
             public int BackendProcessTextLengthThreshold { get; set; } = 60000;
 

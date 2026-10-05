@@ -58,8 +58,9 @@ namespace WordAddIn1
                 { "document.getDataProvenance", "F_get_data_provenance" },
                 { "document.insertFromFile", "F_insert_document_from_file" },
                 { "document.replaceFromFile", "F_replace_document_from_file" },
-                { "document.getChunkDisplayContent", "F_get_curr_doc_chunk_display_content" },
-                { "document.getChunkParagraphDisplayContent", "F_get_curr_doc_chunk_paragraph_display_content" },
+                // document.getChunkDisplayContent / F_get_curr_doc_chunk_* 已下线（2026-10）：实现保留
+                // { "document.getChunkDisplayContent", "F_get_curr_doc_chunk_display_content" },
+                // { "document.getChunkParagraphDisplayContent", "F_get_curr_doc_chunk_paragraph_display_content" },
                 // { "document.findPosition", "F_find_position" }, // 暂不下线 WS 映射（代码保留）
                 { "document.formatTransfer", "F_format_transfer" },
                 { "document.applyPageSetup", "F_apply_page_setup" },

@@ -20,11 +20,17 @@ namespace WordAddIn1
     public static class WordDocumentExtractor
     {
         /// <summary>
-        /// readText 字符数超过此阈值时走后端 API（curr_doc_chunk_and_snapshot），否则本地 ProcessDocumentLocally。
+        /// readText 字符数超过此阈值时本应走后端 API（curr_doc_chunk_and_snapshot），否则本地 ProcessDocumentLocally。
+        /// 2026-10：API 路线先封住，超阈值直接报文档太大；ProcessDocumentWithApi 保留勿删。
         /// 可通过 config.json → App.BackendProcessTextLengthThreshold 调整。
         /// </summary>
         private static int BackendProcessTextLengthThreshold =>
             ConfigManager.Config?.App?.BackendProcessTextLengthThreshold ?? 60000;
+
+        /// <summary>
+        /// 大文档走后端 API 开关。false = 封住，超阈值抛「文档太大」；实现保留，改回 true 即可恢复。
+        /// </summary>
+        private static bool AllowBackendProcessApi => false;
 
         private static bool ShouldLogDocumentExtractDetails(bool optionsVerbose = false)
         {
@@ -948,6 +954,12 @@ namespace WordAddIn1
             ProcessingResult result;
             if (readText.Length > BackendProcessTextLengthThreshold)
             {
+                if (!AllowBackendProcessApi)
+                {
+                    throw new InvalidOperationException(
+                        $"文档太大：文本长度 {readText.Length} 超过阈值 {BackendProcessTextLengthThreshold}，暂不支持处理");
+                }
+
                 if (options.DisallowBackendApi)
                 {
                     throw new InvalidOperationException(

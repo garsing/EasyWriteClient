@@ -24,6 +24,8 @@ namespace WordAddIn1
 
     /// 渠道解析经 <see cref="DocumentHostAdapter"/>（Word/WPS）；只读不抢前台。
 
+    /// 已下线注册（2026-10）：大文档 API 路线先封住，实现保留，勿再 Register。
+
     /// </summary>
 
     public static class F_GetCurrDocChunkParagraphDisplayContentTool
