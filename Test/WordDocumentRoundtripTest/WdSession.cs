@@ -79,6 +79,153 @@ namespace WordDocumentRoundtripTest
             return DesktopToolPipe.Call("F_get_document_page_info", args);
         }
 
+        public ToolResult GetContent(string channelId, string codeLevel = null)
+        {
+            var args = new Dictionary<string, object>();
+            if (channelId != null)
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (codeLevel != null)
+            {
+                args["code_level"] = codeLevel;
+            }
+
+            return DesktopToolPipe.Call("F_get_document_content", args);
+        }
+
+        public bool TypePlain(string fullPath, string text)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object content = GetProp(doc, "Content");
+                    SetProp(content, "Text", text ?? "");
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    doc.Content.Text = text ?? "";
+                    return true;
+                });
+        }
+
+        public bool InsertTable(string fullPath, int rows, int cols, string[] cells)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc => InsertTableLate(doc, rows, cols, cells))
+                : WithWordDoc(fullPath, doc =>
+                {
+                    int end = doc.Content.End;
+                    Word.Range range = doc.Range(end - 1, end - 1);
+                    Word.Table table = doc.Tables.Add(range, rows, cols);
+                    int n = cells == null ? 0 : cells.Length;
+                    int k = 0;
+                    for (int r = 1; r <= rows; r++)
+                    {
+                        for (int c = 1; c <= cols; c++)
+                        {
+                            string t = k < n ? (cells[k] ?? "") : "";
+                            k++;
+                            table.Cell(r, c).Range.Text = t;
+                        }
+                    }
+
+                    return true;
+                });
+        }
+
+        public bool InsertPicture(string fullPath)
+        {
+            string png = WriteOnePxPng();
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object shapes = GetProp(doc, "InlineShapes");
+                    Invoke(shapes, "AddPicture", png);
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    doc.InlineShapes.AddPicture(png);
+                    return true;
+                });
+        }
+
+        public bool InsertChart(string fullPath)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    try
+                    {
+                        object shapes = GetProp(doc, "InlineShapes");
+                        Invoke(shapes, "AddChart", 51);
+                        return true;
+                    }
+                    catch
+                    {
+                    }
+
+                    try
+                    {
+                        object shapes = GetProp(doc, "Shapes");
+                        Invoke(shapes, "AddChart", 51);
+                        return true;
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    doc.InlineShapes.AddChart(Microsoft.Office.Core.XlChartType.xlColumnClustered);
+                    return true;
+                });
+        }
+
+        /// <summary>用本机 Word 做好含 Chart 的 docx 夹具，不 Quit Word。</summary>
+        public string CreateChartFixtureDocx()
+        {
+            Word.Application app = null;
+            bool createdApp = false;
+            try
+            {
+                try
+                {
+                    app = (Word.Application)Marshal.GetActiveObject("Word.Application");
+                }
+                catch
+                {
+                    app = new Word.Application();
+                    app.Visible = true;
+                    createdApp = true;
+                }
+
+                Word.Document doc = app.Documents.Add();
+                doc.InlineShapes.AddChart(Microsoft.Office.Core.XlChartType.xlColumnClustered);
+                string path = NewDocxPath();
+                object fileName = path;
+                doc.SaveAs2(ref fileName);
+                object save = false;
+                doc.Close(ref save);
+                return path;
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                if (createdApp)
+                {
+                    // 本波自己拉起的 Word 只关稿，不 Quit。
+                }
+            }
+        }
+
         public static bool IsShortId(string id)
         {
             return !string.IsNullOrEmpty(id)
@@ -502,6 +649,62 @@ namespace WordDocumentRoundtripTest
             ref Guid riid,
             [MarshalAs(UnmanagedType.IDispatch)] out object ppvObject);
 
+        private static bool WithWordDoc(string fullPath, Func<Word.Document, bool> action)
+        {
+            try
+            {
+                var app = (Word.Application)Marshal.GetActiveObject("Word.Application");
+                Word.Document doc = FindWordDoc(app, fullPath);
+                if (doc == null)
+                {
+                    return false;
+                }
+
+                return action(doc);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool InsertTableLate(object doc, int rows, int cols, string[] cells)
+        {
+            object content = GetProp(doc, "Content");
+            int end = Convert.ToInt32(GetProp(content, "End"));
+            int pos = end > 1 ? end - 1 : end;
+            object range = Invoke(doc, "Range", pos, pos);
+            object tables = GetProp(doc, "Tables");
+            object table = Invoke(tables, "Add", range, rows, cols);
+            int n = cells == null ? 0 : cells.Length;
+            int k = 0;
+            for (int r = 1; r <= rows; r++)
+            {
+                for (int c = 1; c <= cols; c++)
+                {
+                    string t = k < n ? (cells[k] ?? "") : "";
+                    k++;
+                    object cell = Invoke(table, "Cell", r, c);
+                    object cr = GetProp(cell, "Range");
+                    SetProp(cr, "Text", t);
+                }
+            }
+
+            return true;
+        }
+
+        private static string WriteOnePxPng()
+        {
+            string path = Path.Combine(
+                Path.GetTempPath(),
+                "ew-wc-" + Guid.NewGuid().ToString("N") + ".png");
+            File.WriteAllBytes(
+                path,
+                Convert.FromBase64String(
+                    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="));
+            return path;
+        }
+
         private static object GetProp(object target, string name)
         {
             return target.GetType().InvokeMember(
@@ -510,6 +713,16 @@ namespace WordDocumentRoundtripTest
                 null,
                 target,
                 null);
+        }
+
+        private static void SetProp(object target, string name, object value)
+        {
+            target.GetType().InvokeMember(
+                name,
+                System.Reflection.BindingFlags.SetProperty,
+                null,
+                target,
+                new object[] { value });
         }
 
         private static object Invoke(object target, string name, params object[] args)
