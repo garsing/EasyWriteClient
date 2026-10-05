@@ -9,13 +9,12 @@ namespace WordAddIn1
 {
     /// <summary>
     /// WPS 文字图表晚绑定抽取：不走 Word.InlineShape / 内嵌 Excel Chart COM。
-    /// 产出与 WordReader 相同的 &lt;Chart&gt;&lt;DataTable&gt;，供 OOXML 图表位替换。
+    /// Series 读取对齐 WPP（LateBoundChartSeries），产出 WordReader 相同的 &lt;Chart&gt;&lt;DataTable&gt;。
     /// </summary>
     internal static class WpsChartExtract
     {
         private const int WdInlineShapeChart = 12;
         private const int MsoChart = 3;
-        private const int XlSecondary = 2;
 
         public static bool IsWpsDocument(object document)
         {
@@ -241,51 +240,17 @@ namespace WordAddIn1
         {
             try
             {
-                object seriesCollection = GetSeriesCollection(chart);
-                if (seriesCollection == null)
+                if (LateBoundChartSeries.TryRead(chart, out LateBoundChartSeries.Grid raw, out string seriesError)
+                    && raw != null
+                    && raw.Series != null
+                    && raw.Series.Count > 0)
                 {
-                    string fromSheet = TryExtractFromChartDataWorkbook(chart);
-                    return fromSheet ?? "";
+                    return BuildDataTableXml(ToSeriesRows(raw));
                 }
 
-                int seriesCount = TryInt(WpsCom.GetProperty(seriesCollection, "Count"), 0);
-                if (seriesCount <= 0)
-                {
-                    string fromSheet = TryExtractFromChartDataWorkbook(chart);
-                    return string.IsNullOrEmpty(fromSheet) ? EmptyChartXml() : fromSheet;
-                }
-
-                var seriesInfoList = new List<SeriesRow>();
-                for (int i = 1; i <= seriesCount; i++)
-                {
-                    object series = WpsCom.TryGetItem(seriesCollection, i);
-                    if (series == null)
-                    {
-                        try
-                        {
-                            series = WpsCom.Invoke(seriesCollection, "Item", i);
-                        }
-                        catch
-                        {
-                            continue;
-                        }
-                    }
-
-                    if (series == null)
-                    {
-                        continue;
-                    }
-
-                    seriesInfoList.Add(ReadSeries(series, i));
-                }
-
-                if (seriesInfoList.Count == 0)
-                {
-                    string fromSheet = TryExtractFromChartDataWorkbook(chart);
-                    return string.IsNullOrEmpty(fromSheet) ? EmptyChartXml() : fromSheet;
-                }
-
-                return BuildDataTableXml(seriesInfoList);
+                Log("Series 读失败: " + (seriesError ?? "empty"));
+                string fromSheet = TryExtractFromChartDataWorkbook(chart);
+                return string.IsNullOrEmpty(fromSheet) ? EmptyChartXml() : fromSheet;
             }
             catch (Exception ex)
             {
@@ -294,80 +259,53 @@ namespace WordAddIn1
             }
         }
 
-        private static SeriesRow ReadSeries(object series, int index)
+        private static List<SeriesRow> ToSeriesRows(LateBoundChartSeries.Grid raw)
         {
-            var row = new SeriesRow
+            var list = new List<SeriesRow>();
+            List<string> cats = raw.Categories ?? new List<string>();
+            for (int i = 0; i < raw.Series.Count; i++)
             {
-                Name = Convert.ToString(TryGet(series, "Name")) ?? ("系列" + index),
-                AxisY = "primary",
-                Color = "",
-                ChartType = "",
-                ShowDataLabels = "false",
-                Points = new List<PointRow>()
-            };
-
-            try
-            {
-                if (TryInt(TryGet(series, "AxisGroup"), 1) == XlSecondary)
+                LateBoundChartSeries.Col one = raw.Series[i];
+                var row = new SeriesRow
                 {
-                    row.AxisY = "secondary";
-                }
-            }
-            catch
-            {
-            }
-
-            row.Color = TrySeriesColor(series);
-            row.ChartType = MapChartType(TryInt(TryGet(series, "ChartType"), int.MinValue));
-            try
-            {
-                object labels = TryGet(series, "HasDataLabels");
-                if (labels is bool b)
+                    Name = string.IsNullOrEmpty(one.Name) ? ("系列" + (i + 1)) : one.Name,
+                    AxisY = "primary",
+                    Color = NormalizeWordColor(one.Color),
+                    ChartType = "",
+                    ShowDataLabels = "false",
+                    Points = new List<PointRow>()
+                };
+                List<string> values = one.Values ?? new List<string>();
+                int n = Math.Max(cats.Count, values.Count);
+                for (int j = 0; j < n; j++)
                 {
-                    row.ShowDataLabels = b ? "true" : "false";
-                }
-            }
-            catch
-            {
-            }
-
-            object valuesObj = TryGet(series, "Values");
-            object xValuesObj = TryGet(series, "XValues");
-            Array valuesArray = ToArray(valuesObj);
-            Array xValuesArray = ToArray(xValuesObj);
-            int pointCount = valuesArray == null ? 0 : (valuesArray.GetUpperBound(0) - valuesArray.GetLowerBound(0) + 1);
-            int valuesStart = valuesArray == null ? 0 : valuesArray.GetLowerBound(0);
-            int xStart = xValuesArray == null ? 0 : xValuesArray.GetLowerBound(0);
-            for (int j = 0; j < pointCount; j++)
-            {
-                string x = "";
-                double y = 0;
-                if (xValuesArray != null)
-                {
-                    int xi = xStart + j;
-                    if (xi >= xValuesArray.GetLowerBound(0) && xi <= xValuesArray.GetUpperBound(0))
+                    double y = 0;
+                    if (j < values.Count)
                     {
-                        x = Convert.ToString(xValuesArray.GetValue(xi)) ?? "";
+                        double.TryParse(values[j], NumberStyles.Any, CultureInfo.InvariantCulture, out y);
                     }
-                }
 
-                if (valuesArray != null)
-                {
-                    int yi = valuesStart + j;
-                    if (yi >= valuesArray.GetLowerBound(0) && yi <= valuesArray.GetUpperBound(0))
+                    row.Points.Add(new PointRow
                     {
-                        double.TryParse(
-                            Convert.ToString(valuesArray.GetValue(yi)),
-                            NumberStyles.Any,
-                            CultureInfo.InvariantCulture,
-                            out y);
-                    }
+                        X = j < cats.Count ? (cats[j] ?? "") : "",
+                        Y = y
+                    });
                 }
 
-                row.Points.Add(new PointRow { X = x, Y = y });
+                list.Add(row);
             }
 
-            return row;
+            return list;
+        }
+
+        private static string NormalizeWordColor(string color)
+        {
+            if (string.IsNullOrEmpty(color) || color == "none")
+            {
+                return "";
+            }
+
+            return color[0] == '#' ? color.Substring(1) : color;
         }
 
         private static string TryExtractFromChartDataWorkbook(object chart)
@@ -617,61 +555,6 @@ namespace WordAddIn1
             }
         }
 
-        private static string TrySeriesColor(object series)
-        {
-            try
-            {
-                object format = TryGet(series, "Format");
-                object line = format == null ? null : TryGet(format, "Line");
-                object fore = line == null ? null : TryGet(line, "ForeColor");
-                object rgb = fore == null ? null : TryGet(fore, "RGB");
-                if (rgb != null)
-                {
-                    return ConvertRgbToHex(Convert.ToInt32(rgb));
-                }
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                object format = TryGet(series, "Format");
-                object fill = format == null ? null : TryGet(format, "Fill");
-                object fore = fill == null ? null : TryGet(fill, "ForeColor");
-                object rgb = fore == null ? null : TryGet(fore, "RGB");
-                if (rgb != null)
-                {
-                    return ConvertRgbToHex(Convert.ToInt32(rgb));
-                }
-            }
-            catch
-            {
-            }
-
-            return "";
-        }
-
-        private static string MapChartType(int xl)
-        {
-            if (xl == 51)
-            {
-                return "column";
-            }
-
-            if (xl == 4)
-            {
-                return "line";
-            }
-
-            if (xl == -4102)
-            {
-                return "pie3d";
-            }
-
-            return "";
-        }
-
         private static int TryInt(object value, int fallback)
         {
             if (value == null)
@@ -687,14 +570,6 @@ namespace WordAddIn1
             {
                 return fallback;
             }
-        }
-
-        private static string ConvertRgbToHex(int rgbValue)
-        {
-            int b = (rgbValue >> 16) & 0xFF;
-            int g = (rgbValue >> 8) & 0xFF;
-            int r = rgbValue & 0xFF;
-            return r.ToString("X2") + g.ToString("X2") + b.ToString("X2");
         }
 
         private static string EscapeXmlText(string value)

@@ -583,82 +583,53 @@ namespace WordAddIn1.PresentationHost
         private static bool TryReadGridFromSeries(object chart, out PptHtmlChartGrid grid, out string error)
         {
             grid = null;
-            error = null;
-            try
+            if (!WordAddIn1.LateBoundChartSeries.TryRead(chart, out WordAddIn1.LateBoundChartSeries.Grid raw, out error)
+                || raw == null
+                || raw.Categories == null
+                || raw.Series == null)
             {
-                object sc = TryInvoke(chart, "SeriesCollection");
-                if (sc == null)
-                {
-                    sc = WppCom.GetProperty(chart, "SeriesCollection");
-                }
-
-                int count = Convert.ToInt32(WppCom.GetProperty(sc, "Count"));
-                if (count < 1)
-                {
-                    error = "图表没有系列";
-                    return false;
-                }
-
-                object s1 = GetSeries(chart, 1);
-                List<string> cats = ToStringList(WppCom.GetProperty(s1, "XValues"));
-                if (cats.Count == 0)
-                {
-                    // 外链/部分图类别只在轴上，XValues 为空。
-                    cats = TryReadCategoryAxisNames(chart);
-                }
-
-                if (cats.Count == 0)
-                {
-                    error = "图表没有类别";
-                    return false;
-                }
-
-                var columns = new List<PptHtmlChartColumn>
-                {
-                    new PptHtmlChartColumn { Role = "category", Name = "类别" }
-                };
-                var seriesValues = new List<List<string>>();
-                int useSeries = Math.Min(count, MaxCols - 1);
-                for (int i = 1; i <= useSeries; i++)
-                {
-                    object series = GetSeries(chart, i);
-                    string name = Convert.ToString(WppCom.GetProperty(series, "Name") ?? ("系列" + i));
-                    var col = new PptHtmlChartColumn
-                    {
-                        Role = "value",
-                        Name = name,
-                        Color = TryReadSeriesColor(series)
-                    };
-                    columns.Add(col);
-                    seriesValues.Add(ToStringList(WppCom.GetProperty(series, "Values")));
-                }
-
-                int useRows = Math.Min(cats.Count, MaxRows - 1);
-                var rows = new List<List<string>>();
-                for (int r = 0; r < useRows; r++)
-                {
-                    var row = new List<string> { cats[r] };
-                    for (int s = 0; s < seriesValues.Count; s++)
-                    {
-                        row.Add(r < seriesValues[s].Count ? seriesValues[s][r] : "");
-                    }
-
-                    rows.Add(row);
-                }
-
-                grid = new PptHtmlChartGrid
-                {
-                    Columns = columns,
-                    Rows = rows,
-                    Truncated = cats.Count + 1 > MaxRows || count + 1 > MaxCols
-                };
-                return grid.IsPourable;
-            }
-            catch (Exception ex)
-            {
-                error = "读 SeriesCollection 失败: " + ex.Message;
                 return false;
             }
+
+            int count = raw.Series.Count;
+            int useSeries = Math.Min(count, MaxCols - 1);
+            var columns = new List<PptHtmlChartColumn>
+            {
+                new PptHtmlChartColumn { Role = "category", Name = "类别" }
+            };
+            var seriesValues = new List<List<string>>();
+            for (int i = 0; i < useSeries; i++)
+            {
+                WordAddIn1.LateBoundChartSeries.Col one = raw.Series[i];
+                columns.Add(new PptHtmlChartColumn
+                {
+                    Role = "value",
+                    Name = one.Name,
+                    Color = one.Color
+                });
+                seriesValues.Add(one.Values ?? new List<string>());
+            }
+
+            int useRows = Math.Min(raw.Categories.Count, MaxRows - 1);
+            var rows = new List<List<string>>();
+            for (int r = 0; r < useRows; r++)
+            {
+                var row = new List<string> { raw.Categories[r] };
+                for (int s = 0; s < seriesValues.Count; s++)
+                {
+                    row.Add(r < seriesValues[s].Count ? seriesValues[s][r] : "");
+                }
+
+                rows.Add(row);
+            }
+
+            grid = new PptHtmlChartGrid
+            {
+                Columns = columns,
+                Rows = rows,
+                Truncated = raw.Categories.Count + 1 > MaxRows || count + 1 > MaxCols
+            };
+            return grid.IsPourable;
         }
 
         private static void ApplySeriesExtras(object chart, PptHtmlChartGrid grid)
