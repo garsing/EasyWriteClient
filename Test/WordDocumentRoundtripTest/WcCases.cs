@@ -8,13 +8,33 @@ namespace WordDocumentRoundtripTest
 {
     internal static class WcCases
     {
-        public const int Target = 42;
+        public const int Target = 92;
 
         private const string SentA = "易写读编码甲句。";
         private const string SentB = "易写读编码乙句。";
         private const string ParaA = "段甲夹具。";
         private const string ParaB = "段乙夹具。";
         private const string Dup = "重复句夹具。";
+        private const string MixSent = "易写混合甲句。";
+
+        private static readonly string[] ChartIds =
+        {
+            "wc-c-tag", "wc-c-id", "wc-c-not-only-image",
+            "wc-c-datatable", "wc-c-header", "wc-c-col-cat", "wc-c-col-val",
+            "wc-c-cat-name", "wc-c-axis", "wc-c-rows", "wc-c-row-csv",
+            "wc-c-row-num", "wc-c-close", "wc-c-s-level", "wc-c-p-level",
+            "wc-c-local", "wc-c-no-slots"
+        };
+
+        private static readonly string[] ChartTwoIds = { "wc-c-two", "wc-c-ids-diff" };
+
+        private static readonly string[] TableTwoIds = { "wc-t-two", "wc-t-ids-diff" };
+
+        private static readonly string[] MixIds =
+        {
+            "wc-mix-ok", "wc-mix-text", "wc-mix-s", "wc-mix-t", "wc-mix-i",
+            "wc-mix-c", "wc-mix-datatable", "wc-mix-p", "wc-mix-local"
+        };
 
         public static void Run(
             TestRun run,
@@ -31,8 +51,11 @@ namespace WordDocumentRoundtripTest
             RunParagraph(run, s);
             RunDuplicate(run, s);
             RunTable(run, s);
+            RunTableTwo(run, s);
             RunImage(run, s);
             RunChart(run, s);
+            RunChartTwo(run, s);
+            RunMix(run, s);
             RunContract(run, s, textPath);
             RunNegLate(run, s);
             RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
@@ -65,7 +88,8 @@ namespace WordDocumentRoundtripTest
             {
                 FailMany(run, opened.Error ?? "新建失败",
                     "wc-empty-ok", "wc-empty-no-body", "wc-empty-note",
-                    "wc-empty-level", "wc-empty-host-id", "wc-neg-bad-level");
+                    "wc-empty-level", "wc-empty-host-id", "wc-neg-bad-level",
+                    "wc-empty-omit-level", "wc-empty-no-chart", "wc-empty-no-table");
                 return;
             }
 
@@ -77,7 +101,8 @@ namespace WordDocumentRoundtripTest
             {
                 FailMany(run, got.Error ?? "空稿读失败",
                     "wc-empty-ok", "wc-empty-no-body", "wc-empty-note",
-                    "wc-empty-level", "wc-empty-host-id");
+                    "wc-empty-level", "wc-empty-host-id",
+                    "wc-empty-omit-level", "wc-empty-no-chart", "wc-empty-no-table");
                 s.CloseDocByPath(path);
                 return;
             }
@@ -101,6 +126,18 @@ namespace WordDocumentRoundtripTest
                 string.Equals(WdSession.Str(got, "host"), s.ExpectedKind, StringComparison.OrdinalIgnoreCase)
                 && WdSession.IsShortId(WdSession.Str(got, "channel_id")),
                 "host/id " + WdSession.Str(got, "host") + " " + WdSession.Str(got, "channel_id"));
+
+            ToolResult omit = s.GetContent(id, "");
+            Ok(run, "wc-empty-omit-level",
+                omit.Success
+                && string.Equals(WdSession.Str(omit, "code_level"), "sentence", StringComparison.Ordinal),
+                omit.Success ? "code_level=" + WdSession.Str(omit, "code_level") : (omit.Error ?? "空 code_level 失败"));
+            Ok(run, "wc-empty-no-chart",
+                !Regex.IsMatch(WdSession.Str(got, "document_content"), @"<Chart\b", RegexOptions.IgnoreCase),
+                "空稿不该有 Chart");
+            Ok(run, "wc-empty-no-table",
+                WdSession.Str(got, "document_content").IndexOf("<table", StringComparison.OrdinalIgnoreCase) < 0,
+                "空稿不该有 table");
             s.CloseDocByPath(path);
         }
 
@@ -112,7 +149,9 @@ namespace WordDocumentRoundtripTest
             {
                 FailMany(run, opened.Error ?? "新建失败",
                     "wc-s-default", "wc-s-explicit", "wc-s-alias", "wc-s-markers",
-                    "wc-s-text", "wc-s-codes", "wc-s-default-ch", "wc-s-explicit-id");
+                    "wc-s-text", "wc-s-codes", "wc-s-default-ch", "wc-s-explicit-id",
+                    "wc-s-alias-s_", "wc-s-case", "wc-neg-level-sent",
+                    "wc-s-two", "wc-s-pair", "wc-s-both", "wc-s-note", "wc-s-no-table");
                 return null;
             }
 
@@ -121,7 +160,9 @@ namespace WordDocumentRoundtripTest
             {
                 FailMany(run, "COM 写句失败",
                     "wc-s-default", "wc-s-explicit", "wc-s-alias", "wc-s-markers",
-                    "wc-s-text", "wc-s-codes", "wc-s-default-ch", "wc-s-explicit-id");
+                    "wc-s-text", "wc-s-codes", "wc-s-default-ch", "wc-s-explicit-id",
+                    "wc-s-alias-s_", "wc-s-case", "wc-neg-level-sent",
+                    "wc-s-two", "wc-s-pair", "wc-s-both", "wc-s-note", "wc-s-no-table");
                 return path;
             }
 
@@ -130,7 +171,9 @@ namespace WordDocumentRoundtripTest
             {
                 FailMany(run, def.Error ?? "句级读失败",
                     "wc-s-default", "wc-s-explicit", "wc-s-alias", "wc-s-markers",
-                    "wc-s-text", "wc-s-codes", "wc-s-default-ch", "wc-s-explicit-id");
+                    "wc-s-text", "wc-s-codes", "wc-s-default-ch", "wc-s-explicit-id",
+                    "wc-s-alias-s_", "wc-s-case", "wc-neg-level-sent",
+                    "wc-s-two", "wc-s-pair", "wc-s-both", "wc-s-note", "wc-s-no-table");
                 return path;
             }
 
@@ -166,6 +209,32 @@ namespace WordDocumentRoundtripTest
             Ok(run, "wc-s-explicit-id",
                 string.Equals(WdSession.Str(def, "channel_id"), id, StringComparison.Ordinal),
                 "回包 id=" + WdSession.Str(def, "channel_id"));
+
+            ToolResult aliasS_ = s.GetContent(id, "s_");
+            Ok(run, "wc-s-alias-s_",
+                aliasS_.Success
+                && string.Equals(WdSession.Str(aliasS_, "code_level"), "sentence", StringComparison.Ordinal),
+                aliasS_.Success ? "" : (aliasS_.Error ?? "s_ 失败"));
+            ToolResult sentCase = s.GetContent(id, "SENTENCE");
+            Ok(run, "wc-s-case",
+                sentCase.Success
+                && string.Equals(WdSession.Str(sentCase, "code_level"), "sentence", StringComparison.Ordinal),
+                sentCase.Success ? "" : (sentCase.Error ?? "SENTENCE 失败"));
+            ExpectFail(run, "wc-neg-level-sent", s.GetContent(id, "sentences"), "sentence");
+            Ok(run, "wc-s-two", CountCodes(text, "S") >= 2, "S_ 数=" + CountCodes(text, "S"));
+            Match pair = Regex.Match(text, @"\[S_([0-9a-zA-Z]{5})-start\]");
+            Ok(run, "wc-s-pair",
+                pair.Success
+                && text.IndexOf("[S_" + pair.Groups[1].Value + "-end]", StringComparison.Ordinal) >= 0,
+                "S_ 起止不成对");
+            Ok(run, "wc-s-both",
+                text.IndexOf("易写读编码甲句", StringComparison.Ordinal) >= 0
+                && text.IndexOf("易写读编码乙句", StringComparison.Ordinal) >= 0,
+                "两句夹具未齐");
+            Ok(run, "wc-s-note", Contains(WdSession.Str(def, "note"), "S_"), WdSession.Str(def, "note"));
+            Ok(run, "wc-s-no-table",
+                text.IndexOf("<table", StringComparison.OrdinalIgnoreCase) < 0,
+                "纯句稿不该有 table");
             return path;
         }
 
@@ -176,7 +245,9 @@ namespace WordDocumentRoundtripTest
             if (!opened.Success)
             {
                 FailMany(run, opened.Error ?? "新建失败",
-                    "wc-p-level", "wc-p-alias", "wc-p-markers", "wc-p-two", "wc-p-note");
+                    "wc-p-level", "wc-p-alias", "wc-p-markers", "wc-p-two", "wc-p-note",
+                    "wc-p-alias-p", "wc-p-case", "wc-neg-level-para",
+                    "wc-p-end", "wc-p-text-a", "wc-p-text-b");
                 return;
             }
 
@@ -184,7 +255,9 @@ namespace WordDocumentRoundtripTest
             if (!s.TypePlain(path, ParaA + "\r" + ParaB))
             {
                 FailMany(run, "COM 写段失败",
-                    "wc-p-level", "wc-p-alias", "wc-p-markers", "wc-p-two", "wc-p-note");
+                    "wc-p-level", "wc-p-alias", "wc-p-markers", "wc-p-two", "wc-p-note",
+                    "wc-p-alias-p", "wc-p-case", "wc-neg-level-para",
+                    "wc-p-end", "wc-p-text-a", "wc-p-text-b");
                 s.CloseDocByPath(path);
                 return;
             }
@@ -193,7 +266,9 @@ namespace WordDocumentRoundtripTest
             if (!got.Success)
             {
                 FailMany(run, got.Error ?? "段级读失败",
-                    "wc-p-level", "wc-p-alias", "wc-p-markers", "wc-p-two", "wc-p-note");
+                    "wc-p-level", "wc-p-alias", "wc-p-markers", "wc-p-two", "wc-p-note",
+                    "wc-p-alias-p", "wc-p-case", "wc-neg-level-para",
+                    "wc-p-end", "wc-p-text-a", "wc-p-text-b");
                 s.CloseDocByPath(path);
                 return;
             }
@@ -217,6 +292,24 @@ namespace WordDocumentRoundtripTest
                 Contains(WdSession.Str(got, "note"), "P_")
                 || Contains(WdSession.Str(got, "note"), "段落"),
                 WdSession.Str(got, "note"));
+
+            ToolResult aliasP = s.GetContent(id, "p");
+            Ok(run, "wc-p-alias-p",
+                aliasP.Success
+                && string.Equals(WdSession.Str(aliasP, "code_level"), "paragraph", StringComparison.Ordinal),
+                aliasP.Success ? "" : (aliasP.Error ?? "p 失败"));
+            ToolResult paraCase = s.GetContent(id, "Paragraph");
+            Ok(run, "wc-p-case",
+                paraCase.Success
+                && string.Equals(WdSession.Str(paraCase, "code_level"), "paragraph", StringComparison.Ordinal),
+                paraCase.Success ? "" : (paraCase.Error ?? "Paragraph 失败"));
+            ExpectFail(run, "wc-neg-level-para", s.GetContent(id, "para"), "paragraph");
+            Ok(run, "wc-p-end",
+                text.IndexOf("-end]", StringComparison.Ordinal) >= 0
+                && Regex.IsMatch(text, @"\[P_[0-9a-zA-Z]{5}-end\]"),
+                "无 P_ 结束标记");
+            Ok(run, "wc-p-text-a", text.IndexOf("段甲夹具", StringComparison.Ordinal) >= 0, "段甲未出现");
+            Ok(run, "wc-p-text-b", text.IndexOf("段乙夹具", StringComparison.Ordinal) >= 0, "段乙未出现");
             s.CloseDocByPath(path);
         }
 
@@ -257,7 +350,8 @@ namespace WordDocumentRoundtripTest
             if (!opened.Success)
             {
                 FailMany(run, opened.Error ?? "新建失败",
-                    "wc-t-tag", "wc-t-tr-td", "wc-t-id", "wc-t-no-slots");
+                    "wc-t-tag", "wc-t-tr-td", "wc-t-id", "wc-t-no-slots",
+                    "wc-t-cells", "wc-t-close", "wc-t-no-chart");
                 return;
             }
 
@@ -265,7 +359,8 @@ namespace WordDocumentRoundtripTest
             if (!s.InsertTable(path, 2, 2, new[] { "甲", "乙", "丙", "丁" }))
             {
                 FailMany(run, "COM 建表失败",
-                    "wc-t-tag", "wc-t-tr-td", "wc-t-id", "wc-t-no-slots");
+                    "wc-t-tag", "wc-t-tr-td", "wc-t-id", "wc-t-no-slots",
+                    "wc-t-cells", "wc-t-close", "wc-t-no-chart");
                 s.CloseDocByPath(path);
                 return;
             }
@@ -274,7 +369,8 @@ namespace WordDocumentRoundtripTest
             if (!got.Success)
             {
                 FailMany(run, got.Error ?? "读表失败",
-                    "wc-t-tag", "wc-t-tr-td", "wc-t-id", "wc-t-no-slots");
+                    "wc-t-tag", "wc-t-tr-td", "wc-t-id", "wc-t-no-slots",
+                    "wc-t-cells", "wc-t-close", "wc-t-no-chart");
                 s.CloseDocByPath(path);
                 return;
             }
@@ -292,6 +388,50 @@ namespace WordDocumentRoundtripTest
             Ok(run, "wc-t-no-slots",
                 !WdSession.HasKey(got, "empty_count") && !WdSession.HasKey(got, "slots"),
                 "Data 不该带填空槽");
+            Ok(run, "wc-t-cells",
+                text.IndexOf("甲", StringComparison.Ordinal) >= 0
+                && text.IndexOf("丁", StringComparison.Ordinal) >= 0,
+                "表内夹具未出现 「" + TrimPreview(text) + "」");
+            Ok(run, "wc-t-close",
+                text.IndexOf("</table>", StringComparison.OrdinalIgnoreCase) >= 0,
+                "无 </table>");
+            Ok(run, "wc-t-no-chart",
+                !Regex.IsMatch(text, @"<Chart\b", RegexOptions.IgnoreCase),
+                "纯表稿不该有 Chart");
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunTableTwo(TestRun run, WdSession s)
+        {
+            string path = s.CreateTwoTableFixtureDocx();
+            if (string.IsNullOrEmpty(path))
+            {
+                FailMany(run, "无法用 Word 做出双表夹具（未 SKIP）", TableTwoIds);
+                return;
+            }
+
+            ToolResult opened = s.Open(path, false, s.App);
+            if (!opened.Success)
+            {
+                FailMany(run, opened.Error ?? "打开双表稿失败", TableTwoIds);
+                return;
+            }
+
+            ToolResult got = s.GetContent(WdSession.Str(opened, "channel_id"));
+            if (!got.Success)
+            {
+                FailMany(run, got.Error ?? "读双表失败", TableTwoIds);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            string text = WdSession.Str(got, "document_content");
+            Ok(run, "wc-t-two",
+                CountTag(text, @"<table\s+id=""T_") >= 2,
+                "table 数=" + CountTag(text, @"<table\s+id=""T_") + " 「" + TrimPreview(text) + "」");
+            Ok(run, "wc-t-ids-diff",
+                DistinctIds(text, @"table id=""(T_[^""]+)""") >= 2,
+                "T_ 未分号 「" + TrimPreview(text) + "」");
             s.CloseDocByPath(path);
         }
 
@@ -302,15 +442,17 @@ namespace WordDocumentRoundtripTest
             if (!opened.Success)
             {
                 FailMany(run, opened.Error ?? "新建失败",
-                    "wc-i-tag", "wc-i-selfclose", "wc-i-id");
+                    "wc-i-tag", "wc-i-selfclose", "wc-i-id",
+                    "wc-i-two", "wc-i-ids-diff", "wc-i-no-chart");
                 return;
             }
 
             string id = WdSession.Str(opened, "channel_id");
-            if (!s.InsertPicture(path))
+            if (!s.InsertPicture(path) || !s.InsertPicture(path))
             {
                 FailMany(run, "COM 插图失败",
-                    "wc-i-tag", "wc-i-selfclose", "wc-i-id");
+                    "wc-i-tag", "wc-i-selfclose", "wc-i-id",
+                    "wc-i-two", "wc-i-ids-diff", "wc-i-no-chart");
                 s.CloseDocByPath(path);
                 return;
             }
@@ -319,7 +461,8 @@ namespace WordDocumentRoundtripTest
             if (!got.Success)
             {
                 FailMany(run, got.Error ?? "读图失败",
-                    "wc-i-tag", "wc-i-selfclose", "wc-i-id");
+                    "wc-i-tag", "wc-i-selfclose", "wc-i-id",
+                    "wc-i-two", "wc-i-ids-diff", "wc-i-no-chart");
                 s.CloseDocByPath(path);
                 return;
             }
@@ -335,6 +478,11 @@ namespace WordDocumentRoundtripTest
             Ok(run, "wc-i-id",
                 Regex.IsMatch(text, @"id=""I_[^""]+"""),
                 "I_ 不可抄");
+            Ok(run, "wc-i-two", CountTag(text, @"id=""I_") >= 2, "I_ 数=" + CountTag(text, @"id=""I_"));
+            Ok(run, "wc-i-ids-diff", DistinctIds(text, @"id=""(I_[^""]+)""") >= 2, "I_ 未分号");
+            Ok(run, "wc-i-no-chart",
+                !Regex.IsMatch(text, @"<Chart\b", RegexOptions.IgnoreCase),
+                "纯图稿不该有 Chart");
             s.CloseDocByPath(path);
         }
 
@@ -347,8 +495,7 @@ namespace WordDocumentRoundtripTest
                 path = s.CreateChartFixtureDocx();
                 if (string.IsNullOrEmpty(path))
                 {
-                    FailMany(run, "无法用 Word 做出 Chart 夹具（未 SKIP）",
-                        "wc-c-tag", "wc-c-id", "wc-c-not-only-image");
+                    FailMany(run, "无法用 Word 做出 Chart 夹具（未 SKIP）", ChartIds);
                     return;
                 }
 
@@ -362,16 +509,14 @@ namespace WordDocumentRoundtripTest
 
             if (!opened.Success)
             {
-                FailMany(run, opened.Error ?? "打开 Chart 稿失败",
-                    "wc-c-tag", "wc-c-id", "wc-c-not-only-image");
+                FailMany(run, opened.Error ?? "打开 Chart 稿失败", ChartIds);
                 return;
             }
 
             string id = WdSession.Str(opened, "channel_id");
-            if (!s.IsWps && !s.InsertChart(path))
+            if (!s.IsWps && !s.InsertCharts(path, 1))
             {
-                FailMany(run, "COM 插 Chart 失败（未 SKIP）",
-                    "wc-c-tag", "wc-c-id", "wc-c-not-only-image");
+                FailMany(run, "COM 插 Chart 失败（未 SKIP）", ChartIds);
                 s.CloseDocByPath(path);
                 return;
             }
@@ -379,8 +524,7 @@ namespace WordDocumentRoundtripTest
             ToolResult got = s.GetContent(id);
             if (!got.Success)
             {
-                FailMany(run, got.Error ?? "读 Chart 失败",
-                    "wc-c-tag", "wc-c-id", "wc-c-not-only-image");
+                FailMany(run, got.Error ?? "读 Chart 失败", ChartIds);
                 s.CloseDocByPath(path);
                 return;
             }
@@ -396,6 +540,176 @@ namespace WordDocumentRoundtripTest
             Ok(run, "wc-c-not-only-image",
                 Regex.IsMatch(text, @"<Chart\b", RegexOptions.IgnoreCase),
                 "只有图没有 Chart 标签 「" + preview + "」");
+            Ok(run, "wc-c-datatable",
+                text.IndexOf("<DataTable", StringComparison.OrdinalIgnoreCase) >= 0, "无 DataTable 「" + preview + "」");
+            Ok(run, "wc-c-header",
+                text.IndexOf("<Header", StringComparison.OrdinalIgnoreCase) >= 0
+                && text.IndexOf("</Header>", StringComparison.OrdinalIgnoreCase) >= 0,
+                "无 Header");
+            Ok(run, "wc-c-col-cat",
+                Regex.IsMatch(text, @"<Column\s+type=""category""", RegexOptions.IgnoreCase),
+                "无 category 列");
+            Ok(run, "wc-c-col-val",
+                Regex.IsMatch(text, @"<Column\s+type=""value""", RegexOptions.IgnoreCase),
+                "无 value 列");
+            Ok(run, "wc-c-cat-name", text.IndexOf("类别", StringComparison.Ordinal) >= 0, "无「类别」");
+            Ok(run, "wc-c-axis", text.IndexOf("axisY=", StringComparison.Ordinal) >= 0, "无 axisY");
+            Ok(run, "wc-c-rows",
+                text.IndexOf("<Rows", StringComparison.OrdinalIgnoreCase) >= 0
+                && text.IndexOf("<Row>", StringComparison.OrdinalIgnoreCase) >= 0,
+                "无 Rows/Row");
+            Ok(run, "wc-c-row-csv",
+                Regex.IsMatch(text, @"<Row>[^<]*,[^<]*</Row>", RegexOptions.IgnoreCase),
+                "Row 不是逗号分隔");
+            Ok(run, "wc-c-row-num",
+                Regex.IsMatch(text, @"<Row>[^<]*\d[^<]*</Row>", RegexOptions.IgnoreCase),
+                "Row 无数字");
+            Ok(run, "wc-c-close",
+                text.IndexOf("</Chart>", StringComparison.OrdinalIgnoreCase) >= 0, "无 </Chart>");
+
+            ToolResult sent = s.GetContent(id, "sentence");
+            Ok(run, "wc-c-s-level",
+                sent.Success && Regex.IsMatch(WdSession.Str(sent, "document_content"), @"<Chart\s+id=""C_", RegexOptions.IgnoreCase),
+                sent.Success ? "句级无 Chart" : (sent.Error ?? "句级失败"));
+            ToolResult para = s.GetContent(id, "paragraph");
+            Ok(run, "wc-c-p-level",
+                para.Success && Regex.IsMatch(WdSession.Str(para, "document_content"), @"<Chart\s+id=""C_", RegexOptions.IgnoreCase),
+                para.Success ? "段级无 Chart" : (para.Error ?? "段级失败"));
+            Ok(run, "wc-c-local",
+                string.Equals(WdSession.Str(got, "processing_method"), "Local", StringComparison.OrdinalIgnoreCase),
+                "processing_method=" + WdSession.Str(got, "processing_method"));
+            Ok(run, "wc-c-no-slots",
+                !WdSession.HasKey(got, "empty_count") && !WdSession.HasKey(got, "slots"),
+                "Chart 读不该带填空槽");
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunChartTwo(TestRun run, WdSession s)
+        {
+            string path;
+            ToolResult opened;
+            if (s.IsWps)
+            {
+                path = s.CreateChartFixtureDocx(2);
+                if (string.IsNullOrEmpty(path))
+                {
+                    FailMany(run, "无法用 Word 做出双 Chart 夹具（未 SKIP）", ChartTwoIds);
+                    return;
+                }
+
+                opened = s.Open(path, false, s.App);
+            }
+            else
+            {
+                path = s.NewDocxPath();
+                opened = s.Open(path, true, s.App);
+            }
+
+            if (!opened.Success)
+            {
+                FailMany(run, opened.Error ?? "打开双 Chart 稿失败", ChartTwoIds);
+                return;
+            }
+
+            string id = WdSession.Str(opened, "channel_id");
+            if (!s.IsWps && !s.InsertCharts(path, 2))
+            {
+                FailMany(run, "COM 插双 Chart 失败（未 SKIP）", ChartTwoIds);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            ToolResult got = s.GetContent(id);
+            if (!got.Success)
+            {
+                FailMany(run, got.Error ?? "读双 Chart 失败", ChartTwoIds);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            string text = WdSession.Str(got, "document_content");
+            Ok(run, "wc-c-two",
+                CountTag(text, @"<Chart\s+id=""C_") >= 2,
+                "Chart 数=" + CountTag(text, @"<Chart\s+id=""C_") + " 「" + TrimPreview(text) + "」");
+            Ok(run, "wc-c-ids-diff",
+                DistinctIds(text, @"<Chart\s+id=""(C_[^""]+)""") >= 2,
+                "C_ 未分号 「" + TrimPreview(text) + "」");
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunMix(TestRun run, WdSession s)
+        {
+            string path;
+            ToolResult opened;
+            if (s.IsWps)
+            {
+                path = s.CreateMixFixtureDocx();
+                if (string.IsNullOrEmpty(path))
+                {
+                    FailMany(run, "无法用 Word 做出混合夹具（未 SKIP）", MixIds);
+                    return;
+                }
+
+                opened = s.Open(path, false, s.App);
+            }
+            else
+            {
+                path = s.NewDocxPath();
+                opened = s.Open(path, true, s.App);
+            }
+
+            if (!opened.Success)
+            {
+                FailMany(run, opened.Error ?? "打开混合稿失败", MixIds);
+                return;
+            }
+
+            string id = WdSession.Str(opened, "channel_id");
+            if (!s.IsWps)
+            {
+                if (!s.TypePlain(path, MixSent)
+                    || !s.InsertTable(path, 2, 2, new[] { "甲", "乙", "丙", "丁" })
+                    || !s.InsertPicture(path)
+                    || !s.InsertCharts(path, 1))
+                {
+                    FailMany(run, "COM 铺混合稿失败（未 SKIP）", MixIds);
+                    s.CloseDocByPath(path);
+                    return;
+                }
+            }
+
+            ToolResult got = s.GetContent(id);
+            if (!got.Success)
+            {
+                FailMany(run, got.Error ?? "读混合稿失败", MixIds);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            string text = WdSession.Str(got, "document_content");
+            Ok(run, "wc-mix-ok", true, "");
+            Ok(run, "wc-mix-text", text.IndexOf("易写混合甲句", StringComparison.Ordinal) >= 0, "混合夹具字未出现");
+            Ok(run, "wc-mix-s", CountCodes(text, "S") >= 1, "无可抄 S_");
+            Ok(run, "wc-mix-t", text.IndexOf("<table id=\"T_", StringComparison.Ordinal) >= 0, "无 T_");
+            Ok(run, "wc-mix-i",
+                text.IndexOf("<image", StringComparison.OrdinalIgnoreCase) >= 0
+                && text.IndexOf("id=\"I_", StringComparison.Ordinal) >= 0,
+                "无 I_");
+            Ok(run, "wc-mix-c",
+                Regex.IsMatch(text, @"<Chart\s+id=""C_[^""]+""", RegexOptions.IgnoreCase),
+                "无 C_ 「" + TrimPreview(text) + "」");
+            Ok(run, "wc-mix-datatable",
+                text.IndexOf("<DataTable", StringComparison.OrdinalIgnoreCase) >= 0, "混合稿无 DataTable");
+
+            ToolResult para = s.GetContent(id, "paragraph");
+            Ok(run, "wc-mix-p",
+                para.Success
+                && Regex.IsMatch(WdSession.Str(para, "document_content"), @"<Chart\s+id=""C_", RegexOptions.IgnoreCase)
+                && WdSession.Str(para, "document_content").IndexOf("<table id=\"T_", StringComparison.Ordinal) >= 0,
+                para.Success ? "段级丢了表或图" : (para.Error ?? "段级失败"));
+            Ok(run, "wc-mix-local",
+                string.Equals(WdSession.Str(got, "processing_method"), "Local", StringComparison.OrdinalIgnoreCase),
+                "processing_method=" + WdSession.Str(got, "processing_method"));
             s.CloseDocByPath(path);
         }
 
@@ -516,6 +830,35 @@ namespace WordDocumentRoundtripTest
             bool wordOk = OfficeAlive.NotQuit("WINWORD", wordBefore, wordWinBefore, out wordDetail);
             bool wpsOk = OfficeAlive.NotQuit("wps", wpsBefore, wpsWinBefore, out wpsDetail);
             Ok(run, "wc-no-quit", wordOk && wpsOk, wordDetail + " " + wpsDetail);
+        }
+
+        private static int CountTag(string text, string pattern)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return 0;
+            }
+
+            return Regex.Matches(text, pattern, RegexOptions.IgnoreCase).Count;
+        }
+
+        private static int DistinctIds(string text, string pattern)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return 0;
+            }
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (Match m in Regex.Matches(text, pattern, RegexOptions.IgnoreCase))
+            {
+                if (m.Groups.Count > 1)
+                {
+                    seen.Add(m.Groups[1].Value);
+                }
+            }
+
+            return seen.Count;
         }
 
         private static int CountCodes(string text, string prefix)

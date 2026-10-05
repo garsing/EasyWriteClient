@@ -187,7 +187,83 @@ namespace WordDocumentRoundtripTest
         }
 
         /// <summary>用本机 Word 做好含 Chart 的 docx 夹具，不 Quit Word。</summary>
-        public string CreateChartFixtureDocx()
+        public string CreateChartFixtureDocx(int charts = 1)
+        {
+            return CreateWordDocxFixture(doc =>
+            {
+                int n = charts < 1 ? 1 : charts;
+                for (int i = 0; i < n; i++)
+                {
+                    Word.InlineShape shape = doc.InlineShapes.AddChart(
+                        Microsoft.Office.Core.XlChartType.xlColumnClustered);
+                    if (!StampChartSeriesName(shape, "加固系列" + (i + 1)))
+                    {
+                        throw new InvalidOperationException("StampChart 失败");
+                    }
+                }
+            });
+        }
+
+        public string CreateTwoTableFixtureDocx()
+        {
+            return CreateWordDocxFixture(doc =>
+            {
+                doc.Content.Text = "表前间隔。\r表间隔。\r";
+                Word.Table first = doc.Tables.Add(doc.Paragraphs[1].Range, 2, 2);
+                FillWordTable(first, new[] { "甲", "乙", "丙", "丁" });
+                Word.Table second = doc.Tables.Add(doc.Paragraphs[doc.Paragraphs.Count].Range, 2, 2);
+                FillWordTable(second, new[] { "戊", "己", "庚", "辛" });
+                if (doc.Tables.Count < 2)
+                {
+                    throw new InvalidOperationException("双表夹具只得到 " + doc.Tables.Count + " 张表");
+                }
+            });
+        }
+
+        public string CreateMixFixtureDocx()
+        {
+            return CreateWordDocxFixture(doc =>
+            {
+                doc.Content.Text = "易写混合甲句。";
+                int end = doc.Content.End;
+                Word.Range range = doc.Range(end - 1, end - 1);
+                Word.Table table = doc.Tables.Add(range, 2, 2);
+                table.Cell(1, 1).Range.Text = "甲";
+                table.Cell(1, 2).Range.Text = "乙";
+                table.Cell(2, 1).Range.Text = "丙";
+                table.Cell(2, 2).Range.Text = "丁";
+                doc.InlineShapes.AddPicture(WriteOnePxPng());
+                Word.InlineShape shape = doc.InlineShapes.AddChart(
+                    Microsoft.Office.Core.XlChartType.xlColumnClustered);
+                if (!StampChartSeriesName(shape, "混合图"))
+                {
+                    throw new InvalidOperationException("StampChart 失败");
+                }
+            });
+        }
+
+        public bool InsertCharts(string fullPath, int count)
+        {
+            int n = count < 1 ? 1 : count;
+            return IsWps
+                ? false
+                : WithWordDoc(fullPath, doc =>
+                {
+                    for (int i = 0; i < n; i++)
+                    {
+                        Word.InlineShape shape = doc.InlineShapes.AddChart(
+                            Microsoft.Office.Core.XlChartType.xlColumnClustered);
+                        if (!StampChartSeriesName(shape, "加固系列" + (i + 1)))
+                        {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                });
+        }
+
+        private string CreateWordDocxFixture(Action<Word.Document> plant)
         {
             Word.Application app = null;
             bool createdApp = false;
@@ -205,7 +281,7 @@ namespace WordDocumentRoundtripTest
                 }
 
                 Word.Document doc = app.Documents.Add();
-                doc.InlineShapes.AddChart(Microsoft.Office.Core.XlChartType.xlColumnClustered);
+                plant(doc);
                 string path = NewDocxPath();
                 object fileName = path;
                 doc.SaveAs2(ref fileName);
@@ -223,6 +299,21 @@ namespace WordDocumentRoundtripTest
                 {
                     // 本波自己拉起的 Word 只关稿，不 Quit。
                 }
+            }
+        }
+
+        private static bool StampChartSeriesName(Word.InlineShape shape, string name)
+        {
+            try
+            {
+                dynamic chart = shape.Chart;
+                dynamic series = chart.SeriesCollection(1);
+                series.Name = name;
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -665,6 +756,23 @@ namespace WordDocumentRoundtripTest
             catch
             {
                 return false;
+            }
+        }
+
+        private static void FillWordTable(Word.Table table, string[] cells)
+        {
+            int n = cells == null ? 0 : cells.Length;
+            int k = 0;
+            int rows = table.Rows.Count;
+            int cols = table.Columns.Count;
+            for (int r = 1; r <= rows; r++)
+            {
+                for (int c = 1; c <= cols; c++)
+                {
+                    string t = k < n ? (cells[k] ?? "") : "";
+                    k++;
+                    table.Cell(r, c).Range.Text = t;
+                }
             }
         }
 
