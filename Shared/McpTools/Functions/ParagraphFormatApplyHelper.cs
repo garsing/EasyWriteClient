@@ -52,7 +52,7 @@ namespace WordAddIn1
             DocumentState.BindAndActivate(doc);
 
             string validationError = ValidateArgs(args, out string mode, out List<string> targetParagraphCodes,
-                out string inheritFromParagraph, out Dictionary<string, object> paraFormat, out List<string> warnings);
+                out Dictionary<string, object> paraFormat, out List<string> warnings);
             if (validationError != null)
             {
                 return Task.FromResult(new ToolResult { Success = false, Error = validationError });
@@ -60,7 +60,6 @@ namespace WordAddIn1
 
             ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
             AmbiguityCheckResult ambiguityResult = ParagraphFormatAmbiguityHelper.RunPrecheck(
-                inheritFromParagraph,
                 scopeArgs,
                 targetParagraphCodes,
                 "F_apply_paragraph_format",
@@ -85,68 +84,18 @@ namespace WordAddIn1
             var appliedFieldsUnion = new List<string>();
             Word.Range targetSpan = null;
 
-            if (string.Equals(mode, "inherit", StringComparison.OrdinalIgnoreCase))
-            {
-                int inheritDisplayStart = ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
-                    ambiguityResult, 0, "inherit_from_paragraph");
-                var inheritCodes = new List<string> { inheritFromParagraph };
-                Word.Range inheritSpan = inheritDisplayStart >= 0
-                    ? DisplayPositionRangeResolver.ResolveParagraphSpan(
-                        doc,
-                        inheritCodes,
-                        inheritDisplayStart,
-                        scopeArgs.InheritFromTableId,
-                        tableScope,
-                        debugTag: $"apply_para_inherit_span:{inheritFromParagraph}")
-                    : null;
-                Word.Range sourceRange = inheritSpan != null
-                    ? SpanParagraphLocator.LocateFirstParagraph(
-                        doc,
-                        inheritSpan,
-                        inheritCodes,
-                        debugTag: $"apply_para_inherit_source:{inheritFromParagraph}")
-                    : null;
-                if (sourceRange == null)
-                {
-                    return Task.FromResult(new ToolResult
-                    {
-                        Success = false,
-                        Error = $"无法定位 inherit_from_paragraph: {inheritFromParagraph}"
-                    });
-                }
-
-                targetSpan = ApplyToTargetParagraphSpan(
-                    doc,
-                    sourceRange,
-                    targetParagraphCodes,
-                    ambiguityResult,
-                    scopeArgs,
-                    tableScope,
-                    isInherit: true,
-                    paraFormat: null,
-                    appliedParagraphCodes,
-                    skippedParagraphCodes,
-                    applyErrors,
-                    applyWarnings,
-                    appliedFieldsUnion);
-            }
-            else
-            {
-                targetSpan = ApplyToTargetParagraphSpan(
-                    doc,
-                    sourceRange: null,
-                    targetParagraphCodes,
-                    ambiguityResult,
-                    scopeArgs,
-                    tableScope,
-                    isInherit: false,
-                    paraFormat,
-                    appliedParagraphCodes,
-                    skippedParagraphCodes,
-                    applyErrors,
-                    applyWarnings,
-                    appliedFieldsUnion);
-            }
+            targetSpan = ApplyToTargetParagraphSpan(
+                doc,
+                targetParagraphCodes,
+                ambiguityResult,
+                scopeArgs,
+                tableScope,
+                paraFormat,
+                appliedParagraphCodes,
+                skippedParagraphCodes,
+                applyErrors,
+                applyWarnings,
+                appliedFieldsUnion);
 
             var data = BuildResponseData(
                 mode,
@@ -176,12 +125,10 @@ namespace WordAddIn1
 
         private static Word.Range ApplyToTargetParagraphSpan(
             Word.Document doc,
-            Word.Range sourceRange,
             List<string> targetParagraphCodes,
             AmbiguityCheckResult ambiguityResult,
             ApplyFormatScopeArgs scopeArgs,
             TableScopeIndex tableScope,
-            bool isInherit,
             Dictionary<string, object> paraFormat,
             List<string> appliedParagraphCodes,
             List<string> skippedParagraphCodes,
@@ -230,7 +177,7 @@ namespace WordAddIn1
                 targetDisplayStart,
                 scopeArgs.TableId,
                 tableScope,
-                debugTag: isInherit ? "apply_para_inherit_target_span" : "apply_para_explicit_target_span");
+                debugTag: "apply_para_explicit_target_span");
             if (targetSpan == null)
             {
                 foreach (string code in targetParagraphCodes)
@@ -247,28 +194,21 @@ namespace WordAddIn1
 
             try
             {
-                if (isInherit)
+                List<string> fieldWarnings;
+                List<string> appliedFields = ParaFormatWriter.Apply(targetSpan, paraFormat, out fieldWarnings);
+                foreach (string w in fieldWarnings)
                 {
-                    ParagraphFormatInheritHelper.CopyParagraphFormat(sourceRange, targetSpan);
-                }
-                else
-                {
-                    List<string> fieldWarnings;
-                    List<string> appliedFields = ParaFormatWriter.Apply(targetSpan, paraFormat, out fieldWarnings);
-                    foreach (string w in fieldWarnings)
+                    if (!applyWarnings.Contains(w))
                     {
-                        if (!applyWarnings.Contains(w))
-                        {
-                            applyWarnings.Add(w);
-                        }
+                        applyWarnings.Add(w);
                     }
+                }
 
-                    foreach (string f in appliedFields)
+                foreach (string f in appliedFields)
+                {
+                    if (!appliedFieldsUnion.Contains(f))
                     {
-                        if (!appliedFieldsUnion.Contains(f))
-                        {
-                            appliedFieldsUnion.Add(f);
-                        }
+                        appliedFieldsUnion.Add(f);
                     }
                 }
 
@@ -347,13 +287,11 @@ namespace WordAddIn1
             Dictionary<string, object> args,
             out string mode,
             out List<string> targetParagraphCodes,
-            out string inheritFromParagraph,
             out Dictionary<string, object> paraFormat,
             out List<string> warnings)
         {
-            mode = "";
+            mode = "explicit";
             targetParagraphCodes = new List<string>();
-            inheritFromParagraph = "";
             paraFormat = null;
             warnings = new List<string>();
 
@@ -363,58 +301,24 @@ namespace WordAddIn1
                 return "缺少 target_paragraph_codes 或 target_codes";
             }
 
-            mode = args.ContainsKey("mode") ? args["mode"]?.ToString()?.Trim() ?? "" : "";
-            inheritFromParagraph = args.ContainsKey("inherit_from_paragraph")
-                ? args["inherit_from_paragraph"]?.ToString()?.Trim() ?? ""
-                : "";
-
-            if (string.IsNullOrEmpty(inheritFromParagraph)
-                && args.ContainsKey("inherit_from")
-                && args["inherit_from"] != null)
+            if (ActionFormatHelper.HasCancelledInheritKeys(args))
             {
-                string inheritFromSentence = args["inherit_from"].ToString()?.Trim();
-                inheritFromParagraph = ParagraphCodeResolver.ResolveParagraphFromSentence(inheritFromSentence) ?? "";
-                if (string.IsNullOrEmpty(inheritFromParagraph))
-                {
-                    return $"inherit_from 无法反查 P_: {inheritFromSentence}";
-                }
-
-                warnings.Add("deprecated_inherit_from_sentence_resolved_to_paragraph");
+                return ActionFormatHelper.CancelledInheritFromParagraphError;
             }
 
-            if (!string.IsNullOrEmpty(mode) && !string.Equals(mode, "explicit", StringComparison.OrdinalIgnoreCase))
+            string modeArg = args.ContainsKey("mode") ? args["mode"]?.ToString()?.Trim() ?? "" : "";
+            if (!string.IsNullOrEmpty(modeArg)
+                && !string.Equals(modeArg, "explicit", StringComparison.OrdinalIgnoreCase))
             {
-                return $"不支持的 mode: {mode}；仅支持 inherit 或 mode=explicit";
+                return $"不支持的 mode: {modeArg}；仅支持 mode=explicit 或省略并传 para_format";
             }
 
-            if (string.Equals(mode, "explicit", StringComparison.OrdinalIgnoreCase))
+            paraFormat = ParseNestedObject(args, "para_format");
+            if (paraFormat == null || paraFormat.Count == 0)
             {
-                mode = "explicit";
-                if (!string.IsNullOrEmpty(inheritFromParagraph))
-                {
-                    return "inherit_from_paragraph 与 mode=explicit 互斥";
-                }
-
-                paraFormat = ParseNestedObject(args, "para_format");
-                if (paraFormat == null || paraFormat.Count == 0)
-                {
-                    return "mode=explicit 时 para_format 不能为空";
-                }
-
-                return null;
+                return "必须指定 para_format";
             }
 
-            if (string.IsNullOrEmpty(inheritFromParagraph))
-            {
-                return "缺少 inherit_from_paragraph；或传 mode=explicit + para_format";
-            }
-
-            if (args.ContainsKey("para_format") && args["para_format"] != null)
-            {
-                return "inherit 模式不支持 para_format";
-            }
-
-            mode = "inherit";
             return null;
         }
 

@@ -10,24 +10,12 @@ namespace WordAddIn1
     public static class ParagraphFormatAmbiguityHelper
     {
         public static List<DocumentActionAmbiguityAnchor> BuildAnchors(
-            string inheritFromParagraph,
             IReadOnlyList<string> targetParagraphCodes,
             ApplyFormatScopeArgs scopeArgs)
         {
             var anchors = new List<DocumentActionAmbiguityAnchor>();
             scopeArgs = scopeArgs ?? new ApplyFormatScopeArgs();
             targetParagraphCodes = targetParagraphCodes ?? new List<string>();
-
-            if (!string.IsNullOrEmpty(inheritFromParagraph))
-            {
-                anchors.Add(new DocumentActionAmbiguityAnchor
-                {
-                    ActionIndex = 0,
-                    Field = "inherit_from_paragraph",
-                    Codes = inheritFromParagraph,
-                    TableId = scopeArgs.InheritFromTableId
-                });
-            }
 
             var validTargetCodes = new List<string>();
             foreach (string code in targetParagraphCodes)
@@ -71,7 +59,6 @@ namespace WordAddIn1
         }
 
         public static AmbiguityCheckResult RunPrecheck(
-            string inheritFromParagraph,
             ApplyFormatScopeArgs scopeArgs,
             IReadOnlyList<string> targetParagraphCodes,
             string toolName,
@@ -79,7 +66,6 @@ namespace WordAddIn1
             out string cacheError)
         {
             return RunPrecheckInternal(
-                inheritFromParagraph,
                 scopeArgs,
                 targetParagraphCodes,
                 toolName,
@@ -96,7 +82,6 @@ namespace WordAddIn1
             out string cacheError)
         {
             return RunPrecheckInternal(
-                "",
                 scopeArgs,
                 targetParagraphCodes,
                 toolName,
@@ -106,7 +91,6 @@ namespace WordAddIn1
         }
 
         private static AmbiguityCheckResult RunPrecheckInternal(
-            string inheritFromParagraph,
             ApplyFormatScopeArgs scopeArgs,
             IReadOnlyList<string> targetParagraphCodes,
             string toolName,
@@ -120,7 +104,7 @@ namespace WordAddIn1
                 return null;
             }
 
-            var anchors = BuildAnchors(inheritFromParagraph, targetParagraphCodes, scopeArgs);
+            var anchors = BuildAnchors(targetParagraphCodes, scopeArgs);
             if (anchors.Count == 0)
             {
                 return new AmbiguityCheckResult();
@@ -151,8 +135,7 @@ namespace WordAddIn1
         private static TableScopeIndex BuildTableScopeOrNull(ApplyFormatScopeArgs scopeArgs, out string cacheError)
         {
             cacheError = null;
-            bool needsTableScope = !string.IsNullOrEmpty(scopeArgs?.TableId)
-                || !string.IsNullOrEmpty(scopeArgs?.InheritFromTableId);
+            bool needsTableScope = !string.IsNullOrEmpty(scopeArgs?.TableId);
             if (!needsTableScope)
             {
                 return null;

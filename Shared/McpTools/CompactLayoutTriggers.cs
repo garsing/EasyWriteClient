@@ -16,8 +16,6 @@ namespace WordAddIn1
             "F_replace_document_from_file",
             "F_apply_document_format",
             "F_apply_paragraph_format",
-            "F_apply_source_format",
-            "F_apply_source_paragraph_format",
             "F_format_transfer",
             "F_apply_page_setup",
             "F_create_table_from_xml",

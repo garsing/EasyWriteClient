@@ -30,7 +30,7 @@ namespace WordAddIn1
                         return new ToolResult
                         {
                             Success = false,
-                            Error = formatSpec.Error ?? "必须指定 format（inherit_from 或 char_format）"
+                            Error = formatSpec.Error ?? ActionFormatHelper.MissingFormatError
                         };
                     }
 

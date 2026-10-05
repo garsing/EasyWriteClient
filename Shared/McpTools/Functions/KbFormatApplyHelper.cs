@@ -132,8 +132,6 @@ namespace WordAddIn1
 
             var scopeArgs = new ApplyFormatScopeArgs { TableId = tableId };
             AmbiguityCheckResult ambiguityResult = ApplyFormatAmbiguityHelper.RunPrecheck(
-                mode: "",
-                inheritFrom: "",
                 targetCodes,
                 scopeArgs,
                 "F_apply_source_format",

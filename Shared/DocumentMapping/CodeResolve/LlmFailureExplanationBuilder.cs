@@ -315,13 +315,13 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 case AmbiguityActionKind.InsertTarget:
                     return "insert 歧义重试：改 replace，new = 目标句 + insert + 下文。";
                 case AmbiguityActionKind.FormatApply:
-                    return "重试时将 suggested_locator_codes 写入 target_codes 或 inherit_from；"
+                    return "重试时将 suggested_locator_codes 写入 target_codes；"
                            + "多个 target 均会被套用格式。";
                 case AmbiguityActionKind.FormatContextRead:
                     return "重试时将 suggested_locator_codes 写入 target_codes；"
                            + "多个 target 均会被读取。";
                 case AmbiguityActionKind.ParagraphFormatApply:
-                    return "重试时将 suggested_locator_codes 写入 target_paragraph_codes 或 inherit_from_paragraph；"
+                    return "重试时将 suggested_locator_codes 写入 target_paragraph_codes；"
                            + "多个 target 均会被套用段落格式。";
                 case AmbiguityActionKind.ParagraphContextRead:
                     return "重试时将 suggested_locator_codes 写入 target_paragraph_codes；"
@@ -444,16 +444,6 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
 
         private static string ResolveFormatFieldLabel(string field, AmbiguityActionKind actionKind)
         {
-            if (string.Equals(field, "inherit_from", StringComparison.Ordinal))
-            {
-                return "inherit_from";
-            }
-
-            if (string.Equals(field, "inherit_from_paragraph", StringComparison.Ordinal))
-            {
-                return "inherit_from_paragraph";
-            }
-
             if (string.Equals(field, "target_paragraph_codes", StringComparison.Ordinal)
                 || actionKind == AmbiguityActionKind.ParagraphFormatApply
                 || actionKind == AmbiguityActionKind.ParagraphContextRead)

@@ -45,7 +45,7 @@ namespace WordAddIn1
                         return new ToolResult
                         {
                             Success = false,
-                            Error = callFormat.Error ?? "必须指定 format（inherit_from 或 char_format）"
+                            Error = callFormat.Error ?? ActionFormatHelper.MissingFormatError
                         };
                     }
 

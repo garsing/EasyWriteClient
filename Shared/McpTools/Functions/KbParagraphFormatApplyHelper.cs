@@ -151,7 +151,6 @@ namespace WordAddIn1
 
             var scopeArgs = new ApplyFormatScopeArgs { TableId = tableId };
             AmbiguityCheckResult ambiguityResult = ParagraphFormatAmbiguityHelper.RunPrecheck(
-                inheritFromParagraph: "",
                 scopeArgs,
                 targetParagraphCodes,
                 "F_apply_source_paragraph_format",

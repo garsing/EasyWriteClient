@@ -1900,12 +1900,7 @@ namespace WordAddIn1
             ar.format_mode = rep.FormatMode;
             ar.format_apply_error = rep.FormatApplyError;
 
-            if (rep.FormatMode == "inherit_from")
-            {
-                ar.format_applied = "inherit_from";
-                ar.format_source = "detail.format.inherit_from";
-            }
-            else if (rep.FormatMode == "explicit")
+            if (rep.FormatMode == "explicit")
             {
                 ar.format_applied = "char_format";
                 ar.format_source = "detail.format.char_format";
@@ -1950,12 +1945,7 @@ namespace WordAddIn1
             ar.success = ins.Success;
             ar.format_mode = ins.FormatMode;
             ar.format_apply_error = ins.FormatApplyError;
-            if (ins.FormatMode == "inherit_from")
-            {
-                ar.format_applied = "inherit_from";
-                ar.format_source = "detail.format.inherit_from";
-            }
-            else if (ins.FormatMode == "explicit")
+            if (ins.FormatMode == "explicit")
             {
                 ar.format_applied = "char_format";
                 ar.format_source = "detail.format.char_format";

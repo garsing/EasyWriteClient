@@ -6,7 +6,8 @@ using Word = Microsoft.Office.Interop.Word;
 namespace WordAddIn1
 {
     /// <summary>
-    /// replace ≤2 自动 inherit：从 Range 提取/应用方案 B 格式快照（Phase 1）。
+    /// 字符格式快照：ExtractSnapshot / BuildSnapshotFromCharFormat / ApplySnapshot。
+    /// 按 S_ 代抄 inherit_from 已取消；本文件无 inherit 入口。
     /// </summary>
     public static class FormatInheritHelper
     {

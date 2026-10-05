@@ -1,14 +1,12 @@
-using System;
 using System.Collections.Generic;
 using WordAddIn1.DocumentMapping.CodeResolve;
 
 namespace WordAddIn1
 {
-    /// <summary>S_ 套格式 / 读 context 的表域参数（无 index）。</summary>
+    /// <summary>S_ 套格式 / 读 context 的表域参数（无 index；无源表域）。</summary>
     public sealed class ApplyFormatScopeArgs
     {
         public string TableId;
-        public string InheritFromTableId;
     }
 
     public static class ApplyFormatAmbiguityHelper
@@ -26,20 +24,13 @@ namespace WordAddIn1
                 result.TableId = tableObj.ToString()?.Trim();
             }
 
-            if (args.TryGetValue("inherit_from_table_id", out object inheritTableObj) && inheritTableObj != null)
-            {
-                result.InheritFromTableId = inheritTableObj.ToString()?.Trim();
-            }
-
             return result;
         }
 
         public static TableScopeIndex BuildTableScopeOrNull(ApplyFormatScopeArgs scopeArgs, out string cacheError)
         {
             cacheError = null;
-            bool needsTableScope = !string.IsNullOrEmpty(scopeArgs?.TableId)
-                || !string.IsNullOrEmpty(scopeArgs?.InheritFromTableId);
-            if (!needsTableScope)
+            if (string.IsNullOrEmpty(scopeArgs?.TableId))
             {
                 return null;
             }
@@ -54,26 +45,12 @@ namespace WordAddIn1
         }
 
         public static List<DocumentActionAmbiguityAnchor> BuildAnchors(
-            string mode,
-            string inheritFrom,
             IReadOnlyList<string> targetCodes,
             ApplyFormatScopeArgs scopeArgs)
         {
             var anchors = new List<DocumentActionAmbiguityAnchor>();
             scopeArgs = scopeArgs ?? new ApplyFormatScopeArgs();
             targetCodes = targetCodes ?? new List<string>();
-
-            if (string.Equals(mode, "inherit", StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrEmpty(inheritFrom))
-            {
-                anchors.Add(new DocumentActionAmbiguityAnchor
-                {
-                    ActionIndex = 0,
-                    Field = "inherit_from",
-                    Codes = inheritFrom,
-                    TableId = scopeArgs.InheritFromTableId
-                });
-            }
 
             var validTargetCodes = new List<string>();
             foreach (string code in targetCodes)
@@ -117,8 +94,6 @@ namespace WordAddIn1
         }
 
         public static AmbiguityCheckResult RunPrecheck(
-            string mode,
-            string inheritFrom,
             IReadOnlyList<string> targetCodes,
             ApplyFormatScopeArgs scopeArgs,
             string toolName,
@@ -126,8 +101,6 @@ namespace WordAddIn1
             out string cacheError)
         {
             return RunPrecheckInternal(
-                mode,
-                inheritFrom,
                 targetCodes,
                 scopeArgs,
                 toolName,
@@ -144,8 +117,6 @@ namespace WordAddIn1
             out string cacheError)
         {
             return RunPrecheckInternal(
-                "",
-                "",
                 targetCodes,
                 scopeArgs,
                 toolName,
@@ -155,8 +126,6 @@ namespace WordAddIn1
         }
 
         private static AmbiguityCheckResult RunPrecheckInternal(
-            string mode,
-            string inheritFrom,
             IReadOnlyList<string> targetCodes,
             ApplyFormatScopeArgs scopeArgs,
             string toolName,
@@ -170,7 +139,7 @@ namespace WordAddIn1
                 return null;
             }
 
-            var anchors = BuildAnchors(mode, inheritFrom, targetCodes, scopeArgs);
+            var anchors = BuildAnchors(targetCodes, scopeArgs);
             if (anchors.Count == 0)
             {
                 return new AmbiguityCheckResult();

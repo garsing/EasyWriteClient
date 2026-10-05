@@ -10,8 +10,8 @@ using WordAddIn1.DocumentMapping.CodeResolve;
 namespace WordAddIn1
 {
     /// <summary>
-    /// Phase 2/3：将格式应用到 target_codes（charFormatOnly，不改文字）。
-    /// 支持 inherit_from 与 mode=explicit；不支持 match_role / set_Style。
+    /// 将显式 char_format 应用到 target_codes（charFormatOnly，不改文字）。
+    /// inherit_from 已取消；不支持 match_role / set_Style。
     /// 文档触点经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_ApplyDocumentFormatTool
@@ -51,7 +51,7 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_apply_document_format] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
-                    string validationError = ValidateModeArgs(args, out string mode, out string inheritFrom,
+                    string validationError = ValidateModeArgs(args, out string mode,
                         out Dictionary<string, object> charFormat, out Dictionary<string, object> paraFormat);
                     if (validationError != null)
                     {
@@ -73,8 +73,6 @@ namespace WordAddIn1
                     ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
 
                     AmbiguityCheckResult ambiguityResult = ApplyFormatAmbiguityHelper.RunPrecheck(
-                        mode,
-                        inheritFrom,
                         targetCodes,
                         scopeArgs,
                         "F_apply_document_format",
@@ -96,62 +94,18 @@ namespace WordAddIn1
                     List<string> explicitFieldsApplied = null;
                     var warnings = new List<string>();
 
-                    if (mode == "explicit")
+                    snapshot = FormatInheritHelper.BuildSnapshotFromCharFormat(charFormat);
+                    if (snapshot == null || snapshot.Count == 0)
                     {
-                        snapshot = FormatInheritHelper.BuildSnapshotFromCharFormat(charFormat);
-                        if (snapshot.Count == 0)
-                        {
-                            return Done(false,
-                                "explicit 须至少提供 char_format 字段；para_format 不会写入 Word，请传 char_format 或改用 inherit_from");
-                        }
-
-                        explicitFieldsApplied = FormatInheritHelper.ListExplicitFieldsApplied(charFormat);
-                        responseMode = "explicit";
-
-                        if (paraFormat != null && paraFormat.Count > 0)
-                        {
-                            warnings.Add("para_format 已忽略（Phase 3 不 set_Style、不写段落对齐）");
-                        }
+                        return Done(false, "须至少提供 char_format 字段；para_format 不会写入 Word");
                     }
-                    else
+
+                    explicitFieldsApplied = FormatInheritHelper.ListExplicitFieldsApplied(charFormat);
+                    responseMode = "explicit";
+
+                    if (paraFormat != null && paraFormat.Count > 0)
                     {
-                        if (!FormatContextHelper.IsSentenceCode(inheritFrom))
-                        {
-                            return Done(false, "inherit_from 须为 S_ 句子编码；不支持 magic 字符串（如 replaced_range）");
-                        }
-
-                        string sourceContent = DocumentState.GetSentenceContent(inheritFrom);
-                        if (string.IsNullOrEmpty(sourceContent))
-                        {
-                            return Done(false, $"inherit_from 不存在: {inheritFrom}");
-                        }
-
-                        int inheritDisplayStart = ApplyFormatAmbiguityHelper.GetDisplayStartAt(
-                            ambiguityResult, 0, "inherit_from");
-                        var inheritCodes = new List<string> { inheritFrom };
-                        Word.Range inheritSpan = inheritDisplayStart >= 0
-                            ? DisplayPositionRangeResolver.ResolveSpan(
-                                doc,
-                                inheritCodes,
-                                inheritDisplayStart,
-                                scopeArgs.InheritFromTableId,
-                                tableScope,
-                                debugTag: $"apply_inherit_span:{inheritFrom}")
-                            : null;
-                        Word.Range sourceRange = inheritSpan != null
-                            ? SpanSentenceLocator.LocateFirstSentence(
-                                doc,
-                                inheritSpan,
-                                inheritCodes,
-                                debugTag: $"apply_source:{inheritFrom}")
-                            : null;
-                        if (sourceRange == null)
-                        {
-                            return Done(false, $"无法定位 inherit_from: {inheritFrom}");
-                        }
-
-                        snapshot = FormatInheritHelper.ExtractSnapshot(sourceRange);
-                        responseMode = "inherit";
+                        warnings.Add("para_format 已忽略（Phase 3 不 set_Style、不写段落对齐）");
                     }
 
                     var appliedCodes = new List<string>();
@@ -212,16 +166,8 @@ namespace WordAddIn1
                                     }
 
                                     appliedCodes.Add(code);
-                                    if (responseMode == "inherit")
-                                    {
-                                        FormatContextHelper.DbgLog(
-                                            $"apply {code} <- {inheritFrom} fingerprint={FormatInheritHelper.BuildFingerprint(snapshot)}");
-                                    }
-                                    else
-                                    {
-                                        FormatContextHelper.DbgLog(
-                                            $"apply explicit {code} fields={string.Join(",", explicitFieldsApplied)}");
-                                    }
+                                    FormatContextHelper.DbgLog(
+                                        $"apply explicit {code} fields={string.Join(",", explicitFieldsApplied)}");
                                 }
                             }
                             catch (Exception ex)
@@ -248,11 +194,7 @@ namespace WordAddIn1
                         ["skipped_codes"] = skippedCodes
                     };
 
-                    if (responseMode == "inherit")
-                    {
-                        data["inherit_from"] = inheritFrom;
-                    }
-                    else if (explicitFieldsApplied != null && explicitFieldsApplied.Count > 0)
+                    if (explicitFieldsApplied != null && explicitFieldsApplied.Count > 0)
                     {
                         data["explicit_fields_applied"] = explicitFieldsApplied;
                     }
@@ -302,12 +244,10 @@ namespace WordAddIn1
         private static string ValidateModeArgs(
             Dictionary<string, object> args,
             out string mode,
-            out string inheritFrom,
             out Dictionary<string, object> charFormat,
             out Dictionary<string, object> paraFormat)
         {
             mode = "";
-            inheritFrom = "";
             charFormat = null;
             paraFormat = null;
 
@@ -316,71 +256,46 @@ namespace WordAddIn1
                 return "缺少 target_codes";
             }
 
+            if (ActionFormatHelper.HasCancelledInheritKeys(args))
+            {
+                return ActionFormatHelper.CancelledInheritFromError;
+            }
+
             if (args.ContainsKey("match_role") && args["match_role"] != null)
             {
-                return "本期不支持 match_role；请使用 inherit_from 或 mode=explicit + char_format";
+                return "本期不支持 match_role；请使用 char_format";
             }
 
             if (args.ContainsKey("semantic_role") && args["semantic_role"] != null)
             {
-                return "本期不支持 match_role / semantic_role；请使用 inherit_from 或 mode=explicit + char_format";
+                return "本期不支持 match_role / semantic_role；请使用 char_format";
             }
 
             if (args.ContainsKey("search") && args["search"] != null)
             {
-                return "本期不支持 match_role / search；请使用 inherit_from 或 mode=explicit + char_format";
+                return "本期不支持 match_role / search；请使用 char_format";
             }
 
             mode = args.ContainsKey("mode") ? args["mode"]?.ToString()?.Trim() ?? "" : "";
-            inheritFrom = args.ContainsKey("inherit_from") ? args["inherit_from"]?.ToString()?.Trim() ?? "" : "";
 
             if (mode == "match_role")
             {
-                return "本期不支持 match_role；请使用 inherit_from 或 mode=explicit + char_format";
+                return "本期不支持 match_role；请使用 char_format";
             }
 
             if (!string.IsNullOrEmpty(mode) && !string.Equals(mode, "explicit", StringComparison.OrdinalIgnoreCase))
             {
-                return $"不支持的 mode: {mode}；仅支持 inherit_from 或 mode=explicit";
+                return $"不支持的 mode: {mode}；仅支持 mode=explicit 或省略并传 char_format";
             }
 
-            if (string.Equals(mode, "explicit", StringComparison.OrdinalIgnoreCase))
+            mode = "explicit";
+            charFormat = ParseNestedObject(args, "char_format");
+            paraFormat = ParseNestedObject(args, "para_format");
+            if (charFormat == null || charFormat.Count == 0)
             {
-                mode = "explicit";
-                if (!string.IsNullOrEmpty(inheritFrom))
-                {
-                    return "inherit_from 与 mode=explicit 互斥，请只传一种";
-                }
-
-                charFormat = ParseNestedObject(args, "char_format");
-                paraFormat = ParseNestedObject(args, "para_format");
-
-                bool hasChar = charFormat != null && charFormat.Count > 0;
-                bool hasPara = paraFormat != null && paraFormat.Count > 0;
-                if (!hasChar && !hasPara)
-                {
-                    return "mode=explicit 时 char_format 与 para_format 不能同时为空";
-                }
-
-                return null;
+                return "必须指定 char_format";
             }
 
-            if (string.IsNullOrEmpty(inheritFrom))
-            {
-                return "缺少 inherit_from；或传 mode=explicit + char_format";
-            }
-
-            if (args.ContainsKey("char_format") && args["char_format"] != null)
-            {
-                return "inherit 模式不支持 char_format；请去掉 mode 并使用 inherit_from，或改用 mode=explicit";
-            }
-
-            if (args.ContainsKey("para_format") && args["para_format"] != null)
-            {
-                return "inherit 模式不支持 para_format；请使用 inherit_from 或 mode=explicit";
-            }
-
-            mode = "inherit";
             return null;
         }
 
