@@ -1689,7 +1689,8 @@ namespace WordAddIn1
             // 使用正则表达式匹配 [S_00000-start] 和 [S_00000-end] 格式的标记（S_前缀 + 5位编码：数字、小写字母、大写字母）
             // 模式：\[S_[0-9a-zA-Z]{5}-start\]|\[S_[0-9a-zA-Z]{5}-end\] 匹配 [S_00000-start] 和 [S_00000-end] 这样的标记
             var markerPattern = new System.Text.RegularExpressions.Regex(@"\[S_[0-9a-zA-Z]{5}-start\]|\[S_[0-9a-zA-Z]{5}-end\]");
-            return markerPattern.Replace(displayContent, "");
+            return WordAddIn1.DocumentMapping.InTableBoundaryMarker.Strip(
+                markerPattern.Replace(displayContent, ""));
         }
 
         /// <summary>
@@ -1922,7 +1923,8 @@ namespace WordAddIn1
                                     foreach (var chunkData in data["ChunkInfo"])
                                     {
                                         string pd = chunkData["paragraph_display_content"]?.Value<string>() ?? "";
-                                        paraDisplays.Add(pd);
+                                        paraDisplays.Add(
+                                            WordAddIn1.DocumentMapping.InTableBoundaryMarker.AnnotateParagraphs(pd));
                                     }
                                 }
 
@@ -2022,8 +2024,10 @@ namespace WordAddIn1
                                         {
                                             ChunkIdx = chunkData["chunk_idx"]?.Value<int>() ?? 0,
                                             Content = chunkData["content"]?.Value<string>() ?? "",
-                                            DisplayContent = chunkData["display_content"]?.Value<string>() ?? "",
-                                            ParagraphDisplayContent = chunkData["paragraph_display_content"]?.Value<string>() ?? "",
+                                            DisplayContent = WordAddIn1.DocumentMapping.InTableBoundaryMarker.AnnotateSentences(
+                                                chunkData["display_content"]?.Value<string>() ?? ""),
+                                            ParagraphDisplayContent = WordAddIn1.DocumentMapping.InTableBoundaryMarker.AnnotateParagraphs(
+                                                chunkData["paragraph_display_content"]?.Value<string>() ?? ""),
                                             Summary = chunkData["summary"]?.Value<string>() ?? ""
                                         });
                                     }

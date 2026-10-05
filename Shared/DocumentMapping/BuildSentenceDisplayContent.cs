@@ -37,7 +37,7 @@ namespace WordAddIn1.DocumentMapping
                 displayParts.Add(nonSegs[nonSegs.Count - 1] ?? "");
             }
 
-            return string.Join("", displayParts);
+            return InTableBoundaryMarker.AnnotateSentences(string.Join("", displayParts));
         }
     }
 }

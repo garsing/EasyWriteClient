@@ -229,12 +229,14 @@ namespace WordAddIn1
             {
                 return "注意：[P_00000-start] 与 [P_00000-end] 是段落编号标记，不是正文。"
                     + "段版式精迁（F_apply_source_paragraph_format）须使用 P_ 编码；句子改字仍用 S_（code_level=sentence）。"
-                    + "若同一 P_ 出现多次，apply 时须读 suggested_locator_codes 写入 target_paragraph_codes（见 document-format §3.2）；禁止 index。";
+                    + "若同一 P_ 出现多次，apply 时须读 suggested_locator_codes 写入 target_paragraph_codes（见 document-format §3.2）；禁止 index。"
+                    + " 表内末段在 [P_…-start] 后带 [in_table=T_xxx]（不是编码）。要插在表后请用 target.table，不要锚该段；要接在该段后仍用 codes。";
             }
 
             return "注意：[S_00000-start] 与 [S_00000-end] 是句子编号标记，不是正文。"
                 + "F_process_document_actions 定位时 new 中不要包含这些标记。"
-                + " 若文档几乎为空（仅空 S_00000、无实质正文），insert 请省略 pre/post，在用户光标处插入，勿锚 S_00000。";
+                + " 若文档几乎为空（仅空 S_00000、无实质正文），insert 请省略 pre/post，在用户光标处插入，勿锚 S_00000。"
+                + " 表内末句在 [S_…-start] 后带 [in_table=T_xxx]（不是编码）。要插在表后请用 target.table，不要锚该句；要接在该句后仍用 codes + in_table。";
         }
 
         private static string BuildDuplicateSentenceCodeNote()

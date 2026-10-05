@@ -351,7 +351,7 @@ namespace WordDocumentRoundtripTest
             {
                 FailMany(run, opened.Error ?? "新建失败",
                     "wc-t-tag", "wc-t-tr-td", "wc-t-id", "wc-t-no-slots",
-                    "wc-t-cells", "wc-t-close", "wc-t-no-chart");
+                    "wc-t-cells", "wc-t-close", "wc-t-no-chart", "wc-t-last-in-table");
                 return;
             }
 
@@ -360,7 +360,7 @@ namespace WordDocumentRoundtripTest
             {
                 FailMany(run, "COM 建表失败",
                     "wc-t-tag", "wc-t-tr-td", "wc-t-id", "wc-t-no-slots",
-                    "wc-t-cells", "wc-t-close", "wc-t-no-chart");
+                    "wc-t-cells", "wc-t-close", "wc-t-no-chart", "wc-t-last-in-table");
                 s.CloseDocByPath(path);
                 return;
             }
@@ -370,7 +370,7 @@ namespace WordDocumentRoundtripTest
             {
                 FailMany(run, got.Error ?? "读表失败",
                     "wc-t-tag", "wc-t-tr-td", "wc-t-id", "wc-t-no-slots",
-                    "wc-t-cells", "wc-t-close", "wc-t-no-chart");
+                    "wc-t-cells", "wc-t-close", "wc-t-no-chart", "wc-t-last-in-table");
                 s.CloseDocByPath(path);
                 return;
             }
@@ -398,6 +398,10 @@ namespace WordDocumentRoundtripTest
             Ok(run, "wc-t-no-chart",
                 !Regex.IsMatch(text, @"<Chart\b", RegexOptions.IgnoreCase),
                 "纯表稿不该有 Chart");
+            Ok(run, "wc-t-last-in-table",
+                Regex.IsMatch(text, @"\[S_[0-9a-zA-Z]{5}-start\]\[in_table=T_[^\]]+\]丁")
+                && !Regex.IsMatch(text, @"\[in_table=T_[^\]]+\]甲"),
+                "表内末句应带 [in_table=T_]，甲不应带");
             s.CloseDocByPath(path);
         }
 

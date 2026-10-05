@@ -1623,8 +1623,7 @@ namespace WordAddIn1
             // 正则表达式：\[S_[0-9a-zA-Z]{5}-start\]|\[S_[0-9a-zA-Z]{5}-end\]
             string pattern = @"\[S_[0-9a-zA-Z]{5}-start\]|\[S_[0-9a-zA-Z]{5}-end\]";
             string result = Regex.Replace(text, pattern, "");
-            
-            return result;
+            return WordAddIn1.DocumentMapping.InTableBoundaryMarker.Strip(result);
         }
 
         /// <summary>
