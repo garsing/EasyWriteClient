@@ -371,6 +371,21 @@ namespace WordAddIn1
 
         private static List<ChartOrderedEntry> ExtractAllChartsOrdered(Word.Document document)
         {
+            if (WpsChartExtract.IsWpsDocument(document))
+            {
+                var wps = new List<ChartOrderedEntry>();
+                foreach (string tagged in WpsChartExtract.CollectTaggedXml(document))
+                {
+                    if (!string.IsNullOrEmpty(tagged))
+                    {
+                        wps.Add(new ChartOrderedEntry { TaggedXml = tagged });
+                    }
+                }
+
+                LogExtractVerbose("[WordReader] WPS Chart 管线预提取 " + wps.Count + " 个图表");
+                return wps;
+            }
+
             var orderedShapes = new List<(int Start, Word.Chart Chart)>();
 
             try

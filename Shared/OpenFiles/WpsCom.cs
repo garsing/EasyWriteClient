@@ -211,6 +211,23 @@ namespace WordAddIn1.OpenFiles
             }
         }
 
+        public static object TryGetItem(object collection, int index)
+        {
+            if (collection == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return GetIndexed(collection, index);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
         private static object GetIndexed(object collection, int index)
         {
             // 优先 Item 属性/方法
