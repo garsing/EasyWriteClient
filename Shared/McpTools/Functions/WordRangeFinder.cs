@@ -31,6 +31,9 @@ namespace WordAddIn1
 
             // 制表符
             result = result.Replace("\t", "^t");
+
+            // 分页符（分节 ^b 已经是 Find 码，不要改）
+            result = result.Replace("\f", "^m");
             
             return result;
         }
@@ -45,6 +48,8 @@ namespace WordAddIn1
             suffixSearchText = TrimSuffixSurroundBoundary(convertedText.Substring(convertedText.Length - maxLength));
         }
 
+        private static readonly string[] CaretFindCodes = { "^p", "^m", "^b", "^f", "^e", "^l", "^t" };
+
         private static string TrimPrefixSurroundBoundary(string prefix)
         {
             if (string.IsNullOrEmpty(prefix))
@@ -52,9 +57,12 @@ namespace WordAddIn1
                 return prefix;
             }
 
-            if (prefix.Length >= 2 && prefix.EndsWith("^p", StringComparison.Ordinal))
+            foreach (string code in CaretFindCodes)
             {
-                return prefix.Substring(0, prefix.Length - 2);
+                if (prefix.Length >= code.Length && prefix.EndsWith(code, StringComparison.Ordinal))
+                {
+                    return prefix.Substring(0, prefix.Length - code.Length);
+                }
             }
 
             if (prefix.EndsWith("^", StringComparison.Ordinal))
@@ -72,12 +80,15 @@ namespace WordAddIn1
                 return suffix;
             }
 
-            if (suffix.StartsWith("^p", StringComparison.Ordinal))
+            foreach (string code in CaretFindCodes)
             {
-                return suffix.Substring(2);
+                if (suffix.StartsWith(code, StringComparison.Ordinal))
+                {
+                    return suffix.Substring(code.Length);
+                }
             }
 
-            if (suffix.StartsWith("p", StringComparison.Ordinal))
+            if (suffix.Length > 0 && "pmbfelt".IndexOf(suffix[0]) >= 0)
             {
                 return suffix.Substring(1);
             }

@@ -1030,10 +1030,12 @@ namespace WordAddIn1
                 }
 
                 FormatInheritHelper.DbgLog(
-                    WordNoteMarkHelper.ContainsNoteMarks(replacementText)
-                        ? "ExecuteReplace 即将写入（含 ^f/^e → 脚注/尾注引用）"
-                        : "ExecuteReplace 即将 targetRange.Text=...（会清除该区间直接格式）");
-                Word.Range writtenRange = WordNoteMarkHelper.WriteTextWithNoteMarks(
+                    WordBreakWriteHelper.ContainsLayoutBreaks(replacementText)
+                        ? "ExecuteReplace 即将分段写入（\\f / ^b → InsertBreak）"
+                        : WordNoteMarkHelper.ContainsNoteMarks(replacementText)
+                            ? "ExecuteReplace 即将写入（含 ^f/^e → 脚注/尾注引用）"
+                            : "ExecuteReplace 即将 targetRange.Text=...（会清除该区间直接格式）");
+                Word.Range writtenRange = WordBreakWriteHelper.WriteTextWithBreaks(
                     doc, targetRange, replacementText);
                 targetRange = writtenRange ?? targetRange;
                 FormatInheritHelper.DbgLogRangeFonts("ExecuteReplace targetRange AFTER Text=", targetRange);
@@ -1276,7 +1278,7 @@ namespace WordAddIn1
                 }
 
                 string insertText = insertContentBuilder.ToString();
-                insertRange = WordNoteMarkHelper.WriteTextWithNoteMarks(doc, insertRange, insertText)
+                insertRange = WordBreakWriteHelper.WriteTextWithBreaks(doc, insertRange, insertText)
                     ?? insertRange;
                 MoveSelectionAfterInsert(doc, insertRange);
 
@@ -1332,7 +1334,7 @@ namespace WordAddIn1
                 int searchLength = searchEnd - searchStart;
                 
                 // 转换换行符为Word代码格式
-                string convertedText = ConvertNewlinesToWordCodes(sentenceText);
+                string convertedText = WordRangeFinder.ConvertNewlinesToWordCodes(sentenceText);
                 string sentenceEscaped = sentenceText.Replace("\r", "\\r").Replace("\n", "\\n");
                 string convertedEscaped = convertedText.Replace("^p", "\\^p").Replace("^l", "\\^l");
                 
@@ -1376,24 +1378,6 @@ namespace WordAddIn1
             }
         }
         
-        /// <summary>
-        /// 将换行符转换为Word Find功能的特殊字符代码
-        /// </summary>
-        /// <param name="text">原始文本</param>
-        /// <returns>转换后的文本（\r -> ^p, \n -> ^l, \t -> ^t）</returns>
-        private static string ConvertNewlinesToWordCodes(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-                return text;
-
-            string result = text.Replace("\r\n", "^p");
-            result = result.Replace("\r", "^p");
-            result = result.Replace("\n", "^l");
-            result = result.Replace("\t", "^t");
-            
-            return result;
-        }
-
         private static string ValidateSentenceSequenceContinuity(
             string sentenceNames,
             int? displayStartPosition,

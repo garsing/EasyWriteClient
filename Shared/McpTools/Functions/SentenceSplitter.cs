@@ -165,6 +165,16 @@ namespace WordAddIn1
                         sentenceEnd = i + 1;
                         foundSplit = true;
                     }
+                    else if (text[i] == '\f')
+                    {
+                        sentenceEnd = i + 1;
+                        foundSplit = true;
+                    }
+                    else if (i + 1 < text.Length && text[i] == '^' && text[i + 1] == 'b')
+                    {
+                        sentenceEnd = i + 2;
+                        foundSplit = true;
+                    }
                     else if (i + 8 <= text.Length && text.Substring(i, 8) == "</table>")
                     {
                         // </table> 标签，也作为分割符
@@ -180,7 +190,7 @@ namespace WordAddIn1
                     string sentence = text.Substring(start, sentenceEnd - start);
 
                     // 如果句子只包含空白字符（空格、\n、\r、\t等），拼接到前一句中
-                    if (IsWhitespaceOnly(sentence))
+                    if (IsGlueableBreakOnly(sentence))
                     {
                         if (sentences.Count > 0)
                         {
@@ -214,7 +224,7 @@ namespace WordAddIn1
             {
                 string remaining = text.Substring(start);
                 // 如果剩余部分只包含空白字符，拼接到前一句中
-                if (IsWhitespaceOnly(remaining))
+                if (IsGlueableBreakOnly(remaining))
                 {
                     if (sentences.Count > 0)
                     {
@@ -463,17 +473,34 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 检查字符串是否只包含空白字符（空格、\n、\r、\t等）
+        /// 只含空白或切断符（\f / ^b）的片段粘到上一句。
         /// </summary>
-        /// <param name="s">待检查的字符串</param>
-        /// <returns>如果只包含空白字符返回 true，否则返回 false</returns>
-        private static bool IsWhitespaceOnly(string s)
+        private static bool IsGlueableBreakOnly(string s)
         {
             if (string.IsNullOrEmpty(s))
             {
                 return true;
             }
-            return string.IsNullOrWhiteSpace(s);
+
+            int i = 0;
+            while (i < s.Length)
+            {
+                if (char.IsWhiteSpace(s[i]) || s[i] == '\f')
+                {
+                    i++;
+                    continue;
+                }
+
+                if (i + 1 < s.Length && s[i] == '^' && s[i + 1] == 'b')
+                {
+                    i += 2;
+                    continue;
+                }
+
+                return false;
+            }
+
+            return true;
         }
     }
 }

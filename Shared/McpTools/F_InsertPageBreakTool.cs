@@ -13,8 +13,7 @@ namespace WordAddIn1
     {
         private const string SuccessMessage = "已插入分页符，后面的内容从下一页开始。";
         private const string PptHint =
-            "这是 Word 分页符，不要用 F_manage_ppt_slide，也不要往 insert 里写 \\f";
-        private const int WdPageBreak = 7;
+            "这是 Word 分页符，不要用 F_manage_ppt_slide。只切断换页用本工具；正文里带换页用 process_actions 写 \\f；分节写 ^b";
 
         public static void Register(
             Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
@@ -52,7 +51,7 @@ namespace WordAddIn1
                         $"[InsertPageBreak] used_cursor={locate.UsedCursor} target={kind} " +
                         $"total_pages_before={before.TotalPages}");
 
-                    InsertPageBreak(locate.Range);
+                    WordBreakWriteHelper.InsertPageBreak(locate.Range);
 
                     try
                     {
@@ -132,24 +131,6 @@ namespace WordAddIn1
             }
 
             return error;
-        }
-
-        private static void InsertPageBreak(Word.Range range)
-        {
-            try
-            {
-                object breakType = Word.WdBreakType.wdPageBreak;
-                range.InsertBreak(ref breakType);
-                return;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[InsertPageBreak] InsertBreak(enum) 失败: {ex.Message}");
-            }
-
-            dynamic dyn = range;
-            dyn.InsertBreak(WdPageBreak);
         }
 
         private static void MoveCursorAfterBreak(Word.Application app, Word.Range range)

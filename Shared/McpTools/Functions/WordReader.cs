@@ -1185,7 +1185,7 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 分页符/分节符等纯排版段落读入为空时，不应再追加 \r。
+        /// lastRendered 等纯排版空段读入为空时，不应再追加 \r。分页输出 \f 后再补 \r；分节输出 ^b 后不补 \r。
         /// </summary>
         private static bool ShouldSuppressLayoutOnlyParagraphR(XElement paraElement, XNamespace w)
         {
@@ -1215,12 +1215,6 @@ namespace WordAddIn1
                 {
                     return false;
                 }
-            }
-
-            var pPr = paraElement.Element(w + "pPr");
-            if (pPr?.Element(w + "sectPr") != null)
-            {
-                return true;
             }
 
             foreach (var el in paraElement.Descendants())
@@ -1274,7 +1268,9 @@ namespace WordAddIn1
                 return;
             }
 
-            if (paraContent.EndsWith("\r", StringComparison.Ordinal) || suppressTrailingR)
+            if (paraContent.EndsWith("\r", StringComparison.Ordinal)
+                || paraContent.EndsWith("^b", StringComparison.Ordinal)
+                || suppressTrailingR)
             {
                 result += paraContent;
             }
@@ -1328,7 +1324,8 @@ namespace WordAddIn1
                 {
                     if (IsPageBreakBr(el, w))
                     {
-                        orderLog.Add("br:page_skip");
+                        textBuffer.Append('\f');
+                        orderLog.Add("br:page");
                     }
                     else
                     {
@@ -1394,7 +1391,8 @@ namespace WordAddIn1
                 {
                     if (IsPageBreakBr(child, w))
                     {
-                        orderLog.Add("p:br:page_skip");
+                        textBuffer.Append('\f');
+                        orderLog.Add("p:br:page");
                     }
                     else
                     {
@@ -1447,6 +1445,12 @@ namespace WordAddIn1
             if (textBuffer.Length > 0)
             {
                 output.Append(System.Security.SecurityElement.Escape(textBuffer.ToString()));
+            }
+
+            if (paraElement.Element(w + "pPr")?.Element(w + "sectPr") != null)
+            {
+                output.Append("^b");
+                orderLog.Add("sectPr");
             }
 
             string paraResult = output.ToString();

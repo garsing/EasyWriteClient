@@ -27,10 +27,11 @@ namespace WordAddIn1
                 return null;
             }
 
-            // 先转义 \r\n，再转义 \r 和 \n
+            // 先转义 \r\n，再转义 \r、\n、\f
             string escaped = content.Replace("\r\n", "\\r\\n");
             escaped = escaped.Replace("\r", "\\r");
             escaped = escaped.Replace("\n", "\\n");
+            escaped = escaped.Replace("\f", "\\f");
 
             return escaped;
         }
