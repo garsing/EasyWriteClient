@@ -67,6 +67,7 @@ namespace WordAddIn1
                 { "document.captureDocumentPageImage", "F_capture_document_page_image" },
                 { "presentation.capturePptShape", "F_capture_ppt_shape" },
                 { "document.getPageInfo", "F_get_document_page_info" },
+                { "document.insertBlankPage", "F_insert_blank_page" },
                 { "document.listOperations", "F_list_document_operations" },
                 { "document.restoreCheckpoint", "F_restore_document_checkpoint" },
                 { "table.createFromXml", "F_create_table_from_xml" },
