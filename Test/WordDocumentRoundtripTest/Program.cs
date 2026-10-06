@@ -12,9 +12,20 @@ namespace WordDocumentRoundtripTest
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             string host = GetHost(args);
             string caseFilter = GetArg(args, "--case=");
-            bool runContent = caseFilter.StartsWith("wc-", StringComparison.OrdinalIgnoreCase);
+            bool runLayout = caseFilter.StartsWith("lb-", StringComparison.OrdinalIgnoreCase)
+                || caseFilter.StartsWith("wc-lb-", StringComparison.OrdinalIgnoreCase);
+            bool runContent = !runLayout
+                && caseFilter.StartsWith("wc-", StringComparison.OrdinalIgnoreCase);
 
-            Console.WriteLine(runContent ? "文字 读编码（wc-）" : "文字 打开 + 页数（wd-）");
+            if (runLayout)
+            {
+                Console.WriteLine("分页/分节 读入+写入（lb-）");
+            }
+            else
+            {
+                Console.WriteLine(runContent ? "文字 读编码（wc-）" : "文字 打开 + 页数（wd-）");
+            }
+
             Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
             Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
             Console.WriteLine();
@@ -31,7 +42,11 @@ namespace WordDocumentRoundtripTest
             bool wpsWinBefore = OfficeAlive.HasWindow("wps");
             var run = new TestRun();
             var sw = Stopwatch.StartNew();
-            if (runContent)
+            if (runLayout)
+            {
+                LbCases.Run(run, host);
+            }
+            else if (runContent)
             {
                 WcCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
             }
@@ -41,7 +56,7 @@ namespace WordDocumentRoundtripTest
             }
 
             sw.Stop();
-            int target = runContent ? WcCases.Target : 30;
+            int target = runLayout ? LbCases.Target : (runContent ? WcCases.Target : 30);
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed

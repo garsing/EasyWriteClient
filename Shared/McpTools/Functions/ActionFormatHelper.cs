@@ -152,6 +152,11 @@ namespace WordAddIn1
             return AsDict(raw);
         }
 
+        internal static Dictionary<string, object> CoerceDict(object raw)
+        {
+            return AsDict(raw);
+        }
+
         private static Dictionary<string, object> AsDict(object raw)
         {
             if (raw is Dictionary<string, object> dict)

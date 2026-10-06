@@ -95,6 +95,86 @@ namespace WordDocumentRoundtripTest
             return DesktopToolPipe.Call("F_get_document_content", args);
         }
 
+        public ToolResult ProcessActions(string channelId, IList<Dictionary<string, object>> actions)
+        {
+            var args = new Dictionary<string, object>();
+            if (channelId != null)
+            {
+                args["channel_id"] = channelId;
+            }
+
+            args["action"] = actions ?? new List<Dictionary<string, object>>();
+            return DesktopToolPipe.Call("F_process_document_actions", args);
+        }
+
+        public ToolResult InsertPageBreakTool(string channelId, Dictionary<string, object> target)
+        {
+            var args = new Dictionary<string, object>();
+            if (channelId != null)
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (target != null)
+            {
+                foreach (KeyValuePair<string, object> kv in target)
+                {
+                    args[kv.Key] = kv.Value;
+                }
+            }
+
+            return DesktopToolPipe.Call("F_insert_page_break", args);
+        }
+
+        public string GetLiveWordOpenXml(string fullPath)
+        {
+            string xml = null;
+            if (IsWps)
+            {
+                WithWpsDoc(fullPath, doc =>
+                {
+                    object content = GetProp(doc, "Content");
+                    object raw = GetProp(content, "WordOpenXML");
+                    xml = raw as string ?? (raw != null ? raw.ToString() : "");
+                    return true;
+                });
+            }
+            else
+            {
+                WithWordDoc(fullPath, doc =>
+                {
+                    xml = doc.Content.WordOpenXML;
+                    return true;
+                });
+            }
+
+            return xml ?? "";
+        }
+
+        public static bool XmlHasPageBreak(string xml)
+        {
+            if (string.IsNullOrEmpty(xml))
+            {
+                return false;
+            }
+
+            return xml.IndexOf("type=\"page\"", StringComparison.OrdinalIgnoreCase) >= 0
+                || xml.IndexOf("type='page'", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        public static bool XmlHasParagraphSectPr(string xml)
+        {
+            if (string.IsNullOrEmpty(xml))
+            {
+                return false;
+            }
+
+            return Regex.IsMatch(
+                xml,
+                @"<w:pPr[\s\S]*?<w:sectPr[\s\S]*?</w:pPr>",
+                RegexOptions.IgnoreCase);
+        }
+
         public bool TypePlain(string fullPath, string text)
         {
             return IsWps

@@ -257,14 +257,16 @@ namespace WordAddIn1
                 {
                     foreach (var actionObj in actionsList)
                     {
-                        var actionDict = actionObj as Dictionary<string, object>;
+                        var actionDict = ActionFormatHelper.CoerceDict(actionObj);
                         if (actionDict == null || !actionDict.ContainsKey("type"))
                             continue;
 
                         var action = new ParagraphAction();
                         action.Type = actionDict["type"]?.ToString();
-                        
-                        var detail = actionDict.ContainsKey("detail") ? actionDict["detail"] as Dictionary<string, object> : null;
+
+                        var detail = actionDict.ContainsKey("detail")
+                            ? ActionFormatHelper.CoerceDict(actionDict["detail"])
+                            : null;
                         if (detail == null)
                             continue;
 

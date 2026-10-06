@@ -8,7 +8,7 @@ namespace WordDocumentRoundtripTest
 {
     internal static class WcCases
     {
-        public const int Target = 99;
+        public const int Target = 92;
 
         private const string SentA = "易写读编码甲句。";
         private const string SentB = "易写读编码乙句。";
@@ -57,7 +57,6 @@ namespace WordDocumentRoundtripTest
             RunChartTwo(run, s);
             RunMix(run, s);
             RunContract(run, s, textPath);
-            RunLayoutBreaks(run, s);
             RunNegLate(run, s);
             RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
         }
