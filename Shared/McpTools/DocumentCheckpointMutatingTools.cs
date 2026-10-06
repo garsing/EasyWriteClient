@@ -26,6 +26,7 @@ namespace WordAddIn1
             "F_insert_svg_image",
             "F_insert_image",
             "F_insert_blank_page",
+            "F_insert_page_break",
             "F_apply_data_provenance",
         };
 

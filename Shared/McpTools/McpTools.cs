@@ -96,6 +96,7 @@ namespace WordAddIn1
             F_CapturePptShapeTool.Register(toolRegistry, wordApplication);
             F_GetDocumentPageInfoTool.Register(toolRegistry, wordApplication);
             F_InsertBlankPageTool.Register(toolRegistry, wordApplication);
+            F_InsertPageBreakTool.Register(toolRegistry, wordApplication);
             F_GetFormatContextTool.Register(toolRegistry, wordApplication);
             F_ApplyDocumentFormatTool.Register(toolRegistry, wordApplication);
             F_ApplyParagraphFormatTool.Register(toolRegistry, wordApplication);
