@@ -12,6 +12,7 @@ namespace WordAddIn1
     public static class F_InsertBlankPageTool
     {
         private const string SuccessMessage = "已新增一页空白，光标在新页开头，可以开始写内容。";
+        private const string StartSuccessMessage = "已在第 1 页前新增一页空白，光标在新页开头，可以开始写内容。";
         private const string PptHint = "这是 Word 分页，不要用 F_manage_ppt_slide";
         private const int WdPageBreak = 7;
 
@@ -43,6 +44,17 @@ namespace WordAddIn1
                         return Fail(parseErr);
                     }
 
+                    string positionErr = TryParseOptionalPosition(args, out bool atStart);
+                    if (positionErr != null)
+                    {
+                        return Fail(positionErr);
+                    }
+
+                    if (atStart && pageNumber.HasValue)
+                    {
+                        return Fail("position 与 page_number 不能同时传");
+                    }
+
                     var before = PageCaptureHelper.GetDocumentPageInfo(app, doc);
                     if (pageNumber.HasValue &&
                         (pageNumber.Value < 1 || pageNumber.Value > before.TotalPages))
@@ -50,12 +62,27 @@ namespace WordAddIn1
                         return Fail($"页码须为 1～{before.TotalPages}");
                     }
 
-                    int insertPos = ResolveInsertPos(doc, pageNumber, before.TotalPages);
-                    int expectedNewPage = pageNumber.HasValue && pageNumber.Value < before.TotalPages
-                        ? pageNumber.Value + 1
-                        : before.TotalPages + 1;
+                    int insertPos;
+                    int expectedNewPage;
+                    string successMessage;
+                    if (atStart)
+                    {
+                        insertPos = Math.Max(0, doc.Content.Start);
+                        expectedNewPage = 1;
+                        successMessage = StartSuccessMessage;
+                    }
+                    else
+                    {
+                        insertPos = ResolveInsertPos(doc, pageNumber, before.TotalPages);
+                        expectedNewPage = pageNumber.HasValue && pageNumber.Value < before.TotalPages
+                            ? pageNumber.Value + 1
+                            : before.TotalPages + 1;
+                        successMessage = SuccessMessage;
+                    }
+
                     System.Diagnostics.Debug.WriteLine(
-                        $"[InsertBlankPage] page_number={pageNumber?.ToString() ?? "(end)"} " +
+                        $"[InsertBlankPage] page_number={pageNumber?.ToString() ?? "(none)"} " +
+                        $"position={(atStart ? "start" : "(none)")} " +
                         $"insertPos={insertPos} total={before.TotalPages}");
 
                     Word.Range at = doc.Range(insertPos, insertPos);
@@ -108,7 +135,7 @@ namespace WordAddIn1
                             ["cursor_page_number"] = after.CursorPageNumber,
                             ["channel_id"] = docHandle.ChannelId ?? "",
                             ["host"] = docHandle.HostName ?? "",
-                            ["message"] = SuccessMessage
+                            ["message"] = successMessage
                         }
                     };
                 }
@@ -179,6 +206,31 @@ namespace WordAddIn1
             }
 
             return "页码须为整数";
+        }
+
+        private static string TryParseOptionalPosition(
+            Dictionary<string, object> args,
+            out bool atStart)
+        {
+            atStart = false;
+            if (args == null || !args.ContainsKey("position") || args["position"] == null)
+            {
+                return null;
+            }
+
+            string text = Convert.ToString(args["position"])?.Trim();
+            if (string.IsNullOrEmpty(text))
+            {
+                return null;
+            }
+
+            if (!InsertTargetLocatorHelper.IsStartPosition(text))
+            {
+                return InsertTargetLocatorHelper.PositionStartOnlyError;
+            }
+
+            atStart = true;
+            return null;
         }
 
         private static int ResolveInsertPos(Word.Document doc, int? pageNumber, int totalPages)

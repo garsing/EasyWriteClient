@@ -17,8 +17,13 @@ namespace WordAddIn1
             Sentence,
             Table,
             Chart,
-            Image
+            Image,
+            DocumentStart
         }
+
+        public const string PositionStart = "start";
+        public const string FiveWayLocatorError = "定位对象须为 codes / table / chart / image / position 五选一";
+        public const string PositionStartOnlyError = "position 仅支持 start";
 
         public sealed class LocatorSpec
         {
@@ -47,7 +52,7 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 解析定位对象：codes(+in_table) / table / chart / image 四选一。
+        /// 解析定位对象：codes(+in_table) / table / chart / image / position 五选一。
         /// </summary>
         public static LocatorParseResult ParseLocatorObject(
             Dictionary<string, object> dict,
@@ -67,25 +72,55 @@ namespace WordAddIn1
                 && !string.IsNullOrWhiteSpace(dict["chart"].ToString());
             bool hasImage = dict.ContainsKey("image") && dict["image"] != null
                 && !string.IsNullOrWhiteSpace(dict["image"].ToString());
+            bool hasPosition = dict.ContainsKey("position") && dict["position"] != null
+                && !string.IsNullOrWhiteSpace(dict["position"].ToString());
             bool hasInTable = dict.ContainsKey("in_table") && dict["in_table"] != null
                 && !string.IsNullOrWhiteSpace(dict["in_table"].ToString());
 
-            int modeCount = (hasCodes ? 1 : 0) + (hasTable ? 1 : 0) + (hasChart ? 1 : 0) + (hasImage ? 1 : 0);
+            int modeCount = (hasCodes ? 1 : 0) + (hasTable ? 1 : 0) + (hasChart ? 1 : 0)
+                + (hasImage ? 1 : 0) + (hasPosition ? 1 : 0);
             if (modeCount != 1)
             {
                 return new LocatorParseResult
                 {
                     Success = false,
-                    Error = $"{fieldLabel} 定位对象须为 codes / table / chart / image 四选一"
+                    Error = $"{fieldLabel} {FiveWayLocatorError}"
                 };
             }
 
-            if (sentenceOnly && (hasTable || hasChart || hasImage))
+            if (sentenceOnly && (hasTable || hasChart || hasImage || hasPosition))
             {
                 return new LocatorParseResult
                 {
                     Success = false,
                     Error = $"{fieldLabel} 仅支持句子定位（codes + 可选 in_table）"
+                };
+            }
+
+            if (hasPosition)
+            {
+                if (hasInTable)
+                {
+                    return new LocatorParseResult
+                    {
+                        Success = false,
+                        Error = $"{fieldLabel}.in_table 仅可与 codes 同用"
+                    };
+                }
+
+                if (!IsStartPosition(dict["position"].ToString()))
+                {
+                    return new LocatorParseResult
+                    {
+                        Success = false,
+                        Error = $"{fieldLabel}.{PositionStartOnlyError}"
+                    };
+                }
+
+                return new LocatorParseResult
+                {
+                    Success = true,
+                    Spec = new LocatorSpec { Kind = LocatorKind.DocumentStart }
                 };
             }
 
@@ -260,6 +295,17 @@ namespace WordAddIn1
 
             try
             {
+                if (target.Kind == LocatorKind.DocumentStart)
+                {
+                    Word.Range startRange = RangeAtDocumentStart(doc);
+                    if (startRange == null)
+                    {
+                        return FailResolve("locate_failed: 无法取得文档开头 Range");
+                    }
+
+                    return OkRange(startRange, target, usedCursor: false);
+                }
+
                 if (target.Kind == LocatorKind.Table)
                 {
                     Word.Range afterTable = ObjectInsertRangeHelper.FindRangeAfterTable(doc, target.TableId);
@@ -423,8 +469,44 @@ namespace WordAddIn1
             {
                 echo["image"] = spec.ImageId;
             }
+            else if (spec.Kind == LocatorKind.DocumentStart)
+            {
+                echo["position"] = PositionStart;
+            }
 
             return echo;
+        }
+
+        public static bool IsStartPosition(string raw)
+        {
+            return !string.IsNullOrWhiteSpace(raw)
+                && string.Equals(raw.Trim(), PositionStart, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static Word.Range RangeAtDocumentStart(Word.Document doc)
+        {
+            if (doc == null)
+            {
+                return null;
+            }
+
+            int start = doc.Content.Start;
+            return doc.Range(start, start);
+        }
+
+        public static string AppendDocumentStartMessage(string message, LocatorSpec spec)
+        {
+            if (spec == null || spec.Kind != LocatorKind.DocumentStart)
+            {
+                return message;
+            }
+
+            if (string.IsNullOrEmpty(message))
+            {
+                return "已插在正文最前。";
+            }
+
+            return message.TrimEnd() + " 已插在正文最前。";
         }
 
         private static ResolveRangeResult OkRange(Word.Range range, LocatorSpec spec, bool usedCursor)

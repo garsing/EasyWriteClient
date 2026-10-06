@@ -127,7 +127,7 @@ namespace WordAddIn1
                         return new ToolResult
                         {
                             Success = false,
-                            Error = "已不再支持 position，请改用 target（codes / table / chart / image）在对象之后建表；省略 target 则在当前光标处建表。"
+                            Error = "已不再支持顶层 position。正文最前用 target.position=start；句/表/图/图片后用 target.codes / table / chart / image；省略 target 则在当前光标处建表。"
                         };
                     }
 
@@ -228,7 +228,9 @@ namespace WordAddIn1
                         warnings.Add($"未能解析 table_id: {ex.Message}");
                     }
 
-                    string message = "表格创建成功";
+                    string message = InsertTargetLocatorHelper.AppendDocumentStartMessage(
+                        "表格创建成功",
+                        locate.Spec);
                     if (warnings.Count > 0)
                     {
                         message += $"，但存在以下警告: {string.Join("; ", warnings)}";

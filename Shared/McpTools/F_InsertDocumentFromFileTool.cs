@@ -45,6 +45,7 @@ namespace WordAddIn1
                     string targetTable = args.ContainsKey("target_table") ? args["target_table"]?.ToString()?.Trim() : "";
                     string targetChart = args.ContainsKey("target_chart") ? args["target_chart"]?.ToString()?.Trim() : "";
                     string targetImage = args.ContainsKey("target_image") ? args["target_image"]?.ToString()?.Trim() : "";
+                    string targetPosition = args.ContainsKey("target_position") ? args["target_position"]?.ToString()?.Trim() : "";
 
                     var build = BuildInsertProcessArgs(
                         loadResult.Text,
@@ -53,6 +54,7 @@ namespace WordAddIn1
                         targetTable,
                         targetChart,
                         targetImage,
+                        targetPosition,
                         args["format"]);
                     if (!string.IsNullOrEmpty(build.error))
                     {
@@ -91,9 +93,12 @@ namespace WordAddIn1
                             target_table = string.IsNullOrEmpty(targetTable) ? null : targetTable,
                             target_chart = string.IsNullOrEmpty(targetChart) ? null : targetChart,
                             target_image = string.IsNullOrEmpty(targetImage) ? null : targetImage,
+                            target_position = string.IsNullOrEmpty(targetPosition) ? null : targetPosition,
                             characters_inserted = loadResult.Text?.Length ?? 0,
                             process_result = processResult.Data,
-                            message = $"已从文件 {resolved.Display} 插入文档内容"
+                            message = InsertTargetLocatorHelper.IsStartPosition(targetPosition)
+                                ? $"已从文件 {resolved.Display} 插在正文最前"
+                                : $"已从文件 {resolved.Display} 插入文档内容"
                         }
                     };
                 }
@@ -112,6 +117,7 @@ namespace WordAddIn1
             string targetTable,
             string targetChart,
             string targetImage,
+            string targetPosition,
             object format)
         {
             var detail = new Dictionary<string, object>
@@ -124,10 +130,12 @@ namespace WordAddIn1
             bool hasTable = !string.IsNullOrEmpty(targetTable);
             bool hasChart = !string.IsNullOrEmpty(targetChart);
             bool hasImage = !string.IsNullOrEmpty(targetImage);
-            int modeCount = (hasCodes ? 1 : 0) + (hasTable ? 1 : 0) + (hasChart ? 1 : 0) + (hasImage ? 1 : 0);
+            bool hasPosition = !string.IsNullOrEmpty(targetPosition);
+            int modeCount = (hasCodes ? 1 : 0) + (hasTable ? 1 : 0) + (hasChart ? 1 : 0)
+                + (hasImage ? 1 : 0) + (hasPosition ? 1 : 0);
             if (modeCount > 1)
             {
-                return (null, "target_codes / target_table / target_chart / target_image 四选一");
+                return (null, "target_codes / target_table / target_chart / target_image / target_position 五选一");
             }
 
             if (!string.IsNullOrEmpty(inTable) && !hasCodes)
@@ -135,7 +143,19 @@ namespace WordAddIn1
                 return (null, "in_table 仅可与 target_codes 同用");
             }
 
-            if (hasCodes)
+            if (hasPosition)
+            {
+                if (!InsertTargetLocatorHelper.IsStartPosition(targetPosition))
+                {
+                    return (null, "target_position 仅支持 start");
+                }
+
+                detail["target"] = new Dictionary<string, object>
+                {
+                    ["position"] = InsertTargetLocatorHelper.PositionStart
+                };
+            }
+            else if (hasCodes)
             {
                 var target = new Dictionary<string, object> { ["codes"] = targetCodes };
                 if (!string.IsNullOrEmpty(inTable))

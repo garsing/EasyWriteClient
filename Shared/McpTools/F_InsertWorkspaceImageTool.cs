@@ -144,8 +144,9 @@ namespace WordAddIn1
                         ["used_cursor"] = locate.UsedCursor,
                         ["downloaded"] = downloaded,
                         ["image_id"] = resolvedImageId,
-                        ["message"] =
+                        ["message"] = InsertTargetLocatorHelper.AppendDocumentStartMessage(
                             "已插入工作区图片（PNG/位图，非 Word Chart）。误插可用文档 checkpoint 回滚。",
+                            locate.Spec),
                     };
 
                     if (warnings.Count > 0)

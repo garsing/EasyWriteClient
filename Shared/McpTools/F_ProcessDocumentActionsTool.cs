@@ -380,7 +380,8 @@ namespace WordAddIn1
             Sentence,
             Table,
             Chart,
-            Image
+            Image,
+            DocumentStart
         }
 
         private sealed class LocatorSpec
@@ -427,9 +428,18 @@ namespace WordAddIn1
                 case InsertTargetLocatorHelper.LocatorKind.Image:
                     kind = LocatorKind.Image;
                     break;
-                default:
+                case InsertTargetLocatorHelper.LocatorKind.DocumentStart:
+                    kind = LocatorKind.DocumentStart;
+                    break;
+                case InsertTargetLocatorHelper.LocatorKind.Sentence:
                     kind = LocatorKind.Sentence;
                     break;
+                default:
+                    return new LocatorParseResult
+                    {
+                        Success = false,
+                        Error = $"{fieldLabel} 无法识别的定位类型"
+                    };
             }
 
             return new LocatorParseResult
@@ -1143,6 +1153,11 @@ namespace WordAddIn1
                 return int.MaxValue;
             }
 
+            if (action.TargetLocator.Kind == LocatorKind.DocumentStart)
+            {
+                return 0;
+            }
+
             if (action.TargetLocator.Kind == LocatorKind.Sentence)
             {
                 return GetSentencePositionInDocument(
@@ -1184,6 +1199,11 @@ namespace WordAddIn1
                 {
                     insertRange = doc.Application.Selection.Range;
                     System.Diagnostics.Debug.WriteLine($"[ProcessActions][insert] 无 target，光标处插入");
+                }
+                else if (target.Kind == LocatorKind.DocumentStart)
+                {
+                    insertRange = InsertTargetLocatorHelper.RangeAtDocumentStart(doc);
+                    System.Diagnostics.Debug.WriteLine($"[ProcessActions][insert] position=start，正文最前插入");
                 }
                 else if (target.Kind == LocatorKind.Table)
                 {
@@ -1951,7 +1971,18 @@ namespace WordAddIn1
                 ar.format_source = "detail.format.char_format";
             }
 
-            ar.message = ins.Success ? "插入成功" : (ins.ErrorMessage ?? "插入失败");
+            if (!ins.Success)
+            {
+                ar.message = ins.ErrorMessage ?? "插入失败";
+            }
+            else if (target != null && target.Kind == LocatorKind.DocumentStart)
+            {
+                ar.message = "已插在正文最前";
+            }
+            else
+            {
+                ar.message = "插入成功";
+            }
         }
 
         private sealed class FormatInheritContext

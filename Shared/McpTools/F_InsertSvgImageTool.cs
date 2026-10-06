@@ -133,8 +133,9 @@ namespace WordAddIn1
                         ["image_height_cm"] = Math.Round(raster.HeightCm, 2),
                         ["used_cursor"] = locate.UsedCursor,
                         ["image_id"] = resolvedImageId,
-                        ["message"] =
-                            "已插入 SVG 示意图（PNG 图片，非 Word Chart）。误插可用文档 checkpoint 回滚。"
+                        ["message"] = InsertTargetLocatorHelper.AppendDocumentStartMessage(
+                            "已插入 SVG 示意图（PNG 图片，非 Word Chart）。误插可用文档 checkpoint 回滚。",
+                            locate.Spec)
                     };
 
                     if (warnings.Count > 0)
