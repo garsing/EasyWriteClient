@@ -703,11 +703,12 @@ namespace WordAddIn1
                 { "tool_call_id", toolCallId },
                 { "ok", ok }
             };
-            if (ok)
+            // 业务失败也带 result（含 hint / suggested_locator_codes），ok 只表示通道是否成功。
+            if (result != null)
             {
                 payload["result"] = result;
             }
-            else
+            if (!ok)
             {
                 payload["error"] = error ?? "invoke failed";
             }
