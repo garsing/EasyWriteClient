@@ -44,6 +44,7 @@ namespace WordAddIn1
             F_DeleteChartTool.Register(toolRegistry, wordApplication);
             F_InsertSvgImageTool.Register(toolRegistry, wordApplication);
             F_InsertWorkspaceImageTool.Register(toolRegistry, wordApplication); // 注册键 F_insert_image
+            F_DeleteImageTool.Register(toolRegistry, wordApplication);
             F_ModifyYamlFileTool.Register(toolRegistry, wordApplication);
             F_CsvToXmlTool.Register(toolRegistry, wordApplication);
             F_GetDocumentContentTool.Register(toolRegistry, wordApplication);

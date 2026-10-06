@@ -85,6 +85,7 @@ namespace WordAddIn1
                 { "chart.delete", "F_delete_chart" },
                 { "document.insertSvgImage", "F_insert_svg_image" },
                 { "document.insertImage", "F_insert_image" },
+                { "document.deleteImage", "F_delete_image" },
                 { "file.write", "F_write_file" },
                 { "file.read", "F_read_file" },
                 { "workspace.info", "F_workspace_info" },
