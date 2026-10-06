@@ -156,7 +156,7 @@ const isDesktopHost = detectDesktopHost()
 /** Desktop 窗口形态：完整版 expanded / 缩小版 compact（由 C# layoutModeChanged 驱动） */
 const layoutMode = ref('expanded')
 const sidebarCollapsed = ref(false)
-/** 递增后 ChatMessages 强制钉到最新（切历史 / 切形态） */
+/** 递增后 ChatMessages 强制钉到最新（切历史 / 切形态 / 发送新消息） */
 const pinToLatestToken = ref(0)
 
 const historyPopoverOpen = ref(false)
@@ -557,6 +557,7 @@ const handleSend = async (content) => {
   }
   console.log('[App] 添加用户消息:', { id: userMessage.id, content: userMessage.content.substring(0, 20), messageCount: messages.value.length })
   messages.value.push(userMessage)
+  pinToLatestToken.value++
   receivedBackendMessages.value.add(userMessage.id)
   console.log('[App] 用户消息已添加，当前消息数量:', messages.value.length)
 

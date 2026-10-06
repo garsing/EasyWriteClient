@@ -32,7 +32,7 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
-  /** 递增则强制钉到最新（切历史 / 切形态）；不沿用上一会话的上翻态 */
+  /** 递增则强制钉到最新（切历史 / 切形态 / 发送新消息）；不沿用上翻取消跟随 */
   pinToLatestToken: {
     type: [Number, String],
     default: 0
@@ -189,6 +189,12 @@ watch(() => props.pinToLatestToken, (next, prev) => {
 
 watch(() => props.messages.length, (newLength, oldLength) => {
   console.log('[ChatMessages] 消息数量变化:', oldLength, '->', newLength, '消息列表:', props.messages.map(m => ({ id: m.id, role: m.role, content: m.content?.substring(0, 20) })))
+  const last = props.messages[props.messages.length - 1]
+  // 新发一条用户消息：无论之前是否上翻取消跟随，都重新钉住最新输出
+  if (newLength > (oldLength ?? 0) && last?.role === 'user') {
+    forcePinToLatest()
+    return
+  }
   scrollToBottom()
 })
 
