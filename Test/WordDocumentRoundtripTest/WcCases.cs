@@ -8,7 +8,7 @@ namespace WordDocumentRoundtripTest
 {
     internal static class WcCases
     {
-        public const int Target = 92;
+        public const int Target = 99;
 
         private const string SentA = "易写读编码甲句。";
         private const string SentB = "易写读编码乙句。";
@@ -57,6 +57,7 @@ namespace WordDocumentRoundtripTest
             RunChartTwo(run, s);
             RunMix(run, s);
             RunContract(run, s, textPath);
+            RunLayoutBreaks(run, s);
             RunNegLate(run, s);
             RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
         }
@@ -820,6 +821,105 @@ namespace WordDocumentRoundtripTest
             {
                 run.CaseFail("wc-neg-closed", "关稿后仍成功");
             }
+        }
+
+        private static readonly string[] LayoutBreakIds =
+        {
+            "wc-lb-open", "wc-lb-write", "wc-lb-read",
+            "wc-lb-has-f", "wc-lb-has-b",
+            "wc-lb-s-find-all", "wc-lb-p-find-all"
+        };
+
+        private static void RunLayoutBreaks(TestRun run, WdSession s)
+        {
+            string path = s.NewDocxPath();
+            ToolResult opened = s.Open(path, true, s.App);
+            if (!opened.Success)
+            {
+                FailMany(run, opened.Error ?? "新建失败", LayoutBreakIds);
+                return;
+            }
+
+            Ok(run, "wc-lb-open", true, "");
+            string id = WdSession.Str(opened, "channel_id");
+            if (!s.WriteLayoutBreakFixture(path))
+            {
+                FailMany(run, "COM 写分页/分节夹具失败",
+                    "wc-lb-write", "wc-lb-read", "wc-lb-has-f", "wc-lb-has-b",
+                    "wc-lb-s-find-all", "wc-lb-p-find-all");
+                return;
+            }
+
+            Ok(run, "wc-lb-write", true, "");
+
+            ToolResult got = s.GetContent(id);
+            if (!got.Success)
+            {
+                FailMany(run, got.Error ?? "读文失败",
+                    "wc-lb-read", "wc-lb-has-f", "wc-lb-has-b",
+                    "wc-lb-s-find-all", "wc-lb-p-find-all");
+                return;
+            }
+
+            string text = WdSession.Str(got, "document_content");
+            Ok(run, "wc-lb-read",
+                text.IndexOf("封面日期甲", StringComparison.Ordinal) >= 0
+                && text.IndexOf("总概述乙", StringComparison.Ordinal) >= 0
+                && text.IndexOf("第一章丙", StringComparison.Ordinal) >= 0,
+                TrimPreview(text));
+            Ok(run, "wc-lb-has-f", text.IndexOf('\f') >= 0, "display 不见 \\f");
+            Ok(run, "wc-lb-has-b", text.IndexOf("^b", StringComparison.Ordinal) >= 0, "display 不见 ^b");
+
+            List<string> sentenceStored = ParseStoredSpans(text, "S");
+            string sMiss = null;
+            bool sFound = sentenceStored.Count > 0
+                && s.FindAllStoredTexts(path, sentenceStored, out sMiss);
+            Ok(run, "wc-lb-s-find-all",
+                sFound,
+                sentenceStored.Count == 0
+                    ? "未解析到 S_ 存文"
+                    : (sMiss ?? "Find 失败"));
+
+            ToolResult para = s.GetContent(id, "paragraph");
+            if (!para.Success)
+            {
+                run.CaseFail("wc-lb-p-find-all", para.Error ?? "段落读失败");
+                return;
+            }
+
+            List<string> paraStored = ParseStoredSpans(
+                WdSession.Str(para, "document_content"), "P");
+            string pMiss = null;
+            bool pFound = paraStored.Count > 0
+                && s.FindAllStoredTexts(path, paraStored, out pMiss);
+            Ok(run, "wc-lb-p-find-all",
+                pFound,
+                paraStored.Count == 0
+                    ? "未解析到 P_ 存文"
+                    : (pMiss ?? "Find 失败"));
+        }
+
+        private static List<string> ParseStoredSpans(string display, string prefix)
+        {
+            var list = new List<string>();
+            if (string.IsNullOrEmpty(display))
+            {
+                return list;
+            }
+
+            foreach (Match m in Regex.Matches(
+                display,
+                @"\[" + prefix + @"_([0-9a-zA-Z]{5})-start\](.*?)(\[" + prefix + @"_\1-end\])",
+                RegexOptions.Singleline))
+            {
+                string stored = m.Groups[2].Value;
+                if (!string.IsNullOrEmpty(stored))
+                {
+                    list.Add(stored);
+                }
+            }
+
+            return list;
         }
 
         private static void RunNoQuit(

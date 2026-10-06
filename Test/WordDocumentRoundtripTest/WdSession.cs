@@ -385,6 +385,57 @@ namespace WordDocumentRoundtripTest
             return IsWps ? InsertPageBreakWps(fullPath) : InsertPageBreakWord(fullPath);
         }
 
+        /// <summary>
+        /// 封面句 + 分页 + 概述句 + 下一页分节 + 正文句。供读文后再 Find。
+        /// </summary>
+        public bool WriteLayoutBreakFixture(string fullPath)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, WriteLayoutBreakFixtureLate)
+                : WithWordDoc(fullPath, WriteLayoutBreakFixtureWord);
+        }
+
+        /// <summary>
+        /// 用现网 Find 路径搜存文。miss 为转义后的搜不到的存文。
+        /// </summary>
+        public bool FindAllStoredTexts(string fullPath, IList<string> storedTexts, out string miss)
+        {
+            miss = null;
+            if (storedTexts == null || storedTexts.Count == 0)
+            {
+                miss = "(无存文)";
+                return false;
+            }
+
+            string failed = null;
+            bool ok = IsWps
+                ? WithWpsDoc(fullPath, doc => FindAllStoredTextsLate(doc, storedTexts, out failed))
+                : WithWordDoc(fullPath, doc =>
+                {
+                    foreach (string stored in storedTexts)
+                    {
+                        if (string.IsNullOrEmpty(stored))
+                        {
+                            continue;
+                        }
+
+                        Word.Range hit = WordRangeFinder.FindFirstInDocument(doc, stored, "layout-break");
+                        if (hit == null)
+                        {
+                            failed = TextUtils.EscapeNewlinesForDb(stored)
+                                + " → "
+                                + WordRangeFinder.ConvertNewlinesToWordCodes(stored);
+                            return false;
+                        }
+                    }
+
+                    return true;
+                });
+
+            miss = failed;
+            return ok;
+        }
+
         public bool CloseDocByPath(string fullPath)
         {
             return IsWps ? CloseWpsByPath(fullPath) : CloseWordByPath(fullPath);
@@ -444,6 +495,86 @@ namespace WordDocumentRoundtripTest
             }
 
             return false;
+        }
+
+        private static bool WriteLayoutBreakFixtureWord(Word.Document doc)
+        {
+            doc.Content.Text = "封面日期甲。";
+            object page = Word.WdBreakType.wdPageBreak;
+            doc.Range(doc.Content.End - 1, doc.Content.End - 1).InsertBreak(ref page);
+            Word.Range afterPage = doc.Range(doc.Content.End - 1, doc.Content.End - 1);
+            afterPage.Text = "总概述乙。";
+            object sect = Word.WdBreakType.wdSectionBreakNextPage;
+            doc.Range(doc.Content.End - 1, doc.Content.End - 1).InsertBreak(ref sect);
+            Word.Range afterSect = doc.Range(doc.Content.End - 1, doc.Content.End - 1);
+            afterSect.Text = "第一章丙。";
+            return true;
+        }
+
+        private static bool WriteLayoutBreakFixtureLate(object doc)
+        {
+            object content = GetProp(doc, "Content");
+            SetProp(content, "Text", "封面日期甲。");
+            InsertBreakLate(doc, 7);
+            InsertAfterEndLate(doc, "总概述乙。");
+            InsertBreakLate(doc, 2);
+            InsertAfterEndLate(doc, "第一章丙。");
+            return true;
+        }
+
+        private static void InsertAfterEndLate(object doc, string text)
+        {
+            object content = GetProp(doc, "Content");
+            int end = Convert.ToInt32(GetProp(content, "End"));
+            int pos = end > 1 ? end - 1 : end;
+            object range = Invoke(doc, "Range", pos, pos);
+            SetProp(range, "Text", text);
+        }
+
+        private static void InsertBreakLate(object doc, int breakType)
+        {
+            object content = GetProp(doc, "Content");
+            int end = Convert.ToInt32(GetProp(content, "End"));
+            int pos = end > 1 ? end - 1 : end;
+            object range = Invoke(doc, "Range", pos, pos);
+            Invoke(range, "InsertBreak", breakType);
+        }
+
+        private static bool FindAllStoredTextsLate(object doc, IList<string> storedTexts, out string miss)
+        {
+            miss = null;
+            foreach (string stored in storedTexts)
+            {
+                if (string.IsNullOrEmpty(stored))
+                {
+                    continue;
+                }
+
+                string converted = WordRangeFinder.ConvertNewlinesToWordCodes(stored);
+                object content = Invoke(doc, "Content");
+                object find = GetProp(content, "Find");
+                Invoke(find, "ClearFormatting");
+                SetProp(find, "Text", converted);
+                SetProp(find, "MatchCase", true);
+                SetProp(find, "Wrap", 0);
+                bool hit = false;
+                try
+                {
+                    hit = Convert.ToBoolean(Invoke(find, "Execute"));
+                }
+                catch
+                {
+                    hit = false;
+                }
+
+                if (!hit)
+                {
+                    miss = TextUtils.EscapeNewlinesForDb(stored) + " → " + converted;
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static bool InsertPageBreakWord(string fullPath)
