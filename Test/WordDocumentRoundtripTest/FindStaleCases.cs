@@ -865,6 +865,7 @@ namespace WordDocumentRoundtripTest
                 bool ok = string.Equals(converted, storyNoImg, StringComparison.Ordinal);
                 Ok(run, "fs-display-align", ok,
                     ok ? "转换后与 Content.Text 一致" : "仍有对不齐，见日志首差");
+                CheckEncodedSentencesNoImage(run, sentDisplay);
             }
             catch (Exception ex)
             {
@@ -1312,6 +1313,66 @@ namespace WordDocumentRoundtripTest
             }
 
             return Math.Min(a, b);
+        }
+
+        private static readonly Regex SentencePair = new Regex(
+            @"\[S_([0-9a-zA-Z]{5})-start\](.*?)\[S_\1-end\]",
+            RegexOptions.Compiled | RegexOptions.Singleline);
+
+        private static void CheckEncodedSentencesNoImage(TestRun run, string sentDisplay)
+        {
+            Console.WriteLine("  --- 编码句子是否含 <image ---");
+            int n = 0;
+            int bad = 0;
+            if (!string.IsNullOrEmpty(sentDisplay))
+            {
+                foreach (Match m in SentencePair.Matches(sentDisplay))
+                {
+                    n++;
+                    string code = "S_" + m.Groups[1].Value;
+                    string inner = m.Groups[2].Value ?? "";
+                    if (inner.IndexOf("<image", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        bad++;
+                        if (bad <= 8)
+                        {
+                            Console.WriteLine("    display " + code + " 含 image  "
+                                + QuoteSpecial(Peek(inner, 0, 80)));
+                        }
+                    }
+                }
+            }
+
+            int mapN = 0;
+            int mapBad = 0;
+            foreach (IReadOnlyList<string> row in DocumentState.SentenceNameMapping)
+            {
+                if (row == null || row.Count < 3)
+                {
+                    continue;
+                }
+
+                mapN++;
+                string content = row[2] ?? "";
+                if (content.IndexOf("<image", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    mapBad++;
+                    if (mapBad <= 8)
+                    {
+                        Console.WriteLine("    mapping " + row[0] + " 含 image  "
+                            + QuoteSpecial(Peek(content, 0, 80)));
+                    }
+                }
+            }
+
+            Console.WriteLine("    display S_ 句数=" + n + "  含 image=" + bad
+                + "  mapping 句数=" + mapN + "  含 image=" + mapBad);
+            bool ok = bad == 0 && mapBad == 0 && n > 0;
+            Ok(run, "fs-sent-no-image", ok,
+                ok
+                    ? ("S_ 均无 image，display=" + n + " mapping=" + mapN)
+                    : ("display 含 image=" + bad + " mapping 含 image=" + mapBad
+                        + " display句=" + n));
         }
 
         private static void DumpImageGap(string display, string converted, string story)
