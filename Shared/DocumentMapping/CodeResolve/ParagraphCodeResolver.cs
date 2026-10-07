@@ -50,7 +50,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             return sentences.ToList().AsReadOnly();
         }
 
-        /// <summary>P_ → Word 段落 Range（整段）。映射缺失或 Find 失败返回 null（I4-A）。</summary>
+        /// <summary>P_ → Word 段落 Range（整段）。映射缺失或字符序落不到段返回 null。</summary>
         public static Word.Range ResolveParagraphRange(
             Word.Document doc,
             string paragraphCode,

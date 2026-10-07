@@ -1,11 +1,12 @@
+using System;
 using WordAddIn1;
+using WordAddIn1.DocumentMapping;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1.DocumentMapping.CodeResolve
 {
     /// <summary>
-    /// P_ → Word 段落 Range 定位（0b Step B+）。
-    /// Find 走 StoredTextRangeLocator.LocateFirst；命中后再 ExpandToParagraphRange。
+    /// P_ → Word 段落 Range。按 display 转字流后的字符序落到 Paragraphs[k]，不 Find。
     /// </summary>
     public static class ParagraphCodeLocator
     {
@@ -22,53 +23,56 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 return null;
             }
 
-            string paragraphContent = DocumentState.GetParagraphContent(paragraphCode);
-            if (string.IsNullOrEmpty(paragraphContent))
+            if (!HasParagraphMapping(paragraphCode))
             {
                 System.Diagnostics.Debug.WriteLine(
-                    $"[ParagraphLocator] 无 P_ mapping 或 content 为空: {paragraphCode}");
+                    $"[ParagraphLocator] 无 P_ mapping: {paragraphCode}");
                 return null;
             }
 
-            if (ParagraphCodeAmbiguityHelper.IsEmptyParagraphStoredText(paragraphContent))
+            int paraNo = DisplayParagraphIndexMap.ResolveParaIndex(paragraphCode);
+            if (paraNo <= 0)
             {
                 System.Diagnostics.Debug.WriteLine(
-                    $"[ParagraphLocator] 空段 {paragraphCode} 跳过 Find（I4-A）");
+                    $"[ParagraphLocator] 字符序未落到段号 P_={paragraphCode}");
                 return null;
             }
 
-            string tableId = explicitTableId;
-            if (string.IsNullOrEmpty(tableId) && allowAutoTableScope && tableScope != null)
+            Word.Range paragraphRange;
+            try
             {
-                tableId = TableParagraphScopeHelper.ResolveEffectiveTableId(
-                    paragraphCode,
-                    explicitTableId,
-                    tableScope);
+                if (paraNo > doc.Paragraphs.Count)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[ParagraphLocator] 段号越界 P_={paragraphCode} → {paraNo}/{doc.Paragraphs.Count}");
+                    return null;
+                }
+
+                paragraphRange = doc.Paragraphs[paraNo].Range;
+            }
+            catch
+            {
+                return null;
             }
 
             string tag = string.IsNullOrEmpty(debugTag) ? paragraphCode : debugTag;
-
-            Word.Range hit = StoredTextRangeLocator.LocateFirst(
-                doc,
-                paragraphContent,
-                tableId,
-                tag);
-
-            if (hit == null)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[ParagraphLocator] Find 未命中 P_={paragraphCode}");
-                return null;
-            }
-
-            Word.Range paragraphRange = WordRangeFinder.ExpandToParagraphRange(hit);
-            if (paragraphRange != null)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[ParagraphLocator] P_={paragraphCode} 段落 Start={paragraphRange.Start} End={paragraphRange.End}");
-            }
-
+            System.Diagnostics.Debug.WriteLine(
+                $"[ParagraphLocator] P_={tag} → 段[{paraNo}] Start={paragraphRange.Start} End={paragraphRange.End}");
             return paragraphRange;
+        }
+
+        private static bool HasParagraphMapping(string paragraphCode)
+        {
+            foreach (var row in DocumentState.ParagraphNameMapping)
+            {
+                if (row != null && row.Count >= 1
+                    && string.Equals(row[0], paragraphCode, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

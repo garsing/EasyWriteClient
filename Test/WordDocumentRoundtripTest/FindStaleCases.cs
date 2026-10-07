@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Word = Microsoft.Office.Interop.Word;
 using WordAddIn1;
+using WordAddIn1.DocumentMapping;
 
 namespace WordDocumentRoundtripTest
 {
@@ -47,9 +48,21 @@ namespace WordDocumentRoundtripTest
                     && caseFilter.IndexOf("pratext", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool onlyDalign = !string.IsNullOrEmpty(caseFilter)
                     && caseFilter.IndexOf("dalign", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool onlyPwalk = !string.IsNullOrEmpty(caseFilter)
+                    && caseFilter.IndexOf("pwalk", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool onlyPsplit = !string.IsNullOrEmpty(caseFilter)
+                    && caseFilter.IndexOf("psplit", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool onlyPchars = !string.IsNullOrEmpty(caseFilter)
                     && caseFilter.IndexOf("pchars", StringComparison.OrdinalIgnoreCase) >= 0;
-                if (onlyPchars)
+                if (onlyPsplit)
+                {
+                    RunSplitConvertedVsParas(run, app);
+                }
+                else if (onlyPwalk)
+                {
+                    RunConvertParaWalk(run, app);
+                }
+                else if (onlyPchars)
                 {
                     RunRealDocParaChars(run, app);
                 }
@@ -859,6 +872,23 @@ namespace WordDocumentRoundtripTest
                 Console.Out.Flush();
 
                 string converted = DisplayToStory(display);
+                string displayMarks = ConvertTables(StripDisplayWrappers(display))
+                    .Replace("\n", "\x0B");
+                int dispCr, dispB, dispF, dispCrA;
+                int dispEnds = WalkConvertedParaEnds(
+                    displayMarks, out dispCr, out dispB, out dispF, out dispCrA);
+                int nPara = doc.Paragraphs.Count;
+                Console.WriteLine("    从文首转换 段号=" + dispEnds
+                    + "  \\r=" + dispCr
+                    + "  其中\\r\\a=" + dispCrA
+                    + "  ^b=" + dispB
+                    + "  \\f=" + dispF
+                    + "  Paragraphs.Count=" + nPara
+                    + (dispEnds == nPara ? "  相等" : "  对不上"));
+                Ok(run, "fs-display-pcount", dispEnds == nPara,
+                    "display段尾=" + dispEnds + " Count=" + nPara
+                    + " (\\r=" + dispCr + " ^b=" + dispB + " \\f=" + dispF + ")");
+                DumpPSlotVsCount(run, display, dispEnds, nPara);
                 int slashRemoved;
                 string storyNoImg = StripComPictureChars(doc, story ?? "", out slashRemoved);
                 int leftoverSoH = 0;
@@ -1005,6 +1035,107 @@ namespace WordDocumentRoundtripTest
 
             string s = StripDisplayWrappers(display);
             return ConvertTables(s).Replace("\n", "\x0B").Replace("^b", "\f");
+        }
+
+        private static readonly Regex DisplayPBlock = new Regex(
+            @"\[P_[^\]]+-start\](.*?)\[P_[^\]]+-end\]",
+            RegexOptions.Compiled | RegexOptions.Singleline);
+
+        private static void DumpPSlotVsCount(
+            TestRun run, string paragraphDisplay, int dispEnds, int nPara)
+        {
+            var blocks = DisplayPBlock.Matches(paragraphDisplay ?? "");
+            int pSlots = blocks.Count;
+            int caretB = 0;
+            int caretBGlued = 0;
+            int ff = 0;
+            int noCr = 0;
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                string inner = blocks[i].Groups[1].Value ?? "";
+                if (inner.IndexOf("^b", StringComparison.Ordinal) >= 0)
+                {
+                    caretB++;
+                    if (!inner.EndsWith("^b", StringComparison.Ordinal)
+                        && !inner.EndsWith("^b\r", StringComparison.Ordinal))
+                    {
+                        caretBGlued++;
+                        if (caretBGlued <= 3)
+                        {
+                            Console.WriteLine("    P_ 槽内 ^b 粘上下段  #" + (i + 1)
+                                + "  " + QuoteSpecial(inner.Length > 40 ? inner.Substring(0, 40) : inner));
+                        }
+                    }
+                }
+
+                if (inner.IndexOf('\f') >= 0)
+                {
+                    ff++;
+                }
+
+                if (inner.IndexOf('\r') < 0)
+                {
+                    noCr++;
+                }
+            }
+
+            int splitOnCr = SplitTextByParagraphs.Split(
+                ConvertTables(StripDisplayWrappers(paragraphDisplay ?? ""))
+                    .Replace("\n", "\x0B")).Count;
+
+            Console.WriteLine("    P_ 槽数=" + pSlots
+                + "  槽内含^b=" + caretB
+                + "  ^b粘上下段=" + caretBGlued
+                + "  槽内含\\f=" + ff
+                + "  槽无\\r=" + noCr
+                + "  转换后再按\\r切=" + splitOnCr);
+            Console.WriteLine("    对照  P_槽=" + pSlots
+                + "  display段尾(\\r+^b)=" + dispEnds
+                + "  Paragraphs.Count=" + nPara
+                + (pSlots == dispEnds ? "  P_与数段一致" : "  P_与数段不一致"));
+            Ok(run, "fs-p-slot-vs-count", pSlots == dispEnds,
+                "P_槽=" + pSlots + " 数段=" + dispEnds + " Count=" + nPara);
+        }
+
+        private static int WalkConvertedParaEnds(
+            string text, out int cr, out int caretB, out int ff, out int crA)
+        {
+            cr = 0;
+            caretB = 0;
+            ff = 0;
+            crA = 0;
+            int paraNo = 0;
+            if (string.IsNullOrEmpty(text))
+            {
+                return 0;
+            }
+
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (text[i] == '\r')
+                {
+                    cr++;
+                    paraNo++;
+                    if (i + 1 < text.Length && text[i + 1] == '\a')
+                    {
+                        crA++;
+                    }
+                }
+                else if (text[i] == '\f')
+                {
+                    ff++;
+                }
+                else if (text[i] == '^'
+                    && i + 1 < text.Length
+                    && text[i + 1] == 'b')
+                {
+                    caretB++;
+                    paraNo++;
+                    i++;
+                }
+            }
+
+            return paraNo;
         }
 
         private static string StripDisplayWrappers(string display)
@@ -1577,6 +1708,577 @@ namespace WordDocumentRoundtripTest
                 + "  首差=" + i);
             Console.WriteLine("    conv  " + QuoteSpecial(Peek(converted, Math.Max(0, i - 12), 36)));
             Console.WriteLine("    story " + QuoteSpecial(Peek(story, Math.Max(0, i - 12), 36)));
+        }
+
+        private static void RunSplitConvertedVsParas(TestRun run, Word.Application app)
+        {
+            string path = ResolveAlignDocPath();
+            if (!System.IO.File.Exists(path))
+            {
+                run.CaseSkip("fs-p-split", "文件不在: " + path);
+                return;
+            }
+
+            Word.Document doc = null;
+            bool weOpened = false;
+            bool oldUpdate = true;
+            try
+            {
+                string norm = System.IO.Path.GetFullPath(path);
+                foreach (Word.Document d in app.Documents)
+                {
+                    try
+                    {
+                        if (string.Equals(
+                            System.IO.Path.GetFullPath(d.FullName),
+                            norm,
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            doc = d;
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (doc == null)
+                {
+                    object fileName = path;
+                    object readOnly = true;
+                    object missing = System.Reflection.Missing.Value;
+                    doc = app.Documents.Open(
+                        ref fileName,
+                        ref missing,
+                        ref readOnly);
+                    weOpened = true;
+                }
+
+                oldUpdate = app.ScreenUpdating;
+                app.ScreenUpdating = false;
+                try
+                {
+                    app.DisplayAlerts = Word.WdAlertLevel.wdAlertsNone;
+                }
+                catch
+                {
+                }
+
+                Console.WriteLine("  --- 转换后按段尾切开 vs Paragraphs ---");
+                Console.WriteLine("    path=" + path);
+                Console.Out.Flush();
+
+                var options = ProcessDocumentOptions.ForGetDocumentContent("fs-psplit");
+                options.ForceRefresh = true;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                WordDocumentExtractor.ProcessingResult processed =
+                    WordDocumentExtractor.ProcessDocument(doc, options);
+                Console.WriteLine("    ProcessDocument " + sw.Elapsed.TotalSeconds.ToString("F2") + "s");
+                Console.Out.Flush();
+
+                string display = LoadParagraphDisplay(processed);
+                string marks = ConvertTables(StripDisplayWrappers(display)).Replace("\n", "\x0B");
+                List<string> pieces = SplitConvertedByParaEnds(marks);
+                int nPara = doc.Paragraphs.Count;
+                Console.WriteLine("    切开=" + pieces.Count + "  Paragraphs.Count=" + nPara
+                    + (pieces.Count == nPara ? "  条数相等" : "  条数对不上"));
+                Console.Out.Flush();
+
+                int match = 0;
+                int mismatch = 0;
+                int n = pieces.Count < nPara ? pieces.Count : nPara;
+                sw.Restart();
+                for (int i = 0; i < n; i++)
+                {
+                    string com = "";
+                    try
+                    {
+                        com = doc.Paragraphs[i + 1].Range.Text ?? "";
+                    }
+                    catch (Exception ex)
+                    {
+                        mismatch++;
+                        if (mismatch <= 6)
+                        {
+                            Console.WriteLine("    取段失败 [" + (i + 1) + "] " + ex.Message);
+                        }
+
+                        continue;
+                    }
+
+                    com = com.Replace("\x01", "");
+                    string got = pieces[i].Replace("^b", "\f");
+                    if (string.Equals(got, com, StringComparison.Ordinal))
+                    {
+                        match++;
+                    }
+                    else
+                    {
+                        mismatch++;
+                        if (mismatch <= 8)
+                        {
+                            Console.WriteLine("    对不上 片[" + (i + 1) + "]");
+                            Console.WriteLine("      切  " + QuoteSpecial(Peek(got, 0, 40)));
+                            Console.WriteLine("      COM " + QuoteSpecial(Peek(com, 0, 40)));
+                        }
+                    }
+                }
+
+                if (pieces.Count != nPara)
+                {
+                    mismatch += Math.Abs(pieces.Count - nPara);
+                }
+
+                Console.WriteLine("    核对  用时=" + sw.Elapsed.TotalSeconds.ToString("F2") + "s"
+                    + "  对上=" + match
+                    + "  对不上=" + mismatch);
+                bool ok = pieces.Count == nPara && mismatch == 0 && match == nPara;
+                Ok(run, "fs-p-split", ok,
+                    "切开=" + pieces.Count + " Count=" + nPara
+                    + "  对上=" + match + "  对不上=" + mismatch);
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-p-split", ex.GetType().Name + ": " + ex.Message);
+            }
+            finally
+            {
+                try
+                {
+                    app.ScreenUpdating = oldUpdate;
+                }
+                catch
+                {
+                }
+
+                if (weOpened && doc != null)
+                {
+                    CloseDoc(doc);
+                }
+            }
+        }
+
+        private static List<string> SplitConvertedByParaEnds(string text)
+        {
+            var pieces = new List<string>();
+            if (string.IsNullOrEmpty(text))
+            {
+                return pieces;
+            }
+
+            var sb = new StringBuilder();
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (text[i] == '\r')
+                {
+                    sb.Append('\r');
+                    if (i + 1 < text.Length && text[i + 1] == '\a')
+                    {
+                        sb.Append('\a');
+                        i++;
+                    }
+
+                    pieces.Add(sb.ToString());
+                    sb.Length = 0;
+                    continue;
+                }
+
+                if (text[i] == '^'
+                    && i + 1 < text.Length
+                    && text[i + 1] == 'b')
+                {
+                    sb.Append('^').Append('b');
+                    pieces.Add(sb.ToString());
+                    sb.Length = 0;
+                    i++;
+                    continue;
+                }
+
+                sb.Append(text[i]);
+            }
+
+            if (sb.Length > 0)
+            {
+                pieces.Add(sb.ToString());
+            }
+
+            return pieces;
+        }
+
+        private static void RunConvertParaWalk(TestRun run, Word.Application app)
+        {
+            string path = ResolveAlignDocPath();
+            if (!System.IO.File.Exists(path))
+            {
+                run.CaseSkip("fs-p-map", "文件不在: " + path);
+                return;
+            }
+
+            Word.Document doc = null;
+            bool weOpened = false;
+            bool oldUpdate = true;
+            try
+            {
+                string norm = System.IO.Path.GetFullPath(path);
+                foreach (Word.Document d in app.Documents)
+                {
+                    try
+                    {
+                        if (string.Equals(
+                            System.IO.Path.GetFullPath(d.FullName),
+                            norm,
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            doc = d;
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (doc == null)
+                {
+                    object fileName = path;
+                    object readOnly = true;
+                    object missing = System.Reflection.Missing.Value;
+                    doc = app.Documents.Open(
+                        ref fileName,
+                        ref missing,
+                        ref readOnly);
+                    weOpened = true;
+                }
+
+                oldUpdate = app.ScreenUpdating;
+                app.ScreenUpdating = false;
+                try
+                {
+                    app.DisplayAlerts = Word.WdAlertLevel.wdAlertsNone;
+                }
+                catch
+                {
+                }
+
+                Console.WriteLine("  --- display 边转边映射 P_ → 段号 ---");
+                Console.WriteLine("    path=" + path);
+                Console.Out.Flush();
+
+                var options = ProcessDocumentOptions.ForGetDocumentContent("fs-pwalk");
+                options.ForceRefresh = true;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                WordDocumentExtractor.ProcessingResult processed =
+                    WordDocumentExtractor.ProcessDocument(doc, options);
+                Console.WriteLine("    ProcessDocument " + sw.Elapsed.TotalSeconds.ToString("F2") + "s"
+                    + "  method=" + (processed != null ? processed.ProcessingMethod : "?"));
+                Console.Out.Flush();
+
+                string display = LoadParagraphDisplay(processed);
+                string marks = DisplayStoryConvert.ToMarks(display);
+                List<string> pieces = DisplayStoryConvert.SplitByParaEnds(marks);
+                int walkEnds = pieces.Count;
+                List<DisplayParagraphIndexMap.Hit> hits = DisplayParagraphIndexMap.Build(display);
+                int nPara = doc.Paragraphs.Count;
+                Console.WriteLine("    转换后段号=" + walkEnds
+                    + "  P_映射=" + hits.Count
+                    + "  Paragraphs.Count=" + nPara
+                    + (walkEnds == nPara ? "  段数相等" : "  段数对不上"));
+                Console.Out.Flush();
+
+                int unassigned = 0;
+                int oob = 0;
+                int mismatch = 0;
+                int match = 0;
+                sw.Restart();
+                for (int i = 0; i < hits.Count; i++)
+                {
+                    DisplayParagraphIndexMap.Hit hit = hits[i];
+                    if (hit.ParaNo <= 0)
+                    {
+                        unassigned++;
+                        if (unassigned <= 3)
+                        {
+                            Console.WriteLine("    未赋段号 " + hit.Code
+                                + "  inner=" + QuoteSpecial(Peek(hit.Inner, 0, 24)));
+                        }
+
+                        continue;
+                    }
+
+                    if (hit.ParaNo > nPara)
+                    {
+                        oob++;
+                        continue;
+                    }
+
+                    string com = "";
+                    try
+                    {
+                        com = doc.Paragraphs[hit.ParaNo].Range.Text ?? "";
+                    }
+                    catch (Exception ex)
+                    {
+                        oob++;
+                        if (oob <= 3)
+                        {
+                            Console.WriteLine("    取段失败 " + hit.Code
+                                + " → " + hit.ParaNo + "  " + ex.Message);
+                        }
+
+                        continue;
+                    }
+
+                    com = NormParaForMap(com.Replace("\x01", ""));
+                    string expect = NormParaForMap(hit.Inner.Replace("^b", "\f"));
+                    if (string.Equals(com, expect, StringComparison.Ordinal))
+                    {
+                        match++;
+                    }
+                    else
+                    {
+                        mismatch++;
+                        if (mismatch <= 8)
+                        {
+                            Console.WriteLine("    对不上 " + hit.Code
+                                + " → 段[" + hit.ParaNo + "]");
+                            Console.WriteLine("      P_   " + QuoteSpecial(Peek(expect, 0, 36)));
+                            Console.WriteLine("      COM  " + QuoteSpecial(Peek(com, 0, 36)));
+                        }
+                    }
+                }
+
+                Console.WriteLine("    核对  用时=" + sw.Elapsed.TotalSeconds.ToString("F2") + "s"
+                    + "  对上=" + match
+                    + "  对不上=" + mismatch
+                    + "  未赋=" + unassigned
+                    + "  越界=" + oob);
+                bool ok = walkEnds == nPara && mismatch == 0 && unassigned == 0 && oob == 0
+                    && hits.Count > 0;
+                Ok(run, "fs-p-map", ok,
+                    "段号=" + walkEnds + "/" + nPara
+                    + "  映射=" + hits.Count
+                    + "  对上=" + match
+                    + "  对不上=" + mismatch
+                    + "  未赋=" + unassigned);
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-p-map", ex.GetType().Name + ": " + ex.Message);
+            }
+            finally
+            {
+                try
+                {
+                    app.ScreenUpdating = oldUpdate;
+                }
+                catch
+                {
+                }
+
+                if (weOpened && doc != null)
+                {
+                    CloseDoc(doc);
+                }
+            }
+        }
+
+        private static string LoadParagraphDisplay(WordDocumentExtractor.ProcessingResult processed)
+        {
+            var paras = DocumentState.ChunkParagraphDisplayContents;
+            if (paras != null)
+            {
+                var sb = new StringBuilder();
+                foreach (string p in paras)
+                {
+                    sb.Append(p ?? "");
+                }
+
+                if (sb.Length > 0)
+                {
+                    return sb.ToString();
+                }
+            }
+
+            if (processed == null || processed.ChunkInfo == null)
+            {
+                return "";
+            }
+
+            var alt = new StringBuilder();
+            foreach (WordDocumentExtractor.ChunkInfo chunk in processed.ChunkInfo)
+            {
+                if (!string.IsNullOrEmpty(chunk.ParagraphDisplayContent))
+                {
+                    alt.Append(chunk.ParagraphDisplayContent);
+                }
+                else
+                {
+                    alt.Append(chunk.DisplayContent ?? "");
+                }
+            }
+
+            return alt.ToString();
+        }
+
+        private static string StripDisplayKeepP(string display)
+        {
+            if (string.IsNullOrEmpty(display))
+            {
+                return "";
+            }
+
+            string s = DisplayInTable.Replace(display, "");
+            s = DisplayChart.Replace(s, "");
+            s = DisplayImage.Replace(s, "");
+            s = Regex.Replace(s, @"\[S_[^\]]+-(?:start|end)\]", "");
+            return s;
+        }
+
+        private static string NormParaForMap(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            int end = text.Length;
+            while (end > 0)
+            {
+                char c = text[end - 1];
+                if (c != '\r' && c != '\a')
+                {
+                    break;
+                }
+
+                end--;
+            }
+
+            return end == text.Length ? text : text.Substring(0, end);
+        }
+
+        private sealed class PWalkHit
+        {
+            public string Code;
+            public int ParaNo;
+            public string Inner;
+        }
+
+        private static List<PWalkHit> WalkBuildPtoPara(string text, out int paraNo)
+        {
+            var hits = new List<PWalkHit>();
+            paraNo = 0;
+            if (string.IsNullOrEmpty(text))
+            {
+                return hits;
+            }
+
+            string openCode = null;
+            var inner = new StringBuilder();
+            bool assigned = false;
+            int assignedPara = 0;
+            var pending = new List<int>();
+            int i = 0;
+            while (i < text.Length)
+            {
+                if (text[i] == '[')
+                {
+                    int close = text.IndexOf(']', i);
+                    if (close < 0)
+                    {
+                        break;
+                    }
+
+                    string tag = text.Substring(i + 1, close - i - 1);
+                    if (tag.StartsWith("P_", StringComparison.Ordinal)
+                        && tag.EndsWith("-start", StringComparison.Ordinal))
+                    {
+                        openCode = tag.Substring(0, tag.Length - 6);
+                        inner.Length = 0;
+                        assigned = false;
+                        assignedPara = 0;
+                    }
+                    else if (tag.StartsWith("P_", StringComparison.Ordinal)
+                        && tag.EndsWith("-end", StringComparison.Ordinal))
+                    {
+                        string code = tag.Substring(0, tag.Length - 4);
+                        hits.Add(new PWalkHit
+                        {
+                            Code = code,
+                            ParaNo = assigned ? assignedPara : 0,
+                            Inner = inner.ToString()
+                        });
+                        if (!assigned)
+                        {
+                            pending.Add(hits.Count - 1);
+                        }
+
+                        openCode = null;
+                    }
+
+                    i = close + 1;
+                    continue;
+                }
+
+                if (text[i] == '\r')
+                {
+                    paraNo++;
+                    if (openCode != null)
+                    {
+                        assigned = true;
+                        assignedPara = paraNo;
+                    }
+
+                    for (int p = 0; p < pending.Count; p++)
+                    {
+                        hits[pending[p]].ParaNo = paraNo;
+                    }
+
+                    pending.Clear();
+                    if (openCode != null)
+                    {
+                        inner.Append('\r');
+                    }
+
+                    i++;
+                    continue;
+                }
+
+                if (text[i] == '^'
+                    && i + 1 < text.Length
+                    && text[i + 1] == 'b')
+                {
+                    paraNo++;
+                    if (openCode != null)
+                    {
+                        assigned = true;
+                        assignedPara = paraNo;
+                    }
+
+                    for (int p = 0; p < pending.Count; p++)
+                    {
+                        hits[pending[p]].ParaNo = paraNo;
+                    }
+
+                    pending.Clear();
+                    if (openCode != null)
+                    {
+                        inner.Append('^').Append('b');
+                    }
+
+                    i += 2;
+                    continue;
+                }
+
+                if (openCode != null)
+                {
+                    inner.Append(text[i]);
+                }
+
+                i++;
+            }
+
+            return hits;
         }
 
         private static string ResolveAlignDocPath()
