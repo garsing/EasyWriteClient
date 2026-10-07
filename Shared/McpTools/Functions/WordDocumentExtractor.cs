@@ -84,7 +84,7 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 查找 image 标签的位置（必须是 <image />\r，必须带回车符）
+        /// 查找 image 标签的位置（认 image 自闭合标签，其后 \\r 可选）
         /// </summary>
         /// <param name="text">输入文本</param>
         /// <param name="startPos">开始搜索的位置</param>
@@ -96,8 +96,8 @@ namespace WordAddIn1
                 return -1;
             }
 
-            // 匹配 <image />\r（必须带回车符，支持自闭合标签，可能有属性）
-            string pattern = @"<image\s+[^>]*/>\r";
+            // 认 <image />，段末真 \r 一并算边界
+            string pattern = @"<image\s+[^>]*/?>\r?";
             Match match = Regex.Match(text.Substring(startPos), pattern, RegexOptions.IgnoreCase);
             if (match.Success)
             {
@@ -167,7 +167,7 @@ namespace WordAddIn1
             string bodyPattern = @"<body(?:\s+[^>]*)?>";
             string cellPattern = TableMarkupTags.OpenCellPattern;
             string tableClosePattern = @"</table\s*>";  // </table> 不再包含换行符
-            string imagePattern = @"<image\s+[^>]*/>\r";  // 必须是 <image />\r，必须带回车符
+            string imagePattern = @"<image\s+[^>]*/?>\r?";  // 认 <image />，其后 \r 可选
             string chartClosePattern = @"</Chart\s*>\r";  // 必须是 </Chart>\r，必须带回车符
 
             int minPos = int.MaxValue;
@@ -213,7 +213,7 @@ namespace WordAddIn1
                 }
             }
 
-            // 查找 <image />\r（必须是带回车符的）
+            // 查找 <image />（其后 \r 可选）
             Match imageMatch = Regex.Match(text.Substring(startPos), imagePattern, RegexOptions.IgnoreCase);
             if (imageMatch.Success)
             {
