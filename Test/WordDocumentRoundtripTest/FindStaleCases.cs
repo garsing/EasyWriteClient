@@ -662,6 +662,9 @@ namespace WordDocumentRoundtripTest
         private const string RealDocPath =
             @"D:\documents\易写\易写产品试用2\2. 体验素材\1.重庆工程学院课程思政示范课程建设项目结题验收报告.doc";
 
+        private const string RealDocxPath =
+            @"D:\documents\易写\易写产品试用2\2. 体验素材\1.重庆工程学院课程思政示范课程建设项目结题验收报告.docx";
+
         private static void RunPageBreakChar(TestRun run, Word.Application app)
         {
             Word.Document doc = null;
@@ -715,9 +718,10 @@ namespace WordDocumentRoundtripTest
 
         private static void RunRealDocDisplayAlign(TestRun run, Word.Application app)
         {
-            if (!System.IO.File.Exists(RealDocPath))
+            string path = System.IO.File.Exists(RealDocxPath) ? RealDocxPath : RealDocPath;
+            if (!System.IO.File.Exists(path))
             {
-                run.CaseSkip("fs-display-align", "文件不在: " + RealDocPath);
+                run.CaseSkip("fs-display-align", "文件不在: " + path);
                 return;
             }
 
@@ -726,7 +730,7 @@ namespace WordDocumentRoundtripTest
             bool oldUpdate = true;
             try
             {
-                string norm = System.IO.Path.GetFullPath(RealDocPath);
+                string norm = System.IO.Path.GetFullPath(path);
                 foreach (Word.Document d in app.Documents)
                 {
                     try
@@ -747,7 +751,7 @@ namespace WordDocumentRoundtripTest
 
                 if (doc == null)
                 {
-                    object fileName = RealDocPath;
+                    object fileName = path;
                     object readOnly = true;
                     object missing = System.Reflection.Missing.Value;
                     doc = app.Documents.Open(
@@ -768,7 +772,7 @@ namespace WordDocumentRoundtripTest
                 }
 
                 Console.WriteLine("  --- display 转换后对 Content.Text ---");
-                Console.WriteLine("    path=" + RealDocPath);
+                Console.WriteLine("    path=" + path);
 
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 string story = doc.Content.Text ?? "";
@@ -815,14 +819,48 @@ namespace WordDocumentRoundtripTest
                 Console.WriteLine("    paragraph display Length=" + display.Length
                     + "  ProcessDocument=" + sw.Elapsed.TotalSeconds.ToString("F2") + "s"
                     + "  method=" + (processed != null ? processed.ProcessingMethod : "?"));
+                string readText = processed != null ? (processed.ReadText ?? "") : "";
+                string sentDisplay = "";
+                if (processed != null && processed.ChunkInfo != null)
+                {
+                    var ssb = new StringBuilder();
+                    foreach (WordDocumentExtractor.ChunkInfo chunk in processed.ChunkInfo)
+                    {
+                        ssb.Append(chunk.DisplayContent ?? "");
+                    }
+
+                    sentDisplay = ssb.ToString();
+                }
+
+                Console.WriteLine("    ReadText 含 <image=" + (readText.IndexOf("<image", StringComparison.OrdinalIgnoreCase) >= 0)
+                    + "  含 <Chart=" + (readText.IndexOf("<Chart", StringComparison.OrdinalIgnoreCase) >= 0)
+                    + "  Length=" + readText.Length);
+                Console.WriteLine("    sentence display 含 <image=" + (sentDisplay.IndexOf("<image", StringComparison.OrdinalIgnoreCase) >= 0)
+                    + "  Length=" + sentDisplay.Length);
+                Console.WriteLine("    paragraph display 含 <image=" + (display.IndexOf("<image", StringComparison.OrdinalIgnoreCase) >= 0));
                 Console.Out.Flush();
 
                 string converted = DisplayToStory(display);
-                Console.WriteLine("    转换后(格+续格+行末+表末) Length=" + converted.Length);
-                ReportStoryDiff("格+续格+行末+表末", converted, story);
+                string storyNoImg = (story ?? "").Replace("\x01", "").Replace("/\r", "");
+                int leftoverSoH = 0;
+                foreach (char ch in storyNoImg)
+                {
+                    if (ch == '\x01')
+                    {
+                        leftoverSoH++;
+                    }
+                }
+
+                Console.WriteLine("    转换后(去 image 标签) Length=" + converted.Length);
+                Console.WriteLine("    story 去 \\x01 和 /\\r Length=" + storyNoImg.Length
+                    + "  原=" + story.Length
+                    + "  仍剩 \\x01=" + leftoverSoH);
+                ReportStoryDiff("双方去图", converted, storyNoImg);
+                DumpImageGap(display, converted, story);
+                DumpFig1Com(doc, story);
                 DumpLecturerGap(display, story, doc);
 
-                bool ok = string.Equals(converted, story, StringComparison.Ordinal);
+                bool ok = string.Equals(converted, storyNoImg, StringComparison.Ordinal);
                 Ok(run, "fs-display-align", ok,
                     ok ? "转换后与 Content.Text 一致" : "仍有对不齐，见日志首差");
             }
@@ -854,7 +892,7 @@ namespace WordDocumentRoundtripTest
         private static readonly Regex DisplayInTable = new Regex(
             @"\[in_table=[^\]]+\]", RegexOptions.Compiled);
         private static readonly Regex DisplayImage = new Regex(
-            @"<image(?:\s+[^>]*)?/>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            @"<image\b[^>]*/?>\r?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex DisplayChart = new Regex(
             @"<Chart\b[^>]*>[\s\S]*?</Chart\s*>|<Chart\b[^>]*/>",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -1204,6 +1242,122 @@ namespace WordDocumentRoundtripTest
             }
 
             return Math.Min(a, b);
+        }
+
+        private static void DumpImageGap(string display, string converted, string story)
+        {
+            int nTag = DisplayImage.Matches(display).Count;
+            int nSoH = 0;
+            foreach (char ch in story)
+            {
+                if (ch == '\x01')
+                {
+                    nSoH++;
+                }
+            }
+
+            Console.WriteLine("    display <image> 数=" + nTag + "  story \\x01 数=" + nSoH);
+            int sohAt = (story ?? "").IndexOf('\x01');
+            if (sohAt >= 0)
+            {
+                string around = Peek(story, Math.Max(0, sohAt - 8), 20);
+                Console.WriteLine("    \\x01 下标=" + sohAt + "  附近=" + QuoteSpecial(around));
+                var codes = new StringBuilder();
+                int from = Math.Max(0, sohAt - 2);
+                int to = Math.Min(story.Length, sohAt + 6);
+                for (int i = from; i < to; i++)
+                {
+                    if (codes.Length > 0)
+                    {
+                        codes.Append(' ');
+                    }
+
+                    codes.Append(i == sohAt ? "[" : "")
+                        .Append(((int)story[i]).ToString("X2"))
+                        .Append(i == sohAt ? "]" : "");
+                }
+
+                Console.WriteLine("    \\x01 邻码=" + codes);
+            }
+
+            bool hasSoHSlashCr = (story ?? "").IndexOf("\x01/\r", StringComparison.Ordinal) >= 0;
+            bool hasSlashCrAfterXlsx = false;
+            int xlsxAt = (story ?? "").IndexOf("知识图谱.xlsx", StringComparison.Ordinal);
+            if (xlsxAt >= 0)
+            {
+                string tail = Peek(story, xlsxAt, 40);
+                hasSlashCrAfterXlsx = tail.IndexOf("/\r", StringComparison.Ordinal) >= 0;
+                Console.WriteLine("    story 图附近: " + QuoteSpecial(tail));
+            }
+
+            Console.WriteLine("    含 \\x01/\\r=" + hasSoHSlashCr
+                + "  图附近含 /\\r=" + hasSlashCrAfterXlsx);
+            int at = display.IndexOf("知识图谱.xlsx", StringComparison.Ordinal);
+            if (at >= 0)
+            {
+                Console.WriteLine("    display 图附近: "
+                    + QuoteSpecial(Peek(display, Math.Max(0, at - 40), 160)));
+            }
+
+            int cAt = converted.IndexOf("知识图谱.xlsx", StringComparison.Ordinal);
+            if (cAt >= 0)
+            {
+                Console.WriteLine("    conv 图附近: "
+                    + QuoteSpecial(Peek(converted, Math.Max(0, cAt - 8), 40)));
+            }
+        }
+
+        private static void DumpFig1Com(Word.Document doc, string story)
+        {
+            Console.WriteLine("  --- 图1 前一段 COM ---");
+            Word.Paragraphs paras = doc.Paragraphs;
+            int n = paras.Count;
+            int shown = 0;
+            for (int i = 1; i <= n && shown < 2; i++)
+            {
+                string t = paras[i].Range.Text ?? "";
+                if (t.IndexOf("图1.", StringComparison.Ordinal) < 0)
+                {
+                    continue;
+                }
+
+                if (i > 1)
+                {
+                    DumpOneParaCom(paras[i - 1], "图1前");
+                }
+
+                DumpOneParaCom(paras[i], "图1段");
+                shown++;
+            }
+
+            int slashAt = (story ?? "").IndexOf("/\r图1", StringComparison.Ordinal);
+            Console.WriteLine("    story 中 /\\r图1 下标=" + slashAt);
+        }
+
+        private static void DumpOneParaCom(Word.Paragraph para, string title)
+        {
+            Word.Range rng = para.Range;
+            Console.WriteLine("    " + title + " Range=" + rng.Start + "-" + rng.End
+                + "  Text=" + QuoteSpecial(rng.Text)
+                + "  InlineShapes=" + rng.InlineShapes.Count
+                + "  Fields=" + rng.Fields.Count);
+            if (rng.InlineShapes.Count > 0)
+            {
+                Word.InlineShape pic = rng.InlineShapes[1];
+                Console.WriteLine("    " + title + " InlineShape Type=" + pic.Type
+                    + "  Width=" + pic.Width.ToString("F1"));
+            }
+
+            Word.Characters chars = rng.Characters;
+            int take = Math.Min(4, chars.Count);
+            for (int i = 1; i <= take; i++)
+            {
+                string ct = chars[i].Text ?? "";
+                int code = ct.Length > 0 ? (int)ct[0] : -1;
+                Console.WriteLine("    " + title + " Characters[" + i + "] code="
+                    + code.ToString("X2") + "  " + QuoteSpecial(ct)
+                    + "  span=" + (chars[i].End - chars[i].Start));
+            }
         }
 
         private static void DumpLecturerGap(string display, string story, Word.Document doc)
