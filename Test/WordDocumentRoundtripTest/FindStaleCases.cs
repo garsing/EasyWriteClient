@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using Word = Microsoft.Office.Interop.Word;
+using WordAddIn1;
 
 namespace WordDocumentRoundtripTest
 {
@@ -35,7 +37,25 @@ namespace WordDocumentRoundtripTest
                     && caseFilter.IndexOf("real", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool onlyPage = !string.IsNullOrEmpty(caseFilter)
                     && caseFilter.IndexOf("page", StringComparison.OrdinalIgnoreCase) >= 0;
-                if (onlyPage)
+                bool onlyPlus = !string.IsNullOrEmpty(caseFilter)
+                    && caseFilter.IndexOf("plus", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool onlyParaText = !string.IsNullOrEmpty(caseFilter)
+                    && caseFilter.IndexOf("pratext", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool onlyDalign = !string.IsNullOrEmpty(caseFilter)
+                    && caseFilter.IndexOf("dalign", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (onlyDalign)
+                {
+                    RunRealDocDisplayAlign(run, app);
+                }
+                else if (onlyParaText)
+                {
+                    RunRealDocParaTexts(run, app);
+                }
+                else if (onlyPlus)
+                {
+                    RunCellPlusCr(run, app);
+                }
+                else if (onlyPage)
                 {
                     RunPageBreakChar(run, app);
                 }
@@ -355,6 +375,60 @@ namespace WordDocumentRoundtripTest
             }
         }
 
+        private static void RunCellPlusCr(TestRun run, Word.Application app)
+        {
+            Word.Document doc = null;
+            try
+            {
+                doc = app.Documents.Add();
+                Word.Table table = doc.Tables.Add(doc.Range(0, 0), 1, 1);
+                Word.Cell cell = table.Cell(1, 1);
+                cell.Range.Text = "封面甲。";
+                Word.Range cr = cell.Range;
+                string cellText = cr.Text ?? "";
+                string body = cellText.TrimEnd('\r', '\a');
+                string withCr = body + "\r";
+                string findCode = WordAddIn1.WordRangeFinder.ConvertNewlinesToWordCodes(withCr);
+
+                Console.WriteLine("  --- 格文 + \\r / ^p ---");
+                Console.WriteLine("    Cell.Text=" + QuoteSpecial(cellText)
+                    + "  当 display 的格文=" + QuoteSpecial(body));
+                Word.Characters chars = cr.Characters;
+                if (chars.Count > 0)
+                {
+                    Word.Range last = chars[chars.Count];
+                    Console.WriteLine("    末项 Characters[" + chars.Count + "] "
+                        + last.Start + "-" + last.End + "  " + QuoteSpecial(last.Text));
+                }
+
+                bool memCr = cellText.IndexOf(withCr, StringComparison.Ordinal) >= 0;
+                Console.WriteLine("    内存含「格文+\\r」? " + memCr
+                    + "  含「格文+\\r\\a」? "
+                    + (cellText.IndexOf(body + "\r\a", StringComparison.Ordinal) >= 0));
+
+                bool raw = TryFind(doc, cr.Start, cr.End, withCr, out int rs, out int re);
+                Console.WriteLine("    Find 原文「格文+\\r」 Execute=" + raw
+                    + (raw ? (" hit=" + rs + "-" + re) : ""));
+
+                bool caret = TryFind(doc, cr.Start, cr.End, findCode, out int cs, out int ce);
+                Console.WriteLine("    Find 「" + findCode + "」 Execute=" + caret
+                    + (caret ? (" hit=" + cs + "-" + ce) : ""));
+
+                Ok(run, "fs-cell-plus-p", memCr && caret,
+                    caret
+                        ? ("^p hit=" + cs + "-" + ce + " 内存+\\r=" + memCr)
+                        : ("^p 未命中 内存+\\r=" + memCr + " raw=" + raw));
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-cell-plus-p", ex.Message);
+            }
+            finally
+            {
+                CloseDoc(doc);
+            }
+        }
+
         private static void RunCellPlainAmbigFind(TestRun run, Word.Application app)
         {
             Word.Document doc = null;
@@ -636,6 +710,669 @@ namespace WordDocumentRoundtripTest
             finally
             {
                 CloseDoc(doc);
+            }
+        }
+
+        private static void RunRealDocDisplayAlign(TestRun run, Word.Application app)
+        {
+            if (!System.IO.File.Exists(RealDocPath))
+            {
+                run.CaseSkip("fs-display-align", "文件不在: " + RealDocPath);
+                return;
+            }
+
+            Word.Document doc = null;
+            bool weOpened = false;
+            bool oldUpdate = true;
+            try
+            {
+                string norm = System.IO.Path.GetFullPath(RealDocPath);
+                foreach (Word.Document d in app.Documents)
+                {
+                    try
+                    {
+                        if (string.Equals(
+                            System.IO.Path.GetFullPath(d.FullName),
+                            norm,
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            doc = d;
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (doc == null)
+                {
+                    object fileName = RealDocPath;
+                    object readOnly = true;
+                    object missing = System.Reflection.Missing.Value;
+                    doc = app.Documents.Open(
+                        ref fileName,
+                        ref missing,
+                        ref readOnly);
+                    weOpened = true;
+                }
+
+                oldUpdate = app.ScreenUpdating;
+                app.ScreenUpdating = false;
+                try
+                {
+                    app.DisplayAlerts = Word.WdAlertLevel.wdAlertsNone;
+                }
+                catch
+                {
+                }
+
+                Console.WriteLine("  --- display 转换后对 Content.Text ---");
+                Console.WriteLine("    path=" + RealDocPath);
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                string story = doc.Content.Text ?? "";
+                Console.WriteLine("    Content.Text Length=" + story.Length
+                    + "  用时=" + sw.Elapsed.TotalSeconds.ToString("F2") + "s");
+                Console.Out.Flush();
+
+                sw.Restart();
+                var options = ProcessDocumentOptions.ForGetDocumentContent("fs-dalign");
+                options.ForceRefresh = true;
+                WordDocumentExtractor.ProcessingResult processed =
+                    WordDocumentExtractor.ProcessDocument(doc, options);
+                string display = "";
+                var paras = DocumentState.ChunkParagraphDisplayContents;
+                if (paras != null)
+                {
+                    var sb = new StringBuilder();
+                    foreach (string p in paras)
+                    {
+                        sb.Append(p ?? "");
+                    }
+
+                    display = sb.ToString();
+                }
+
+                if (display.Length == 0 && processed != null && processed.ChunkInfo != null)
+                {
+                    var sb = new StringBuilder();
+                    foreach (WordDocumentExtractor.ChunkInfo chunk in processed.ChunkInfo)
+                    {
+                        if (!string.IsNullOrEmpty(chunk.ParagraphDisplayContent))
+                        {
+                            sb.Append(chunk.ParagraphDisplayContent);
+                        }
+                        else
+                        {
+                            sb.Append(chunk.DisplayContent ?? "");
+                        }
+                    }
+
+                    display = sb.ToString();
+                }
+
+                Console.WriteLine("    paragraph display Length=" + display.Length
+                    + "  ProcessDocument=" + sw.Elapsed.TotalSeconds.ToString("F2") + "s"
+                    + "  method=" + (processed != null ? processed.ProcessingMethod : "?"));
+                Console.Out.Flush();
+
+                string converted = DisplayToStory(display);
+                Console.WriteLine("    转换后(格+续格+行末+表末) Length=" + converted.Length);
+                ReportStoryDiff("格+续格+行末+表末", converted, story);
+                DumpLecturerGap(display, story, doc);
+
+                bool ok = string.Equals(converted, story, StringComparison.Ordinal);
+                Ok(run, "fs-display-align", ok,
+                    ok ? "转换后与 Content.Text 一致" : "仍有对不齐，见日志首差");
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-display-align", ex.GetType().Name + ": " + ex.Message);
+            }
+            finally
+            {
+                try
+                {
+                    app.ScreenUpdating = oldUpdate;
+                }
+                catch
+                {
+                }
+
+                if (weOpened && doc != null)
+                {
+                    CloseDoc(doc);
+                }
+            }
+        }
+
+        private static readonly Regex DisplayCodeStart = new Regex(
+            @"\[(?:P|S)_[^\]]+-start\]", RegexOptions.Compiled);
+        private static readonly Regex DisplayCodeEnd = new Regex(
+            @"\[(?:P|S)_[^\]]+-end\]", RegexOptions.Compiled);
+        private static readonly Regex DisplayInTable = new Regex(
+            @"\[in_table=[^\]]+\]", RegexOptions.Compiled);
+        private static readonly Regex DisplayImage = new Regex(
+            @"<image(?:\s+[^>]*)?/>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex DisplayChart = new Regex(
+            @"<Chart\b[^>]*>[\s\S]*?</Chart\s*>|<Chart\b[^>]*/>",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex DisplayAttrInt = new Regex(
+            @"(colspan|rowspan)\s*=\s*""?(\d+)""?",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static string DisplayToStory(string display)
+        {
+            if (string.IsNullOrEmpty(display))
+            {
+                return "";
+            }
+
+            string s = StripDisplayWrappers(display);
+            return ConvertTables(s).Replace("\n", "");
+        }
+
+        private static string StripDisplayWrappers(string display)
+        {
+            string s = DisplayCodeStart.Replace(display, "");
+            s = DisplayCodeEnd.Replace(s, "");
+            s = DisplayInTable.Replace(s, "");
+            s = DisplayChart.Replace(s, "");
+            s = DisplayImage.Replace(s, "");
+            return s;
+        }
+
+        private static string ConvertTables(string text)
+        {
+            var sb = new StringBuilder();
+            int i = 0;
+            while (i < text.Length)
+            {
+                int tableAt = IndexOfIgnoreCase(text, "<table", i);
+                if (tableAt < 0)
+                {
+                    sb.Append(text.Substring(i));
+                    break;
+                }
+
+                sb.Append(text.Substring(i, tableAt - i));
+                int openEnd = text.IndexOf('>', tableAt);
+                if (openEnd < 0)
+                {
+                    sb.Append(text.Substring(tableAt));
+                    break;
+                }
+
+                int close = FindMatchingClose(text, openEnd + 1, "<table", "</table>");
+                if (close < 0)
+                {
+                    sb.Append(text.Substring(tableAt));
+                    break;
+                }
+
+                string inner = text.Substring(openEnd + 1, close - (openEnd + 1));
+                sb.Append(ConvertOneTable(inner));
+                int after = text.IndexOf('>', close);
+                i = after >= 0 ? after + 1 : close + 8;
+            }
+
+            return sb.ToString();
+        }
+
+        private static string ConvertOneTable(string inner)
+        {
+            var rows = ParseRows(inner);
+            if (rows.Count == 0)
+            {
+                return "";
+            }
+
+            int extra = 0;
+            foreach (List<DispCell> row in rows)
+            {
+                foreach (DispCell cell in row)
+                {
+                    extra = Math.Max(extra, cell.RowSpan - 1);
+                }
+            }
+
+            int nrows = rows.Count + extra;
+            var carry = new int[nrows];
+            for (int r = 0; r < rows.Count; r++)
+            {
+                int used = 0;
+                foreach (DispCell cell in rows[r])
+                {
+                    used += cell.ColSpan;
+                    for (int dr = 1; dr < cell.RowSpan && r + dr < nrows; dr++)
+                    {
+                        carry[r + dr] += cell.ColSpan;
+                    }
+                }
+
+                carry[r] += used;
+            }
+
+            int ncols = 0;
+            for (int r = 0; r < nrows; r++)
+            {
+                if (carry[r] > ncols)
+                {
+                    ncols = carry[r];
+                }
+            }
+            var origin = new int[nrows, ncols];
+            for (int r = 0; r < nrows; r++)
+            {
+                for (int c = 0; c < ncols; c++)
+                {
+                    origin[r, c] = -1;
+                }
+            }
+
+            for (int r = 0; r < rows.Count; r++)
+            {
+                int c = 0;
+                foreach (DispCell cell in rows[r])
+                {
+                    while (c < ncols && origin[r, c] != -1)
+                    {
+                        c++;
+                    }
+
+                    if (c < ncols)
+                    {
+                        origin[r, c] = 0;
+                    }
+
+                    for (int dc = 1; dc < cell.ColSpan && c + dc < ncols; dc++)
+                    {
+                        origin[r, c + dc] = -2;
+                    }
+
+                    for (int dr = 1; dr < cell.RowSpan && r + dr < nrows; dr++)
+                    {
+                        if (c < ncols)
+                        {
+                            origin[r + dr, c] = cell.ColSpan;
+                        }
+
+                        for (int dc = 1; dc < cell.ColSpan && c + dc < ncols; dc++)
+                        {
+                            origin[r + dr, c + dc] = -2;
+                        }
+                    }
+
+                    c += cell.ColSpan;
+                }
+            }
+
+            var sb = new StringBuilder();
+            for (int r = 0; r < rows.Count; r++)
+            {
+                int c = 0;
+                int cellIdx = 0;
+                while (c < ncols)
+                {
+                    if (origin[r, c] > 0)
+                    {
+                        sb.Append('\r').Append('\a');
+                        c += origin[r, c];
+                        continue;
+                    }
+
+                    if (origin[r, c] == -2)
+                    {
+                        c++;
+                        continue;
+                    }
+
+                    if (cellIdx < rows[r].Count)
+                    {
+                        DispCell cell = rows[r][cellIdx++];
+                        sb.Append(ConvertTables(cell.Inner));
+                        sb.Append('\r').Append('\a');
+                        c += cell.ColSpan;
+                    }
+                    else
+                    {
+                        c++;
+                    }
+                }
+
+                sb.Append('\r').Append('\a');
+            }
+
+            return sb.ToString();
+        }
+
+        private sealed class DispCell
+        {
+            public int ColSpan = 1;
+            public int RowSpan = 1;
+            public string Inner = "";
+        }
+
+        private static List<List<DispCell>> ParseRows(string inner)
+        {
+            var rows = new List<List<DispCell>>();
+            int i = 0;
+            while (i < inner.Length)
+            {
+                int tr = IndexOfIgnoreCase(inner, "<tr", i);
+                if (tr < 0)
+                {
+                    break;
+                }
+
+                int trEnd = inner.IndexOf('>', tr);
+                if (trEnd < 0)
+                {
+                    break;
+                }
+
+                int trClose = FindMatchingClose(inner, trEnd + 1, "<tr", "</tr>");
+                if (trClose < 0)
+                {
+                    break;
+                }
+
+                string rowHtml = inner.Substring(trEnd + 1, trClose - (trEnd + 1));
+                rows.Add(ParseCells(rowHtml));
+                int after = inner.IndexOf('>', trClose);
+                i = after >= 0 ? after + 1 : trClose + 5;
+            }
+
+            return rows;
+        }
+
+        private static List<DispCell> ParseCells(string rowHtml)
+        {
+            var cells = new List<DispCell>();
+            int i = 0;
+            while (i < rowHtml.Length)
+            {
+                int td = IndexOfIgnoreCase(rowHtml, "<td", i);
+                int th = IndexOfIgnoreCase(rowHtml, "<th", i);
+                int open = MinPos(td, th);
+                if (open < 0)
+                {
+                    break;
+                }
+
+                bool isTh = th >= 0 && (td < 0 || th < td);
+                int openEnd = rowHtml.IndexOf('>', open);
+                if (openEnd < 0)
+                {
+                    break;
+                }
+
+                string tag = rowHtml.Substring(open, openEnd - open);
+                int close = FindMatchingClose(
+                    rowHtml,
+                    openEnd + 1,
+                    isTh ? "<th" : "<td",
+                    isTh ? "</th>" : "</td>");
+                if (close < 0)
+                {
+                    break;
+                }
+
+                var cell = new DispCell
+                {
+                    Inner = rowHtml.Substring(openEnd + 1, close - (openEnd + 1)),
+                    ColSpan = ReadSpan(tag, "colspan"),
+                    RowSpan = ReadSpan(tag, "rowspan")
+                };
+                cells.Add(cell);
+                int after = rowHtml.IndexOf('>', close);
+                i = after >= 0 ? after + 1 : close + 5;
+            }
+
+            return cells;
+        }
+
+        private static int ReadSpan(string tag, string name)
+        {
+            Match m = DisplayAttrInt.Match(tag);
+            while (m.Success)
+            {
+                if (string.Equals(m.Groups[1].Value, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    int n;
+                    if (int.TryParse(m.Groups[2].Value, out n) && n > 0)
+                    {
+                        return n;
+                    }
+                }
+
+                m = m.NextMatch();
+            }
+
+            return 1;
+        }
+
+        private static int FindMatchingClose(string text, int from, string open, string close)
+        {
+            int depth = 1;
+            int i = from;
+            while (i < text.Length && depth > 0)
+            {
+                int nextOpen = IndexOfIgnoreCase(text, open, i);
+                int nextClose = IndexOfIgnoreCase(text, close, i);
+                if (nextClose < 0)
+                {
+                    return -1;
+                }
+
+                if (nextOpen >= 0 && nextOpen < nextClose)
+                {
+                    depth++;
+                    i = nextOpen + open.Length;
+                }
+                else
+                {
+                    depth--;
+                    if (depth == 0)
+                    {
+                        return nextClose;
+                    }
+
+                    i = nextClose + close.Length;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int IndexOfIgnoreCase(string text, string value, int start)
+        {
+            return text.IndexOf(value, start, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static int MinPos(int a, int b)
+        {
+            if (a < 0)
+            {
+                return b;
+            }
+
+            if (b < 0)
+            {
+                return a;
+            }
+
+            return Math.Min(a, b);
+        }
+
+        private static void DumpLecturerGap(string display, string story, Word.Document doc)
+        {
+            Console.WriteLine("  --- 讲师附近：display 表结构 vs COM ---");
+            int dAt = display.IndexOf("讲师", StringComparison.Ordinal);
+            if (dAt >= 0)
+            {
+                int from = Math.Max(0, dAt - 180);
+                int take = Math.Min(420, display.Length - from);
+                Console.WriteLine("    display: " + QuoteSpecial(display.Substring(from, take)));
+            }
+
+            int sAt = story.IndexOf("讲师", StringComparison.Ordinal);
+            if (sAt >= 0)
+            {
+                Console.WriteLine("    story : " + QuoteSpecial(Peek(story, Math.Max(0, sAt - 20), 80)));
+            }
+
+            if (doc.Tables.Count > 0)
+            {
+                Word.Table table = doc.Tables[1];
+                Console.WriteLine("    COM 表1 " + table.Rows.Count + "×" + table.Columns.Count
+                    + "  Range=" + table.Range.Start + "-" + table.Range.End);
+                Console.WriteLine("    COM 表1.Range.Text=" + QuoteSpecial(table.Range.Text ?? ""));
+                int rMax = Math.Min(6, table.Rows.Count);
+                int cMax = Math.Min(6, table.Columns.Count);
+                for (int r = 1; r <= rMax; r++)
+                {
+                    for (int c = 1; c <= cMax; c++)
+                    {
+                        try
+                        {
+                            Word.Range cr = table.Cell(r, c).Range;
+                            Console.WriteLine("    COM[" + r + "," + c + "] "
+                                + cr.Start + "-" + cr.End + "  "
+                                + QuoteSpecial(cr.Text));
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine("    COM[" + r + "," + c + "] "
+                                + ex.GetType().Name);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void ReportStoryDiff(string title, string converted, string story)
+        {
+            Console.WriteLine("    --- " + title + " ---");
+            if (string.Equals(converted, story, StringComparison.Ordinal))
+            {
+                Console.WriteLine("    完全一致 Length=" + converted.Length);
+                return;
+            }
+
+            int i = FirstDiff(converted, story);
+            Console.WriteLine("    不一致  conv=" + converted.Length
+                + "  story=" + story.Length
+                + "  首差=" + i);
+            Console.WriteLine("    conv  " + QuoteSpecial(Peek(converted, Math.Max(0, i - 12), 36)));
+            Console.WriteLine("    story " + QuoteSpecial(Peek(story, Math.Max(0, i - 12), 36)));
+        }
+
+        private static void RunRealDocParaTexts(TestRun run, Word.Application app)
+        {
+            if (!System.IO.File.Exists(RealDocPath))
+            {
+                run.CaseSkip("fs-para-text-time", "文件不在: " + RealDocPath);
+                return;
+            }
+
+            Word.Document doc = null;
+            bool weOpened = false;
+            bool oldUpdate = true;
+            try
+            {
+                string norm = System.IO.Path.GetFullPath(RealDocPath);
+                foreach (Word.Document d in app.Documents)
+                {
+                    try
+                    {
+                        if (string.Equals(
+                            System.IO.Path.GetFullPath(d.FullName),
+                            norm,
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            doc = d;
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (doc == null)
+                {
+                    object fileName = RealDocPath;
+                    object readOnly = true;
+                    object missing = System.Reflection.Missing.Value;
+                    doc = app.Documents.Open(
+                        ref fileName,
+                        ref missing,
+                        ref readOnly);
+                    weOpened = true;
+                }
+
+                oldUpdate = app.ScreenUpdating;
+                app.ScreenUpdating = false;
+                try
+                {
+                    app.DisplayAlerts = Word.WdAlertLevel.wdAlertsNone;
+                }
+                catch
+                {
+                }
+
+                Console.WriteLine("  --- 真稿只扫 Paragraph.Range.Text ---");
+                Console.WriteLine("    path=" + RealDocPath);
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                int n = doc.Paragraphs.Count;
+                Console.WriteLine("    Paragraphs.Count=" + n
+                    + "  取Count用时=" + sw.Elapsed.TotalSeconds.ToString("F2") + "s");
+                Console.Out.Flush();
+
+                sw.Restart();
+                int chars = 0;
+                int i = 0;
+                foreach (Word.Paragraph para in doc.Paragraphs)
+                {
+                    string t = para.Range.Text ?? "";
+                    chars += t.Length;
+                    i++;
+                    if (i % 100 == 0)
+                    {
+                        Console.WriteLine("    段 " + i + "/" + n
+                            + "  字 " + chars
+                            + "  " + sw.Elapsed.TotalSeconds.ToString("F2") + "s");
+                        Console.Out.Flush();
+                    }
+                }
+
+                sw.Stop();
+                Console.WriteLine("    扫完 " + i + " 段  Text合计=" + chars
+                    + "  用时=" + sw.Elapsed.TotalSeconds.ToString("F2") + "s");
+                Ok(run, "fs-para-text-time", i == n,
+                    i + " 段 " + chars + " 字 " + sw.Elapsed.TotalSeconds.ToString("F2") + "s");
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-para-text-time", ex.Message);
+            }
+            finally
+            {
+                try
+                {
+                    app.ScreenUpdating = oldUpdate;
+                }
+                catch
+                {
+                }
+
+                if (weOpened && doc != null)
+                {
+                    CloseDoc(doc);
+                }
             }
         }
 
