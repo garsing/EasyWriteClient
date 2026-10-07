@@ -12,12 +12,18 @@ namespace WordDocumentRoundtripTest
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             string host = GetHost(args);
             string caseFilter = GetArg(args, "--case=");
-            bool runLayout = caseFilter.StartsWith("lb-", StringComparison.OrdinalIgnoreCase)
-                || caseFilter.StartsWith("wc-lb-", StringComparison.OrdinalIgnoreCase);
-            bool runContent = !runLayout
+            bool runFindStale = caseFilter.StartsWith("fs-", StringComparison.OrdinalIgnoreCase);
+            bool runLayout = !runFindStale
+                && (caseFilter.StartsWith("lb-", StringComparison.OrdinalIgnoreCase)
+                    || caseFilter.StartsWith("wc-lb-", StringComparison.OrdinalIgnoreCase));
+            bool runContent = !runFindStale && !runLayout
                 && caseFilter.StartsWith("wc-", StringComparison.OrdinalIgnoreCase);
 
-            if (runLayout)
+            if (runFindStale)
+            {
+                Console.WriteLine("Find stale 探针（fs-）：游标推进，看是不是只在进表后返回游标前");
+            }
+            else if (runLayout)
             {
                 Console.WriteLine("分页/分节 读入+写入（lb-）");
             }
@@ -30,7 +36,7 @@ namespace WordDocumentRoundtripTest
             Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
             Console.WriteLine();
 
-            if (!DesktopToolPipe.TryWaitUntilAvailable(8000))
+            if (!runFindStale && !DesktopToolPipe.TryWaitUntilAvailable(8000))
             {
                 Console.WriteLine("连不上易写 Desktop。请先打开易写应用（需含 DesktopTools 管道的新版本），再跑本套。");
                 return 1;
@@ -42,7 +48,11 @@ namespace WordDocumentRoundtripTest
             bool wpsWinBefore = OfficeAlive.HasWindow("wps");
             var run = new TestRun();
             var sw = Stopwatch.StartNew();
-            if (runLayout)
+            if (runFindStale)
+            {
+                FindStaleCases.Run(run, host, caseFilter);
+            }
+            else if (runLayout)
             {
                 LbCases.Run(run, host);
             }
@@ -56,7 +66,9 @@ namespace WordDocumentRoundtripTest
             }
 
             sw.Stop();
-            int target = runLayout ? LbCases.Target : (runContent ? WcCases.Target : 30);
+            int target = runFindStale
+                ? FindStaleCases.Target
+                : (runLayout ? LbCases.Target : (runContent ? WcCases.Target : 30));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed

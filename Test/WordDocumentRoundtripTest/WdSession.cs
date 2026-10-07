@@ -126,6 +126,16 @@ namespace WordDocumentRoundtripTest
             return DesktopToolPipe.Call("F_insert_page_break", args);
         }
 
+        public bool OnWordDoc(string fullPath, Func<Word.Document, bool> action)
+        {
+            if (IsWps || action == null)
+            {
+                return false;
+            }
+
+            return WithWordDoc(fullPath, action);
+        }
+
         public string GetLiveWordOpenXml(string fullPath)
         {
             string xml = null;

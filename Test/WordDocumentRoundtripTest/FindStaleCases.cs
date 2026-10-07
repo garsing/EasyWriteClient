@@ -1,0 +1,1622 @@
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+using Word = Microsoft.Office.Interop.Word;
+
+namespace WordDocumentRoundtripTest
+{
+    /// <summary>
+    /// 探针：游标逐位 Find，看 hit.Start &lt; cursor（stale）是不是只在进表后出现。
+    /// 直连本机 Word COM，不走 Desktop 管道。
+    /// </summary>
+    internal static class FindStaleCases
+    {
+        public const int Target = 20;
+
+        private const string Needle = "歧义甲。";
+
+        public static void Run(TestRun run, string host, string caseFilter = "")
+        {
+            Word.Application app = null;
+            bool createdApp = false;
+            try
+            {
+                app = AttachApp(host, out createdApp);
+                if (app == null)
+                {
+                    throw new InvalidOperationException(
+                        string.Equals(host, "wps", StringComparison.OrdinalIgnoreCase)
+                            ? "无 WPS"
+                            : "无 Word");
+                }
+
+                bool onlyReal = !string.IsNullOrEmpty(caseFilter)
+                    && caseFilter.IndexOf("real", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool onlyPage = !string.IsNullOrEmpty(caseFilter)
+                    && caseFilter.IndexOf("page", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (onlyPage)
+                {
+                    RunPageBreakChar(run, app);
+                }
+                else if (onlyReal)
+                {
+                    RunRealDocCharsAbut(run, app);
+                }
+                else
+                {
+                    RunPlain(run, app);
+                    RunTable(run, app);
+                    RunNestedCellText(run, app);
+                    RunCellPreAmbigFind(run, app);
+                    RunCellPlainAmbigFind(run, app);
+                    RunCellPlainWalk(run, app);
+                    RunCellCharacters(run, app);
+                    RunDocCharacters(run, app);
+                    RunCharsAbut(run, app);
+                    RunPageBreakChar(run, app);
+                }
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-plain-write", ex.GetType().Name + ": " + ex.Message);
+                run.CaseFail("fs-plain-zero-stale", "无 Word");
+                run.CaseFail("fs-table-write", "无 Word");
+                run.CaseFail("fs-table-next-count", "无 Word");
+                run.CaseFail("fs-stale-only-in-table", "无 Word");
+                run.CaseFail("fs-cell21-scope", "无 Word");
+                run.CaseFail("fs-table-20-37", "无 Word");
+                run.CaseFail("fs-para-2nd-find", "无 Word");
+                run.CaseFail("fs-nested-cell-text", "无 Word");
+                run.CaseFail("fs-cell-pre-first", "无 Word");
+                run.CaseFail("fs-cell-pre-second", "无 Word");
+                run.CaseFail("fs-cell-plain-first", "无 Word");
+                run.CaseFail("fs-cell-plain-second", "无 Word");
+                run.CaseFail("fs-cell-plain-walk", "无 Word");
+                run.CaseFail("fs-cell-chars", "无 Word");
+                run.CaseFail("fs-doc-chars", "无 Word");
+                run.CaseFail("fs-chars-abut", "无 Word");
+                run.CaseFail("fs-real-chars-abut", "无 Word");
+                run.CaseFail("fs-text-align", "无 Word");
+                run.CaseFail("fs-page-char", "无 Word");
+            }
+            finally
+            {
+                if (createdApp)
+                {
+                    // 自己拉起的 Word 只关稿，不 Quit。
+                }
+            }
+        }
+
+        private static Word.Application AttachApp(string host, out bool created)
+        {
+            created = false;
+            if (string.Equals(host, "wps", StringComparison.OrdinalIgnoreCase))
+            {
+                string[] ids = { "Kwps.Application", "kwps.Application", "wps.Application" };
+                foreach (string id in ids)
+                {
+                    try
+                    {
+                        object obj = Marshal.GetActiveObject(id);
+                        if (obj != null)
+                        {
+                            return (Word.Application)obj;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                foreach (string id in ids)
+                {
+                    try
+                    {
+                        Type t = Type.GetTypeFromProgID(id);
+                        if (t == null)
+                        {
+                            continue;
+                        }
+
+                        Word.Application createdApp = (Word.Application)Activator.CreateInstance(t);
+                        createdApp.Visible = true;
+                        created = true;
+                        return createdApp;
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                return null;
+            }
+
+            try
+            {
+                return (Word.Application)Marshal.GetActiveObject("Word.Application");
+            }
+            catch
+            {
+                Word.Application createdApp = new Word.Application();
+                createdApp.Visible = true;
+                created = true;
+                return createdApp;
+            }
+        }
+
+        private static void RunPlain(TestRun run, Word.Application app)
+        {
+            Word.Document doc = null;
+            try
+            {
+                doc = app.Documents.Add();
+                doc.Content.Text = Needle + "\r间隔乙。\r" + Needle + "\r" + Needle + "\r" + Needle;
+                run.CaseOk("fs-plain-write");
+
+                StaleWalk walk = Walk(doc, Needle);
+                Console.WriteLine(walk.FormatLog("无表对照"));
+                Ok(run, "fs-plain-zero-stale", walk.StaleTotal == 0,
+                    "无表也 stale " + walk.StaleTotal
+                    + " 次（before=" + walk.StaleBefore
+                    + " in=" + walk.StaleIn
+                    + " after=" + walk.StaleAfter + "）");
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-plain-write", ex.Message);
+                run.CaseFail("fs-plain-zero-stale", "写/探针失败");
+            }
+            finally
+            {
+                CloseDoc(doc);
+            }
+        }
+
+        private static void RunTable(TestRun run, Word.Application app)
+        {
+            Word.Document doc = null;
+            try
+            {
+                doc = app.Documents.Add();
+                if (!PlantTableFixture(doc))
+                {
+                    run.CaseFail("fs-table-write", "表没建出来");
+                    run.CaseFail("fs-table-next-count", "无稿");
+                    run.CaseFail("fs-stale-only-in-table", "无稿");
+                    run.CaseFail("fs-cell21-scope", "无稿");
+                    run.CaseFail("fs-table-20-37", "无稿");
+                    run.CaseFail("fs-para-2nd-find", "无稿");
+                    return;
+                }
+
+                run.CaseOk("fs-table-write");
+                StaleWalk walk = Walk(doc, Needle);
+                Console.WriteLine(walk.FormatLog("表前同文 + 表内同文"));
+                Ok(run, "fs-table-next-count", walk.NextHits >= 4,
+                    "Find Next 命中 " + walk.NextHits + "（期望 ≥4：表前2 + 表内2）");
+                bool onlyInTable = walk.StaleBefore == 0 && walk.StaleAfter == 0;
+                Ok(run, "fs-stale-only-in-table", onlyInTable,
+                    "stale 不在「仅进表」：before=" + walk.StaleBefore
+                    + " in=" + walk.StaleIn
+                    + " after=" + walk.StaleAfter
+                    + " total=" + walk.StaleTotal
+                    + (walk.StaleTotal == 0 ? "（本夹具一次 stale 都没有）" : ""));
+                ProbeSecondCellScope(run, doc);
+                ProbeTableTailScope(run, doc);
+                ProbeParagraphList(run, doc);
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-table-write", ex.Message);
+                run.CaseFail("fs-table-next-count", "写/探针失败");
+                run.CaseFail("fs-stale-only-in-table", "写/探针失败");
+                run.CaseFail("fs-cell21-scope", "写/探针失败");
+                run.CaseFail("fs-table-20-37", "写/探针失败");
+                run.CaseFail("fs-para-2nd-find", "写/探针失败");
+            }
+            finally
+            {
+                CloseDoc(doc);
+            }
+        }
+
+        private static void RunNestedCellText(TestRun run, Word.Application app)
+        {
+            Word.Document doc = null;
+            try
+            {
+                doc = app.Documents.Add();
+                doc.Content.Text = "表前。\r";
+                Word.Table outer = doc.Tables.Add(doc.Paragraphs[1].Range, 1, 2);
+                outer.Cell(1, 1).Range.Text = "外格甲。";
+                Word.Cell host = outer.Cell(1, 2);
+                host.Range.Text = "外前甲。";
+                Word.Range nestAt = host.Range;
+                nestAt.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                nestAt.MoveEnd(Word.WdUnits.wdCharacter, -1);
+                nestAt.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                Word.Table inner = doc.Tables.Add(nestAt, 1, 2);
+                inner.Cell(1, 1).Range.Text = "内格乙。";
+                inner.Cell(1, 2).Range.Text = "内格丙。";
+
+                Word.Range outerCell = host.Range;
+                Console.WriteLine("  --- 外层 [1,2] 内套表 ---");
+                Console.WriteLine("    doc.Tables=" + doc.Tables.Count
+                    + "  外表 " + outer.Range.Start + "-" + outer.Range.End
+                    + "  Cell.Tables=" + host.Tables.Count
+                    + "  Range.Tables=" + outerCell.Tables.Count);
+                int ti = 0;
+                foreach (Word.Table t in doc.Tables)
+                {
+                    ti++;
+                    Console.WriteLine("    doc.Tables[" + ti + "] " + t.Range.Start + "-" + t.Range.End);
+                }
+
+                Console.WriteLine("    外格[1,2] " + outerCell.Start + "-" + outerCell.End);
+                Console.WriteLine("    外格.Text=" + QuoteSpecial(outerCell.Text));
+                Console.WriteLine("    外格[1,1].Text=" + QuoteSpecial(outer.Cell(1, 1).Range.Text));
+
+                int p = 0;
+                foreach (Word.Paragraph para in outerCell.Paragraphs)
+                {
+                    p++;
+                    Console.WriteLine("    外格段P" + p + " " + para.Range.Start + "-" + para.Range.End
+                        + "  " + QuoteSpecial(para.Range.Text));
+                }
+
+                if (host.Tables.Count > 0)
+                {
+                    Word.Table nest = host.Tables[1];
+                    Console.WriteLine("    Cell.Tables[1] " + nest.Range.Start + "-" + nest.Range.End);
+                    Console.WriteLine("    内[1,1] " + nest.Cell(1, 1).Range.Start + "-"
+                        + nest.Cell(1, 1).Range.End + "  " + QuoteSpecial(nest.Cell(1, 1).Range.Text));
+                    Console.WriteLine("    内[1,2] " + nest.Cell(1, 2).Range.Start + "-"
+                        + nest.Cell(1, 2).Range.End + "  " + QuoteSpecial(nest.Cell(1, 2).Range.Text));
+                }
+
+                string cellText = outerCell.Text ?? "";
+                bool hasBoth = cellText.IndexOf("外前甲", StringComparison.Ordinal) >= 0
+                    && cellText.IndexOf("内格乙", StringComparison.Ordinal) >= 0;
+                Ok(run, "fs-nested-cell-text", hasBoth, "外格 Text 未见「外前+内表」: " + QuoteSpecial(cellText));
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-nested-cell-text", ex.Message);
+            }
+            finally
+            {
+                CloseDoc(doc);
+            }
+        }
+
+        private static void RunCellPreAmbigFind(TestRun run, Word.Application app)
+        {
+            Word.Document doc = null;
+            try
+            {
+                doc = app.Documents.Add();
+                Word.Table outer = doc.Tables.Add(doc.Range(0, 0), 1, 1);
+                Word.Cell host = outer.Cell(1, 1);
+                host.Range.Text = Needle + "间隔乙。" + Needle;
+                Word.Range nestAt = host.Range;
+                nestAt.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                nestAt.MoveEnd(Word.WdUnits.wdCharacter, -1);
+                nestAt.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                Word.Table inner = doc.Tables.Add(nestAt, 1, 2);
+                inner.Cell(1, 1).Range.Text = Needle;
+                inner.Cell(1, 2).Range.Text = "内格丙。";
+
+                Word.Range cell = host.Range;
+                Console.WriteLine("  --- 格内表前两处同文 + 内表 ---");
+                Console.WriteLine("    cell=" + cell.Start + "-" + cell.End
+                    + "  Text=" + QuoteSpecial(cell.Text)
+                    + "  Cell.Tables=" + host.Tables.Count);
+
+                bool firstOk = TryFind(doc, cell.Start, cell.End, Needle, out int h1s, out int h1e);
+                bool firstIn = firstOk && h1s >= cell.Start && h1e <= cell.End && h1s >= cell.Start;
+                Console.WriteLine("    #1 整格搜 Execute=" + firstOk
+                    + " hit=" + h1s + "-" + h1e
+                    + (firstOk && h1s < cell.Start ? " 弹回格外" : (firstIn ? " 落在格内" : "")));
+                Ok(run, "fs-cell-pre-first", firstOk && firstIn && h1s >= cell.Start,
+                    firstOk
+                        ? ("hit=" + h1s + "-" + h1e + " cell=" + cell.Start + "-" + cell.End)
+                        : "整格搜第一处失败");
+
+                if (!firstOk)
+                {
+                    run.CaseFail("fs-cell-pre-second", "没有第一处，无法推进");
+                    return;
+                }
+
+                bool secondOk = TryFind(doc, h1e, cell.End, Needle, out int h2s, out int h2e);
+                bool bounced = secondOk && h2s < h1e;
+                bool inside = secondOk && h2s >= h1e && h2e <= cell.End;
+                Console.WriteLine("    #2 从 " + h1e + " 收到格末 " + cell.End
+                    + " Execute=" + secondOk
+                    + " hit=" + h2s + "-" + h2e
+                    + (bounced ? " STALE弹回第一处" : (inside ? " 落在第二处窗内" : "")));
+                Ok(run, "fs-cell-pre-second", secondOk && inside && !bounced,
+                    secondOk
+                        ? ("hit=" + h2s + "-" + h2e
+                            + " window=" + h1e + "-" + cell.End
+                            + (bounced ? " 弹回" : " 未落窗内"))
+                        : "第二处 Execute=False（窗内含内表）");
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-cell-pre-first", ex.Message);
+                run.CaseFail("fs-cell-pre-second", "写/探针失败");
+            }
+            finally
+            {
+                CloseDoc(doc);
+            }
+        }
+
+        private static void RunCellPlainAmbigFind(TestRun run, Word.Application app)
+        {
+            Word.Document doc = null;
+            try
+            {
+                doc = app.Documents.Add();
+                Word.Table outer = doc.Tables.Add(doc.Range(0, 0), 1, 1);
+                Word.Cell host = outer.Cell(1, 1);
+                host.Range.Text = Needle + "间隔乙。" + Needle;
+                Word.Range cell = host.Range;
+                Console.WriteLine("  --- 格内无内表，仅「歧义甲。间隔乙。歧义甲。」 ---");
+                Console.WriteLine("    cell=" + cell.Start + "-" + cell.End
+                    + "  Text=" + QuoteSpecial(cell.Text)
+                    + "  Cell.Tables=" + host.Tables.Count);
+
+                bool firstOk = TryFind(doc, cell.Start, cell.End, Needle, out int h1s, out int h1e);
+                bool firstIn = firstOk && h1s >= cell.Start && h1e <= cell.End;
+                Console.WriteLine("    #1 整格搜 Execute=" + firstOk
+                    + " hit=" + h1s + "-" + h1e
+                    + (firstIn ? " 落在格内" : ""));
+                Ok(run, "fs-cell-plain-first", firstOk && firstIn,
+                    firstOk ? ("hit=" + h1s + "-" + h1e) : "整格搜第一处失败");
+
+                if (!firstOk)
+                {
+                    run.CaseFail("fs-cell-plain-second", "没有第一处，无法推进");
+                    return;
+                }
+
+                bool secondOk = TryFind(doc, h1e, cell.End, Needle, out int h2s, out int h2e);
+                bool bounced = secondOk && h2s < h1e;
+                bool inside = secondOk && h2s >= h1e && h2e <= cell.End;
+                Console.WriteLine("    #2 从 " + h1e + " 收到格末 " + cell.End
+                    + " Execute=" + secondOk
+                    + " hit=" + h2s + "-" + h2e
+                    + (bounced ? " STALE弹回第一处" : (inside ? " 落在第二处窗内" : "")));
+                Ok(run, "fs-cell-plain-second", secondOk && inside && !bounced,
+                    secondOk
+                        ? ("hit=" + h2s + "-" + h2e
+                            + " window=" + h1e + "-" + cell.End
+                            + (bounced ? " 弹回" : " 未落窗内"))
+                        : "第二处 Execute=False");
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-cell-plain-first", ex.Message);
+                run.CaseFail("fs-cell-plain-second", "写/探针失败");
+            }
+            finally
+            {
+                CloseDoc(doc);
+            }
+        }
+
+        private static void RunCellPlainWalk(TestRun run, Word.Application app)
+        {
+            Word.Document doc = null;
+            try
+            {
+                doc = app.Documents.Add();
+                Word.Table outer = doc.Tables.Add(doc.Range(0, 0), 1, 1);
+                Word.Cell host = outer.Cell(1, 1);
+                host.Range.Text = Needle + "间隔乙。" + Needle;
+                Word.Range cell = host.Range;
+                Console.WriteLine("  --- 格内两处同文，逐字推进 ---");
+                Console.WriteLine("    cell=" + cell.Start + "-" + cell.End
+                    + "  Text=" + QuoteSpecial(cell.Text));
+
+                int firstSecondAt = -1;
+                int lastStaleAt = -1;
+                var sb = new StringBuilder();
+                for (int c = cell.Start; c < cell.End; c++)
+                {
+                    bool ok = TryFind(doc, c, cell.End, Needle, out int hs, out int he);
+                    string tag;
+                    if (!ok)
+                    {
+                        tag = "MISS";
+                    }
+                    else if (hs < c)
+                    {
+                        tag = "STALE hit=" + hs + "-" + he;
+                        lastStaleAt = c;
+                    }
+                    else
+                    {
+                        tag = "ok hit=" + hs + "-" + he;
+                        if (firstSecondAt < 0 && hs > cell.Start)
+                        {
+                            firstSecondAt = c;
+                        }
+                    }
+
+                    sb.Append("    cursor=").Append(c).Append("  ").AppendLine(tag);
+                }
+
+                Console.WriteLine(sb.ToString());
+                Console.WriteLine("    首次命中第二处的 cursor="
+                    + (firstSecondAt < 0 ? "从未" : firstSecondAt.ToString())
+                    + "  最后一次 STALE cursor=" + lastStaleAt);
+                Ok(run, "fs-cell-plain-walk", firstSecondAt >= 0,
+                    firstSecondAt < 0
+                        ? "逐字推到格末也从未命中第二处"
+                        : ("cursor=" + firstSecondAt + " 起才能中第二处"));
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-cell-plain-walk", ex.Message);
+            }
+            finally
+            {
+                CloseDoc(doc);
+            }
+        }
+
+        private static void RunCellCharacters(TestRun run, Word.Application app)
+        {
+            Word.Document doc = null;
+            try
+            {
+                doc = app.Documents.Add();
+                Word.Table outer = doc.Tables.Add(doc.Range(0, 0), 1, 1);
+                Word.Cell host = outer.Cell(1, 1);
+                host.Range.Text = Needle + "间隔乙。" + Needle;
+                Word.Range cell = host.Range;
+                Word.Characters chars = cell.Characters;
+                int n = chars.Count;
+                Console.WriteLine("  --- Cell.Range.Characters ---");
+                Console.WriteLine("    cell=" + cell.Start + "-" + cell.End
+                    + "  Characters.Count=" + n
+                    + "  Text=" + QuoteSpecial(cell.Text));
+                var sb = new StringBuilder();
+                for (int i = 1; i <= n; i++)
+                {
+                    Word.Range ch = chars[i];
+                    sb.Append("    [").Append(i).Append("] ")
+                        .Append(ch.Start).Append("-").Append(ch.End)
+                        .Append("  ").AppendLine(QuoteSpecial(ch.Text));
+                }
+
+                Console.WriteLine(sb.ToString());
+                Ok(run, "fs-cell-chars", n > 0, "Characters.Count=" + n);
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-cell-chars", ex.Message);
+            }
+            finally
+            {
+                CloseDoc(doc);
+            }
+        }
+
+        private static void RunDocCharacters(TestRun run, Word.Application app)
+        {
+            Word.Document doc = null;
+            try
+            {
+                doc = app.Documents.Add();
+                doc.Content.Text = Needle + "\r间隔乙。\r" + Needle + "\r";
+                int end = doc.Content.End;
+                Word.Range at = doc.Range(end - 1, end - 1);
+                Word.Table table = doc.Tables.Add(at, 1, 2);
+                table.Cell(1, 1).Range.Text = Needle;
+                table.Cell(1, 2).Range.Text = "表内丙。";
+
+                Word.Characters chars = doc.Content.Characters;
+                int n = chars.Count;
+                Console.WriteLine("  --- Document.Content.Characters ---");
+                Console.WriteLine("    Content.End=" + doc.Content.End + "  Characters.Count=" + n);
+                int show = n < 8 ? n : 8;
+                for (int i = 1; i <= show; i++)
+                {
+                    Word.Range ch = chars[i];
+                    Console.WriteLine("    [" + i + "] " + ch.Start + "-" + ch.End
+                        + "  " + QuoteSpecial(ch.Text));
+                }
+
+                if (n > show)
+                {
+                    Word.Range last = chars[n];
+                    Console.WriteLine("    …");
+                    Console.WriteLine("    [" + n + "] " + last.Start + "-" + last.End
+                        + "  " + QuoteSpecial(last.Text));
+                }
+
+                Ok(run, "fs-doc-chars", n > 0, "Count=" + n);
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-doc-chars", ex.Message);
+            }
+            finally
+            {
+                CloseDoc(doc);
+            }
+        }
+
+        private static void RunCharsAbut(TestRun run, Word.Application app)
+        {
+            Word.Document doc = null;
+            try
+            {
+                doc = app.Documents.Add();
+                doc.Content.Text = Needle + "\r间隔乙。\r" + Needle + "\r";
+                int end = doc.Content.End;
+                Word.Range at = doc.Range(end - 1, end - 1);
+                Word.Table table = doc.Tables.Add(at, 1, 2);
+                table.Cell(1, 1).Range.Text = Needle;
+                table.Cell(1, 2).Range.Text = "表内丙。";
+
+                string cellReport = CheckAbut("格", table.Cell(1, 1).Range);
+                string docReport = CheckAbut("整篇", doc.Content);
+                Console.WriteLine("  --- Characters 是否收尾相连 ---");
+                Console.WriteLine(cellReport);
+                Console.WriteLine(docReport);
+                bool ok = cellReport.IndexOf("不相连: GAP=0 OVER=0", StringComparison.Ordinal) >= 0
+                    && docReport.IndexOf("不相连: GAP=0 OVER=0", StringComparison.Ordinal) >= 0;
+                Ok(run, "fs-chars-abut", ok, "有缺口或重叠，见日志");
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-chars-abut", ex.Message);
+            }
+            finally
+            {
+                CloseDoc(doc);
+            }
+        }
+
+        private const string RealDocPath =
+            @"D:\documents\易写\易写产品试用2\2. 体验素材\1.重庆工程学院课程思政示范课程建设项目结题验收报告.doc";
+
+        private static void RunPageBreakChar(TestRun run, Word.Application app)
+        {
+            Word.Document doc = null;
+            try
+            {
+                doc = app.Documents.Add();
+                doc.Content.Text = "封面甲。";
+                Word.Range at = doc.Range(doc.Content.End - 1, doc.Content.End - 1);
+                object breakType = Word.WdBreakType.wdPageBreak;
+                at.InsertBreak(ref breakType);
+                Word.Range after = doc.Range(doc.Content.End - 1, doc.Content.End - 1);
+                after.InsertAfter("正文乙。");
+
+                string text = doc.Content.Text ?? "";
+                Console.WriteLine("  --- 分页符在 Content.Text / Characters ---");
+                Console.WriteLine("    Content.End=" + doc.Content.End
+                    + "  Text.Length=" + text.Length
+                    + "  Text=" + QuoteSpecial(text));
+
+                Word.Characters chars = doc.Content.Characters;
+                int n = chars.Count;
+                Console.WriteLine("    Characters.Count=" + n);
+                int ffIndex = -1;
+                for (int i = 1; i <= n; i++)
+                {
+                    Word.Range ch = chars[i];
+                    string t = ch.Text ?? "";
+                    Console.WriteLine("    [" + i + "] " + ch.Start + "-" + ch.End
+                        + "  " + QuoteSpecial(t));
+                    if (t.IndexOf('\f') >= 0)
+                    {
+                        ffIndex = i;
+                    }
+                }
+
+                bool inText = text.IndexOf('\f') >= 0;
+                Ok(run, "fs-page-char", inText && ffIndex > 0,
+                    inText
+                        ? ("Text 有 \\f，Characters[" + ffIndex + "]")
+                        : "Content.Text 里没有 \\f");
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-page-char", ex.Message);
+            }
+            finally
+            {
+                CloseDoc(doc);
+            }
+        }
+
+        private static void RunRealDocCharsAbut(TestRun run, Word.Application app)
+        {
+            if (!System.IO.File.Exists(RealDocPath))
+            {
+                run.CaseSkip("fs-real-chars-abut", "文件不在: " + RealDocPath);
+                run.CaseSkip("fs-text-align", "文件不在: " + RealDocPath);
+                return;
+            }
+
+            Word.Document doc = null;
+            bool weOpened = false;
+            bool oldUpdate = true;
+            try
+            {
+                string norm = System.IO.Path.GetFullPath(RealDocPath);
+                foreach (Word.Document d in app.Documents)
+                {
+                    try
+                    {
+                        if (string.Equals(
+                            System.IO.Path.GetFullPath(d.FullName),
+                            norm,
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            doc = d;
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (doc == null)
+                {
+                    object fileName = RealDocPath;
+                    object readOnly = true;
+                    object missing = System.Reflection.Missing.Value;
+                    doc = app.Documents.Open(
+                        ref fileName,
+                        ref missing,
+                        ref readOnly);
+                    weOpened = true;
+                }
+
+                oldUpdate = app.ScreenUpdating;
+                app.ScreenUpdating = false;
+                try
+                {
+                    app.DisplayAlerts = Word.WdAlertLevel.wdAlertsNone;
+                }
+                catch
+                {
+                }
+
+                Console.WriteLine("  --- 真稿按段扫 Characters 收尾 ---");
+                Console.WriteLine("    path=" + RealDocPath);
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                int contentStart = doc.Content.Start;
+                int contentEnd = doc.Content.End;
+                int expect = doc.Content.Characters.Count;
+                int paraCount = doc.Paragraphs.Count;
+                Console.WriteLine("    Content=" + contentStart + "-" + contentEnd
+                    + "  Characters.Count=" + expect
+                    + "  Paragraphs=" + paraCount
+                    + "  用时=" + sw.Elapsed.TotalSeconds.ToString("F2") + "s");
+                Console.Out.Flush();
+
+                sw.Restart();
+                string contentText = doc.Content.Text ?? "";
+                var items = new List<CharItem>(expect);
+                int gaps = 0;
+                int overs = 0;
+                int prevEnd = int.MinValue;
+                int firstStart = -1;
+                int paraIdx = 0;
+                var samples = new StringBuilder();
+                foreach (Word.Paragraph para in doc.Paragraphs)
+                {
+                    paraIdx++;
+                    Word.Characters chars = para.Range.Characters;
+                    int n = chars.Count;
+                    for (int i = 1; i <= n; i++)
+                    {
+                        Word.Range ch = chars[i];
+                        var item = new CharItem
+                        {
+                            Start = ch.Start,
+                            End = ch.End,
+                            Text = ch.Text ?? ""
+                        };
+                        items.Add(item);
+                        if (firstStart < 0)
+                        {
+                            firstStart = item.Start;
+                            Console.WriteLine("    首字 " + item.Start + "-" + item.End
+                                + "  " + QuoteSpecial(item.Text));
+                            Console.Out.Flush();
+                        }
+
+                        if (prevEnd != int.MinValue && prevEnd != item.Start)
+                        {
+                            string kind;
+                            if (prevEnd < item.Start)
+                            {
+                                gaps++;
+                                kind = "GAP";
+                            }
+                            else
+                            {
+                                overs++;
+                                kind = "OVER";
+                            }
+
+                            if (gaps + overs <= 12)
+                            {
+                                samples.Append("    ").Append(kind)
+                                    .Append(" 段").Append(paraIdx)
+                                    .Append("[").Append(i).Append("] ")
+                                    .Append(prevEnd).Append(" → ")
+                                    .Append(item.Start).Append("-").Append(item.End)
+                                    .Append("  ").Append(QuoteSpecial(item.Text))
+                                    .AppendLine();
+                            }
+                        }
+
+                        prevEnd = item.End;
+                    }
+
+                    if (paraIdx % 30 == 0)
+                    {
+                        Console.WriteLine("    段 " + paraIdx + "/" + paraCount
+                            + "  字 " + items.Count
+                            + "  " + sw.Elapsed.TotalSeconds.ToString("F1") + "s");
+                        Console.Out.Flush();
+                    }
+                }
+
+                sw.Stop();
+                int done = items.Count;
+                bool cover = firstStart == contentStart && prevEnd == contentEnd;
+                bool countMatch = done == expect;
+                Console.WriteLine("    扫了=" + done + "  期望Count=" + expect
+                    + "  首Start=" + firstStart
+                    + "  末End=" + prevEnd
+                    + "  GAP=" + gaps
+                    + "  OVER=" + overs
+                    + "  用时=" + sw.Elapsed.TotalSeconds.ToString("F1") + "s");
+                if (samples.Length > 0)
+                {
+                    Console.Write(samples.ToString());
+                }
+
+                Ok(run, "fs-real-chars-abut",
+                    gaps == 0 && overs == 0 && cover && countMatch,
+                    "GAP=" + gaps + " OVER=" + overs
+                    + (cover ? "" : " 未盖满 Content")
+                    + (countMatch ? "" : " 条数≠Count"));
+
+                AlignContentText(run, contentText, items, contentStart, contentEnd);
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-real-chars-abut", ex.Message);
+                run.CaseFail("fs-text-align", ex.Message);
+            }
+            finally
+            {
+                try
+                {
+                    app.ScreenUpdating = oldUpdate;
+                }
+                catch
+                {
+                }
+
+                if (weOpened && doc != null)
+                {
+                    CloseDoc(doc);
+                }
+            }
+        }
+
+        private struct CharItem
+        {
+            public int Start;
+            public int End;
+            public string Text;
+        }
+
+        private struct AlignRule
+        {
+            public string Pattern;
+            public int Span;
+        }
+
+        private static void AlignContentText(
+            TestRun run,
+            string text,
+            List<CharItem> items,
+            int contentStart,
+            int contentEnd)
+        {
+            Console.WriteLine("  --- Content.Text 与 Characters 对齐 ---");
+            Console.WriteLine("    Text.Length=" + text.Length
+                + "  items=" + items.Count
+                + "  Content=" + contentStart + "-" + contentEnd);
+
+            var concat = new StringBuilder(text.Length);
+            foreach (CharItem item in items)
+            {
+                concat.Append(item.Text);
+            }
+
+            bool concatEq = string.Equals(concat.ToString(), text, StringComparison.Ordinal);
+            Console.WriteLine("    concat(Characters.Text)==Content.Text ? " + concatEq);
+            if (!concatEq)
+            {
+                int miss = FirstDiff(concat.ToString(), text);
+                Console.WriteLine("    concat 首差下标=" + miss);
+            }
+
+            var rules = new List<AlignRule>();
+            string fail = null;
+            int rounds = 0;
+            const int maxRounds = 40;
+            while (rounds < maxRounds)
+            {
+                rounds++;
+                AlignMismatch miss = FindAlignMismatch(text, items, rules, contentStart);
+                if (miss == null)
+                {
+                    Console.WriteLine("    第" + rounds + "轮对齐成功  规则数=" + rules.Count);
+                    break;
+                }
+
+                Console.WriteLine("    第" + rounds + "轮对不上  Characters[" + miss.ItemIndex + "]"
+                    + " 实际=" + miss.Item.Start + "-" + miss.Item.End
+                    + " Text=" + QuoteSpecial(miss.Item.Text)
+                    + "  span=" + (miss.Item.End - miss.Item.Start)
+                    + "  文本下标=" + miss.TextIndex
+                    + "  预测Start=" + miss.PredictedStart
+                    + "  预测消耗=" + miss.PredictedConsume + "/" + miss.PredictedSpan
+                    + "  原文=" + QuoteSpecial(Peek(text, miss.TextIndex, 8)));
+
+                if (miss.TextIndex < 0
+                    || miss.TextIndex > text.Length
+                    || !StartsWithAt(text, miss.TextIndex, miss.Item.Text))
+                {
+                    fail = "Characters.Text 对不上 Content.Text 下标 " + miss.TextIndex;
+                    break;
+                }
+
+                string pattern = miss.Item.Text;
+                int span = miss.Item.End - miss.Item.Start;
+                AlignRule existing;
+                int existAt = IndexOfRule(rules, pattern);
+                if (existAt >= 0)
+                {
+                    existing = rules[existAt];
+                    if (existing.Span != span)
+                    {
+                        fail = "同文不同跨度 " + QuoteSpecial(pattern)
+                            + " span=" + existing.Span + "/" + span;
+                        break;
+                    }
+
+                    fail = "规则已在仍对不上 " + QuoteSpecial(pattern);
+                    break;
+                }
+
+                rules.Add(new AlignRule { Pattern = pattern, Span = span });
+                Console.WriteLine("    加规则 " + QuoteSpecial(pattern) + " → span=" + span
+                    + "  重头再对");
+            }
+
+            if (fail == null && rounds >= maxRounds)
+            {
+                fail = "超过 " + maxRounds + " 轮";
+            }
+
+            Console.WriteLine("    最终规则:");
+            if (rules.Count == 0)
+            {
+                Console.WriteLine("      （无，默认 1 字 = 1 格）");
+            }
+            else
+            {
+                var hist = new Dictionary<string, int>(StringComparer.Ordinal);
+                foreach (AlignRule rule in rules)
+                {
+                    string key = QuoteSpecial(rule.Pattern) + " → span=" + rule.Span;
+                    int n;
+                    hist.TryGetValue(key, out n);
+                    hist[key] = n + 1;
+                }
+
+                foreach (KeyValuePair<string, int> kv in hist)
+                {
+                    Console.WriteLine("      " + kv.Key);
+                }
+            }
+
+            Ok(run, "fs-text-align", fail == null,
+                fail == null ? ("规则 " + rules.Count + " 条，" + rounds + " 轮对齐") : fail);
+        }
+
+        private sealed class AlignMismatch
+        {
+            public int ItemIndex;
+            public CharItem Item;
+            public int TextIndex;
+            public int PredictedStart;
+            public int PredictedConsume;
+            public int PredictedSpan;
+        }
+
+        private static AlignMismatch FindAlignMismatch(
+            string text,
+            List<CharItem> items,
+            List<AlignRule> rules,
+            int predicted)
+        {
+            int ti = 0;
+            for (int ci = 0; ci < items.Count; ci++)
+            {
+                CharItem item = items[ci];
+                int consume;
+                int span;
+                PredictOne(text, ti, rules, out consume, out span);
+                bool textOk = StartsWithAt(text, ti, item.Text);
+                int actualSpan = item.End - item.Start;
+                if (!textOk || consume != item.Text.Length || span != actualSpan || predicted != item.Start)
+                {
+                    return new AlignMismatch
+                    {
+                        ItemIndex = ci + 1,
+                        Item = item,
+                        TextIndex = ti,
+                        PredictedStart = predicted,
+                        PredictedConsume = consume,
+                        PredictedSpan = span
+                    };
+                }
+
+                ti += item.Text.Length;
+                predicted += actualSpan;
+            }
+
+            if (ti != text.Length)
+            {
+                return new AlignMismatch
+                {
+                    ItemIndex = items.Count,
+                    Item = items.Count > 0 ? items[items.Count - 1] : default(CharItem),
+                    TextIndex = ti,
+                    PredictedStart = predicted,
+                    PredictedConsume = 0,
+                    PredictedSpan = 0
+                };
+            }
+
+            return null;
+        }
+
+        private static void PredictOne(
+            string text,
+            int ti,
+            List<AlignRule> rules,
+            out int consume,
+            out int span)
+        {
+            int bestLen = -1;
+            int bestSpan = 1;
+            foreach (AlignRule rule in rules)
+            {
+                if (rule.Pattern.Length > bestLen && StartsWithAt(text, ti, rule.Pattern))
+                {
+                    bestLen = rule.Pattern.Length;
+                    bestSpan = rule.Span;
+                }
+            }
+
+            if (bestLen > 0)
+            {
+                consume = bestLen;
+                span = bestSpan;
+                return;
+            }
+
+            consume = ti < text.Length ? 1 : 0;
+            span = consume;
+        }
+
+        private static int IndexOfRule(List<AlignRule> rules, string pattern)
+        {
+            for (int i = 0; i < rules.Count; i++)
+            {
+                if (string.Equals(rules[i].Pattern, pattern, StringComparison.Ordinal))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static bool StartsWithAt(string text, int index, string value)
+        {
+            if (value == null || index < 0 || index + value.Length > text.Length)
+            {
+                return false;
+            }
+
+            return string.CompareOrdinal(text, index, value, 0, value.Length) == 0;
+        }
+
+        private static int FirstDiff(string a, string b)
+        {
+            int n = Math.Min(a.Length, b.Length);
+            for (int i = 0; i < n; i++)
+            {
+                if (a[i] != b[i])
+                {
+                    return i;
+                }
+            }
+
+            return a.Length == b.Length ? -1 : n;
+        }
+
+        private static string Peek(string text, int index, int take)
+        {
+            if (index < 0 || index >= text.Length)
+            {
+                return "";
+            }
+
+            int n = Math.Min(take, text.Length - index);
+            return text.Substring(index, n);
+        }
+
+        private static string CheckAbut(string title, Word.Range scope)
+        {
+            Word.Characters chars = scope.Characters;
+            int n = chars.Count;
+            var sb = new StringBuilder();
+            sb.Append("    ").Append(title)
+                .Append(" Range=").Append(scope.Start).Append("-").Append(scope.End)
+                .Append(" Count=").Append(n);
+            if (n > 0)
+            {
+                sb.Append("  firstStart=").Append(chars[1].Start)
+                    .Append(" lastEnd=").Append(chars[n].End);
+            }
+
+            sb.AppendLine();
+            int gaps = 0;
+            int overs = 0;
+            for (int i = 1; i < n; i++)
+            {
+                if (i == 1 || i % 2000 == 0)
+                {
+                    Console.WriteLine("    扫到 " + i + "/" + n);
+                }
+
+                Word.Range a = chars[i];
+                Word.Range b = chars[i + 1];
+                if (a.End == b.Start)
+                {
+                    continue;
+                }
+
+                string kind = a.End < b.Start ? "GAP" : "OVER";
+                if (a.End < b.Start)
+                {
+                    gaps++;
+                }
+                else
+                {
+                    overs++;
+                }
+
+                if (gaps + overs <= 8)
+                {
+                    sb.Append("    ").Append(kind)
+                        .Append(" [").Append(i).Append("] ").Append(a.Start).Append("-").Append(a.End)
+                        .Append(" ").Append(QuoteSpecial(a.Text))
+                        .Append(" → [").Append(i + 1).Append("] ").Append(b.Start).Append("-").Append(b.End)
+                        .Append(" ").Append(QuoteSpecial(b.Text))
+                        .AppendLine();
+                }
+            }
+
+            sb.Append("    不相连: GAP=").Append(gaps).Append(" OVER=").Append(overs);
+            return sb.ToString();
+        }
+
+        private static string QuoteSpecial(string text)
+        {
+            if (text == null)
+            {
+                return "(null)";
+            }
+
+            var sb = new StringBuilder("\"");
+            foreach (char ch in text)
+            {
+                if (ch == '\r')
+                {
+                    sb.Append("\\r");
+                }
+                else if (ch == '\n')
+                {
+                    sb.Append("\\n");
+                }
+                else if (ch == '\a')
+                {
+                    sb.Append("\\a");
+                }
+                else if (ch == '\t')
+                {
+                    sb.Append("\\t");
+                }
+                else if (ch == '\f')
+                {
+                    sb.Append("\\f");
+                }
+                else if (ch < 32)
+                {
+                    sb.Append("\\x").Append(((int)ch).ToString("X2"));
+                }
+                else
+                {
+                    sb.Append(ch);
+                }
+            }
+
+            sb.Append("\"");
+            return sb.ToString();
+        }
+
+        private static bool PlantTableFixture(Word.Document doc)
+        {
+            doc.Content.Text = Needle + "\r间隔乙。\r" + Needle + "\r";
+            int end = doc.Content.End;
+            Word.Range at = doc.Range(end - 1, end - 1);
+            Word.Table table = doc.Tables.Add(at, 2, 2);
+            table.Cell(1, 1).Range.Text = Needle;
+            table.Cell(1, 2).Range.Text = "表内丙。";
+            table.Cell(2, 1).Range.Text = Needle;
+            table.Cell(2, 2).Range.Text = "表内丁。";
+            Word.Range after = doc.Range(doc.Content.End - 1, doc.Content.End - 1);
+            after.InsertAfter(Needle);
+            return doc.Tables.Count >= 1;
+        }
+
+        private static void ProbeSecondCellScope(TestRun run, Word.Document doc)
+        {
+            Word.Range cell = doc.Tables[1].Cell(2, 1).Range;
+            int scopeStart = cell.Start;
+            int scopeEnd = cell.End;
+            Word.Range search = doc.Range(scopeStart, scopeEnd);
+            Word.Find find = search.Find;
+            find.ClearFormatting();
+            find.Text = Needle;
+            find.MatchCase = true;
+            find.MatchWholeWord = false;
+            find.Wrap = Word.WdFindWrap.wdFindStop;
+            bool ok = find.Execute();
+            int hitStart = ok ? search.Start : -1;
+            int hitEnd = ok ? search.End : -1;
+            bool bounced = ok && hitStart < scopeStart;
+            bool inside = ok && hitStart >= scopeStart && hitEnd <= scopeEnd;
+            Console.WriteLine("  --- 限定 [2,1] " + scopeStart + "-" + scopeEnd + " 搜「" + Needle + "」 ---");
+            Console.WriteLine("    Execute=" + ok
+                + "  hit=" + hitStart + "-" + hitEnd
+                + (bounced ? "  弹回格外" : (inside ? "  落在本格" : "  未落本格")));
+            Ok(run, "fs-cell21-scope", ok && inside && !bounced,
+                ok
+                    ? ("hit=" + hitStart + "-" + hitEnd
+                        + " scope=" + scopeStart + "-" + scopeEnd
+                        + (bounced ? " 弹回第一格" : " 未落在 26–31"))
+                    : "本格 Find 未命中");
+        }
+
+        private static void ProbeTableTailScope(TestRun run, Word.Document doc)
+        {
+            Word.Range table = doc.Tables[1].Range;
+            int firstCellEnd = doc.Tables[1].Cell(1, 1).Range.End;
+            int scopeStart = firstCellEnd;
+            int scopeEnd = table.End;
+            Word.Range search = doc.Range(scopeStart, scopeEnd);
+            Word.Find find = search.Find;
+            find.ClearFormatting();
+            find.Text = Needle;
+            find.MatchCase = true;
+            find.MatchWholeWord = false;
+            find.Wrap = Word.WdFindWrap.wdFindStop;
+            bool ok = find.Execute();
+            int hitStart = ok ? search.Start : -1;
+            int hitEnd = ok ? search.End : -1;
+            bool bounced = ok && hitStart < scopeStart;
+            bool inside = ok && hitStart >= scopeStart && hitEnd <= scopeEnd;
+            Console.WriteLine("  --- 限定表尾 " + scopeStart + "-" + scopeEnd
+                + "（不含 [1,1]）搜「" + Needle + "」 ---");
+            Console.WriteLine("    Execute=" + ok
+                + "  hit=" + hitStart + "-" + hitEnd
+                + (bounced ? "  弹回第一格" : (inside ? "  落在窗内（第二处）" : "  未落窗内")));
+            Ok(run, "fs-table-20-37", ok && inside && !bounced,
+                ok
+                    ? ("hit=" + hitStart + "-" + hitEnd
+                        + " scope=" + scopeStart + "-" + scopeEnd
+                        + (bounced ? " 弹回 15–20" : " 未落在第二处"))
+                    : "20–37 内 Find 未命中");
+        }
+
+        private static void ProbeParagraphList(TestRun run, Word.Document doc)
+        {
+            Console.WriteLine("  --- 全部 Paragraph.Range ---");
+            var hits = new System.Collections.Generic.List<Word.Range>();
+            var tableHits = new System.Collections.Generic.List<Word.Range>();
+            int i = 0;
+            foreach (Word.Paragraph para in doc.Paragraphs)
+            {
+                i++;
+                Word.Range pr = para.Range;
+                string raw = pr.Text ?? "";
+                string shown = raw.Replace("\r", "\\r").Replace("\a", "\\a").Replace("\n", "\\n");
+                if (shown.Length > 24)
+                {
+                    shown = shown.Substring(0, 24) + "…";
+                }
+
+                bool inTable = false;
+                try
+                {
+                    inTable = pr.Tables.Count > 0;
+                }
+                catch
+                {
+                }
+
+                bool exact = string.Equals(NormParaText(raw), Needle, StringComparison.Ordinal);
+                Console.WriteLine("    P" + i + " " + pr.Start + "-" + pr.End
+                    + (inTable ? " table" : " body")
+                    + (exact ? " EXACT" : "")
+                    + "  \"" + shown + "\"");
+                if (exact)
+                {
+                    hits.Add(pr);
+                    if (inTable)
+                    {
+                        tableHits.Add(pr);
+                    }
+                }
+            }
+
+            bool secondOk = FindInsideParagraph(hits.Count >= 2 ? hits[1] : null, "全文第2精确段");
+            bool tableSecondOk = FindInsideParagraph(
+                tableHits.Count >= 2 ? tableHits[1] : null,
+                "表内第2精确段");
+            Ok(run, "fs-para-2nd-find", secondOk && tableSecondOk,
+                "全文第2=" + secondOk + " 表内第2=" + tableSecondOk
+                + " exact=" + hits.Count + " tableExact=" + tableHits.Count);
+        }
+
+        private static bool FindInsideParagraph(Word.Range para, string label)
+        {
+            if (para == null)
+            {
+                Console.WriteLine("    " + label + " 没有");
+                return false;
+            }
+
+            Word.Range search = para.Document.Range(para.Start, para.End);
+            Word.Find find = search.Find;
+            find.ClearFormatting();
+            find.Text = Needle;
+            find.MatchCase = true;
+            find.MatchWholeWord = false;
+            find.Wrap = Word.WdFindWrap.wdFindStop;
+            bool ok = find.Execute();
+            int hitStart = ok ? search.Start : -1;
+            int hitEnd = ok ? search.End : -1;
+            bool inside = ok && hitStart >= para.Start && hitEnd <= para.End;
+            bool bounced = ok && hitStart < para.Start;
+            Console.WriteLine("    " + label + " " + para.Start + "-" + para.End
+                + " 内 Find → Execute=" + ok + " hit=" + hitStart + "-" + hitEnd
+                + (bounced ? " 弹回段外" : (inside ? " 落在本段" : " 未落本段")));
+            return ok && inside && !bounced;
+        }
+
+        private static string NormParaText(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            return text.TrimEnd('\r', '\a', '\n');
+        }
+
+        private static StaleWalk Walk(Word.Document doc, string needle)
+        {
+            var walk = new StaleWalk();
+            int contentEnd = doc.Content.End;
+            walk.ContentEnd = contentEnd;
+            if (doc.Tables.Count > 0)
+            {
+                Word.Table table = doc.Tables[1];
+                Word.Range tr = table.Range;
+                walk.TableStart = tr.Start;
+                walk.TableEnd = tr.End;
+                walk.CellLog = DumpCellRanges(table);
+            }
+
+            int cursor = 0;
+            int guard = 0;
+            while (cursor < contentEnd && guard < 40)
+            {
+                guard++;
+                if (!TryFind(doc, cursor, contentEnd, needle, out int hitStart, out int hitEnd))
+                {
+                    break;
+                }
+
+                bool stale = hitStart < cursor;
+                string zone = Zone(cursor, walk.TableStart, walk.TableEnd);
+                walk.AddNext(cursor, hitStart, hitEnd, stale, zone);
+                if (hitEnd <= cursor)
+                {
+                    walk.NextStuck = true;
+                    break;
+                }
+
+                cursor = hitEnd;
+            }
+
+            bool oldUpdate = true;
+            try
+            {
+                oldUpdate = doc.Application.ScreenUpdating;
+                doc.Application.ScreenUpdating = false;
+                for (int c = 0; c < contentEnd; c++)
+                {
+                    if (!TryFind(doc, c, contentEnd, needle, out int hitStart, out _))
+                    {
+                        continue;
+                    }
+
+                    if (hitStart >= c)
+                    {
+                        continue;
+                    }
+
+                    string zone = Zone(c, walk.TableStart, walk.TableEnd);
+                    walk.AddCursorStale(c, hitStart, zone);
+                }
+            }
+            finally
+            {
+                try
+                {
+                    doc.Application.ScreenUpdating = oldUpdate;
+                }
+                catch
+                {
+                }
+            }
+
+            return walk;
+        }
+
+        private static bool TryFind(
+            Word.Document doc,
+            int searchStart,
+            int contentEnd,
+            string needle,
+            out int hitStart,
+            out int hitEnd)
+        {
+            hitStart = -1;
+            hitEnd = -1;
+            Word.Range search = doc.Range(searchStart, contentEnd);
+            Word.Find find = search.Find;
+            find.ClearFormatting();
+            find.Text = needle;
+            find.MatchCase = true;
+            find.MatchWholeWord = false;
+            find.Wrap = Word.WdFindWrap.wdFindStop;
+            if (!find.Execute())
+            {
+                return false;
+            }
+
+            hitStart = search.Start;
+            hitEnd = search.End;
+            return true;
+        }
+
+        private static string DumpCellRanges(Word.Table table)
+        {
+            var sb = new StringBuilder();
+            int rows = table.Rows.Count;
+            int cols = table.Columns.Count;
+            sb.AppendLine("    单元格 Range（" + rows + "×" + cols + "）");
+            for (int r = 1; r <= rows; r++)
+            {
+                for (int c = 1; c <= cols; c++)
+                {
+                    try
+                    {
+                        Word.Range cr = table.Cell(r, c).Range;
+                        string text = (cr.Text ?? "").Replace("\r", "\\r").Replace("\a", "\\a");
+                        if (text.Length > 20)
+                        {
+                            text = text.Substring(0, 20) + "…";
+                        }
+
+                        sb.Append("    [").Append(r).Append(",").Append(c).Append("] ")
+                            .Append(cr.Start).Append("-").Append(cr.End)
+                            .Append("  text=\"").Append(text).Append("\"")
+                            .AppendLine();
+                    }
+                    catch (Exception ex)
+                    {
+                        sb.Append("    [").Append(r).Append(",").Append(c).Append("] 读不到：")
+                            .Append(ex.Message)
+                            .AppendLine();
+                    }
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        private static string Zone(int cursor, int tableStart, int tableEnd)
+        {
+            if (tableStart < 0)
+            {
+                return "plain";
+            }
+
+            if (cursor < tableStart)
+            {
+                return "before";
+            }
+
+            if (cursor < tableEnd)
+            {
+                return "in";
+            }
+
+            return "after";
+        }
+
+        private static void CloseDoc(Word.Document doc)
+        {
+            if (doc == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object save = false;
+                doc.Close(ref save);
+            }
+            catch
+            {
+            }
+        }
+
+        private static void Ok(TestRun run, string name, bool pass, string reason)
+        {
+            if (pass)
+            {
+                run.CaseOk(name);
+            }
+            else
+            {
+                run.CaseFail(name, reason ?? "");
+            }
+        }
+
+        private sealed class StaleWalk
+        {
+            public int ContentEnd;
+            public int TableStart = -1;
+            public int TableEnd = -1;
+            public int NextHits;
+            public bool NextStuck;
+            public int StaleBefore;
+            public int StaleIn;
+            public int StaleAfter;
+            public int StalePlain;
+            public string CellLog = "";
+            public readonly StringBuilder NextLog = new StringBuilder();
+            public readonly StringBuilder StaleSamples = new StringBuilder();
+            private int _sample;
+
+            public int StaleTotal
+            {
+                get { return StaleBefore + StaleIn + StaleAfter + StalePlain; }
+            }
+
+            public void AddNext(int cursor, int hitStart, int hitEnd, bool stale, string zone)
+            {
+                NextHits++;
+                NextLog.Append("    #").Append(NextHits)
+                    .Append(" cursor=").Append(cursor)
+                    .Append(" hit=").Append(hitStart).Append("-").Append(hitEnd)
+                    .Append(" zone=").Append(zone)
+                    .Append(stale ? " STALE" : " ok")
+                    .AppendLine();
+            }
+
+            public void AddCursorStale(int cursor, int hitStart, string zone)
+            {
+                if (zone == "before")
+                {
+                    StaleBefore++;
+                }
+                else if (zone == "in")
+                {
+                    StaleIn++;
+                }
+                else if (zone == "after")
+                {
+                    StaleAfter++;
+                }
+                else
+                {
+                    StalePlain++;
+                }
+
+                if (_sample >= 8)
+                {
+                    return;
+                }
+
+                _sample++;
+                StaleSamples.Append("    stale#").Append(_sample)
+                    .Append(" cursor=").Append(cursor)
+                    .Append(" hitStart=").Append(hitStart)
+                    .Append(" zone=").Append(zone)
+                    .AppendLine();
+            }
+
+            public string FormatLog(string title)
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("  --- Find stale  " + title + " ---");
+                sb.Append("    Content.End=").Append(ContentEnd);
+                if (TableStart >= 0)
+                {
+                    sb.Append("  table=").Append(TableStart).Append("-").Append(TableEnd);
+                }
+
+                sb.AppendLine();
+                if (!string.IsNullOrEmpty(CellLog))
+                {
+                    sb.Append(CellLog);
+                }
+
+                sb.AppendLine("    Find Next（cursor=hit.End）命中 " + NextHits
+                    + (NextStuck ? "  中途卡住" : ""));
+                sb.Append(NextLog);
+                sb.AppendLine("    游标+1 stale 合计 " + StaleTotal
+                    + "  before=" + StaleBefore
+                    + "  in=" + StaleIn
+                    + "  after=" + StaleAfter
+                    + "  plain=" + StalePlain);
+                sb.Append(StaleSamples);
+                return sb.ToString();
+            }
+        }
+    }
+}
