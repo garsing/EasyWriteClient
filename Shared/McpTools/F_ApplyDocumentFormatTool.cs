@@ -58,26 +58,38 @@ namespace WordAddIn1
                         return Done(false, validationError);
                     }
 
-                    string targetCodesCsv = args["target_codes"]?.ToString()?.Trim() ?? "";
-                    var targetCodes = FormatContextHelper.ParseSentenceCodes(targetCodesCsv);
-                    if (targetCodes.Count == 0)
+                    if (!TryResolveApplyTargets(
+                            args,
+                            out List<string> targetCodes,
+                            out bool paragraphMode,
+                            out string targetError))
                     {
-                        return Done(false, "target_codes 为空");
-                    }
-
-                    if (targetCodes.Any(c => c.StartsWith("T_", StringComparison.Ordinal)))
-                    {
-                        return Done(false, "apply 仅支持 S_ 句子编码，不支持 T_");
+                        return Done(false, targetError);
                     }
 
                     ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
+                    AmbiguityCheckResult ambiguityResult;
+                    TableScopeIndex tableScope;
+                    string cacheError;
+                    if (paragraphMode)
+                    {
+                        ambiguityResult = ParagraphFormatAmbiguityHelper.RunPrecheck(
+                            scopeArgs,
+                            targetCodes,
+                            "F_apply_document_format",
+                            out tableScope,
+                            out cacheError);
+                    }
+                    else
+                    {
+                        ambiguityResult = ApplyFormatAmbiguityHelper.RunPrecheck(
+                            targetCodes,
+                            scopeArgs,
+                            "F_apply_document_format",
+                            out tableScope,
+                            out cacheError);
+                    }
 
-                    AmbiguityCheckResult ambiguityResult = ApplyFormatAmbiguityHelper.RunPrecheck(
-                        targetCodes,
-                        scopeArgs,
-                        "F_apply_document_format",
-                        out TableScopeIndex tableScope,
-                        out string cacheError);
                     if (cacheError != null)
                     {
                         return Done(false, cacheError);
@@ -114,7 +126,20 @@ namespace WordAddIn1
 
                     foreach (string code in targetCodes)
                     {
-                        if (!FormatContextHelper.IsSentenceCode(code))
+                        if (paragraphMode)
+                        {
+                            if (!FormatContextHelper.IsParagraphCode(code))
+                            {
+                                skippedCodes.Add(code);
+                                applyErrors.Add($"{code}: 非 P_ 编码");
+                            }
+                            else if (!DocumentState.HasParagraphMapping(code))
+                            {
+                                skippedCodes.Add(code);
+                                applyErrors.Add($"{code}: 映射表中不存在");
+                            }
+                        }
+                        else if (!FormatContextHelper.IsSentenceCode(code))
                         {
                             skippedCodes.Add(code);
                             applyErrors.Add($"{code}: 非 S_ 编码");
@@ -129,17 +154,29 @@ namespace WordAddIn1
                     Word.Range targetSpan = null;
                     if (skippedCodes.Count < targetCodes.Count)
                     {
-                        int targetDisplayStart = ApplyFormatAmbiguityHelper.GetDisplayStartAt(
-                            ambiguityResult, 0, "target_codes");
+                        string startField = paragraphMode ? "target_paragraph_codes" : "target_codes";
+                        int targetDisplayStart = paragraphMode
+                            ? ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
+                                ambiguityResult, 0, startField)
+                            : ApplyFormatAmbiguityHelper.GetDisplayStartAt(
+                                ambiguityResult, 0, startField);
                         if (targetDisplayStart >= 0)
                         {
-                            targetSpan = DisplayPositionRangeResolver.ResolveSpan(
-                                doc,
-                                targetCodes,
-                                targetDisplayStart,
-                                scopeArgs.TableId,
-                                tableScope,
-                                debugTag: "apply_target_span");
+                            targetSpan = paragraphMode
+                                ? DisplayPositionRangeResolver.ResolveParagraphSpan(
+                                    doc,
+                                    targetCodes,
+                                    targetDisplayStart,
+                                    scopeArgs.TableId,
+                                    tableScope,
+                                    debugTag: "apply_para_char_span")
+                                : DisplayPositionRangeResolver.ResolveSpan(
+                                    doc,
+                                    targetCodes,
+                                    targetDisplayStart,
+                                    scopeArgs.TableId,
+                                    tableScope,
+                                    debugTag: "apply_target_span");
                         }
 
                         if (targetSpan == null)
@@ -251,9 +288,18 @@ namespace WordAddIn1
             charFormat = null;
             paraFormat = null;
 
-            if (!args.ContainsKey("target_codes") || string.IsNullOrWhiteSpace(args["target_codes"]?.ToString()))
+            bool hasSentence = args.ContainsKey("target_codes")
+                && !string.IsNullOrWhiteSpace(args["target_codes"]?.ToString());
+            bool hasParagraph = args.ContainsKey("target_paragraph_codes")
+                && !string.IsNullOrWhiteSpace(args["target_paragraph_codes"]?.ToString());
+            if (!hasSentence && !hasParagraph)
             {
-                return "缺少 target_codes";
+                return "缺少 target_codes 或 target_paragraph_codes";
+            }
+
+            if (hasSentence && hasParagraph)
+            {
+                return "target_codes 与 target_paragraph_codes 互斥，请二选一";
             }
 
             if (ActionFormatHelper.HasCancelledInheritKeys(args))
@@ -297,6 +343,64 @@ namespace WordAddIn1
             }
 
             return null;
+        }
+
+        private static bool TryResolveApplyTargets(
+            Dictionary<string, object> args,
+            out List<string> targetCodes,
+            out bool paragraphMode,
+            out string error)
+        {
+            targetCodes = new List<string>();
+            paragraphMode = false;
+            error = null;
+
+            string paragraphCsv = args.ContainsKey("target_paragraph_codes")
+                ? args["target_paragraph_codes"]?.ToString()?.Trim() ?? ""
+                : "";
+            if (!string.IsNullOrEmpty(paragraphCsv))
+            {
+                targetCodes = FormatContextHelper.ParseParagraphCodes(paragraphCsv);
+                if (targetCodes.Count == 0)
+                {
+                    error = "target_paragraph_codes 为空";
+                    return false;
+                }
+
+                paragraphMode = true;
+                return true;
+            }
+
+            string sentenceCsv = args.ContainsKey("target_codes")
+                ? args["target_codes"]?.ToString()?.Trim() ?? ""
+                : "";
+            targetCodes = FormatContextHelper.ParseSentenceCodes(sentenceCsv);
+            if (targetCodes.Count == 0)
+            {
+                error = "target_codes 为空";
+                return false;
+            }
+
+            if (targetCodes.Any(c => c.StartsWith("T_", StringComparison.Ordinal)))
+            {
+                error = "apply 仅支持 S_ / P_，不支持 T_";
+                return false;
+            }
+
+            bool anyP = targetCodes.Any(FormatContextHelper.IsParagraphCode);
+            bool anyS = targetCodes.Any(FormatContextHelper.IsSentenceCode);
+            if (anyP && anyS)
+            {
+                error = "target_codes 不可混用 S_ 与 P_；撞码段改 char 请只传 P_xxxxx_N";
+                return false;
+            }
+
+            if (anyP)
+            {
+                paragraphMode = true;
+            }
+
+            return true;
         }
 
         private static Dictionary<string, object> ParseNestedObject(Dictionary<string, object> args, string key)
