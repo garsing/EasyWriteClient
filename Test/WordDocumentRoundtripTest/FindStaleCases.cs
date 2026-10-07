@@ -779,6 +779,7 @@ namespace WordDocumentRoundtripTest
 
                 Console.WriteLine("  --- display 转换后对 Content.Text ---");
                 Console.WriteLine("    path=" + path);
+                Console.Out.Flush();
 
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 string story = doc.Content.Text ?? "";
@@ -787,10 +788,15 @@ namespace WordDocumentRoundtripTest
                 Console.Out.Flush();
 
                 sw.Restart();
+                Console.WriteLine("    ProcessDocument 开始…");
+                Console.Out.Flush();
                 var options = ProcessDocumentOptions.ForGetDocumentContent("fs-dalign");
                 options.ForceRefresh = true;
                 WordDocumentExtractor.ProcessingResult processed =
                     WordDocumentExtractor.ProcessDocument(doc, options);
+                Console.WriteLine("    ProcessDocument 结束 "
+                    + sw.Elapsed.TotalSeconds.ToString("F2") + "s");
+                Console.Out.Flush();
                 string display = "";
                 var paras = DocumentState.ChunkParagraphDisplayContents;
                 if (paras != null)
@@ -865,8 +871,15 @@ namespace WordDocumentRoundtripTest
                     + "  仍剩 \\x01=" + leftoverSoH);
                 ReportStoryDiff("双方去图", converted, storyNoImg);
                 DumpImageGap(display, converted, story);
-                DumpFig1Com(doc, story);
-                DumpLecturerGap(display, story, doc);
+                bool thesisDump = string.Equals(
+                    System.IO.Path.GetFullPath(path),
+                    System.IO.Path.GetFullPath(RealDocxPath),
+                    StringComparison.OrdinalIgnoreCase);
+                if (thesisDump)
+                {
+                    DumpFig1Com(doc, story);
+                    DumpLecturerGap(display, story, doc);
+                }
 
                 bool ok = string.Equals(converted, storyNoImg, StringComparison.Ordinal);
                 Ok(run, "fs-display-align", ok,
@@ -985,7 +998,7 @@ namespace WordDocumentRoundtripTest
             }
 
             string s = StripDisplayWrappers(display);
-            return ConvertTables(s).Replace("\n", "\x0B");
+            return ConvertTables(s).Replace("\n", "\x0B").Replace("^b", "\f");
         }
 
         private static string StripDisplayWrappers(string display)
