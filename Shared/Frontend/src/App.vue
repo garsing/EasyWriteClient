@@ -126,6 +126,7 @@ import {
 } from './utils/chatAttachments.js'
 import {
   collectClipboardFiles,
+  clipboardPlainText,
   fileFromHostClipboardPayload,
   shouldBlockPasteForHost,
   shouldTryHostClipboard
@@ -459,6 +460,11 @@ async function readClipboardFromHost () {
   }
 }
 
+/** 粘贴被拦截但宿主无文件/图片时，把纯文本（如 Windows 路径）补进输入框光标处 */
+function insertTextIntoChatInput (text) {
+  window.dispatchEvent(new CustomEvent('insertTextAtCursor', { detail: { text } }))
+}
+
 /** 对话框粘贴：JS clipboard 优先；WebView2 读不到时问宿主（截图 / 资源管理器复制文件） */
 async function onChatPaste (e) {
   const files = collectClipboardFiles(e.clipboardData)
@@ -469,12 +475,19 @@ async function onChatPaste (e) {
     return
   }
   if (!isWebView2 || !shouldTryHostClipboard(e.clipboardData)) return
-  if (shouldBlockPasteForHost(e.clipboardData)) {
+  // await 之后 paste 事件的 clipboardData 可能失效，纯文本先同步取出
+  const plainText = clipboardPlainText(e.clipboardData)
+  const blocked = shouldBlockPasteForHost(e.clipboardData)
+  if (blocked) {
     e.preventDefault()
     e.stopPropagation()
   }
   const res = await readClipboardFromHost()
-  if (!res || res.success === false) return
+  if (!res || res.success === false) {
+    // 宿主剪贴板没有文件/图片（复制的只是路径文本）：把拦下的文本补回输入框
+    if (blocked && plainText) insertTextIntoChatInput(plainText)
+    return
+  }
   if (res.kind === 'files') {
     if (res.limitHit === true || res.limitHit === 1) {
       showAttachLimitHint()

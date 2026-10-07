@@ -82,6 +82,7 @@
 
     <div class="input-wrapper">
       <a-textarea
+        ref="textareaRef"
         v-model:value="inputValue"
         :placeholder="placeholder"
         :auto-size="autoSize"
@@ -106,7 +107,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import submitIcon from '../assets/images/submit.png'
 import stopIcon from '../assets/images/stop.png'
 import { resolveFileAppIconByName, resolveOpenFileAppIcon } from '../utils/openFileAppIcon.js'
@@ -307,6 +308,34 @@ function onPasteCapture (e) {
 
 const inputValue = ref('')
 const placeholder = ref('输入消息')
+const textareaRef = ref(null)
+
+function resolveNativeTextarea () {
+  const comp = textareaRef.value
+  const el = comp && (comp.$el || comp)
+  if (!el) return null
+  if (el.tagName === 'TEXTAREA') return el
+  return typeof el.querySelector === 'function' ? el.querySelector('textarea') : null
+}
+
+/** 粘贴回退：把文本插到光标处（宿主剪贴板无文件/图片时由 App 触发） */
+function insertTextAtCursor (text) {
+  if (!text) return
+  const ta = resolveNativeTextarea()
+  if (!ta) {
+    inputValue.value += text
+    return
+  }
+  const v = inputValue.value
+  const start = typeof ta.selectionStart === 'number' ? ta.selectionStart : v.length
+  const end = typeof ta.selectionEnd === 'number' ? ta.selectionEnd : v.length
+  inputValue.value = v.slice(0, start) + text + v.slice(end)
+  nextTick(() => {
+    ta.focus()
+    const pos = start + text.length
+    ta.setSelectionRange(pos, pos)
+  })
+}
 
 watch(inputValue, (v) => {
   syncLiveDraftInput(v)
@@ -348,6 +377,12 @@ onMounted(() => {
 
   window.addEventListener('clearInput', () => {
     inputValue.value = ''
+  })
+
+  window.addEventListener('insertTextAtCursor', (event) => {
+    if (event.detail && typeof event.detail.text === 'string') {
+      insertTextAtCursor(event.detail.text)
+    }
   })
 })
 
