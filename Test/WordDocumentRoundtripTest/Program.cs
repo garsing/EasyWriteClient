@@ -12,6 +12,7 @@ namespace WordDocumentRoundtripTest
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             string host = GetHost(args);
             string caseFilter = GetArg(args, "--case=");
+            string docPath = GetArg(args, "--doc=");
             bool runFindStale = caseFilter.StartsWith("fs-", StringComparison.OrdinalIgnoreCase);
             bool runLayout = !runFindStale
                 && (caseFilter.StartsWith("lb-", StringComparison.OrdinalIgnoreCase)
@@ -50,7 +51,7 @@ namespace WordDocumentRoundtripTest
             var sw = Stopwatch.StartNew();
             if (runFindStale)
             {
-                FindStaleCases.Run(run, host, caseFilter);
+                FindStaleCases.Run(run, host, caseFilter, docPath);
             }
             else if (runLayout)
             {

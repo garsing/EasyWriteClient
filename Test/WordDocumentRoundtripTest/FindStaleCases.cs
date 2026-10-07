@@ -18,8 +18,12 @@ namespace WordDocumentRoundtripTest
 
         private const string Needle = "歧义甲。";
 
-        public static void Run(TestRun run, string host, string caseFilter = "")
+        /// <summary>fs-dalign 默认稿；可用 --doc= 换文件。</summary>
+        internal static string AlignDocPath = "";
+
+        public static void Run(TestRun run, string host, string caseFilter = "", string docPath = "")
         {
+            AlignDocPath = docPath ?? "";
             Word.Application app = null;
             bool createdApp = false;
             try
@@ -718,7 +722,9 @@ namespace WordDocumentRoundtripTest
 
         private static void RunRealDocDisplayAlign(TestRun run, Word.Application app)
         {
-            string path = System.IO.File.Exists(RealDocxPath) ? RealDocxPath : RealDocPath;
+            string path = !string.IsNullOrEmpty(AlignDocPath)
+                ? AlignDocPath
+                : (System.IO.File.Exists(RealDocxPath) ? RealDocxPath : RealDocPath);
             if (!System.IO.File.Exists(path))
             {
                 run.CaseSkip("fs-display-align", "文件不在: " + path);
