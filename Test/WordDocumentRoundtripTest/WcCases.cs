@@ -285,7 +285,8 @@ namespace WordDocumentRoundtripTest
                 alias.Success ? "" : (alias.Error ?? "alias 失败"));
             Ok(run, "wc-p-markers",
                 text.IndexOf("[P_", StringComparison.Ordinal) >= 0
-                && text.IndexOf("-start]", StringComparison.Ordinal) >= 0,
+                && (text.IndexOf(" start]", StringComparison.Ordinal) >= 0
+                    || text.IndexOf("-start]", StringComparison.Ordinal) >= 0),
                 "无 P_ 标记");
             Ok(run, "wc-p-two", CountCodes(text, "P") >= 2, "P_ 数=" + CountCodes(text, "P"));
             Ok(run, "wc-p-note",
@@ -305,8 +306,9 @@ namespace WordDocumentRoundtripTest
                 paraCase.Success ? "" : (paraCase.Error ?? "Paragraph 失败"));
             ExpectFail(run, "wc-neg-level-para", s.GetContent(id, "para"), "paragraph");
             Ok(run, "wc-p-end",
-                text.IndexOf("-end]", StringComparison.Ordinal) >= 0
-                && Regex.IsMatch(text, @"\[P_[0-9a-zA-Z]{5}-end\]"),
+                (text.IndexOf(" end]", StringComparison.Ordinal) >= 0
+                    || text.IndexOf("-end]", StringComparison.Ordinal) >= 0)
+                && Regex.IsMatch(text, @"\[P_[0-9a-zA-Z]{5}(?:_[1-9][0-9]*)?(?:-end| end)\]"),
                 "无 P_ 结束标记");
             Ok(run, "wc-p-text-a", text.IndexOf("段甲夹具", StringComparison.Ordinal) >= 0, "段甲未出现");
             Ok(run, "wc-p-text-b", text.IndexOf("段乙夹具", StringComparison.Ordinal) >= 0, "段乙未出现");
@@ -972,7 +974,9 @@ namespace WordDocumentRoundtripTest
             }
 
             var seen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (Match m in Regex.Matches(text, @"\[" + prefix + @"_([0-9a-zA-Z]{5})-start\]"))
+            foreach (Match m in Regex.Matches(
+                text,
+                @"\[" + prefix + @"_([0-9a-zA-Z]{5}(?:_[1-9][0-9]*)?)(?:-start| start)\]"))
             {
                 seen.Add(m.Groups[1].Value);
             }

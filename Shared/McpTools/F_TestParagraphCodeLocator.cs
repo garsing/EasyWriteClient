@@ -10,7 +10,7 @@ namespace WordAddIn1
     /// <summary>
     /// 开发测试：P_ → Word 段落 Range 定位（批次 0b）。
     /// 对当前文档 ProcessDocument 后，按 paragraph display 顺序逐 P_ 走
-    /// ResolveParagraphSpan + SpanParagraphLocator（与生产 apply 路径一致）。
+    /// ParagraphRangeLocator（与生产 apply 路径一致，不 Find）。
     /// </summary>
     public static class F_TestParagraphCodeLocator
     {
@@ -33,8 +33,8 @@ namespace WordAddIn1
                     LogHeader(doc.Name ?? "未命名文档");
                     Console.WriteLine(
                         allowAutoTableScope
-                            ? "定位模式：自动限表（allow_auto_table_scope=true）"
-                            : "定位模式：全文 Find（与句子测试一致，allow_auto_table_scope=false）");
+                            ? "定位模式：字符序段号（allow_auto_table_scope 已忽略）"
+                            : "定位模式：字符序段号（不 Find）");
 
                     WordDocumentExtractor.ProcessingResult processResult = null;
                     if (runProcessDocument)
@@ -114,10 +114,8 @@ namespace WordAddIn1
                 Console.WriteLine($"paragraph display 有序 P_ 共 {orderedCodes.Count} 个（含重复出现）");
             }
 
-            TableScopeIndex tableScope = TableParagraphScopeHelper.BuildIndexFromDocumentState();
-
             Console.WriteLine("");
-            Console.WriteLine("=== P_ 定位测试（display 序 + ResolveParagraphSpan）===");
+            Console.WriteLine("=== P_ 定位测试（display 序 + ParagraphRangeLocator）===");
             int seq = 0;
 
             foreach (string code in orderedCodes)
@@ -128,20 +126,14 @@ namespace WordAddIn1
                     DocumentState.GetParagraphContent(code)?.Replace("\r", "\\r").Replace("\n", "\\n") ?? "",
                     80);
 
-                string storedText = DocumentState.GetParagraphContent(code);
                 string errorCode = null;
                 string errorMessage = null;
                 Word.Range range = null;
 
-                if (string.IsNullOrEmpty(storedText))
+                if (!DocumentState.HasParagraphMapping(code))
                 {
                     errorCode = ParagraphCodeResolver.ErrorParagraphMappingMissing;
-                    errorMessage = $"未找到段落映射或 content 为空: {code}";
-                }
-                else if (ParagraphCodeAmbiguityHelper.IsEmptyParagraphStoredText(storedText))
-                {
-                    errorCode = ParagraphCodeResolver.ErrorParagraphRangeNotFound;
-                    errorMessage = $"空段 {code} 无法定位 Word 段落 Range（I4-A）";
+                    errorMessage = $"未找到段落映射: {code}";
                 }
                 else if (doc == null)
                 {
@@ -150,40 +142,11 @@ namespace WordAddIn1
                 }
                 else
                 {
-                    string tableId = null;
-                    if (allowAutoTableScope)
-                    {
-                        tableId = TableParagraphScopeHelper.ResolveEffectiveTableId(code, null, tableScope);
-                    }
-
-                    var codeList = new List<string> { code };
-                    Word.Range span = DisplayPositionRangeResolver.ResolveParagraphSpan(
-                        doc,
-                        codeList,
-                        displayStart,
-                        tableId,
-                        tableScope,
-                        debugTag: code);
-
-                    if (span == null)
+                    range = ParagraphRangeLocator.TryResolve(doc, code, debugTag: code);
+                    if (range == null)
                     {
                         errorCode = ParagraphCodeResolver.ErrorParagraphRangeNotFound;
-                        errorMessage = $"无法定位段落 Span: {code} displayStart={displayStart}";
-                    }
-                    else
-                    {
-                        Word.Range hit = SpanParagraphLocator.LocateParagraph(
-                            doc,
-                            span,
-                            code,
-                            debugTag: code);
-                        range = hit != null ? WordRangeFinder.ExpandToParagraphRange(hit) : null;
-
-                        if (range == null)
-                        {
-                            errorCode = ParagraphCodeResolver.ErrorParagraphRangeNotFound;
-                            errorMessage = $"Span 内未命中段落: {code} displayStart={displayStart}";
-                        }
+                        errorMessage = $"无法定位段落 Range: {code} displayStart={displayStart}";
                     }
                 }
 
@@ -224,10 +187,11 @@ namespace WordAddIn1
                          && ParagraphCodeAmbiguityHelper.IsEmptyParagraphStoredText(
                              DocumentState.GetParagraphContent(code)))
                 {
-                    summary.EmptyParagraphCount++;
-                    item.Outcome = "expected_empty";
+                    summary.LocateFailCount++;
+                    item.Outcome = "locate_fail";
+                    summary.Failures.Add(item);
                     Console.WriteLine(
-                        $"  [{seq}] ⚪ {code} displayStart={displayStart} 空段（I4-A）→ {errorCode}: {errorMessage}");
+                        $"  [{seq}] ❌ {code} displayStart={displayStart} 空段未落到段号 → {errorCode}: {errorMessage}");
                 }
                 else if (string.Equals(
                              errorCode,

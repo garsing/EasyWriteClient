@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using WordAddIn1.DocumentMapping.CodeResolve;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
@@ -314,15 +315,51 @@ namespace WordAddIn1
 
         public static string GetParagraphContent(string paragraphName)
         {
+            string key = ResolveParagraphMappingKey(paragraphName);
             foreach (var mapping in Session.ParagraphNameMapping)
             {
-                if (mapping.Count >= 3 && mapping[0] == paragraphName)
+                if (mapping.Count >= 3 && mapping[0] == key)
                 {
                     return mapping[2];
                 }
             }
 
             return "";
+        }
+
+        public static bool HasParagraphMapping(string paragraphName)
+        {
+            string key = ResolveParagraphMappingKey(paragraphName);
+            if (string.IsNullOrEmpty(key))
+            {
+                return false;
+            }
+
+            foreach (var mapping in Session.ParagraphNameMapping)
+            {
+                if (mapping != null && mapping.Count >= 1
+                    && string.Equals(mapping[0], key, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string ResolveParagraphMappingKey(string paragraphName)
+        {
+            if (string.IsNullOrEmpty(paragraphName))
+            {
+                return paragraphName;
+            }
+
+            if (ParagraphPublicCode.TryGetBaseCode(paragraphName, out string baseCode))
+            {
+                return baseCode;
+            }
+
+            return paragraphName;
         }
 
         public static void ClearSentenceParagraphIndex()

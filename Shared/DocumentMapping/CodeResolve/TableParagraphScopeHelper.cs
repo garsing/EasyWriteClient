@@ -19,7 +19,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static readonly Regex ParagraphStartRegex = new Regex(
-            @"\[((P_[0-9a-zA-Z]{5}))-start\]",
+            @"\[((P_[0-9a-zA-Z]{5}(?:_[1-9][0-9]*)?))(?:-start| start)\]",
             RegexOptions.Compiled);
 
         private const string CloseTableTag = "</table>";
@@ -163,20 +163,12 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
 
         private static int CountCodeInParagraphDisplay(string paragraphCode)
         {
-            string marker = "[" + paragraphCode + "-start]";
             int total = 0;
-            foreach (string display in DocumentState.ChunkParagraphDisplayContents)
+            foreach (string code in ParagraphCodeAmbiguityHelper.GetOrderedParagraphCodesFromDisplay())
             {
-                if (string.IsNullOrEmpty(display))
-                {
-                    continue;
-                }
-
-                int idx = 0;
-                while ((idx = display.IndexOf(marker, idx, StringComparison.Ordinal)) >= 0)
+                if (string.Equals(code, paragraphCode, StringComparison.Ordinal))
                 {
                     total++;
-                    idx += marker.Length;
                 }
             }
 

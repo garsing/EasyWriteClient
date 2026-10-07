@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using WordAddIn1;
+using WordAddIn1.DocumentMapping.CodeResolve;
 
 namespace WordAddIn1.DocumentMapping
 {
@@ -12,7 +13,7 @@ namespace WordAddIn1.DocumentMapping
     public static class DisplayParagraphIndexMap
     {
         private static readonly Regex PBlock = new Regex(
-            @"\[(P_[0-9a-zA-Z]{5})-start\](.*?)\[\1-end\]",
+            @"\[(P_[0-9a-zA-Z]{5}(?:_[1-9][0-9]*)?)(?:-start| start)\](.*?)\[\1(?:-end| end)\]",
             RegexOptions.Compiled | RegexOptions.Singleline);
 
         public sealed class Hit
@@ -95,7 +96,7 @@ namespace WordAddIn1.DocumentMapping
 
         public static int ResolveParaIndex(string display, string paragraphCode)
         {
-            if (string.IsNullOrEmpty(paragraphCode))
+            if (!ParagraphPublicCode.TryParse(paragraphCode, out ParagraphPublicCode.Parsed parsed))
             {
                 return 0;
             }
@@ -105,21 +106,27 @@ namespace WordAddIn1.DocumentMapping
             int n = 0;
             for (int i = 0; i < hits.Count; i++)
             {
-                if (!string.Equals(hits[i].Code, paragraphCode, StringComparison.Ordinal))
+                if (!ParagraphPublicCode.TryParse(hits[i].Code, out ParagraphPublicCode.Parsed hitParsed)
+                    || !string.Equals(hitParsed.BaseCode, parsed.BaseCode, StringComparison.Ordinal))
                 {
                     continue;
                 }
 
                 n++;
+                if (!parsed.RequiresUnique && n == parsed.Occurrence)
+                {
+                    return hits[i].ParaNo;
+                }
+
                 paraNo = hits[i].ParaNo;
             }
 
-            if (n != 1)
+            if (parsed.RequiresUnique && n == 1)
             {
-                return 0;
+                return paraNo;
             }
 
-            return paraNo;
+            return 0;
         }
 
         private static int PieceAt(int[] starts, int idx, int markLen)

@@ -25,7 +25,7 @@ namespace WordAddIn1.DocumentMapping
             RegexOptions.Compiled);
 
         private static readonly Regex ParagraphStartRegex = new Regex(
-            @"\[(P_[0-9a-zA-Z]{5})-start\]",
+            @"\[(P_[0-9a-zA-Z]{5}(?:_[1-9][0-9]*)?)(?:-start| start)\]",
             RegexOptions.Compiled);
 
         private static readonly Regex InTableMarkerRegex = new Regex(

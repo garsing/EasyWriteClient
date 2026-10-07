@@ -215,7 +215,8 @@ namespace WordAddIn1
                 {
                     return "⚠️ 当前返回的是各分块摘要，不是 paragraph_display_content。"
                         + "大文档请用 F_get_curr_doc_chunk_paragraph_display_content（chunk_idx）取完整 P_ 原文。"
-                        + "\n\n[P_00000-start] 与 [P_00000-end] 是段落编号标记，不是正文。"
+                        + "\n\n[P_00000 start] 与 [P_00000 end] 是段落编号标记，不是正文。"
+                        + "撞码段写作 P_xxxxx_N；套段须原样传入，禁止去掉 _N。"
                         + "套段版式（F_apply_paragraph_format）须使用 P_ 编码，与 S_ 不可混用。";
                 }
 
@@ -227,10 +228,10 @@ namespace WordAddIn1
 
             if (isParagraph)
             {
-                return "注意：[P_00000-start] 与 [P_00000-end] 是段落编号标记，不是正文。"
+                return "注意：[P_00000 start] 与 [P_00000 end] 是段落编号标记，不是正文。"
                     + "套段版式（F_apply_paragraph_format）须使用 P_ 编码；句子改字仍用 S_（code_level=sentence）。"
-                    + "若同一 P_ 出现多次，apply 时须读 suggested_locator_codes 写入 target_paragraph_codes（见 document-format §3.2）；禁止 index。"
-                    + " 表内末段在 [P_…-start] 后带 [in_table=T_xxx]（不是编码）。要插在表后请用 target.table，不要锚该段；要接在该段后仍用 codes。";
+                    + "同文撞码写成 P_xxxxx_N，apply 须原样传入该公开码；禁止传已撞码的光杆 P_，禁止 index。"
+                    + " 表内末段在 [P_… start] 后带 [in_table=T_xxx]（不是编码）。要插在表后请用 target.table，不要锚该段；要接在该段后仍用 codes。";
             }
 
             return "注意：[S_00000-start] 与 [S_00000-end] 是句子编号标记，不是正文。"
@@ -305,9 +306,9 @@ namespace WordAddIn1
                 return "";
             }
 
-            return "注意：以下段落编码在文档中出现多次（相同段落文本复用同一编码）："
+            return "注意：以下段落公开码在 display 中出现多次："
                 + string.Join(", ", duplicateCodes)
-                + "。使用 F_apply_paragraph_format 定位时，须在 target_paragraph_codes 中写入 suggested_locator_codes（见 document-format §3.2）；禁止 index。";
+                + "。套段请用 display 里带 _N 的公开码，禁止传光杆、禁止 index。";
         }
     }
 }

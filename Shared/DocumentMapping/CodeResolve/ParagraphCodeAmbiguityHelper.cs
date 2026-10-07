@@ -18,7 +18,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
         public const string ErrorAmbiguousParagraphCode = DisplaySequenceLocator.ErrorAmbiguousSentenceCode;
 
         private static readonly Regex ParagraphStartRegex = new Regex(
-            @"\[((P_[0-9a-zA-Z]{5}))-start\]",
+            @"\[((P_[0-9a-zA-Z]{5}(?:_[1-9][0-9]*)?))(?:-start| start)\]",
             RegexOptions.Compiled);
 
         public const int ContextTextPreviewMaxChars = LlmFailureExplanationBuilder.ContextTextPreviewMaxChars;
@@ -102,6 +102,24 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
 
                 if (codeList.Count == 0)
                 {
+                    continue;
+                }
+
+                if (codeList.Exists(c => !ParagraphPublicCode.TryParse(c, out _)))
+                {
+                    result.HasBlockingError = true;
+                    result.ErrorCode = DisplaySequenceLocator.ErrorInvalidAnchorSequence;
+                    result.SummaryMessage = BuildInvalidAnchorMessage(
+                        anchor, codeList, DisplaySequenceLocator.ErrorInvalidAnchorSequence);
+                    continue;
+                }
+
+                if (HasBareCodeAgainstCollision(codeList))
+                {
+                    result.HasBlockingError = true;
+                    result.ErrorCode = ErrorAmbiguousParagraphCode;
+                    result.SummaryMessage = BuildBareCollisionMessage(anchor, codeList);
+                    result.Hint = "请使用 paragraph display 里的 P_xxxxx_N，不要传已撞码的光杆 P_。";
                     continue;
                 }
 
@@ -277,6 +295,50 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 ContextLeftSentences = Math.Max(0, Math.Min(5, settings.ContextLeftSentences)),
                 ContextRightSentences = Math.Max(0, Math.Min(5, settings.ContextRightSentences)),
             };
+        }
+
+        private static bool HasBareCodeAgainstCollision(IReadOnlyList<string> codeList)
+        {
+            if (codeList == null || codeList.Count == 0)
+            {
+                return false;
+            }
+
+            List<string> ordered = GetOrderedParagraphCodesFromDisplay();
+            foreach (string code in codeList)
+            {
+                if (!ParagraphPublicCode.TryParse(code, out ParagraphPublicCode.Parsed parsed)
+                    || !parsed.RequiresUnique)
+                {
+                    continue;
+                }
+
+                int n = 0;
+                foreach (string displayed in ordered)
+                {
+                    if (ParagraphPublicCode.TryParse(displayed, out ParagraphPublicCode.Parsed hit)
+                        && string.Equals(hit.BaseCode, parsed.BaseCode, StringComparison.Ordinal))
+                    {
+                        n++;
+                    }
+                }
+
+                if (n >= 2)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string BuildBareCollisionMessage(
+            DocumentActionAmbiguityAnchor anchor,
+            IReadOnlyList<string> codeList)
+        {
+            string label = $"action[{anchor?.ActionIndex ?? 0}].{anchor?.Field ?? "codes"}";
+            string codes = string.Join(",", codeList ?? Array.Empty<string>());
+            return $"光杆段落码已撞码，无法定位 {label}（codes={codes}）";
         }
 
         private static List<string> ParseCodeList(string codes)

@@ -507,7 +507,7 @@ namespace WordAddIn1
 
         public static bool IsParagraphCode(string code)
         {
-            return !string.IsNullOrEmpty(code) && code.StartsWith("P_", StringComparison.Ordinal);
+            return ParagraphPublicCode.TryParse(code, out _);
         }
 
         public static bool IsSentenceCode(string code)

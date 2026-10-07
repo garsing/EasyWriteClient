@@ -10,7 +10,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
     /// </summary>
     public static class ParagraphCodeResolver
     {
-        /// <summary>Find 失败（含空段 I4-A）。Step B+ 使用。</summary>
+        /// <summary>字符序落不到段。</summary>
         public const string ErrorParagraphRangeNotFound = "paragraph_range_not_found";
 
         /// <summary>未 ProcessDocument / 无 P_ mapping。</summary>
@@ -38,6 +38,11 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             if (string.IsNullOrEmpty(paragraphCode))
             {
                 return Array.Empty<string>();
+            }
+
+            if (ParagraphPublicCode.TryGetBaseCode(paragraphCode, out string baseCode))
+            {
+                paragraphCode = baseCode;
             }
 
             if (!DocumentState.ParagraphToSentences.TryGetValue(paragraphCode, out List<string> sentences)
@@ -68,7 +73,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 debugTag);
         }
 
-        /// <summary>带 errorCode 的解析；Find / mapping 失败时不抛异常。</summary>
+        /// <summary>带 errorCode 的解析；mapping / 段号失败时不抛异常。</summary>
         public static bool TryResolveParagraphRange(
             Word.Document doc,
             string paragraphCode,
@@ -91,18 +96,10 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 return false;
             }
 
-            string storedText = DocumentState.GetParagraphContent(paragraphCode);
-            if (string.IsNullOrEmpty(storedText))
+            if (!DocumentState.HasParagraphMapping(paragraphCode))
             {
                 errorCode = ErrorParagraphMappingMissing;
-                errorMessage = $"未找到段落映射或 content 为空: {paragraphCode}";
-                return false;
-            }
-
-            if (ParagraphCodeAmbiguityHelper.IsEmptyParagraphStoredText(storedText))
-            {
-                errorCode = ErrorParagraphRangeNotFound;
-                errorMessage = $"空段 {paragraphCode} 无法定位 Word 段落 Range（I4-A）";
+                errorMessage = $"未找到段落映射: {paragraphCode}";
                 return false;
             }
 

@@ -1,11 +1,10 @@
 using System.Collections.Generic;
-using WordAddIn1;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1.DocumentMapping.CodeResolve
 {
     /// <summary>
-    /// 在统一栈得到的段落序列 Span 内，按 P_ 编码定位单段 Range（无 occurrenceIndex）。
+    /// 在统一栈得到的段落序列内，按 P_ 落到单段 Range（字符序，不 Find）。
     /// </summary>
     public static class SpanParagraphLocator
     {
@@ -15,19 +14,12 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             string paragraphCode,
             string debugTag = null)
         {
-            if (doc == null || span == null || string.IsNullOrEmpty(paragraphCode))
+            if (doc == null || string.IsNullOrEmpty(paragraphCode))
             {
                 return null;
             }
 
-            string storedText = DocumentState.GetParagraphContent(paragraphCode);
-            if (string.IsNullOrEmpty(storedText))
-            {
-                return null;
-            }
-
-            string tag = string.IsNullOrEmpty(debugTag) ? paragraphCode : debugTag;
-            return StoredTextRangeLocator.LocateInSpan(doc, span, storedText, tag);
+            return ParagraphRangeLocator.TryResolve(doc, paragraphCode, debugTag);
         }
 
         public static Word.Range LocateFirstParagraph(
@@ -41,13 +33,12 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 return null;
             }
 
-            // 单码序列：Span 即该段，避免范围内 Find 与 scope 重合
             if (codeList.Count == 1)
             {
                 return span;
             }
 
-            return LocateParagraph(doc, span, codeList[0], debugTag);
+            return ParagraphRangeLocator.TryResolve(doc, codeList[0], debugTag);
         }
 
         public static Word.Range LocateLastParagraph(
@@ -66,7 +57,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 return span;
             }
 
-            return LocateParagraph(doc, span, codeList[codeList.Count - 1], debugTag);
+            return ParagraphRangeLocator.TryResolve(doc, codeList[codeList.Count - 1], debugTag);
         }
     }
 }

@@ -52,14 +52,21 @@ namespace WordDocumentRoundtripTest
                     && caseFilter.IndexOf("pwalk", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool onlyPsplit = !string.IsNullOrEmpty(caseFilter)
                     && caseFilter.IndexOf("psplit", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool onlyPnth = !string.IsNullOrEmpty(caseFilter)
+                    && caseFilter.IndexOf("pnth", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool onlyPchars = !string.IsNullOrEmpty(caseFilter)
                     && caseFilter.IndexOf("pchars", StringComparison.OrdinalIgnoreCase) >= 0;
-                if (onlyPsplit)
+                if (onlyPnth)
+                {
+                    RunPublicCodeNth(run);
+                }
+                else if (onlyPsplit)
                 {
                     RunSplitConvertedVsParas(run, app);
                 }
                 else if (onlyPwalk)
                 {
+                    RunPublicCodeNth(run);
                     RunConvertParaWalk(run, app);
                 }
                 else if (onlyPchars)
@@ -944,9 +951,9 @@ namespace WordDocumentRoundtripTest
         }
 
         private static readonly Regex DisplayCodeStart = new Regex(
-            @"\[(?:P|S)_[^\]]+-start\]", RegexOptions.Compiled);
+            @"\[(?:P|S)_[^\]]+?(?:-start| start)\]", RegexOptions.Compiled);
         private static readonly Regex DisplayCodeEnd = new Regex(
-            @"\[(?:P|S)_[^\]]+-end\]", RegexOptions.Compiled);
+            @"\[(?:P|S)_[^\]]+?(?:-end| end)\]", RegexOptions.Compiled);
         private static readonly Regex DisplayInTable = new Regex(
             @"\[in_table=[^\]]+\]", RegexOptions.Compiled);
         private static readonly Regex DisplayImage = new Regex(
@@ -1038,7 +1045,7 @@ namespace WordDocumentRoundtripTest
         }
 
         private static readonly Regex DisplayPBlock = new Regex(
-            @"\[P_[^\]]+-start\](.*?)\[P_[^\]]+-end\]",
+            @"\[P_[^\]]+?(?:-start| start)\](.*?)\[P_[^\]]+?(?:-end| end)\]",
             RegexOptions.Compiled | RegexOptions.Singleline);
 
         private static void DumpPSlotVsCount(
@@ -1906,6 +1913,46 @@ namespace WordDocumentRoundtripTest
             return pieces;
         }
 
+        private static void RunPublicCodeNth(TestRun run)
+        {
+            try
+            {
+                string display = BuildParagraphDisplayContent.Build(
+                    new[] { "" },
+                    new List<IReadOnlyList<string>>
+                    {
+                        new List<string> { "P_00003", "P_00001", "P_00003" }
+                    },
+                    new Dictionary<string, string>
+                    {
+                        ["P_00003"] = "重复段。\r",
+                        ["P_00001"] = "中间段。\r",
+                    });
+
+                bool wroteN = display.IndexOf("[P_00003_1 start]", StringComparison.Ordinal) >= 0
+                    && display.IndexOf("[P_00003_2 start]", StringComparison.Ordinal) >= 0
+                    && display.IndexOf("[P_00001 start]", StringComparison.Ordinal) >= 0
+                    && display.IndexOf("[P_00003-start]", StringComparison.Ordinal) < 0;
+
+                int first = DisplayParagraphIndexMap.ResolveParaIndex(display, "P_00003_1");
+                int second = DisplayParagraphIndexMap.ResolveParaIndex(display, "P_00003_2");
+                int mid = DisplayParagraphIndexMap.ResolveParaIndex(display, "P_00001");
+                int bare = DisplayParagraphIndexMap.ResolveParaIndex(display, "P_00003");
+
+                bool ok = wroteN && first == 1 && mid == 2 && second == 3 && bare == 0;
+                Ok(run, "fs-p-nth", ok,
+                    "写出=" + wroteN
+                    + "  _1=" + first
+                    + "  中=" + mid
+                    + "  _2=" + second
+                    + "  光杆=" + bare);
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-p-nth", ex.GetType().Name + ": " + ex.Message);
+            }
+        }
+
         private static void RunConvertParaWalk(TestRun run, Word.Application app)
         {
             string path = ResolveAlignDocPath();
@@ -2191,7 +2238,8 @@ namespace WordDocumentRoundtripTest
 
                     string tag = text.Substring(i + 1, close - i - 1);
                     if (tag.StartsWith("P_", StringComparison.Ordinal)
-                        && tag.EndsWith("-start", StringComparison.Ordinal))
+                        && (tag.EndsWith("-start", StringComparison.Ordinal)
+                            || tag.EndsWith(" start", StringComparison.Ordinal)))
                     {
                         openCode = tag.Substring(0, tag.Length - 6);
                         inner.Length = 0;
@@ -2199,7 +2247,8 @@ namespace WordDocumentRoundtripTest
                         assignedPara = 0;
                     }
                     else if (tag.StartsWith("P_", StringComparison.Ordinal)
-                        && tag.EndsWith("-end", StringComparison.Ordinal))
+                        && (tag.EndsWith("-end", StringComparison.Ordinal)
+                            || tag.EndsWith(" end", StringComparison.Ordinal)))
                     {
                         string code = tag.Substring(0, tag.Length - 4);
                         hits.Add(new PWalkHit

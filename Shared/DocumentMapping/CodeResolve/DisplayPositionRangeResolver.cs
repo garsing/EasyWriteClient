@@ -69,7 +69,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
         }
 
         /// <summary>
-        /// P_ 多码跨度定位：拼接段落 storedText 后整体 Find（镜像 ResolveSpan）。
+        /// P_ 多码跨度：display 连续后按段号合并 Range，不 Find。
         /// </summary>
         public static Word.Range ResolveParagraphSpan(
             Word.Document doc,
@@ -99,27 +99,15 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 }
             }
 
-            string combinedText = BuildCombinedParagraphStoredText(codeList);
-            if (string.IsNullOrEmpty(combinedText))
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[DisplayPositionRangeResolver] ResolveParagraphSpan 拼接文本为空 codes=[{string.Join(",", codeList)}]");
-                return null;
-            }
-
             string tag = string.IsNullOrEmpty(debugTag)
                 ? $"para_span[{string.Join(",", codeList)}]"
                 : debugTag;
 
             System.Diagnostics.Debug.WriteLine(
-                $"[DisplayPositionRangeResolver] ResolveParagraphSpan combinedFind " +
-                $"codes={codeList.Count} textLen={combinedText.Length} tag={tag}");
+                $"[DisplayPositionRangeResolver] ResolveParagraphSpan 段号合并 " +
+                $"codes={codeList.Count} tag={tag}");
 
-            return StoredTextRangeLocator.LocateFirst(
-                doc,
-                combinedText,
-                tableId,
-                tag);
+            return ParagraphRangeLocator.TryResolve(doc, codeList, domain, tag);
         }
 
         private static string BuildCombinedStoredText(IReadOnlyList<string> codeList)
@@ -132,25 +120,6 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 {
                     System.Diagnostics.Debug.WriteLine(
                         $"[DisplayPositionRangeResolver] 编码无 storedText: {code}");
-                    return null;
-                }
-
-                sb.Append(content);
-            }
-
-            return sb.ToString();
-        }
-
-        private static string BuildCombinedParagraphStoredText(IReadOnlyList<string> codeList)
-        {
-            var sb = new StringBuilder();
-            foreach (string code in codeList)
-            {
-                string content = DocumentState.GetParagraphContent(code);
-                if (string.IsNullOrEmpty(content))
-                {
-                    System.Diagnostics.Debug.WriteLine(
-                        $"[DisplayPositionRangeResolver] 段落编码无 storedText: {code}");
                     return null;
                 }
 
