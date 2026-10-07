@@ -1752,9 +1752,8 @@ namespace WordAddIn1
                 // 5. 递归提取单元格内容（段落、文本、嵌套表格等）
                 string cellContent = ProcessElementRecursive(cell, w, document, docPath, imageSaveDir, fileHash);
                 
-                // 5.1 去掉单元格内容最后的换行符（\r）
-                // 单元格内最后一个换行符只是表示单元格内是一个段落，不是实际的换行符
-                cellContent = cellContent.TrimEnd('\r');
+                // 5.1 只去掉格末 1 个 \r（格标配套）。格内真分段的 \r 要留。
+                cellContent = TrimLastCellParagraphMark(cellContent);
                 
                 // 5.2 如果单元格内容以 <image /> 结尾，需要添加 \r（统一格式）
                 // 匹配 <image /> 或 <image ... /> 格式（支持带属性的自闭合标签）
@@ -1776,8 +1775,7 @@ namespace WordAddIn1
                 LogExtractVerbose($"[DEBUG] 单元格处理失败: {ex.Message}");
                 // 降级处理：输出基本cell标签
                 string cellContent = ProcessElementRecursive(cell, w, document, docPath, imageSaveDir, fileHash);
-                // 去掉单元格内容最后的换行符（\r）
-                cellContent = cellContent.TrimEnd('\r');
+                cellContent = TrimLastCellParagraphMark(cellContent);
                 // 如果单元格内容以 <image /> 结尾，需要添加 \r（统一格式）
                 if (Regex.IsMatch(cellContent, @"<image\s+[^>]*/>\s*$", RegexOptions.IgnoreCase))
                 {
@@ -1787,6 +1785,19 @@ namespace WordAddIn1
             }
             
             return result;
+        }
+
+        /// <summary>
+        /// 格末只削 1 个 \r。多个 \r 时前面的是格内真分段，Find 的 ^p 能搜到，不能 TrimEnd。
+        /// </summary>
+        private static string TrimLastCellParagraphMark(string cellContent)
+        {
+            if (string.IsNullOrEmpty(cellContent) || cellContent[cellContent.Length - 1] != '\r')
+            {
+                return cellContent;
+            }
+
+            return cellContent.Substring(0, cellContent.Length - 1);
         }
 
         /// <summary>
