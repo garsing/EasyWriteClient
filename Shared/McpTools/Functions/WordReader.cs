@@ -930,7 +930,7 @@ namespace WordAddIn1
         {
             string idAttr = string.IsNullOrEmpty(imageId) ? "" : $" id=\"{EscapeXmlAttribute(imageId)}\"";
             string src = EscapeXmlAttribute(imagePath ?? "");
-            return $"<image{idAttr} src=\"{src}\"/>\r";
+            return $"<image{idAttr} src=\"{src}\"/>";
         }
 
         private static string AllocatePlaceholderImagePath()
@@ -1755,13 +1755,6 @@ namespace WordAddIn1
                 // 5.1 只去掉格末 1 个 \r（格标配套）。格内真分段的 \r 要留。
                 cellContent = TrimLastCellParagraphMark(cellContent);
                 
-                // 5.2 如果单元格内容以 <image /> 结尾，需要添加 \r（统一格式）
-                // 匹配 <image /> 或 <image ... /> 格式（支持带属性的自闭合标签）
-                if (Regex.IsMatch(cellContent, @"<image\s+[^>]*/>\s*$", RegexOptions.IgnoreCase))
-                {
-                    cellContent += "\r";
-                }
-                
                 // 6. 输出带合并信息的 cell 标签
                 result = $"<{TableMarkupTags.Td}{attrStr}>";
                 result += cellContent;  // 递归提取的内容
@@ -1776,11 +1769,6 @@ namespace WordAddIn1
                 // 降级处理：输出基本cell标签
                 string cellContent = ProcessElementRecursive(cell, w, document, docPath, imageSaveDir, fileHash);
                 cellContent = TrimLastCellParagraphMark(cellContent);
-                // 如果单元格内容以 <image /> 结尾，需要添加 \r（统一格式）
-                if (Regex.IsMatch(cellContent, @"<image\s+[^>]*/>\s*$", RegexOptions.IgnoreCase))
-                {
-                    cellContent += "\r";
-                }
                 result = $"<{TableMarkupTags.Td}>{cellContent}</{TableMarkupTags.Td}>\n";
             }
             

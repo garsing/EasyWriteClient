@@ -841,7 +841,8 @@ namespace WordDocumentRoundtripTest
                 Console.Out.Flush();
 
                 string converted = DisplayToStory(display);
-                string storyNoImg = (story ?? "").Replace("\x01", "").Replace("/\r", "");
+                int slashRemoved;
+                string storyNoImg = StripComPictureChars(doc, story ?? "", out slashRemoved);
                 int leftoverSoH = 0;
                 foreach (char ch in storyNoImg)
                 {
@@ -852,8 +853,9 @@ namespace WordDocumentRoundtripTest
                 }
 
                 Console.WriteLine("    转换后(去 image 标签) Length=" + converted.Length);
-                Console.WriteLine("    story 去 \\x01 和 /\\r Length=" + storyNoImg.Length
+                Console.WriteLine("    story 只去图占位 / 和 \\x01 Length=" + storyNoImg.Length
                     + "  原=" + story.Length
+                    + "  去 /=" + slashRemoved
                     + "  仍剩 \\x01=" + leftoverSoH);
                 ReportStoryDiff("双方去图", converted, storyNoImg);
                 DumpImageGap(display, converted, story);
@@ -892,13 +894,81 @@ namespace WordDocumentRoundtripTest
         private static readonly Regex DisplayInTable = new Regex(
             @"\[in_table=[^\]]+\]", RegexOptions.Compiled);
         private static readonly Regex DisplayImage = new Regex(
-            @"<image\b[^>]*/?>\r?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            @"<image\b[^>]*/?>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex DisplayChart = new Regex(
             @"<Chart\b[^>]*>[\s\S]*?</Chart\s*>|<Chart\b[^>]*/>",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex DisplayAttrInt = new Regex(
             @"(colspan|rowspan)\s*=\s*""?(\d+)""?",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static string StripComPictureChars(Word.Document doc, string story, out int slashRemoved)
+        {
+            slashRemoved = 0;
+            if (string.IsNullOrEmpty(story))
+            {
+                return "";
+            }
+
+            string s = story.Replace("\x01", "");
+            Word.InlineShapes pics = doc.InlineShapes;
+            int n = pics.Count;
+            for (int i = 1; i <= n; i++)
+            {
+                Word.Range picRange;
+                try
+                {
+                    picRange = pics[i].Range;
+                }
+                catch
+                {
+                    continue;
+                }
+
+                string picText = picRange.Text ?? "";
+                if (picText.IndexOf('/') < 0)
+                {
+                    continue;
+                }
+
+                int from = picRange.Start - 16;
+                if (from < doc.Content.Start)
+                {
+                    from = doc.Content.Start;
+                }
+
+                string prefix;
+                try
+                {
+                    prefix = (from < picRange.Start)
+                        ? (doc.Range(from, picRange.Start).Text ?? "")
+                        : "";
+                }
+                catch
+                {
+                    prefix = "";
+                }
+
+                prefix = prefix.Replace("\x01", "");
+                string needle = prefix + "/";
+                int at = string.IsNullOrEmpty(prefix)
+                    ? s.IndexOf('/')
+                    : s.IndexOf(needle, StringComparison.Ordinal);
+                if (at < 0)
+                {
+                    continue;
+                }
+
+                int slashAt = string.IsNullOrEmpty(prefix) ? at : at + prefix.Length;
+                if (slashAt >= 0 && slashAt < s.Length && s[slashAt] == '/')
+                {
+                    s = s.Remove(slashAt, 1);
+                    slashRemoved++;
+                }
+            }
+
+            return s;
+        }
 
         private static string DisplayToStory(string display)
         {
@@ -908,7 +978,7 @@ namespace WordDocumentRoundtripTest
             }
 
             string s = StripDisplayWrappers(display);
-            return ConvertTables(s).Replace("\n", "");
+            return ConvertTables(s).Replace("\n", "\x0B");
         }
 
         private static string StripDisplayWrappers(string display)
