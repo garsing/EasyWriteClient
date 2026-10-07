@@ -47,7 +47,13 @@ namespace WordDocumentRoundtripTest
                     && caseFilter.IndexOf("pratext", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool onlyDalign = !string.IsNullOrEmpty(caseFilter)
                     && caseFilter.IndexOf("dalign", StringComparison.OrdinalIgnoreCase) >= 0;
-                if (onlyDalign)
+                bool onlyPchars = !string.IsNullOrEmpty(caseFilter)
+                    && caseFilter.IndexOf("pchars", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (onlyPchars)
+                {
+                    RunRealDocParaChars(run, app);
+                }
+                else if (onlyDalign)
                 {
                     RunRealDocDisplayAlign(run, app);
                 }
@@ -1571,6 +1577,132 @@ namespace WordDocumentRoundtripTest
                 + "  首差=" + i);
             Console.WriteLine("    conv  " + QuoteSpecial(Peek(converted, Math.Max(0, i - 12), 36)));
             Console.WriteLine("    story " + QuoteSpecial(Peek(story, Math.Max(0, i - 12), 36)));
+        }
+
+        private static string ResolveAlignDocPath()
+        {
+            if (!string.IsNullOrEmpty(AlignDocPath))
+            {
+                return AlignDocPath;
+            }
+
+            return System.IO.File.Exists(RealDocxPath) ? RealDocxPath : RealDocPath;
+        }
+
+        private static void RunRealDocParaChars(TestRun run, Word.Application app)
+        {
+            string path = ResolveAlignDocPath();
+            if (!System.IO.File.Exists(path))
+            {
+                run.CaseSkip("fs-para-chars-time", "文件不在: " + path);
+                return;
+            }
+
+            Word.Document doc = null;
+            bool weOpened = false;
+            bool oldUpdate = true;
+            try
+            {
+                string norm = System.IO.Path.GetFullPath(path);
+                foreach (Word.Document d in app.Documents)
+                {
+                    try
+                    {
+                        if (string.Equals(
+                            System.IO.Path.GetFullPath(d.FullName),
+                            norm,
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            doc = d;
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (doc == null)
+                {
+                    object fileName = path;
+                    object readOnly = true;
+                    object missing = System.Reflection.Missing.Value;
+                    doc = app.Documents.Open(
+                        ref fileName,
+                        ref missing,
+                        ref readOnly);
+                    weOpened = true;
+                }
+
+                oldUpdate = app.ScreenUpdating;
+                app.ScreenUpdating = false;
+                try
+                {
+                    app.DisplayAlerts = Word.WdAlertLevel.wdAlertsNone;
+                }
+                catch
+                {
+                }
+
+                Console.WriteLine("  --- 按段扫 Characters.Text ---");
+                Console.WriteLine("    path=" + path);
+                Console.Out.Flush();
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                int nPara = doc.Paragraphs.Count;
+                Console.WriteLine("    Paragraphs.Count=" + nPara
+                    + "  取Count=" + sw.Elapsed.TotalSeconds.ToString("F2") + "s");
+                Console.Out.Flush();
+
+                sw.Restart();
+                int nChar = 0;
+                int i = 0;
+                foreach (Word.Paragraph para in doc.Paragraphs)
+                {
+                    Word.Characters chars = para.Range.Characters;
+                    int n = chars.Count;
+                    for (int c = 1; c <= n; c++)
+                    {
+                        string t = chars[c].Text ?? "";
+                        nChar += t.Length;
+                    }
+
+                    i++;
+                    if (i % 20 == 0 || i == nPara)
+                    {
+                        Console.WriteLine("    段 " + i + "/" + nPara
+                            + "  字 " + nChar
+                            + "  " + sw.Elapsed.TotalSeconds.ToString("F1") + "s");
+                        Console.Out.Flush();
+                    }
+                }
+
+                sw.Stop();
+                Console.WriteLine("    扫完 段=" + i + "  字=" + nChar
+                    + "  用时=" + sw.Elapsed.TotalSeconds.ToString("F1") + "s");
+                Ok(run, "fs-para-chars-time", i == nPara,
+                    "段=" + i + " 字=" + nChar
+                    + " " + sw.Elapsed.TotalSeconds.ToString("F1") + "s");
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-para-chars-time", ex.GetType().Name + ": " + ex.Message);
+            }
+            finally
+            {
+                try
+                {
+                    app.ScreenUpdating = oldUpdate;
+                }
+                catch
+                {
+                }
+
+                if (weOpened && doc != null)
+                {
+                    CloseDoc(doc);
+                }
+            }
         }
 
         private static void RunRealDocParaTexts(TestRun run, Word.Application app)
