@@ -80,6 +80,7 @@
       </div>
     </div>
 
+    <p class="ai-content-label" role="note">内容由人工智能生成，请注意甄别</p>
     <div class="input-wrapper">
       <a-textarea
         ref="textareaRef"
@@ -103,7 +104,6 @@
         <img :src="currentIcon" :alt="isProcessing ? '停止' : '发送'" class="send-icon" />
       </button>
     </div>
-    <p class="ai-content-label" role="note">内容由人工智能生成，请注意甄别</p>
   </div>
 </template>
 
@@ -426,14 +426,14 @@ const handleShiftEnter = () => {}
 <style scoped>
 /* 插件默认：紧凑单行输入 */
 .chat-input-container {
-  padding: 12px 8px 8px 16px;
+  padding: 12px 8px 12px 16px;
   background-color: #f7f7f5;
   border-top: 1px solid transparent;
   flex-shrink: 0;
 }
 
 .ai-content-label {
-  margin: 8px 0 0;
+  margin: 0 0 8px;
   padding: 0 8px 0 0;
   font-size: 11px;
   line-height: 1.4;
@@ -656,12 +656,12 @@ const handleShiftEnter = () => {}
 
 /* 桌面端：外层与面板同色，仅内框白色；外层 padding 收紧使内框更贴边 */
 .chat-input-container--desktop {
-  padding: 6px 10px 8px;
+  padding: 6px 10px 10px;
   background-color: #f7f7f5;
 }
 
 .chat-input-container--desktop .ai-content-label {
-  margin-top: 6px;
+  margin: 0 0 6px;
   padding: 0;
 }
 
