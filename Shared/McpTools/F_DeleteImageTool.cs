@@ -24,6 +24,11 @@ namespace WordAddIn1
             {
                 try
                 {
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -40,11 +45,6 @@ namespace WordAddIn1
                     string imageId = args != null && args.ContainsKey("image_id")
                         ? args["image_id"]?.ToString()?.Trim()
                         : "";
-                    string idErr = ValidateImageId(imageId);
-                    if (idErr != null)
-                    {
-                        return Fail(idErr);
-                    }
 
                     try
                     {
@@ -114,6 +114,24 @@ namespace WordAddIn1
                     return Fail($"删除图片失败: {ex.Message}");
                 }
             };
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            string imageId = args != null && args.ContainsKey("image_id")
+                ? args["image_id"]?.ToString()?.Trim()
+                : "";
+            string idErr = ValidateImageId(imageId);
+            if (idErr != null)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(idErr);
+                return true;
+            }
+
+            return false;
         }
 
         private static string ValidateImageId(string imageId)

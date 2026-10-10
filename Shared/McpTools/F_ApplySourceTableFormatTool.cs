@@ -16,6 +16,11 @@ namespace WordAddIn1
             {
                 try
                 {
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     string targetTableId = FormatSourceResolver.GetArgString(args, "target_table_id");
                     string kbTableId = FormatSourceResolver.GetArgString(args, "kb_table_id");
 
@@ -70,6 +75,28 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = $"apply_source_table_format 失败: {ex.Message}" };
                 }
             };
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            string targetTableId = FormatSourceResolver.GetArgString(args, "target_table_id");
+            if (string.IsNullOrWhiteSpace(targetTableId))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("缺少 target_table_id");
+                return true;
+            }
+
+            string kbTableId = FormatSourceResolver.GetArgString(args, "kb_table_id");
+            if (string.IsNullOrWhiteSpace(kbTableId))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("缺少 kb_table_id");
+                return true;
+            }
+
+            return false;
         }
     }
 }

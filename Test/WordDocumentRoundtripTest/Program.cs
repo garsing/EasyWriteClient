@@ -24,6 +24,12 @@ namespace WordDocumentRoundtripTest
                 return RollbackLiveProbe.Run(host);
             }
 
+            if (string.Equals(caseFilter, "ckpt-skip-parse", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                return ContractSkipCkptProbe.Run();
+            }
+
             bool runActions = !runFindStale && !runLayout
                 && caseFilter.StartsWith("wa-", StringComparison.OrdinalIgnoreCase);
             bool runContent = !runFindStale && !runLayout && !runActions

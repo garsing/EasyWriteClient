@@ -22,6 +22,11 @@ namespace WordAddIn1
                 string pngPath = null;
                 try
                 {
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -41,37 +46,13 @@ namespace WordAddIn1
 
                     string pathArg = FilePathResolver.TryGetArg(args, "path");
                     string svg = args != null && args.ContainsKey("svg") ? args["svg"]?.ToString() : null;
-                    if (!string.IsNullOrEmpty(pathArg) && !string.IsNullOrEmpty(svg))
-                    {
-                        return Fail("path 与 svg 只能传其中一个");
-                    }
-
-                    if (string.IsNullOrEmpty(pathArg) && string.IsNullOrEmpty(svg))
-                    {
-                        return Fail("必须提供 path 或 svg");
-                    }
-
                     if (!string.IsNullOrEmpty(pathArg))
                     {
-                        if (!FilePathResolver.TryResolve(pathArg, out ResolvedFilePath svgResolved, out string pathError))
-                        {
-                            return Fail(pathError);
-                        }
-
-                        var svgRead = await FilePathResolver.ReadAsync(svgResolved).ConfigureAwait(true);
-                        if (!svgRead.Success)
-                        {
-                            return Fail(svgRead.Error);
-                        }
-
-                        svg = svgRead.Text;
+                        FilePathResolver.TryResolve(pathArg, out ResolvedFilePath svgResolved, out _);
+                        DocumentCheckpointMutatingTools.TryReadLocalText(svgResolved, out svg, out _);
                     }
 
                     var validation = SvgSecurityValidator.Validate(svg);
-                    if (!validation.Success)
-                    {
-                        return Fail(validation.Error);
-                    }
 
                     double? widthCm = TryParseWidthCm(args);
 
@@ -203,6 +184,50 @@ namespace WordAddIn1
             }
 
             return null;
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            string pathArg = FilePathResolver.TryGetArg(args, "path");
+            string svg = args != null && args.ContainsKey("svg") ? args["svg"]?.ToString() : null;
+            if (!string.IsNullOrEmpty(pathArg) && !string.IsNullOrEmpty(svg))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("path 与 svg 只能传其中一个");
+                return true;
+            }
+
+            if (string.IsNullOrEmpty(pathArg) && string.IsNullOrEmpty(svg))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("必须提供 path 或 svg");
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(pathArg))
+            {
+                if (!FilePathResolver.TryResolve(pathArg, out ResolvedFilePath svgResolved, out string pathError))
+                {
+                    failure = DocumentCheckpointMutatingTools.Fail(pathError);
+                    return true;
+                }
+
+                if (!DocumentCheckpointMutatingTools.TryReadLocalText(svgResolved, out svg, out string readError))
+                {
+                    failure = DocumentCheckpointMutatingTools.Fail(readError);
+                    return true;
+                }
+            }
+
+            var validation = SvgSecurityValidator.Validate(svg);
+            if (!validation.Success)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(validation.Error);
+                return true;
+            }
+
+            return false;
         }
 
         private static ToolResult Fail(string error)

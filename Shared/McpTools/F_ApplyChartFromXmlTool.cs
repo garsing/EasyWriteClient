@@ -23,6 +23,11 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[ApplyChart] 开始套用图表 XML");
 
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -45,24 +50,10 @@ namespace WordAddIn1
                     }
 
                     string chartId = args.ContainsKey("chart_id") ? args["chart_id"]?.ToString() : "";
-                    if (string.IsNullOrEmpty(chartId))
-                    {
-                        return new ToolResult { Success = false, Error = "未提供图表编号" };
-                    }
-
                     string scope = "all";
                     if (args.ContainsKey("scope") && args["scope"] != null)
                     {
                         scope = args["scope"]?.ToString()?.Trim().ToLowerInvariant() ?? "all";
-                    }
-
-                    if (scope != "all" && scope != "format" && scope != "data")
-                    {
-                        return new ToolResult
-                        {
-                            Success = false,
-                            Error = $"scope 无效: '{scope}'，有效值为: all, format, data"
-                        };
                     }
 
                     string mode = "full";
@@ -71,30 +62,7 @@ namespace WordAddIn1
                         mode = args["mode"]?.ToString()?.Trim().ToLowerInvariant() ?? "full";
                     }
 
-                    string xmlContent = null;
-                    if (args.ContainsKey("xml_content") && !string.IsNullOrEmpty(args["xml_content"]?.ToString()))
-                    {
-                        xmlContent = args["xml_content"].ToString();
-                    }
-                    else if (FilePathResolver.TryGetArg(args, "path", "filename") != null)
-                    {
-                        if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out string pathError, "path", "filename"))
-                        {
-                            return new ToolResult { Success = false, Error = pathError };
-                        }
-
-                        var xmlRead = await FilePathResolver.ReadAsync(xmlResolved).ConfigureAwait(false);
-                        if (!xmlRead.Success)
-                        {
-                            return new ToolResult { Success = false, Error = xmlRead.Error };
-                        }
-
-                        xmlContent = xmlRead.Text;
-                    }
-                    else
-                    {
-                        return new ToolResult { Success = false, Error = "必须提供 path 或 xml_content 参数" };
-                    }
+                    TryGetXmlContent(args, out string xmlContent, out _);
 
                     try
                     {
@@ -203,6 +171,83 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = $"图表套用失败: {ex.Message}" };
                 }
             };
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            string chartId = args != null && args.ContainsKey("chart_id")
+                ? args["chart_id"]?.ToString()
+                : "";
+            if (string.IsNullOrEmpty(chartId))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("未提供图表编号");
+                return true;
+            }
+
+            string scope = "all";
+            if (args != null && args.ContainsKey("scope") && args["scope"] != null)
+            {
+                scope = args["scope"]?.ToString()?.Trim().ToLowerInvariant() ?? "all";
+            }
+
+            if (scope != "all" && scope != "format" && scope != "data")
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(
+                    "scope 无效: '" + scope + "'，有效值为: all, format, data");
+                return true;
+            }
+
+            if (!TryGetXmlContent(args, out string xmlContent, out string xmlError))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(xmlError);
+                return true;
+            }
+
+            var parseResult = ChartConfigXmlParser.ParseAsync(xmlContent).GetAwaiter().GetResult();
+            if (!parseResult.Success)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(parseResult.Error ?? "XML解析失败");
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryGetXmlContent(
+            Dictionary<string, object> args,
+            out string xmlContent,
+            out string error)
+        {
+            xmlContent = null;
+            error = null;
+            if (args != null && args.ContainsKey("xml_content") && !string.IsNullOrEmpty(args["xml_content"]?.ToString()))
+            {
+                xmlContent = args["xml_content"].ToString();
+                return true;
+            }
+
+            if (FilePathResolver.TryGetArg(args, "path", "filename") != null)
+            {
+                if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out string pathError, "path", "filename"))
+                {
+                    error = pathError;
+                    return false;
+                }
+
+                if (!DocumentCheckpointMutatingTools.TryReadLocalText(xmlResolved, out xmlContent, out string readError))
+                {
+                    error = readError;
+                    return false;
+                }
+
+                return true;
+            }
+
+            error = "必须提供 path 或 xml_content 参数";
+            return false;
         }
     }
 }

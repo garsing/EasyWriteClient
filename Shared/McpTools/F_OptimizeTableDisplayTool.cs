@@ -19,6 +19,11 @@ namespace WordAddIn1
             {
                 try
                 {
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -33,10 +38,6 @@ namespace WordAddIn1
                         $"[F_optimize_table_display] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
-                    if (string.IsNullOrEmpty(tableId))
-                    {
-                        return new ToolResult { Success = false, Error = "未提供表格编号" };
-                    }
                     try
                     {
                         WordReader.ReadWord(document);
@@ -154,5 +155,21 @@ namespace WordAddIn1
             return data;
         }
 
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            string tableId = args != null && args.ContainsKey("table_id")
+                ? args["table_id"]?.ToString()
+                : "";
+            if (string.IsNullOrEmpty(tableId))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("未提供表格编号");
+                return true;
+            }
+
+            return false;
+        }
     }
 }

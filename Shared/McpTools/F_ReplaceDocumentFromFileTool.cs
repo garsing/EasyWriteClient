@@ -19,37 +19,16 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out string pathError, "path", "replace_file"))
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
                     {
-                        return new ToolResult { Success = false, Error = pathError };
+                        return contractFail;
                     }
 
-                    string originalCodes = args.ContainsKey("original_codes")
-                        ? args["original_codes"]?.ToString()?.Trim()
-                        : "";
+                    FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out _, "path", "replace_file");
+                    string originalCodes = args["original_codes"]?.ToString()?.Trim();
+                    DocumentCheckpointMutatingTools.TryReadLocalText(resolved, out string fileText, out _);
 
-                    if (string.IsNullOrEmpty(originalCodes))
-                    {
-                        return new ToolResult { Success = false, Error = "必须提供 original_codes 参数（要替换的连续编码序列）" };
-                    }
-
-                    ActionFormatHelper.Spec formatSpec = ActionFormatHelper.ParseFormatObject(args, required: true);
-                    if (!formatSpec.Ok)
-                    {
-                        return new ToolResult
-                        {
-                            Success = false,
-                            Error = formatSpec.Error ?? ActionFormatHelper.MissingFormatError
-                        };
-                    }
-
-                    var loadResult = await FilePathResolver.ReadAsync(resolved).ConfigureAwait(false);
-                    if (!loadResult.Success || string.IsNullOrEmpty(loadResult.Text))
-                    {
-                        return new ToolResult { Success = false, Error = loadResult.Error ?? $"文件内容为空: {resolved.Display}" };
-                    }
-
-                    var processArgs = BuildReplaceProcessArgs(loadResult.Text, originalCodes, args["format"]);
+                    var processArgs = BuildReplaceProcessArgs(fileText, originalCodes, args["format"]);
                     if (args.ContainsKey("channel_id"))
                     {
                         processArgs["channel_id"] = args["channel_id"];
@@ -78,7 +57,7 @@ namespace WordAddIn1
                             path = resolved.Display,
                             replace_file = resolved.Display,
                             original_codes = originalCodes,
-                            characters_replaced = loadResult.Text?.Length ?? 0,
+                            characters_replaced = fileText?.Length ?? 0,
                             process_result = processResult.Data,
                             message = $"已从文件 {resolved.Display} 替换文档内容（编码: {originalCodes}）"
                         }
@@ -90,6 +69,44 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = $"从文件替换文档失败: {ex.Message}" };
                 }
             };
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out string pathError, "path", "replace_file"))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(pathError);
+                return true;
+            }
+
+            string originalCodes = args != null && args.ContainsKey("original_codes")
+                ? args["original_codes"]?.ToString()?.Trim()
+                : "";
+            if (string.IsNullOrEmpty(originalCodes))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(
+                    "必须提供 original_codes 参数（要替换的连续编码序列）");
+                return true;
+            }
+
+            ActionFormatHelper.Spec formatSpec = ActionFormatHelper.ParseFormatObject(args, required: true);
+            if (!formatSpec.Ok)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(
+                    formatSpec.Error ?? ActionFormatHelper.MissingFormatError);
+                return true;
+            }
+
+            if (!DocumentCheckpointMutatingTools.TryReadLocalText(resolved, out _, out string readError))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(readError);
+                return true;
+            }
+
+            return false;
         }
 
         private static Dictionary<string, object> BuildReplaceProcessArgs(

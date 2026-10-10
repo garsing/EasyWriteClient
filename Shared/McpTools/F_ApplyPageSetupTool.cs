@@ -21,6 +21,11 @@ namespace WordAddIn1
             {
                 try
                 {
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -40,10 +45,6 @@ namespace WordAddIn1
 
                     bool applyPageSetup = GetBoolArg(args, "apply_page_setup", true);
                     bool applyHeadersFooters = GetBoolArg(args, "apply_headers_footers", true);
-                    if (!applyPageSetup && !applyHeadersFooters)
-                    {
-                        return Fail("apply_page_setup 与 apply_headers_footers 不能同时为 false");
-                    }
 
                     string contentMode = GetStringArg(args, "page_layout_content_mode");
                     if (string.IsNullOrEmpty(contentMode))
@@ -292,6 +293,23 @@ namespace WordAddIn1
             var created = new Dictionary<string, object>(StringComparer.Ordinal);
             mode[key] = created;
             return created;
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            bool applyPageSetup = GetBoolArg(args, "apply_page_setup", true);
+            bool applyHeadersFooters = GetBoolArg(args, "apply_headers_footers", true);
+            if (!applyPageSetup && !applyHeadersFooters)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(
+                    "apply_page_setup 与 apply_headers_footers 不能同时为 false");
+                return true;
+            }
+
+            return false;
         }
 
         private static ToolResult Fail(string error)

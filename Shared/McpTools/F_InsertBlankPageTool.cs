@@ -24,6 +24,11 @@ namespace WordAddIn1
             {
                 try
                 {
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -168,6 +173,34 @@ namespace WordAddIn1
             }
 
             return error;
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            string parseErr = TryParseOptionalPageNumber(args, out int? pageNumber);
+            if (parseErr != null)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(parseErr);
+                return true;
+            }
+
+            string positionErr = TryParseOptionalPosition(args, out bool atStart);
+            if (positionErr != null)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(positionErr);
+                return true;
+            }
+
+            if (atStart && pageNumber.HasValue)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("position 与 page_number 不能同时传");
+                return true;
+            }
+
+            return false;
         }
 
         private static string TryParseOptionalPageNumber(

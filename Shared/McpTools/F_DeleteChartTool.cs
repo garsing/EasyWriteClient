@@ -21,6 +21,11 @@ namespace WordAddIn1
             {
                 try
                 {
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -43,10 +48,6 @@ namespace WordAddIn1
                     }
 
                     string chartId = args.ContainsKey("chart_id") ? args["chart_id"]?.ToString() : "";
-                    if (string.IsNullOrWhiteSpace(chartId))
-                    {
-                        return new ToolResult { Success = false, Error = "未提供图表编号" };
-                    }
                     try
                     {
                         WordReader.ReadWord(document);
@@ -212,6 +213,23 @@ namespace WordAddIn1
             sb.Append("光标已停留在被删图表原后沿处。");
             sb.Append("请在此位置调用 F_create_chart_from_xml 重建新图（无需传入 position 参数）。");
             return sb.ToString();
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            string chartId = args != null && args.ContainsKey("chart_id")
+                ? args["chart_id"]?.ToString()
+                : "";
+            if (string.IsNullOrWhiteSpace(chartId))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("未提供图表编号");
+                return true;
+            }
+
+            return false;
         }
     }
 }

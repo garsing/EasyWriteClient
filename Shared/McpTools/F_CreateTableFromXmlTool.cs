@@ -79,6 +79,11 @@ namespace WordAddIn1
                     LogPhase("开始");
                     System.Diagnostics.Debug.WriteLine("[DEBUG] 开始创建表格");
 
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -92,44 +97,11 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_create_table_from_xml] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
-                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out string pathError, "path", "filename"))
-                    {
-                        return new ToolResult { Success = false, Error = pathError };
-                    }
-
+                    FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out _, "path", "filename");
                     string filename = xmlResolved.Display;
-                    var xmlRead = await FilePathResolver.ReadAsync(xmlResolved).ConfigureAwait(false);
-                    if (!xmlRead.Success)
-                    {
-                        return new ToolResult { Success = false, Error = xmlRead.Error };
-                    }
-
                     string xmlFilePath = xmlResolved.LocalPath;
-
-                    // 解析XML
                     var parseResult = ParseXmlFile(xmlFilePath);
                     LogPhase($"XML 解析完成 rows={parseResult.Config?.Table?.Rows} cols={parseResult.Config?.Table?.Cols}");
-                    if (parseResult.Config == null)
-                    {
-                        return new ToolResult { Success = false, Error = $"XML解析失败: {parseResult.Error}" };
-                    }
-
-                    // 验证配置
-                    var validationResult = ValidateConfig(parseResult.Config);
-                    if (!validationResult.IsValid)
-                    {
-                        return new ToolResult { Success = false, Error = $"配置验证失败: {validationResult.Error}" };
-                    }
-
-                    if (args.ContainsKey("position") && args["position"] != null
-                        && !string.IsNullOrWhiteSpace(args["position"].ToString()))
-                    {
-                        return new ToolResult
-                        {
-                            Success = false,
-                            Error = "已不再支持顶层 position。正文最前用 target.position=start；句/表/图/图片后用 target.codes / table / chart / image；省略 target 则在当前光标处建表。"
-                        };
-                    }
 
                     RefreshDocumentForCreateTable(document, args);
 
@@ -279,6 +251,48 @@ namespace WordAddIn1
         /// <summary>
         /// 解析XML文件
         /// </summary>
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out string pathError, "path", "filename"))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(pathError);
+                return true;
+            }
+
+            if (!DocumentCheckpointMutatingTools.TryReadLocalText(xmlResolved, out _, out string readError))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(readError);
+                return true;
+            }
+
+            ParseResult parseResult = ParseXmlFile(xmlResolved.LocalPath);
+            if (parseResult.Config == null)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("XML解析失败: " + parseResult.Error);
+                return true;
+            }
+
+            ValidationResult validationResult = ValidateConfig(parseResult.Config);
+            if (!validationResult.IsValid)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("配置验证失败: " + validationResult.Error);
+                return true;
+            }
+
+            if (args != null && args.ContainsKey("position") && args["position"] != null
+                && !string.IsNullOrWhiteSpace(args["position"].ToString()))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(
+                    "已不再支持顶层 position。正文最前用 target.position=start；句/表/图/图片后用 target.codes / table / chart / image；省略 target 则在当前光标处建表。");
+                return true;
+            }
+
+            return false;
+        }
+
         private static ParseResult ParseXmlFile(string filePath)
         {
             try

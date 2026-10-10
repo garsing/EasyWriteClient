@@ -23,6 +23,11 @@ namespace WordAddIn1
             {
                 try
                 {
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -174,6 +179,29 @@ namespace WordAddIn1
             }
 
             return wordApplication as Word.Application;
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            Dictionary<string, object> targetDict = InsertTargetLocatorHelper.TryGetTargetDict(args);
+            if (targetDict == null)
+            {
+                return false;
+            }
+
+            InsertTargetLocatorHelper.LocatorParseResult parsed =
+                InsertTargetLocatorHelper.ParseLocatorObject(
+                    targetDict, sentenceOnly: false, fieldLabel: "target");
+            if (!parsed.Success)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("locate_failed: " + parsed.Error);
+                return true;
+            }
+
+            return false;
         }
     }
 }

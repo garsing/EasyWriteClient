@@ -18,6 +18,11 @@ namespace WordAddIn1
             {
                 try
                 {
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -31,16 +36,8 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_apply_data_provenance] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
-                    if (!DataProvenanceJsonParser.TryParseItems(args, out List<ProvenanceItemInput> items, out string parseError))
-                    {
-                        return Fail(parseError);
-                    }
-
-                    ProvenanceValidationResult structure = DataProvenanceParamValidator.ValidateStructure(items);
-                    if (!structure.Ok)
-                    {
-                        return Fail(structure.Error);
-                    }
+                    DataProvenanceJsonParser.TryParseItems(args, out List<ProvenanceItemInput> items, out _);
+                    DataProvenanceParamValidator.ValidateStructure(items);
 
                     // 不读写 TrackRevisions（2026-08：取消审阅工具注册与默认关审阅）
                     WordDocumentExtractor.ProcessDocument(
@@ -168,6 +165,27 @@ namespace WordAddIn1
                     anchor_code = validation.AnchorCode,
                 },
             };
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            if (!DataProvenanceJsonParser.TryParseItems(args, out List<ProvenanceItemInput> items, out string parseError))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(parseError);
+                return true;
+            }
+
+            ProvenanceValidationResult structure = DataProvenanceParamValidator.ValidateStructure(items);
+            if (!structure.Ok)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(structure.Error);
+                return true;
+            }
+
+            return false;
+        }
 
         private static ToolResult FailAt(int index, string anchorCode, string error) =>
             new ToolResult

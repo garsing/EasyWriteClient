@@ -20,6 +20,11 @@ namespace WordAddIn1
             {
                 try
                 {
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -34,25 +39,8 @@ namespace WordAddIn1
                         $"[F_apply_table_row_values] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
-                    if (string.IsNullOrWhiteSpace(tableId))
-                    {
-                        return new ToolResult { Success = false, Error = "未提供 table_id" };
-                    }
-
                     ActionFormatHelper.Spec callFormat = ActionFormatHelper.ParseFormatObject(args, required: true);
-                    if (!callFormat.Ok)
-                    {
-                        return new ToolResult
-                        {
-                            Success = false,
-                            Error = callFormat.Error ?? ActionFormatHelper.MissingFormatError
-                        };
-                    }
-
-                    if (!TryParseWriteSpecs(args, out List<TableRowWriteSpec> specs, out string parseError))
-                    {
-                        return new ToolResult { Success = false, Error = parseError };
-                    }
+                    TryParseWriteSpecs(args, out List<TableRowWriteSpec> specs, out _);
 
                     using (EasyWriteDiagnostics.Time("table_row_values.apply.total"))
                     {
@@ -202,6 +190,37 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = $"执行失败: {ex.Message}" };
                 }
             };
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            string tableId = args != null && args.ContainsKey("table_id")
+                ? args["table_id"]?.ToString()
+                : "";
+            if (string.IsNullOrWhiteSpace(tableId))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("未提供 table_id");
+                return true;
+            }
+
+            ActionFormatHelper.Spec callFormat = ActionFormatHelper.ParseFormatObject(args, required: true);
+            if (!callFormat.Ok)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(
+                    callFormat.Error ?? ActionFormatHelper.MissingFormatError);
+                return true;
+            }
+
+            if (!TryParseWriteSpecs(args, out _, out string parseError))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(parseError);
+                return true;
+            }
+
+            return false;
         }
 
         private static bool TryParseWriteSpecs(

@@ -24,6 +24,11 @@ namespace WordAddIn1
                 {
                     System.Diagnostics.Debug.WriteLine("[DEBUG] 开始创建图表");
 
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -46,31 +51,9 @@ namespace WordAddIn1
                             "create_chart (WPS 不支持 Word/Excel 内嵌图表 COM；请用 Word 或改用 SVG/图片)");
                     }
 
-                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out string pathError, "path", "filename"))
-                    {
-                        return new ToolResult { Success = false, Error = pathError };
-                    }
-
+                    FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out _, "path", "filename");
                     string filename = xmlResolved.Display;
-                    var xmlRead = await FilePathResolver.ReadAsync(xmlResolved).ConfigureAwait(false);
-                    if (!xmlRead.Success)
-                    {
-                        return new ToolResult { Success = false, Error = xmlRead.Error };
-                    }
-
-                    string xmlFilePath = xmlResolved.LocalPath;
-
-                    var parseResult = await ChartXmlParser.ParseXmlFile(xmlFilePath);
-                    if (parseResult.Config == null)
-                    {
-                        return new ToolResult { Success = false, Error = $"XML解析失败: {parseResult.Error}" };
-                    }
-
-                    var validationResult = ChartCreateHelper.ValidateConfig(parseResult.Config);
-                    if (!validationResult.IsValid)
-                    {
-                        return new ToolResult { Success = false, Error = $"配置验证失败: {validationResult.Error}" };
-                    }
+                    var parseResult = ChartXmlParser.ParseXmlFile(xmlResolved.LocalPath).GetAwaiter().GetResult();
 
                     int? position = null;
                     if (args.ContainsKey("position"))
@@ -147,6 +130,40 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = $"执行失败: {ex.Message}" };
                 }
             };
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out string pathError, "path", "filename"))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(pathError);
+                return true;
+            }
+
+            if (!DocumentCheckpointMutatingTools.TryReadLocalText(xmlResolved, out _, out string readError))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(readError);
+                return true;
+            }
+
+            ChartXmlParseResult parseResult = ChartXmlParser.ParseXmlFile(xmlResolved.LocalPath).GetAwaiter().GetResult();
+            if (parseResult.Config == null)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("XML解析失败: " + parseResult.Error);
+                return true;
+            }
+
+            var validationResult = ChartCreateHelper.ValidateConfig(parseResult.Config);
+            if (!validationResult.IsValid)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("配置验证失败: " + validationResult.Error);
+                return true;
+            }
+
+            return false;
         }
     }
 }

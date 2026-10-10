@@ -36,6 +36,11 @@ namespace WordAddIn1
                 var sw = Stopwatch.StartNew();
                 try
                 {
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -53,25 +58,8 @@ namespace WordAddIn1
                     Debug.WriteLine(
                         $"[F_insert_workspace_image] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
-                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out string pathError, "path", "filename"))
-                    {
-                        return Fail(pathError);
-                    }
-
-                    string ext = Path.GetExtension(resolved.LocalPath);
-                    if (string.IsNullOrEmpty(ext) || !AllowedExtensions.Contains(ext))
-                    {
-                        return Fail(
-                            "unsupported_format: 仅支持 .png / .jpg / .jpeg / .webp");
-                    }
-
+                    FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out _, "path", "filename");
                     double widthCm = TryParseWidthCm(args) ?? DefaultWidthCm;
-
-                    var ensure = await FilePathResolver.ReadBytesAsync(resolved).ConfigureAwait(true);
-                    if (!ensure.Success || string.IsNullOrEmpty(resolved.LocalPath) || !File.Exists(resolved.LocalPath))
-                    {
-                        return Fail($"file_not_found: {ensure.Error ?? resolved.Display}");
-                    }
 
                     try
                     {
@@ -234,6 +222,34 @@ namespace WordAddIn1
             }
 
             return null;
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out string pathError, "path", "filename"))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(pathError);
+                return true;
+            }
+
+            string ext = Path.GetExtension(resolved.LocalPath);
+            if (string.IsNullOrEmpty(ext) || !AllowedExtensions.Contains(ext))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(
+                    "unsupported_format: 仅支持 .png / .jpg / .jpeg / .webp");
+                return true;
+            }
+
+            if (string.IsNullOrEmpty(resolved.LocalPath) || !File.Exists(resolved.LocalPath))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("file_not_found: 文件不存在: " + resolved.Display);
+                return true;
+            }
+
+            return false;
         }
 
         private static ToolResult Fail(string error)

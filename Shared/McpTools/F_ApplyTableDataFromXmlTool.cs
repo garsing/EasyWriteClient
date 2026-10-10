@@ -22,6 +22,11 @@ namespace WordAddIn1
             {
                 try
                 {
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -36,37 +41,8 @@ namespace WordAddIn1
                         $"[F_apply_table_data_from_xml] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
-                    if (string.IsNullOrEmpty(tableId))
-                    {
-                        return new ToolResult { Success = false, Error = "未提供 table_id" };
-                    }
-
                     string mode = args.ContainsKey("mode") ? args["mode"]?.ToString() : "empty_only";
-
-                    string xmlContent = null;
-                    if (args.ContainsKey("xml_content") && !string.IsNullOrEmpty(args["xml_content"]?.ToString()))
-                    {
-                        xmlContent = args["xml_content"].ToString();
-                    }
-                    else if (FilePathResolver.TryGetArg(args, "path", "filename") != null)
-                    {
-                        if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out string pathError, "path", "filename"))
-                        {
-                            return new ToolResult { Success = false, Error = pathError };
-                        }
-
-                        var xmlRead = await FilePathResolver.ReadAsync(xmlResolved).ConfigureAwait(false);
-                        if (!xmlRead.Success)
-                        {
-                            return new ToolResult { Success = false, Error = xmlRead.Error };
-                        }
-
-                        xmlContent = xmlRead.Text;
-                    }
-                    else
-                    {
-                        return new ToolResult { Success = false, Error = "必须提供 path 或 xml_content 参数" };
-                    }
+                    TryGetXmlContent(args, out string xmlContent, out _);
 
                     var applyResult = TableDataApplyHelper.ApplyTableDataToExistingTable(
                         document,
@@ -110,6 +86,84 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = $"执行失败: {ex.Message}" };
                 }
             };
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            string tableId = args != null && args.ContainsKey("table_id")
+                ? args["table_id"]?.ToString()
+                : "";
+            if (string.IsNullOrEmpty(tableId))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("未提供 table_id");
+                return true;
+            }
+
+            string mode = args != null && args.ContainsKey("mode") ? args["mode"]?.ToString() : "empty_only";
+            mode = string.IsNullOrWhiteSpace(mode) ? "empty_only" : mode.Trim();
+            if (mode != "empty_only" && mode != "full")
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("mode 必须是 empty_only 或 full");
+                return true;
+            }
+
+            if (!TryGetXmlContent(args, out string xmlContent, out string xmlError))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(xmlError);
+                return true;
+            }
+
+            var parseResult = TableConfigXmlParser.ParseDataXml(xmlContent);
+            if (parseResult.Config == null)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(parseResult.Error ?? "XML 解析失败");
+                return true;
+            }
+
+            if (parseResult.Config.Data == null || parseResult.Config.Data.Count == 0)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("Data 矩阵为空");
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryGetXmlContent(
+            Dictionary<string, object> args,
+            out string xmlContent,
+            out string error)
+        {
+            xmlContent = null;
+            error = null;
+            if (args != null && args.ContainsKey("xml_content") && !string.IsNullOrEmpty(args["xml_content"]?.ToString()))
+            {
+                xmlContent = args["xml_content"].ToString();
+                return true;
+            }
+
+            if (FilePathResolver.TryGetArg(args, "path", "filename") != null)
+            {
+                if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out string pathError, "path", "filename"))
+                {
+                    error = pathError;
+                    return false;
+                }
+
+                if (!DocumentCheckpointMutatingTools.TryReadLocalText(xmlResolved, out xmlContent, out string readError))
+                {
+                    error = readError;
+                    return false;
+                }
+
+                return true;
+            }
+
+            error = "必须提供 path 或 xml_content 参数";
+            return false;
         }
     }
 }

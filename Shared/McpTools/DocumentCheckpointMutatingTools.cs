@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 
 namespace WordAddIn1
 {
@@ -35,6 +36,117 @@ namespace WordAddIn1
         {
             if (string.IsNullOrEmpty(toolName) || !MutatingToolNames.Contains(toolName))
             {
+                return false;
+            }
+
+            return true;
+        }
+
+        public static ToolResult Fail(string error)
+        {
+            return new ToolResult
+            {
+                Success = false,
+                Error = error,
+                Data = new Dictionary<string, object>
+                {
+                    ["checkpoint_cleanup_only"] = true
+                }
+            };
+        }
+
+        /// <summary>
+        /// 不碰稿的契约。失败则不应建副本。无契约或通过返回 false。
+        /// </summary>
+        public static bool TryGetContractParseFailure(
+            string toolName,
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            if (string.IsNullOrEmpty(toolName))
+            {
+                return false;
+            }
+
+            switch (toolName)
+            {
+                case "F_process_document_actions":
+                    return F_ProcessDocumentActionsTool.TryGetContractParseFailure(args, out failure);
+                case "F_insert_document_from_file":
+                    return F_InsertDocumentFromFileTool.TryGetContractParseFailure(args, out failure);
+                case "F_replace_document_from_file":
+                    return F_ReplaceDocumentFromFileTool.TryGetContractParseFailure(args, out failure);
+                case "F_apply_document_format":
+                    return F_ApplyDocumentFormatTool.TryGetContractParseFailure(args, out failure);
+                case "F_apply_source_table_format":
+                    return F_ApplySourceTableFormatTool.TryGetContractParseFailure(args, out failure);
+                case "F_apply_page_setup":
+                    return F_ApplyPageSetupTool.TryGetContractParseFailure(args, out failure);
+                case "F_create_table_from_xml":
+                    return F_CreateTableFromXmlTool.TryGetContractParseFailure(args, out failure);
+                case "F_apply_table_format_from_xml":
+                    return F_ApplyTableFormatFromXmlTool.TryGetContractParseFailure(args, out failure);
+                case "F_apply_table_data_from_xml":
+                    return F_ApplyTableDataFromXmlTool.TryGetContractParseFailure(args, out failure);
+                case "F_apply_table_row_values":
+                    return F_ApplyTableRowValuesTool.TryGetContractParseFailure(args, out failure);
+                case "F_optimize_table_display":
+                    return F_OptimizeTableDisplayTool.TryGetContractParseFailure(args, out failure);
+                case "F_delete_table":
+                    return F_DeleteTableTool.TryGetContractParseFailure(args, out failure);
+                case "F_create_chart_from_xml":
+                    return F_CreateChartFromXmlTool.TryGetContractParseFailure(args, out failure);
+                case "F_apply_chart_from_xml":
+                    return F_ApplyChartFromXmlTool.TryGetContractParseFailure(args, out failure);
+                case "F_delete_chart":
+                    return F_DeleteChartTool.TryGetContractParseFailure(args, out failure);
+                case "F_insert_svg_image":
+                    return F_InsertSvgImageTool.TryGetContractParseFailure(args, out failure);
+                case "F_insert_image":
+                    return F_InsertWorkspaceImageTool.TryGetContractParseFailure(args, out failure);
+                case "F_delete_image":
+                    return F_DeleteImageTool.TryGetContractParseFailure(args, out failure);
+                case "F_insert_blank_page":
+                    return F_InsertBlankPageTool.TryGetContractParseFailure(args, out failure);
+                case "F_insert_page_break":
+                    return F_InsertPageBreakTool.TryGetContractParseFailure(args, out failure);
+                case "F_apply_data_provenance":
+                    return F_ApplyDataProvenanceTool.TryGetContractParseFailure(args, out failure);
+                default:
+                    return false;
+            }
+        }
+
+        public static bool TryReadLocalText(ResolvedFilePath resolved, out string text, out string error)
+        {
+            text = null;
+            error = null;
+            if (resolved == null || string.IsNullOrEmpty(resolved.LocalPath))
+            {
+                error = "路径未解析";
+                return false;
+            }
+
+            if (!File.Exists(resolved.LocalPath))
+            {
+                error = "文件不存在: " + resolved.Display;
+                return false;
+            }
+
+            try
+            {
+                text = File.ReadAllText(resolved.LocalPath);
+            }
+            catch (Exception ex)
+            {
+                error = "读取文件失败: " + ex.Message;
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(text))
+            {
+                error = "文件内容为空: " + resolved.Display;
                 return false;
             }
 

@@ -34,6 +34,11 @@ namespace WordAddIn1
                     string logPath = EasyWriteLog.BeginSession("apply_document_format");
                     FormatContextHelper.DbgLog($"会话日志: {logPath}");
 
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return Task.FromResult(contractFail);
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -276,6 +281,27 @@ namespace WordAddIn1
                     return Done(false, $"apply_document_format 失败: {ex.Message}");
                 }
             };
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            string validationError = ValidateModeArgs(args, out _, out _, out _);
+            if (validationError != null)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(validationError);
+                return true;
+            }
+
+            if (!TryResolveApplyTargets(args, out _, out _, out string targetError))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(targetError);
+                return true;
+            }
+
+            return false;
         }
 
         private static string ValidateModeArgs(

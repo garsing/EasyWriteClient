@@ -19,26 +19,13 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out string pathError, "path", "insert_file"))
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
                     {
-                        return new ToolResult { Success = false, Error = pathError };
+                        return contractFail;
                     }
 
-                    ActionFormatHelper.Spec formatSpec = ActionFormatHelper.ParseFormatObject(args, required: true);
-                    if (!formatSpec.Ok)
-                    {
-                        return new ToolResult
-                        {
-                            Success = false,
-                            Error = formatSpec.Error ?? ActionFormatHelper.MissingFormatError
-                        };
-                    }
-
-                    var loadResult = await FilePathResolver.ReadAsync(resolved).ConfigureAwait(false);
-                    if (!loadResult.Success || string.IsNullOrEmpty(loadResult.Text))
-                    {
-                        return new ToolResult { Success = false, Error = loadResult.Error ?? $"文件内容为空: {resolved.Display}" };
-                    }
+                    FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out _, "path", "insert_file");
+                    DocumentCheckpointMutatingTools.TryReadLocalText(resolved, out string fileText, out _);
 
                     string targetCodes = args.ContainsKey("target_codes") ? args["target_codes"]?.ToString()?.Trim() : "";
                     string inTable = args.ContainsKey("in_table") ? args["in_table"]?.ToString()?.Trim() : "";
@@ -48,7 +35,7 @@ namespace WordAddIn1
                     string targetPosition = args.ContainsKey("target_position") ? args["target_position"]?.ToString()?.Trim() : "";
 
                     var build = BuildInsertProcessArgs(
-                        loadResult.Text,
+                        fileText,
                         targetCodes,
                         inTable,
                         targetTable,
@@ -94,7 +81,7 @@ namespace WordAddIn1
                             target_chart = string.IsNullOrEmpty(targetChart) ? null : targetChart,
                             target_image = string.IsNullOrEmpty(targetImage) ? null : targetImage,
                             target_position = string.IsNullOrEmpty(targetPosition) ? null : targetPosition,
-                            characters_inserted = loadResult.Text?.Length ?? 0,
+                            characters_inserted = fileText?.Length ?? 0,
                             process_result = processResult.Data,
                             message = InsertTargetLocatorHelper.IsStartPosition(targetPosition)
                                 ? $"已从文件 {resolved.Display} 插在正文最前"
@@ -108,6 +95,55 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = $"从文件插入文档失败: {ex.Message}" };
                 }
             };
+        }
+
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out string pathError, "path", "insert_file"))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(pathError);
+                return true;
+            }
+
+            ActionFormatHelper.Spec formatSpec = ActionFormatHelper.ParseFormatObject(args, required: true);
+            if (!formatSpec.Ok)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(
+                    formatSpec.Error ?? ActionFormatHelper.MissingFormatError);
+                return true;
+            }
+
+            if (!DocumentCheckpointMutatingTools.TryReadLocalText(resolved, out string fileText, out string readError))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(readError);
+                return true;
+            }
+
+            string targetCodes = args.ContainsKey("target_codes") ? args["target_codes"]?.ToString()?.Trim() : "";
+            string inTable = args.ContainsKey("in_table") ? args["in_table"]?.ToString()?.Trim() : "";
+            string targetTable = args.ContainsKey("target_table") ? args["target_table"]?.ToString()?.Trim() : "";
+            string targetChart = args.ContainsKey("target_chart") ? args["target_chart"]?.ToString()?.Trim() : "";
+            string targetImage = args.ContainsKey("target_image") ? args["target_image"]?.ToString()?.Trim() : "";
+            string targetPosition = args.ContainsKey("target_position") ? args["target_position"]?.ToString()?.Trim() : "";
+            var build = BuildInsertProcessArgs(
+                fileText,
+                targetCodes,
+                inTable,
+                targetTable,
+                targetChart,
+                targetImage,
+                targetPosition,
+                args["format"]);
+            if (!string.IsNullOrEmpty(build.error))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(build.error);
+                return true;
+            }
+
+            return false;
         }
 
         private static (Dictionary<string, object> args, string error) BuildInsertProcessArgs(
