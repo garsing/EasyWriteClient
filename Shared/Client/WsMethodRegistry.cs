@@ -230,8 +230,13 @@ namespace WordAddIn1
             CheckpointBeforeResult before = DocumentCheckpointService.CreateBeforeMutation(toolName, args);
             if (!before.Success)
             {
+                WordAddIn1.DocumentHost.HostProbe.Log(
+                    "invoke-ckpt-fail",
+                    "tool=" + toolName + " err=" + (before.Error ?? ""));
                 return new ToolResult { Success = false, Error = before.Error };
             }
+
+            WordAddIn1.DocumentHost.HostProbe.Log("invoke-ckpt-ok", "tool=" + toolName);
 
             ToolResult result;
             try
@@ -240,19 +245,36 @@ namespace WordAddIn1
             }
             catch (Exception)
             {
-                DocumentCheckpointService.RollbackFailedMutation(before.DocUuid, before.Timestamp);
+                try
+                {
+                    DocumentCheckpointService.RollbackFailedMutation(before.DocUuid, before.Timestamp);
+                }
+                catch (Exception rollbackEx)
+                {
+                    WordAddIn1.DocumentHost.HostProbe.Log(
+                        "invoke-rollback-threw",
+                        WordAddIn1.DocumentHost.HostProbe.Ex(rollbackEx));
+                }
+
                 throw;
             }
 
             if (DocumentCheckpointService.IsInvokeMutationFailed(result, toolName))
             {
-                if (DocumentCheckpointService.IsCheckpointCleanupOnly(result))
+                try
                 {
-                    DocumentCheckpointService.CleanupFailedInvoke(before.DocUuid, before.Timestamp);
+                    if (DocumentCheckpointService.IsCheckpointCleanupOnly(result))
+                    {
+                        DocumentCheckpointService.CleanupFailedInvoke(before.DocUuid, before.Timestamp);
+                    }
+                    else
+                    {
+                        DocumentCheckpointService.RollbackFailedMutation(before.DocUuid, before.Timestamp);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    DocumentCheckpointService.RollbackFailedMutation(before.DocUuid, before.Timestamp);
+                    WordAddIn1.DocumentHost.HostProbe.Log("invoke-rollback-threw", WordAddIn1.DocumentHost.HostProbe.Ex(ex));
                 }
 
                 return result;

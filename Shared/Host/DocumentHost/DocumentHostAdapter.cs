@@ -28,6 +28,7 @@ namespace WordAddIn1.DocumentHost
 
             if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string error))
             {
+                HostProbe.Log("ctx-channel-fail", HostProbe.ArgsBrief(args) + " err=" + error);
                 errorResult = new ToolResult
                 {
                     Success = false,
@@ -36,11 +37,14 @@ namespace WordAddIn1.DocumentHost
                 return false;
             }
 
+            HostProbe.Log("ctx-channel", "kind=" + channel.Kind + " ch=" + channel.ChannelId);
+
             if (channel.Kind == ChannelKind.Word)
             {
                 var wordChannel = channel as WordChannel;
                 if (wordChannel == null || !wordChannel.TryGetLiveDocument(out Word.Document document))
                 {
+                    HostProbe.Log("ctx-word-closed", "ch=" + channel.ChannelId);
                     errorResult = new ToolResult
                     {
                         Success = false,
@@ -97,6 +101,7 @@ namespace WordAddIn1.DocumentHost
                 var wpsChannel = channel as WpsChannel;
                 if (wpsChannel == null || !wpsChannel.TryGetLiveDocument(out object wpsDoc))
                 {
+                    HostProbe.Log("ctx-wps-closed", "ch=" + channel.ChannelId);
                     errorResult = new ToolResult
                     {
                         Success = false,
@@ -105,6 +110,7 @@ namespace WordAddIn1.DocumentHost
                     return false;
                 }
 
+                HostProbe.TouchLate("ctx-wps-live", wpsDoc);
                 DocumentState.ActivateSessionByUuid(wpsChannel.DocUuid);
                 context = new DocumentSessionContext(
                     wpsChannel.ChannelId,
@@ -134,6 +140,9 @@ namespace WordAddIn1.DocumentHost
             bool activateDocument = false)
         {
             handle = null;
+            HostProbe.Log("interop-enter", HostProbe.ArgsBrief(args) + " activate=" + activateDocument);
+            try
+            {
             if (!TryResolveContext(
                     args,
                     wordApplication,
@@ -141,6 +150,7 @@ namespace WordAddIn1.DocumentHost
                     out errorResult,
                     activateDocument))
             {
+                HostProbe.Log("interop-ctx-fail", errorResult == null ? "" : errorResult.Error);
                 return false;
             }
 
@@ -171,6 +181,7 @@ namespace WordAddIn1.DocumentHost
                         out string wpsError,
                         activateDocument))
                 {
+                    HostProbe.Log("interop-wps-prepare-fail", "ch=" + context.ChannelId + " err=" + wpsError);
                     errorResult = new ToolResult
                     {
                         Success = false,
@@ -181,6 +192,7 @@ namespace WordAddIn1.DocumentHost
                     return false;
                 }
 
+                HostProbe.Touch("interop-wps-ok", wordDoc);
                 handle = new InteropDocumentHandle(
                     wordDoc,
                     context,
@@ -190,6 +202,13 @@ namespace WordAddIn1.DocumentHost
 
             errorResult = UnsupportedResult(context.Kind, context.ChannelId, "interop_document");
             return false;
+            }
+            catch (Exception ex)
+            {
+                HostProbe.Log("interop-throw", HostProbe.Ex(ex));
+                errorResult = new ToolResult { Success = false, Error = ex.Message };
+                return false;
+            }
         }
 
         /// <summary>

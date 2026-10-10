@@ -507,6 +507,21 @@ namespace WordAddIn1
         public static bool TryGetByDocUuid(string docUuid, out WordChannel channel)
         {
             channel = null;
+            if (!TryGetChannelByDocUuid(docUuid, out IOperationChannel found) || !(found is WordChannel word))
+            {
+                return false;
+            }
+
+            channel = word;
+            return true;
+        }
+
+        /// <summary>
+        /// 按 doc_uuid 取任意渠道（Word / WPS）。回滚不得只认 WordChannel。
+        /// </summary>
+        public static bool TryGetChannelByDocUuid(string docUuid, out IOperationChannel channel)
+        {
+            channel = null;
             if (string.IsNullOrWhiteSpace(docUuid))
             {
                 return false;
@@ -519,13 +534,7 @@ namespace WordAddIn1
                     return false;
                 }
 
-                if (!Channels.TryGetValue(channelId, out IOperationChannel ch) || !(ch is WordChannel wc))
-                {
-                    return false;
-                }
-
-                channel = wc;
-                return true;
+                return Channels.TryGetValue(channelId, out channel) && channel != null;
             }
         }
 

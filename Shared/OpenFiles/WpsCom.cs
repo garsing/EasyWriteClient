@@ -1,15 +1,39 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace WordAddIn1.OpenFiles
 {
     /// <summary>
-    /// WPS 文字 COM 晚绑定辅助：仅 GetActiveObject，不 new / 不 Quit。
+    /// WPS 文字 COM 晚绑定辅助：GetActiveObject + 多进程 HWND，不 new / 不 Quit。
     /// </summary>
     internal static class WpsCom
     {
+        private const uint ObjIdNativeOm = 0xFFFFFFF0;
+
+        private static readonly Guid IidIDispatch = new Guid("00020400-0000-0000-C000-000000000046");
+
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [DllImport("oleacc.dll")]
+        private static extern int AccessibleObjectFromWindow(
+            IntPtr hwnd,
+            uint dwObjectID,
+            ref Guid riid,
+            [MarshalAs(UnmanagedType.IDispatch)] out object ppvObject);
+
         public static readonly string[] ProgIds =
         {
             "Kwps.Application",
@@ -20,26 +44,225 @@ namespace WordAddIn1.OpenFiles
         public static object TryGetActiveApplication(out string progId)
         {
             progId = null;
-            foreach (string id in ProgIds)
+            object bestWithDocs = null;
+            int bestCount = 0;
+            object anyAlive = null;
+            string bestId = null;
+            string anyId = null;
+
+            foreach (WpsAppCandidate candidate in EnumerateRunningApplications())
             {
-                try
+                if (candidate.Application == null || !CanReadDocuments(candidate.Application))
                 {
-                    object app = Marshal.GetActiveObject(id);
-                    if (app != null && CanReadDocuments(app))
-                    {
-                        progId = id;
-                        return app;
-                    }
+                    continue;
                 }
-                catch (COMException)
+
+                int count = SafeDocumentCount(candidate.Application);
+                if (count > bestCount)
                 {
+                    bestWithDocs = candidate.Application;
+                    bestCount = count;
+                    bestId = candidate.ProgId;
                 }
-                catch (Exception)
+                else if (anyAlive == null && count >= 0)
                 {
+                    anyAlive = candidate.Application;
+                    anyId = candidate.ProgId;
                 }
             }
 
+            if (bestWithDocs != null)
+            {
+                progId = bestId ?? ProgIds[0];
+                return bestWithDocs;
+            }
+
+            if (anyAlive != null)
+            {
+                progId = anyId ?? ProgIds[0];
+                return anyAlive;
+            }
+
             return null;
+        }
+
+        private struct WpsAppCandidate
+        {
+            public object Application;
+            public string ProgId;
+        }
+
+        private static List<WpsAppCandidate> EnumerateRunningApplications()
+        {
+            var list = new List<WpsAppCandidate>();
+            var seenHwnd = new HashSet<int>();
+            foreach (string id in ProgIds)
+            {
+                object app = null;
+                try
+                {
+                    app = Marshal.GetActiveObject(id);
+                }
+                catch (COMException)
+                {
+                    app = null;
+                }
+                catch (Exception)
+                {
+                    app = null;
+                }
+
+                if (app == null)
+                {
+                    continue;
+                }
+
+                int key = SafeAppHwnd(app);
+                if (key == 0)
+                {
+                    key = RuntimeHelpers.GetHashCode(app);
+                }
+
+                if (seenHwnd.Add(key))
+                {
+                    list.Add(new WpsAppCandidate { Application = app, ProgId = id });
+                }
+            }
+
+            foreach (object app in CollectApplicationsFromWindows())
+            {
+                int key = SafeAppHwnd(app);
+                if (key == 0)
+                {
+                    key = RuntimeHelpers.GetHashCode(app);
+                }
+
+                if (!seenHwnd.Add(key))
+                {
+                    continue;
+                }
+
+                list.Add(new WpsAppCandidate { Application = app, ProgId = ProgIds[0] });
+            }
+
+            return list;
+        }
+
+        private static List<object> CollectApplicationsFromWindows()
+        {
+            var apps = new List<object>();
+            var pids = new HashSet<uint>();
+            try
+            {
+                foreach (Process p in Process.GetProcessesByName("wps"))
+                {
+                    try
+                    {
+                        pids.Add((uint)p.Id);
+                    }
+                    finally
+                    {
+                        p.Dispose();
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return apps;
+            }
+
+            if (pids.Count == 0)
+            {
+                return apps;
+            }
+
+            EnumWindows(
+                (hWnd, _) =>
+                {
+                    if (!IsWindowVisible(hWnd))
+                    {
+                        return true;
+                    }
+
+                    GetWindowThreadProcessId(hWnd, out uint pid);
+                    if (!pids.Contains(pid))
+                    {
+                        return true;
+                    }
+
+                    object app = TryApplicationFromWindow(hWnd);
+                    if (app != null)
+                    {
+                        apps.Add(app);
+                    }
+
+                    return true;
+                },
+                IntPtr.Zero);
+
+            return apps;
+        }
+
+        private static object TryApplicationFromWindow(IntPtr hwnd)
+        {
+            Guid iid = IidIDispatch;
+            object obj;
+            if (AccessibleObjectFromWindow(hwnd, ObjIdNativeOm, ref iid, out obj) != 0 || obj == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (GetProperty(obj, "Documents") != null)
+                {
+                    return obj;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                return GetProperty(obj, "Application");
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static int SafeDocumentCount(object app)
+        {
+            try
+            {
+                object docs = GetProperty(app, "Documents");
+                object countObj = GetProperty(docs, "Count");
+                return countObj == null ? -1 : Convert.ToInt32(countObj);
+            }
+            catch (Exception)
+            {
+                return -1;
+            }
+        }
+
+        private static int SafeAppHwnd(object app)
+        {
+            if (app == null)
+            {
+                return 0;
+            }
+
+            try
+            {
+                object raw = GetProperty(app, "Hwnd") ?? GetProperty(app, "HWND");
+                return raw == null ? 0 : Convert.ToInt32(raw);
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
         }
 
         public static bool CanReadDocuments(object app)

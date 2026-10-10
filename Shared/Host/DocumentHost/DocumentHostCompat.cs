@@ -57,8 +57,11 @@ namespace WordAddIn1.DocumentHost
             if (!TryAsWordDocument(context.WpsDocument, out wordDoc))
             {
                 error = "unsupported: 当前 WPS 文档无法接入 Interop 管线（非 Word 兼容自动化对象）；host=wps";
+                HostProbe.Log("prepare-cast-fail", "ch=" + context.ChannelId);
                 return false;
             }
+
+            HostProbe.Touch("prepare-cast-ok", wordDoc);
 
             string wpsUuid = context.DocUuid;
             if (!string.IsNullOrEmpty(wpsUuid))
@@ -70,16 +73,44 @@ namespace WordAddIn1.DocumentHost
 
             if (activateDocument)
             {
-                try
-                {
-                    wordDoc.Activate();
-                }
-                catch (Exception)
-                {
-                }
+                TryActivateLateBound(wordDoc);
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// WPS 第一份稿的 Word 兼容 RCW 常还不是 Application.ActiveDocument，
+        /// 直接 Activate 会报「没有打开的文档」。先晚绑定再走 Interop。
+        /// </summary>
+        public static void TryActivateLateBound(object document)
+        {
+            if (document == null)
+            {
+                return;
+            }
+
+            try
+            {
+                WordAddIn1.OpenFiles.WpsCom.Invoke(document, "Activate");
+            }
+            catch (Exception)
+            {
+            }
+
+            Word.Document wordDoc = document as Word.Document;
+            if (wordDoc == null)
+            {
+                return;
+            }
+
+            try
+            {
+                wordDoc.Activate();
+            }
+            catch (Exception)
+            {
+            }
         }
     }
 }

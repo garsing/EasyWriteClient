@@ -28,12 +28,18 @@ namespace WordAddIn1
             {
                 try
                 {
+                    WordAddIn1.DocumentHost.HostProbe.Log(
+                        "tool-enter",
+                        WordAddIn1.DocumentHost.HostProbe.ArgsBrief(args));
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
                             out InteropDocumentHandle docHandle,
                             out ToolResult resolveError))
                     {
+                        WordAddIn1.DocumentHost.HostProbe.Log(
+                            "tool-resolve-fail",
+                            resolveError == null ? "" : resolveError.Error);
                         System.Diagnostics.Debug.WriteLine(
                             $"[F_process_document_actions] resolve failed: {resolveError?.Error}; " +
                             $"arg.channel_id={ChannelContext.TryGetChannelIdFromParameters(args) ?? "(null)"}; " +
@@ -42,6 +48,7 @@ namespace WordAddIn1
                     }
 
                     Word.Document document = docHandle.Document;
+                    WordAddIn1.DocumentHost.HostProbe.Touch("tool-doc", document);
 
                     string logPath = EasyWriteLog.BeginSession("process_document_actions");
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 本次测试日志: {logPath}");
@@ -53,7 +60,7 @@ namespace WordAddIn1
                     if (!args.ContainsKey("action"))
                     {
                         System.Diagnostics.Debug.WriteLine("[ERROR] 缺少必需参数：action");
-                        return new ToolResult { Success = false, Error = "缺少必需参数：action" };
+                        return FailBeforeWrite("缺少必需参数：action");
                     }
 
                     // 第一步：更新句子与名称映射表（必须在解析参数之前，确保验证时能找到句子）
@@ -69,7 +76,7 @@ namespace WordAddIn1
                         if (!string.IsNullOrEmpty(mappingError))
                         {
                             System.Diagnostics.Debug.WriteLine($"[ERROR] 更新映射表失败: {mappingError}");
-                            return new ToolResult { Success = false, Error = mappingError };
+                            return FailBeforeWrite(mappingError);
                         }
                         System.Diagnostics.Debug.WriteLine(
                             $"[第一步完成] 映射表总数: {DocumentState.NameToContentMap.Count}");
@@ -91,7 +98,7 @@ namespace WordAddIn1
                     if (!parseSuccess)
                     {
                         System.Diagnostics.Debug.WriteLine($"[ERROR] 解析操作失败: {parseError}");
-                        return new ToolResult { Success = false, Error = parseError };
+                        return FailBeforeWrite(parseError);
                     }
                     
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 解析操作成功，共 {actions.Count} 个操作");
@@ -240,6 +247,22 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine($"[ERROR] 处理句子操作异常: {ex.Message}");
                     System.Diagnostics.Debug.WriteLine($"[ERROR] 异常堆栈: {ex.StackTrace}");
                     return new ToolResult { Success = false, Error = $"处理句子操作失败: {ex.Message}" };
+                }
+            };
+        }
+
+        /// <summary>
+        /// 尚未写字的契约失败：只丢副本，不按 Word.ActiveDocument 回滚正文。
+        /// </summary>
+        private static ToolResult FailBeforeWrite(string error)
+        {
+            return new ToolResult
+            {
+                Success = false,
+                Error = error,
+                Data = new Dictionary<string, object>
+                {
+                    ["checkpoint_cleanup_only"] = true
                 }
             };
         }

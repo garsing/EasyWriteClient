@@ -105,24 +105,22 @@ namespace WordAddIn1
             Word.Document activeDoc = null;
             string resolveHint = null;
             Dictionary<string, object> args = ToArgsDictionary(parameters);
-            if (DocumentHostAdapter.TryResolveInteropDocument(
-                    args,
-                    _wordApplication,
-                    out InteropDocumentHandle handle,
-                    out ToolResult resolveError))
+            string explicitId = ChannelContext.TryGetChannelIdFromParameters(args);
+            bool hasExplicitChannel = !string.IsNullOrEmpty(explicitId);
+            HostProbe.Log("ckpt-enter", "tool=" + toolName + " " + HostProbe.ArgsBrief(args)
+                + " hasExplicit=" + hasExplicitChannel + " wordApp=" + (_wordApplication != null));
+
+            if (!TryResolveDocumentForCheckpoint(args, out activeDoc, out resolveHint)
+                && LooksLikeNoOpenDocument(resolveHint))
             {
-                activeDoc = handle.Document;
-                TryCacheApplicationFromDocument(activeDoc);
-                System.Diagnostics.Debug.WriteLine(
-                    $"[Checkpoint] resolve via DocumentHost host={handle.HostName} channel_id={handle.ChannelId} tool={toolName}");
-            }
-            else
-            {
-                resolveHint = resolveError?.Error;
+                HostProbe.Log("ckpt-retry-activate", "hint=" + resolveHint);
+                TryActivateChannelDocument(args);
+                TryResolveDocumentForCheckpoint(args, out activeDoc, out resolveHint);
             }
 
-            // 回退：宿主已注入 Word.Application（Plugin / F_open_word 后）
-            if (activeDoc == null && _wordApplication != null)
+            // 显式渠道已给出时不要回退 Word.ActiveDocument：
+            // Desktop 常同时挂着空的 Word 与 WPS，回退会吞掉 excel/ppt/wps 的真实错误。
+            if (activeDoc == null && !hasExplicitChannel && _wordApplication != null)
             {
                 try
                 {
@@ -130,7 +128,12 @@ namespace WordAddIn1
                 }
                 catch (Exception ex)
                 {
-                    return Fail("无法读取活动文档: " + ex.Message);
+                    if (!string.IsNullOrEmpty(resolveHint))
+                    {
+                        return Fail(resolveHint, "ckpt-active-fallback-hint");
+                    }
+
+                    return Fail("无法读取活动文档: " + ex.Message, "ckpt-active-fallback");
                 }
             }
 
@@ -139,10 +142,23 @@ namespace WordAddIn1
                 string detail = string.IsNullOrEmpty(resolveHint)
                     ? "无可用文档渠道；请确认 WPS/Word 已打开文档，或传入 channel_id"
                     : resolveHint;
-                return Fail(detail);
+                return Fail(detail, "ckpt-no-doc");
             }
 
-            DocumentState.BindAndActivate(activeDoc);
+            try
+            {
+                HostProbe.Touch("ckpt-before-activate", activeDoc);
+                TryActivateInteropDocument(activeDoc);
+                HostProbe.Touch("ckpt-after-activate", activeDoc);
+                DocumentState.BindAndActivate(activeDoc);
+                HostProbe.Touch("ckpt-after-bind", activeDoc);
+            }
+            catch (Exception ex)
+            {
+                HostProbe.Log("ckpt-bind-throw", HostProbe.Ex(ex));
+                return Fail(ex.Message, "ckpt-bind-throw");
+            }
+
             string docUuid = DocumentState.EnsureCurrDocUuid(activeDoc);
 
             string dir = GetDocCheckpointDirectory(docUuid);
@@ -157,8 +173,25 @@ namespace WordAddIn1
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Checkpoint] Save document copy failed: {ex.Message}");
-                return Fail($"创建文档副本失败: {ex.Message}");
+                if (LooksLikeNoOpenDocument(ex.Message))
+                {
+                    TryActivateInteropDocument(activeDoc);
+                    try
+                    {
+                        DocumentCheckpointSaveHelper.SaveDocumentCopy(activeDoc, path);
+                        ex = null;
+                    }
+                    catch (Exception retryEx)
+                    {
+                        ex = retryEx;
+                    }
+                }
+
+                if (ex != null)
+                {
+                    HostProbe.Log("ckpt-save-fail", HostProbe.Ex(ex));
+                    return Fail($"创建文档副本失败: {ex.Message}", "ckpt-save");
+                }
             }
 
             DocumentCheckpointSession session = GetOrCreateSession(docUuid);
@@ -169,6 +202,7 @@ namespace WordAddIn1
                 EvictOldestCheckpoint(session, docUuid);
             }
 
+            HostProbe.Log("ckpt-ok", "path=" + path + " ts=" + timestamp);
             System.Diagnostics.Debug.WriteLine(
                 $"[Checkpoint] copy saved path={path} timestamp={timestamp} historyCount={session.CheckpointTimestampsInOrder.Count}");
 
@@ -178,6 +212,97 @@ namespace WordAddIn1
                 Timestamp = timestamp,
                 DocUuid = docUuid
             };
+        }
+
+        private static bool TryResolveDocumentForCheckpoint(
+            Dictionary<string, object> args,
+            out Word.Document document,
+            out string resolveHint)
+        {
+            document = null;
+            resolveHint = null;
+            try
+            {
+                if (DocumentHostAdapter.TryResolveInteropDocument(
+                        args,
+                        _wordApplication,
+                        out InteropDocumentHandle handle,
+                        out ToolResult resolveError))
+                {
+                    document = handle.Document;
+                    TryCacheApplicationFromDocument(document);
+                    HostProbe.Log("ckpt-resolve-ok", "host=" + handle.HostName + " ch=" + handle.ChannelId);
+                    HostProbe.Touch("ckpt-resolve-doc", document);
+                    return document != null;
+                }
+
+                resolveHint = resolveError?.Error;
+                HostProbe.Log("ckpt-resolve-false", "hint=" + resolveHint);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                resolveHint = ex.Message;
+                HostProbe.Log("ckpt-resolve-throw", HostProbe.Ex(ex));
+                return false;
+            }
+        }
+
+        private static void TryActivateChannelDocument(Dictionary<string, object> args)
+        {
+            try
+            {
+                if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out _)
+                    || channel == null)
+                {
+                    return;
+                }
+
+                if (channel is WordChannel word && word.TryGetLiveDocument(out Word.Document wordDoc))
+                {
+                    TryActivateInteropDocument(wordDoc);
+                    return;
+                }
+
+                if (channel is WpsChannel wps && wps.TryGetLiveDocument(out object wpsDoc))
+                {
+                    if (DocumentHostCompat.TryAsWordDocument(wpsDoc, out Word.Document compat))
+                    {
+                        TryActivateInteropDocument(compat);
+                    }
+                    else
+                    {
+                        DocumentHostCompat.TryActivateLateBound(wpsDoc);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Checkpoint] activate channel skipped: {ex.Message}");
+            }
+        }
+
+        private static void TryActivateInteropDocument(Word.Document document)
+        {
+            if (document == null)
+            {
+                return;
+            }
+
+            try
+            {
+                document.Activate();
+            }
+            catch (Exception)
+            {
+                DocumentHostCompat.TryActivateLateBound(document);
+            }
+        }
+
+        private static bool LooksLikeNoOpenDocument(string text)
+        {
+            return !string.IsNullOrEmpty(text)
+                && text.IndexOf("没有打开的文档", StringComparison.Ordinal) >= 0;
         }
 
         private static Dictionary<string, object> ToArgsDictionary(IReadOnlyDictionary<string, object> parameters)
@@ -328,24 +453,78 @@ namespace WordAddIn1
                 return;
             }
 
-            string path = GetCheckpointFilePath(docUuid, timestamp);
-            if (File.Exists(path) && _wordApplication?.ActiveDocument != null)
+            try
             {
-                try
+                string path = GetCheckpointFilePath(docUuid, timestamp);
+                Word.Document target = TryResolveLiveDocumentByUuid(docUuid);
+                if (File.Exists(path) && target != null)
                 {
-                    DocumentRestoreHelper.RestoreActiveDocumentFromCheckpoint(path, _wordApplication);
+                    Word.Application app = null;
+                    try
+                    {
+                        app = target.Application;
+                    }
+                    catch (Exception ex)
+                    {
+                        HostProbe.Log("rollback-app", HostProbe.Ex(ex));
+                    }
+
+                    if (app != null)
+                    {
+                        DocumentRestoreHelper.RestoreActiveDocumentFromCheckpoint(path, app, target);
+                    }
+                    else
+                    {
+                        HostProbe.Log("rollback-skip-restore", "uuid=" + docUuid + " no Application on target");
+                    }
                 }
-                catch (Exception ex)
+                else
                 {
-                    System.Diagnostics.Debug.WriteLine($"[Checkpoint] rollback restore warning: {ex.Message}");
+                    HostProbe.Log(
+                        "rollback-skip-restore",
+                        "uuid=" + docUuid + " file=" + File.Exists(path) + " target=" + (target != null));
                 }
             }
+            catch (Exception ex)
+            {
+                // 回滚不得盖掉工具已经返回的契约错误（Word+WPS 双开时 ActiveDocument 常 COM 失败）
+                HostProbe.Log("rollback-warn", HostProbe.Ex(ex));
+                System.Diagnostics.Debug.WriteLine($"[Checkpoint] rollback restore warning: {ex.Message}");
+            }
 
-            DocumentState.ClearAfterCheckpointRestore();
-            RemoveCheckpointAndFollowingActions(docUuid, timestamp, deleteNewerFiles: false);
-            DeleteCheckpointFile(docUuid, timestamp);
+            try
+            {
+                DocumentState.ClearAfterCheckpointRestore();
+                RemoveCheckpointAndFollowingActions(docUuid, timestamp, deleteNewerFiles: false);
+                DeleteCheckpointFile(docUuid, timestamp);
+            }
+            catch (Exception ex)
+            {
+                HostProbe.Log("rollback-cleanup-warn", HostProbe.Ex(ex));
+            }
 
             System.Diagnostics.Debug.WriteLine($"[Checkpoint] rollback failed invoke timestamp={timestamp}");
+        }
+
+        private static Word.Document TryResolveLiveDocumentByUuid(string docUuid)
+        {
+            if (!ChannelRegistry.TryGetChannelByDocUuid(docUuid, out IOperationChannel channel) || channel == null)
+            {
+                return null;
+            }
+
+            if (channel is WordChannel word && word.TryGetLiveDocument(out Word.Document wordDoc))
+            {
+                return wordDoc;
+            }
+
+            if (channel is WpsChannel wps && wps.TryGetLiveDocument(out object wpsDoc)
+                && DocumentHostCompat.TryAsWordDocument(wpsDoc, out Word.Document compat))
+            {
+                return compat;
+            }
+
+            return null;
         }
 
         public static ToolResult RestoreCheckpoint(string timestamp, Word.Document document = null)
@@ -764,9 +943,16 @@ namespace WordAddIn1
             return false;
         }
 
-        private static CheckpointBeforeResult Fail(string error)
+        private static CheckpointBeforeResult Fail(string error, string site = null)
         {
-            return new CheckpointBeforeResult { Success = false, Error = error };
+            string text = error ?? "";
+            if (!string.IsNullOrEmpty(site))
+            {
+                HostProbe.Log("ckpt-fail", "site=" + site + " err=" + text);
+                text = "[" + site + "] " + text;
+            }
+
+            return new CheckpointBeforeResult { Success = false, Error = text };
         }
     }
 
@@ -795,6 +981,11 @@ namespace WordAddIn1
                 Directory.CreateDirectory(dir);
             }
 
+            if (TrySaveViaFileCopy(document, path))
+            {
+                return;
+            }
+
             if (TrySaveViaPersistFile(document, path))
             {
                 return;
@@ -806,7 +997,58 @@ namespace WordAddIn1
             }
 
             throw new InvalidOperationException(
-                "无法创建文档副本（IPersistFile 与 SaveAs2 均失败）。请先保存文档后重试。");
+                "无法创建文档副本（文件拷贝、IPersistFile 与 SaveAs2 均失败）。请先保存文档后重试。");
+        }
+
+        /// <summary>
+        /// WPS 的 IPersistFile.Save 常把「另存副本」做成改路径/拆掉 ActiveDocument，
+        /// 下一轮改字就会报「没有打开的文档」。已落盘的稿先 Save 再拷文件。
+        /// </summary>
+        private static bool TrySaveViaFileCopy(Word.Document document, string path)
+        {
+            string originalFullName;
+            try
+            {
+                originalFullName = document.FullName;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(originalFullName)
+                || originalFullName.StartsWith("Unsaved", StringComparison.OrdinalIgnoreCase)
+                || !File.Exists(originalFullName))
+            {
+                return false;
+            }
+
+            try
+            {
+                try
+                {
+                    document.Save();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        "[Checkpoint] in-place Save before copy skipped: " + ex.Message);
+                }
+
+                File.Copy(originalFullName, path, overwrite: true);
+                if (!File.Exists(path) || new FileInfo(path).Length == 0)
+                {
+                    return false;
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[Checkpoint] File.Copy ok path={path}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Checkpoint] File.Copy failed: {ex.Message}");
+                return false;
+            }
         }
 
         private static bool TrySaveViaPersistFile(Word.Document document, string path)
