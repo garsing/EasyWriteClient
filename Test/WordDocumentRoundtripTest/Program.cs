@@ -17,6 +17,13 @@ namespace WordDocumentRoundtripTest
             bool runLayout = !runFindStale
                 && (caseFilter.StartsWith("lb-", StringComparison.OrdinalIgnoreCase)
                     || caseFilter.StartsWith("wc-lb-", StringComparison.OrdinalIgnoreCase));
+            if (string.Equals(caseFilter, "wa-rollback-live", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 改字回滚探针（wa-rollback-live）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                return RollbackLiveProbe.Run(host);
+            }
+
             bool runActions = !runFindStale && !runLayout
                 && caseFilter.StartsWith("wa-", StringComparison.OrdinalIgnoreCase);
             bool runContent = !runFindStale && !runLayout && !runActions

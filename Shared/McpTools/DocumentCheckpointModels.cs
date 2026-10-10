@@ -31,5 +31,7 @@ namespace WordAddIn1
         public string Error { get; set; }
         public string Timestamp { get; set; }
         public string DocUuid { get; set; }
+        /// <summary>创建副本时的渠道号；回滚按它找活文档，不依赖 DocumentIdentity 与渠道 uuid 是否同一套。</summary>
+        public string ChannelId { get; set; }
     }
 }

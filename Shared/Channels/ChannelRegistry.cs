@@ -1018,7 +1018,7 @@ namespace WordAddIn1
             return null;
         }
 
-        private static string TryGetChannelDocUuid(IOperationChannel channel)
+        public static string TryGetChannelDocUuid(IOperationChannel channel)
         {
             if (channel is WordChannel word)
             {

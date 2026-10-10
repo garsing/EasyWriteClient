@@ -247,7 +247,8 @@ namespace WordAddIn1
             {
                 try
                 {
-                    DocumentCheckpointService.RollbackFailedMutation(before.DocUuid, before.Timestamp);
+                    DocumentCheckpointService.RollbackFailedMutation(
+                        before.DocUuid, before.Timestamp, before.ChannelId);
                 }
                 catch (Exception rollbackEx)
                 {
@@ -269,7 +270,8 @@ namespace WordAddIn1
                     }
                     else
                     {
-                        DocumentCheckpointService.RollbackFailedMutation(before.DocUuid, before.Timestamp);
+                        DocumentCheckpointService.RollbackFailedMutation(
+                            before.DocUuid, before.Timestamp, before.ChannelId);
                     }
                 }
                 catch (Exception ex)

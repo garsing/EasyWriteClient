@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using WordAddIn1.DocumentHost;
+using WordAddIn1.OpenFiles;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
@@ -145,6 +146,20 @@ namespace WordAddIn1
                 return Fail(detail, "ckpt-no-doc");
             }
 
+            string channelId = ChannelContext.TryGetChannelIdFromParameters(args);
+            string channelUuid = null;
+            if (ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out _)
+                && channel != null)
+            {
+                channelId = channel.ChannelId;
+                channelUuid = ChannelRegistry.TryGetChannelDocUuid(channel);
+            }
+
+            if (!string.IsNullOrEmpty(channelUuid))
+            {
+                DocumentIdentity.Register(activeDoc, channelUuid);
+            }
+
             try
             {
                 HostProbe.Touch("ckpt-before-activate", activeDoc);
@@ -159,7 +174,14 @@ namespace WordAddIn1
                 return Fail(ex.Message, "ckpt-bind-throw");
             }
 
-            string docUuid = DocumentState.EnsureCurrDocUuid(activeDoc);
+            if (!string.IsNullOrEmpty(channelUuid))
+            {
+                DocumentState.ActivateSessionByUuid(channelUuid);
+            }
+
+            string docUuid = !string.IsNullOrEmpty(channelUuid)
+                ? channelUuid
+                : DocumentState.EnsureCurrDocUuid(activeDoc);
 
             string dir = GetDocCheckpointDirectory(docUuid);
             Directory.CreateDirectory(dir);
@@ -210,7 +232,8 @@ namespace WordAddIn1
             {
                 Success = true,
                 Timestamp = timestamp,
-                DocUuid = docUuid
+                DocUuid = docUuid,
+                ChannelId = channelId
             };
         }
 
@@ -446,7 +469,7 @@ namespace WordAddIn1
             return prop?.GetValue(data);
         }
 
-        public static void RollbackFailedMutation(string docUuid, string timestamp)
+        public static void RollbackFailedMutation(string docUuid, string timestamp, string channelId = null)
         {
             if (string.IsNullOrEmpty(docUuid) || string.IsNullOrEmpty(timestamp))
             {
@@ -456,21 +479,15 @@ namespace WordAddIn1
             try
             {
                 string path = GetCheckpointFilePath(docUuid, timestamp);
-                Word.Document target = TryResolveLiveDocumentByUuid(docUuid);
+                Word.Document target = TryResolveLiveDocumentForRollback(docUuid, channelId);
                 if (File.Exists(path) && target != null)
                 {
-                    Word.Application app = null;
-                    try
-                    {
-                        app = target.Application;
-                    }
-                    catch (Exception ex)
-                    {
-                        HostProbe.Log("rollback-app", HostProbe.Ex(ex));
-                    }
-
+                    Word.Application app = TryApplicationForRestore(target, channelId);
                     if (app != null)
                     {
+                        HostProbe.Log(
+                            "rollback-restore",
+                            "uuid=" + docUuid + " ch=" + (channelId ?? "") + " path=" + path);
                         DocumentRestoreHelper.RestoreActiveDocumentFromCheckpoint(path, app, target);
                     }
                     else
@@ -482,7 +499,8 @@ namespace WordAddIn1
                 {
                     HostProbe.Log(
                         "rollback-skip-restore",
-                        "uuid=" + docUuid + " file=" + File.Exists(path) + " target=" + (target != null));
+                        "uuid=" + docUuid + " ch=" + (channelId ?? "")
+                        + " file=" + File.Exists(path) + " target=" + (target != null));
                 }
             }
             catch (Exception ex)
@@ -506,6 +524,22 @@ namespace WordAddIn1
             System.Diagnostics.Debug.WriteLine($"[Checkpoint] rollback failed invoke timestamp={timestamp}");
         }
 
+        private static Word.Document TryResolveLiveDocumentForRollback(string docUuid, string channelId)
+        {
+            if (!string.IsNullOrEmpty(channelId)
+                && ChannelRegistry.TryGet(channelId, out IOperationChannel byId)
+                && byId != null)
+            {
+                Word.Document fromChannel = TryLiveDocumentFromChannel(byId);
+                if (fromChannel != null)
+                {
+                    return fromChannel;
+                }
+            }
+
+            return TryResolveLiveDocumentByUuid(docUuid);
+        }
+
         private static Word.Document TryResolveLiveDocumentByUuid(string docUuid)
         {
             if (!ChannelRegistry.TryGetChannelByDocUuid(docUuid, out IOperationChannel channel) || channel == null)
@@ -513,6 +547,11 @@ namespace WordAddIn1
                 return null;
             }
 
+            return TryLiveDocumentFromChannel(channel);
+        }
+
+        private static Word.Document TryLiveDocumentFromChannel(IOperationChannel channel)
+        {
             if (channel is WordChannel word && word.TryGetLiveDocument(out Word.Document wordDoc))
             {
                 return wordDoc;
@@ -525,6 +564,57 @@ namespace WordAddIn1
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// 回滚 Open 必须走本稿宿主的 Application。WPS 兼容 RCW 的 .Application 双开时会落到旁边 Word。
+        /// </summary>
+        private static Word.Application TryApplicationForRestore(Word.Document target, string channelId)
+        {
+            if (!string.IsNullOrEmpty(channelId)
+                && ChannelRegistry.TryGet(channelId, out IOperationChannel channel)
+                && channel is WpsChannel wps
+                && wps.TryGetLiveDocument(out object wpsDoc))
+            {
+                Word.Application late = TryAsWordApplication(WpsCom.GetProperty(wpsDoc, "Application"));
+                if (late != null)
+                {
+                    return late;
+                }
+            }
+
+            try
+            {
+                return target?.Application;
+            }
+            catch (Exception ex)
+            {
+                HostProbe.Log("rollback-app", HostProbe.Ex(ex));
+                return null;
+            }
+        }
+
+        private static Word.Application TryAsWordApplication(object app)
+        {
+            if (app == null)
+            {
+                return null;
+            }
+
+            Word.Application typed = app as Word.Application;
+            if (typed != null)
+            {
+                return typed;
+            }
+
+            try
+            {
+                return (Word.Application)app;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         public static ToolResult RestoreCheckpoint(string timestamp, Word.Document document = null)
