@@ -227,6 +227,15 @@ namespace WordAddIn1
                 return await handler(args);
             }
 
+            if (string.Equals(toolName, "F_process_document_actions", StringComparison.Ordinal)
+                && F_ProcessDocumentActionsTool.TryGetContractParseFailure(args, out ToolResult parseFail))
+            {
+                WordAddIn1.DocumentHost.HostProbe.Log(
+                    "invoke-skip-ckpt-parse",
+                    parseFail == null ? "" : parseFail.Error);
+                return parseFail;
+            }
+
             CheckpointBeforeResult before = DocumentCheckpointService.CreateBeforeMutation(toolName, args);
             if (!before.Success)
             {

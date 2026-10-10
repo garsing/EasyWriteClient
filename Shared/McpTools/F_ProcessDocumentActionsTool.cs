@@ -31,6 +31,14 @@ namespace WordAddIn1
                     WordAddIn1.DocumentHost.HostProbe.Log(
                         "tool-enter",
                         WordAddIn1.DocumentHost.HostProbe.ArgsBrief(args));
+                    if (TryGetContractParseFailure(args, out ToolResult parseFail))
+                    {
+                        WordAddIn1.DocumentHost.HostProbe.Log(
+                            "tool-skip-resolve-parse",
+                            parseFail == null ? "" : parseFail.Error);
+                        return parseFail;
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -56,12 +64,6 @@ namespace WordAddIn1
                         $"[F_process_document_actions] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 操作前文档状态: 段落总数={document.Paragraphs.Count}");
                     FormatInheritHelper.DbgLogDocumentFontSample(document, "process_actions 入口");
-
-                    if (!args.ContainsKey("action"))
-                    {
-                        System.Diagnostics.Debug.WriteLine("[ERROR] 缺少必需参数：action");
-                        return FailBeforeWrite("缺少必需参数：action");
-                    }
 
                     // 第一步：更新句子与名称映射表（必须在解析参数之前，确保验证时能找到句子）
                     System.Diagnostics.Debug.WriteLine("[第一步] 更新句子与名称映射表");
@@ -252,6 +254,30 @@ namespace WordAddIn1
         }
 
         /// <summary>
+        /// 不读稿的契约解析。失败则调用方不应建副本、不应 resolve。
+        /// </summary>
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            if (args == null || !args.ContainsKey("action"))
+            {
+                failure = FailBeforeWrite("缺少必需参数：action");
+                return true;
+            }
+
+            var parseResult = ParseActions(args["action"], null);
+            if (!parseResult.Item1)
+            {
+                failure = FailBeforeWrite(parseResult.Item2);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// 尚未写字的契约失败：只丢副本，不按 Word.ActiveDocument 回滚正文。
         /// </summary>
         private static ToolResult FailBeforeWrite(string error)
@@ -317,6 +343,11 @@ namespace WordAddIn1
                                 }
 
                                 action.FormatSpec = ActionFormatHelper.ParseFormatObject(detail, required: true);
+                                if (!action.FormatSpec.Ok)
+                                {
+                                    return (false, action.FormatSpec.Error ?? ActionFormatHelper.MissingFormatError, null);
+                                }
+
                                 break;
 
                             case "delete":
@@ -362,6 +393,11 @@ namespace WordAddIn1
                                 }
 
                                 action.FormatSpec = ActionFormatHelper.ParseFormatObject(detail, required: true);
+                                if (!action.FormatSpec.Ok)
+                                {
+                                    return (false, action.FormatSpec.Error ?? ActionFormatHelper.MissingFormatError, null);
+                                }
+
                                 break;
                         }
 

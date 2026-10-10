@@ -98,7 +98,13 @@ namespace WordDocumentRoundtripTest
             {
                 ["original"] = new Dictionary<string, object> { ["codes"] = codes[0] },
                 ["new"] = "不该写出。",
-                ["inherit_from"] = codes[0]
+                ["format"] = new Dictionary<string, object>
+                {
+                    ["char_format"] = new Dictionary<string, object>
+                    {
+                        ["not_a_real_field"] = true
+                    }
+                }
             }));
 
             ToolResult wr = s.ProcessActions(id, batch);
