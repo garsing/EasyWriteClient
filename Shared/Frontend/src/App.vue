@@ -77,6 +77,7 @@
         :todos="todoBarTodos"
         @toggle="todoBarExpanded = !todoBarExpanded"
       />
+      <p class="ai-content-label" role="note">内容由人工智能生成，请注意甄别</p>
       <ChatInput
         @send="handleSend"
         @stop="handleUserStop"
@@ -1353,6 +1354,21 @@ const restoreInputValue = (value) => {
   line-height: 1.5;
   color: #999;
   text-align: center;
+}
+
+.ai-content-label {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 4px 16px 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #8a8a8a;
+  text-align: center;
+  user-select: none;
+}
+
+.app-shell.host-desktop .ai-content-label {
+  padding: 2px 10px 0;
 }
 
 .chat-drop-hint {
