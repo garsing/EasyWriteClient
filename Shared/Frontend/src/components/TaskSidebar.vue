@@ -1105,12 +1105,13 @@ async function handleOpenSettings () {
 }
 
 .open-file-group-children {
-  padding-left: 10px;
+  /* 对齐套件标题：chevron 12 + gap 6 + 图标 16 + gap 6，文件图标落在套件名下方 */
+  padding-left: 40px;
   min-width: 0;
 }
 
 .open-file-item.open-file-child {
-  padding: 6px 10px 6px 18px;
+  padding: 6px 10px 6px 8px;
   gap: 6px;
 }
 
