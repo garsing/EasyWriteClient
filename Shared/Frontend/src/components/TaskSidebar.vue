@@ -123,6 +123,12 @@
                   @mouseleave="hideHoverTip"
                   @contextmenu.prevent="openFileContextMenu($event, item)"
                 >
+                  <img
+                    :src="resolveOpenFileTypeIcon(item)"
+                    alt=""
+                    class="open-file-app-icon"
+                    aria-hidden="true"
+                  />
                   <span class="open-file-name">{{ item.displayName || '未命名文档' }}</span>
                 </div>
               </div>
@@ -229,11 +235,19 @@
       @mousedown.stop
     >
       <button
+        v-for="kind in createMenu.kinds"
+        :key="kind.key"
         type="button"
-        class="open-file-ctx-item"
-        @click="handleCreateNew"
+        class="open-file-ctx-item open-file-create-kind"
+        @click="handleCreateNew(kind.key)"
       >
-        新建
+        <img
+          :src="kind.icon"
+          alt=""
+          class="open-file-app-icon"
+          aria-hidden="true"
+        />
+        <span>{{ kind.label }}</span>
       </button>
     </div>
   </aside>
@@ -248,7 +262,7 @@ import knowledgeBaseIcon from '../assets/images/knowledge_base.png'
 import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
 import userIcon from '../assets/images/avatar.png'
 import { openFileSelectionKey } from '../utils/selectedOpenFiles.js'
-import { listPersistentOpenFileGroups, resolveOpenFileAppGroupKey } from '../utils/openFileAppIcon.js'
+import { listPersistentOpenFileGroups, resolveOpenFileAppGroupKey, resolveOpenFileTypeIcon } from '../utils/openFileAppIcon.js'
 
 const BROWSER_OPEN_FILE_GROUPS = new Set(['chrome', 'edge', 'yiwrite'])
 
@@ -342,7 +356,8 @@ const createMenu = ref({
   visible: false,
   top: 0,
   left: 0,
-  group: '',
+  suite: '',
+  kinds: [],
   plusRect: null
 })
 
@@ -440,7 +455,8 @@ function closeCreateMenu () {
   createMenu.value = {
     ...createMenu.value,
     visible: false,
-    group: '',
+    suite: '',
+    kinds: [],
     plusRect: null
   }
 }
@@ -481,20 +497,22 @@ function onCreatePlusClick (event, group) {
   closeFileContextMenu()
   clearCreateFailTipTimer()
   const key = group?.key || ''
-  if (createMenu.value.visible && createMenu.value.group === key) {
+  if (createMenu.value.visible && createMenu.value.suite === key) {
     closeCreateMenu()
     return
   }
+  const kinds = Array.isArray(group?.createKinds) ? group.createKinds : []
   const el = event.currentTarget
   const rect = el && typeof el.getBoundingClientRect === 'function'
     ? el.getBoundingClientRect()
     : { top: event.clientY, left: event.clientX, right: event.clientX, bottom: event.clientY }
-  const pos = placeMenuNearRect(rect, 128, 44)
+  const pos = placeMenuNearRect(rect, 168, 8 + 36 * Math.max(kinds.length, 1))
   createMenu.value = {
     visible: true,
     top: pos.top,
     left: pos.left,
-    group: key,
+    suite: key,
+    kinds,
     plusRect: {
       top: rect.top,
       left: rect.left,
@@ -530,8 +548,8 @@ function showCreateFailTip (plusRect, message) {
   }, CREATE_FAIL_TIP_MS)
 }
 
-async function handleCreateNew () {
-  const group = createMenu.value.group
+async function handleCreateNew (kindKey) {
+  const group = kindKey || ''
   const plusRect = createMenu.value.plusRect
   closeCreateMenu()
   if (!group) return
@@ -1093,7 +1111,13 @@ async function handleOpenSettings () {
 
 .open-file-item.open-file-child {
   padding: 6px 10px 6px 18px;
-  gap: 0;
+  gap: 6px;
+}
+
+.open-file-ctx-item.open-file-create-kind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .sidebar-hover-tip {

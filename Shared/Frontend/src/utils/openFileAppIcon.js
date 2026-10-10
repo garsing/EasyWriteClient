@@ -6,6 +6,8 @@ import yiWriteLogoIcon from '../assets/images/yi-write_logo1.png'
 import chromeAppIcon from '../assets/images/chrome.png'
 import edgeAppIcon from '../assets/images/edge.png'
 import imageAppIcon from '../assets/images/image.png'
+import officeSuiteIcon from '../assets/images/office.png'
+import browserSuiteIcon from '../assets/images/browser-o.png'
 
 const GROUP_ORDER = [
   'word',
@@ -80,35 +82,84 @@ export function resolveOpenFileAppGroupIcon (groupKey) {
   return GROUP_ICONS[groupKey] || wordAppIcon
 }
 
-/** 侧栏「打开文件」常驻九行（无图片 / 其他）。 */
-export const PERSISTENT_OPEN_FILE_GROUP_KEYS = [
-  'word',
-  'excel',
-  'ppt',
-  'wps',
-  'et',
-  'wpp',
-  'chrome',
-  'edge',
-  'yiwrite'
+/** 侧栏「打开文件」常驻三栏（Office / WPS / 浏览器）。 */
+export const OPEN_FILE_SUITE_DEFS = [
+  {
+    key: 'office',
+    label: 'Office',
+    icon: officeSuiteIcon,
+    kindKeys: ['word', 'excel', 'ppt']
+  },
+  {
+    key: 'wps',
+    label: 'WPS',
+    icon: wpsAppIcon,
+    kindKeys: ['wps', 'et', 'wpp']
+  },
+  {
+    key: 'browser',
+    label: '浏览器',
+    icon: browserSuiteIcon,
+    kindKeys: ['chrome', 'edge', 'yiwrite']
+  }
 ]
+
+const KIND_TO_SUITE = (() => {
+  const map = new Map()
+  for (const suite of OPEN_FILE_SUITE_DEFS) {
+    for (const kind of suite.kindKeys) {
+      map.set(kind, suite.key)
+    }
+  }
+  return map
+})()
+
+/** WPS 三小类在侧栏按文件类型用 Word / Excel / PPT 图标。 */
+const KIND_TYPE_ICON_ALIAS = {
+  wps: 'word',
+  et: 'excel',
+  wpp: 'ppt'
+}
+
+export function resolveOpenFileTypeIconKey (groupKey) {
+  return KIND_TYPE_ICON_ALIAS[groupKey] || groupKey
+}
+
+export function resolveOpenFileTypeIcon (item) {
+  const key = resolveOpenFileAppGroupKey(item)
+  return resolveOpenFileAppGroupIcon(resolveOpenFileTypeIconKey(key))
+}
+
+function listCreateKinds (kindKeys) {
+  return kindKeys.map((key) => ({
+    key,
+    label: resolveOpenFileAppGroupLabel(key),
+    icon: resolveOpenFileAppGroupIcon(resolveOpenFileTypeIconKey(key))
+  }))
+}
+
+/** 兼容旧名：九个可新建小类（送给 createOpenFile）。 */
+export const PERSISTENT_OPEN_FILE_GROUP_KEYS = OPEN_FILE_SUITE_DEFS.flatMap((s) => s.kindKeys)
 
 const PERSISTENT_OPEN_FILE_GROUP_SET = new Set(PERSISTENT_OPEN_FILE_GROUP_KEYS)
 
-/** 侧栏用：永远九行，再把已打开条目填进去。 */
+/** 侧栏用：永远三栏，再把已打开条目填进对应套件。 */
 export function listPersistentOpenFileGroups (items) {
-  const groups = PERSISTENT_OPEN_FILE_GROUP_KEYS.map((key) => ({
-    key,
-    label: resolveOpenFileAppGroupLabel(key),
-    icon: resolveOpenFileAppGroupIcon(key),
-    items: []
+  const groups = OPEN_FILE_SUITE_DEFS.map((suite) => ({
+    key: suite.key,
+    label: suite.label,
+    icon: suite.icon,
+    items: [],
+    createKinds: listCreateKinds(suite.kindKeys)
   }))
   const byKey = new Map(groups.map((g) => [g.key, g]))
   const list = Array.isArray(items) ? items : []
   for (const item of list) {
-    const key = resolveOpenFileAppGroupKey(item)
-    if (!PERSISTENT_OPEN_FILE_GROUP_SET.has(key)) continue
-    byKey.get(key).items.push(item)
+    const kind = resolveOpenFileAppGroupKey(item)
+    if (!PERSISTENT_OPEN_FILE_GROUP_SET.has(kind)) continue
+    const suiteKey = KIND_TO_SUITE.get(kind)
+    if (!suiteKey) continue
+    byKey.get(suiteKey).items.push(item)
   }
   return groups
 }
