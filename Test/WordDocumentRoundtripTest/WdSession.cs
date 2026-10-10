@@ -107,6 +107,28 @@ namespace WordDocumentRoundtripTest
             return DesktopToolPipe.Call("F_process_document_actions", args);
         }
 
+        public ToolResult ProcessActionsRaw(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_process_document_actions",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public bool ActivateDoc(string fullPath)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    Invoke(doc, "Activate");
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    doc.Activate();
+                    return true;
+                });
+        }
+
         public ToolResult InsertPageBreakTool(string channelId, Dictionary<string, object> target)
         {
             var args = new Dictionary<string, object>();

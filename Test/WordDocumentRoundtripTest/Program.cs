@@ -17,7 +17,9 @@ namespace WordDocumentRoundtripTest
             bool runLayout = !runFindStale
                 && (caseFilter.StartsWith("lb-", StringComparison.OrdinalIgnoreCase)
                     || caseFilter.StartsWith("wc-lb-", StringComparison.OrdinalIgnoreCase));
-            bool runContent = !runFindStale && !runLayout
+            bool runActions = !runFindStale && !runLayout
+                && caseFilter.StartsWith("wa-", StringComparison.OrdinalIgnoreCase);
+            bool runContent = !runFindStale && !runLayout && !runActions
                 && caseFilter.StartsWith("wc-", StringComparison.OrdinalIgnoreCase);
 
             if (runFindStale)
@@ -27,6 +29,10 @@ namespace WordDocumentRoundtripTest
             else if (runLayout)
             {
                 Console.WriteLine("分页/分节 读入+写入（lb-）");
+            }
+            else if (runActions)
+            {
+                Console.WriteLine("文字 改字（wa-）");
             }
             else
             {
@@ -57,6 +63,10 @@ namespace WordDocumentRoundtripTest
             {
                 LbCases.Run(run, host);
             }
+            else if (runActions)
+            {
+                WaCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+            }
             else if (runContent)
             {
                 WcCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
@@ -69,7 +79,9 @@ namespace WordDocumentRoundtripTest
             sw.Stop();
             int target = runFindStale
                 ? FindStaleCases.Target
-                : (runLayout ? LbCases.Target : (runContent ? WcCases.Target : 30));
+                : (runLayout
+                    ? LbCases.Target
+                    : (runActions ? WaCases.Target : (runContent ? WcCases.Target : 30)));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
