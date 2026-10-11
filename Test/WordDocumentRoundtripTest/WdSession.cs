@@ -1037,7 +1037,7 @@ namespace WordDocumentRoundtripTest
         {
             object content = GetProp(doc, "Content");
             int end = Convert.ToInt32(GetProp(content, "End"));
-            int pos = end > 1 ? end - 1 : end;
+            int pos = end > 0 ? end - 1 : 0;
             object range = Invoke(doc, "Range", pos, pos);
             object tables = GetProp(doc, "Tables");
             object table = Invoke(tables, "Add", range, rows, cols);
