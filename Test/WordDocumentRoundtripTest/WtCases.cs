@@ -14,7 +14,7 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static class WtCases
     {
-        public const int Target = 94;
+        public const int Target = 144;
 
         private const string LabelA = "易写表指标";
         private const string LabelB = "易写表WACC";
@@ -40,6 +40,15 @@ namespace WordDocumentRoundtripTest
         private const string RsLeft = "易写表跨行左";
         private const string RsUp = "易写表跨行上";
         private const string RsDown = "易写表跨行下";
+        private const string ConsE = "易写表巩固戊";
+        private const string MoreStart = "易写表文首格";
+        private const string WideA = "易写表宽甲";
+        private const string WideB = "易写表宽乙";
+        private const string WideC = "易写表宽丙";
+        private const string TallA = "易写表高甲";
+        private const string TallB = "易写表高乙";
+        private const string PairA = "易写表对甲";
+        private const string PairB = "易写表对乙";
 
         private static readonly string[] ExtraIds =
         {
@@ -56,6 +65,25 @@ namespace WordDocumentRoundtripTest
             "wt-afmt-applied", "wt-afmt-echo", "wt-del-unk", "wt-del-twice",
             "wt-opt-unk", "wt-opt-after-del", "wt-opt-rebuild", "wt-del-keep-sent",
             "wt-read-gone", "wt-two-del-first"
+        };
+
+        private static readonly string[] ExtraIds2 =
+        {
+            "wt-solo-after", "wt-solo-after-id", "wt-solo-fill", "wt-solo-fill-text", "wt-solo-del-keep",
+            "wt-two-after-first", "wt-two-keep-both", "wt-two-order", "wt-two-after-last", "wt-two-last-order",
+            "wt-before-tbl", "wt-before-tbl-id", "wt-before-keep-sent", "wt-before-order",
+            "wt-read-first-after-before", "wt-third-after-tbl", "wt-third-text",
+            "wt-cursor-after-two", "wt-cursor-first-text", "wt-cursor-n", "wt-no-join-labels",
+            "wt-fill-first-late", "wt-fill-first-late-text", "wt-read-second", "wt-fill-second",
+            "wt-fill-second-text", "wt-opt-second", "wt-opt-first-late", "wt-xfmt-second",
+            "wt-afmt-first-late", "wt-afmt-second-keep", "wt-del-second-keep-first",
+            "wt-del-first-keep-second", "wt-start-keep-old",
+            "wt-create-unk-chart", "wt-create-unk-image", "wt-create-two-modes",
+            "wt-create-empty-codes", "wt-create-empty-table",
+            "wt-create-2x3", "wt-create-3x2", "wt-create-2x1", "wt-read-2x3-rows",
+            "wt-fill-2x3", "wt-opt-2x3", "wt-del-2x3-gone",
+            "wt-create-bad-merge", "wt-create-empty-tr", "wt-fill-second-short",
+            "wt-create-after-filled"
         };
 
         public static void RunCreateAfterOnly(
@@ -440,6 +468,7 @@ namespace WordDocumentRoundtripTest
                 RunCreateAndFill(run, s);
                 RunFormatDeleteOpt(run, s);
                 RunConsolidate(run, s);
+                RunConsolidateMore(run, s);
                 RunNegLate(run, s);
                 RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
             }
@@ -1235,6 +1264,552 @@ namespace WordDocumentRoundtripTest
             s.CloseDocByPath(path);
         }
 
+        private static void RunConsolidateMore(TestRun run, WdSession s)
+        {
+            RunMoreSolo(run, s);
+            RunMoreTwoSent(run, s);
+            RunMoreBeforeAndCursor(run, s);
+            RunMoreDelFirstKeepSecond(run, s);
+            RunMoreShapesAndNeg(run, s);
+        }
+
+        private static void RunMoreSolo(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, ExtraIds2))
+            {
+                return;
+            }
+
+            if (!s.TypePlain(path, AfterSent))
+            {
+                FailMany(run, "COM 写单句失败",
+                    "wt-solo-after", "wt-solo-after-id", "wt-solo-fill", "wt-solo-fill-text", "wt-solo-del-keep");
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            s.ActivateDoc(path);
+            string sent = CodeContaining(ReadBody(s, id), AfterSent, "S");
+            var afterArgs = CreateArgs(id, WriteXml(GridXml(ConsA, "", ConsB, "")));
+            afterArgs["target"] = new Dictionary<string, object> { ["codes"] = sent };
+            ToolResult created = s.CreateTableFromXml(afterArgs);
+            string tableId = WdSession.Str(created, "table_id");
+            Ok(run, "wt-solo-after",
+                created.Success && StillHas(s, id, AfterSent) && StillHas(s, id, ConsA),
+                created.Success ? "单句后建表丢了句或表" : (created.Error ?? ""));
+            Ok(run, "wt-solo-after-id",
+                created.Success && tableId.StartsWith("T_", StringComparison.Ordinal),
+                created.Success ? "单句后无 T_" : (created.Error ?? ""));
+            if (!created.Success || string.IsNullOrEmpty(tableId))
+            {
+                FailMany(run, created.Error ?? "单句后无 table_id",
+                    "wt-solo-fill", "wt-solo-fill-text", "wt-solo-del-keep");
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            ToolResult read = s.ReadTableRowValues(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = tableId
+            });
+            int emptyRow, emptyCount;
+            if (!read.Success || !TryFirstEmptyRow(read, out emptyRow, out emptyCount))
+            {
+                FailMany(run, read.Success ? "单句表无空槽" : (read.Error ?? ""),
+                    "wt-solo-fill", "wt-solo-fill-text", "wt-solo-del-keep");
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            ToolResult fill = s.ApplyTableRowValues(FillArgs(id, tableId, emptyRow, PadValues(emptyCount, FillA)));
+            Ok(run, "wt-solo-fill", fill.Success, fill.Error ?? "单句表填空失败");
+            Ok(run, "wt-solo-fill-text",
+                fill.Success && StillHas(s, id, FillA) && StillHas(s, id, ConsA) && StillHas(s, id, AfterSent),
+                fill.Success ? "单句表填空字不对" : (fill.Error ?? ""));
+
+            ToolResult del = s.DeleteTable(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = tableId
+            });
+            Ok(run, "wt-solo-del-keep",
+                del.Success && !StillHas(s, id, ConsA) && StillHas(s, id, AfterSent),
+                del.Success ? "删单句表带走了前句或标签还在" : (del.Error ?? ""));
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunMoreTwoSent(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!TryOpen(run, s, out path, out id,
+                "wt-two-after-first", "wt-two-keep-both", "wt-two-order",
+                "wt-two-after-last", "wt-two-last-order"))
+            {
+                return;
+            }
+
+            if (!s.TypePlain(path, AfterSent + "\r" + AfterSentB))
+            {
+                FailMany(run, "COM 写两句失败",
+                    "wt-two-after-first", "wt-two-keep-both", "wt-two-order",
+                    "wt-two-after-last", "wt-two-last-order");
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            s.ActivateDoc(path);
+            string body = ReadBody(s, id);
+            string first = CodeContaining(body, AfterSent, "S");
+            var firstArgs = CreateArgs(id, WriteXml(GridXml(ConsA, "", ConsB, "")));
+            firstArgs["target"] = new Dictionary<string, object> { ["codes"] = first };
+            ToolResult afterFirst = s.CreateTableFromXml(firstArgs);
+            string afterBody = ReadBody(s, id);
+            Ok(run, "wt-two-after-first",
+                afterFirst.Success && StillHas(s, id, ConsA),
+                afterFirst.Success ? "第一句后无表" : (afterFirst.Error ?? ""));
+            Ok(run, "wt-two-keep-both",
+                afterFirst.Success && StillHas(s, id, AfterSent) && StillHas(s, id, AfterSentB),
+                afterFirst.Success ? "第一句后建表丢了句子" : (afterFirst.Error ?? ""));
+            Ok(run, "wt-two-order",
+                afterFirst.Success && InOrder(afterBody, AfterSent, ConsA, AfterSentB),
+                afterFirst.Success ? "第一句后表不在两句之间" : (afterFirst.Error ?? ""));
+            s.CloseDocByPath(path);
+
+            if (!TryOpen(run, s, out path, out id, "wt-two-after-last", "wt-two-last-order"))
+            {
+                return;
+            }
+
+            if (!s.TypePlain(path, AfterSent + "\r" + AfterSentB))
+            {
+                FailMany(run, "COM 写两句(末)失败", "wt-two-after-last", "wt-two-last-order");
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            s.ActivateDoc(path);
+            string last = CodeContaining(ReadBody(s, id), AfterSentB, "S");
+            var lastArgs = CreateArgs(id, WriteXml(GridXml(ConsC, "", ConsD, "")));
+            lastArgs["target"] = new Dictionary<string, object> { ["codes"] = last };
+            ToolResult afterLast = s.CreateTableFromXml(lastArgs);
+            string lastBody = ReadBody(s, id);
+            Ok(run, "wt-two-after-last",
+                afterLast.Success && StillHas(s, id, ConsC) && StillHas(s, id, AfterSentB),
+                afterLast.Success ? "末句后建表失败" : (afterLast.Error ?? ""));
+            Ok(run, "wt-two-last-order",
+                afterLast.Success && InOrder(lastBody, AfterSent, AfterSentB, ConsC),
+                afterLast.Success ? "末句后表不在两句之后" : (afterLast.Error ?? ""));
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunMoreBeforeAndCursor(TestRun run, WdSession s)
+        {
+            string[] rest =
+            {
+                "wt-before-tbl", "wt-before-tbl-id", "wt-before-keep-sent", "wt-before-order",
+                "wt-read-first-after-before", "wt-third-after-tbl", "wt-third-text",
+                "wt-cursor-after-two", "wt-cursor-first-text", "wt-cursor-n", "wt-no-join-labels",
+                "wt-fill-first-late", "wt-fill-first-late-text", "wt-read-second", "wt-fill-second",
+                "wt-fill-second-text", "wt-opt-second", "wt-opt-first-late", "wt-xfmt-second",
+                "wt-afmt-first-late", "wt-afmt-second-keep", "wt-del-second-keep-first",
+                "wt-start-keep-old", "wt-fill-second-short", "wt-create-after-filled"
+            };
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, rest))
+            {
+                return;
+            }
+
+            if (!s.TypePlain(path, AfterSent))
+            {
+                FailMany(run, "COM 写表前句失败", rest);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            s.ActivateDoc(path);
+            s.MoveSelectionToEnd(path);
+            ToolResult first = s.CreateTableFromXml(CreateArgs(id, WriteXml(GridXml(ConsA, "", ConsB, ""))));
+            string firstId = WdSession.Str(first, "table_id");
+            if (!first.Success || string.IsNullOrEmpty(firstId))
+            {
+                FailMany(run, first.Error ?? "表前铺甲失败", rest);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            string sent = CodeContaining(ReadBody(s, id), AfterSent, "S");
+            var beforeArgs = CreateArgs(id, WriteXml(GridXml(ConsC, "", ConsD, "")));
+            beforeArgs["target"] = new Dictionary<string, object> { ["codes"] = sent };
+            ToolResult second = s.CreateTableFromXml(beforeArgs);
+            string secondId = WdSession.Str(second, "table_id");
+            string beforeBody = ReadBody(s, id);
+            Ok(run, "wt-before-tbl",
+                second.Success && StillHas(s, id, ConsA) && StillHas(s, id, ConsC),
+                second.Success ? "表前建表合成或丢表" : (second.Error ?? ""));
+            Ok(run, "wt-before-tbl-id",
+                second.Success && secondId.StartsWith("T_", StringComparison.Ordinal) && secondId != firstId,
+                second.Success ? "表前第二张 id 不对" : (second.Error ?? ""));
+            Ok(run, "wt-before-keep-sent",
+                second.Success && StillHas(s, id, AfterSent),
+                second.Success ? "表前建表丢了前句" : (second.Error ?? ""));
+            Ok(run, "wt-before-order",
+                second.Success && InOrder(beforeBody, AfterSent, ConsC, ConsA),
+                second.Success ? "表前表不在句与甲之间" : (second.Error ?? ""));
+            if (!second.Success || string.IsNullOrEmpty(secondId))
+            {
+                FailMany(run, second.Error ?? "表前无 table_id",
+                    "wt-read-first-after-before", "wt-third-after-tbl", "wt-third-text",
+                    "wt-cursor-after-two", "wt-cursor-first-text", "wt-cursor-n", "wt-no-join-labels",
+                    "wt-fill-first-late", "wt-fill-first-late-text", "wt-read-second", "wt-fill-second",
+                    "wt-fill-second-text", "wt-opt-second", "wt-opt-first-late", "wt-xfmt-second",
+                    "wt-afmt-first-late", "wt-afmt-second-keep", "wt-del-second-keep-first",
+                    "wt-start-keep-old", "wt-fill-second-short", "wt-create-after-filled");
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            ToolResult readFirst = s.ReadTableRowValues(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = firstId
+            });
+            int firstEmptyRow = 0;
+            int firstEmpty = 0;
+            bool firstHasEmpty = readFirst.Success && TryFirstEmptyRow(readFirst, out firstEmptyRow, out firstEmpty);
+            Ok(run, "wt-read-first-after-before",
+                firstHasEmpty,
+                readFirst.Success ? "表前插入后甲空槽没了" : (readFirst.Error ?? ""));
+
+            var thirdArgs = CreateArgs(id, WriteXml(GridXml(ConsE, "", Cell1, "")));
+            thirdArgs["target"] = new Dictionary<string, object> { ["table"] = secondId };
+            ToolResult third = s.CreateTableFromXml(thirdArgs);
+            string thirdId = WdSession.Str(third, "table_id");
+            Ok(run, "wt-third-after-tbl",
+                third.Success && StillHas(s, id, ConsA) && StillHas(s, id, ConsC) && StillHas(s, id, ConsE),
+                third.Success ? "第三张表后建表连表" : (third.Error ?? ""));
+            Ok(run, "wt-third-text",
+                third.Success && thirdId != firstId && thirdId != secondId,
+                third.Success ? "第三张 table_id 不对" : (third.Error ?? ""));
+
+            ToolResult cursor1 = s.CreateTableFromXml(CreateArgs(id, WriteXml(OneCellXml(Row3A))));
+            Ok(run, "wt-cursor-after-two",
+                cursor1.Success && StillHas(s, id, ConsA) && StillHas(s, id, ConsC) && StillHas(s, id, Row3A),
+                cursor1.Success ? "光标再建吃掉前表" : (cursor1.Error ?? ""));
+            ToolResult readAfterCursor = s.ReadTableRowValues(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = firstId
+            });
+            int afterCursorEmpty;
+            Ok(run, "wt-cursor-first-text",
+                readAfterCursor.Success && TryFirstEmptyRow(readAfterCursor, out _, out afterCursorEmpty),
+                readAfterCursor.Success ? "光标再建后甲空槽没了" : (readAfterCursor.Error ?? ""));
+
+            ToolResult cursorN = s.CreateTableFromXml(CreateArgs(id, WriteXml(ThreeRowXml())));
+            Ok(run, "wt-cursor-n",
+                cursorN.Success && StillHas(s, id, ConsA) && StillHas(s, id, Row3B) && StillHas(s, id, Row3C),
+                cursorN.Success ? "光标三行表连进甲" : (cursorN.Error ?? ""));
+            ToolResult cursorRs = s.CreateTableFromXml(CreateArgs(id, WriteXml(RowspanXml())));
+            string afterJoin = ReadBody(s, id);
+            Ok(run, "wt-no-join-labels",
+                cursorRs.Success
+                    && InOrder(afterJoin, ConsC, ConsA)
+                    && afterJoin.IndexOf(ConsA, StringComparison.Ordinal) >= 0
+                    && afterJoin.IndexOf(ConsC, StringComparison.Ordinal) >= 0
+                    && afterJoin.IndexOf(RsLeft, StringComparison.Ordinal) >= 0
+                    && afterJoin.IndexOf(Row3A, StringComparison.Ordinal) >= 0,
+                cursorRs.Success ? "连建后标签被覆盖" : (cursorRs.Error ?? ""));
+
+            if (!firstHasEmpty)
+            {
+                FailMany(run, "甲无空槽，无法晚填",
+                    "wt-fill-first-late", "wt-fill-first-late-text", "wt-create-after-filled");
+            }
+            else
+            {
+                ToolResult fillFirst = s.ApplyTableRowValues(
+                    FillArgs(id, firstId, firstEmptyRow, PadValues(firstEmpty, FillA)));
+                Ok(run, "wt-fill-first-late", fillFirst.Success, fillFirst.Error ?? "晚填甲失败");
+                Ok(run, "wt-fill-first-late-text",
+                    fillFirst.Success && StillHas(s, id, FillA) && StillHas(s, id, ConsA) && StillHas(s, id, ConsC),
+                    fillFirst.Success ? "晚填甲字不对" : (fillFirst.Error ?? ""));
+
+                var afterFilled = CreateArgs(id, WriteXml(GridXml(MoreStart, "1", PairA, "2")));
+                afterFilled["target"] = new Dictionary<string, object> { ["table"] = firstId };
+                ToolResult filledAfter = s.CreateTableFromXml(afterFilled);
+                Ok(run, "wt-create-after-filled",
+                    filledAfter.Success && StillHas(s, id, FillA) && StillHas(s, id, MoreStart) && StillHas(s, id, ConsA),
+                    filledAfter.Success ? "已填表后再建表丢了字" : (filledAfter.Error ?? ""));
+            }
+
+            ToolResult readSecond = s.ReadTableRowValues(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = secondId
+            });
+            int secondRow = 0;
+            int secondEmpty = 0;
+            bool secondHasEmpty = readSecond.Success && TryFirstEmptyRow(readSecond, out secondRow, out secondEmpty);
+            Ok(run, "wt-read-second",
+                secondHasEmpty,
+                readSecond.Success ? "丙无空槽" : (readSecond.Error ?? ""));
+            if (!secondHasEmpty)
+            {
+                FailMany(run, readSecond.Success ? "丙无空槽" : (readSecond.Error ?? ""),
+                    "wt-fill-second", "wt-fill-second-text", "wt-fill-second-short");
+            }
+            else
+            {
+                var tooShort = secondEmpty <= 1 ? new string[0] : new string[secondEmpty - 1];
+                for (int i = 0; i < tooShort.Length; i++)
+                {
+                    tooShort[i] = "";
+                }
+
+                ToolResult shortLen = s.ApplyTableRowValues(FillArgs(id, secondId, secondRow, tooShort));
+                Ok(run, "wt-fill-second-short",
+                    !shortLen.Success && StillHas(s, id, ConsC) && !StillHas(s, id, FillB),
+                    shortLen.Success ? "丙 values 偏短仍写入" : (shortLen.Error ?? "错长度却改了丙"));
+
+                ToolResult fillSecond = s.ApplyTableRowValues(
+                    FillArgs(id, secondId, secondRow, PadValues(secondEmpty, FillB)));
+                Ok(run, "wt-fill-second", fillSecond.Success, fillSecond.Error ?? "填丙失败");
+                Ok(run, "wt-fill-second-text",
+                    fillSecond.Success && StillHas(s, id, FillB) && StillHas(s, id, ConsC) && StillHas(s, id, ConsA),
+                    fillSecond.Success ? "填丙字不对" : (fillSecond.Error ?? ""));
+            }
+
+            ToolResult optSecond = s.OptimizeTableDisplay(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = secondId
+            });
+            Ok(run, "wt-opt-second", optSecond.Success, optSecond.Error ?? "优丙失败");
+            ToolResult optFirst = s.OptimizeTableDisplay(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = firstId
+            });
+            Ok(run, "wt-opt-first-late", optFirst.Success, optFirst.Error ?? "晚优甲失败");
+
+            string extractPath = Path.Combine(Path.GetTempPath(), "ew-wt-x2-" + Guid.NewGuid().ToString("N") + ".xml");
+            ToolResult xfmt = s.ExtractTableFormat(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["path"] = extractPath,
+                ["table_selection"] = new Dictionary<string, object>
+                {
+                    ["type"] = "by_id",
+                    ["table_id"] = secondId
+                }
+            });
+            Ok(run, "wt-xfmt-second",
+                xfmt.Success && File.Exists(extractPath),
+                xfmt.Success ? "抽丙格式无文件" : (xfmt.Error ?? ""));
+
+            string fmtXml =
+                "<TableConfig><General><TableFontColor>000000</TableFontColor><Style><TableStyle>ThreeLine</TableStyle><HeaderRows>1</HeaderRows></Style></General></TableConfig>";
+            ToolResult afmtFirst = s.ApplyTableFormatFromXml(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = firstId,
+                ["xml_content"] = fmtXml
+            });
+            Ok(run, "wt-afmt-first-late",
+                afmtFirst.Success && StillHas(s, id, ConsA),
+                afmtFirst.Success ? "晚套甲改了字" : (afmtFirst.Error ?? ""));
+            ToolResult afmtSecond = s.ApplyTableFormatFromXml(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = secondId,
+                ["xml_content"] = fmtXml
+            });
+            Ok(run, "wt-afmt-second-keep",
+                afmtSecond.Success && StillHas(s, id, ConsA) && StillHas(s, id, ConsC),
+                afmtSecond.Success ? "套丙带走了甲" : (afmtSecond.Error ?? ""));
+
+            var startArgs = CreateArgs(id, WriteXml(OneCellXml(MoreStart + "首")));
+            startArgs["target"] = new Dictionary<string, object> { ["position"] = "start" };
+            ToolResult atStart = s.CreateTableFromXml(startArgs);
+            Ok(run, "wt-start-keep-old",
+                atStart.Success && StillHas(s, id, ConsA) && StillHas(s, id, MoreStart + "首"),
+                atStart.Success ? "文首建表冲掉旧表" : (atStart.Error ?? ""));
+
+            ToolResult delSecond = s.DeleteTable(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = secondId
+            });
+            Ok(run, "wt-del-second-keep-first",
+                delSecond.Success && !StillHas(s, id, ConsC) && StillHas(s, id, ConsA),
+                delSecond.Success ? "删丙时甲也没了或丙还在" : (delSecond.Error ?? ""));
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunMoreDelFirstKeepSecond(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, "wt-del-first-keep-second"))
+            {
+                return;
+            }
+
+            ToolResult a = s.CreateTableFromXml(CreateArgs(id, WriteXml(GridXml(PairA, "1", PairB, "2"))));
+            string aId = WdSession.Str(a, "table_id");
+            if (!a.Success || string.IsNullOrEmpty(aId))
+            {
+                FailMany(run, a.Error ?? "对表甲失败", "wt-del-first-keep-second");
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            var bArgs = CreateArgs(id, WriteXml(OneCellXml(TallA)));
+            bArgs["target"] = new Dictionary<string, object> { ["table"] = aId };
+            ToolResult b = s.CreateTableFromXml(bArgs);
+            string bId = WdSession.Str(b, "table_id");
+            if (!b.Success || string.IsNullOrEmpty(bId))
+            {
+                FailMany(run, b.Error ?? "对表乙失败", "wt-del-first-keep-second");
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            ToolResult del = s.DeleteTable(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = aId
+            });
+            Ok(run, "wt-del-first-keep-second",
+                del.Success && !StillHas(s, id, PairA) && StillHas(s, id, TallA),
+                del.Success ? "删第一张时第二张也没了" : (del.Error ?? ""));
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunMoreShapesAndNeg(TestRun run, WdSession s)
+        {
+            string[] rest =
+            {
+                "wt-create-unk-chart", "wt-create-unk-image", "wt-create-two-modes",
+                "wt-create-empty-codes", "wt-create-empty-table",
+                "wt-create-2x3", "wt-create-3x2", "wt-create-2x1", "wt-read-2x3-rows",
+                "wt-fill-2x3", "wt-opt-2x3", "wt-del-2x3-gone",
+                "wt-create-bad-merge", "wt-create-empty-tr"
+            };
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, rest))
+            {
+                return;
+            }
+
+            var unkChart = CreateArgs(id, WriteXml(GridXml(ConsA, "", ConsB, "")));
+            unkChart["target"] = new Dictionary<string, object> { ["chart"] = "C_99999" };
+            ExpectFail(run, "wt-create-unk-chart", s.CreateTableFromXml(unkChart), "图表");
+
+            var unkImage = CreateArgs(id, WriteXml(GridXml(ConsA, "", ConsB, "")));
+            unkImage["target"] = new Dictionary<string, object> { ["image"] = "I_99999" };
+            ExpectFail(run, "wt-create-unk-image", s.CreateTableFromXml(unkImage), "图片");
+
+            var twoModes = CreateArgs(id, WriteXml(GridXml(ConsA, "", ConsB, "")));
+            twoModes["target"] = new Dictionary<string, object>
+            {
+                ["codes"] = "S_00001",
+                ["table"] = "T_00001"
+            };
+            ExpectFail(run, "wt-create-two-modes", s.CreateTableFromXml(twoModes), "五选一");
+
+            var emptyCodes = CreateArgs(id, WriteXml(GridXml(ConsA, "", ConsB, "")));
+            emptyCodes["target"] = new Dictionary<string, object> { ["codes"] = "   " };
+            ExpectFail(run, "wt-create-empty-codes", s.CreateTableFromXml(emptyCodes), "五选一");
+
+            var emptyTable = CreateArgs(id, WriteXml(GridXml(ConsA, "", ConsB, "")));
+            emptyTable["target"] = new Dictionary<string, object> { ["table"] = "" };
+            ExpectFail(run, "wt-create-empty-table", s.CreateTableFromXml(emptyTable), "五选一");
+
+            ExpectFail(run, "wt-create-bad-merge",
+                s.CreateTableFromXml(CreateArgs(id, WriteXml(
+                    "<TableConfig><General/><Table><Properties><ColWidths><float>120</float><float>180</float></ColWidths></Properties><Data>"
+                    + "<tr><td>甲</td><td>乙</td></tr>"
+                    + "<tr><td colspan=\"3\">越界</td></tr></Data></Table></TableConfig>"))),
+                "越界");
+            ToolResult emptyTr = s.CreateTableFromXml(CreateArgs(id, WriteXml(
+                "<TableConfig><General/><Table><Properties/><Data><tr></tr></Data></Table></TableConfig>")));
+            Ok(run, "wt-create-empty-tr",
+                emptyTr != null && !emptyTr.Success
+                    && (Contains(emptyTr.Error, "为空") || Contains(emptyTr.Error, "推断列数")),
+                emptyTr != null && !emptyTr.Success
+                    ? "失败文案不含「为空/推断列数」: " + (emptyTr.Error ?? "")
+                    : "空 <tr> 仍成功");
+
+            ToolResult wide = s.CreateTableFromXml(CreateArgs(id, WriteXml(WideXml())));
+            string wideId = WdSession.Str(wide, "table_id");
+            Ok(run, "wt-create-2x3",
+                wide.Success && StillHas(s, id, WideA) && StillHas(s, id, WideB) && StillHas(s, id, WideC),
+                wide.Success ? "2x3 缺标签" : (wide.Error ?? ""));
+
+            ToolResult tall = s.CreateTableFromXml(CreateArgs(id, WriteXml(TallXml())));
+            Ok(run, "wt-create-3x2",
+                tall.Success && StillHas(s, id, TallA) && StillHas(s, id, TallB),
+                tall.Success ? "3x2 缺标签" : (tall.Error ?? ""));
+
+            ToolResult pair = s.CreateTableFromXml(CreateArgs(id, WriteXml(PairColXml())));
+            Ok(run, "wt-create-2x1",
+                pair.Success && StillHas(s, id, PairA) && StillHas(s, id, PairB),
+                pair.Success ? "2x1 缺标签" : (pair.Error ?? ""));
+
+            if (!wide.Success || string.IsNullOrEmpty(wideId))
+            {
+                FailMany(run, wide.Error ?? "2x3 无 id",
+                    "wt-read-2x3-rows", "wt-fill-2x3", "wt-opt-2x3", "wt-del-2x3-gone");
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            ToolResult readWide = s.ReadTableRowValues(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = wideId
+            });
+            JObject data = DataObj(readWide);
+            JArray rows = data == null ? null : data["rows"] as JArray;
+            Ok(run, "wt-read-2x3-rows",
+                readWide.Success && rows != null && rows.Count == 2,
+                readWide.Success ? "2x3 rows=" + (rows == null ? -1 : rows.Count) : (readWide.Error ?? ""));
+
+            int wideRow, wideEmpty;
+            if (!readWide.Success || !TryFirstEmptyRow(readWide, out wideRow, out wideEmpty))
+            {
+                FailMany(run, readWide.Success ? "2x3 无空槽" : (readWide.Error ?? ""), "wt-fill-2x3");
+            }
+            else
+            {
+                ToolResult fillWide = s.ApplyTableRowValues(
+                    FillArgs(id, wideId, wideRow, PadValues(wideEmpty, FillA)));
+                Ok(run, "wt-fill-2x3",
+                    fillWide.Success && StillHas(s, id, FillA) && StillHas(s, id, WideA),
+                    fillWide.Success ? "2x3 填空字不对" : (fillWide.Error ?? ""));
+            }
+
+            ToolResult optWide = s.OptimizeTableDisplay(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = wideId
+            });
+            Ok(run, "wt-opt-2x3", optWide.Success, optWide.Error ?? "2x3 optimize 失败");
+
+            ToolResult delWide = s.DeleteTable(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = wideId
+            });
+            Ok(run, "wt-del-2x3-gone",
+                delWide.Success && !StillHas(s, id, WideA) && StillHas(s, id, TallA) && StillHas(s, id, PairA),
+                delWide.Success ? "删 2x3 时其他表也没了或标签还在" : (delWide.Error ?? ""));
+            s.CloseDocByPath(path);
+        }
+
         private static void RunNegLate(TestRun run, WdSession s)
         {
             string xml = WriteXml(GridXml(LabelA, "1", LabelB, "2"));
@@ -1564,6 +2139,64 @@ namespace WordDocumentRoundtripTest
                     ["is_bold"] = false
                 }
             };
+        }
+
+        private static bool InOrder(string body, params string[] parts)
+        {
+            if (string.IsNullOrEmpty(body) || parts == null)
+            {
+                return false;
+            }
+
+            int pos = 0;
+            foreach (string part in parts)
+            {
+                if (string.IsNullOrEmpty(part))
+                {
+                    return false;
+                }
+
+                int i = body.IndexOf(part, pos, StringComparison.Ordinal);
+                if (i < 0)
+                {
+                    return false;
+                }
+
+                pos = i + part.Length;
+            }
+
+            return true;
+        }
+
+        private static string WideXml()
+        {
+            return
+                "<TableConfig><General><TableFontColor>000000</TableFontColor></General><Table><Properties>"
+                + "<ColWidths><float>80</float><float>80</float><float>80</float></ColWidths></Properties><Data>"
+                + "<tr><td>" + WideA + "</td><td></td><td>" + WideB + "</td></tr>"
+                + "<tr><td>" + WideC + "</td><td></td><td></td></tr>"
+                + "</Data></Table></TableConfig>";
+        }
+
+        private static string TallXml()
+        {
+            return
+                "<TableConfig><General><TableFontColor>000000</TableFontColor></General><Table><Properties>"
+                + "<ColWidths><float>120</float><float>120</float></ColWidths></Properties><Data>"
+                + "<tr><td>" + TallA + "</td><td></td></tr>"
+                + "<tr><td>" + TallB + "</td><td></td></tr>"
+                + "<tr><td></td><td></td></tr>"
+                + "</Data></Table></TableConfig>";
+        }
+
+        private static string PairColXml()
+        {
+            return
+                "<TableConfig><General><TableFontColor>000000</TableFontColor></General><Table><Properties>"
+                + "<ColWidths><float>120</float></ColWidths></Properties><Data>"
+                + "<tr><td>" + PairA + "</td></tr>"
+                + "<tr><td>" + PairB + "</td></tr>"
+                + "</Data></Table></TableConfig>";
         }
 
         private static string GridXml(string a, string b, string c, string d)
