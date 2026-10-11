@@ -6,11 +6,14 @@ using Word = Microsoft.Office.Interop.Word;
 namespace WordAddIn1.DocumentHost
 {
     /// <summary>
-    /// 文字宿主 / 检查点 / 表后落点诊断。只走 DebugCategories 的 host（或 all）。
+    /// 文字宿主 / 检查点 / 表后落点诊断。总闸 + DebugCategories 的 host（或 all）。
     /// </summary>
     internal static class HostProbe
     {
-        internal static bool Enabled => EasyWriteDiagnostics.IsEnabled(DebugCategory.Host);
+        /// <summary>总闸。false 时不算详情、不碰 COM。排障再改 true，且 config 含 host 或 all。</summary>
+        internal const bool Enable = false;
+
+        internal static bool Enabled => Enable && EasyWriteDiagnostics.IsEnabled(DebugCategory.Host);
 
         public static void Log(string site, string detail)
         {

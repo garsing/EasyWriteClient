@@ -34,10 +34,13 @@ namespace WordAddIn1
 
                 Word.Range tableRange = table.Range;
                 int objectEnd = tableRange.End;
-                WordAddIn1.DocumentHost.HostProbe.Log(
-                    "tbl-after-range",
-                    "id=" + tableId + " start=" + tableRange.Start + " end=" + objectEnd
-                    + " docEnd=" + SafeContentEnd(doc));
+                if (WordAddIn1.DocumentHost.HostProbe.Enabled)
+                {
+                    WordAddIn1.DocumentHost.HostProbe.Log(
+                        "tbl-after-range",
+                        "id=" + tableId + " start=" + tableRange.Start + " end=" + objectEnd
+                        + " docEnd=" + SafeContentEnd(doc));
+                }
 
                 Word.Range wordPath = TryInsertParagraphAfterCollapsedEnd(tableRange, tableId);
                 if (wordPath != null && !RangeIsInCell(wordPath))
@@ -226,12 +229,15 @@ namespace WordAddIn1
                 try
                 {
                     raw = doc.Range(pos, pos);
-                    WordAddIn1.DocumentHost.HostProbe.Log(
-                        "tbl-after-raw",
-                        "id=" + tableId + " asked=" + pos
-                        + " got=" + raw.Start + "-" + raw.End
-                        + " text=" + QuoteSpecial(raw.Text)
-                        + " " + DescribeRange(raw));
+                    if (WordAddIn1.DocumentHost.HostProbe.Enabled)
+                    {
+                        WordAddIn1.DocumentHost.HostProbe.Log(
+                            "tbl-after-raw",
+                            "id=" + tableId + " asked=" + pos
+                            + " got=" + raw.Start + "-" + raw.End
+                            + " text=" + QuoteSpecial(raw.Text)
+                            + " " + DescribeRange(raw));
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -276,11 +282,14 @@ namespace WordAddIn1
             try
             {
                 raw.InsertParagraphAfter();
-                WordAddIn1.DocumentHost.HostProbe.Log(
-                    "tbl-after-raw-para",
-                    "id=" + tableId + " pos=" + pos
-                    + " start=" + raw.Start + " end=" + raw.End
-                    + " " + DescribeRange(raw));
+                if (WordAddIn1.DocumentHost.HostProbe.Enabled)
+                {
+                    WordAddIn1.DocumentHost.HostProbe.Log(
+                        "tbl-after-raw-para",
+                        "id=" + tableId + " pos=" + pos
+                        + " start=" + raw.Start + " end=" + raw.End
+                        + " " + DescribeRange(raw));
+                }
                 raw.Collapse(Word.WdCollapseDirection.wdCollapseStart);
                 if (RangeIsInCell(raw))
                 {
@@ -310,11 +319,14 @@ namespace WordAddIn1
             try
             {
                 raw.InsertAfter("\r");
-                WordAddIn1.DocumentHost.HostProbe.Log(
-                    "tbl-after-raw-ins",
-                    "id=" + tableId + " pos=" + pos
-                    + " start=" + raw.Start + " end=" + raw.End
-                    + " " + DescribeRange(raw));
+                if (WordAddIn1.DocumentHost.HostProbe.Enabled)
+                {
+                    WordAddIn1.DocumentHost.HostProbe.Log(
+                        "tbl-after-raw-ins",
+                        "id=" + tableId + " pos=" + pos
+                        + " start=" + raw.Start + " end=" + raw.End
+                        + " " + DescribeRange(raw));
+                }
                 raw.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
                 if (RangeIsInCell(raw))
                 {
