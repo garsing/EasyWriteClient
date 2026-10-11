@@ -30,6 +30,33 @@ namespace WordDocumentRoundtripTest
                 return ContractSkipCkptProbe.Run();
             }
 
+            if (string.Equals(caseFilter, "wt-wps-empty-slots", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("WPS 巩固表空槽回包（wt-wps-empty-slots）");
+                if (!DesktopToolPipe.TryWaitUntilAvailable(8000))
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                WtCases.RunEmptySlotDump(host);
+                return 0;
+            }
+
+            if (string.Equals(caseFilter, "wt-after-tbl-join", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 表后建表是否并表（wt-after-tbl-join）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                if (!DesktopToolPipe.TryWaitUntilAvailable(8000))
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                WtCases.RunAfterTblJoinProbe(host);
+                return 0;
+            }
+
             if (string.Equals(caseFilter, "wt-create-after-two", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("文字 两句后建表短套（wt-create-after-two）");

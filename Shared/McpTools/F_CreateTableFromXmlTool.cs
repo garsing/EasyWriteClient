@@ -111,7 +111,8 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = locate.Error };
                     }
 
-                    var createResult = CreateTableAtLocation(document, parseResult.Config, locate.Range);
+                    Word.Range addRange = RangeForAddAfterTable(locate);
+                    var createResult = CreateTableAtLocation(document, parseResult.Config, addRange);
                     LogPhase($"CreateTableAtLocation success={createResult.Success}");
                     if (!createResult.Success)
                     {
@@ -649,6 +650,25 @@ namespace WordAddIn1
             {
                 System.Diagnostics.Debug.WriteLine("[CreateTable] 定位前刷新失败: " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// 仅表后建表：FindRangeAfterTable 留下的段会被 Tables.Add 吃掉，两表贴邻会并成一张。
+        /// 再插一段，Add 吃后一段，表间留空段。句后/光标/图后不走这里。
+        /// </summary>
+        private static Word.Range RangeForAddAfterTable(InsertTargetLocatorHelper.ResolveRangeResult locate)
+        {
+            if (locate?.Range == null
+                || locate.Spec == null
+                || locate.Spec.Kind != InsertTargetLocatorHelper.LocatorKind.Table)
+            {
+                return locate?.Range;
+            }
+
+            Word.Range insertRange = locate.Range;
+            insertRange.InsertParagraphAfter();
+            insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            return insertRange;
         }
 
         private static CreateResult CreateTableAtLocation(Word.Document document, TableConfig config, Word.Range insertRange)

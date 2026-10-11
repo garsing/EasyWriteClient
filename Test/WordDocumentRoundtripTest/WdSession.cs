@@ -239,6 +239,69 @@ namespace WordDocumentRoundtripTest
             return DesktopToolPipe.Call("F_insert_page_break", args);
         }
 
+        public bool WriteTableFacts(string fullPath)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object tables = GetProp(doc, "Tables");
+                    int n = Convert.ToInt32(GetProp(tables, "Count"));
+                    Console.WriteLine("COM Tables.Count=" + n);
+                    for (int i = 1; i <= n; i++)
+                    {
+                        object t = Invoke(tables, "Item", i);
+                        object rng = GetProp(t, "Range");
+                        string title = "";
+                        try { title = Convert.ToString(GetProp(t, "Title")); } catch { title = "?"; }
+                        string cell = "";
+                        try
+                        {
+                            object c11 = Invoke(t, "Cell", 1, 1);
+                            object cr = GetProp(c11, "Range");
+                            cell = (Convert.ToString(GetProp(cr, "Text")) ?? "")
+                                .Replace("\r", "\\r").Replace("\a", "\\a");
+                        }
+                        catch (Exception ex)
+                        {
+                            cell = ex.Message;
+                        }
+
+                        Console.WriteLine("  COM[" + i + "] start=" + GetProp(rng, "Start")
+                            + " end=" + GetProp(rng, "End")
+                            + " title=" + title
+                            + " r1=" + cell);
+                    }
+
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    Console.WriteLine("COM Tables.Count=" + doc.Tables.Count);
+                    for (int i = 1; i <= doc.Tables.Count; i++)
+                    {
+                        Word.Table t = doc.Tables[i];
+                        string title = "";
+                        try { title = t.Title ?? ""; } catch { title = "?"; }
+                        string cell = "";
+                        try
+                        {
+                            cell = (t.Cell(1, 1).Range.Text ?? "").Replace("\r", "\\r").Replace("\a", "\\a");
+                        }
+                        catch (Exception ex)
+                        {
+                            cell = ex.Message;
+                        }
+
+                        Console.WriteLine("  COM[" + i + "] start=" + t.Range.Start
+                            + " end=" + t.Range.End
+                            + " title=" + title
+                            + " r1=" + cell);
+                    }
+
+                    return true;
+                });
+        }
+
         public bool OnWordDoc(string fullPath, Func<Word.Document, bool> action)
         {
             if (IsWps || action == null)

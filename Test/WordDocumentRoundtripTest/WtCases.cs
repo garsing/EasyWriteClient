@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using WordAddIn1;
+using Word = Microsoft.Office.Interop.Word;
 
 namespace WordDocumentRoundtripTest
 {
@@ -114,6 +115,164 @@ namespace WordDocumentRoundtripTest
         /// 两句话：存文 ≠ 全文，必须走原来的 Find，不能误用整篇 Content。
         /// 句后建表应夹在两句之间（第一句后）或落在第二句后。
         /// </summary>
+        /// <summary>对照巩固套：首张表刚建完 vs 后面又建几张表之后，读空槽。</summary>
+        public static void RunEmptySlotDump(string host)
+        {
+            var s = new WdSession(host);
+            var dummy = new TestRun();
+            string path, id;
+            if (!TryOpen(dummy, s, out path, out id, "wt-wps-empty-slots"))
+            {
+                Console.WriteLine("open failed");
+                return;
+            }
+
+            if (!s.TypePlain(path, ConsSent))
+            {
+                Console.WriteLine("TypePlain failed");
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            s.ActivateDoc(path);
+            ToolResult created = s.CreateTableFromXml(
+                CreateArgsFilename(id, WriteXml(GridXml(ConsA, "", ConsB, ""))));
+            string tableId = WdSession.Str(created, "table_id");
+            Console.WriteLine("first id=" + tableId + " ok=" + created.Success);
+            DumpRead(s, id, tableId, "just-created");
+
+            var afterTbl = CreateArgs(id, WriteXml(GridXml(ConsC, "", ConsD, "")));
+            afterTbl["target"] = new Dictionary<string, object> { ["table"] = tableId };
+            ToolResult second = s.CreateTableFromXml(afterTbl);
+            Console.WriteLine("after-tbl ok=" + second.Success + " id=" + WdSession.Str(second, "table_id"));
+            DumpRead(s, id, tableId, "after-second-table");
+
+            CreateOkHas(s, id, OneCellXml(Cell1), Cell1);
+            CreateOkHas(s, id, ThreeRowXml(), Row3A);
+            CreateOkHas(s, id, SpanXml(), SpanTxt);
+            CreateOkHas(s, id, RowspanXml(), RsLeft);
+            Console.WriteLine("firstId still=" + tableId);
+            s.WriteTableFacts(path);
+            DumpRead(s, id, tableId, "after-extra-tables");
+
+            s.CloseDocByPath(path);
+        }
+
+        private static void DumpRead(WdSession s, string id, string tableId, string tag)
+        {
+            ToolResult read = s.ReadTableRowValues(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["table_id"] = tableId
+            });
+            Console.WriteLine(tag + " success=" + read.Success + " err=" + (read.Error ?? ""));
+            JObject data = DataObj(read);
+            JArray rows = data == null ? null : data["rows"] as JArray;
+            if (rows == null)
+            {
+                Console.WriteLine(tag + " rows=null data=" + (data == null ? "null" : data.ToString(Formatting.None)));
+                return;
+            }
+
+            foreach (JToken token in rows)
+            {
+                JObject o = token as JObject;
+                if (o == null)
+                {
+                    continue;
+                }
+
+                Console.WriteLine(tag + " row=" + o["row"] + " empty_count=" + o["empty_count"]
+                    + " values=" + (o["values"] == null ? "null" : o["values"].ToString(Formatting.None))
+                    + " slots=" + (o["slots"] == null ? "null" : o["slots"].ToString(Formatting.None)));
+            }
+
+            int er, ec;
+            Console.WriteLine(tag + " TryFirstEmpty=" + TryFirstEmptyRow(read, out er, out ec)
+                + " row=" + er + " n=" + ec);
+        }
+
+        /// <summary>表后建表后看 COM 是两张还是并成一张。</summary>
+        public static void RunAfterTblJoinProbe(string host)
+        {
+            var s = new WdSession(host);
+            var dummy = new TestRun();
+            string path, id;
+            if (!TryOpen(dummy, s, out path, out id, "wt-after-tbl-join"))
+            {
+                Console.WriteLine("open failed");
+                return;
+            }
+
+            if (!s.TypePlain(path, AfterSent))
+            {
+                Console.WriteLine("TypePlain failed");
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            s.ActivateDoc(path);
+            ToolResult first = s.CreateTableFromXml(CreateArgs(id, WriteXml(GridXml(ConsA, "", ConsB, ""))));
+            string firstId = WdSession.Str(first, "table_id");
+            Console.WriteLine("first success=" + first.Success + " id=" + firstId + " err=" + (first.Error ?? ""));
+            DumpTables(s, path, "after-first");
+
+            var afterTbl = CreateArgs(id, WriteXml(GridXml(ConsC, "", ConsD, "")));
+            afterTbl["target"] = new Dictionary<string, object> { ["table"] = firstId };
+            ToolResult second = s.CreateTableFromXml(afterTbl);
+            string secondId = WdSession.Str(second, "table_id");
+            Console.WriteLine("second success=" + second.Success + " id=" + secondId + " err=" + (second.Error ?? ""));
+            DumpTables(s, path, "after-second");
+
+            string body = ReadBody(s, id);
+            Console.WriteLine("has甲=" + (body.IndexOf(ConsA, StringComparison.Ordinal) >= 0)
+                + " has乙=" + (body.IndexOf(ConsB, StringComparison.Ordinal) >= 0)
+                + " has丙=" + (body.IndexOf(ConsC, StringComparison.Ordinal) >= 0)
+                + " has丁=" + (body.IndexOf(ConsD, StringComparison.Ordinal) >= 0));
+            Console.WriteLine("T_ count=" + Regex.Matches(body, @"\[T_[0-9a-zA-Z]{5,}-start\]").Count);
+            Console.WriteLine("doc left open: " + path);
+        }
+
+        private static void DumpTables(WdSession s, string path, string tag)
+        {
+            s.OnWordDoc(path, doc =>
+            {
+                Console.WriteLine(tag + " Tables.Count=" + doc.Tables.Count
+                    + " Paras=" + doc.Paragraphs.Count
+                    + " Content.End=" + doc.Content.End);
+                for (int i = 1; i <= doc.Tables.Count; i++)
+                {
+                    Word.Table t = doc.Tables[i];
+                    string title = "";
+                    try { title = t.Title ?? ""; } catch { title = "?"; }
+                    string cells = "";
+                    try
+                    {
+                        cells = (t.Cell(1, 1).Range.Text ?? "").Replace("\r", "\\r").Replace("\a", "\\a")
+                            + " | "
+                            + (t.Cell(1, 2).Range.Text ?? "").Replace("\r", "\\r").Replace("\a", "\\a");
+                    }
+                    catch (Exception ex)
+                    {
+                        cells = ex.Message;
+                    }
+
+                    Console.WriteLine("  T" + i + " rows=" + t.Rows.Count + " cols=" + t.Columns.Count
+                        + " rng=" + t.Range.Start + "-" + t.Range.End
+                        + " title=" + title
+                        + " r1=" + cells);
+                }
+
+                if (doc.Tables.Count >= 2)
+                {
+                    int gap = doc.Tables[2].Range.Start - doc.Tables[1].Range.End;
+                    Console.WriteLine("  gap(T2.Start-T1.End)=" + gap);
+                }
+
+                return true;
+            });
+        }
+
         public static void RunCreateAfterTwoOnly(
             TestRun run,
             string host,
