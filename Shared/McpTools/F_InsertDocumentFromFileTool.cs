@@ -65,6 +65,10 @@ namespace WordAddIn1
                     ToolResult processResult = await processHandler(build.args);
                     if (!processResult.Success)
                     {
+                        WordAddIn1.DocumentHost.HostProbe.Log(
+                            "from-file-ins-fail",
+                            "err=" + (processResult.Error ?? "(null)")
+                            + " data=" + BriefData(processResult.Data));
                         return processResult;
                     }
 
@@ -95,6 +99,24 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = $"从文件插入文档失败: {ex.Message}" };
                 }
             };
+        }
+
+        private static string BriefData(object data)
+        {
+            if (data == null)
+            {
+                return "(null)";
+            }
+
+            try
+            {
+                string json = new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(data);
+                return json.Length > 500 ? json.Substring(0, 500) : json;
+            }
+            catch (Exception ex)
+            {
+                return data.GetType().Name + " " + ex.Message;
+            }
         }
 
         public static bool TryGetContractParseFailure(

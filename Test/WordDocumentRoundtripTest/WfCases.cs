@@ -30,6 +30,23 @@ namespace WordDocumentRoundtripTest
         private const string Dup = "重复从文件夹具。";
         private const string Unique = "独特从文件甲句。";
 
+        public static void RunTableOnly(TestRun run, string host)
+        {
+            var s = new WdSession(host);
+            string warmPath = WarmWpsChannel(s);
+            try
+            {
+                RunTable(run, s);
+            }
+            finally
+            {
+                if (!string.IsNullOrEmpty(warmPath))
+                {
+                    s.CloseDocByPath(warmPath);
+                }
+            }
+        }
+
         public static void Run(
             TestRun run,
             string host,
@@ -513,11 +530,16 @@ namespace WordDocumentRoundtripTest
             var after = InsertArgs(id, WriteTxt(AfterTable));
             after["target_table"] = liveTableId;
             ToolResult afterR = s.InsertFromFile(after);
+            string afterDump = afterR.Success
+                ? ""
+                : ("target_table 失败 err=" + (afterR.Error ?? "(null)")
+                    + " data=" + DumpData(afterR));
+            Console.WriteLine("  [dbg] wf-tbl-after tableId=" + liveTableId + " " + afterDump);
             Ok(run, "wf-tbl-after",
                 afterR.Success && StillHas(s, id, AfterTable) && StillHas(s, id, "丁"),
                 afterR.Success
                     ? "表后句未出现或表内丁丢了"
-                    : ("target_table 失败: " + (afterR.Error ?? "(null)")));
+                    : afterDump);
             s.CloseDocByPath(path);
         }
 
@@ -785,6 +807,23 @@ namespace WordDocumentRoundtripTest
         private static bool StillHas(WdSession s, string id, string needle)
         {
             return ReadBody(s, id).IndexOf(needle, StringComparison.Ordinal) >= 0;
+        }
+
+        private static string DumpData(ToolResult r)
+        {
+            if (r == null || r.Data == null)
+            {
+                return "(null)";
+            }
+
+            try
+            {
+                return JsonConvert.SerializeObject(r.Data);
+            }
+            catch
+            {
+                return Convert.ToString(r.Data) ?? "(data)";
+            }
         }
 
         private static bool BlobHas(ToolResult r, string needle)

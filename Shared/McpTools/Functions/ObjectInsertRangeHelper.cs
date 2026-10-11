@@ -13,6 +13,9 @@ namespace WordAddIn1
         {
             if (doc == null || string.IsNullOrEmpty(tableId))
             {
+                WordAddIn1.DocumentHost.HostProbe.Log(
+                    "tbl-after-skip",
+                    "doc=" + (doc == null ? "null" : "ok") + " tableId=" + (tableId ?? "(null)"));
                 return null;
             }
 
@@ -21,24 +24,35 @@ namespace WordAddIn1
                 Word.Table table = SentenceCodeLocator.ResolveTableById(doc, tableId);
                 if (table == null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[ObjectInsertRange] 找不到表格 '{tableId}'");
+                    WordAddIn1.DocumentHost.HostProbe.Log("tbl-after-no-table", "id=" + tableId);
                     return null;
                 }
 
                 Word.Range insertRange = table.Range;
+                int rawStart = insertRange.Start;
+                int rawEnd = insertRange.End;
+                WordAddIn1.DocumentHost.HostProbe.Log(
+                    "tbl-after-range",
+                    "id=" + tableId + " start=" + rawStart + " end=" + rawEnd);
                 insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                WordAddIn1.DocumentHost.HostProbe.Log(
+                    "tbl-after-collapsed",
+                    "id=" + tableId + " start=" + insertRange.Start + " end=" + insertRange.End);
                 insertRange.InsertParagraphAfter();
-                // InsertParagraphAfter 后 Range 为新段；须 Collapse Start。
-                // Collapse End 会落到段标之后（下一段开头），写入时易粘到后续正文。
+                WordAddIn1.DocumentHost.HostProbe.Log(
+                    "tbl-after-para",
+                    "id=" + tableId + " start=" + insertRange.Start + " end=" + insertRange.End);
                 insertRange.Collapse(Word.WdCollapseDirection.wdCollapseStart);
-
-                System.Diagnostics.Debug.WriteLine(
-                    $"[ObjectInsertRange] 表 '{tableId}' 后插入点 Start={insertRange.Start}");
+                WordAddIn1.DocumentHost.HostProbe.Log(
+                    "tbl-after-ok",
+                    "id=" + tableId + " start=" + insertRange.Start);
                 return insertRange;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ObjectInsertRange] 表后定位失败: {ex.Message}");
+                WordAddIn1.DocumentHost.HostProbe.Log(
+                    "tbl-after-ex",
+                    "id=" + tableId + " " + WordAddIn1.DocumentHost.HostProbe.Ex(ex));
                 return null;
             }
         }

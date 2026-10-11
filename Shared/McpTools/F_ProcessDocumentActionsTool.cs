@@ -1270,7 +1270,15 @@ namespace WordAddIn1
                 }
                 else if (target.Kind == LocatorKind.Table)
                 {
+                    WordAddIn1.DocumentHost.HostProbe.Log(
+                        "insert-table-anchor",
+                        "tableId=" + (target.TableId ?? "(null)"));
                     insertRange = ObjectInsertRangeHelper.FindRangeAfterTable(doc, target.TableId);
+                    WordAddIn1.DocumentHost.HostProbe.Log(
+                        "insert-table-range",
+                        insertRange == null
+                            ? "null"
+                            : ("start=" + insertRange.Start + " end=" + insertRange.End));
                 }
                 else if (target.Kind == LocatorKind.Chart)
                 {
@@ -1311,7 +1319,9 @@ namespace WordAddIn1
 
                 if (insertRange == null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[ProcessActions][insert] 无法确定插入位置");
+                    WordAddIn1.DocumentHost.HostProbe.Log(
+                        "insert-no-range",
+                        "kind=" + (target == null ? "cursor" : target.Kind.ToString()));
                     result.ErrorMessage = "无法确定插入位置";
                     return result;
                 }
