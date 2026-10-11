@@ -128,6 +128,34 @@ namespace WordDocumentRoundtripTest
                 args ?? new Dictionary<string, object>());
         }
 
+        public ToolResult GetFormatContext(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_get_format_context",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult ApplyDocumentFormat(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_apply_document_format",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult ApplyParagraphFormat(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_apply_paragraph_format",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult ApplyPageSetup(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_apply_page_setup",
+                args ?? new Dictionary<string, object>());
+        }
+
         public bool ActivateDoc(string fullPath)
         {
             return IsWps
@@ -235,6 +263,91 @@ namespace WordDocumentRoundtripTest
                     doc.Content.Text = text ?? "";
                     return true;
                 });
+        }
+
+        public bool SetParagraphChar(string fullPath, int paraIndex, string fontName, float size, bool bold)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object range = ParagraphRangeLate(doc, paraIndex);
+                    if (range == null)
+                    {
+                        return false;
+                    }
+
+                    ApplyFontLate(range, fontName, size, bold);
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    if (paraIndex < 1 || paraIndex > doc.Paragraphs.Count)
+                    {
+                        return false;
+                    }
+
+                    Word.Range range = doc.Paragraphs[paraIndex].Range;
+                    if (!string.IsNullOrEmpty(fontName))
+                    {
+                        range.Font.NameFarEast = fontName;
+                        range.Font.Name = fontName;
+                    }
+
+                    if (size > 0)
+                    {
+                        range.Font.Size = size;
+                    }
+
+                    range.Font.Bold = bold ? 1 : 0;
+                    return true;
+                });
+        }
+
+        public bool SetParagraphAlign(string fullPath, int paraIndex, int alignment)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object range = ParagraphRangeLate(doc, paraIndex);
+                    if (range == null)
+                    {
+                        return false;
+                    }
+
+                    object pf = GetProp(range, "ParagraphFormat");
+                    SetProp(pf, "Alignment", alignment);
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    if (paraIndex < 1 || paraIndex > doc.Paragraphs.Count)
+                    {
+                        return false;
+                    }
+
+                    doc.Paragraphs[paraIndex].Range.ParagraphFormat.Alignment =
+                        (Word.WdParagraphAlignment)alignment;
+                    return true;
+                });
+        }
+
+        public bool TryReadLeftMargin(string fullPath, out double points)
+        {
+            double value = 0;
+            bool ok = IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object ps = GetProp(doc, "PageSetup");
+                    value = Convert.ToDouble(GetProp(ps, "LeftMargin"));
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    value = doc.PageSetup.LeftMargin;
+                    return true;
+                });
+            points = value;
+            return ok;
         }
 
         public bool InsertTable(string fullPath, int rows, int cols, string[] cells)
@@ -1068,6 +1181,50 @@ namespace WordDocumentRoundtripTest
                 Convert.FromBase64String(
                     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="));
             return path;
+        }
+
+        private static object ParagraphRangeLate(object doc, int paraIndex)
+        {
+            try
+            {
+                object paras = GetProp(doc, "Paragraphs");
+                int n = Convert.ToInt32(GetProp(paras, "Count"));
+                if (paraIndex < 1 || paraIndex > n)
+                {
+                    return null;
+                }
+
+                object para = Invoke(paras, "Item", paraIndex);
+                return GetProp(para, "Range");
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void ApplyFontLate(object range, string fontName, float size, bool bold)
+        {
+            object font = GetProp(range, "Font");
+            if (!string.IsNullOrEmpty(fontName))
+            {
+                try
+                {
+                    SetProp(font, "NameFarEast", fontName);
+                }
+                catch
+                {
+                }
+
+                SetProp(font, "Name", fontName);
+            }
+
+            if (size > 0)
+            {
+                SetProp(font, "Size", size);
+            }
+
+            SetProp(font, "Bold", bold ? 1 : 0);
         }
 
         private static object GetProp(object target, string name)

@@ -50,7 +50,9 @@ namespace WordDocumentRoundtripTest
                 && caseFilter.StartsWith("wa-", StringComparison.OrdinalIgnoreCase);
             bool runFromFile = !runFindStale && !runLayout && !runActions
                 && caseFilter.StartsWith("wf-", StringComparison.OrdinalIgnoreCase);
-            bool runContent = !runFindStale && !runLayout && !runActions && !runFromFile
+            bool runFormat = !runFindStale && !runLayout && !runActions && !runFromFile
+                && caseFilter.StartsWith("wg-", StringComparison.OrdinalIgnoreCase);
+            bool runContent = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat
                 && caseFilter.StartsWith("wc-", StringComparison.OrdinalIgnoreCase);
 
             if (runFindStale)
@@ -68,6 +70,10 @@ namespace WordDocumentRoundtripTest
             else if (runFromFile)
             {
                 Console.WriteLine("文字 从文件插换（wf-）");
+            }
+            else if (runFormat)
+            {
+                Console.WriteLine("文字 套格式（wg-）");
             }
             else
             {
@@ -106,6 +112,10 @@ namespace WordDocumentRoundtripTest
             {
                 WfCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
             }
+            else if (runFormat)
+            {
+                WgCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+            }
             else if (runContent)
             {
                 WcCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
@@ -124,7 +134,9 @@ namespace WordDocumentRoundtripTest
                         ? WaCases.Target
                         : (runFromFile
                             ? WfCases.Target
-                            : (runContent ? WcCases.Target : 30))));
+                            : (runFormat
+                                ? WgCases.Target
+                                : (runContent ? WcCases.Target : 30)))));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
