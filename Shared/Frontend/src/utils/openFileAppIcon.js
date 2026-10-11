@@ -1,5 +1,8 @@
 import wordAppIcon from '../assets/images/word.png'
 import wpsAppIcon from '../assets/images/wps.png'
+import wpsWordAppIcon from '../assets/images/wps-word.png'
+import wpsExcelAppIcon from '../assets/images/wps-excel.png'
+import wpsPptAppIcon from '../assets/images/wps-ppt.png'
 import excelAppIcon from '../assets/images/excel.png'
 import pptAppIcon from '../assets/images/ppt.png'
 import yiWriteLogoIcon from '../assets/images/yi-write_logo1.png'
@@ -39,11 +42,11 @@ const GROUP_LABELS = {
 
 const GROUP_ICONS = {
   word: wordAppIcon,
-  wps: wpsAppIcon,
+  wps: wpsWordAppIcon,
   excel: excelAppIcon,
-  et: wpsAppIcon,
+  et: wpsExcelAppIcon,
   ppt: pptAppIcon,
-  wpp: wpsAppIcon,
+  wpp: wpsPptAppIcon,
   image: imageAppIcon,
   chrome: chromeAppIcon,
   edge: edgeAppIcon,
@@ -114,27 +117,15 @@ const KIND_TO_SUITE = (() => {
   return map
 })()
 
-/** WPS 三小类在侧栏按文件类型用 Word / Excel / PPT 图标。 */
-const KIND_TYPE_ICON_ALIAS = {
-  wps: 'word',
-  et: 'excel',
-  wpp: 'ppt'
-}
-
-export function resolveOpenFileTypeIconKey (groupKey) {
-  return KIND_TYPE_ICON_ALIAS[groupKey] || groupKey
-}
-
 export function resolveOpenFileTypeIcon (item) {
-  const key = resolveOpenFileAppGroupKey(item)
-  return resolveOpenFileAppGroupIcon(resolveOpenFileTypeIconKey(key))
+  return resolveOpenFileAppGroupIcon(resolveOpenFileAppGroupKey(item))
 }
 
 function listCreateKinds (kindKeys) {
   return kindKeys.map((key) => ({
     key,
     label: resolveOpenFileAppGroupLabel(key),
-    icon: resolveOpenFileAppGroupIcon(resolveOpenFileTypeIconKey(key))
+    icon: resolveOpenFileAppGroupIcon(key)
   }))
 }
 
