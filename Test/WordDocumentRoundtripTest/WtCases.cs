@@ -192,6 +192,63 @@ namespace WordDocumentRoundtripTest
                 + " row=" + er + " n=" + ec);
         }
 
+        /// <summary>句后、已有表之前再建表，看会不会并进后面那张。</summary>
+        public static void RunBeforeTblJoinProbe(string host)
+        {
+            var s = new WdSession(host);
+            var dummy = new TestRun();
+            string path, id;
+            if (!TryOpen(dummy, s, out path, out id, "wt-before-tbl-join"))
+            {
+                Console.WriteLine("open failed");
+                return;
+            }
+
+            if (!s.TypePlain(path, AfterSent))
+            {
+                Console.WriteLine("TypePlain failed");
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            s.ActivateDoc(path);
+            s.MoveSelectionToEnd(path);
+            ToolResult first = s.CreateTableFromXml(CreateArgs(id, WriteXml(GridXml(ConsA, "", ConsB, ""))));
+            string firstId = WdSession.Str(first, "table_id");
+            Console.WriteLine("first success=" + first.Success + " id=" + firstId);
+            DumpTablesOrFacts(s, path, "after-first");
+            s.WriteSelectionFact(path);
+
+            ToolResult got = s.GetContent(id);
+            string sent = CodeContaining(WdSession.Str(got, "document_content"), AfterSent, "S");
+            Console.WriteLine("anchor=" + sent);
+            var beforeArgs = CreateArgs(id, WriteXml(GridXml(ConsC, "", ConsD, "")));
+            beforeArgs["target"] = new Dictionary<string, object> { ["codes"] = sent };
+            ToolResult second = s.CreateTableFromXml(beforeArgs);
+            Console.WriteLine("before-tbl success=" + second.Success
+                + " id=" + WdSession.Str(second, "table_id")
+                + " err=" + (second.Error ?? ""));
+            DumpTablesOrFacts(s, path, "after-before-insert");
+            string body = ReadBody(s, id);
+            Console.WriteLine("has句=" + (body.IndexOf(AfterSent, StringComparison.Ordinal) >= 0)
+                + " has甲=" + (body.IndexOf(ConsA, StringComparison.Ordinal) >= 0)
+                + " has丙=" + (body.IndexOf(ConsC, StringComparison.Ordinal) >= 0));
+            Console.WriteLine("doc=" + path);
+            s.CloseDocByPath(path);
+        }
+
+        private static void DumpTablesOrFacts(WdSession s, string path, string tag)
+        {
+            Console.WriteLine(tag);
+            if (s.IsWps)
+            {
+                s.WriteTableFacts(path);
+                return;
+            }
+
+            DumpTables(s, path, tag);
+        }
+
         /// <summary>表后建表后看 COM 是两张还是并成一张。</summary>
         public static void RunAfterTblJoinProbe(string host)
         {

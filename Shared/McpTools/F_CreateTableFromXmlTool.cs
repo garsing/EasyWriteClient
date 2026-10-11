@@ -111,7 +111,7 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = locate.Error };
                     }
 
-                    Word.Range addRange = RangeForAddAfterTable(locate);
+                    Word.Range addRange = EnsureSeparatedFromExistingTables(document, locate.Range);
                     var createResult = CreateTableAtLocation(document, parseResult.Config, addRange);
                     LogPhase($"CreateTableAtLocation success={createResult.Success}");
                     if (!createResult.Success)
@@ -211,7 +211,8 @@ namespace WordAddIn1
 
                     LogPhase($"完成 messageLen={message.Length}");
 
-                    Word.Application app = wordApplication as Word.Application;
+                    Word.Application app = document.Application
+                        ?? (wordApplication as Word.Application);
                     if (app != null && createResult.Table != null)
                     {
                         PostModifyNavigateHelper.NavigateAfterInsertObject(
@@ -653,21 +654,55 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 仅表后建表：FindRangeAfterTable 留下的段会被 Tables.Add 吃掉，两表贴邻会并成一张。
-        /// 再插一段，Add 吃后一段，表间留空段。句后/光标/图后不走这里。
+        /// Tables.Add 会吃掉落点那一段。若紧贴已有表（表前或表后），再留一段空段，避免并成一张。
         /// </summary>
-        private static Word.Range RangeForAddAfterTable(InsertTargetLocatorHelper.ResolveRangeResult locate)
+        private static Word.Range EnsureSeparatedFromExistingTables(Word.Document document, Word.Range insertRange)
         {
-            if (locate?.Range == null
-                || locate.Spec == null
-                || locate.Spec.Kind != InsertTargetLocatorHelper.LocatorKind.Table)
+            if (document == null || insertRange == null)
             {
-                return locate?.Range;
+                return insertRange;
             }
 
-            Word.Range insertRange = locate.Range;
-            insertRange.InsertParagraphAfter();
-            insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            int pos = insertRange.Start;
+            List<Word.Table> tables = TableResolveHelper.GetAllTablesInOrder(document);
+            foreach (Word.Table table in tables)
+            {
+                int tableStart;
+                int tableEnd;
+                try
+                {
+                    tableStart = table.Range.Start;
+                    tableEnd = table.Range.End;
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (pos > tableStart && pos < tableEnd)
+                {
+                    continue;
+                }
+
+                if (pos <= tableStart && tableStart - pos <= 1)
+                {
+                    // 不能对 table.Start 做 InsertParagraphBefore，会写进首格。
+                    // 在表前故事位连续插两个段标，Add 吃前一个，后一个隔开旧表。
+                    int hook = tableStart > 0 ? tableStart - 1 : 0;
+                    document.Range(hook, hook).InsertAfter("\r");
+                    document.Range(hook, hook).InsertAfter("\r");
+                    int addAt = tableStart > 0 ? tableStart : 0;
+                    return document.Range(addAt, addAt);
+                }
+
+                if (pos >= tableEnd && pos - tableEnd <= 1)
+                {
+                    insertRange.InsertParagraphAfter();
+                    insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                    return insertRange;
+                }
+            }
+
             return insertRange;
         }
 

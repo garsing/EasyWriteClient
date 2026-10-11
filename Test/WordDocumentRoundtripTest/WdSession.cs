@@ -239,6 +239,44 @@ namespace WordDocumentRoundtripTest
             return DesktopToolPipe.Call("F_insert_page_break", args);
         }
 
+        public bool MoveSelectionToEnd(string fullPath)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object app = GetProp(doc, "Application");
+                    object sel = GetProp(app, "Selection");
+                    object content = GetProp(doc, "Content");
+                    int end = Convert.ToInt32(GetProp(content, "End"));
+                    Invoke(sel, "SetRange", end, end);
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    int end = doc.Content.End;
+                    doc.Application.Selection.SetRange(end, end);
+                    return true;
+                });
+        }
+
+        public bool WriteSelectionFact(string fullPath)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object app = GetProp(doc, "Application");
+                    object sel = GetProp(app, "Selection");
+                    Console.WriteLine("Selection=" + GetProp(sel, "Start") + "-" + GetProp(sel, "End"));
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    Word.Selection sel = doc.Application.Selection;
+                    Console.WriteLine("Selection=" + sel.Start + "-" + sel.End);
+                    return true;
+                });
+        }
+
         public bool WriteTableFacts(string fullPath)
         {
             return IsWps

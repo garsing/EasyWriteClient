@@ -43,6 +43,19 @@ namespace WordDocumentRoundtripTest
                 return 0;
             }
 
+            if (string.Equals(caseFilter, "wt-before-tbl-join", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 表前（句后）建表是否并表（wt-before-tbl-join）");
+                if (!DesktopToolPipe.TryWaitUntilAvailable(8000))
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                WtCases.RunBeforeTblJoinProbe(host);
+                return 0;
+            }
+
             if (string.Equals(caseFilter, "wt-after-tbl-join", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("文字 表后建表是否并表（wt-after-tbl-join）");
