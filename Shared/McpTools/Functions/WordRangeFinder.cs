@@ -202,8 +202,26 @@ namespace WordAddIn1
             {
                 Word.Range searchRange = doc.Content;
                 ConfigureFind(searchRange.Find, candidate);
+                bool hit;
+                try
+                {
+                    hit = searchRange.Find.Execute();
+                }
+                catch (Exception ex)
+                {
+                    HostProbe.Log(
+                        "find-exec",
+                        "tag=" + (debugInfo ?? "") + " cand=" + candidate + " ex=" + ex.Message);
+                    continue;
+                }
 
-                if (!searchRange.Find.Execute())
+                HostProbe.Log(
+                    "find-exec",
+                    "tag=" + (debugInfo ?? "")
+                    + " cand=" + candidate
+                    + " hit=" + hit
+                    + (hit ? (" start=" + searchRange.Start + " end=" + searchRange.End) : ""));
+                if (!hit)
                 {
                     continue;
                 }
@@ -834,6 +852,19 @@ namespace WordAddIn1
                     return null;
                 }
 
+                // 与 FindFirstInRange 相同：wdFindStop 在「要找的串 = 整个搜索 Range」时 Execute=false。
+                // 全文只有这一句时 Content 就是存文，不再走 Find。
+                if (IsNormalizedTextEqualToScope(doc.Content, sentenceText))
+                {
+                    HostProbe.Log(
+                        "find-whole-story",
+                        "tag=" + (debugInfo ?? "")
+                        + " start=" + doc.Content.Start
+                        + " end=" + doc.Content.End
+                        + " len=" + sentenceText.Length);
+                    return doc.Content.Duplicate;
+                }
+
                 // 在函数开始处统一转换为Word代码格式，后续所有操作都基于转换后的文本
                 string convertedText = ConvertNewlinesToWordCodes(sentenceText);
                 int convertedLength = convertedText.Length;
@@ -870,11 +901,12 @@ namespace WordAddIn1
                         "find-miss",
                         "tag=" + (debugInfo ?? "")
                         + " storeLen=" + sentenceText.Length
-                        + " store=" + sentenceText.Replace("\r", "\\r").Replace("\n", "\\n")
+                        + " store=" + HostProbe.Quote(sentenceText)
                         + " conv=" + convertedText
                         + " cand=" + candidates.Count
                         + " bodyLen=" + body.Length
-                        + " body=" + body.Replace("\r", "\\r").Replace("\n", "\\n"));
+                        + " body=" + HostProbe.Quote(body));
+                    HostProbe.DumpContentChars("find-miss-chars", doc);
                     return null;
                 }
                 else

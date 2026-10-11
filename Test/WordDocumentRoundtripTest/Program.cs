@@ -30,6 +30,30 @@ namespace WordDocumentRoundtripTest
                 return ContractSkipCkptProbe.Run();
             }
 
+            if (string.Equals(caseFilter, "wt-create-after-two", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 两句后建表短套（wt-create-after-two）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopToolPipe.TryWaitUntilAvailable(8000))
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                int wordBeforeTwo = OfficeAlive.Count("WINWORD");
+                int wpsBeforeTwo = OfficeAlive.Count("wps");
+                bool wordWinBeforeTwo = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforeTwo = OfficeAlive.HasWindow("wps");
+                var twoRun = new TestRun();
+                WtCases.RunCreateAfterTwoOnly(
+                    twoRun, host, wordBeforeTwo, wpsBeforeTwo, wordWinBeforeTwo, wpsWinBeforeTwo);
+                Console.WriteLine("正式用例 通过 " + twoRun.CasesPassed
+                    + "  失败 " + twoRun.CasesFailed
+                    + "  跳过 " + twoRun.CasesSkipped);
+                return twoRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (string.Equals(caseFilter, "wt-create-after", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("文字 句后建表短套（wt-create-after）");

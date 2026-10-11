@@ -23,6 +23,7 @@ namespace WordDocumentRoundtripTest
         private const string MergeLeft = "易写表左";
         private const string MergeRight = "易写表右";
         private const string AfterSent = "易写表前句。";
+        private const string AfterSentB = "易写表后句。";
         private const string RebuildA = "易写表重建甲";
         private const string RebuildB = "易写表重建乙";
         private const string ConsA = "易写表巩固甲";
@@ -107,6 +108,104 @@ namespace WordDocumentRoundtripTest
                     s.CloseDocByPath(warmPath);
                 }
             }
+        }
+
+        /// <summary>
+        /// 两句话：存文 ≠ 全文，必须走原来的 Find，不能误用整篇 Content。
+        /// 句后建表应夹在两句之间（第一句后）或落在第二句后。
+        /// </summary>
+        public static void RunCreateAfterTwoOnly(
+            TestRun run,
+            string host,
+            int wordBefore,
+            int wpsBefore,
+            bool wordWinBefore,
+            bool wpsWinBefore)
+        {
+            var s = new WdSession(host);
+            string warmPath = WarmWpsChannel(s);
+            try
+            {
+                RunAfterTwo(run, s, "wt-create-after-first", AfterSent, AfterSentB, AfterSent);
+                RunAfterTwo(run, s, "wt-create-after-last", AfterSent, AfterSentB, AfterSentB);
+                RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+            }
+            finally
+            {
+                if (!string.IsNullOrEmpty(warmPath))
+                {
+                    s.CloseDocByPath(warmPath);
+                }
+            }
+        }
+
+        private static void RunAfterTwo(
+            TestRun run,
+            WdSession s,
+            string caseId,
+            string first,
+            string second,
+            string anchorNeedle)
+        {
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, caseId))
+            {
+                return;
+            }
+
+            if (!s.TypePlain(path, first + "\r" + second))
+            {
+                FailMany(run, "COM 写两句失败", caseId);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            s.ActivateDoc(path);
+            ToolResult got = s.GetContent(id);
+            string body = WdSession.Str(got, "document_content");
+            string sent = CodeContaining(body, anchorNeedle, "S");
+            if (string.IsNullOrEmpty(sent))
+            {
+                FailMany(run, "无可抄含锚句的 S_", caseId);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            var args = CreateArgs(id, WriteXml(GridXml(LabelA, "", LabelB, "")));
+            args["target"] = new Dictionary<string, object> { ["codes"] = sent };
+            ToolResult after = s.CreateTableFromXml(args);
+            string afterBody = ReadBody(s, id);
+            int iFirst = IndexOf(afterBody, first);
+            int iSecond = IndexOf(afterBody, second);
+            int iTbl = IndexOf(afterBody, LabelA);
+            bool order = string.Equals(anchorNeedle, first, StringComparison.Ordinal)
+                ? iFirst >= 0 && iTbl > iFirst && iSecond > iTbl
+                : iFirst >= 0 && iSecond > iFirst && iTbl > iSecond;
+            string reason;
+            if (!after.Success)
+            {
+                reason = after.Error ?? "建表失败";
+            }
+            else if (!order)
+            {
+                reason = string.Equals(anchorNeedle, first, StringComparison.Ordinal)
+                    ? "表没夹在两句之间（可能误用了全文 Range）"
+                    : "表没落在第二句之后";
+            }
+            else
+            {
+                reason = "";
+            }
+
+            Ok(run, caseId, after.Success && order, reason);
+            s.CloseDocByPath(path);
+        }
+
+        private static int IndexOf(string text, string needle)
+        {
+            return string.IsNullOrEmpty(text) || string.IsNullOrEmpty(needle)
+                ? -1
+                : text.IndexOf(needle, StringComparison.Ordinal);
         }
 
         public static void Run(

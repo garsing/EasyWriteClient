@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1.DocumentHost
@@ -62,6 +63,103 @@ namespace WordAddIn1.DocumentHost
             }
 
             return "type=" + ex.GetType().Name + " msg=" + ex.Message + hr + " stack=" + stack.Replace('\r', '|').Replace('\n', '|');
+        }
+
+        public static void DumpContentChars(string site, Word.Document document)
+        {
+            if (!Enabled || document == null)
+            {
+                return;
+            }
+
+            try
+            {
+                Word.Range content = document.Content;
+                string text = content.Text ?? "";
+                Log(site, "Content.Start=" + content.Start + " End=" + content.End
+                    + " Text.Len=" + text.Length
+                    + " hex=" + ToHex(text)
+                    + " q=" + Quote(text));
+
+                Word.Characters chars = content.Characters;
+                int n = chars.Count;
+                Log(site, "Characters.Count=" + n);
+                int limit = n < 40 ? n : 40;
+                for (int i = 1; i <= limit; i++)
+                {
+                    string ct = chars[i].Text ?? "";
+                    Log(site, "ch[" + i + "] start=" + chars[i].Start
+                        + " hex=" + ToHex(ct) + " q=" + Quote(ct));
+                }
+            }
+            catch (Exception ex)
+            {
+                Log(site, Ex(ex));
+            }
+        }
+
+        public static string Quote(string text)
+        {
+            if (text == null)
+            {
+                return "(null)";
+            }
+
+            var sb = new StringBuilder("\"");
+            foreach (char ch in text)
+            {
+                if (ch == '\r')
+                {
+                    sb.Append("\\r");
+                }
+                else if (ch == '\n')
+                {
+                    sb.Append("\\n");
+                }
+                else if (ch == '\t')
+                {
+                    sb.Append("\\t");
+                }
+                else if (ch == '\a')
+                {
+                    sb.Append("\\a");
+                }
+                else if (ch == '\f')
+                {
+                    sb.Append("\\f");
+                }
+                else if (ch < 32)
+                {
+                    sb.Append("\\x").Append(((int)ch).ToString("X2"));
+                }
+                else
+                {
+                    sb.Append(ch);
+                }
+            }
+
+            return sb.Append('"').ToString();
+        }
+
+        public static string ToHex(string text)
+        {
+            if (text == null)
+            {
+                return "(null)";
+            }
+
+            var sb = new StringBuilder();
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (i > 0)
+                {
+                    sb.Append(' ');
+                }
+
+                sb.Append(((int)text[i]).ToString("X4"));
+            }
+
+            return sb.ToString();
         }
 
         public static void Touch(string site, Word.Document document)
