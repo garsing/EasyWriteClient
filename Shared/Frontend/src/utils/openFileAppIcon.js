@@ -20,9 +20,9 @@ const GROUP_ORDER = [
   'et',
   'wpp',
   'image',
+  'yiwrite',
   'chrome',
   'edge',
-  'yiwrite',
   'other'
 ]
 
@@ -103,7 +103,7 @@ export const OPEN_FILE_SUITE_DEFS = [
     key: 'browser',
     label: '浏览器',
     icon: browserSuiteIcon,
-    kindKeys: ['chrome', 'edge', 'yiwrite']
+    kindKeys: ['yiwrite', 'chrome', 'edge']
   }
 ]
 
@@ -151,6 +151,17 @@ export function listPersistentOpenFileGroups (items) {
     const suiteKey = KIND_TO_SUITE.get(kind)
     if (!suiteKey) continue
     byKey.get(suiteKey).items.push(item)
+  }
+  const browser = byKey.get('browser')
+  if (browser) {
+    const rank = new Map(
+      OPEN_FILE_SUITE_DEFS.find((s) => s.key === 'browser').kindKeys.map((k, i) => [k, i])
+    )
+    browser.items.sort((a, b) => {
+      const ra = rank.get(resolveOpenFileAppGroupKey(a)) ?? 99
+      const rb = rank.get(resolveOpenFileAppGroupKey(b)) ?? 99
+      return ra - rb
+    })
   }
   return groups
 }
