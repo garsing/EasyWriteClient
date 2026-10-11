@@ -248,7 +248,7 @@ namespace WordAddIn1
             foreach (object itemObj in writeItems)
             {
                 itemIndex++;
-                var item = itemObj as Dictionary<string, object>;
+                var item = ActionFormatHelper.CoerceDict(itemObj);
                 if (item == null)
                 {
                     error = $"writes[{itemIndex}] 格式无效";

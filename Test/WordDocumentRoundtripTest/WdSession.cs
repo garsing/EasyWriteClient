@@ -156,6 +156,55 @@ namespace WordDocumentRoundtripTest
                 args ?? new Dictionary<string, object>());
         }
 
+        public ToolResult CreateTableFromXml(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_create_table_from_xml",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult DeleteTable(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_delete_table",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult ReadTableRowValues(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_read_table_row_values",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult ApplyTableRowValues(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_apply_table_row_values",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult ExtractTableFormat(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_extract_table_format",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult ApplyTableFormatFromXml(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_apply_table_format_from_xml",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult OptimizeTableDisplay(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_optimize_table_display",
+                args ?? new Dictionary<string, object>());
+        }
+
         public bool ActivateDoc(string fullPath)
         {
             return IsWps

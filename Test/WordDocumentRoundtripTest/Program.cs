@@ -52,7 +52,9 @@ namespace WordDocumentRoundtripTest
                 && caseFilter.StartsWith("wf-", StringComparison.OrdinalIgnoreCase);
             bool runFormat = !runFindStale && !runLayout && !runActions && !runFromFile
                 && caseFilter.StartsWith("wg-", StringComparison.OrdinalIgnoreCase);
-            bool runContent = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat
+            bool runTable = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat
+                && caseFilter.StartsWith("wt-", StringComparison.OrdinalIgnoreCase);
+            bool runContent = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
                 && caseFilter.StartsWith("wc-", StringComparison.OrdinalIgnoreCase);
 
             if (runFindStale)
@@ -74,6 +76,10 @@ namespace WordDocumentRoundtripTest
             else if (runFormat)
             {
                 Console.WriteLine("文字 套格式（wg-）");
+            }
+            else if (runTable)
+            {
+                Console.WriteLine("文字 表格（wt-）");
             }
             else
             {
@@ -116,6 +122,10 @@ namespace WordDocumentRoundtripTest
             {
                 WgCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
             }
+            else if (runTable)
+            {
+                WtCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+            }
             else if (runContent)
             {
                 WcCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
@@ -136,7 +146,9 @@ namespace WordDocumentRoundtripTest
                             ? WfCases.Target
                             : (runFormat
                                 ? WgCases.Target
-                                : (runContent ? WcCases.Target : 30)))));
+                                : (runTable
+                                    ? WtCases.Target
+                                    : (runContent ? WcCases.Target : 30))))));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed

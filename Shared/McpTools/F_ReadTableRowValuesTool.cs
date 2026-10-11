@@ -19,6 +19,14 @@ namespace WordAddIn1
             {
                 try
                 {
+                    string tableId = args != null && args.ContainsKey("table_id")
+                        ? args["table_id"]?.ToString()
+                        : "";
+                    if (string.IsNullOrWhiteSpace(tableId))
+                    {
+                        return new ToolResult { Success = false, Error = "未提供 table_id" };
+                    }
+
                     if (!DocumentHostAdapter.TryResolveInteropDocument(
                             args,
                             wordApplication,
@@ -32,12 +40,6 @@ namespace WordAddIn1
                     Word.Document document = docHandle.Document;
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_read_table_row_values] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
-
-                    string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
-                    if (string.IsNullOrWhiteSpace(tableId))
-                    {
-                        return new ToolResult { Success = false, Error = "未提供 table_id" };
-                    }
 
                     using (EasyWriteDiagnostics.Time("table_row_values.read.total"))
                     {

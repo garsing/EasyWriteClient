@@ -93,7 +93,9 @@ namespace WordAddIn1
                     }
 
                     // 解析表格选择参数
-                    var tableSelection = args["table_selection"] as Dictionary<string, object>;
+                    var tableSelection = args.ContainsKey("table_selection")
+                        ? ActionFormatHelper.CoerceDict(args["table_selection"])
+                        : null;
                     var selection = TableExtractSelectionHelper.Resolve(document, tableSelection);
                     if (!selection.Success)
                     {
