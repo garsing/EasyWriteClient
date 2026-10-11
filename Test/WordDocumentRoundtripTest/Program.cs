@@ -30,6 +30,30 @@ namespace WordDocumentRoundtripTest
                 return ContractSkipCkptProbe.Run();
             }
 
+            if (string.Equals(caseFilter, "wt-create-after", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 句后建表短套（wt-create-after）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopToolPipe.TryWaitUntilAvailable(8000))
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                int wordBeforeAfter = OfficeAlive.Count("WINWORD");
+                int wpsBeforeAfter = OfficeAlive.Count("wps");
+                bool wordWinBeforeAfter = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforeAfter = OfficeAlive.HasWindow("wps");
+                var afterRun = new TestRun();
+                WtCases.RunCreateAfterOnly(
+                    afterRun, host, wordBeforeAfter, wpsBeforeAfter, wordWinBeforeAfter, wpsWinBeforeAfter);
+                Console.WriteLine("正式用例 通过 " + afterRun.CasesPassed
+                    + "  失败 " + afterRun.CasesFailed
+                    + "  跳过 " + afterRun.CasesSkipped);
+                return afterRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (string.Equals(caseFilter, "wf-tbl-after", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("文字 从文件插换短套（wf-tbl-after）");

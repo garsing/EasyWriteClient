@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using WordAddIn1;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1.DocumentMapping.CodeResolve
@@ -23,12 +24,23 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
         {
             if (doc == null || codeList == null || codeList.Count == 0 || displayStartPosition < 0)
             {
+                HostProbe.Log(
+                    "span-null",
+                    "why=args doc=" + (doc == null ? "null" : "ok")
+                    + " codes=" + (codeList == null ? "null" : codeList.Count.ToString())
+                    + " start=" + displayStartPosition);
                 return null;
             }
 
             IReadOnlyList<string> domain = domainOrderedCodes ?? BuildDomain(tableId, tableScope);
             if (domain == null || displayStartPosition + codeList.Count > domain.Count)
             {
+                HostProbe.Log(
+                    "span-null",
+                    "why=domain domainN=" + (domain == null ? "null" : domain.Count.ToString())
+                    + " start=" + displayStartPosition
+                    + " need=" + codeList.Count
+                    + " passedDomain=" + (domainOrderedCodes == null ? "no" : "yes"));
                 return null;
             }
 
@@ -36,6 +48,11 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             {
                 if (!string.Equals(domain[displayStartPosition + i], codeList[i], StringComparison.Ordinal))
                 {
+                    HostProbe.Log(
+                        "span-null",
+                        "why=mismatch i=" + i
+                        + " domain=" + domain[displayStartPosition + i]
+                        + " want=" + codeList[i]);
                     return null;
                 }
             }
@@ -43,6 +60,9 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             string combinedText = BuildCombinedStoredText(codeList);
             if (string.IsNullOrEmpty(combinedText))
             {
+                HostProbe.Log(
+                    "span-null",
+                    "why=empty-stored codes=" + string.Join(",", codeList));
                 System.Diagnostics.Debug.WriteLine(
                     $"[DisplayPositionRangeResolver] ResolveSpan 拼接文本为空 codes=[{string.Join(",", codeList)}]");
                 return null;
@@ -61,11 +81,19 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 LogCombinedSpanDetails(codeList, combinedText, tag);
             }
 
-            return StoredTextRangeLocator.LocateFirst(
+            Word.Range hit = StoredTextRangeLocator.LocateFirst(
                 doc,
                 combinedText,
                 tableId,
                 tag);
+            HostProbe.Log(
+                "span-find",
+                "tag=" + tag
+                + " textLen=" + combinedText.Length
+                + " text=" + TextUtils.EscapeNewlinesForDb(combinedText)
+                + " table=" + (tableId ?? "")
+                + " hit=" + (hit == null ? "null" : (hit.Start + "-" + hit.End)));
+            return hit;
         }
 
         /// <summary>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using WordAddIn1.DocumentHost;
 using WordAddIn1.DocumentMapping.CodeResolve;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -374,6 +375,20 @@ namespace WordAddIn1
                 };
 
                 DisplaySequenceLocateResult locate = DisplaySequenceLocator.TryResolve(names, locateOptions);
+                HostProbe.Touch("sent-locate-doc", doc);
+                HostProbe.Log(
+                    "sent-locate",
+                    "codes=" + string.Join(",", names)
+                    + " match=" + (locate == null ? "null" : locate.MatchCount.ToString())
+                    + " err=" + (locate == null ? "null" : (locate.ErrorCode ?? ""))
+                    + " start=" + (locate == null || !locate.DisplayStartPosition.HasValue
+                        ? "none"
+                        : locate.DisplayStartPosition.Value.ToString())
+                    + " domainN=" + (locate == null || locate.OrderedDomainCodes == null
+                        ? "null"
+                        : locate.OrderedDomainCodes.Count.ToString())
+                    + " snap=" + (DocumentState.Snapshot == null ? "null" : "ok")
+                    + " stored=" + BriefStored(names));
                 if (locate == null || locate.MatchCount == 0)
                 {
                     return FailResolve(
@@ -395,6 +410,13 @@ namespace WordAddIn1
                     tableScope,
                     locate.OrderedDomainCodes,
                     debugTag: "insert_svg_target");
+
+                HostProbe.Log(
+                    "sent-range",
+                    range == null
+                        ? "null"
+                        : ("start=" + range.Start + " end=" + range.End
+                            + " text=" + BriefText(range.Text)));
 
                 if (range == null)
                 {
@@ -421,6 +443,12 @@ namespace WordAddIn1
             if (raw is Dictionary<string, object> dict)
             {
                 return dict;
+            }
+
+            Dictionary<string, object> coerced = ActionFormatHelper.CoerceDict(raw);
+            if (coerced != null && coerced.Count > 0)
+            {
+                return coerced;
             }
 
             // JavaScriptSerializer 可能给出 Dictionary<string, object> 的变体
@@ -522,7 +550,36 @@ namespace WordAddIn1
 
         private static ResolveRangeResult FailResolve(string error)
         {
+            HostProbe.Log("sent-fail", error ?? "");
             return new ResolveRangeResult { Success = false, Error = error };
+        }
+
+        private static string BriefStored(IList<string> names)
+        {
+            if (names == null || names.Count == 0)
+            {
+                return "(none)";
+            }
+
+            var parts = new List<string>();
+            foreach (string name in names)
+            {
+                string text = DocumentState.GetSentenceContent(name);
+                parts.Add(name + "=" + BriefText(text));
+            }
+
+            return string.Join(" | ", parts);
+        }
+
+        private static string BriefText(string text)
+        {
+            if (text == null)
+            {
+                return "(null)";
+            }
+
+            string escaped = TextUtils.EscapeNewlinesForDb(text);
+            return escaped.Length <= 160 ? escaped : escaped.Substring(0, 160);
         }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
@@ -855,6 +856,25 @@ namespace WordAddIn1
                     }
 
                     System.Diagnostics.Debug.WriteLine($"[FindSentenceRangeInDocument] {(string.IsNullOrEmpty(debugInfo) ? "" : $"({debugInfo}) ")}未找到匹配");
+                    string body = "";
+                    try
+                    {
+                        body = doc.Content == null ? "" : (doc.Content.Text ?? "");
+                    }
+                    catch (Exception ex)
+                    {
+                        body = "ERR:" + ex.Message;
+                    }
+
+                    HostProbe.Log(
+                        "find-miss",
+                        "tag=" + (debugInfo ?? "")
+                        + " storeLen=" + sentenceText.Length
+                        + " store=" + sentenceText.Replace("\r", "\\r").Replace("\n", "\\n")
+                        + " conv=" + convertedText
+                        + " cand=" + candidates.Count
+                        + " bodyLen=" + body.Length
+                        + " body=" + body.Replace("\r", "\\r").Replace("\n", "\\n"));
                     return null;
                 }
                 else

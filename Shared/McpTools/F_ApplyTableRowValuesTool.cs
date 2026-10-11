@@ -237,7 +237,14 @@ namespace WordAddIn1
                 return false;
             }
 
-            IEnumerable writeItems = args["writes"] as IEnumerable;
+            object writesRaw = args["writes"];
+            if (writesRaw is string)
+            {
+                error = "writes 必须是数组";
+                return false;
+            }
+
+            IEnumerable writeItems = writesRaw as IEnumerable;
             if (writeItems == null)
             {
                 error = "writes 必须是数组";
