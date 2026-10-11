@@ -56,6 +56,13 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_apply_document_format] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
+                    string mappingError = FormatContextHelper.RefreshMapping(
+                        doc, "apply_document_format", docHandle.DisallowBackendApi);
+                    if (mappingError != null)
+                    {
+                        return Done(false, mappingError);
+                    }
+
                     string validationError = ValidateModeArgs(args, out string mode,
                         out Dictionary<string, object> charFormat, out Dictionary<string, object> paraFormat);
                     if (validationError != null)

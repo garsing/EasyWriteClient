@@ -33,6 +33,34 @@ namespace WordAddIn1
             System.Diagnostics.Debug.WriteLine($"{DbgPrefix} {message}");
         }
 
+        /// <summary>
+        /// 套格式前重刷 S_/P_ 映射与 Snapshot。建副本会丢掉易失快照，
+        /// 不刷新则 CheckBatch 找不到刚读过的码（改字工具已有同一步）。
+        /// </summary>
+        public static string RefreshMapping(
+            Word.Document doc,
+            string source,
+            bool disallowBackendApi = false)
+        {
+            if (doc == null)
+            {
+                return "Word 文档不可用";
+            }
+
+            try
+            {
+                var options = ProcessDocumentOptions.ForProcessActions(
+                    string.IsNullOrEmpty(source) ? "apply_format" : source);
+                options.DisallowBackendApi = disallowBackendApi;
+                WordDocumentExtractor.ProcessDocument(doc, options);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return "刷新文档映射失败: " + ex.Message;
+            }
+        }
+
         public sealed class FormatContextBuildResult
         {
             public bool Success { get; set; }

@@ -49,6 +49,13 @@ namespace WordAddIn1
                         });
                     }
 
+                    string mappingError = FormatContextHelper.RefreshMapping(
+                        doc, "apply_paragraph_format", docHandle.DisallowBackendApi);
+                    if (mappingError != null)
+                    {
+                        return Task.FromResult(new ToolResult { Success = false, Error = mappingError });
+                    }
+
                     return ParagraphFormatApplyHelper.RunApplyAsync(app, args, doc);
                 }
                 catch (Exception ex)
