@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using WordAddIn1.BrowserHost;
+using WordAddIn1.HostPlatform;
 using Office = Microsoft.Office.Core;
 using Excel = Microsoft.Office.Interop.Excel;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
@@ -127,6 +128,7 @@ namespace WordAddIn1.OpenFiles
             {
             }
 
+            MaximizeWord(app, doc);
             HostCallbacks.RaiseWordApplicationResolved(app);
             HostCallbacks.RaiseOpenFilesRefresh();
             return true;
@@ -148,6 +150,9 @@ namespace WordAddIn1.OpenFiles
             }
 
             TryInvoke(doc, "Activate");
+            WpsCom.TrySetProperty(app, "Visible", true);
+            TryInvoke(app, "Activate");
+            MaximizeLateBound(app, WordMaximizeState);
             HostCallbacks.RaiseOpenFilesRefresh();
             return true;
         }
@@ -172,6 +177,7 @@ namespace WordAddIn1.OpenFiles
             {
             }
 
+            MaximizeExcel(app);
             HostCallbacks.RaiseExcelApplicationResolved(app);
             HostCallbacks.RaiseOpenFilesRefresh();
             return true;
@@ -194,6 +200,7 @@ namespace WordAddIn1.OpenFiles
 
             EtCom.EnsureVisible(app);
             TryInvoke(book, "Activate");
+            MaximizeLateBound(app, ExcelMaximizeState);
             HostCallbacks.RaiseOpenFilesRefresh();
             return true;
         }
@@ -221,6 +228,7 @@ namespace WordAddIn1.OpenFiles
             {
             }
 
+            MaximizePpt(app);
             HostCallbacks.RaisePowerPointApplicationResolved(app);
             HostCallbacks.RaiseOpenFilesRefresh();
             return true;
@@ -242,6 +250,7 @@ namespace WordAddIn1.OpenFiles
             }
 
             WppCom.EnsureVisible(app);
+            MaximizeLateBound(app, PptMaximizeState);
             HostCallbacks.RaiseOpenFilesRefresh();
             return true;
         }
@@ -298,6 +307,176 @@ namespace WordAddIn1.OpenFiles
                 error = "启动 " + (kind == "edge" ? "Edge" : "Chrome") + " 失败: " + ex.Message;
                 return false;
             }
+        }
+
+        private const int WordMaximizeState = 1;
+        private const int ExcelMaximizeState = -4137;
+        private const int PptMaximizeState = 3;
+
+        private static void MaximizeWord(Word.Application app, Word.Document doc)
+        {
+            try
+            {
+                app.WindowState = Word.WdWindowState.wdWindowStateMaximize;
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                if (doc?.ActiveWindow != null)
+                {
+                    doc.ActiveWindow.WindowState = Word.WdWindowState.wdWindowStateMaximize;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            NativeWindowActivate.MaximizeAndFocus(TryWordHwnd(app, doc));
+        }
+
+        private static void MaximizeExcel(Excel.Application app)
+        {
+            try
+            {
+                app.WindowState = Excel.XlWindowState.xlMaximized;
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                if (app.ActiveWindow != null)
+                {
+                    app.ActiveWindow.WindowState = Excel.XlWindowState.xlMaximized;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            int hwnd = 0;
+            try
+            {
+                hwnd = app.Hwnd;
+            }
+            catch (Exception)
+            {
+            }
+
+            NativeWindowActivate.MaximizeAndFocus(hwnd);
+        }
+
+        private static void MaximizePpt(PowerPoint.Application app)
+        {
+            try
+            {
+                app.WindowState = PowerPoint.PpWindowState.ppWindowMaximized;
+            }
+            catch (Exception)
+            {
+            }
+
+            int hwnd = 0;
+            try
+            {
+                hwnd = app.HWND;
+            }
+            catch (Exception)
+            {
+            }
+
+            NativeWindowActivate.MaximizeAndFocus(hwnd);
+        }
+
+        private static void MaximizeLateBound(object app, int windowState)
+        {
+            if (app == null)
+            {
+                return;
+            }
+
+            WpsCom.TrySetProperty(app, "WindowState", windowState);
+            object activeWindow = WpsCom.GetProperty(app, "ActiveWindow");
+            if (activeWindow != null)
+            {
+                WpsCom.TrySetProperty(activeWindow, "WindowState", windowState);
+            }
+
+            NativeWindowActivate.MaximizeAndFocus(TryLateBoundHwnd(app, activeWindow));
+        }
+
+        private static int TryWordHwnd(Word.Application app, Word.Document doc)
+        {
+            try
+            {
+                int hwnd = doc != null ? doc.ActiveWindow.Hwnd : 0;
+                if (hwnd != 0)
+                {
+                    return hwnd;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                return app != null ? app.ActiveWindow.Hwnd : 0;
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+        }
+
+        private static int TryLateBoundHwnd(object app, object activeWindow)
+        {
+            if (TryReadHwnd(activeWindow, out int hwnd) && hwnd != 0)
+            {
+                return hwnd;
+            }
+
+            TryReadHwnd(app, out hwnd);
+            return hwnd;
+        }
+
+        private static bool TryReadHwnd(object target, out int hwnd)
+        {
+            hwnd = 0;
+            if (target == null)
+            {
+                return false;
+            }
+
+            if (EtCom.TryGetHwnd(target, out hwnd) && hwnd != 0)
+            {
+                return true;
+            }
+
+            if (WppCom.TryGetHwnd(target, out hwnd) && hwnd != 0)
+            {
+                return true;
+            }
+
+            try
+            {
+                object raw = WpsCom.GetProperty(target, "Hwnd") ?? WpsCom.GetProperty(target, "HWND");
+                if (raw != null)
+                {
+                    hwnd = Convert.ToInt32(raw);
+                    return hwnd != 0;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            hwnd = 0;
+            return false;
         }
 
         private static void TryInvoke(object target, string name)

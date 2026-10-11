@@ -90,6 +90,33 @@ namespace WordAddIn1.HostPlatform
             }
         }
 
+        /// <summary>
+        /// 侧栏新建用：Restore（若最小化）后 Maximize，再前台。
+        /// </summary>
+        public static void MaximizeAndFocus(int hwnd)
+        {
+            if (hwnd == 0)
+            {
+                return;
+            }
+
+            IntPtr target = new IntPtr(hwnd);
+            try
+            {
+                if (IsIconic(target))
+                {
+                    ShowWindow(target, SwRestore);
+                }
+
+                ShowWindow(target, SwMaximize);
+                ShowWindow(target, SwShow);
+                SetForegroundWindow(target);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         public static void EnsureUsable(IList<int> hwndHints, string titleHint, IList<string> processNames)
         {
             IntPtr target = ResolveMainWindow(hwndHints, titleHint, processNames);
