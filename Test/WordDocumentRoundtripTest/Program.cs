@@ -32,7 +32,9 @@ namespace WordDocumentRoundtripTest
 
             bool runActions = !runFindStale && !runLayout
                 && caseFilter.StartsWith("wa-", StringComparison.OrdinalIgnoreCase);
-            bool runContent = !runFindStale && !runLayout && !runActions
+            bool runFromFile = !runFindStale && !runLayout && !runActions
+                && caseFilter.StartsWith("wf-", StringComparison.OrdinalIgnoreCase);
+            bool runContent = !runFindStale && !runLayout && !runActions && !runFromFile
                 && caseFilter.StartsWith("wc-", StringComparison.OrdinalIgnoreCase);
 
             if (runFindStale)
@@ -46,6 +48,10 @@ namespace WordDocumentRoundtripTest
             else if (runActions)
             {
                 Console.WriteLine("文字 改字（wa-）");
+            }
+            else if (runFromFile)
+            {
+                Console.WriteLine("文字 从文件插换（wf-）");
             }
             else
             {
@@ -80,6 +86,10 @@ namespace WordDocumentRoundtripTest
             {
                 WaCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
             }
+            else if (runFromFile)
+            {
+                WfCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+            }
             else if (runContent)
             {
                 WcCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
@@ -94,7 +104,11 @@ namespace WordDocumentRoundtripTest
                 ? FindStaleCases.Target
                 : (runLayout
                     ? LbCases.Target
-                    : (runActions ? WaCases.Target : (runContent ? WcCases.Target : 30)));
+                    : (runActions
+                        ? WaCases.Target
+                        : (runFromFile
+                            ? WfCases.Target
+                            : (runContent ? WcCases.Target : 30))));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed

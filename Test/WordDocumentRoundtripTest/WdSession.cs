@@ -114,6 +114,20 @@ namespace WordDocumentRoundtripTest
                 args ?? new Dictionary<string, object>());
         }
 
+        public ToolResult InsertFromFile(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_insert_document_from_file",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult ReplaceFromFile(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_replace_document_from_file",
+                args ?? new Dictionary<string, object>());
+        }
+
         public bool ActivateDoc(string fullPath)
         {
             return IsWps
