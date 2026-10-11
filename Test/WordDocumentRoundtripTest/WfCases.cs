@@ -534,7 +534,6 @@ namespace WordDocumentRoundtripTest
                 ? ""
                 : ("target_table 失败 err=" + (afterR.Error ?? "(null)")
                     + " data=" + DumpData(afterR));
-            Console.WriteLine("  [dbg] wf-tbl-after tableId=" + liveTableId + " " + afterDump);
             Ok(run, "wf-tbl-after",
                 afterR.Success && StillHas(s, id, AfterTable) && StillHas(s, id, "丁"),
                 afterR.Success

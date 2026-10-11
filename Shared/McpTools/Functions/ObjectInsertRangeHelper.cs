@@ -78,7 +78,7 @@ namespace WordAddIn1
                 Word.InlineShape chart = ChartResolveHelper.ResolveInlineShapeByChartId(doc, chartId);
                 if (chart == null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[ObjectInsertRange] 找不到图表 '{chartId}'");
+                    EasyWriteDiagnostics.Log(DebugCategory.Chart, "[ObjectInsertRange] 找不到图表 '" + chartId + "'");
                     return null;
                 }
 
@@ -87,13 +87,14 @@ namespace WordAddIn1
                 insertRange.InsertParagraphAfter();
                 insertRange.Collapse(Word.WdCollapseDirection.wdCollapseStart);
 
-                System.Diagnostics.Debug.WriteLine(
-                    $"[ObjectInsertRange] 图 '{chartId}' 后插入点 Start={insertRange.Start}");
+                EasyWriteDiagnostics.Log(
+                    DebugCategory.Chart,
+                    "[ObjectInsertRange] 图 '" + chartId + "' 后插入点 Start=" + insertRange.Start);
                 return insertRange;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ObjectInsertRange] 图后定位失败: {ex.Message}");
+                EasyWriteDiagnostics.Log(DebugCategory.Chart, "[ObjectInsertRange] 图后定位失败: " + ex.Message);
                 return null;
             }
         }
@@ -147,7 +148,7 @@ namespace WordAddIn1
                 Word.InlineShape image = ImageResolveHelper.ResolveInlineShapeByImageId(doc, imageId);
                 if (image == null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[ObjectInsertRange] 找不到图片 '{imageId}'");
+                    EasyWriteDiagnostics.Log(DebugCategory.Chart, "[ObjectInsertRange] 找不到图片 '" + imageId + "'");
                     return null;
                 }
 
@@ -156,13 +157,14 @@ namespace WordAddIn1
                 insertRange.InsertParagraphAfter();
                 insertRange.Collapse(Word.WdCollapseDirection.wdCollapseStart);
 
-                System.Diagnostics.Debug.WriteLine(
-                    $"[ObjectInsertRange] 图片 '{imageId}' 后插入点 Start={insertRange.Start}");
+                EasyWriteDiagnostics.Log(
+                    DebugCategory.Chart,
+                    "[ObjectInsertRange] 图片 '" + imageId + "' 后插入点 Start=" + insertRange.Start);
                 return insertRange;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ObjectInsertRange] 图片后定位失败: {ex.Message}");
+                EasyWriteDiagnostics.Log(DebugCategory.Chart, "[ObjectInsertRange] 图片后定位失败: " + ex.Message);
                 return null;
             }
         }

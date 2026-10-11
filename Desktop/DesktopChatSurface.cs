@@ -280,18 +280,14 @@ namespace EasyWriteClient.Desktop
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "EasyWriteDesktop");
             Directory.CreateDirectory(logDir);
-            string logPath = Path.Combine(logDir, "webview-init.log");
             void Log(string msg)
             {
-                string line = DateTime.Now.ToString("HH:mm:ss.fff") + " " + msg;
-                System.Diagnostics.Debug.WriteLine("[DesktopChatSurface] " + line);
-                try
+                if (!EasyWriteDiagnostics.IsEnabled(DebugCategory.Host))
                 {
-                    File.AppendAllText(logPath, line + Environment.NewLine);
+                    return;
                 }
-                catch
-                {
-                }
+
+                EasyWriteDiagnostics.Log(DebugCategory.Host, "[DesktopChatSurface] " + msg);
             }
 
             Log($"begin Size={Size} ClientSize={ClientSize} www check…");
@@ -372,7 +368,7 @@ namespace EasyWriteClient.Desktop
             {
                 Log("NavigationCompleted timeout");
                 MessageBox.Show(
-                    "前端页面加载超时。\r\n日志: " + logPath,
+                    "前端页面加载超时。\r\n需要诊断时在 config.json 把 App.DebugCategories 设为 [\"host\"] 或 [\"all\"]。",
                     "易写",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
@@ -380,7 +376,7 @@ namespace EasyWriteClient.Desktop
             else if (!navTcs.Task.Result)
             {
                 MessageBox.Show(
-                    "前端页面导航失败。\r\n日志: " + logPath,
+                    "前端页面导航失败。\r\n需要诊断时在 config.json 把 App.DebugCategories 设为 [\"host\"] 或 [\"all\"]。",
                     "易写",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
@@ -408,8 +404,7 @@ namespace EasyWriteClient.Desktop
                         Log("Vue #app still empty — opening DevTools");
                         core.OpenDevToolsWindow();
                         MessageBox.Show(
-                            "页面已打开但 Vue 未渲染（#app 为空）。\r\n已打开开发者工具，请查看 Console。\r\n日志: "
-                            + logPath,
+                            "页面已打开但 Vue 未渲染（#app 为空）。\r\n已打开开发者工具，请查看 Console。\r\n需要诊断时在 config.json 把 App.DebugCategories 设为 [\"host\"] 或 [\"all\"]。",
                             "易写",
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Warning);

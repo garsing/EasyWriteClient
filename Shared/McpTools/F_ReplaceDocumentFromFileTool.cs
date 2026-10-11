@@ -39,9 +39,10 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = "F_process_document_actions 未注册" };
                     }
 
-                    System.Diagnostics.Debug.WriteLine(
-                        "[F_replace_document_from_file] delegate → F_process_document_actions; " +
-                        $"channel_id={ChannelContext.TryGetChannelIdFromParameters(processArgs) ?? "(default)"}");
+                    EasyWriteDiagnostics.Log(
+                        DebugCategory.Tool,
+                        "[F_replace_document_from_file] delegate → F_process_document_actions; channel_id="
+                        + (ChannelContext.TryGetChannelIdFromParameters(processArgs) ?? "(default)"));
 
                     ToolResult processResult = await processHandler(processArgs);
                     if (!processResult.Success)
@@ -65,7 +66,9 @@ namespace WordAddIn1
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[ERROR] replace_document_from_file 异常: {ex.Message}");
+                    EasyWriteDiagnostics.Log(
+                        DebugCategory.Tool,
+                        "[ERROR] replace_document_from_file 异常: " + ex.Message);
                     return new ToolResult { Success = false, Error = $"从文件替换文档失败: {ex.Message}" };
                 }
             };

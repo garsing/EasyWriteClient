@@ -2857,14 +2857,7 @@ namespace WordAddIn1.PresentationHost
             }
 
             string line = "[PptChartSnap] " + message;
-            try
-            {
-                EasyWriteLog.WriteLine(line);
-            }
-            catch (Exception)
-            {
-            }
-
+            EasyWriteDiagnostics.Log(DebugCategory.PptHtml, line);
             warnings?.Add(line);
         }
 
@@ -2876,15 +2869,7 @@ namespace WordAddIn1.PresentationHost
             }
 
             string line = "[PptChartPour] " + message;
-            try
-            {
-                EasyWriteLog.WriteLine(line);
-                EasyWriteLog.Flush();
-            }
-            catch (Exception)
-            {
-            }
-
+            EasyWriteDiagnostics.Log(DebugCategory.PptHtml, line);
             warnings?.Add(line);
         }
 

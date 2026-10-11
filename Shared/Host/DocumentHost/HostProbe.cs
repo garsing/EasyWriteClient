@@ -1,41 +1,27 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Runtime.InteropServices;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1.DocumentHost
 {
     /// <summary>
-    /// 临时定位：改字适配/checkpoint 逐步落盘。不改变成功路径。
+    /// 文字宿主 / 检查点 / 表后落点诊断。只走 DebugCategories 的 host（或 all）。
     /// </summary>
     internal static class HostProbe
     {
-        /// <summary>对照实验：false 时 Touch 不碰 COM，只打日志。</summary>
-        internal const bool EnableTouch = true;
+        internal static bool Enabled => EasyWriteDiagnostics.IsEnabled(DebugCategory.Host);
 
         public static void Log(string site, string detail)
         {
-            string line = DateTime.Now.ToString("HH:mm:ss.fff") + " [dhost] " + site + " " + (detail ?? "");
-            try
+            if (!Enabled)
             {
-                EasyWriteLog.WriteLine(line);
-            }
-            catch (Exception)
-            {
+                return;
             }
 
-            try
-            {
-                File.AppendAllText(
-                    Path.Combine(Path.GetTempPath(), "ew-dhost.log"),
-                    line + Environment.NewLine);
-            }
-            catch (Exception)
-            {
-            }
-
-            System.Diagnostics.Debug.WriteLine(line);
+            EasyWriteDiagnostics.Log(
+                DebugCategory.Host,
+                site + " " + (detail ?? ""));
         }
 
         public static string ArgsBrief(IReadOnlyDictionary<string, object> args)
@@ -77,9 +63,8 @@ namespace WordAddIn1.DocumentHost
 
         public static void Touch(string site, Word.Document document)
         {
-            if (!EnableTouch)
+            if (!Enabled)
             {
-                Log(site, "touch-skipped");
                 return;
             }
 
@@ -108,9 +93,8 @@ namespace WordAddIn1.DocumentHost
 
         public static void TouchLate(string site, object document)
         {
-            if (!EnableTouch)
+            if (!Enabled)
             {
-                Log(site, "touch-late-skipped");
                 return;
             }
 
@@ -151,4 +135,3 @@ namespace WordAddIn1.DocumentHost
         }
     }
 }
-

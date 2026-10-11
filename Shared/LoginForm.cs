@@ -217,21 +217,12 @@ namespace WordAddIn1
 
         private static void Log(string msg)
         {
-            string line = DateTime.Now.ToString("HH:mm:ss.fff") + " " + msg;
-            System.Diagnostics.Debug.WriteLine("[LoginForm] " + line);
-            try
+            if (!EasyWriteDiagnostics.IsEnabled(DebugCategory.Host))
             {
-                string dir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "EasyWriteDesktop");
-                Directory.CreateDirectory(dir);
-                File.AppendAllText(
-                    Path.Combine(dir, "login-webview.log"),
-                    line + Environment.NewLine);
+                return;
             }
-            catch
-            {
-            }
+
+            EasyWriteDiagnostics.Log(DebugCategory.Host, "[LoginForm] " + msg);
         }
 
         private async Task InitAndLoadAsync()

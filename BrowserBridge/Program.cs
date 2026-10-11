@@ -160,6 +160,11 @@ namespace YiWriteBrowserBridge
 
         private static void TryLog(string line)
         {
+            if (!HostDebugEnabled())
+            {
+                return;
+            }
+
             try
             {
                 string dir = Path.Combine(
@@ -176,6 +181,28 @@ namespace YiWriteBrowserBridge
             {
                 /* ignore */
             }
+        }
+
+        /// <summary>Bridge 不读 config.json，与后端一样认 DEBUG_CATEGORIES（host / all）。</summary>
+        private static bool HostDebugEnabled()
+        {
+            string raw = Environment.GetEnvironmentVariable("DEBUG_CATEGORIES");
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            foreach (string part in raw.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string c = part.Trim();
+                if (c.Equals("all", StringComparison.OrdinalIgnoreCase)
+                    || c.Equals("host", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

@@ -58,9 +58,10 @@ namespace WordAddIn1
                         build.args["channel_id"] = args["channel_id"];
                     }
 
-                    System.Diagnostics.Debug.WriteLine(
-                        "[F_insert_document_from_file] delegate → F_process_document_actions; " +
-                        $"channel_id={ChannelContext.TryGetChannelIdFromParameters(build.args) ?? "(default)"}");
+                    EasyWriteDiagnostics.Log(
+                        DebugCategory.Tool,
+                        "[F_insert_document_from_file] delegate → F_process_document_actions; channel_id="
+                        + (ChannelContext.TryGetChannelIdFromParameters(build.args) ?? "(default)"));
 
                     ToolResult processResult = await processHandler(build.args);
                     if (!processResult.Success)

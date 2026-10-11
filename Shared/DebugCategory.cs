@@ -31,6 +31,8 @@ namespace WordAddIn1
         public const string FormatTransfer = "format_transfer";
         /// <summary>Desktop「打开文件」探测 / Word COM 事件。</summary>
         public const string OpenFiles = "open_files";
+        /// <summary>文字宿主 / 检查点 / 表后落点、浏览器附着、Desktop WebView 排障旁路。</summary>
+        public const string Host = "host";
 
         public static readonly HashSet<string> Known = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -51,7 +53,8 @@ namespace WordAddIn1
             PptHtml,
             ExcelEt,
             FormatTransfer,
-            OpenFiles
+            OpenFiles,
+            Host
         };
     }
 }

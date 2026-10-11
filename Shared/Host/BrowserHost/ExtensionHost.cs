@@ -1364,6 +1364,11 @@ namespace WordAddIn1.BrowserHost
         {
             try
             {
+                if (!EasyWriteDiagnostics.IsEnabled(DebugCategory.Host))
+                {
+                    return;
+                }
+
                 if (map == null || map.Count == 0)
                 {
                     return;
@@ -1452,6 +1457,11 @@ namespace WordAddIn1.BrowserHost
         {
             try
             {
+                if (!EasyWriteDiagnostics.IsEnabled(DebugCategory.Host))
+                {
+                    return;
+                }
+
                 string name = entry != null ? entry.Name : null;
                 if (!string.IsNullOrEmpty(name) && name.Length > 36)
                 {
@@ -1477,12 +1487,12 @@ namespace WordAddIn1.BrowserHost
 
         private static void AppendAttachDiag(string text)
         {
-            string dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "YiWrite",
-                "logs");
-            Directory.CreateDirectory(dir);
-            File.AppendAllText(Path.Combine(dir, "attach-click-diag.log"), text, System.Text.Encoding.UTF8);
+            if (!EasyWriteDiagnostics.IsEnabled(DebugCategory.Host))
+            {
+                return;
+            }
+
+            EasyWriteDiagnostics.Log(DebugCategory.Host, text);
         }
 
         private sealed class AttachTabInfo
