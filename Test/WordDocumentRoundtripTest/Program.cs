@@ -195,6 +195,7 @@ namespace WordDocumentRoundtripTest
             int wpsBefore = OfficeAlive.Count("wps");
             bool wordWinBefore = OfficeAlive.HasWindow("WINWORD");
             bool wpsWinBefore = OfficeAlive.HasWindow("wps");
+            WdSession.SweepBeforeRun(host);
             var run = new TestRun
             {
                 TotalTarget = runFindStale
@@ -214,44 +215,50 @@ namespace WordDocumentRoundtripTest
                                             : (runContent ? WcCases.Target : 30)))))))
             };
             var sw = Stopwatch.StartNew();
-            if (runFindStale)
+            try
             {
-                FindStaleCases.Run(run, host, caseFilter, docPath);
+                if (runFindStale)
+                {
+                    FindStaleCases.Run(run, host, caseFilter, docPath);
+                }
+                else if (runLayout)
+                {
+                    LbCases.Run(run, host);
+                }
+                else if (runActions)
+                {
+                    WaCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+                }
+                else if (runFromFile)
+                {
+                    WfCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+                }
+                else if (runFormat)
+                {
+                    WgCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+                }
+                else if (runTable)
+                {
+                    WtCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+                }
+                else if (runChart)
+                {
+                    WhCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore, GetArg(args, "--wh-part="));
+                }
+                else if (runContent)
+                {
+                    WcCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+                }
+                else
+                {
+                    WdCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+                }
             }
-            else if (runLayout)
+            finally
             {
-                LbCases.Run(run, host);
+                sw.Stop();
+                WdSession.SweepAfterRun(host);
             }
-            else if (runActions)
-            {
-                WaCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
-            }
-            else if (runFromFile)
-            {
-                WfCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
-            }
-            else if (runFormat)
-            {
-                WgCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
-            }
-            else if (runTable)
-            {
-                WtCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
-            }
-            else if (runChart)
-            {
-                WhCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
-            }
-            else if (runContent)
-            {
-                WcCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
-            }
-            else
-            {
-                WdCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
-            }
-
-            sw.Stop();
             int target = runFindStale
                 ? FindStaleCases.Target
                 : (runLayout

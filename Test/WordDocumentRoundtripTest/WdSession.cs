@@ -31,6 +31,9 @@ namespace WordDocumentRoundtripTest
             get { return Host == "wps"; }
         }
 
+        /// <summary>关稿后顺手收 Word AddChart 留下的无窗口空 Excel。图表波打开，不 Quit 有窗的用户 Excel。</summary>
+        public bool DismissOrphanExcelOnClose { get; set; }
+
         public string NewDocxPath()
         {
             return Path.Combine(
@@ -855,7 +858,453 @@ namespace WordDocumentRoundtripTest
 
         public bool CloseDocByPath(string fullPath)
         {
-            return IsWps ? CloseWpsByPath(fullPath) : CloseWordByPath(fullPath);
+            bool closed = IsWps ? CloseWpsByPath(fullPath) : CloseWordByPath(fullPath);
+            TryDeleteTestTemp(fullPath);
+            if (DismissOrphanExcelOnClose)
+            {
+                DismissOrphanExcel();
+            }
+
+            return closed;
+        }
+
+        /// <summary>开跑前：关残留测试稿、收无窗空 Excel、删 TEMP 里 ew- 测试文件。不 Quit Word/WPS，不碰有窗 Excel。</summary>
+        public static void SweepBeforeRun(string host)
+        {
+            ReportSweep("开跑前", SweepResidues(host));
+        }
+
+        /// <summary>跑完再扫一遍，避免本轮关稿失败留下的文件/空 Excel。</summary>
+        public static void SweepAfterRun(string host)
+        {
+            ReportSweep("跑完", SweepResidues(host));
+        }
+
+        private static void ReportSweep(string when, int[] counts)
+        {
+            Console.WriteLine(
+                "清残留 " + when
+                + "：关测试稿 " + counts[0]
+                + "，空 Excel " + counts[1]
+                + "，删临时文件 " + counts[2]);
+        }
+
+        private static int[] SweepResidues(string host)
+        {
+            bool wps = string.Equals(host, "wps", StringComparison.OrdinalIgnoreCase);
+            int docs = CloseLeftoverTestDocs(wps);
+            int excel = DismissOrphanExcel();
+            int files = SweepTestTempFiles();
+            return new[] { docs, excel, files };
+        }
+
+        public static int CloseLeftoverTestDocs(bool wps)
+        {
+            return wps ? CloseLeftoverWpsTestDocs() : CloseLeftoverWordTestDocs();
+        }
+
+        private static int CloseLeftoverWordTestDocs()
+        {
+            int n = 0;
+            try
+            {
+                var app = (Word.Application)Marshal.GetActiveObject("Word.Application");
+                var list = new List<Word.Document>();
+                foreach (Word.Document d in app.Documents)
+                {
+                    list.Add(d);
+                }
+
+                foreach (Word.Document d in list)
+                {
+                    string full = null;
+                    string name = null;
+                    try
+                    {
+                        full = d.FullName;
+                        name = d.Name;
+                    }
+                    catch
+                    {
+                    }
+
+                    if (!IsTestTempName(name) && !IsTestTempPath(full))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        object save = false;
+                        d.Close(ref save);
+                        n++;
+                    }
+                    catch
+                    {
+                    }
+
+                    TryDeleteTestTemp(full);
+                }
+            }
+            catch
+            {
+            }
+
+            return n;
+        }
+
+        private static int CloseLeftoverWpsTestDocs()
+        {
+            int n = 0;
+            foreach (object app in EnumerateWpsApps())
+            {
+                object docs;
+                try
+                {
+                    docs = GetProp(app, "Documents");
+                }
+                catch
+                {
+                    continue;
+                }
+
+                int count;
+                try
+                {
+                    count = Convert.ToInt32(GetProp(docs, "Count"));
+                }
+                catch
+                {
+                    continue;
+                }
+
+                var paths = new List<string>();
+                for (int i = 1; i <= count; i++)
+                {
+                    try
+                    {
+                        object d = Invoke(docs, "Item", i);
+                        string full = Convert.ToString(GetProp(d, "FullName"));
+                        string name = Convert.ToString(GetProp(d, "Name"));
+                        if (IsTestTempName(name) || IsTestTempPath(full))
+                        {
+                            paths.Add(full);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                foreach (string full in paths)
+                {
+                    if (CloseWpsByPath(full))
+                    {
+                        n++;
+                    }
+
+                    TryDeleteTestTemp(full);
+                }
+            }
+
+            return n;
+        }
+
+        /// <summary>
+        /// 只收无窗口、且没有用户工作簿的 Excel（Word AddChart 数据源）。
+        /// 有可见窗口或磁盘上非测试文件的工作簿一律不动。
+        /// </summary>
+        public static int DismissOrphanExcel()
+        {
+            int n = 0;
+            if (!HasUserExcelWindow())
+            {
+                n += QuitEmptyExcelApps();
+            }
+
+            n += KillWindowlessExcel();
+            return n;
+        }
+
+        private static int QuitEmptyExcelApps()
+        {
+            int quit = 0;
+            for (int i = 0; i < 3; i++)
+            {
+                Excel.Application app;
+                try
+                {
+                    app = (Excel.Application)Marshal.GetActiveObject("Excel.Application");
+                }
+                catch
+                {
+                    break;
+                }
+
+                try
+                {
+                    if (HasUserWorkbook(app))
+                    {
+                        break;
+                    }
+
+                    var books = new List<Excel.Workbook>();
+                    foreach (Excel.Workbook book in app.Workbooks)
+                    {
+                        books.Add(book);
+                    }
+
+                    foreach (Excel.Workbook book in books)
+                    {
+                        try
+                        {
+                            book.Close(false);
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    app.DisplayAlerts = false;
+                    app.Quit();
+                    quit++;
+                }
+                catch
+                {
+                    break;
+                }
+            }
+
+            return quit;
+        }
+
+        /// <summary>标题含 xlsx/工作簿/BookN 视为用户 Excel。光秃「Excel」是图表数据窗，不算。</summary>
+        private static bool HasUserExcelWindow()
+        {
+            try
+            {
+                foreach (Process p in Process.GetProcessesByName("EXCEL"))
+                {
+                    try
+                    {
+                        string title = p.MainWindowTitle ?? "";
+                        if (LooksLikeUserExcelTitle(title))
+                        {
+                            return true;
+                        }
+                    }
+                    finally
+                    {
+                        p.Dispose();
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        private static bool LooksLikeUserExcelTitle(string title)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                return false;
+            }
+
+            if (title.IndexOf(".xls", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (title.IndexOf("工作簿", StringComparison.Ordinal) >= 0)
+            {
+                return true;
+            }
+
+            return title.IndexOf("Book", StringComparison.OrdinalIgnoreCase) >= 0
+                && title.IndexOf("Excel", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static int KillWindowlessExcel()
+        {
+            int n = 0;
+            try
+            {
+                foreach (Process p in Process.GetProcessesByName("EXCEL"))
+                {
+                    try
+                    {
+                        if (!string.IsNullOrWhiteSpace(p.MainWindowTitle))
+                        {
+                            continue;
+                        }
+
+                        p.Kill();
+                        n++;
+                    }
+                    catch
+                    {
+                    }
+                    finally
+                    {
+                        p.Dispose();
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return n;
+        }
+
+        private static bool HasUserWorkbook(Excel.Application app)
+        {
+            try
+            {
+                foreach (Excel.Workbook book in app.Workbooks)
+                {
+                    try
+                    {
+                        string full = book.FullName;
+                        if (!string.IsNullOrEmpty(full)
+                            && File.Exists(full)
+                            && !IsTestTempPath(full))
+                        {
+                            return true;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        public static int SweepTestTempFiles()
+        {
+            int n = 0;
+            string dir;
+            try
+            {
+                dir = Path.GetTempPath();
+            }
+            catch
+            {
+                return 0;
+            }
+
+            string[] names;
+            try
+            {
+                names = Directory.GetFiles(dir);
+            }
+            catch
+            {
+                return 0;
+            }
+
+            foreach (string file in names)
+            {
+                if (!IsTestTempPath(file))
+                {
+                    continue;
+                }
+
+                if (TryDeleteFile(file))
+                {
+                    n++;
+                }
+            }
+
+            return n;
+        }
+
+        private static bool IsTestTempName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            return name.StartsWith("ew-wd-", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("ew-wh-", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("ew-c2-", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("ew-wt-", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("ew-wf-", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("ew-wg-", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("ew-wa-", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("ew-wc-", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsTestTempPath(string fullPath)
+        {
+            if (string.IsNullOrEmpty(fullPath))
+            {
+                return false;
+            }
+
+            string name = Path.GetFileName(fullPath);
+            if (!IsTestTempName(name))
+            {
+                return false;
+            }
+
+            string temp;
+            try
+            {
+                temp = Path.GetTempPath();
+            }
+            catch
+            {
+                return false;
+            }
+
+            return string.Equals(
+                Normalize(Path.GetDirectoryName(fullPath) ?? ""),
+                Normalize(temp.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void TryDeleteTestTemp(string fullPath)
+        {
+            if (IsTestTempPath(fullPath))
+            {
+                TryDeleteFile(fullPath);
+            }
+        }
+
+        private static bool TryDeleteFile(string fullPath)
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                try
+                {
+                    if (!File.Exists(fullPath))
+                    {
+                        return i > 0;
+                    }
+
+                    File.Delete(fullPath);
+                    return true;
+                }
+                catch
+                {
+                    if (i < 3)
+                    {
+                        System.Threading.Thread.Sleep(80);
+                    }
+                }
+            }
+
+            return false;
         }
 
         public static bool CloseExcelByPath(string fullPath)
@@ -871,6 +1320,7 @@ namespace WordDocumentRoundtripTest
                         if (string.Equals(Normalize(book.FullName), norm, StringComparison.OrdinalIgnoreCase))
                         {
                             book.Close(false);
+                            TryDeleteTestTemp(fullPath);
                             return true;
                         }
                     }
@@ -899,6 +1349,7 @@ namespace WordDocumentRoundtripTest
                         if (string.Equals(Normalize(pres.FullName), norm, StringComparison.OrdinalIgnoreCase))
                         {
                             pres.Close();
+                            TryDeleteTestTemp(fullPath);
                             return true;
                         }
                     }

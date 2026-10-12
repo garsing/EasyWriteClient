@@ -40,18 +40,38 @@ namespace WordDocumentRoundtripTest
             int wordBefore,
             int wpsBefore,
             bool wordWinBefore,
-            bool wpsWinBefore)
+            bool wpsWinBefore,
+            string part = null)
         {
+            bool runBase = string.IsNullOrEmpty(part) || part == "base";
+            bool runCon = string.IsNullOrEmpty(part) || part == "con";
+            bool runC2 = string.IsNullOrEmpty(part) || part == "c2";
             var s = new WdSession(host);
-            RunNegEarly(run, s);
+            s.DismissOrphanExcelOnClose = !s.IsWps;
+            if (runBase)
+            {
+                RunNegEarly(run, s);
+            }
             string warmPath = WarmWpsChannel(s);
             try
             {
-                RunCreateAndMutate(run, s);
-                RunConsolidate(run, s);
-                RunConsolidate2(run, s);
-                RunNegLate(run, s);
-                RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+                if (runBase)
+                {
+                    RunCreateAndMutate(run, s);
+                }
+                if (runCon)
+                {
+                    RunConsolidate(run, s);
+                }
+                if (runC2)
+                {
+                    RunConsolidate2(run, s);
+                }
+                if (runBase)
+                {
+                    RunNegLate(run, s);
+                    RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+                }
             }
             finally
             {
