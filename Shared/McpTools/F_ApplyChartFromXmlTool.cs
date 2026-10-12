@@ -127,6 +127,11 @@ namespace WordAddIn1
                         };
                     }
 
+                    if (scope == "data" || scope == "all")
+                    {
+                        WordReader.RebindLiveChartId(inlineShape.Chart, chartId);
+                    }
+
                     try
                     {
                         WordReader.ReadWord(document);

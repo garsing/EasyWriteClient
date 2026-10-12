@@ -23,7 +23,7 @@ namespace WordAddIn1
         private static string _activeDocUuid = "";
 
         /// <summary>递增后清空 ProcessDocument 会话缓存（指纹算法或缓存条目结构变更时）。</summary>
-        public const int FingerprintVersion = 7;
+        public const int FingerprintVersion = 8;
 
         /// <summary>当前活动文档分片；无绑定时为临时空分片（不写回 SessionsByUuid）。</summary>
         private static DocumentSessionState Session
@@ -669,14 +669,91 @@ namespace WordAddIn1
 
         public static string FindOrCreateChartId(string chartBodyContent)
         {
-            string normalizedContent = chartBodyContent ?? "";
-            string contentHash = GenerateContentHash(normalizedContent);
+            return FindOrCreateChartId(chartBodyContent, null);
+        }
 
+        /// <summary>
+        /// 按 DataTable 哈希发 <c>C_</c>。同文第二张相同数据走 <c>|#k</c>（与 <c>I_</c> 同），
+        /// 令序表一张图一个号。token 只留字母数字，避免 Base64 的 <c>/</c> 进编号。
+        /// </summary>
+        public static string FindOrCreateChartId(string chartBodyContent, HashSet<string> occupiedInThisRead)
+        {
+            string normalizedContent = chartBodyContent ?? "";
+            int k = 1;
+            while (k <= 100)
+            {
+                string material = k == 1 ? normalizedContent : normalizedContent + "|#" + k;
+                string contentHash = GenerateContentHash(material);
+                string existing = FindChartIdByHash(contentHash);
+                if (!string.IsNullOrEmpty(existing)
+                    && (occupiedInThisRead == null || !occupiedInThisRead.Contains(existing)))
+                {
+                    return existing;
+                }
+
+                if (string.IsNullOrEmpty(existing))
+                {
+                    string chartId = MintChartId(contentHash);
+                    Session.ChartIdMapping.Add(new List<string> { chartId, contentHash, material });
+                    return chartId;
+                }
+
+                k++;
+            }
+
+            return MintChartId(GenerateContentHash(normalizedContent + "|#overflow"));
+        }
+
+        /// <summary>套数据后把新 DataTable 绑回已发出的 <c>C_</c>，避免下一轮 ReadWord 换号。</summary>
+        public static void RebindChartId(string chartId, string chartBodyContent)
+        {
+            if (string.IsNullOrEmpty(chartId))
+            {
+                return;
+            }
+
+            string hash = GenerateContentHash(chartBodyContent ?? "");
+            foreach (var mapping in Session.ChartIdMapping)
+            {
+                if (mapping.Count >= 1 && mapping[0] == chartId)
+                {
+                    if (mapping.Count >= 2)
+                    {
+                        mapping[1] = hash;
+                    }
+                    else
+                    {
+                        mapping.Add(hash);
+                    }
+
+                    if (mapping.Count >= 3)
+                    {
+                        mapping[2] = chartBodyContent ?? "";
+                    }
+                    else
+                    {
+                        mapping.Add(chartBodyContent ?? "");
+                    }
+
+                    return;
+                }
+            }
+
+            Session.ChartIdMapping.Add(new List<string> { chartId, hash, chartBodyContent ?? "" });
+        }
+
+        private static string FindChartIdByHash(string contentHash)
+        {
             foreach (var mapping in Session.ChartIdMapping)
             {
                 if (mapping.Count >= 2 && mapping[1] == contentHash)
                 {
                     string storedId = mapping[0];
+                    if (string.IsNullOrEmpty(storedId))
+                    {
+                        return null;
+                    }
+
                     if (!storedId.StartsWith("C_"))
                     {
                         mapping[0] = "C_" + storedId;
@@ -687,54 +764,80 @@ namespace WordAddIn1
                 }
             }
 
-            string chartIdBase = contentHash.Length >= 8 ? contentHash.Substring(0, 8) : contentHash;
-            string chartIdWithPrefix = "C_" + chartIdBase;
+            return null;
+        }
 
-            bool chartIdExists = false;
+        private static string MintChartId(string contentHash)
+        {
+            string chartId = "C_" + ToChartIdToken(contentHash, 8);
+            if (!ChartIdTaken(chartId))
+            {
+                return chartId;
+            }
+
+            for (int len = 12; len <= 32; len += 4)
+            {
+                string longer = "C_" + ToChartIdToken(contentHash, len);
+                if (!ChartIdTaken(longer))
+                {
+                    return longer;
+                }
+            }
+
+            return "C_" + ToChartIdToken(contentHash + Guid.NewGuid().ToString("N"), 8);
+        }
+
+        private static bool ChartIdTaken(string chartId)
+        {
+            string bare = chartId != null && chartId.StartsWith("C_", StringComparison.Ordinal)
+                ? chartId.Substring(2)
+                : chartId;
             foreach (var mapping in Session.ChartIdMapping)
             {
                 if (mapping.Count >= 1)
                 {
                     string storedId = mapping[0];
-                    if (storedId == chartIdWithPrefix || storedId == chartIdBase)
+                    if (storedId == chartId || storedId == bare)
                     {
-                        chartIdExists = true;
-                        break;
+                        return true;
                     }
                 }
             }
 
-            if (chartIdExists)
+            return false;
+        }
+
+        private static string ToChartIdToken(string contentHash, int length)
+        {
+            if (length < 1)
             {
-                for (int len = 12; len <= contentHash.Length; len += 4)
-                {
-                    string candidateIdBase = contentHash.Substring(0, len);
-                    string candidateIdWithPrefix = "C_" + candidateIdBase;
-                    bool candidateExists = false;
-                    foreach (var mapping in Session.ChartIdMapping)
-                    {
-                        if (mapping.Count >= 1)
-                        {
-                            string storedId = mapping[0];
-                            if (storedId == candidateIdWithPrefix || storedId == candidateIdBase)
-                            {
-                                candidateExists = true;
-                                break;
-                            }
-                        }
-                    }
+                length = 8;
+            }
 
-                    if (!candidateExists)
+            if (string.IsNullOrEmpty(contentHash))
+            {
+                return new string('0', length);
+            }
+
+            var sb = new StringBuilder(length);
+            foreach (char c in contentHash)
+            {
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+                {
+                    sb.Append(c);
+                    if (sb.Length >= length)
                     {
-                        chartIdBase = candidateIdBase;
-                        chartIdWithPrefix = candidateIdWithPrefix;
-                        break;
+                        return sb.ToString();
                     }
                 }
             }
 
-            Session.ChartIdMapping.Add(new List<string> { chartIdWithPrefix, contentHash, normalizedContent });
-            return chartIdWithPrefix;
+            while (sb.Length < length)
+            {
+                sb.Append('0');
+            }
+
+            return sb.ToString();
         }
 
         public static void AddChartIdToOrder(string chartId)

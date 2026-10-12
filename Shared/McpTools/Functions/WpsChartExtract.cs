@@ -58,6 +58,7 @@ namespace WordAddIn1
             found.Sort((a, b) => a.Start.CompareTo(b.Start));
 
             Log("shapes=" + found.Count);
+            var occupied = new HashSet<string>(StringComparer.Ordinal);
             foreach (var item in found)
             {
                 string raw = ExtractDataTableXml(item.Chart);
@@ -67,7 +68,8 @@ namespace WordAddIn1
                 }
 
                 string body = ExtractChartBodyContent(raw);
-                string chartId = DocumentState.FindOrCreateChartId(body);
+                string chartId = DocumentState.FindOrCreateChartId(body, occupied);
+                occupied.Add(chartId);
                 tagged.Add(BuildChartXmlWithId(chartId, raw));
                 Log("tagged " + chartId + " start=" + item.Start);
             }

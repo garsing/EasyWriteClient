@@ -414,6 +414,7 @@ namespace WordAddIn1
             orderedShapes.Sort((a, b) => a.Start.CompareTo(b.Start));
 
             var result = new List<ChartOrderedEntry>();
+            var occupied = new HashSet<string>(StringComparer.Ordinal);
             foreach (var item in orderedShapes)
             {
                 string rawXml = ExtractChartSeriesCollection(item.Chart);
@@ -423,7 +424,8 @@ namespace WordAddIn1
                 }
 
                 string bodyContent = ExtractChartBodyContent(rawXml);
-                string chartId = DocumentState.FindOrCreateChartId(bodyContent);
+                string chartId = DocumentState.FindOrCreateChartId(bodyContent, occupied);
+                occupied.Add(chartId);
                 string taggedXml = BuildChartXmlWithId(chartId, rawXml);
                 result.Add(new ChartOrderedEntry { TaggedXml = taggedXml });
                 LogExtractVerbose($"[ChartId] 预提取 chart_id={chartId}，Range.Start={item.Start}");
@@ -431,6 +433,26 @@ namespace WordAddIn1
 
             LogExtractVerbose($"[WordReader] 共预提取 {result.Count} 个图表（有序）");
             return result;
+        }
+
+        /// <summary>套数据后把现场 DataTable 绑回已发出的 <c>C_</c>。</summary>
+        internal static void RebindLiveChartId(Word.Chart chart, string chartId)
+        {
+            if (chart == null || string.IsNullOrEmpty(chartId))
+            {
+                return;
+            }
+
+            try
+            {
+                string rawXml = ExtractChartSeriesCollection(chart);
+                string body = ExtractChartBodyContent(rawXml);
+                DocumentState.RebindChartId(chartId, body);
+            }
+            catch (Exception ex)
+            {
+                LogExtractVerbose("[ChartId] Rebind 失败: " + ex.Message);
+            }
         }
 
         private static string ExtractChartBodyContent(string rawChartXml)
