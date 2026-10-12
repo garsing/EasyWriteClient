@@ -13,7 +13,7 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static class WhCases
     {
-        public const int Target = 144;
+        public const int Target = 244;
 
         private const string AfterSent = "易写图前句。";
         private const string TitleA = "易写图销量";
@@ -49,6 +49,7 @@ namespace WordDocumentRoundtripTest
             {
                 RunCreateAndMutate(run, s);
                 RunConsolidate(run, s);
+                RunConsolidate2(run, s);
                 RunNegLate(run, s);
                 RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
             }
@@ -1114,6 +1115,708 @@ namespace WordDocumentRoundtripTest
             all.AddRange(ConDeleteIds);
             all.AddRange(ConFlowIds);
             return all.ToArray();
+        }
+
+        // ============ 巩固再 100（wh-c2-*）============
+
+        private static readonly string[] Con2NegIds =
+        {
+            "wh-c2-n-column", "wh-c2-n-scatter", "wh-c2-n-radar", "wh-c2-n-doughnut", "wh-c2-n-type-ws",
+            "wh-c2-n-empty-file", "wh-c2-n-not-xml", "wh-c2-n-dir", "wh-c2-n-type-pad", "wh-c2-n-row-empty",
+            "wh-c2-n-apply-ws-xml", "wh-c2-n-apply-not-xml", "wh-c2-n-apply-html", "wh-c2-n-del-ws-id",
+            "wh-c2-n-filename-missing", "wh-c2-n-apply-all-bad", "wh-c2-n-type-typo", "wh-c2-n-type-3dpie",
+            "wh-c2-n-create-json", "wh-c2-n-type-combo"
+        };
+
+        private static readonly string[] Con2TwinIds =
+        {
+            "wh-c2-twin-ok", "wh-c2-twin-diff", "wh-c2-twin-count", "wh-c2-twin-x1", "wh-c2-twin-x2",
+            "wh-c2-twin-a2", "wh-c2-twin-a1-keep", "wh-c2-twin-d1", "wh-c2-twin-x2-after", "wh-c2-twin-count1",
+            "wh-c2-twin-body", "wh-c2-twin-token"
+        };
+
+        private static readonly string[] Con2IdIds =
+        {
+            "wh-c2-id-prefix", "wh-c2-id-alnum", "wh-c2-id-after-data", "wh-c2-id-after-data2",
+            "wh-c2-id-after-fmt", "wh-c2-id-in-body", "wh-c2-id-x-after-2data", "wh-c2-id-keep-sent",
+            "wh-c2-id-fmt-then-data", "wh-c2-id-all-scope", "wh-c2-id-echo-apply", "wh-c2-id-len"
+        };
+
+        private static readonly string[] Con2MixIds =
+        {
+            "wh-c2-mix-after-table", "wh-c2-mix-keep-table", "wh-c2-mix-two-sent", "wh-c2-mix-cn-cat",
+            "wh-c2-mix-long-title", "wh-c2-mix-dup-col", "wh-c2-mix-path-file", "wh-c2-mix-line-after",
+            "wh-c2-mix-pie-after", "wh-c2-mix-chart-tbl-chart", "wh-c2-mix-del-keep-tbl", "wh-c2-mix-zero-y",
+            "wh-c2-mix-five-ser", "wh-c2-mix-echo-title", "wh-c2-mix-xml-file", "wh-c2-mix-keep-pair"
+        };
+
+        private static readonly string[] Con2ExtIds =
+        {
+            "wh-c2-e-scope-omit", "wh-c2-e-flag", "wh-c2-e-info-id", "wh-c2-e-line-type", "wh-c2-e-pie-type",
+            "wh-c2-e-sibling", "wh-c2-e-byid-need", "wh-c2-e-byid-empty", "wh-c2-e-by-index", "wh-c2-e-sel-empty",
+            "wh-c2-e-save-false", "wh-c2-e-overwrite", "wh-c2-e-all-rows", "wh-c2-e-format-cfg", "wh-c2-e-keep-body"
+        };
+
+        private static readonly string[] Con2AppIds =
+        {
+            "wh-c2-a-filename", "wh-c2-a-fmt-keep-data", "wh-c2-a-data-keep-title", "wh-c2-a-all-both",
+            "wh-c2-a-mode-omit", "wh-c2-a-mode-full", "wh-c2-a-zero", "wh-c2-a-neg", "wh-c2-a-dec",
+            "wh-c2-a-twice-title", "wh-c2-a-then-del", "wh-c2-a-echo-series", "wh-c2-a-empty-xml",
+            "wh-c2-a-ws-id", "wh-c2-a-self"
+        };
+
+        private static readonly string[] Con2DelIds =
+        {
+            "wh-c2-d-first", "wh-c2-d-last", "wh-c2-d-echo", "wh-c2-d-msg", "wh-c2-d-x-remain",
+            "wh-c2-d-count", "wh-c2-d-rebuild", "wh-c2-d-nopfx", "wh-c2-d-conly", "wh-c2-d-keep-line"
+        };
+
+        private static void RunConsolidate2(TestRun run, WdSession s)
+        {
+            RunCon2Neg(run, s);
+            if (s.IsWps)
+            {
+                RunCon2WpsRest(run, s);
+                return;
+            }
+
+            RunCon2Twin(run, s);
+            RunCon2Id(run, s);
+            RunCon2Mix(run, s);
+            RunCon2Extract(run, s);
+            RunCon2Apply(run, s);
+            RunCon2Delete(run, s);
+        }
+
+        private static void RunCon2Neg(TestRun run, WdSession s)
+        {
+            ExpectFail(run, "wh-c2-n-column",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("column", TitleA, V1, R3)))), "无效");
+            ExpectFail(run, "wh-c2-n-scatter",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("scatter", TitleA, V1, R3)))), "无效");
+            ExpectFail(run, "wh-c2-n-radar",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("radar", TitleA, V1, R3)))), "无效");
+            ExpectFail(run, "wh-c2-n-doughnut",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("doughnut", TitleA, V1, R3)))), "无效");
+            ExpectFail(run, "wh-c2-n-type-ws",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("   ", TitleA, V1, R3)))), "Type");
+            ExpectFail(run, "wh-c2-n-empty-file",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(""))), "XML");
+            ExpectFail(run, "wh-c2-n-not-xml",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml("not-xml"))), "XML");
+            ExpectFail(run, "wh-c2-n-dir",
+                s.CreateChartFromXml(CreateArgs(null, Path.GetTempPath().TrimEnd('\\'))), "失败");
+            ExpectFail(run, "wh-c2-n-type-pad",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml(" column_clustered ", TitleA, V1, R3)))), "无效");
+            ExpectFail(run, "wh-c2-n-row-empty",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(
+                    "<ChartConfig><Chart><Type>column_clustered</Type><DataTable><Header>"
+                    + "<Column type=\"category\">年</Column><Column type=\"value\">销量</Column></Header>"
+                    + "<Rows><Row></Row></Rows></DataTable></Chart></ChartConfig>"))),
+                "Point");
+            ExpectFail(run, "wh-c2-n-apply-ws-xml",
+                s.ApplyChartFromXml(ApplyArgs(null, "C_00001", "format", "   ")), "XML");
+            ExpectFail(run, "wh-c2-n-apply-not-xml",
+                s.ApplyChartFromXml(ApplyArgs(null, "C_00001", "format", "hello")), "XML");
+            ExpectFail(run, "wh-c2-n-apply-html",
+                s.ApplyChartFromXml(ApplyArgs(null, "C_00001", "format", "<html></html>")), "ChartConfig");
+            ExpectFail(run, "wh-c2-n-del-ws-id",
+                s.DeleteChart(new Dictionary<string, object> { ["chart_id"] = "   " }), "编号");
+            ExpectFail(run, "wh-c2-n-filename-missing",
+                s.CreateChartFromXml(CreateArgsFilename(null, Path.Combine(Path.GetTempPath(), "ew-c2-no-" + Guid.NewGuid().ToString("N") + ".xml"))),
+                "不存在");
+            ExpectFail(run, "wh-c2-n-apply-all-bad",
+                s.ApplyChartFromXml(ApplyArgs(null, "C_00001", "all", "<x/>")), "XML");
+            ExpectFail(run, "wh-c2-n-type-typo",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("column_clustred", TitleA, V1, R3)))), "无效");
+            ExpectFail(run, "wh-c2-n-type-3dpie",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("3dpie", TitleA, V1, R3)))), "无效");
+            ExpectFail(run, "wh-c2-n-create-json",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml("{\"Chart\":{}}"))), "XML");
+            ExpectFail(run, "wh-c2-n-type-combo",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("combo", TitleA, V1, R3)))), "无效");
+        }
+
+        /// <summary>同 DataTable 两张图必须两个 C_，删第一张后第二张仍按号能抽。</summary>
+        private static void RunCon2Twin(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!TryOpenLaid(run, s, ConSent, out path, out id, Con2TwinIds))
+            {
+                return;
+            }
+
+            try
+            {
+                string xml = GenXml("column_clustered", TitleA, V1, Rows("801"));
+                ToolResult c1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(xml)));
+                s.MoveSelectionToEnd(path);
+                ToolResult c2 = s.CreateChartFromXml(CreateArgs(id, WriteXml(xml)));
+                string a = WdSession.Str(c1, "chart_id");
+                string b = WdSession.Str(c2, "chart_id");
+                Ok(run, "wh-c2-twin-ok", c1.Success && c2.Success, c2.Error ?? c1.Error ?? "同数据双建失败");
+                Ok(run, "wh-c2-twin-diff",
+                    c1.Success && c2.Success && a != b && a.StartsWith("C_", StringComparison.Ordinal) && b.StartsWith("C_", StringComparison.Ordinal),
+                    "同数据两张应两个 C_");
+                Ok(run, "wh-c2-twin-count", ChartCount(s, id) >= 2, "正文不足两张 Chart");
+                Ok(run, "wh-c2-twin-token", IdTokenSafe(a) && IdTokenSafe(b), "C_ 含 / 或 +");
+
+                ToolResult x1 = s.ExtractChartXml(ExtractArgs(id, a, null, "format"));
+                ToolResult x2 = s.ExtractChartXml(ExtractArgs(id, b, null, "all"));
+                Ok(run, "wh-c2-twin-x1", x1.Success && Contains(WdSession.Str(x1, "xml_content"), TitleA), x1.Error ?? "抽第一张失败");
+                Ok(run, "wh-c2-twin-x2", x2.Success, x2.Error ?? "抽第二张失败");
+
+                ToolResult a2 = s.ApplyChartFromXml(ApplyArgs(id, b, "format", FormatXml(TitleC)));
+                ToolResult x1b = s.ExtractChartXml(ExtractArgs(id, a, null, "format"));
+                Ok(run, "wh-c2-twin-a2", a2.Success, a2.Error ?? "套第二张失败");
+                Ok(run, "wh-c2-twin-a1-keep",
+                    x1b.Success && Contains(WdSession.Str(x1b, "xml_content"), TitleA),
+                    x1b.Error ?? "套第二张动了第一张");
+
+                ToolResult d1 = s.DeleteChart(DelArgs(id, a));
+                Ok(run, "wh-c2-twin-d1", d1.Success, d1.Error ?? "删第一张失败");
+                ToolResult x2b = s.ExtractChartXml(ExtractArgs(id, b, null, "all"));
+                Ok(run, "wh-c2-twin-x2-after", x2b.Success, x2b.Error ?? "删第一张后第二张抽不到");
+                Ok(run, "wh-c2-twin-count1", ChartCount(s, id) == 1, "删一张后计数不对");
+                Ok(run, "wh-c2-twin-body", StillHas(s, id, ConSent), "双图流程丢了巩固句");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        /// <summary>套 data 后 C_ 不换号，token 字母数字。</summary>
+        private static void RunCon2Id(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!TryOpenLaid(run, s, ConSent, out path, out id, Con2IdIds))
+            {
+                return;
+            }
+
+            try
+            {
+                ToolResult created = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("811")))));
+                string chart = WdSession.Str(created, "chart_id");
+                if (!created.Success || string.IsNullOrEmpty(chart))
+                {
+                    FailMany(run, created.Error ?? "建图无 C_", Con2IdIds);
+                    return;
+                }
+
+                Ok(run, "wh-c2-id-prefix", chart.StartsWith("C_", StringComparison.Ordinal), "号不以 C_ 开头");
+                Ok(run, "wh-c2-id-alnum", IdTokenSafe(chart), "C_ token 含 / + =");
+                Ok(run, "wh-c2-id-len", chart.Length >= 10, "C_ 过短");
+
+                ToolResult fmt = s.ApplyChartFromXml(ApplyArgs(id, chart, "format", FormatXml(TitleB)));
+                Ok(run, "wh-c2-id-after-fmt", fmt.Success && HasChartId(s, id, chart), fmt.Error ?? "套格式换号");
+
+                ToolResult d1 = s.ApplyChartFromXml(ApplyArgs(id, chart, "data", DataXml("21", "22", "23")));
+                Ok(run, "wh-c2-id-after-data", d1.Success && HasChartId(s, id, chart), d1.Error ?? "套数据换号");
+                ToolResult d2 = s.ApplyChartFromXml(ApplyArgs(id, chart, "data", DataXml("31", "32", "33")));
+                Ok(run, "wh-c2-id-after-data2", d2.Success && HasChartId(s, id, chart), d2.Error ?? "连套数据换号");
+                Ok(run, "wh-c2-id-in-body", HasChartId(s, id, chart), "套数据后正文无该 C_");
+
+                ToolResult xd = s.ExtractChartXml(ExtractArgs(id, chart, null, "data"));
+                Ok(run, "wh-c2-id-x-after-2data",
+                    xd.Success && Contains(WdSession.Str(xd, "xml_content"), "31"),
+                    xd.Error ?? "换号后抽不到或值不对");
+                Ok(run, "wh-c2-id-keep-sent", StillHas(s, id, ConSent), "编号块丢了巩固句");
+
+                ToolResult fd = s.ApplyChartFromXml(ApplyArgs(id, chart, "format", FormatXml(TitleC)));
+                fd = s.ApplyChartFromXml(ApplyArgs(id, chart, "data", DataXml("41", "42", "43")));
+                Ok(run, "wh-c2-id-fmt-then-data", fd.Success && HasChartId(s, id, chart), fd.Error ?? "先格式后数据换号");
+
+                ToolResult all = s.ApplyChartFromXml(ApplyArgs(id, chart, "all", DataXml("51", "52", "53")));
+                Ok(run, "wh-c2-id-all-scope", all.Success && HasChartId(s, id, chart), all.Error ?? "scope=all 换号");
+                Ok(run, "wh-c2-id-echo-apply", WdSession.Bool(all, "chart_applied"), "回包无 chart_applied");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunCon2Mix(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, Con2MixIds))
+            {
+                return;
+            }
+
+            try
+            {
+                if (!s.TypePlain(path, ConSent + "\r" + PairSent)
+                    || !s.InsertTable(path, 2, 2, new[] { TableCellText, "乙", "丙", "丁" }))
+                {
+                    FailMany(run, "COM 铺混合稿失败", Con2MixIds);
+                    return;
+                }
+
+                s.ActivateDoc(path);
+                s.MoveSelectionToEnd(path);
+                ToolResult c1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("821")))));
+                string chart1 = WdSession.Str(c1, "chart_id");
+                Ok(run, "wh-c2-mix-after-table", c1.Success && !string.IsNullOrEmpty(chart1), c1.Error ?? "表后建图失败");
+                Ok(run, "wh-c2-mix-keep-table", StillHas(s, id, TableCellText), "建图丢了表");
+                Ok(run, "wh-c2-mix-two-sent", StillHas(s, id, ConSent) && StillHas(s, id, PairSent), "建图丢了双句");
+                Ok(run, "wh-c2-mix-keep-pair", StillHas(s, id, PairSent), "建图丢了乙句");
+
+                s.MoveSelectionToEnd(path);
+                string cnXml =
+                    "<ChartConfig><Chart><Type>column_clustered</Type><Title>易写图甲乙</Title><DataTable><Header>"
+                    + "<Column type=\"category\">类</Column><Column type=\"value\">值</Column></Header><Rows>"
+                    + "<Row>甲,11</Row><Row>乙,22</Row><Row>丙,33</Row></Rows></DataTable></Chart></ChartConfig>";
+                ToolResult cn = s.CreateChartFromXml(CreateArgs(id, WriteXml(cnXml)));
+                Ok(run, "wh-c2-mix-cn-cat", cn.Success, cn.Error ?? "中文类目建图失败");
+
+                s.MoveSelectionToEnd(path);
+                string longTitle = "易写图长标题" + new string('甲', 40);
+                ToolResult lng = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", longTitle, V1, Rows("822")))));
+                Ok(run, "wh-c2-mix-long-title", lng.Success, lng.Error ?? "长标题建图失败");
+
+                s.MoveSelectionToEnd(path);
+                ToolResult dup = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, new[] { "销量", "销量" }, new[] { "2023,1,2", "2024,3,4", "2025,5,6" }))));
+                Ok(run, "wh-c2-mix-dup-col", dup.Success, dup.Error ?? "同名两列建图失败");
+
+                string both = WriteXml(GenXml("column_clustered", TitleA, V1, Rows("823")));
+                s.MoveSelectionToEnd(path);
+                ToolResult pf = s.CreateChartFromXml(new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["path"] = both,
+                    ["filename"] = both
+                });
+                Ok(run, "wh-c2-mix-path-file", pf.Success, pf.Error ?? "path+filename 建图失败");
+                Ok(run, "wh-c2-mix-echo-title",
+                    pf.Success && Contains(WdSession.Str(pf, "title"), TitleA),
+                    "回包 title 不对");
+                Ok(run, "wh-c2-mix-xml-file",
+                    pf.Success && !string.IsNullOrEmpty(WdSession.Str(pf, "xml_file")),
+                    "回包无 xml_file");
+
+                s.MoveSelectionToEnd(path);
+                ToolResult line = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("line", TitleLine, V1, Rows("824")))));
+                Ok(run, "wh-c2-mix-line-after",
+                    line.Success && Contains(WdSession.Str(line, "chart_type"), "line"),
+                    line.Error ?? "柱后折线失败");
+                s.MoveSelectionToEnd(path);
+                ToolResult pie = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("pie3d", TitlePie, V1, Rows("825")))));
+                Ok(run, "wh-c2-mix-pie-after",
+                    pie.Success && Contains(WdSession.Str(pie, "chart_type"), "pie"),
+                    pie.Error ?? "折后饼失败");
+
+                s.MoveSelectionToEnd(path);
+                if (!s.InsertTable(path, 2, 2, new[] { "戊", "己", "庚", "辛" }))
+                {
+                    run.CaseFail("wh-c2-mix-chart-tbl-chart", "COM 插第二张表失败");
+                }
+                else
+                {
+                    s.MoveSelectionToEnd(path);
+                    ToolResult c3 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("826")))));
+                    Ok(run, "wh-c2-mix-chart-tbl-chart",
+                        c3.Success && ChartCount(s, id) >= 2 && StillHas(s, id, TableCellText),
+                        c3.Error ?? "图-表-图失败");
+                    if (c3.Success)
+                    {
+                        ToolResult del = s.DeleteChart(DelArgs(id, WdSession.Str(c3, "chart_id")));
+                        Ok(run, "wh-c2-mix-del-keep-tbl",
+                            del.Success && StillHas(s, id, TableCellText),
+                            del.Error ?? "删图带走了表");
+                    }
+                    else
+                    {
+                        run.CaseFail("wh-c2-mix-del-keep-tbl", "无第三张图可删");
+                    }
+                }
+
+                s.MoveSelectionToEnd(path);
+                ToolResult zero = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, new[] { "2023,0", "2024,0", "2025,0" }))));
+                Ok(run, "wh-c2-mix-zero-y", zero.Success, zero.Error ?? "全 0 建图失败");
+
+                s.MoveSelectionToEnd(path);
+                ToolResult five = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml(
+                    "column_clustered",
+                    TitleA,
+                    new[] { "a", "b", "c", "d", "e" },
+                    new[] { "2023,1,2,3,4,5", "2024,6,7,8,9,10", "2025,11,12,13,14,15" }))));
+                Ok(run, "wh-c2-mix-five-ser", five.Success, five.Error ?? "五系列建图失败");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunCon2Extract(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!TryOpenLaid(run, s, ConSent, out path, out id, Con2ExtIds))
+            {
+                return;
+            }
+
+            try
+            {
+                ToolResult col = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("831")))));
+                s.MoveSelectionToEnd(path);
+                ToolResult line = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("line", TitleLine, V1, Rows("832")))));
+                s.MoveSelectionToEnd(path);
+                ToolResult pie = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("pie3d", TitlePie, V1, Rows("833")))));
+                string cCol = WdSession.Str(col, "chart_id");
+                string cLine = WdSession.Str(line, "chart_id");
+                string cPie = WdSession.Str(pie, "chart_id");
+                if (string.IsNullOrEmpty(cCol) || string.IsNullOrEmpty(cLine) || string.IsNullOrEmpty(cPie))
+                {
+                    FailMany(run, "建抽图夹具失败", Con2ExtIds);
+                    return;
+                }
+
+                var omit = ExtractArgs(id, cCol, null, "all");
+                omit.Remove("scope");
+                ToolResult xomit = s.ExtractChartXml(omit);
+                Ok(run, "wh-c2-e-scope-omit", xomit.Success, xomit.Error ?? "省略 scope 失败");
+                Ok(run, "wh-c2-e-flag", xomit.Success && WdSession.Bool(xomit, "chart_extracted"), "无 chart_extracted");
+                Ok(run, "wh-c2-e-info-id", xomit.Success && BlobHas(xomit, cCol), "回包无该 C_");
+                Ok(run, "wh-c2-e-all-rows", xomit.Success && Contains(WdSession.Str(xomit, "xml_content"), "Rows"), "all 无 Rows");
+
+                ToolResult xf = s.ExtractChartXml(ExtractArgs(id, cCol, null, "format"));
+                Ok(run, "wh-c2-e-format-cfg", xf.Success && Contains(WdSession.Str(xf, "xml_content"), "ChartConfig"), xf.Error ?? "format 无 ChartConfig");
+
+                ToolResult xl = s.ExtractChartXml(ExtractArgs(id, cLine, null, "all"));
+                Ok(run, "wh-c2-e-line-type",
+                    xl.Success && (Contains(WdSession.Str(xl, "xml_content"), "line") || Contains(WdSession.Str(xl, "chart_type"), "line") || BlobHas(xl, "line")),
+                    xl.Error ?? "折线抽图无 line");
+                ToolResult xp = s.ExtractChartXml(ExtractArgs(id, cPie, null, "all"));
+                Ok(run, "wh-c2-e-pie-type",
+                    xp.Success && (Contains(WdSession.Str(xp, "xml_content"), "pie") || BlobHas(xp, "pie")),
+                    xp.Error ?? "饼图抽图无 pie");
+
+                ToolResult delLine = s.DeleteChart(DelArgs(id, cLine));
+                ToolResult xcol = s.ExtractChartXml(ExtractArgs(id, cCol, null, "all"));
+                Ok(run, "wh-c2-e-sibling", delLine.Success && xcol.Success, xcol.Error ?? "删折线后柱形抽不到");
+
+                ExpectFail(run, "wh-c2-e-byid-need",
+                    s.ExtractChartXml(new Dictionary<string, object>
+                    {
+                        ["channel_id"] = id,
+                        ["chart_selection"] = new Dictionary<string, object> { ["type"] = "by_id" },
+                        ["path"] = Path.Combine(Path.GetTempPath(), "ew-c2-e1-" + Guid.NewGuid().ToString("N") + ".xml")
+                    }),
+                    "chart_id");
+                ExpectFail(run, "wh-c2-e-byid-empty",
+                    s.ExtractChartXml(ExtractArgs(id, "", null, "all")),
+                    "chart_id");
+                ExpectFail(run, "wh-c2-e-by-index",
+                    s.ExtractChartXml(new Dictionary<string, object>
+                    {
+                        ["channel_id"] = id,
+                        ["chart_selection"] = new Dictionary<string, object> { ["type"] = "by_index", ["index"] = 0 },
+                        ["path"] = Path.Combine(Path.GetTempPath(), "ew-c2-e2-" + Guid.NewGuid().ToString("N") + ".xml")
+                    }),
+                    "by_id");
+                ExpectFail(run, "wh-c2-e-sel-empty",
+                    s.ExtractChartXml(new Dictionary<string, object>
+                    {
+                        ["channel_id"] = id,
+                        ["chart_selection"] = new Dictionary<string, object>(),
+                        ["path"] = Path.Combine(Path.GetTempPath(), "ew-c2-e3-" + Guid.NewGuid().ToString("N") + ".xml")
+                    }),
+                    "选择");
+
+                ToolResult nosave = s.ExtractChartXml(ExtractArgsNoPath(id, cCol, "format"));
+                nosave = s.ExtractChartXml(new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["scope"] = "format",
+                    ["save_to_file"] = false,
+                    ["chart_selection"] = new Dictionary<string, object> { ["type"] = "by_id", ["chart_id"] = cCol }
+                });
+                Ok(run, "wh-c2-e-save-false",
+                    nosave.Success && !string.IsNullOrEmpty(WdSession.Str(nosave, "xml_content")),
+                    nosave.Error ?? "save_to_file=false 失败");
+
+                string fp = Path.Combine(Path.GetTempPath(), "ew-c2-ow-" + Guid.NewGuid().ToString("N") + ".xml");
+                ToolResult o1 = s.ExtractChartXml(ExtractArgs(id, cCol, fp, "all"));
+                ToolResult o2 = s.ExtractChartXml(ExtractArgs(id, cCol, fp, "data"));
+                Ok(run, "wh-c2-e-overwrite",
+                    o1.Success && o2.Success && File.Exists(fp),
+                    o2.Error ?? "二次落盘失败");
+                Ok(run, "wh-c2-e-keep-body", StillHas(s, id, ConSent), "抽图丢了巩固句");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunCon2Apply(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!TryOpenLaid(run, s, ConSent, out path, out id, Con2AppIds))
+            {
+                return;
+            }
+
+            try
+            {
+                ToolResult created = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("841")))));
+                string chart = WdSession.Str(created, "chart_id");
+                if (!created.Success || string.IsNullOrEmpty(chart))
+                {
+                    FailMany(run, created.Error ?? "建套用夹具失败", Con2AppIds);
+                    return;
+                }
+
+                string fn = WriteXml(FormatXml(TitleB));
+                ToolResult afn = s.ApplyChartFromXml(new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["chart_id"] = chart,
+                    ["scope"] = "format",
+                    ["filename"] = fn
+                });
+                Ok(run, "wh-c2-a-filename", afn.Success, afn.Error ?? "filename 套格式失败");
+
+                ToolResult adata = s.ApplyChartFromXml(ApplyArgs(id, chart, "data", DataXml("61", "62", "63")));
+                ToolResult xdata = s.ExtractChartXml(ExtractArgs(id, chart, null, "data"));
+                ToolResult xfmt = s.ExtractChartXml(ExtractArgs(id, chart, null, "format"));
+                Ok(run, "wh-c2-a-fmt-keep-data",
+                    adata.Success && xdata.Success && Contains(WdSession.Str(xdata, "xml_content"), "61"),
+                    xdata.Error ?? "套数据后抽不到新值");
+                Ok(run, "wh-c2-a-data-keep-title",
+                    xfmt.Success && Contains(WdSession.Str(xfmt, "xml_content"), TitleB),
+                    xfmt.Error ?? "套数据冲掉了 Title");
+
+                ToolResult aall = s.ApplyChartFromXml(ApplyArgs(id, chart, "all", DataXml("71", "72", "73")));
+                ToolResult xall = s.ExtractChartXml(ExtractArgs(id, chart, null, "data"));
+                Ok(run, "wh-c2-a-all-both",
+                    aall.Success && xall.Success && Contains(WdSession.Str(xall, "xml_content"), "71"),
+                    aall.Error ?? "scope=all 失败");
+
+                var omit = ApplyArgs(id, chart, "format", FormatXml(TitleC));
+                omit.Remove("mode");
+                ToolResult aomit = s.ApplyChartFromXml(omit);
+                Ok(run, "wh-c2-a-mode-omit", aomit.Success, aomit.Error ?? "省略 mode 失败");
+                ToolResult afull = s.ApplyChartFromXml(ApplyArgs(id, chart, "format", FormatXml(TitleC), "full"));
+                Ok(run, "wh-c2-a-mode-full", afull.Success, afull.Error ?? "mode=full 失败");
+
+                Ok(run, "wh-c2-a-zero",
+                    s.ApplyChartFromXml(ApplyArgs(id, chart, "data", DataXml("0", "0", "0"))).Success,
+                    "套 0 失败");
+                Ok(run, "wh-c2-a-neg",
+                    s.ApplyChartFromXml(ApplyArgs(id, chart, "data", DataXml("-1", "-2", "3"))).Success,
+                    "套负数失败");
+                Ok(run, "wh-c2-a-dec",
+                    s.ApplyChartFromXml(ApplyArgs(id, chart, "data", DataXml("1.5", "2.5", "3.5"))).Success,
+                    "套小数失败");
+
+                ToolResult t1 = s.ApplyChartFromXml(ApplyArgs(id, chart, "format", FormatXml(TitleB)));
+                ToolResult t2 = s.ApplyChartFromXml(ApplyArgs(id, chart, "format", FormatXml(TitleB)));
+                Ok(run, "wh-c2-a-twice-title", t1.Success && t2.Success, t2.Error ?? "连套同一 Title 失败");
+                Ok(run, "wh-c2-a-echo-series",
+                    WdSession.HasKey(adata, "series_updated") || WdSession.HasKey(aall, "series_updated"),
+                    "回包无 series_updated");
+                Ok(run, "wh-c2-a-self", HasChartId(s, id, chart) && StillHas(s, id, ConSent), "套用后号或句丢了");
+
+                ExpectFail(run, "wh-c2-a-empty-xml",
+                    s.ApplyChartFromXml(ApplyArgs(id, chart, "format", "   ")),
+                    "XML");
+                ExpectFail(run, "wh-c2-a-ws-id",
+                    s.ApplyChartFromXml(ApplyArgs(id, "   ", "format", FormatXml(TitleB))),
+                    "编号");
+
+                ToolResult del = s.DeleteChart(DelArgs(id, chart));
+                Ok(run, "wh-c2-a-then-del", del.Success && !HasChartId(s, id, chart), del.Error ?? "套后删失败");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunCon2Delete(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!TryOpenLaid(run, s, ConSent, out path, out id, Con2DelIds))
+            {
+                return;
+            }
+
+            try
+            {
+                ToolResult c1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("851")))));
+                s.MoveSelectionToEnd(path);
+                ToolResult c2 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("line", TitleLine, V1, Rows("852")))));
+                s.MoveSelectionToEnd(path);
+                ToolResult c3 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("853")))));
+                string a = WdSession.Str(c1, "chart_id");
+                string b = WdSession.Str(c2, "chart_id");
+                string c = WdSession.Str(c3, "chart_id");
+                if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b) || string.IsNullOrEmpty(c))
+                {
+                    FailMany(run, "建删图夹具失败", Con2DelIds);
+                    return;
+                }
+
+                ToolResult dFirst = s.DeleteChart(DelArgs(id, a));
+                Ok(run, "wh-c2-d-first", dFirst.Success && !HasChartId(s, id, a), dFirst.Error ?? "删第一张失败");
+                Ok(run, "wh-c2-d-echo", dFirst.Success && WdSession.Bool(dFirst, "chart_deleted"), "回包无 chart_deleted");
+                Ok(run, "wh-c2-d-msg", dFirst.Success && Contains(WdSession.Str(dFirst, "message"), "删除"), "回包 message 无删除");
+                ToolResult xb = s.ExtractChartXml(ExtractArgs(id, b, null, "all"));
+                Ok(run, "wh-c2-d-x-remain", xb.Success, xb.Error ?? "删第一张后中间张抽不到");
+                Ok(run, "wh-c2-d-keep-line", HasChartId(s, id, b), "删第一张带走了折线");
+
+                ToolResult dLast = s.DeleteChart(DelArgs(id, c));
+                Ok(run, "wh-c2-d-last", dLast.Success && !HasChartId(s, id, c), dLast.Error ?? "删最后一张失败");
+                Ok(run, "wh-c2-d-count", ChartCount(s, id) == 1, "删首尾后应剩 1 张");
+
+                ExpectFail(run, "wh-c2-d-nopfx",
+                    s.DeleteChart(DelArgs(id, "00001")),
+                    "找不到");
+                ExpectFail(run, "wh-c2-d-conly",
+                    s.DeleteChart(DelArgs(id, "C_")),
+                    "找不到");
+
+                s.MoveSelectionToEnd(path);
+                ToolResult reb = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("854")))));
+                Ok(run, "wh-c2-d-rebuild",
+                    reb.Success && WdSession.Str(reb, "chart_id").StartsWith("C_", StringComparison.Ordinal) && StillHas(s, id, ConSent),
+                    reb.Error ?? "删后重建失败");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunCon2WpsRest(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, WpsCon2Host()))
+            {
+                return;
+            }
+
+            try
+            {
+                s.ActivateDoc(path);
+                s.GetContent(id);
+                ToolResult create = s.CreateChartFromXml(CreateArgs(id, WriteXml(ColumnXml(TitleA))));
+                foreach (string cid in Con2TwinIds)
+                {
+                    ExpectFail(run, cid, create, "unsupported");
+                }
+
+                foreach (string cid in Con2IdIds)
+                {
+                    ExpectFail(run, cid, create, "unsupported");
+                }
+
+                foreach (string cid in Con2MixIds)
+                {
+                    ExpectFail(run, cid, create, "unsupported");
+                }
+
+                ToolResult extract = s.ExtractChartXml(ExtractArgs(id, "C_00001", null, "all"));
+                foreach (string cid in Con2ExtIds)
+                {
+                    ExpectFail(run, cid, extract, "unsupported");
+                }
+
+                ToolResult apply = s.ApplyChartFromXml(ApplyArgs(id, "C_00001", "format", FormatXml(TitleB)));
+                foreach (string cid in Con2AppIds)
+                {
+                    if (cid == "wh-c2-a-empty-xml")
+                    {
+                        continue;
+                    }
+
+                    ExpectFail(run, cid, apply, "unsupported");
+                }
+
+                ExpectFail(run, "wh-c2-a-empty-xml",
+                    s.ApplyChartFromXml(ApplyArgs(id, "C_00001", "format", "   ")), "XML");
+
+                ToolResult del = s.DeleteChart(DelArgs(id, "C_00001"));
+                foreach (string cid in Con2DelIds)
+                {
+                    if (cid == "wh-c2-d-nopfx" || cid == "wh-c2-d-conly")
+                    {
+                        continue;
+                    }
+
+                    ExpectFail(run, cid, del, "unsupported");
+                }
+
+                ExpectFail(run, "wh-c2-d-nopfx", s.DeleteChart(DelArgs(id, "00001")), "unsupported");
+                ExpectFail(run, "wh-c2-d-conly", s.DeleteChart(DelArgs(id, "C_")), "unsupported");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static string[] WpsCon2Host()
+        {
+            var all = new List<string>();
+            all.AddRange(Con2TwinIds);
+            all.AddRange(Con2IdIds);
+            all.AddRange(Con2MixIds);
+            all.AddRange(Con2ExtIds);
+            all.AddRange(Con2AppIds);
+            all.AddRange(Con2DelIds);
+            return all.ToArray();
+        }
+
+        private static bool TryOpenLaid(
+            TestRun run,
+            WdSession s,
+            string sent,
+            out string path,
+            out string id,
+            params string[] failIds)
+        {
+            if (!TryOpen(run, s, out path, out id, failIds))
+            {
+                return false;
+            }
+
+            if (!s.TypePlain(path, sent))
+            {
+                FailMany(run, "COM 写巩固句失败", failIds);
+                s.CloseDocByPath(path);
+                path = null;
+                id = null;
+                return false;
+            }
+
+            s.ActivateDoc(path);
+            s.GetContent(id);
+            return true;
+        }
+
+        private static bool IdTokenSafe(string chartId)
+        {
+            if (string.IsNullOrEmpty(chartId) || !chartId.StartsWith("C_", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            string token = chartId.Substring(2);
+            foreach (char ch in token)
+            {
+                if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')))
+                {
+                    return false;
+                }
+            }
+
+            return token.Length > 0;
         }
 
         // ---- 巩固块夹具 ----
