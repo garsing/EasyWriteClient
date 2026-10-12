@@ -188,7 +188,22 @@ namespace WordDocumentRoundtripTest
             int wpsBefore = OfficeAlive.Count("wps");
             bool wordWinBefore = OfficeAlive.HasWindow("WINWORD");
             bool wpsWinBefore = OfficeAlive.HasWindow("wps");
-            var run = new TestRun();
+            var run = new TestRun
+            {
+                TotalTarget = runFindStale
+                    ? FindStaleCases.Target
+                    : (runLayout
+                        ? LbCases.Target
+                        : (runActions
+                            ? WaCases.Target
+                            : (runFromFile
+                                ? WfCases.Target
+                                : (runFormat
+                                    ? WgCases.Target
+                                    : (runTable
+                                        ? WtCases.Target
+                                        : (runContent ? WcCases.Target : 30))))))
+            };
             var sw = Stopwatch.StartNew();
             if (runFindStale)
             {
