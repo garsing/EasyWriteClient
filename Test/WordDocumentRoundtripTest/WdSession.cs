@@ -205,6 +205,34 @@ namespace WordDocumentRoundtripTest
                 args ?? new Dictionary<string, object>());
         }
 
+        public ToolResult CreateChartFromXml(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_create_chart_from_xml",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult ExtractChartXml(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_extract_chart_xml",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult ApplyChartFromXml(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_apply_chart_from_xml",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult DeleteChart(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_delete_chart",
+                args ?? new Dictionary<string, object>());
+        }
+
         public bool ActivateDoc(string fullPath)
         {
             return IsWps
