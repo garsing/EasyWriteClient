@@ -227,6 +227,7 @@ namespace WordDocumentRoundtripTest
                 s.ExtractChartXml(new Dictionary<string, object>
                 {
                     ["channel_id"] = id,
+                    ["path"] = Path.Combine(Path.GetTempPath(), "ew-wh-ctx-" + Guid.NewGuid().ToString("N") + ".xml"),
                     ["chart_selection"] = new Dictionary<string, object>
                     {
                         ["type"] = "by_context",
@@ -517,10 +518,9 @@ namespace WordDocumentRoundtripTest
                 args["channel_id"] = channelId;
             }
 
-            if (!string.IsNullOrEmpty(path))
-            {
-                args["path"] = path;
-            }
+            args["path"] = string.IsNullOrEmpty(path)
+                ? Path.Combine(Path.GetTempPath(), "ew-wh-x-" + Guid.NewGuid().ToString("N") + ".xml")
+                : path;
 
             return args;
         }

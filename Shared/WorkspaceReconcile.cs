@@ -176,12 +176,6 @@ namespace WordAddIn1
 
             if (ExtractTools.Contains(toolName))
             {
-                string raw = FilePathResolver.TryGetArg(args, "path");
-                if (string.IsNullOrEmpty(raw))
-                {
-                    return true;
-                }
-
                 return HasWorkspacePath(args, "path");
             }
 

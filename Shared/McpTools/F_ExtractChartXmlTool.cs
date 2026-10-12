@@ -52,7 +52,9 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = $"生成图表映射表失败：{ex.Message}" };
                     }
 
-                    var chartSelection = args["chart_selection"] as Dictionary<string, object>;
+                    var chartSelection = args != null && args.ContainsKey("chart_selection")
+                        ? ActionFormatHelper.CoerceDict(args["chart_selection"])
+                        : null;
                     var selection = ChartSelectionHelper.Resolve(document, chartSelection);
                     if (!selection.Success)
                     {
@@ -75,10 +77,10 @@ namespace WordAddIn1
                     }
 
                     string pathArg = FilePathResolver.TryGetArg(args, "path");
-                    bool saveToFile = true;
+                    bool saveToFile = !string.IsNullOrEmpty(pathArg);
                     if (args.ContainsKey("save_to_file"))
                     {
-                        saveToFile = ParseBoolArg(args["save_to_file"], true);
+                        saveToFile = ParseBoolArg(args["save_to_file"], saveToFile);
                     }
 
                     if (!string.IsNullOrEmpty(pathArg))
@@ -94,7 +96,7 @@ namespace WordAddIn1
                         return new ToolResult
                         {
                             Success = false,
-                            Error = $"无法定位图表 InlineShape（chart_id={selection.ChartId}）"
+                            Error = $"找不到图表编号 '{selection.ChartId}'，请确认图表编号是否正确"
                         };
                     }
 

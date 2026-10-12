@@ -79,7 +79,7 @@ namespace WordAddIn1
                         return new ToolResult
                         {
                             Success = false,
-                            Error = $"无法定位图表 InlineShape（chart_id={chartId}）"
+                            Error = $"找不到图表编号 '{chartId}'，请确认图表编号是否正确"
                         };
                     }
 
