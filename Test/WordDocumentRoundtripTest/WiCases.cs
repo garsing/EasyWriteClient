@@ -14,7 +14,7 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static class WiCases
     {
-        public const int Target = 46;
+        public const int Target = 38;
 
         private const string BeforeSent = "易写图前句。";
         private const string AnchorSent = "易写句后锚。";
@@ -87,50 +87,6 @@ namespace WordDocumentRoundtripTest
             ExpectFail(run, "wi-neg-unknown-id",
                 s.InsertImage(new Dictionary<string, object> { ["channel_id"] = "w999", ["path"] = png }),
                 "未知");
-            ExpectFail(run, "wi-neg-no-path",
-                s.InsertImage(new Dictionary<string, object>()),
-                "path");
-            ExpectFail(run, "wi-neg-missing",
-                s.InsertImage(new Dictionary<string, object>
-                {
-                    ["path"] = Path.Combine(Path.GetTempPath(), "ew-wi-missing-" + Guid.NewGuid().ToString("N") + ".png")
-                }),
-                "不存在");
-            ExpectFail(run, "wi-neg-bad-ext",
-                s.InsertImage(new Dictionary<string, object> { ["path"] = WdSession.DummyPath(".txt") }),
-                "格式");
-            ExpectFail(run, "wi-neg-target-two",
-                s.InsertImage(TargetArgs(png, new Dictionary<string, object>
-                {
-                    ["codes"] = "S_00001",
-                    ["table"] = "T_00001"
-                })),
-                "定位对象");
-            ExpectFail(run, "wi-neg-target-intable-only",
-                s.InsertImage(new Dictionary<string, object>
-                {
-                    ["path"] = png,
-                    ["in_table"] = true
-                }),
-                "定位对象");
-            ExpectFail(run, "wi-neg-target-pos-end",
-                s.InsertImage(TargetArgs(png, new Dictionary<string, object> { ["position"] = "end" })),
-                "position");
-            ExpectFail(run, "wi-neg-target-pos-num",
-                s.InsertImage(TargetArgs(png, new Dictionary<string, object> { ["position"] = "3" })),
-                "position");
-            ExpectFail(run, "wi-neg-target-unknown-code",
-                s.InsertImage(TargetArgs(png, new Dictionary<string, object> { ["codes"] = "S_99999" })),
-                "找不到");
-            ExpectFail(run, "wi-neg-target-unknown-tbl",
-                s.InsertImage(TargetArgs(png, new Dictionary<string, object> { ["table"] = "T_99999" })),
-                "找不到");
-            ExpectFail(run, "wi-neg-target-unknown-chart",
-                s.InsertImage(TargetArgs(png, new Dictionary<string, object> { ["chart"] = "C_99999" })),
-                "找不到");
-            ExpectFail(run, "wi-neg-target-unknown-img",
-                s.InsertImage(TargetArgs(png, new Dictionary<string, object> { ["image"] = "I_99999" })),
-                "找不到");
             ExpectFail(run, "wi-neg-svg-both",
                 s.InsertSvgImage(new Dictionary<string, object>
                 {
@@ -141,6 +97,69 @@ namespace WordDocumentRoundtripTest
             ExpectFail(run, "wi-neg-svg-none",
                 s.InsertSvgImage(new Dictionary<string, object>()),
                 "必须提供");
+            string[] needChannel =
+            {
+                "wi-neg-no-path", "wi-neg-missing", "wi-neg-bad-ext",
+                "wi-neg-target-two", "wi-neg-target-intable-only",
+                "wi-neg-target-pos-end", "wi-neg-target-pos-num",
+                "wi-neg-target-unknown-code", "wi-neg-target-unknown-tbl",
+                "wi-neg-target-unknown-chart", "wi-neg-target-unknown-img"
+            };
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, needChannel))
+            {
+                return;
+            }
+
+            ExpectFail(run, "wi-neg-no-path",
+                s.InsertImage(new Dictionary<string, object> { ["channel_id"] = id }),
+                "path");
+            ExpectFail(run, "wi-neg-missing",
+                s.InsertImage(new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["path"] = Path.Combine(Path.GetTempPath(), "ew-wi-missing-" + Guid.NewGuid().ToString("N") + ".png")
+                }),
+                "不存在");
+            ExpectFail(run, "wi-neg-bad-ext",
+                s.InsertImage(new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["path"] = WdSession.DummyPath(".txt")
+                }),
+                "unsupported_format");
+            ExpectFail(run, "wi-neg-target-two",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object>
+                {
+                    ["codes"] = "S_00001",
+                    ["table"] = "T_00001"
+                })),
+                "定位对象");
+            ExpectFail(run, "wi-neg-target-intable-only",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object>
+                {
+                    ["in_table"] = "T_00001"
+                })),
+                "定位对象");
+            ExpectFail(run, "wi-neg-target-pos-end",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["position"] = "end" })),
+                "position");
+            ExpectFail(run, "wi-neg-target-pos-num",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["position"] = "3" })),
+                "position");
+            ExpectFail(run, "wi-neg-target-unknown-code",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["codes"] = "S_99999" })),
+                "无法定位");
+            ExpectFail(run, "wi-neg-target-unknown-tbl",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["table"] = "T_99999" })),
+                "找不到");
+            ExpectFail(run, "wi-neg-target-unknown-chart",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["chart"] = "C_99999" })),
+                "找不到");
+            ExpectFail(run, "wi-neg-target-unknown-img",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["image"] = "I_99999" })),
+                "找不到");
+            s.CloseDocByPath(path);
         }
 
         // ---------- B. 插图正例 ----------
@@ -350,21 +369,55 @@ namespace WordDocumentRoundtripTest
                 s.CapturePageImage(new Dictionary<string, object> { ["channel_id"] = "w999" }),
                 "未知");
             RunSheetRangeNeg(run, s);
+
+            string[] capNeedChannel =
+            {
+                "wp-neg-span", "wp-neg-storage", "wp-neg-shape",
+                "wp-neg-page-zero", "wp-neg-page-over"
+            };
+            string capPath, capId;
+            if (!TryOpen(run, s, out capPath, out capId, capNeedChannel))
+            {
+                return;
+            }
+
             ExpectFail(run, "wp-neg-span",
-                s.CapturePageImage(new Dictionary<string, object> { ["page_from"] = 1, ["page_to"] = 2 }),
+                s.CapturePageImage(new Dictionary<string, object>
+                {
+                    ["channel_id"] = capId,
+                    ["page_from"] = 1,
+                    ["page_to"] = 2
+                }),
                 "page_from");
             ExpectFail(run, "wp-neg-storage",
-                s.CapturePageImage(new Dictionary<string, object> { ["storage_doc_uuid"] = "u-1" }),
+                s.CapturePageImage(new Dictionary<string, object>
+                {
+                    ["channel_id"] = capId,
+                    ["storage_doc_uuid"] = "u-1"
+                }),
                 "storage_doc_uuid");
             ExpectFail(run, "wp-neg-shape",
-                s.CapturePageImage(new Dictionary<string, object> { ["shape_id"] = "P_1" }),
+                s.CapturePageImage(new Dictionary<string, object>
+                {
+                    ["channel_id"] = capId,
+                    ["shape_id"] = "P_1"
+                }),
                 "shape");
             ExpectFail(run, "wp-neg-page-zero",
-                s.CapturePageImage(new Dictionary<string, object> { ["page_number"] = 0 }),
+                s.CapturePageImage(new Dictionary<string, object>
+                {
+                    ["channel_id"] = capId,
+                    ["page_number"] = 0
+                }),
                 "page_number");
             ExpectFail(run, "wp-neg-page-over",
-                s.CapturePageImage(new Dictionary<string, object> { ["page_number"] = 999 }),
+                s.CapturePageImage(new Dictionary<string, object>
+                {
+                    ["channel_id"] = capId,
+                    ["page_number"] = 999
+                }),
                 "页");
+            s.CloseDocByPath(capPath);
         }
 
         // ---------- E. 页截图正例 ----------
@@ -452,15 +505,17 @@ namespace WordDocumentRoundtripTest
 
         // ---------- 帮手 ----------
 
-        private static Dictionary<string, object> TargetArgs(string png, Dictionary<string, object> target)
+        private static Dictionary<string, object> TargetArgs(
+            string channelId,
+            string png,
+            Dictionary<string, object> target)
         {
-            var args = new Dictionary<string, object> { ["path"] = png };
-            foreach (KeyValuePair<string, object> kv in target)
+            return new Dictionary<string, object>
             {
-                args[kv.Key] = kv.Value;
-            }
-
-            return args;
+                ["channel_id"] = channelId,
+                ["path"] = png,
+                ["target"] = target
+            };
         }
 
         private static void RunSheetRangeNeg(TestRun run, WdSession s)
