@@ -8,16 +8,19 @@ using WordAddIn1;
 namespace WordDocumentRoundtripTest
 {
     /// <summary>
-    /// 第 8 波：插图（位图 / SVG）+ 页截图。
+    /// 第 8 波：插图（位图 / SVG）+ 页截图。原 38 + 巩固 50。
     /// Word 与 WPS 同一套 ID，不 SKIP（无默认渠条现场被占时记环境 SKIP）。
     /// 用例清单见 docs/测试/word测试/插图与页图/用例清单.md。
     /// </summary>
     internal static class WiCases
     {
-        public const int Target = 38;
+        public const int Target = 88;
 
         private const string BeforeSent = "易写图前句。";
         private const string AnchorSent = "易写句后锚。";
+        private const string ConsAnchor = "易写巩固锚。";
+        private const string ConsSvgSent = "易写巩固 SVG。";
+        private const string ConsTblCell = "易写巩固表甲";
 
         private static readonly string[] BitmapIds =
         {
@@ -58,6 +61,8 @@ namespace WordDocumentRoundtripTest
 
             RunCaptureNeg(run, s);
             RunCapturePos(run, s);
+
+            RunConsolidate(run, s, png, svgText);
 
             RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
         }
@@ -469,6 +474,500 @@ namespace WordDocumentRoundtripTest
             s.CloseDocByPath(path);
         }
 
+        // ---------- G. 巩固 +50 ----------
+
+        private static void RunConsolidate(TestRun run, WdSession s, string png, string svgText)
+        {
+            RunConsSvgNoChannel(run, s, svgText);
+            RunConsContract(run, s, png);
+            RunConsFormats(run, s, png);
+            RunConsAnchor(run, s, png);
+            RunConsTwoAndAfterImg(run, s, png);
+            RunConsAfterTbl(run, s, png);
+            RunConsSvgPos(run, s, svgText);
+            RunConsCaptureTwice(run, s);
+        }
+
+        private static void RunConsSvgNoChannel(TestRun run, WdSession s, string svgText)
+        {
+            ToolResult noCh = s.InsertSvgImage(new Dictionary<string, object> { ["svg"] = svgText });
+            if (!noCh.Success
+                && (Contains(noCh.Error, "打开")
+                    || Contains(noCh.Error, "unsupported")
+                    || Contains(noCh.Error, "browser")
+                    || Contains(noCh.Error, "渠道")))
+            {
+                run.CaseOk("wi-c-svg-no-ch");
+            }
+            else if (noCh.Success)
+            {
+                run.CaseSkip("wi-c-svg-no-ch", "现场已有默认文字渠，不关用户稿");
+            }
+            else
+            {
+                run.CaseFail("wi-c-svg-no-ch", noCh.Error ?? "应失败或跳过");
+            }
+
+            ExpectFail(run, "wi-c-svg-unk-ch",
+                s.InsertSvgImage(new Dictionary<string, object> { ["channel_id"] = "w999", ["svg"] = svgText }),
+                "未知");
+            ExpectFail(run, "wi-c-svg-empty",
+                s.InsertSvgImage(new Dictionary<string, object> { ["svg"] = "   " }),
+                "为空");
+            ExpectFail(run, "wi-c-svg-script",
+                s.InsertSvgImage(new Dictionary<string, object>
+                {
+                    ["svg"] = "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>"
+                }),
+                "script");
+            ExpectFail(run, "wi-c-svg-root",
+                s.InsertSvgImage(new Dictionary<string, object> { ["svg"] = "<div></div>" }),
+                "根节点");
+            ExpectFail(run, "wi-c-svg-missing",
+                s.InsertSvgImage(new Dictionary<string, object>
+                {
+                    ["path"] = Path.Combine(
+                        Path.GetTempPath(),
+                        "ew-wi-missing-" + Guid.NewGuid().ToString("N") + ".svg")
+                }),
+                "不存在");
+
+            ExpectFail(run, "wp-c-slide",
+                s.CapturePageImage(new Dictionary<string, object> { ["slide_id"] = "s1" }),
+                "slide_id");
+            ExpectFail(run, "wp-c-page-numbers",
+                s.CapturePageImage(new Dictionary<string, object> { ["page_numbers"] = "1,2" }),
+                "page_numbers");
+            ExpectFail(run, "wp-c-source",
+                s.CapturePageImage(new Dictionary<string, object> { ["source_channel_id"] = "w1" }),
+                "source");
+            ExpectFail(run, "wp-c-name",
+                s.CapturePageImage(new Dictionary<string, object> { ["document_name"] = "x.docx" }),
+                "名");
+        }
+
+        private static void RunConsContract(TestRun run, WdSession s, string png)
+        {
+            string[] ids =
+            {
+                "wi-c-empty-path", "wi-c-gif", "wi-c-bmp",
+                "wi-c-codes-t", "wi-c-codes-c", "wi-c-codes-i", "wi-c-codes-p",
+                "wi-c-empty-codes", "wi-c-empty-target",
+                "wi-c-tbl-nopfx", "wi-c-chart-nopfx", "wi-c-img-nopfx",
+                "wi-c-codes-chart", "wi-c-intable-pos", "wi-c-intable-bad",
+                "wp-c-from-only", "wp-c-neg1"
+            };
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, ids))
+            {
+                return;
+            }
+
+            ExpectFail(run, "wi-c-empty-path",
+                s.InsertImage(new Dictionary<string, object> { ["channel_id"] = id, ["path"] = "" }),
+                "path");
+            ExpectFail(run, "wi-c-gif",
+                s.InsertImage(new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["path"] = WdSession.DummyPath(".gif")
+                }),
+                "unsupported_format");
+            ExpectFail(run, "wi-c-bmp",
+                s.InsertImage(new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["path"] = WdSession.DummyPath(".bmp")
+                }),
+                "unsupported_format");
+            ExpectFail(run, "wi-c-codes-t",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["codes"] = "T_00001" })),
+                "仅支持 S_");
+            ExpectFail(run, "wi-c-codes-c",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["codes"] = "C_00001" })),
+                "仅支持 S_");
+            ExpectFail(run, "wi-c-codes-i",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["codes"] = "I_00001" })),
+                "仅支持 S_");
+            ExpectFail(run, "wi-c-codes-p",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["codes"] = "P_00001" })),
+                "仅支持 S_");
+            ExpectFail(run, "wi-c-empty-codes",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["codes"] = "" })),
+                "定位对象");
+            ExpectFail(run, "wi-c-empty-target",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["foo"] = "bar" })),
+                "定位对象");
+            ExpectFail(run, "wi-c-tbl-nopfx",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["table"] = "abc" })),
+                "T_");
+            ExpectFail(run, "wi-c-chart-nopfx",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["chart"] = "abc" })),
+                "C_");
+            ExpectFail(run, "wi-c-img-nopfx",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object> { ["image"] = "abc" })),
+                "I_");
+            ExpectFail(run, "wi-c-codes-chart",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object>
+                {
+                    ["codes"] = "S_00001",
+                    ["chart"] = "C_00001"
+                })),
+                "定位对象");
+            ExpectFail(run, "wi-c-intable-pos",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object>
+                {
+                    ["in_table"] = "T_00001",
+                    ["position"] = "start"
+                })),
+                "in_table");
+            ExpectFail(run, "wi-c-intable-bad",
+                s.InsertImage(TargetArgs(id, png, new Dictionary<string, object>
+                {
+                    ["codes"] = "S_00001",
+                    ["in_table"] = "foo"
+                })),
+                "T_");
+            ExpectFail(run, "wp-c-from-only",
+                s.CapturePageImage(new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["page_from"] = 1
+                }),
+                "page_from");
+            ExpectFail(run, "wp-c-neg1",
+                s.CapturePageImage(new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["page_number"] = -1
+                }),
+                "page_number");
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunConsFormats(TestRun run, WdSession s, string png)
+        {
+            string[] ids =
+            {
+                "wi-c-filename-ok", "wi-c-filename-echo",
+                "wi-c-jpg-ok", "wi-c-jpeg-ok", "wi-c-png-upper",
+                "wi-c-used-cursor", "wi-c-width-zero", "wi-c-width-neg",
+                "wi-c-pos-START", "wi-c-echo-start"
+            };
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, ids))
+            {
+                return;
+            }
+
+            ToolResult byName = s.InsertImage(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["filename"] = png
+            });
+            Ok(run, "wi-c-filename-ok", byName.Success, byName.Error ?? "filename 插图失败");
+            Ok(run, "wi-c-filename-echo",
+                byName.Success && WdSession.Str(byName, "filename").Length > 0,
+                byName.Success ? "回包缺 filename" : (byName.Error ?? ""));
+            Ok(run, "wi-c-used-cursor",
+                byName.Success && WdSession.Bool(byName, "used_cursor"),
+                byName.Success ? "used_cursor 应为 true" : (byName.Error ?? ""));
+
+            ToolResult jpg = s.InsertImage(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["path"] = FixtureJpeg.Ensure(".jpg")
+            });
+            Ok(run, "wi-c-jpg-ok",
+                jpg.Success && WdSession.Str(jpg, "image_id").StartsWith("I_", StringComparison.Ordinal),
+                jpg.Success ? "无 I_" : (jpg.Error ?? ""));
+
+            ToolResult jpeg = s.InsertImage(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["path"] = FixtureJpeg.Ensure(".jpeg")
+            });
+            Ok(run, "wi-c-jpeg-ok",
+                jpeg.Success && WdSession.Str(jpeg, "image_id").StartsWith("I_", StringComparison.Ordinal),
+                jpeg.Success ? "无 I_" : (jpeg.Error ?? ""));
+
+            string upper = Path.Combine(
+                Path.GetTempPath(),
+                "ew-wi-" + Guid.NewGuid().ToString("N") + ".PNG");
+            File.Copy(png, upper, true);
+            ToolResult pngU = s.InsertImage(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["path"] = upper
+            });
+            Ok(run, "wi-c-png-upper", pngU.Success, pngU.Error ?? ".PNG 插图失败");
+
+            ToolResult zero = s.InsertImage(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["path"] = png,
+                ["width_cm"] = 0
+            });
+            Ok(run, "wi-c-width-zero", zero.Success, zero.Error ?? "width_cm=0 应插入");
+
+            ToolResult neg = s.InsertImage(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["path"] = png,
+                ["width_cm"] = -1
+            });
+            Ok(run, "wi-c-width-neg", neg.Success, neg.Error ?? "width_cm=-1 应插入");
+
+            ToolResult start = s.InsertImage(TargetArgs(id, png, new Dictionary<string, object>
+            {
+                ["position"] = "START"
+            }));
+            string body = ReadBody(s, id);
+            Ok(run, "wi-c-pos-START",
+                start.Success && body.IndexOf("<image", StringComparison.Ordinal) >= 0,
+                start.Success ? "正文无 <image" : (start.Error ?? ""));
+            Ok(run, "wi-c-echo-start",
+                start.Success
+                    && string.Equals(EchoStr(start, "position"), "start", StringComparison.OrdinalIgnoreCase),
+                start.Success ? "target_echo.position=" + EchoStr(start, "position") : (start.Error ?? ""));
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunConsAnchor(TestRun run, WdSession s, string png)
+        {
+            string[] ids = { "wi-c-used-anchor", "wi-c-echo-codes" };
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, ids))
+            {
+                return;
+            }
+
+            if (!s.TypePlain(path, ConsAnchor))
+            {
+                FailMany(run, "COM 写巩固锚失败", ids);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            s.ActivateDoc(path);
+            string body = ReadBody(s, id);
+            string code = SentCodeOf(body, ConsAnchor);
+            if (string.IsNullOrEmpty(code))
+            {
+                FailMany(run, "回读无巩固锚编码（body=" + Snip(body) + "）", ids);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            ToolResult ins = s.InsertImage(TargetArgs(id, png, new Dictionary<string, object>
+            {
+                ["codes"] = code
+            }));
+            Ok(run, "wi-c-used-anchor",
+                ins.Success && !WdSession.Bool(ins, "used_cursor"),
+                ins.Success ? "used_cursor 应为 false" : (ins.Error ?? ""));
+            Ok(run, "wi-c-echo-codes",
+                ins.Success && string.Equals(EchoStr(ins, "codes"), code, StringComparison.Ordinal),
+                ins.Success ? "target_echo.codes=" + EchoStr(ins, "codes") : (ins.Error ?? ""));
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunConsTwoAndAfterImg(TestRun run, WdSession s, string png)
+        {
+            string[] ids =
+            {
+                "wi-c-two-ok", "wi-c-two-ids", "wi-c-two-text",
+                "wi-c-after-img", "wi-c-after-img-keep"
+            };
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, ids))
+            {
+                return;
+            }
+
+            ToolResult a = s.InsertImage(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["path"] = png
+            });
+            ToolResult b = s.InsertImage(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["path"] = png
+            });
+            string idA = WdSession.Str(a, "image_id");
+            string idB = WdSession.Str(b, "image_id");
+            string body = ReadBody(s, id);
+            int nImg = CountTag(body, "<image");
+            Ok(run, "wi-c-two-ok", a.Success && b.Success, b.Error ?? a.Error ?? "连插失败");
+            Ok(run, "wi-c-two-ids",
+                a.Success && b.Success && idA.StartsWith("I_", StringComparison.Ordinal)
+                    && idB.StartsWith("I_", StringComparison.Ordinal) && idA != idB,
+                a.Success && b.Success ? "I_ 相同或空 a=" + idA + " b=" + idB : (b.Error ?? a.Error ?? ""));
+            Ok(run, "wi-c-two-text",
+                a.Success && b.Success && nImg >= 2,
+                a.Success && b.Success ? "正文 <image 数=" + nImg : (b.Error ?? a.Error ?? ""));
+
+            ToolResult after = s.InsertImage(TargetArgs(id, png, new Dictionary<string, object>
+            {
+                ["image"] = idA
+            }));
+            string idC = WdSession.Str(after, "image_id");
+            string afterBody = ReadBody(s, id);
+            Ok(run, "wi-c-after-img",
+                after.Success && idC.StartsWith("I_", StringComparison.Ordinal) && idC != idA,
+                after.Success ? "图后插 I_=" + idC : (after.Error ?? ""));
+            Ok(run, "wi-c-after-img-keep",
+                after.Success && afterBody.IndexOf(idA, StringComparison.Ordinal) >= 0,
+                after.Success ? "第一张 I_ 丢了" : (after.Error ?? ""));
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunConsAfterTbl(TestRun run, WdSession s, string png)
+        {
+            string[] ids = { "wi-c-after-tbl", "wi-c-after-tbl-keep" };
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, ids))
+            {
+                return;
+            }
+
+            if (!s.InsertTable(path, 1, 1, new[] { ConsTblCell }))
+            {
+                FailMany(run, "COM 建巩固表失败", ids);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            s.ActivateDoc(path);
+            string body = ReadBody(s, id);
+            string tid = FirstTableId(body);
+            if (string.IsNullOrEmpty(tid))
+            {
+                FailMany(run, "回读无 T_（body=" + Snip(body) + "）", ids);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            ToolResult ins = s.InsertImage(TargetArgs(id, png, new Dictionary<string, object>
+            {
+                ["table"] = tid
+            }));
+            string after = ReadBody(s, id);
+            Ok(run, "wi-c-after-tbl", ins.Success, ins.Error ?? "表后插图失败");
+            Ok(run, "wi-c-after-tbl-keep",
+                ins.Success && after.IndexOf(ConsTblCell, StringComparison.Ordinal) >= 0,
+                ins.Success ? "表字丢了" : (ins.Error ?? ""));
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunConsSvgPos(TestRun run, WdSession s, string svgText)
+        {
+            string[] widthIds = { "wi-c-svg-width" };
+            string path, id;
+            if (TryOpen(run, s, out path, out id, widthIds))
+            {
+                ToolResult wide = s.InsertSvgImage(new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["svg"] = svgText,
+                    ["width_cm"] = 3
+                });
+                double w = Num(wide, "image_width_cm");
+                Ok(run, "wi-c-svg-width",
+                    wide.Success && Math.Abs(w - 3.0) < 0.4,
+                    wide.Success ? "SVG 宽=" + w : (wide.Error ?? ""));
+                s.CloseDocByPath(path);
+            }
+
+            string[] afterIds = { "wi-c-svg-after" };
+            if (!TryOpen(run, s, out path, out id, afterIds))
+            {
+                return;
+            }
+
+            if (!s.TypePlain(path, ConsSvgSent))
+            {
+                FailMany(run, "COM 写巩固 SVG 句失败", afterIds);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            s.ActivateDoc(path);
+            string body = ReadBody(s, id);
+            string code = SentCodeOf(body, ConsSvgSent);
+            if (string.IsNullOrEmpty(code))
+            {
+                FailMany(run, "回读无巩固 SVG 句编码（body=" + Snip(body) + "）", afterIds);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            ToolResult after = s.InsertSvgImage(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["svg"] = svgText,
+                ["target"] = new Dictionary<string, object> { ["codes"] = code }
+            });
+            string afterBody = ReadBody(s, id);
+            Ok(run, "wi-c-svg-after",
+                after.Success && afterBody.IndexOf(ConsSvgSent, StringComparison.Ordinal) >= 0,
+                after.Success ? "巩固 SVG 句丢了" : (after.Error ?? ""));
+            s.CloseDocByPath(path);
+
+            string[] startIds = { "wi-c-svg-start" };
+            if (!TryOpen(run, s, out path, out id, startIds))
+            {
+                return;
+            }
+
+            ToolResult start = s.InsertSvgImage(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["svg"] = svgText,
+                ["target"] = new Dictionary<string, object> { ["position"] = "start" }
+            });
+            Ok(run, "wi-c-svg-start",
+                start.Success && WdSession.Str(start, "image_id").StartsWith("I_", StringComparison.Ordinal),
+                start.Success ? "无 I_" : (start.Error ?? ""));
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunConsCaptureTwice(TestRun run, WdSession s)
+        {
+            string[] ids = { "wp-c-twice" };
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, ids))
+            {
+                return;
+            }
+
+            if (!s.TypePlain(path, "易写巩固截图页。"))
+            {
+                FailMany(run, "COM 写巩固截图页失败", ids);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            s.ActivateDoc(path);
+            ToolResult a = s.CapturePageImage(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["page_number"] = 1
+            });
+            ToolResult b = s.CapturePageImage(new Dictionary<string, object>
+            {
+                ["channel_id"] = id,
+                ["page_number"] = 1
+            });
+            Ok(run, "wp-c-twice",
+                a.Success && b.Success
+                    && WdSession.Str(a, "image_base64").Length > 0
+                    && WdSession.Str(b, "image_base64").Length > 0,
+                a.Success && b.Success ? "image_base64 空" : (b.Error ?? a.Error ?? ""));
+            s.CloseDocByPath(path);
+        }
+
         // ---------- C/F. 哨兵 ----------
 
         private static void RunNoQuit(
@@ -568,6 +1067,70 @@ namespace WordDocumentRoundtripTest
         {
             ToolResult got = s.GetContent(id);
             return got.Success ? WdSession.Str(got, "document_content") : "";
+        }
+
+        private static string EchoStr(ToolResult r, string key)
+        {
+            Dictionary<string, object> d = Data(r);
+            if (d == null || !d.ContainsKey("target_echo") || d["target_echo"] == null)
+            {
+                return "";
+            }
+
+            object raw = d["target_echo"];
+            Dictionary<string, object> echo = raw as Dictionary<string, object>;
+            if (echo == null)
+            {
+                try
+                {
+                    echo = JsonConvert.DeserializeObject<Dictionary<string, object>>(
+                        JsonConvert.SerializeObject(raw));
+                }
+                catch
+                {
+                    echo = null;
+                }
+            }
+
+            if (echo == null || !echo.ContainsKey(key) || echo[key] == null)
+            {
+                return "";
+            }
+
+            return Convert.ToString(echo[key]) ?? "";
+        }
+
+        private static string FirstTableId(string body)
+        {
+            if (string.IsNullOrEmpty(body))
+            {
+                return "";
+            }
+
+            Match m = Regex.Match(body, @"T_[A-Za-z0-9]+");
+            return m.Success ? m.Value : "";
+        }
+
+        private static int CountTag(string body, string tag)
+        {
+            if (string.IsNullOrEmpty(body) || string.IsNullOrEmpty(tag))
+            {
+                return 0;
+            }
+
+            int n = 0;
+            int i = 0;
+            while (true)
+            {
+                int at = body.IndexOf(tag, i, StringComparison.Ordinal);
+                if (at < 0)
+                {
+                    return n;
+                }
+
+                n++;
+                i = at + tag.Length;
+            }
         }
 
         private static string SentCodeOf(string body, string sent)
@@ -726,6 +1289,30 @@ namespace WordDocumentRoundtripTest
                 }
 
                 _path = path;
+                return path;
+            }
+        }
+
+        private static class FixtureJpeg
+        {
+            public static string Ensure(string ext)
+            {
+                string suffix = string.IsNullOrEmpty(ext) ? ".jpg" : ext;
+                if (!suffix.StartsWith(".", StringComparison.Ordinal))
+                {
+                    suffix = "." + suffix;
+                }
+
+                string path = Path.Combine(
+                    Path.GetTempPath(),
+                    "ew-wi-" + Guid.NewGuid().ToString("N") + suffix);
+                using (var bmp = new System.Drawing.Bitmap(FixturePng.WidthPx, FixturePng.HeightPx))
+                using (var g = System.Drawing.Graphics.FromImage(bmp))
+                {
+                    g.Clear(System.Drawing.Color.FromArgb(0xC4, 0x72, 0x44));
+                    bmp.Save(path, System.Drawing.Imaging.ImageFormat.Jpeg);
+                }
+
                 return path;
             }
         }
