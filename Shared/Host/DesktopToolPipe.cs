@@ -88,10 +88,25 @@ namespace WordAddIn1
                 string raw = Transact(req.ToString(Newtonsoft.Json.Formatting.None), timeoutMs);
                 JObject jo = JObject.Parse(raw);
                 var dataTok = jo["data"];
-                Dictionary<string, object> data = null;
-                if (dataTok != null && dataTok.Type == JTokenType.Object)
+                object data = null;
+                if (dataTok != null && dataTok.Type != JTokenType.Null)
                 {
-                    data = dataTok.ToObject<Dictionary<string, object>>();
+                    if (dataTok.Type == JTokenType.Object)
+                    {
+                        data = dataTok.ToObject<Dictionary<string, object>>();
+                    }
+                    else if (dataTok.Type == JTokenType.String)
+                    {
+                        data = dataTok.ToString();
+                    }
+                    else if (dataTok.Type == JTokenType.Array)
+                    {
+                        data = dataTok.ToObject<List<object>>();
+                    }
+                    else
+                    {
+                        data = dataTok.ToObject<object>();
+                    }
                 }
 
                 return new ToolResult

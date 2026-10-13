@@ -148,8 +148,12 @@ namespace WordDocumentRoundtripTest
                 && !runChart
                 && (caseFilter.StartsWith("wi-", StringComparison.OrdinalIgnoreCase)
                     || caseFilter.StartsWith("wp-", StringComparison.OrdinalIgnoreCase));
-            bool runContent = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
+            bool runCkpt = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
                 && !runChart && !runImage
+                && (caseFilter.StartsWith("wk-", StringComparison.OrdinalIgnoreCase)
+                    || caseFilter.StartsWith("wv-", StringComparison.OrdinalIgnoreCase));
+            bool runContent = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
+                && !runChart && !runImage && !runCkpt
                 && caseFilter.StartsWith("wc-", StringComparison.OrdinalIgnoreCase);
 
             if (runFindStale)
@@ -183,6 +187,10 @@ namespace WordDocumentRoundtripTest
             else if (runImage)
             {
                 Console.WriteLine("文字 插图与页图（wi-/wp-）");
+            }
+            else if (runCkpt)
+            {
+                Console.WriteLine("文字 检查点与溯源（wk-/wv-）");
             }
             else
             {
@@ -220,7 +228,7 @@ namespace WordDocumentRoundtripTest
                                         ? WtCases.Target
                                         : (runChart
                                             ? WhCases.Target
-                                            : (runImage ? WiCases.Target : (runContent ? WcCases.Target : 30))))))))
+                                            : (runImage ? WiCases.Target : (runCkpt ? WkCases.Target : (runContent ? WcCases.Target : 30)))))))))
             };
             var sw = Stopwatch.StartNew();
             try
@@ -257,6 +265,10 @@ namespace WordDocumentRoundtripTest
                 {
                     WiCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
                 }
+                else if (runCkpt)
+                {
+                    WkCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+                }
                 else if (runContent)
                 {
                     WcCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
@@ -285,7 +297,7 @@ namespace WordDocumentRoundtripTest
                                         ? WtCases.Target
                                         : (runChart
                                             ? WhCases.Target
-                                            : (runImage ? WiCases.Target : (runContent ? WcCases.Target : 30))))))));
+                                            : (runImage ? WiCases.Target : (runCkpt ? WkCases.Target : (runContent ? WcCases.Target : 30)))))))));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed

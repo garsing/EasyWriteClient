@@ -236,6 +236,51 @@ namespace WordDocumentRoundtripTest
                 args ?? new Dictionary<string, object>());
         }
 
+        public ToolResult ListOperations(string channelId)
+        {
+            var args = new Dictionary<string, object>();
+            if (channelId != null)
+            {
+                args["channel_id"] = channelId;
+            }
+
+            return DesktopToolPipe.Call("F_list_document_operations", args);
+        }
+
+        public ToolResult RestoreCheckpoint(string channelId, string timestamp)
+        {
+            var args = new Dictionary<string, object>();
+            if (channelId != null)
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (timestamp != null)
+            {
+                args["timestamp"] = timestamp;
+            }
+
+            return DesktopToolPipe.Call("F_restore_document_checkpoint", args);
+        }
+
+        public ToolResult ApplyDataProvenance(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_apply_data_provenance",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult GetDataProvenance(string channelId)
+        {
+            var args = new Dictionary<string, object>();
+            if (channelId != null)
+            {
+                args["channel_id"] = channelId;
+            }
+
+            return DesktopToolPipe.Call("F_get_data_provenance", args);
+        }
+
         public ToolResult InsertImage(Dictionary<string, object> args)
         {
             return DesktopToolPipe.Call(
