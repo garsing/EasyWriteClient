@@ -19,10 +19,26 @@ namespace WordAddIn1
                 return warnings;
             }
 
-            var provenanceBookmarks = CollectProvenanceBookmarks(doc);
-            if (provenanceBookmarks.Count == 0)
+            var infos = CollectProvenanceBookmarkInfos(doc);
+            if (infos.Count == 0)
             {
                 return warnings;
+            }
+
+            var deletedSpans = new List<(int Start, int End)>();
+            foreach (BookmarkInfo info in infos.Where(i => i.IsBlock).OrderByDescending(i => i.Start))
+            {
+                TryDeleteBookmarkByName(doc, info.Name, deletedSpans);
+            }
+
+            foreach (BookmarkInfo info in infos.Where(i => !i.IsBlock).OrderByDescending(i => i.Start))
+            {
+                if (deletedSpans.Any(span => info.Start >= span.Start && info.Start <= span.End))
+                {
+                    continue;
+                }
+
+                TryDeleteBookmarkByName(doc, info.Name, deletedSpans);
             }
 
             bool formatHit = ScanAndRemoveSuperscriptMarkers(doc);
@@ -31,65 +47,79 @@ namespace WordAddIn1
                 warnings.Add("marker_removed_by_format_scan");
             }
 
-            var blockBookmarks = provenanceBookmarks
-                .Where(b => IsBlockBookmark(b.Name))
-                .OrderByDescending(b => b.Range.Start)
-                .ToList();
-
-            var deletedSpans = new List<(int Start, int End)>();
-            foreach (Word.Bookmark block in blockBookmarks)
-            {
-                try
-                {
-                    int start = block.Range.Start;
-                    int end = block.Range.End;
-                    block.Range.Delete();
-                    deletedSpans.Add((start, end));
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[DataProvenanceClear] 删除块书签失败: {ex.Message}");
-                }
-            }
-
-            var remaining = provenanceBookmarks
-                .Where(b => !IsBlockBookmark(b.Name))
-                .OrderByDescending(b => b.Range.Start)
-                .ToList();
-
-            foreach (Word.Bookmark bookmark in remaining)
-            {
-                try
-                {
-                    int start = bookmark.Range.Start;
-                    if (deletedSpans.Any(span => start >= span.Start && start <= span.End))
-                    {
-                        continue;
-                    }
-
-                    bookmark.Range.Delete();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[DataProvenanceClear] 删除书签失败: {ex.Message}");
-                }
-            }
-
+            TrimTrailingEmptyParagraphs(doc);
             return warnings;
         }
 
-        private static List<Word.Bookmark> CollectProvenanceBookmarks(Word.Document doc)
+        private struct BookmarkInfo
         {
-            var list = new List<Word.Bookmark>();
+            public string Name;
+            public int Start;
+            public bool IsBlock;
+        }
+
+        private static List<BookmarkInfo> CollectProvenanceBookmarkInfos(Word.Document doc)
+        {
+            var list = new List<BookmarkInfo>();
             foreach (Word.Bookmark bookmark in doc.Bookmarks)
             {
-                if (ProvenanceBookmarkNames.IsProvenanceBookmark(bookmark.Name))
+                string name;
+                try
                 {
-                    list.Add(bookmark);
+                    name = bookmark.Name;
                 }
+                catch
+                {
+                    continue;
+                }
+
+                if (!ProvenanceBookmarkNames.IsProvenanceBookmark(name))
+                {
+                    continue;
+                }
+
+                int start = int.MaxValue;
+                try
+                {
+                    start = bookmark.Range.Start;
+                }
+                catch
+                {
+                }
+
+                list.Add(new BookmarkInfo
+                {
+                    Name = name,
+                    Start = start,
+                    IsBlock = IsBlockBookmark(name)
+                });
             }
 
             return list;
+        }
+
+        private static void TryDeleteBookmarkByName(
+            Word.Document doc,
+            string name,
+            List<(int Start, int End)> deletedSpans)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(name) || !doc.Bookmarks.Exists(name))
+                {
+                    return;
+                }
+
+                Word.Bookmark bookmark = doc.Bookmarks[name];
+                int start = bookmark.Range.Start;
+                int end = bookmark.Range.End;
+                bookmark.Range.Delete();
+                deletedSpans.Add((start, end));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DataProvenanceClear] 删除书签失败: {ex.Message}");
+            }
         }
 
         private static bool IsBlockBookmark(string name)
@@ -108,6 +138,29 @@ namespace WordAddIn1
                 || name.StartsWith("yw_prov_cht_block_", StringComparison.Ordinal);
         }
 
+        private static void TrimTrailingEmptyParagraphs(Word.Document doc)
+        {
+            try
+            {
+                while (doc.Paragraphs.Count > 1)
+                {
+                    Word.Paragraph last = doc.Paragraphs[doc.Paragraphs.Count];
+                    string text = last.Range.Text ?? "";
+                    string trimmed = text.Trim('\r', '\n', '\a', '\t', ' ', '\u00A0');
+                    if (trimmed.Length > 0)
+                    {
+                        break;
+                    }
+
+                    last.Range.Delete();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DataProvenanceClear] 收文末空段失败: {ex.Message}");
+            }
+        }
+
         private static bool ScanAndRemoveSuperscriptMarkers(Word.Document doc)
         {
             bool hit = false;
@@ -122,24 +175,29 @@ namespace WordAddIn1
                     steps++;
                     AgentRunCancellation.ThrowIfCancelled();
 
-                    Word.Range wordRange = doc.Range(pos, pos);
-                    wordRange.MoveEnd(Word.WdUnits.wdWord, 1);
-                    if (wordRange.End <= pos)
+                    Word.Range probe = doc.Range(pos, pos + 1);
+                    string ch = probe.Text ?? "";
+                    if (ch == "[")
                     {
-                        pos++;
-                        continue;
+                        Word.Range marker = doc.Range(pos, pos);
+                        marker.MoveEnd(Word.WdUnits.wdCharacter, 16);
+                        string raw = marker.Text ?? "";
+                        int close = raw.IndexOf(']');
+                        if (close > 0)
+                        {
+                            Word.Range candidate = doc.Range(pos, pos + close + 1);
+                            string text = (candidate.Text ?? "").Trim();
+                            if (MarkerFormatRegex.IsMatch(text) && candidate.Font.Superscript != 0)
+                            {
+                                candidate.Delete();
+                                hit = true;
+                                end = doc.Content.End;
+                                continue;
+                            }
+                        }
                     }
 
-                    string text = (wordRange.Text ?? "").Trim();
-                    if (wordRange.Font.Superscript != 0 && MarkerFormatRegex.IsMatch(text))
-                    {
-                        wordRange.Delete();
-                        hit = true;
-                        end = doc.Content.End;
-                        continue;
-                    }
-
-                    pos = wordRange.End;
+                    pos++;
                 }
             }
             catch (OperationCanceledException)

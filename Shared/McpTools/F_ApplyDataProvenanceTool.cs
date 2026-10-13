@@ -39,10 +39,12 @@ namespace WordAddIn1
                     DataProvenanceJsonParser.TryParseItems(args, out List<ProvenanceItemInput> items, out _);
                     DataProvenanceParamValidator.ValidateStructure(items);
 
-                    // 不读写 TrackRevisions（2026-08：取消审阅工具注册与默认关审阅）
+                    // 覆盖须先清旧再定位。清旧后作废指纹缓存，按门面同源刷快照。
+                    List<string> warnings = DataProvenanceClearHelper.ClearIfNeeded(doc);
+                    DocumentState.ClearProcessDocumentCache("apply_data_provenance_cleared");
                     WordDocumentExtractor.ProcessDocument(
                         doc,
-                        ProcessDocumentOptions.ForProcessActions("apply_data_provenance"));
+                        ProcessDocumentOptions.ForProcessActions("locate"));
 
                     var rendered = new List<RenderedProvenanceItem>();
                     for (int i = 0; i < items.Count; i++)
@@ -70,8 +72,6 @@ namespace WordAddIn1
                         renderedItem.Anchor = item.Anchor;
                         rendered.Add(renderedItem);
                     }
-
-                    List<string> warnings = DataProvenanceClearHelper.ClearIfNeeded(doc);
 
                     int sentenceNo = 0;
                     var sentenceItems = new List<RenderedProvenanceItem>();
@@ -123,11 +123,9 @@ namespace WordAddIn1
                             item.SentenceNumber.Value);
                     }
 
-                    DataProvenanceWriteHelper.WriteReferenceSection(doc, sentenceItems);
+                    DataProvenanceWriteHelper.DumpCharactersAfterMarkers(doc);
 
-                    WordDocumentExtractor.ProcessDocument(
-                        doc,
-                        ProcessDocumentOptions.ForProcessActions("apply_data_provenance_post"));
+                    DataProvenanceWriteHelper.WriteReferenceSection(doc, sentenceItems);
 
                     return new ToolResult
                     {

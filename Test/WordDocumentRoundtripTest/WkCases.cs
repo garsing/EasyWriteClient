@@ -423,6 +423,8 @@ namespace WordDocumentRoundtripTest
                     : (applied.Error ?? ""));
 
             string body = ReadBody(s, id);
+            Console.WriteLine("[after-apply] codes=" + string.Join(",", ListCodes(body, "S")));
+            Console.WriteLine("[after-apply] body=" + body.Replace("\r", "\\r"));
             Ok(run, "wv-s-mark",
                 applied.Success && Contains(body, ProvSent) && Contains(body, "[1]"),
                 applied.Success ? "缺原句或 [1]: " + Snip(body) : (applied.Error ?? ""));
