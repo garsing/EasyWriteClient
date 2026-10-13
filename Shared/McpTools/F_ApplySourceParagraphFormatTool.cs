@@ -63,7 +63,8 @@ namespace WordAddIn1
                         explicitParaFormat,
                         source,
                         tableId,
-                        doc);
+                        doc,
+                        docHandle.DisallowBackendApi);
                 }
                 catch (Exception ex)
                 {

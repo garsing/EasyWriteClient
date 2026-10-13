@@ -61,19 +61,14 @@ namespace WordAddIn1
                     FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out _, "path", "filename");
                     double widthCm = TryParseWidthCm(args) ?? DefaultWidthCm;
 
-                    try
-                    {
-                        WordReader.ReadWord(document);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"[InsertWorkspaceImage] ReadWord 警告: {ex.Message}");
-                    }
-
-                    var locate = InsertTargetLocatorHelper.TryResolveInsertRange(document, args);
+                    var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                        document,
+                        args,
+                        InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
+                        docHandle.DisallowBackendApi);
                     if (!locate.Success)
                     {
-                        return Fail(locate.Error ?? "locate_failed");
+                        return InsertTargetLocatorHelper.ToFailureResult(locate, "F_insert_workspace_image");
                     }
 
                     double heightCm;

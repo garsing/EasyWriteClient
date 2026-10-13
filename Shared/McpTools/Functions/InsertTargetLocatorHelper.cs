@@ -8,8 +8,7 @@ using Word = Microsoft.Office.Interop.Word;
 namespace WordAddIn1
 {
     /// <summary>
-    /// insert / F_insert_svg_image 共用的 target oneof 解析与落点 Range。
-    /// 解析规则与 F_ProcessDocumentActionsTool 历史实现一致。
+    /// 统一定位：解析 → 按需 ProcessDocument → 歧义（含消歧建议）→ Range。
     /// </summary>
     public static class InsertTargetLocatorHelper
     {
@@ -20,6 +19,21 @@ namespace WordAddIn1
             Chart,
             Image,
             DocumentStart
+        }
+
+        public enum LocateRangeKind
+        {
+            InsertAfter = 0,
+            ContentSpan = 1
+        }
+
+        public enum LocatePrecheckStream
+        {
+            SentenceActions = 0,
+            SentenceFormatApply = 1,
+            SentenceFormatContext = 2,
+            ParagraphFormatApply = 3,
+            ParagraphFormatContext = 4
         }
 
         public const string PositionStart = "start";
@@ -50,6 +64,15 @@ namespace WordAddIn1
             public Word.Range Range { get; set; }
             public bool UsedCursor { get; set; }
             public LocatorSpec Spec { get; set; }
+            public AmbiguityCheckResult Ambiguity { get; set; }
+        }
+
+        public sealed class PrecheckResult
+        {
+            public bool Success { get; set; }
+            public string Error { get; set; }
+            public AmbiguityCheckResult Ambiguity { get; set; }
+            public TableScopeIndex TableScope { get; set; }
         }
 
         /// <summary>
@@ -248,7 +271,9 @@ namespace WordAddIn1
         /// </summary>
         public static ResolveRangeResult TryResolveInsertRange(
             Word.Document doc,
-            Dictionary<string, object> args)
+            Dictionary<string, object> args,
+            LocateRangeKind rangeKind = LocateRangeKind.InsertAfter,
+            bool disallowBackendApi = false)
         {
             if (doc == null)
             {
@@ -273,10 +298,14 @@ namespace WordAddIn1
                 return FailResolve($"locate_failed: {parsed.Error}");
             }
 
-            return TryResolveInsertRange(doc, parsed.Spec);
+            return TryResolveInsertRange(doc, parsed.Spec, rangeKind, disallowBackendApi);
         }
 
-        public static ResolveRangeResult TryResolveInsertRange(Word.Document doc, LocatorSpec target)
+        public static ResolveRangeResult TryResolveInsertRange(
+            Word.Document doc,
+            LocatorSpec target,
+            LocateRangeKind rangeKind = LocateRangeKind.InsertAfter,
+            bool disallowBackendApi = false)
         {
             if (doc == null)
             {
@@ -307,8 +336,22 @@ namespace WordAddIn1
                     return OkRange(startRange, target, usedCursor: false);
                 }
 
+                if (SpecNeedsProcessDocument(target))
+                {
+                    string pdError = TryProcessDocumentForLocate(doc, disallowBackendApi);
+                    if (pdError != null)
+                    {
+                        return FailResolve("locate_failed: " + pdError);
+                    }
+                }
+
                 if (target.Kind == LocatorKind.Table)
                 {
+                    if (rangeKind == LocateRangeKind.ContentSpan)
+                    {
+                        return FailResolve("locate_failed: ContentSpan 仅支持句子/段落编码");
+                    }
+
                     Word.Range afterTable = ObjectInsertRangeHelper.FindRangeAfterTable(doc, target.TableId);
                     if (afterTable == null)
                     {
@@ -320,6 +363,11 @@ namespace WordAddIn1
 
                 if (target.Kind == LocatorKind.Chart)
                 {
+                    if (rangeKind == LocateRangeKind.ContentSpan)
+                    {
+                        return FailResolve("locate_failed: ContentSpan 仅支持句子/段落编码");
+                    }
+
                     Word.Range afterChart = ObjectInsertRangeHelper.FindRangeAfterChart(doc, target.ChartId);
                     if (afterChart == null)
                     {
@@ -331,6 +379,11 @@ namespace WordAddIn1
 
                 if (target.Kind == LocatorKind.Image)
                 {
+                    if (rangeKind == LocateRangeKind.ContentSpan)
+                    {
+                        return FailResolve("locate_failed: ContentSpan 仅支持句子/段落编码");
+                    }
+
                     Word.Range afterImage = ObjectInsertRangeHelper.FindRangeAfterImage(doc, target.ImageId);
                     if (afterImage == null)
                     {
@@ -340,95 +393,210 @@ namespace WordAddIn1
                     return OkRange(afterImage, target, usedCursor: false);
                 }
 
-                // Sentence
-                var names = target.Codes.Split(',')
-                    .Select(s => s.Trim())
-                    .Where(s => !string.IsNullOrEmpty(s))
-                    .ToList();
-                if (names.Count == 0)
-                {
-                    return FailResolve("locate_failed: target.codes 为空");
-                }
-
-                TableScopeIndex tableScope = null;
-                if (!string.IsNullOrEmpty(target.InTableId))
-                {
-                    var scopeArgs = new ApplyFormatScopeArgs { TableId = target.InTableId };
-                    tableScope = ApplyFormatAmbiguityHelper.BuildTableScopeOrNull(scopeArgs, out string cacheError);
-                    if (cacheError != null)
-                    {
-                        return FailResolve($"locate_failed: {cacheError}");
-                    }
-
-                    if (tableScope == null || !tableScope.ContainsTableId(target.InTableId))
-                    {
-                        return FailResolve($"locate_failed: 表域 '{target.InTableId}' 不可用，请先 F_get_document_content");
-                    }
-                }
-
-                var locateOptions = new DisplaySequenceLocateOptions
-                {
-                    TableId = target.InTableId,
-                    TableScope = tableScope,
-                    StreamKind = CodeStreamKind.SentenceReadText,
-                    Snapshot = DocumentState.Snapshot
-                };
-
-                DisplaySequenceLocateResult locate = DisplaySequenceLocator.TryResolve(names, locateOptions);
-                HostProbe.Touch("sent-locate-doc", doc);
-                HostProbe.Log(
-                    "sent-locate",
-                    "codes=" + string.Join(",", names)
-                    + " match=" + (locate == null ? "null" : locate.MatchCount.ToString())
-                    + " err=" + (locate == null ? "null" : (locate.ErrorCode ?? ""))
-                    + " start=" + (locate == null || !locate.DisplayStartPosition.HasValue
-                        ? "none"
-                        : locate.DisplayStartPosition.Value.ToString())
-                    + " domainN=" + (locate == null || locate.OrderedDomainCodes == null
-                        ? "null"
-                        : locate.OrderedDomainCodes.Count.ToString())
-                    + " snap=" + (DocumentState.Snapshot == null ? "null" : "ok")
-                    + " stored=" + BriefStored(names));
-                if (locate == null || locate.MatchCount == 0)
-                {
-                    return FailResolve(
-                        $"locate_failed: 无法定位句子（{locate?.ErrorCode ?? "unknown"}）");
-                }
-
-                if (locate.MatchCount > 1 || !locate.DisplayStartPosition.HasValue)
-                {
-                    return FailResolve(
-                        $"locate_failed: 句子编码歧义（{DisplaySequenceLocator.ErrorAmbiguousSentenceCode}），请扩充 codes 或加 in_table");
-                }
-
-                int displayStart = locate.DisplayStartPosition.Value;
-                Word.Range range = DisplayPositionRangeResolver.ResolveSpan(
-                    doc,
-                    names,
-                    displayStart,
-                    target.InTableId,
-                    tableScope,
-                    locate.OrderedDomainCodes,
-                    debugTag: "insert_svg_target");
-
-                HostProbe.Log(
-                    "sent-range",
-                    range == null
-                        ? "null"
-                        : ("start=" + range.Start + " end=" + range.End
-                            + " text=" + BriefText(range.Text)));
-
-                if (range == null)
-                {
-                    return FailResolve("locate_failed: 已解析编码但无法取得 Word Range");
-                }
-
-                range.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
-                return OkRange(range, target, usedCursor: false);
+                return TryResolveSentenceOrParagraphRange(doc, target, rangeKind, paragraph: false);
             }
             catch (Exception ex)
             {
                 return FailResolve($"locate_failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 整批歧义预检（停在歧义，不落 Range）。批里有号则一次 ProcessDocument。
+        /// </summary>
+        public static PrecheckResult TryPrecheckTargets(
+            Word.Document doc,
+            IReadOnlyList<DocumentActionAmbiguityAnchor> anchors,
+            bool disallowBackendApi = false,
+            LocatePrecheckStream stream = LocatePrecheckStream.SentenceActions,
+            ApplyFormatScopeArgs formatScope = null,
+            string formatToolName = null)
+        {
+            var result = new PrecheckResult { Success = true };
+            if (doc == null)
+            {
+                result.Success = false;
+                result.Error = "locate_failed: 文档不可用";
+                return result;
+            }
+
+            if (AnchorsNeedProcessDocument(anchors, formatScope))
+            {
+                string pdError = TryProcessDocumentForLocate(doc, disallowBackendApi);
+                if (pdError != null)
+                {
+                    result.Success = false;
+                    result.Error = "locate_failed: " + pdError;
+                    return result;
+                }
+            }
+
+            string cacheError;
+            AmbiguityCheckResult ambiguity;
+            TableScopeIndex tableScope;
+            if (stream == LocatePrecheckStream.ParagraphFormatApply
+                || stream == LocatePrecheckStream.ParagraphFormatContext)
+            {
+                List<string> codes = FlattenAnchorCodes(anchors);
+                if (stream == LocatePrecheckStream.ParagraphFormatContext)
+                {
+                    ambiguity = ParagraphFormatAmbiguityHelper.RunContextReadPrecheck(
+                        codes,
+                        formatScope ?? new ApplyFormatScopeArgs(),
+                        formatToolName ?? "F_get_format_context",
+                        out tableScope,
+                        out cacheError);
+                }
+                else
+                {
+                    ambiguity = ParagraphFormatAmbiguityHelper.RunPrecheck(
+                        formatScope ?? new ApplyFormatScopeArgs(),
+                        codes,
+                        formatToolName ?? "F_apply_paragraph_format",
+                        out tableScope,
+                        out cacheError);
+                }
+            }
+            else if (stream == LocatePrecheckStream.SentenceFormatApply
+                || stream == LocatePrecheckStream.SentenceFormatContext)
+            {
+                List<string> codes = FlattenAnchorCodes(anchors);
+                if (stream == LocatePrecheckStream.SentenceFormatContext)
+                {
+                    ambiguity = ApplyFormatAmbiguityHelper.RunContextReadPrecheck(
+                        codes,
+                        formatScope ?? new ApplyFormatScopeArgs(),
+                        formatToolName ?? "F_get_format_context",
+                        out tableScope,
+                        out cacheError);
+                }
+                else
+                {
+                    ambiguity = ApplyFormatAmbiguityHelper.RunPrecheck(
+                        codes,
+                        formatScope ?? new ApplyFormatScopeArgs(),
+                        formatToolName ?? "F_apply_document_format",
+                        out tableScope,
+                        out cacheError);
+                }
+            }
+            else
+            {
+                tableScope = TableSentenceScopeHelper.BuildIndexFromProcessCache(
+                    DocumentState.LastProcessCache);
+                cacheError = null;
+                ambiguity = SentenceCodeAmbiguityHelper.CheckBatch(
+                    anchors,
+                    DocumentState.Snapshot,
+                    ConfigManager.GetDocumentActionsAmbiguitySettings(),
+                    tableScope);
+            }
+
+            result.TableScope = tableScope;
+            result.Ambiguity = ambiguity;
+            if (cacheError != null)
+            {
+                result.Success = false;
+                result.Error = cacheError;
+                return result;
+            }
+
+            if (ambiguity != null && ambiguity.HasBlockingError)
+            {
+                result.Success = false;
+                result.Error = ambiguity.SummaryMessage ?? "locate_failed: 定位歧义";
+                return result;
+            }
+
+            return result;
+        }
+
+        public static ResolveRangeResult TryResolveCodeSpan(
+            Word.Document doc,
+            IReadOnlyList<string> codes,
+            string inTableId,
+            LocateRangeKind rangeKind,
+            bool paragraph,
+            bool disallowBackendApi)
+        {
+            var spec = new LocatorSpec
+            {
+                Kind = LocatorKind.Sentence,
+                Codes = codes == null ? "" : string.Join(",", codes.Where(c => !string.IsNullOrWhiteSpace(c))),
+                InTableId = inTableId
+            };
+            if (string.IsNullOrEmpty(spec.Codes))
+            {
+                return FailResolve("locate_failed: codes 为空");
+            }
+
+            if (doc == null)
+            {
+                return FailResolve("locate_failed: 文档不可用");
+            }
+
+            string pdError = TryProcessDocumentForLocate(doc, disallowBackendApi);
+            if (pdError != null)
+            {
+                return FailResolve("locate_failed: " + pdError);
+            }
+
+            return TryResolveSentenceOrParagraphRange(doc, spec, rangeKind, paragraph);
+        }
+
+        public static ToolResult ToFailureResult(ResolveRangeResult locate, string toolName = null)
+        {
+            if (locate?.Ambiguity != null && locate.Ambiguity.HasBlockingError)
+            {
+                return SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
+                    string.IsNullOrEmpty(toolName) ? "locate" : toolName,
+                    locate.Ambiguity);
+            }
+
+            return new ToolResult
+            {
+                Success = false,
+                Error = locate?.Error ?? "locate_failed",
+                Data = new Dictionary<string, object>
+                {
+                    ["error"] = "locate_failed",
+                    ["checkpoint_cleanup_only"] = true
+                }
+            };
+        }
+
+        public static ToolResult ToPrecheckFailureResult(
+            PrecheckResult precheck,
+            string documentName,
+            int totalActions)
+        {
+            if (precheck?.Ambiguity != null && precheck.Ambiguity.HasBlockingError)
+            {
+                return SentenceCodeAmbiguityHelper.BuildPreStep3FailureResult(
+                    documentName,
+                    totalActions,
+                    precheck.Ambiguity);
+            }
+
+            return SentenceCodeAmbiguityHelper.BuildPreStep3FailureResult(
+                documentName,
+                totalActions,
+                "locate_failed",
+                precheck?.Error ?? "定位预检失败");
+        }
+
+        public static string TryProcessDocumentForLocate(Word.Document doc, bool disallowBackendApi)
+        {
+            try
+            {
+                var options = ProcessDocumentOptions.ForProcessActions("locate");
+                options.DisallowBackendApi = disallowBackendApi;
+                WordDocumentExtractor.ProcessDocument(doc, options);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return ex.Message;
             }
         }
 
@@ -535,6 +703,223 @@ namespace WordAddIn1
             }
 
             return message.TrimEnd() + " 已插在正文最前。";
+        }
+
+        private static ResolveRangeResult TryResolveSentenceOrParagraphRange(
+            Word.Document doc,
+            LocatorSpec target,
+            LocateRangeKind rangeKind,
+            bool paragraph)
+        {
+            var names = (target.Codes ?? "")
+                .Split(',')
+                .Select(s => s.Trim())
+                .Where(s => !string.IsNullOrEmpty(s))
+                .ToList();
+            if (names.Count == 0)
+            {
+                return FailResolve("locate_failed: target.codes 为空");
+            }
+
+            var formatScope = new ApplyFormatScopeArgs { TableId = target.InTableId };
+            AmbiguityCheckResult ambiguity;
+            TableScopeIndex tableScope;
+            string cacheError;
+            string field = paragraph ? "target_paragraph_codes" : "target";
+            if (paragraph)
+            {
+                ambiguity = ParagraphFormatAmbiguityHelper.RunPrecheck(
+                    formatScope,
+                    names,
+                    "locate",
+                    out tableScope,
+                    out cacheError);
+            }
+            else
+            {
+                var anchor = new DocumentActionAmbiguityAnchor
+                {
+                    ActionIndex = 0,
+                    Field = field,
+                    Codes = string.Join(",", names),
+                    TableId = target.InTableId
+                };
+                tableScope = BuildSentenceTableScope(target.InTableId, out cacheError);
+                ambiguity = SentenceCodeAmbiguityHelper.CheckBatch(
+                    new[] { anchor },
+                    DocumentState.Snapshot,
+                    ConfigManager.GetDocumentActionsAmbiguitySettings(),
+                    tableScope);
+            }
+
+            if (cacheError != null)
+            {
+                return FailResolve($"locate_failed: {cacheError}");
+            }
+
+            if (ambiguity != null && ambiguity.HasBlockingError)
+            {
+                return FailAmbiguity(ambiguity);
+            }
+
+            int displayStart = paragraph
+                ? ParagraphFormatAmbiguityHelper.GetDisplayStartAt(ambiguity, 0, field)
+                : GetSentenceDisplayStart(ambiguity, field);
+            if (displayStart < 0)
+            {
+                return FailResolve("locate_failed: 无法定位编码序列");
+            }
+
+            if (!string.IsNullOrEmpty(target.InTableId)
+                && (tableScope == null || !tableScope.ContainsTableId(target.InTableId)))
+            {
+                return FailResolve($"locate_failed: 表域 '{target.InTableId}' 不可用，请先 F_get_document_content");
+            }
+
+            HostProbe.Touch("sent-locate-doc", doc);
+            HostProbe.Log(
+                "sent-locate",
+                "codes=" + string.Join(",", names)
+                + " paragraph=" + paragraph
+                + " displayStart=" + displayStart
+                + " snap=" + (DocumentState.Snapshot == null ? "null" : "ok")
+                + " stored=" + BriefStored(names));
+
+            Word.Range range = paragraph
+                ? DisplayPositionRangeResolver.ResolveParagraphSpan(
+                    doc,
+                    names,
+                    displayStart,
+                    target.InTableId,
+                    tableScope,
+                    debugTag: "locate_facade_para")
+                : DisplayPositionRangeResolver.ResolveSpan(
+                    doc,
+                    names,
+                    displayStart,
+                    target.InTableId,
+                    tableScope,
+                    debugTag: "locate_facade");
+
+            HostProbe.Log(
+                "sent-range",
+                range == null
+                    ? "null"
+                    : ("start=" + range.Start + " end=" + range.End
+                        + " text=" + BriefText(range.Text)));
+
+            if (range == null)
+            {
+                return FailResolve("locate_failed: 已解析编码但无法取得 Word Range");
+            }
+
+            if (!paragraph && rangeKind == LocateRangeKind.InsertAfter)
+            {
+                range.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            }
+
+            return OkRange(range, target, usedCursor: false);
+        }
+
+        private static int GetSentenceDisplayStart(AmbiguityCheckResult ambiguity, string field)
+        {
+            if (ambiguity?.ResolvedDisplayStartPositionByField == null)
+            {
+                return -1;
+            }
+
+            string key = SentenceCodeAmbiguityHelper.MakeFieldKey(0, field);
+            return ambiguity.ResolvedDisplayStartPositionByField.TryGetValue(key, out int start)
+                ? start
+                : -1;
+        }
+
+        private static bool SpecNeedsProcessDocument(LocatorSpec spec)
+        {
+            return spec != null
+                && spec.Kind != LocatorKind.DocumentStart
+                && (spec.Kind == LocatorKind.Sentence
+                    || spec.Kind == LocatorKind.Table
+                    || spec.Kind == LocatorKind.Chart
+                    || spec.Kind == LocatorKind.Image);
+        }
+
+        private static bool AnchorsNeedProcessDocument(
+            IReadOnlyList<DocumentActionAmbiguityAnchor> anchors,
+            ApplyFormatScopeArgs formatScope)
+        {
+            if (!string.IsNullOrWhiteSpace(formatScope?.TableId))
+            {
+                return true;
+            }
+
+            if (anchors == null)
+            {
+                return false;
+            }
+
+            foreach (DocumentActionAmbiguityAnchor anchor in anchors)
+            {
+                if (!string.IsNullOrWhiteSpace(anchor?.Codes)
+                    || !string.IsNullOrWhiteSpace(anchor?.TableId))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static List<string> FlattenAnchorCodes(IReadOnlyList<DocumentActionAmbiguityAnchor> anchors)
+        {
+            var codes = new List<string>();
+            if (anchors == null)
+            {
+                return codes;
+            }
+
+            foreach (DocumentActionAmbiguityAnchor anchor in anchors)
+            {
+                if (string.IsNullOrWhiteSpace(anchor?.Codes))
+                {
+                    continue;
+                }
+
+                foreach (string part in anchor.Codes.Split(','))
+                {
+                    string trimmed = part.Trim();
+                    if (!string.IsNullOrEmpty(trimmed))
+                    {
+                        codes.Add(trimmed);
+                    }
+                }
+            }
+
+            return codes;
+        }
+
+        private static TableScopeIndex BuildSentenceTableScope(string tableId, out string cacheError)
+        {
+            cacheError = null;
+            if (string.IsNullOrEmpty(tableId))
+            {
+                return TableSentenceScopeHelper.BuildIndexFromProcessCache(DocumentState.LastProcessCache);
+            }
+
+            var scopeArgs = new ApplyFormatScopeArgs { TableId = tableId };
+            return ApplyFormatAmbiguityHelper.BuildTableScopeOrNull(scopeArgs, out cacheError);
+        }
+
+        private static ResolveRangeResult FailAmbiguity(AmbiguityCheckResult ambiguity)
+        {
+            HostProbe.Log("sent-fail", ambiguity?.SummaryMessage ?? "ambiguous");
+            return new ResolveRangeResult
+            {
+                Success = false,
+                Error = ambiguity?.SummaryMessage
+                    ?? $"locate_failed: 句子编码歧义（{DisplaySequenceLocator.ErrorAmbiguousSentenceCode}）",
+                Ambiguity = ambiguity
+            };
         }
 
         private static ResolveRangeResult OkRange(Word.Range range, LocatorSpec spec, bool usedCursor)

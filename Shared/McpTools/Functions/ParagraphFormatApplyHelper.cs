@@ -12,7 +12,8 @@ namespace WordAddIn1
         public static Task<ToolResult> RunApplyAsync(
             Word.Application wordApp,
             Dictionary<string, object> args,
-            Word.Document document = null)
+            Word.Document document = null,
+            bool disallowBackendApi = false)
         {
             Word.Document doc = document;
             if (doc == null)
@@ -59,23 +60,37 @@ namespace WordAddIn1
             }
 
             ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
-            AmbiguityCheckResult ambiguityResult = ParagraphFormatAmbiguityHelper.RunPrecheck(
-                scopeArgs,
-                targetParagraphCodes,
-                "F_apply_paragraph_format",
-                out TableScopeIndex tableScope,
-                out string cacheError);
-            if (cacheError != null)
+            var formatAnchors = new List<DocumentActionAmbiguityAnchor>
             {
-                return Task.FromResult(new ToolResult { Success = false, Error = cacheError });
+                new DocumentActionAmbiguityAnchor
+                {
+                    ActionIndex = 0,
+                    Field = "target_paragraph_codes",
+                    Codes = string.Join(",", targetParagraphCodes),
+                    TableId = scopeArgs.TableId
+                }
+            };
+            var precheck = InsertTargetLocatorHelper.TryPrecheckTargets(
+                doc,
+                formatAnchors,
+                disallowBackendApi,
+                InsertTargetLocatorHelper.LocatePrecheckStream.ParagraphFormatApply,
+                scopeArgs,
+                "F_apply_paragraph_format");
+            if (!precheck.Success)
+            {
+                if (precheck.Ambiguity != null && precheck.Ambiguity.HasBlockingError)
+                {
+                    return Task.FromResult(SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
+                        "F_apply_paragraph_format",
+                        precheck.Ambiguity));
+                }
+
+                return Task.FromResult(new ToolResult { Success = false, Error = precheck.Error });
             }
 
-            if (ambiguityResult != null && ambiguityResult.HasBlockingError)
-            {
-                return Task.FromResult(SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
-                    "F_apply_paragraph_format",
-                    ambiguityResult));
-            }
+            AmbiguityCheckResult ambiguityResult = precheck.Ambiguity;
+            TableScopeIndex tableScope = precheck.TableScope;
 
             var appliedParagraphCodes = new List<string>();
             var skippedParagraphCodes = new List<string>();
@@ -87,15 +102,14 @@ namespace WordAddIn1
             targetSpan = ApplyToTargetParagraphSpan(
                 doc,
                 targetParagraphCodes,
-                ambiguityResult,
                 scopeArgs,
-                tableScope,
                 paraFormat,
                 appliedParagraphCodes,
                 skippedParagraphCodes,
                 applyErrors,
                 applyWarnings,
-                appliedFieldsUnion);
+                appliedFieldsUnion,
+                disallowBackendApi);
 
             var data = BuildResponseData(
                 mode,
@@ -126,15 +140,14 @@ namespace WordAddIn1
         private static Word.Range ApplyToTargetParagraphSpan(
             Word.Document doc,
             List<string> targetParagraphCodes,
-            AmbiguityCheckResult ambiguityResult,
             ApplyFormatScopeArgs scopeArgs,
-            TableScopeIndex tableScope,
             Dictionary<string, object> paraFormat,
             List<string> appliedParagraphCodes,
             List<string> skippedParagraphCodes,
             List<string> applyErrors,
             List<string> applyWarnings,
-            List<string> appliedFieldsUnion)
+            List<string> appliedFieldsUnion,
+            bool disallowBackendApi)
         {
             foreach (string code in targetParagraphCodes)
             {
@@ -155,29 +168,14 @@ namespace WordAddIn1
                 return null;
             }
 
-            int targetDisplayStart = ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
-                ambiguityResult, 0, "target_paragraph_codes");
-            if (targetDisplayStart < 0)
-            {
-                foreach (string code in targetParagraphCodes)
-                {
-                    if (!skippedParagraphCodes.Contains(code))
-                    {
-                        skippedParagraphCodes.Add(code);
-                        applyErrors.Add($"{code}: 无法在文档中定位序列 Span");
-                    }
-                }
-
-                return null;
-            }
-
-            Word.Range targetSpan = DisplayPositionRangeResolver.ResolveParagraphSpan(
+            var spanLocate = InsertTargetLocatorHelper.TryResolveCodeSpan(
                 doc,
                 targetParagraphCodes,
-                targetDisplayStart,
                 scopeArgs.TableId,
-                tableScope,
-                debugTag: "apply_para_explicit_target_span");
+                InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
+                paragraph: true,
+                disallowBackendApi);
+            Word.Range targetSpan = spanLocate.Success ? spanLocate.Range : null;
             if (targetSpan == null)
             {
                 foreach (string code in targetParagraphCodes)

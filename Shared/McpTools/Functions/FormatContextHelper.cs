@@ -49,11 +49,8 @@ namespace WordAddIn1
 
             try
             {
-                var options = ProcessDocumentOptions.ForProcessActions(
-                    string.IsNullOrEmpty(source) ? "apply_format" : source);
-                options.DisallowBackendApi = disallowBackendApi;
-                WordDocumentExtractor.ProcessDocument(doc, options);
-                return null;
+                string pdError = InsertTargetLocatorHelper.TryProcessDocumentForLocate(doc, disallowBackendApi);
+                return pdError == null ? null : "刷新文档映射失败: " + pdError;
             }
             catch (Exception ex)
             {
@@ -87,9 +84,11 @@ namespace WordAddIn1
             int? contextWindow,
             string tableId,
             TableScopeIndex tableScope,
-            AmbiguityCheckResult precheckResult)
+            AmbiguityCheckResult precheckResult,
+            bool disallowBackendApi = false)
         {
-            return BuildSentenceContext(doc, targetCodesCsv, contextWindow, tableId, tableScope, precheckResult);
+            return BuildSentenceContext(
+                doc, targetCodesCsv, contextWindow, tableId, tableScope, precheckResult, disallowBackendApi);
         }
 
         public static FormatContextBuildResult BuildParagraphContext(
@@ -106,7 +105,8 @@ namespace WordAddIn1
             int? contextWindow,
             string tableId,
             TableScopeIndex tableScope,
-            AmbiguityCheckResult precheckResult)
+            AmbiguityCheckResult precheckResult,
+            bool disallowBackendApi = false)
         {
             var result = new FormatContextBuildResult
             {
@@ -147,22 +147,14 @@ namespace WordAddIn1
                 return result;
             }
 
-            int displayStart = ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
-                precheckResult, 0, "target_paragraph_codes");
-            if (displayStart < 0)
-            {
-                result.Success = false;
-                result.Error = "target_paragraph_codes 无法在段落快照中定位";
-                return result;
-            }
-
-            Word.Range span = DisplayPositionRangeResolver.ResolveParagraphSpan(
+            var spanLocate = InsertTargetLocatorHelper.TryResolveCodeSpan(
                 doc,
                 targetCodes,
-                displayStart,
                 tableId,
-                tableScope,
-                debugTag: "format_context_para_span");
+                InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
+                paragraph: true,
+                disallowBackendApi);
+            Word.Range span = spanLocate.Success ? spanLocate.Range : null;
             if (span == null)
             {
                 result.Success = false;
@@ -228,7 +220,8 @@ namespace WordAddIn1
             int? contextWindow,
             string tableId,
             TableScopeIndex tableScope,
-            AmbiguityCheckResult precheckResult)
+            AmbiguityCheckResult precheckResult,
+            bool disallowBackendApi = false)
         {
             var result = new FormatContextBuildResult
             {
@@ -269,22 +262,14 @@ namespace WordAddIn1
                 return result;
             }
 
-            int displayStart = ApplyFormatAmbiguityHelper.GetDisplayStartAt(
-                precheckResult, 0, "target_codes");
-            if (displayStart < 0)
-            {
-                result.Success = false;
-                result.Error = "target_codes 无法在文档快照中定位";
-                return result;
-            }
-
-            Word.Range span = DisplayPositionRangeResolver.ResolveSpan(
+            var spanLocate = InsertTargetLocatorHelper.TryResolveCodeSpan(
                 doc,
                 targetCodes,
-                displayStart,
                 tableId,
-                tableScope,
-                debugTag: "format_context_span");
+                InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
+                paragraph: false,
+                disallowBackendApi);
+            Word.Range span = spanLocate.Success ? spanLocate.Range : null;
             if (span == null)
             {
                 result.Success = false;

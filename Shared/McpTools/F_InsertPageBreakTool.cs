@@ -43,10 +43,14 @@ namespace WordAddIn1
                         $"[InsertPageBreak] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     var before = TryGetPageInfo(app, doc);
-                    var locate = InsertTargetLocatorHelper.TryResolveInsertRange(doc, args);
+                    var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                        doc,
+                        args,
+                        InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
+                        docHandle.DisallowBackendApi);
                     if (!locate.Success)
                     {
-                        return Fail(locate.Error);
+                        return InsertTargetLocatorHelper.ToFailureResult(locate, "F_insert_page_break");
                     }
 
                     string kind = locate.UsedCursor

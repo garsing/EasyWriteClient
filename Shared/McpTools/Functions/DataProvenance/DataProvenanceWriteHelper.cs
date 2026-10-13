@@ -15,28 +15,37 @@ namespace WordAddIn1
             }
 
             string code = item.Anchor?.Code;
-            Word.Range insert;
+            var spec = new InsertTargetLocatorHelper.LocatorSpec();
             if (item.Kind == ProvenanceAnchorKind.Table)
             {
-                insert = ObjectInsertRangeHelper.FindRangeAfterTable(doc, code);
+                spec.Kind = InsertTargetLocatorHelper.LocatorKind.Table;
+                spec.TableId = code;
             }
             else if (item.Kind == ProvenanceAnchorKind.Chart)
             {
-                insert = ObjectInsertRangeHelper.FindRangeAfterChart(doc, code);
+                spec.Kind = InsertTargetLocatorHelper.LocatorKind.Chart;
+                spec.ChartId = code;
             }
             else if (item.Kind == ProvenanceAnchorKind.Image)
             {
-                insert = ObjectInsertRangeHelper.FindRangeAfterImage(doc, code);
+                spec.Kind = InsertTargetLocatorHelper.LocatorKind.Image;
+                spec.ImageId = code;
             }
             else
             {
                 throw new InvalidOperationException($"WriteObjectLines 不支持锚点类型 {item.Kind}");
             }
 
-            if (insert == null)
+            var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                doc,
+                spec,
+                InsertTargetLocatorHelper.LocateRangeKind.InsertAfter);
+            if (!locate.Success || locate.Range == null)
             {
-                throw new InvalidOperationException($"无法定位对象 {code}");
+                throw new InvalidOperationException(locate.Error ?? $"无法定位对象 {code}");
             }
+
+            Word.Range insert = locate.Range;
 
             Word.Range firstLineRange = null;
             Word.Range lastLineRange = null;

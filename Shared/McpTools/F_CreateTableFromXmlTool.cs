@@ -103,12 +103,14 @@ namespace WordAddIn1
                     var parseResult = ParseXmlFile(xmlFilePath);
                     LogPhase($"XML 解析完成 rows={parseResult.Config?.Table?.Rows} cols={parseResult.Config?.Table?.Cols}");
 
-                    RefreshDocumentForCreateTable(document, args);
-
-                    var locate = InsertTargetLocatorHelper.TryResolveInsertRange(document, args);
+                    var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                        document,
+                        args,
+                        InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
+                        docHandle.DisallowBackendApi);
                     if (!locate.Success)
                     {
-                        return new ToolResult { Success = false, Error = locate.Error };
+                        return InsertTargetLocatorHelper.ToFailureResult(locate, "F_create_table_from_xml");
                     }
 
                     Word.Range addRange = EnsureSeparatedFromExistingTables(document, locate.Range);
@@ -625,34 +627,6 @@ namespace WordAddIn1
         /// <summary>
         /// 创建表格
         /// </summary>
-        private static void RefreshDocumentForCreateTable(Word.Document document, Dictionary<string, object> args)
-        {
-            Dictionary<string, object> targetDict = InsertTargetLocatorHelper.TryGetTargetDict(args);
-            if (targetDict == null)
-            {
-                return;
-            }
-
-            bool hasCodes = targetDict.ContainsKey("codes") && targetDict["codes"] != null
-                && !string.IsNullOrWhiteSpace(targetDict["codes"].ToString());
-            try
-            {
-                if (hasCodes)
-                {
-                    WordDocumentExtractor.ProcessDocument(
-                        document, ProcessDocumentOptions.ForProcessActions("create_table"));
-                }
-                else
-                {
-                    WordReader.ReadWord(document);
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine("[CreateTable] 定位前刷新失败: " + ex.Message);
-            }
-        }
-
         /// <summary>
         /// Tables.Add 会吃掉落点那一段。若紧贴已有表（表前或表后），再留一段空段，避免并成一张。
         /// </summary>

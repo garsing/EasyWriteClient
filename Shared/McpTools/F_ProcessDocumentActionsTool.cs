@@ -65,31 +65,8 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 操作前文档状态: 段落总数={document.Paragraphs.Count}");
                     FormatInheritHelper.DbgLogDocumentFontSample(document, "process_actions 入口");
 
-                    // 第一步：更新句子与名称映射表（必须在解析参数之前，确保验证时能找到句子）
-                    System.Diagnostics.Debug.WriteLine("[第一步] 更新句子与名称映射表");
-                    FormatInheritHelper.DbgLog("第一步映射刷新前");
-                    FormatInheritHelper.DbgLogDocumentFontSample(document, "第一步映射前");
-                    try
-                    {
-                        string mappingError = await UpdateSentenceNameMapping(
-                            document,
-                            "process_actions_step1",
-                            docHandle.DisallowBackendApi);
-                        if (!string.IsNullOrEmpty(mappingError))
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[ERROR] 更新映射表失败: {mappingError}");
-                            return FailBeforeWrite(mappingError);
-                        }
-                        System.Diagnostics.Debug.WriteLine(
-                            $"[第一步完成] 映射表总数: {DocumentState.NameToContentMap.Count}");
-                        FormatInheritHelper.DbgLogDocumentFontSample(document, "第一步映射后");
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[ERROR] 更新映射表异常: {ex.Message}");
-                        System.Diagnostics.Debug.WriteLine($"[ERROR] 异常堆栈: {ex.StackTrace}");
-                        return new ToolResult { Success = false, Error = $"更新映射表失败: {ex.Message}" };
-                    }
+                    FormatInheritHelper.DbgLog("门面整批预检前");
+                    FormatInheritHelper.DbgLogDocumentFontSample(document, "门面预检前");
 
                     System.Diagnostics.Debug.WriteLine("[DEBUG] 开始解析操作参数");
                     var parseResult = ParseActions(args["action"], document);
@@ -110,24 +87,21 @@ namespace WordAddIn1
                         actions[i].ActionIndex = i;
                     }
 
-                    var ambiguitySettings = ConfigManager.GetDocumentActionsAmbiguitySettings();
-                    var ambiguityAnchors = BuildAmbiguityAnchors(actions);
-                    TableScopeIndex tableScope = TableSentenceScopeHelper.BuildIndexFromProcessCache(
-                        DocumentState.LastProcessCache);
-                    var ambiguityResult = SentenceCodeAmbiguityHelper.CheckBatch(
-                        ambiguityAnchors,
-                        DocumentState.Snapshot,
-                        ambiguitySettings,
-                        tableScope);
-                    if (ambiguityResult.HasBlockingError)
+                    var precheck = InsertTargetLocatorHelper.TryPrecheckTargets(
+                        document,
+                        BuildAmbiguityAnchors(actions),
+                        docHandle.DisallowBackendApi);
+                    if (!precheck.Success)
                     {
-                        return SentenceCodeAmbiguityHelper.BuildPreStep3FailureResult(
+                        return InsertTargetLocatorHelper.ToPrecheckFailureResult(
+                            precheck,
                             document.Name ?? "未命名文档",
-                            actions.Count,
-                            ambiguityResult);
+                            actions.Count);
                     }
 
-                    ApplyResolvedDisplayPositions(actions, ambiguityResult);
+                    TableScopeIndex tableScope = precheck.TableScope
+                        ?? TableSentenceScopeHelper.BuildIndexFromProcessCache(DocumentState.LastProcessCache);
+                    ApplyResolvedDisplayPositions(actions, precheck.Ambiguity);
 
                     string continuityError = ValidateAllActionsContinuity(actions, tableScope);
                     if (!string.IsNullOrEmpty(continuityError))
@@ -145,7 +119,8 @@ namespace WordAddIn1
                     List<ActionResult> modifyResults = await ModifyDocumentDirectly(
                         document,
                         actions,
-                        tableScope);
+                        tableScope,
+                        docHandle.DisallowBackendApi);
                     FormatInheritHelper.DbgLogDocumentFontSample(document, "第三步 modify 后");
                     System.Diagnostics.Debug.WriteLine("[第三步完成]");
 
@@ -743,7 +718,8 @@ namespace WordAddIn1
         private static async Task<List<ActionResult>> ModifyDocumentDirectly(
             Word.Document doc,
             List<ParagraphAction> actions,
-            TableScopeIndex tableScope)
+            TableScopeIndex tableScope,
+            bool disallowBackendApi)
         {
             var results = new List<ActionResult>();
 
@@ -760,16 +736,15 @@ namespace WordAddIn1
                     .OrderByDescending(x => GetSentencePositionInDocument(
                         doc,
                         x.Action.SentenceNames,
-                        x.Action.ResolvedSentenceDisplayStart,
                         x.Action.Type?.ToLower() == "replace"
                             ? x.Action.OriginalScopeFields?.TableId
                             : x.Action.DeletionScopeFields?.TableId,
-                        tableScope))
+                        disallowBackendApi))
                     .ToList();
 
                 var insertActions = sortedActions
                     .Where(x => x.Action.Type?.ToLower() == "insert")
-                    .OrderByDescending(x => GetInsertSortPosition(doc, x.Action, tableScope))
+                    .OrderByDescending(x => GetInsertSortPosition(doc, x.Action, disallowBackendApi))
                     .ToList();
 
                 // 先执行delete和replace操作
@@ -801,11 +776,10 @@ namespace WordAddIn1
                                     doc,
                                     action.SentenceNames,
                                     action.Content,
-                                    action.ResolvedSentenceDisplayStart,
                                     action.OriginalScopeFields?.TableId,
-                                    tableScope,
                                     formatSnapshot,
-                                    formatMode);
+                                    formatMode,
+                                    disallowBackendApi);
                                 FillReplaceActionResult(result, rep);
                                 break;
                             }
@@ -815,9 +789,8 @@ namespace WordAddIn1
                                 var del = ExecuteDeleteBySentenceNames(
                                     doc,
                                     action.SentenceNames,
-                                    action.ResolvedSentenceDisplayStart,
                                     action.DeletionScopeFields?.TableId,
-                                    tableScope);
+                                    disallowBackendApi);
                                 FillDeleteActionResult(result, del);
                                 break;
                             }
@@ -858,10 +831,9 @@ namespace WordAddIn1
                             doc,
                             action.TargetLocator,
                             action.Content,
-                            action.ResolvedTargetDisplayStart,
-                            tableScope,
                             formatSnapshot,
-                            formatMode);
+                            formatMode,
+                            disallowBackendApi);
                         FillInsertActionResult(result, ins, action.TargetLocator);
                     }
                     catch (Exception ex)
@@ -892,33 +864,29 @@ namespace WordAddIn1
         private static int GetSentencePositionInDocument(
             Word.Document doc,
             string sentenceNames,
-            int? displayStartPosition = null,
-            string tableId = null,
-            TableScopeIndex tableScope = null)
+            string tableId,
+            bool disallowBackendApi)
         {
-            if (string.IsNullOrEmpty(sentenceNames) || !displayStartPosition.HasValue)
+            if (string.IsNullOrEmpty(sentenceNames))
             {
                 return 0;
             }
 
             try
             {
-                var names = ParseCodeList(sentenceNames);
-                if (names.Count == 0 || !names[0].StartsWith("S_", StringComparison.Ordinal))
-                {
-                    return 0;
-                }
-
-                Word.Range span = DisplayPositionRangeResolver.ResolveSpan(
+                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
                     doc,
-                    names,
-                    displayStartPosition.Value,
-                    tableId,
-                    tableScope,
-                    debugTag: "process_actions_sort");
-                if (span != null)
+                    new InsertTargetLocatorHelper.LocatorSpec
+                    {
+                        Kind = InsertTargetLocatorHelper.LocatorKind.Sentence,
+                        Codes = sentenceNames,
+                        InTableId = tableId
+                    },
+                    InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
+                    disallowBackendApi);
+                if (locate.Success && locate.Range != null)
                 {
-                    return span.Start;
+                    return locate.Range.Start;
                 }
             }
             catch
@@ -926,6 +894,43 @@ namespace WordAddIn1
             }
 
             return 0;
+        }
+
+        private static InsertTargetLocatorHelper.LocatorSpec ToFacadeSpec(LocatorSpec target)
+        {
+            if (target == null)
+            {
+                return null;
+            }
+
+            var spec = new InsertTargetLocatorHelper.LocatorSpec
+            {
+                Codes = target.Codes,
+                InTableId = target.InTableId,
+                TableId = target.TableId,
+                ChartId = target.ChartId,
+                ImageId = target.ImageId
+            };
+            switch (target.Kind)
+            {
+                case LocatorKind.Table:
+                    spec.Kind = InsertTargetLocatorHelper.LocatorKind.Table;
+                    break;
+                case LocatorKind.Chart:
+                    spec.Kind = InsertTargetLocatorHelper.LocatorKind.Chart;
+                    break;
+                case LocatorKind.Image:
+                    spec.Kind = InsertTargetLocatorHelper.LocatorKind.Image;
+                    break;
+                case LocatorKind.DocumentStart:
+                    spec.Kind = InsertTargetLocatorHelper.LocatorKind.DocumentStart;
+                    break;
+                default:
+                    spec.Kind = InsertTargetLocatorHelper.LocatorKind.Sentence;
+                    break;
+            }
+
+            return spec;
         }
 
         /// <summary>
@@ -965,11 +970,10 @@ namespace WordAddIn1
             Word.Document doc,
             string sentenceNames,
             string newContent,
-            int? displayStartPosition = null,
-            string tableId = null,
-            TableScopeIndex tableScope = null,
-            Dictionary<string, object> formatSnapshot = null,
-            string formatMode = null)
+            string tableId,
+            Dictionary<string, object> formatSnapshot,
+            string formatMode,
+            bool disallowBackendApi)
         {
             var result = new ReplaceExecutionResult { Success = false, NewSentences = new List<string>() };
 
@@ -980,12 +984,6 @@ namespace WordAddIn1
                 if (string.IsNullOrEmpty(sentenceNames))
                 {
                     result.ErrorMessage = "缺少 original.codes";
-                    return result;
-                }
-
-                if (!displayStartPosition.HasValue)
-                {
-                    result.ErrorMessage = "缺少唯一定位结果";
                     return result;
                 }
 
@@ -1006,20 +1004,24 @@ namespace WordAddIn1
                 result.OriginalCodes = names;
                 FormatInheritHelper.DbgLog($"ExecuteReplace S_ count={names.Count} codes=[{string.Join(",", names)}]");
 
-                Word.Range targetRange = DisplayPositionRangeResolver.ResolveSpan(
+                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
                     doc,
-                    names,
-                    displayStartPosition.Value,
-                    tableId,
-                    tableScope,
-                    debugTag: "process_actions_replace");
-
-                if (targetRange == null)
+                    new InsertTargetLocatorHelper.LocatorSpec
+                    {
+                        Kind = InsertTargetLocatorHelper.LocatorKind.Sentence,
+                        Codes = sentenceNames,
+                        InTableId = tableId
+                    },
+                    InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
+                    disallowBackendApi);
+                if (!locate.Success || locate.Range == null)
                 {
-                    result.ErrorMessage = "未找到任何句子 Range";
-                    System.Diagnostics.Debug.WriteLine($"[替换操作] 未找到任何句子Range");
+                    result.ErrorMessage = locate.Error ?? "未找到任何句子 Range";
+                    System.Diagnostics.Debug.WriteLine($"[替换操作] {result.ErrorMessage}");
                     return result;
                 }
+
+                Word.Range targetRange = locate.Range;
 
                 string originalRangeText = targetRange.Text ?? "";
                 FormatInheritHelper.DbgLogRangeFonts("ExecuteReplace targetRange BEFORE Text=", targetRange);
@@ -1141,9 +1143,8 @@ namespace WordAddIn1
         private static DeleteExecutionResult ExecuteDeleteBySentenceNames(
             Word.Document doc,
             string sentenceNames,
-            int? displayStartPosition = null,
-            string tableId = null,
-            TableScopeIndex tableScope = null)
+            string tableId,
+            bool disallowBackendApi)
         {
             var result = new DeleteExecutionResult { Success = false };
 
@@ -1152,12 +1153,6 @@ namespace WordAddIn1
                 if (string.IsNullOrEmpty(sentenceNames))
                 {
                     result.ErrorMessage = "缺少 deletion.codes";
-                    return result;
-                }
-
-                if (!displayStartPosition.HasValue)
-                {
-                    result.ErrorMessage = "缺少唯一定位结果";
                     return result;
                 }
 
@@ -1177,20 +1172,24 @@ namespace WordAddIn1
 
                 result.AffectedCodes = names;
 
-                Word.Range targetRange = DisplayPositionRangeResolver.ResolveSpan(
+                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
                     doc,
-                    names,
-                    displayStartPosition.Value,
-                    tableId,
-                    tableScope,
-                    debugTag: "process_actions_delete");
-
-                if (targetRange == null)
+                    new InsertTargetLocatorHelper.LocatorSpec
+                    {
+                        Kind = InsertTargetLocatorHelper.LocatorKind.Sentence,
+                        Codes = sentenceNames,
+                        InTableId = tableId
+                    },
+                    InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
+                    disallowBackendApi);
+                if (!locate.Success || locate.Range == null)
                 {
-                    result.ErrorMessage = "未找到任何句子 Range";
-                    System.Diagnostics.Debug.WriteLine($"[删除操作] 未找到任何句子Range");
+                    result.ErrorMessage = locate.Error ?? "未找到任何句子 Range";
+                    System.Diagnostics.Debug.WriteLine($"[删除操作] {result.ErrorMessage}");
                     return result;
                 }
+
+                Word.Range targetRange = locate.Range;
 
                 int cursorPos = targetRange.Start;
                 targetRange.Delete();
@@ -1209,7 +1208,7 @@ namespace WordAddIn1
             }
         }
 
-        private static int GetInsertSortPosition(Word.Document doc, ParagraphAction action, TableScopeIndex tableScope)
+        private static int GetInsertSortPosition(Word.Document doc, ParagraphAction action, bool disallowBackendApi)
         {
             if (action?.TargetLocator == null)
             {
@@ -1221,30 +1220,35 @@ namespace WordAddIn1
                 return 0;
             }
 
-            if (action.TargetLocator.Kind == LocatorKind.Sentence)
+            try
             {
-                return GetSentencePositionInDocument(
+                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
                     doc,
-                    action.TargetLocator.Codes,
-                    action.ResolvedTargetDisplayStart,
-                    action.TargetLocator.InTableId,
-                    tableScope);
+                    ToFacadeSpec(action.TargetLocator),
+                    InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
+                    disallowBackendApi);
+                if (locate.Success && locate.Range != null)
+                {
+                    return locate.Range.Start;
+                }
+            }
+            catch
+            {
             }
 
             return int.MaxValue - 1;
         }
 
         /// <summary>
-        /// 按 target 定位后插入（仅后插）：句 Collapse(End)；表/图走 ObjectInsertRangeHelper；无 target 则光标处。
+        /// 按 target 定位后插入（仅后插）：门面 InsertAfter。
         /// </summary>
         private static InsertExecutionResult ExecuteInsert(
             Word.Document doc,
             LocatorSpec target,
             string insertContent,
-            int? targetDisplayStart = null,
-            TableScopeIndex tableScope = null,
-            Dictionary<string, object> formatSnapshot = null,
-            string formatMode = null)
+            Dictionary<string, object> formatSnapshot,
+            string formatMode,
+            bool disallowBackendApi)
         {
             var result = new InsertExecutionResult { Success = false, NewSentences = new List<string>() };
 
@@ -1256,75 +1260,24 @@ namespace WordAddIn1
                     return result;
                 }
 
-                Word.Range insertRange = null;
-
-                if (target == null)
-                {
-                    insertRange = doc.Application.Selection.Range;
-                    System.Diagnostics.Debug.WriteLine($"[ProcessActions][insert] 无 target，光标处插入");
-                }
-                else if (target.Kind == LocatorKind.DocumentStart)
-                {
-                    insertRange = InsertTargetLocatorHelper.RangeAtDocumentStart(doc);
-                    System.Diagnostics.Debug.WriteLine($"[ProcessActions][insert] position=start，正文最前插入");
-                }
-                else if (target.Kind == LocatorKind.Table)
-                {
-                    WordAddIn1.DocumentHost.HostProbe.Log(
-                        "insert-table-anchor",
-                        "tableId=" + (target.TableId ?? "(null)"));
-                    insertRange = ObjectInsertRangeHelper.FindRangeAfterTable(doc, target.TableId);
-                    WordAddIn1.DocumentHost.HostProbe.Log(
-                        "insert-table-range",
-                        insertRange == null
-                            ? "null"
-                            : ("start=" + insertRange.Start + " end=" + insertRange.End));
-                }
-                else if (target.Kind == LocatorKind.Chart)
-                {
-                    insertRange = ObjectInsertRangeHelper.FindRangeAfterChart(doc, target.ChartId);
-                }
-                else if (target.Kind == LocatorKind.Image)
-                {
-                    insertRange = ObjectInsertRangeHelper.FindRangeAfterImage(doc, target.ImageId);
-                }
-                else if (target.Kind == LocatorKind.Sentence)
-                {
-                    var names = target.Codes.Split(',').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
-                    if (names.Count == 0)
-                    {
-                        result.ErrorMessage = "target.codes 为空";
-                        return result;
-                    }
-
-                    if (!targetDisplayStart.HasValue)
-                    {
-                        result.ErrorMessage = "缺少 target 锚点唯一定位结果";
-                        return result;
-                    }
-
-                    Word.Range span = DisplayPositionRangeResolver.ResolveSpan(
-                        doc,
-                        names,
-                        targetDisplayStart.Value,
-                        target.InTableId,
-                        tableScope,
-                        debugTag: "process_actions_insert_target");
-                    if (span != null)
-                    {
-                        insertRange = span;
-                        insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
-                    }
-                }
-
-                if (insertRange == null)
+                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                    doc,
+                    ToFacadeSpec(target),
+                    InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
+                    disallowBackendApi);
+                if (!locate.Success || locate.Range == null)
                 {
                     WordAddIn1.DocumentHost.HostProbe.Log(
                         "insert-no-range",
-                        "kind=" + (target == null ? "cursor" : target.Kind.ToString()));
-                    result.ErrorMessage = "无法确定插入位置";
+                        "kind=" + (target == null ? "cursor" : target.Kind.ToString())
+                        + " err=" + (locate.Error ?? ""));
+                    result.ErrorMessage = locate.Error ?? "无法确定插入位置";
                     return result;
                 }
+
+                Word.Range insertRange = locate.Range;
+                System.Diagnostics.Debug.WriteLine(
+                    $"[ProcessActions][insert] 门面定位 usedCursor={locate.UsedCursor} kind={target?.Kind}");
 
                 List<string> insertSentences = SentenceSplitter.SplitForActionContent(insertContent);
                 if (insertSentences.Count == 0)
@@ -1793,7 +1746,8 @@ namespace WordAddIn1
             {
                 SnapshotRecord record = DocumentState.SnapshotHistory[i];
                 if (record.Index < postIndex
-                    && string.Equals(record.Source, "process_actions_step1", StringComparison.Ordinal))
+                    && (string.Equals(record.Source, "process_actions_step1", StringComparison.Ordinal)
+                        || string.Equals(record.Source, "locate", StringComparison.Ordinal)))
                 {
                     return record;
                 }

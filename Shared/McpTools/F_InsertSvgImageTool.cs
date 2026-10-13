@@ -56,19 +56,14 @@ namespace WordAddIn1
 
                     double? widthCm = TryParseWidthCm(args);
 
-                    try
-                    {
-                        WordReader.ReadWord(document);
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[InsertSvg] ReadWord 警告: {ex.Message}");
-                    }
-
-                    var locate = InsertTargetLocatorHelper.TryResolveInsertRange(document, args);
+                    var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                        document,
+                        args,
+                        InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
+                        docHandle.DisallowBackendApi);
                     if (!locate.Success)
                     {
-                        return Fail(locate.Error);
+                        return InsertTargetLocatorHelper.ToFailureResult(locate, "F_insert_svg_image");
                     }
 
                     var raster = await SvgWebView2Rasterizer.RasterizeAsync(

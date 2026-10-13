@@ -20,7 +20,8 @@ namespace WordAddIn1
             string kbDetailedSubtype,
             FormatSourceResolution source,
             string tableId = null,
-            Word.Document document = null)
+            Word.Document document = null,
+            bool disallowBackendApi = false)
         {
             string subtype = (kbDetailedSubtype ?? "").Trim();
             if (string.IsNullOrEmpty(subtype))
@@ -131,23 +132,37 @@ namespace WordAddIn1
             string fingerprint = FormatInheritHelper.BuildFingerprint(snapshot);
 
             var scopeArgs = new ApplyFormatScopeArgs { TableId = tableId };
-            AmbiguityCheckResult ambiguityResult = ApplyFormatAmbiguityHelper.RunPrecheck(
-                targetCodes,
-                scopeArgs,
-                "F_apply_source_format",
-                out TableScopeIndex tableScope,
-                out string cacheError);
-            if (cacheError != null)
+            var formatAnchors = new List<DocumentActionAmbiguityAnchor>
             {
-                return new ToolResult { Success = false, Error = cacheError };
+                new DocumentActionAmbiguityAnchor
+                {
+                    ActionIndex = 0,
+                    Field = "target_codes",
+                    Codes = string.Join(",", targetCodes),
+                    TableId = tableId
+                }
+            };
+            var precheck = InsertTargetLocatorHelper.TryPrecheckTargets(
+                doc,
+                formatAnchors,
+                disallowBackendApi,
+                InsertTargetLocatorHelper.LocatePrecheckStream.SentenceFormatApply,
+                scopeArgs,
+                "F_apply_source_format");
+            if (!precheck.Success)
+            {
+                if (precheck.Ambiguity != null && precheck.Ambiguity.HasBlockingError)
+                {
+                    return SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
+                        "F_apply_source_format",
+                        precheck.Ambiguity);
+                }
+
+                return new ToolResult { Success = false, Error = precheck.Error };
             }
 
-            if (ambiguityResult != null && ambiguityResult.HasBlockingError)
-            {
-                return SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
-                    "F_apply_source_format",
-                    ambiguityResult);
-            }
+            AmbiguityCheckResult ambiguityResult = precheck.Ambiguity;
+            TableScopeIndex tableScope = precheck.TableScope;
 
             var appliedCodes = new List<string>();
             var skippedCodes = new List<string>();
@@ -170,17 +185,16 @@ namespace WordAddIn1
             Word.Range targetSpan = null;
             if (skippedCodes.Count < targetCodes.Count)
             {
-                int targetDisplayStart = ApplyFormatAmbiguityHelper.GetDisplayStartAt(
-                    ambiguityResult, 0, "target_codes");
-                if (targetDisplayStart >= 0)
+                var spanLocate = InsertTargetLocatorHelper.TryResolveCodeSpan(
+                    doc,
+                    targetCodes,
+                    tableId,
+                    InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
+                    paragraph: false,
+                    disallowBackendApi);
+                if (spanLocate.Success)
                 {
-                    targetSpan = DisplayPositionRangeResolver.ResolveSpan(
-                        doc,
-                        targetCodes,
-                        targetDisplayStart,
-                        tableId,
-                        tableScope,
-                        debugTag: "apply_kb_format_span");
+                    targetSpan = spanLocate.Range;
                 }
 
                 if (targetSpan == null)

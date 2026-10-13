@@ -21,7 +21,8 @@ namespace WordAddIn1
             Dictionary<string, object> explicitParaFormat,
             FormatSourceResolution source,
             string tableId = null,
-            Word.Document document = null)
+            Word.Document document = null,
+            bool disallowBackendApi = false)
         {
             string cid = (clusterId ?? "").Trim();
             bool hasClusterId = !string.IsNullOrEmpty(cid);
@@ -150,23 +151,37 @@ namespace WordAddIn1
             }
 
             var scopeArgs = new ApplyFormatScopeArgs { TableId = tableId };
-            AmbiguityCheckResult ambiguityResult = ParagraphFormatAmbiguityHelper.RunPrecheck(
-                scopeArgs,
-                targetParagraphCodes,
-                "F_apply_source_paragraph_format",
-                out TableScopeIndex tableScope,
-                out string cacheError);
-            if (cacheError != null)
+            var formatAnchors = new List<DocumentActionAmbiguityAnchor>
             {
-                return new ToolResult { Success = false, Error = cacheError };
+                new DocumentActionAmbiguityAnchor
+                {
+                    ActionIndex = 0,
+                    Field = "target_paragraph_codes",
+                    Codes = string.Join(",", targetParagraphCodes),
+                    TableId = tableId
+                }
+            };
+            var precheck = InsertTargetLocatorHelper.TryPrecheckTargets(
+                doc,
+                formatAnchors,
+                disallowBackendApi,
+                InsertTargetLocatorHelper.LocatePrecheckStream.ParagraphFormatApply,
+                scopeArgs,
+                "F_apply_source_paragraph_format");
+            if (!precheck.Success)
+            {
+                if (precheck.Ambiguity != null && precheck.Ambiguity.HasBlockingError)
+                {
+                    return SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
+                        "F_apply_source_paragraph_format",
+                        precheck.Ambiguity);
+                }
+
+                return new ToolResult { Success = false, Error = precheck.Error };
             }
 
-            if (ambiguityResult != null && ambiguityResult.HasBlockingError)
-            {
-                return SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
-                    "F_apply_source_paragraph_format",
-                    ambiguityResult);
-            }
+            AmbiguityCheckResult ambiguityResult = precheck.Ambiguity;
+            TableScopeIndex tableScope = precheck.TableScope;
 
             var appliedParagraphCodes = new List<string>();
             var skippedParagraphCodes = new List<string>();
@@ -191,17 +206,16 @@ namespace WordAddIn1
             Word.Range targetSpan = null;
             if (skippedParagraphCodes.Count < targetParagraphCodes.Count)
             {
-                int targetDisplayStart = ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
-                    ambiguityResult, 0, "target_paragraph_codes");
-                if (targetDisplayStart >= 0)
+                var spanLocate = InsertTargetLocatorHelper.TryResolveCodeSpan(
+                    doc,
+                    targetParagraphCodes,
+                    tableId,
+                    InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
+                    paragraph: true,
+                    disallowBackendApi);
+                if (spanLocate.Success)
                 {
-                    targetSpan = DisplayPositionRangeResolver.ResolveParagraphSpan(
-                        doc,
-                        targetParagraphCodes,
-                        targetDisplayStart,
-                        tableId,
-                        tableScope,
-                        debugTag: "apply_kb_para_format_span");
+                    targetSpan = spanLocate.Range;
                 }
 
                 if (targetSpan == null)

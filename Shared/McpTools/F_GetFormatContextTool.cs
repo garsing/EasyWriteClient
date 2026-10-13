@@ -80,22 +80,33 @@ namespace WordAddIn1
                         string targetParagraphCodes = args["target_paragraph_codes"].ToString()?.Trim() ?? "";
                         var parsedParagraphTargets = FormatContextHelper.ParseParagraphCodes(targetParagraphCodes);
                         ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
-                        AmbiguityCheckResult precheck = ParagraphFormatAmbiguityHelper.RunContextReadPrecheck(
-                            parsedParagraphTargets,
+                        var paraAnchors = new List<DocumentActionAmbiguityAnchor>
+                        {
+                            new DocumentActionAmbiguityAnchor
+                            {
+                                ActionIndex = 0,
+                                Field = "target_paragraph_codes",
+                                Codes = string.Join(",", parsedParagraphTargets),
+                                TableId = scopeArgs.TableId
+                            }
+                        };
+                        var paraPrecheck = InsertTargetLocatorHelper.TryPrecheckTargets(
+                            doc,
+                            paraAnchors,
+                            docHandle.DisallowBackendApi,
+                            InsertTargetLocatorHelper.LocatePrecheckStream.ParagraphFormatContext,
                             scopeArgs,
-                            "F_get_format_context",
-                            out TableScopeIndex tableScope,
-                            out string cacheError);
-                        if (cacheError != null)
+                            "F_get_format_context");
+                        if (!paraPrecheck.Success)
                         {
-                            return Task.FromResult(new ToolResult { Success = false, Error = cacheError });
-                        }
+                            if (paraPrecheck.Ambiguity != null && paraPrecheck.Ambiguity.HasBlockingError)
+                            {
+                                return Task.FromResult(SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
+                                    "F_get_format_context",
+                                    paraPrecheck.Ambiguity));
+                            }
 
-                        if (precheck != null && precheck.HasBlockingError)
-                        {
-                            return Task.FromResult(SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
-                                "F_get_format_context",
-                                precheck));
+                            return Task.FromResult(new ToolResult { Success = false, Error = paraPrecheck.Error });
                         }
 
                         built = FormatContextHelper.BuildParagraphContext(
@@ -103,30 +114,42 @@ namespace WordAddIn1
                             targetParagraphCodes,
                             contextWindow,
                             scopeArgs.TableId,
-                            tableScope,
-                            precheck);
+                            paraPrecheck.TableScope,
+                            paraPrecheck.Ambiguity,
+                            docHandle.DisallowBackendApi);
                     }
                     else
                     {
                         string targetCodes = args["target_codes"].ToString()?.Trim() ?? "";
                         var parsedTargets = FormatContextHelper.ParseSentenceCodes(targetCodes);
                         ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
-                        AmbiguityCheckResult precheck = ApplyFormatAmbiguityHelper.RunContextReadPrecheck(
-                            parsedTargets,
+                        var sentAnchors = new List<DocumentActionAmbiguityAnchor>
+                        {
+                            new DocumentActionAmbiguityAnchor
+                            {
+                                ActionIndex = 0,
+                                Field = "target_codes",
+                                Codes = string.Join(",", parsedTargets),
+                                TableId = scopeArgs.TableId
+                            }
+                        };
+                        var sentPrecheck = InsertTargetLocatorHelper.TryPrecheckTargets(
+                            doc,
+                            sentAnchors,
+                            docHandle.DisallowBackendApi,
+                            InsertTargetLocatorHelper.LocatePrecheckStream.SentenceFormatContext,
                             scopeArgs,
-                            "F_get_format_context",
-                            out TableScopeIndex tableScope,
-                            out string cacheError);
-                        if (cacheError != null)
+                            "F_get_format_context");
+                        if (!sentPrecheck.Success)
                         {
-                            return Task.FromResult(new ToolResult { Success = false, Error = cacheError });
-                        }
+                            if (sentPrecheck.Ambiguity != null && sentPrecheck.Ambiguity.HasBlockingError)
+                            {
+                                return Task.FromResult(SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
+                                    "F_get_format_context",
+                                    sentPrecheck.Ambiguity));
+                            }
 
-                        if (precheck != null && precheck.HasBlockingError)
-                        {
-                            return Task.FromResult(SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
-                                "F_get_format_context",
-                                precheck));
+                            return Task.FromResult(new ToolResult { Success = false, Error = sentPrecheck.Error });
                         }
 
                         built = FormatContextHelper.BuildContext(
@@ -134,8 +157,9 @@ namespace WordAddIn1
                             targetCodes,
                             contextWindow,
                             scopeArgs.TableId,
-                            tableScope,
-                            precheck);
+                            sentPrecheck.TableScope,
+                            sentPrecheck.Ambiguity,
+                            docHandle.DisallowBackendApi);
                     }
 
                     if (!built.Success)

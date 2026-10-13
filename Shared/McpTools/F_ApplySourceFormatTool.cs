@@ -56,7 +56,8 @@ namespace WordAddIn1
                         kbDetailedSubtype,
                         source,
                         tableId,
-                        doc);
+                        doc,
+                        docHandle.DisallowBackendApi);
                 }
                 catch (Exception ex)
                 {

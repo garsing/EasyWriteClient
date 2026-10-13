@@ -56,13 +56,6 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_apply_document_format] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
-                    string mappingError = FormatContextHelper.RefreshMapping(
-                        doc, "apply_document_format", docHandle.DisallowBackendApi);
-                    if (mappingError != null)
-                    {
-                        return Done(false, mappingError);
-                    }
-
                     string validationError = ValidateModeArgs(args, out string mode,
                         out Dictionary<string, object> charFormat, out Dictionary<string, object> paraFormat);
                     if (validationError != null)
@@ -80,39 +73,39 @@ namespace WordAddIn1
                     }
 
                     ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
-                    AmbiguityCheckResult ambiguityResult;
-                    TableScopeIndex tableScope;
-                    string cacheError;
-                    if (paragraphMode)
+                    var formatAnchors = new List<DocumentActionAmbiguityAnchor>
                     {
-                        ambiguityResult = ParagraphFormatAmbiguityHelper.RunPrecheck(
-                            scopeArgs,
-                            targetCodes,
-                            "F_apply_document_format",
-                            out tableScope,
-                            out cacheError);
-                    }
-                    else
+                        new DocumentActionAmbiguityAnchor
+                        {
+                            ActionIndex = 0,
+                            Field = paragraphMode ? "target_paragraph_codes" : "target_codes",
+                            Codes = string.Join(",", targetCodes),
+                            TableId = scopeArgs.TableId
+                        }
+                    };
+                    var precheck = InsertTargetLocatorHelper.TryPrecheckTargets(
+                        doc,
+                        formatAnchors,
+                        docHandle.DisallowBackendApi,
+                        paragraphMode
+                            ? InsertTargetLocatorHelper.LocatePrecheckStream.ParagraphFormatApply
+                            : InsertTargetLocatorHelper.LocatePrecheckStream.SentenceFormatApply,
+                        scopeArgs,
+                        "F_apply_document_format");
+                    if (!precheck.Success)
                     {
-                        ambiguityResult = ApplyFormatAmbiguityHelper.RunPrecheck(
-                            targetCodes,
-                            scopeArgs,
-                            "F_apply_document_format",
-                            out tableScope,
-                            out cacheError);
+                        if (precheck.Ambiguity != null && precheck.Ambiguity.HasBlockingError)
+                        {
+                            return Task.FromResult(SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
+                                "F_apply_document_format",
+                                precheck.Ambiguity));
+                        }
+
+                        return Done(false, precheck.Error);
                     }
 
-                    if (cacheError != null)
-                    {
-                        return Done(false, cacheError);
-                    }
-
-                    if (ambiguityResult != null && ambiguityResult.HasBlockingError)
-                    {
-                        return Task.FromResult(SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
-                            "F_apply_document_format",
-                            ambiguityResult));
-                    }
+                    AmbiguityCheckResult ambiguityResult = precheck.Ambiguity;
+                    TableScopeIndex tableScope = precheck.TableScope;
                     Dictionary<string, object> snapshot;
                     string responseMode;
                     List<string> explicitFieldsApplied = null;
@@ -166,29 +159,16 @@ namespace WordAddIn1
                     Word.Range targetSpan = null;
                     if (skippedCodes.Count < targetCodes.Count)
                     {
-                        string startField = paragraphMode ? "target_paragraph_codes" : "target_codes";
-                        int targetDisplayStart = paragraphMode
-                            ? ParagraphFormatAmbiguityHelper.GetDisplayStartAt(
-                                ambiguityResult, 0, startField)
-                            : ApplyFormatAmbiguityHelper.GetDisplayStartAt(
-                                ambiguityResult, 0, startField);
-                        if (targetDisplayStart >= 0)
+                        var spanLocate = InsertTargetLocatorHelper.TryResolveCodeSpan(
+                            doc,
+                            targetCodes,
+                            scopeArgs.TableId,
+                            InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
+                            paragraphMode,
+                            docHandle.DisallowBackendApi);
+                        if (spanLocate.Success)
                         {
-                            targetSpan = paragraphMode
-                                ? DisplayPositionRangeResolver.ResolveParagraphSpan(
-                                    doc,
-                                    targetCodes,
-                                    targetDisplayStart,
-                                    scopeArgs.TableId,
-                                    tableScope,
-                                    debugTag: "apply_para_char_span")
-                                : DisplayPositionRangeResolver.ResolveSpan(
-                                    doc,
-                                    targetCodes,
-                                    targetDisplayStart,
-                                    scopeArgs.TableId,
-                                    tableScope,
-                                    debugTag: "apply_target_span");
+                            targetSpan = spanLocate.Range;
                         }
 
                         if (targetSpan == null)
