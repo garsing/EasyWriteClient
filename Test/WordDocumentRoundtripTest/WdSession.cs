@@ -236,6 +236,27 @@ namespace WordDocumentRoundtripTest
                 args ?? new Dictionary<string, object>());
         }
 
+        public ToolResult InsertImage(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_insert_image",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult InsertSvgImage(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_insert_svg_image",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult CapturePageImage(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_capture_document_page_image",
+                args ?? new Dictionary<string, object>());
+        }
+
         public bool ActivateDoc(string fullPath)
         {
             return IsWps

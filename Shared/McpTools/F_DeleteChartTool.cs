@@ -96,6 +96,8 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = $"删除图表失败：{ex.Message}" };
                     }
 
+                    DocumentState.RetireChartId(chartId);
+
                     try
                     {
                         WordReader.ReadWord(document);

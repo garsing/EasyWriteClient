@@ -144,8 +144,12 @@ namespace WordDocumentRoundtripTest
                 && caseFilter.StartsWith("wt-", StringComparison.OrdinalIgnoreCase);
             bool runChart = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
                 && caseFilter.StartsWith("wh-", StringComparison.OrdinalIgnoreCase);
-            bool runContent = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
+            bool runImage = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
                 && !runChart
+                && (caseFilter.StartsWith("wi-", StringComparison.OrdinalIgnoreCase)
+                    || caseFilter.StartsWith("wp-", StringComparison.OrdinalIgnoreCase));
+            bool runContent = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
+                && !runChart && !runImage
                 && caseFilter.StartsWith("wc-", StringComparison.OrdinalIgnoreCase);
 
             if (runFindStale)
@@ -176,6 +180,10 @@ namespace WordDocumentRoundtripTest
             {
                 Console.WriteLine("文字 图表（wh-）");
             }
+            else if (runImage)
+            {
+                Console.WriteLine("文字 插图与页图（wi-/wp-）");
+            }
             else
             {
                 Console.WriteLine(runContent ? "文字 读编码（wc-）" : "文字 打开 + 页数（wd-）");
@@ -185,9 +193,9 @@ namespace WordDocumentRoundtripTest
             Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
             Console.WriteLine();
 
-            if (!runFindStale && !DesktopToolPipe.TryWaitUntilAvailable(8000))
+            if (!runFindStale && !DesktopLauncher.EnsureAvailable())
             {
-                Console.WriteLine("连不上易写 Desktop。请先打开易写应用（需含 DesktopTools 管道的新版本），再跑本套。");
+                Console.WriteLine("连不上易写 Desktop（已尝试自动拉起）。请手动打开易写应用，再跑本套。");
                 return 1;
             }
 
@@ -212,7 +220,7 @@ namespace WordDocumentRoundtripTest
                                         ? WtCases.Target
                                         : (runChart
                                             ? WhCases.Target
-                                            : (runContent ? WcCases.Target : 30)))))))
+                                            : (runImage ? WiCases.Target : (runContent ? WcCases.Target : 30))))))))
             };
             var sw = Stopwatch.StartNew();
             try
@@ -245,6 +253,10 @@ namespace WordDocumentRoundtripTest
                 {
                     WhCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore, GetArg(args, "--wh-part="));
                 }
+                else if (runImage)
+                {
+                    WiCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+                }
                 else if (runContent)
                 {
                     WcCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
@@ -269,11 +281,11 @@ namespace WordDocumentRoundtripTest
                             ? WfCases.Target
                             : (runFormat
                                 ? WgCases.Target
-                                : (runTable
-                                    ? WtCases.Target
-                                    : (runChart
-                                        ? WhCases.Target
-                                        : (runContent ? WcCases.Target : 30)))))));
+                                    : (runTable
+                                        ? WtCases.Target
+                                        : (runChart
+                                            ? WhCases.Target
+                                            : (runImage ? WiCases.Target : (runContent ? WcCases.Target : 30))))))));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed

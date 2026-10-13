@@ -44,7 +44,7 @@ namespace WordAddIn1
             }
         }
 
-        public static List<string> CollectTaggedXml(object document)
+        public static List<string> CollectTaggedXml(object document, IReadOnlyList<string> prevChartOrder = null)
         {
             var tagged = new List<string>();
             if (document == null)
@@ -58,7 +58,9 @@ namespace WordAddIn1
             found.Sort((a, b) => a.Start.CompareTo(b.Start));
 
             Log("shapes=" + found.Count);
-            var occupied = new HashSet<string>(StringComparer.Ordinal);
+            var raws = new List<string>();
+            var bodies = new List<string>();
+            var starts = new List<int>();
             foreach (var item in found)
             {
                 string raw = ExtractDataTableXml(item.Chart);
@@ -67,11 +69,17 @@ namespace WordAddIn1
                     raw = EmptyChartXml();
                 }
 
-                string body = ExtractChartBodyContent(raw);
-                string chartId = DocumentState.FindOrCreateChartId(body, occupied);
-                occupied.Add(chartId);
-                tagged.Add(BuildChartXmlWithId(chartId, raw));
-                Log("tagged " + chartId + " start=" + item.Start);
+                raws.Add(raw);
+                bodies.Add(ExtractChartBodyContent(raw));
+                starts.Add(item.Start);
+            }
+
+            List<string> chartIds = DocumentState.AssignChartIdsForRead(bodies, prevChartOrder);
+            for (int i = 0; i < raws.Count; i++)
+            {
+                string chartId = i < chartIds.Count ? chartIds[i] : "";
+                tagged.Add(BuildChartXmlWithId(chartId, raws[i]));
+                Log("tagged " + chartId + " start=" + starts[i]);
             }
 
             return tagged;

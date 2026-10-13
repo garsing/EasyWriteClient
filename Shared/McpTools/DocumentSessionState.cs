@@ -23,6 +23,10 @@ namespace WordAddIn1
 
         public List<string> ChartIdOrder { get; } = new List<string>();
 
+        /// <summary>已删的 C_，读文时不得按哈希复活。</summary>
+        public HashSet<string> RetiredChartIds { get; } =
+            new HashSet<string>(StringComparer.Ordinal);
+
         /// <summary>[图片编号 I_, 最终材料哈希, meta 原文, salt_k]（按实例唯一，每次读文重建）</summary>
         public List<List<string>> ImageIdMapping { get; } = new List<List<string>>();
 

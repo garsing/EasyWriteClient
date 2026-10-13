@@ -1225,7 +1225,7 @@ namespace WordDocumentRoundtripTest
             ExpectFail(run, "wh-c2-n-not-xml",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml("not-xml"))), "XML");
             ExpectFail(run, "wh-c2-n-dir",
-                s.CreateChartFromXml(CreateArgs(null, Path.GetTempPath().TrimEnd('\\'))), "失败");
+                s.CreateChartFromXml(CreateArgs(null, Path.GetTempPath().TrimEnd('\\'))), "不存在");
             ExpectFail(run, "wh-c2-n-type-pad",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml(" column_clustered ", TitleA, V1, R3)))), "无效");
             ExpectFail(run, "wh-c2-n-row-empty",

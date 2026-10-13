@@ -23,7 +23,7 @@ namespace WordAddIn1
         private static string _activeDocUuid = "";
 
         /// <summary>递增后清空 ProcessDocument 会话缓存（指纹算法或缓存条目结构变更时）。</summary>
-        public const int FingerprintVersion = 8;
+        public const int FingerprintVersion = 9;
 
         /// <summary>当前活动文档分片；无绑定时为临时空分片（不写回 SessionsByUuid）。</summary>
         private static DocumentSessionState Session
@@ -675,6 +675,7 @@ namespace WordAddIn1
         /// <summary>
         /// 按 DataTable 哈希发 <c>C_</c>。同文第二张相同数据走 <c>|#k</c>（与 <c>I_</c> 同），
         /// 令序表一张图一个号。token 只留字母数字，避免 Base64 的 <c>/</c> 进编号。
+        /// 已删的号不按哈希复活。
         /// </summary>
         public static string FindOrCreateChartId(string chartBodyContent, HashSet<string> occupiedInThisRead)
         {
@@ -686,6 +687,7 @@ namespace WordAddIn1
                 string contentHash = GenerateContentHash(material);
                 string existing = FindChartIdByHash(contentHash);
                 if (!string.IsNullOrEmpty(existing)
+                    && !IsRetiredChartId(existing)
                     && (occupiedInThisRead == null || !occupiedInThisRead.Contains(existing)))
                 {
                     return existing;
@@ -694,6 +696,13 @@ namespace WordAddIn1
                 if (string.IsNullOrEmpty(existing))
                 {
                     string chartId = MintChartId(contentHash);
+                    if (IsRetiredChartId(chartId)
+                        || (occupiedInThisRead != null && occupiedInThisRead.Contains(chartId)))
+                    {
+                        k++;
+                        continue;
+                    }
+
                     Session.ChartIdMapping.Add(new List<string> { chartId, contentHash, material });
                     return chartId;
                 }
@@ -702,6 +711,97 @@ namespace WordAddIn1
             }
 
             return MintChartId(GenerateContentHash(normalizedContent + "|#overflow"));
+        }
+
+        /// <summary>读文前拍下序表。ClearChartIdOrder 之后仍按这张表钉号。</summary>
+        public static List<string> CaptureChartOrderBeforeRead()
+        {
+            return GetChartIdOrder();
+        }
+
+        /// <summary>
+        /// 号当钥匙、位置靠 display 序。张数不变则按序钉死并更新哈希（套数据不换号）；
+        /// 张数变少则把未删的号按相对序留给还在的图（删兄不偷弟号）。
+        /// </summary>
+        public static List<string> AssignChartIdsForRead(IList<string> bodies, IReadOnlyList<string> prevOrder)
+        {
+            var ids = new List<string>();
+            int n = bodies == null ? 0 : bodies.Count;
+            int prevN = prevOrder == null ? 0 : prevOrder.Count;
+
+            if (n > 0 && prevN == n)
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    string id = prevOrder[i];
+                    RebindChartId(id, bodies[i]);
+                    ids.Add(id);
+                }
+
+                return ids;
+            }
+
+            if (n > 0 && prevN > n)
+            {
+                var survivors = new List<string>();
+                for (int i = 0; i < prevN; i++)
+                {
+                    string id = prevOrder[i];
+                    if (!IsRetiredChartId(id))
+                    {
+                        survivors.Add(id);
+                    }
+                }
+
+                if (survivors.Count == n)
+                {
+                    for (int i = 0; i < n; i++)
+                    {
+                        RebindChartId(survivors[i], bodies[i]);
+                        ids.Add(survivors[i]);
+                    }
+
+                    return ids;
+                }
+            }
+
+            var occupied = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < n; i++)
+            {
+                string id = FindOrCreateChartId(bodies[i], occupied);
+                occupied.Add(id);
+                ids.Add(id);
+            }
+
+            return ids;
+        }
+
+        public static void RetireChartId(string chartId)
+        {
+            if (string.IsNullOrEmpty(chartId))
+            {
+                return;
+            }
+
+            Session.RetiredChartIds.Add(chartId);
+            for (int i = Session.ChartIdMapping.Count - 1; i >= 0; i--)
+            {
+                var mapping = Session.ChartIdMapping[i];
+                if (mapping != null && mapping.Count > 0 && mapping[0] == chartId)
+                {
+                    Session.ChartIdMapping.RemoveAt(i);
+                }
+            }
+        }
+
+        public static bool IsRetiredChartId(string chartId)
+        {
+            return !string.IsNullOrEmpty(chartId) && Session.RetiredChartIds.Contains(chartId);
+        }
+
+        public static void ClearRetiredChartIds()
+        {
+            Session.RetiredChartIds.Clear();
         }
 
         /// <summary>套数据后把新 DataTable 绑回已发出的 <c>C_</c>，避免下一轮 ReadWord 换号。</summary>
@@ -885,6 +985,7 @@ namespace WordAddIn1
         public static void SetChartIdMappingSnapshot(List<List<string>> mappingSnapshot)
         {
             Session.ChartIdMapping.Clear();
+            Session.RetiredChartIds.Clear();
             if (mappingSnapshot == null)
             {
                 return;

@@ -115,6 +115,7 @@ namespace WordAddIn1
             try
             {
                 // 每次运行都清空表格/图表/图片顺序表，重新生成当前文档的顺序
+                List<string> prevChartOrder = DocumentState.CaptureChartOrderBeforeRead();
                 DocumentState.ClearTableIdOrder();
                 DocumentState.ClearChartIdOrder();
                 DocumentState.ClearImageIdOrder();
@@ -148,7 +149,7 @@ namespace WordAddIn1
                 string pathForImages = null;
 
                 // 图表走 COM 预提取，OOXML 遍历时按 chart drawing 顺序消费
-                _chartOrderedEntries = ExtractAllChartsOrdered(document);
+                _chartOrderedEntries = ExtractAllChartsOrdered(document, prevChartOrder);
                 _chartConsumeIndex = 0;
 
                 if (extractImages)
@@ -369,12 +370,14 @@ namespace WordAddIn1
             }
         }
 
-        private static List<ChartOrderedEntry> ExtractAllChartsOrdered(Word.Document document)
+        private static List<ChartOrderedEntry> ExtractAllChartsOrdered(
+            Word.Document document,
+            IReadOnlyList<string> prevChartOrder)
         {
             if (WpsChartExtract.IsWpsDocument(document))
             {
                 var wps = new List<ChartOrderedEntry>();
-                foreach (string tagged in WpsChartExtract.CollectTaggedXml(document))
+                foreach (string tagged in WpsChartExtract.CollectTaggedXml(document, prevChartOrder))
                 {
                     if (!string.IsNullOrEmpty(tagged))
                     {
@@ -414,7 +417,9 @@ namespace WordAddIn1
             orderedShapes.Sort((a, b) => a.Start.CompareTo(b.Start));
 
             var result = new List<ChartOrderedEntry>();
-            var occupied = new HashSet<string>(StringComparer.Ordinal);
+            var raws = new List<string>();
+            var bodies = new List<string>();
+            var starts = new List<int>();
             foreach (var item in orderedShapes)
             {
                 string rawXml = ExtractChartSeriesCollection(item.Chart);
@@ -423,12 +428,17 @@ namespace WordAddIn1
                     continue;
                 }
 
-                string bodyContent = ExtractChartBodyContent(rawXml);
-                string chartId = DocumentState.FindOrCreateChartId(bodyContent, occupied);
-                occupied.Add(chartId);
-                string taggedXml = BuildChartXmlWithId(chartId, rawXml);
-                result.Add(new ChartOrderedEntry { TaggedXml = taggedXml });
-                LogExtractVerbose($"[ChartId] 预提取 chart_id={chartId}，Range.Start={item.Start}");
+                raws.Add(rawXml);
+                bodies.Add(ExtractChartBodyContent(rawXml));
+                starts.Add(item.Start);
+            }
+
+            List<string> chartIds = DocumentState.AssignChartIdsForRead(bodies, prevChartOrder);
+            for (int i = 0; i < raws.Count; i++)
+            {
+                string chartId = i < chartIds.Count ? chartIds[i] : "";
+                result.Add(new ChartOrderedEntry { TaggedXml = BuildChartXmlWithId(chartId, raws[i]) });
+                LogExtractVerbose($"[ChartId] 预提取 chart_id={chartId}，Range.Start={starts[i]}");
             }
 
             LogExtractVerbose($"[WordReader] 共预提取 {result.Count} 个图表（有序）");
