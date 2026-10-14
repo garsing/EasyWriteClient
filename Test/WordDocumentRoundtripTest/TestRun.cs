@@ -17,6 +17,14 @@ namespace WordDocumentRoundtripTest
                 : "?";
         }
 
+        public void NotePassed(int count)
+        {
+            if (count > 0)
+            {
+                CasesPassed += count;
+            }
+        }
+
         public void CaseOk(string name)
         {
             CasesPassed++;

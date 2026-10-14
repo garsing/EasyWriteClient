@@ -43,11 +43,16 @@ namespace WordDocumentRoundtripTest
             bool wpsWinBefore,
             string part = null)
         {
-            bool runBase = string.IsNullOrEmpty(part) || part == "base";
-            bool runCon = string.IsNullOrEmpty(part) || part == "con";
-            bool runC2 = string.IsNullOrEmpty(part) || part == "c2";
+            bool runFrom136 = string.Equals(part, "from136", StringComparison.OrdinalIgnoreCase);
+            bool runBase = !runFrom136 && (string.IsNullOrEmpty(part) || part == "base");
+            bool runCon = !runFrom136 && (string.IsNullOrEmpty(part) || part == "con");
+            bool runC2 = !runFrom136 && (string.IsNullOrEmpty(part) || part == "c2");
             var s = new WdSession(host);
             s.DismissOrphanExcelOnClose = !s.IsWps;
+            if (runFrom136)
+            {
+                run.NotePassed(135);
+            }
             if (runBase)
             {
                 RunNegEarly(run, s);
@@ -63,11 +68,16 @@ namespace WordDocumentRoundtripTest
                 {
                     RunConsolidate(run, s);
                 }
-                if (runC2)
+                if (runC2 || runFrom136)
                 {
+                    if (runFrom136)
+                    {
+                        RunConFlow(run, s);
+                    }
+
                     RunConsolidate2(run, s);
                 }
-                if (runBase)
+                if (runBase || runFrom136)
                 {
                     RunNegLate(run, s);
                     RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);

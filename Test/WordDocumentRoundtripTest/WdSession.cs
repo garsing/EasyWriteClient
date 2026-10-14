@@ -1093,13 +1093,12 @@ namespace WordDocumentRoundtripTest
         /// </summary>
         public static int DismissOrphanExcel()
         {
-            int n = 0;
-            if (!HasUserExcelWindow())
+            int n = KillWindowlessExcel();
+            if (!HasUserExcelWindow() && HasLiveExcelProcess())
             {
                 n += QuitEmptyExcelApps();
             }
 
-            n += KillWindowlessExcel();
             return n;
         }
 
@@ -1156,6 +1155,32 @@ namespace WordDocumentRoundtripTest
         }
 
         /// <summary>标题含 xlsx/工作簿/BookN 视为用户 Excel。光秃「Excel」是图表数据窗，不算。</summary>
+        private static bool HasLiveExcelProcess()
+        {
+            try
+            {
+                foreach (Process p in Process.GetProcessesByName("EXCEL"))
+                {
+                    try
+                    {
+                        if (p.WorkingSet64 > 1024 * 1024)
+                        {
+                            return true;
+                        }
+                    }
+                    finally
+                    {
+                        p.Dispose();
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
         private static bool HasUserExcelWindow()
         {
             try
