@@ -89,7 +89,15 @@ namespace WordAddIn1
                 chartEl.Add(new XElement("YAxisMajorUnit", chart.YAxisMajorUnit));
             }
 
-            AppendElementIfNotEmpty(chartEl, "DataLabelType", chart.DataLabelType);
+            if (chart.ShowValue.HasValue)
+            {
+                chartEl.Add(new XElement("ShowValue", chart.ShowValue.Value ? "true" : "false"));
+            }
+
+            if (chart.ShowPercentage.HasValue)
+            {
+                chartEl.Add(new XElement("ShowPercentage", chart.ShowPercentage.Value ? "true" : "false"));
+            }
             if (chart.Explosion > 0)
             {
                 chartEl.Add(new XElement("Explosion", chart.Explosion));
@@ -144,7 +152,7 @@ namespace WordAddIn1
                 var col = new XElement(
                     "Column",
                     new XAttribute("type", "value"),
-                    new XAttribute("axisY", string.IsNullOrEmpty(series.AxisY) ? "primary" : series.AxisY));
+                    new XAttribute("axisY", string.IsNullOrEmpty(series.AxisY) ? ChartConfigSyntax.AxisYPrimary : series.AxisY));
 
                 if (!string.IsNullOrEmpty(series.Color))
                 {

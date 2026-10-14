@@ -29,14 +29,9 @@ namespace WordAddIn1
                 {
                     errors.Add("Chart.Type字段为空或缺失");
                 }
-                else
+                else if (!ChartConfigSyntax.TryCanonicalType(config.Chart.Type, out _, out string typeError))
                 {
-                    // 验证图表类型
-                    string[] validTypes = { "column_clustered", "line", "pie3d" };
-                    if (!validTypes.Contains(config.Chart.Type))
-                    {
-                        errors.Add($"Chart.Type值无效: '{config.Chart.Type}'，有效值为: {string.Join(", ", validTypes)}");
-                    }
+                    errors.Add(typeError);
                 }
 
                 // 标题现在是可选的，不再验证
@@ -72,9 +67,14 @@ namespace WordAddIn1
                         }
 
                         // 验证AxisY属性
-                        if (!string.IsNullOrEmpty(series.AxisY) && series.AxisY != "primary" && series.AxisY != "secondary")
+                        if (!ChartConfigSyntax.TryCanonicalAxisY(series.AxisY, out _, out string axisError))
                         {
-                            errors.Add($"SeriesCollection第{i + 1}个Series的AxisY属性无效: '{series.AxisY}'，有效值为: primary, secondary");
+                            errors.Add($"SeriesCollection第{i + 1}个Series的{axisError}");
+                        }
+
+                        if (!ChartConfigSyntax.TryCanonicalOptionalType(series.ChartType, out _, out string seriesTypeError))
+                        {
+                            errors.Add($"SeriesCollection第{i + 1}个Series的{seriesTypeError}");
                         }
 
                         // 验证Points
@@ -326,32 +326,7 @@ namespace WordAddIn1
                     }
                 }
 
-                // 设置图例位置（默认放在顶部）
-                try
-                {
-                    chart.HasLegend = true;
-                    string legendPosition = !string.IsNullOrEmpty(config.Chart.LegendPosition) 
-                        ? config.Chart.LegendPosition 
-                        : "top"; // 默认图例位置为顶部
-                    chart.Legend.Position = (Word.XlLegendPosition)ChartEngine.GetLegendPosition(legendPosition);
-                    
-                    // 设置图例字体大小（默认8号）
-                    try
-                    {
-                        chart.Legend.Font.Size = 8;
-                        System.Diagnostics.Debug.WriteLine("[DEBUG] 已设置图例字体大小为8号");
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 设置图例字体大小失败: {ex.Message}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    string errorMsg = $"设置图例位置失败: {ex.Message}";
-                    errors.Add(errorMsg);
-                    System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
-                }
+                ChartEngine.ApplyLegend(chart, config.Chart.LegendPosition, errors);
 
                 // 设置网格线（默认显示虚线主要网格线）
                 if (!string.IsNullOrEmpty(config.Chart.Gridlines))

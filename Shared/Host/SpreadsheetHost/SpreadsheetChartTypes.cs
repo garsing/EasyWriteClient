@@ -441,6 +441,11 @@ namespace WordAddIn1.SpreadsheetHost
                 return false;
             }
 
+            if (!ChartConfigSyntax.TryForbiddenExtra(chartEl, out error))
+            {
+                return false;
+            }
+
             chartName = Attr(chartEl, "name");
             if (string.IsNullOrEmpty(chartName))
             {
@@ -468,7 +473,6 @@ namespace WordAddIn1.SpreadsheetHost
                 YAxisMin = ParseDouble(El(chartEl, "YAxisMin")),
                 YAxisMax = ParseDouble(El(chartEl, "YAxisMax")),
                 YAxisMajorUnit = ParseDouble(El(chartEl, "YAxisMajorUnit")),
-                DataLabelType = El(chartEl, "DataLabelType") ?? "",
                 Explosion = ParseInt(El(chartEl, "Explosion")),
                 FillMissingValues = true,
                 SeriesCollection = new List<SeriesInfo>()
@@ -637,6 +641,37 @@ namespace WordAddIn1.SpreadsheetHost
                 return false;
             }
 
+            if (!ChartConfigSyntax.TryCanonicalOptionalType(format.Type, out string canonType, out error))
+            {
+                return false;
+            }
+
+            format.Type = canonType;
+            if (!ChartConfigSyntax.TryCanonicalGridlines(format.Gridlines, out string canonGrid, out error))
+            {
+                return false;
+            }
+
+            format.Gridlines = canonGrid;
+            if (!ChartConfigSyntax.TryCanonicalLegend(format.LegendPosition, out string canonLegend, out error))
+            {
+                return false;
+            }
+
+            format.LegendPosition = canonLegend;
+            if (!ChartConfigSyntax.TryParseOptionalBool(chartEl, "ShowValue", out bool? showValue, out error))
+            {
+                return false;
+            }
+
+            if (!ChartConfigSyntax.TryParseOptionalBool(chartEl, "ShowPercentage", out bool? showPercentage, out error))
+            {
+                return false;
+            }
+
+            format.ShowValue = showValue;
+            format.ShowPercentage = showPercentage;
+
             if (!string.IsNullOrWhiteSpace(format.Type)
                 && !TryMapChartType(format.Type, out _, out string typeError))
             {
@@ -657,26 +692,13 @@ namespace WordAddIn1.SpreadsheetHost
         {
             xlType = Excel.XlChartType.xlColumnClustered;
             error = null;
-            string t = (type ?? "").Trim().ToLowerInvariant();
-            switch (t)
+            if (!ChartConfigSyntax.TryCanonicalType(type, out string canon, out error))
             {
-                case "column":
-                case "column_clustered":
-                    xlType = Excel.XlChartType.xlColumnClustered;
-                    return true;
-                case "line":
-                    xlType = Excel.XlChartType.xlLine;
-                    return true;
-                case "pie":
-                    xlType = Excel.XlChartType.xlPie;
-                    return true;
-                case "pie3d":
-                    xlType = Excel.XlChartType.xl3DPie;
-                    return true;
-                default:
-                    error = "未知图表类型: " + type + "（支持 column_clustered|line|pie|pie3d，column 为别名）";
-                    return false;
+                return false;
             }
+
+            xlType = ChartEngine.GetChartType(canon);
+            return true;
         }
 
         public static string ChartTypeToWire(Excel.XlChartType xlType)
@@ -690,7 +712,7 @@ namespace WordAddIn1.SpreadsheetHost
                 case Excel.XlChartType.xl3DPie:
                     return "pie3d";
                 default:
-                    return "column_clustered";
+                    return ChartConfigSyntax.TypeColumn;
             }
         }
 
@@ -879,9 +901,14 @@ namespace WordAddIn1.SpreadsheetHost
                         chart.Add(new XElement("ShowDataLabels", "true"));
                     }
 
-                    if (!string.IsNullOrEmpty(format.DataLabelType))
+                    if (format.ShowValue.HasValue)
                     {
-                        chart.Add(new XElement("DataLabelType", format.DataLabelType));
+                        chart.Add(new XElement("ShowValue", format.ShowValue.Value ? "true" : "false"));
+                    }
+
+                    if (format.ShowPercentage.HasValue)
+                    {
+                        chart.Add(new XElement("ShowPercentage", format.ShowPercentage.Value ? "true" : "false"));
                     }
 
                     if (format.AxisX != null)

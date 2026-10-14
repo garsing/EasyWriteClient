@@ -59,31 +59,17 @@ namespace WordAddIn1
                 var chartElement = root.Element("Chart");
                 if (chartElement != null)
                 {
-                    config.Chart = new ChartInfo
+                    if (!ChartConfigSyntax.TryForbiddenExtra(chartElement, out string extraError))
                     {
-                        Type = chartElement.Element("Type")?.Value ?? "",
-                        Title = chartElement.Element("Title")?.Value ?? "",
-                        Theme = chartElement.Element("Theme")?.Value ?? "",
-                        Width = int.TryParse(chartElement.Element("Width")?.Value, out int width) ? width : 0,
-                        Height = int.TryParse(chartElement.Element("Height")?.Value, out int height) ? height : 0,
-                        ShowDataLabels = bool.TryParse(chartElement.Element("ShowDataLabels")?.Value, out bool showDataLabels) && showDataLabels,
-                        LegendPosition = chartElement.Element("LegendPosition")?.Value ?? "",
-                        PlotColor = chartElement.Element("PlotColor")?.Value ?? "",
-                        TitleFontSize = int.TryParse(chartElement.Element("TitleFontSize")?.Value, out int titleFontSize) ? titleFontSize : 0,
-                        TitleFontBold = bool.TryParse(chartElement.Element("TitleFontBold")?.Value, out bool titleFontBold) && titleFontBold,
-                        TitleFontColor = chartElement.Element("TitleFontColor")?.Value ?? "",
-                        Gridlines = chartElement.Element("Gridlines")?.Value ?? "",
-                        GapWidth = int.TryParse(chartElement.Element("GapWidth")?.Value, out int gapWidth) ? gapWidth : 0,
-                        DataMarkers = bool.TryParse(chartElement.Element("DataMarkers")?.Value, out bool dataMarkers) && dataMarkers,
-                        MarkerSize = int.TryParse(chartElement.Element("MarkerSize")?.Value, out int markerSize) ? markerSize : 0,
-                        LineWeight = double.TryParse(chartElement.Element("LineWeight")?.Value, out double lineWeight) ? lineWeight : 0,
-                        YAxisMin = double.TryParse(chartElement.Element("YAxisMin")?.Value, out double yAxisMin) ? yAxisMin : 0,
-                        YAxisMax = double.TryParse(chartElement.Element("YAxisMax")?.Value, out double yAxisMax) ? yAxisMax : 0,
-                        YAxisMajorUnit = double.TryParse(chartElement.Element("YAxisMajorUnit")?.Value, out double yAxisMajorUnit) ? yAxisMajorUnit : 0,
-                        DataLabelType = chartElement.Element("DataLabelType")?.Value ?? "",
-                        Explosion = int.TryParse(chartElement.Element("Explosion")?.Value, out int explosion) ? explosion : 0,
-                        FillMissingValues = chartElement.Element("FillMissingValues") == null ? true : (bool.TryParse(chartElement.Element("FillMissingValues")?.Value, out bool fillMissingValues) && fillMissingValues) // 默认true，使用平滑处理
-                    };
+                        return new ChartXmlParseResult { Config = null, Error = extraError };
+                    }
+
+                    if (!TryCanonicalChartWire(chartElement, out ChartInfo parsedChart, out string wireError))
+                    {
+                        return new ChartXmlParseResult { Config = null, Error = wireError };
+                    }
+
+                    config.Chart = parsedChart;
 
                     // 解析DataTable
                     var dataTableElement = chartElement.Element("DataTable");
@@ -185,12 +171,28 @@ namespace WordAddIn1
                     // 为每个value列创建一个Series
                     foreach (var columnElement in valueColumns)
                     {
+                        if (!ChartConfigSyntax.TryCanonicalAxisY(
+                                columnElement.Attribute("axisY")?.Value,
+                                out string axisY,
+                                out string axisError))
+                        {
+                            return new ChartXmlParseResult { Config = null, Error = axisError };
+                        }
+
+                        if (!ChartConfigSyntax.TryCanonicalOptionalType(
+                                columnElement.Attribute("chartType")?.Value,
+                                out string seriesType,
+                                out string seriesTypeError))
+                        {
+                            return new ChartXmlParseResult { Config = null, Error = seriesTypeError };
+                        }
+
                         var series = new SeriesInfo
                         {
-                            Name = columnElement.Value ?? "", // Column的文本内容作为系列名称
-                            AxisY = columnElement.Attribute("axisY")?.Value ?? "primary",
+                            Name = columnElement.Value ?? "",
+                            AxisY = axisY,
                             Color = columnElement.Attribute("color")?.Value ?? "",
-                            ChartType = columnElement.Attribute("chartType")?.Value ?? "",
+                            ChartType = seriesType,
                             Points = new List<PointInfo>()
                         };
                         
@@ -419,6 +421,82 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine($"[DEBUG] CSV解析异常: {errorMsg}");
                 return new CsvParseResult { Rows = null, Error = errorMsg };
             }
+        }
+
+        private static bool TryCanonicalChartWire(XElement chartElement, out ChartInfo chart, out string error)
+        {
+            chart = null;
+            error = null;
+            string rawType = chartElement.Element("Type")?.Value ?? "";
+            string type = "";
+            if (!string.IsNullOrWhiteSpace(rawType)
+                && !ChartConfigSyntax.TryCanonicalType(rawType, out type, out error))
+            {
+                return false;
+            }
+
+            if (!ChartConfigSyntax.TryCanonicalGridlines(
+                    chartElement.Element("Gridlines")?.Value,
+                    out string gridlines,
+                    out error))
+            {
+                return false;
+            }
+
+            if (!ChartConfigSyntax.TryCanonicalLegend(
+                    chartElement.Element("LegendPosition")?.Value,
+                    out string legend,
+                    out error))
+            {
+                return false;
+            }
+
+            if (!ChartConfigSyntax.TryParseOptionalBool(
+                    chartElement,
+                    "ShowValue",
+                    out bool? showValue,
+                    out error))
+            {
+                return false;
+            }
+
+            if (!ChartConfigSyntax.TryParseOptionalBool(
+                    chartElement,
+                    "ShowPercentage",
+                    out bool? showPercentage,
+                    out error))
+            {
+                return false;
+            }
+
+            chart = new ChartInfo
+            {
+                Type = type,
+                Title = chartElement.Element("Title")?.Value ?? "",
+                Theme = chartElement.Element("Theme")?.Value ?? "",
+                Width = int.TryParse(chartElement.Element("Width")?.Value, out int width) ? width : 0,
+                Height = int.TryParse(chartElement.Element("Height")?.Value, out int height) ? height : 0,
+                ShowDataLabels = bool.TryParse(chartElement.Element("ShowDataLabels")?.Value, out bool showDataLabels) && showDataLabels,
+                LegendPosition = legend,
+                PlotColor = chartElement.Element("PlotColor")?.Value ?? "",
+                TitleFontSize = int.TryParse(chartElement.Element("TitleFontSize")?.Value, out int titleFontSize) ? titleFontSize : 0,
+                TitleFontBold = bool.TryParse(chartElement.Element("TitleFontBold")?.Value, out bool titleFontBold) && titleFontBold,
+                TitleFontColor = chartElement.Element("TitleFontColor")?.Value ?? "",
+                Gridlines = gridlines,
+                GapWidth = int.TryParse(chartElement.Element("GapWidth")?.Value, out int gapWidth) ? gapWidth : 0,
+                DataMarkers = bool.TryParse(chartElement.Element("DataMarkers")?.Value, out bool dataMarkers) && dataMarkers,
+                MarkerSize = int.TryParse(chartElement.Element("MarkerSize")?.Value, out int markerSize) ? markerSize : 0,
+                LineWeight = double.TryParse(chartElement.Element("LineWeight")?.Value, out double lineWeight) ? lineWeight : 0,
+                YAxisMin = double.TryParse(chartElement.Element("YAxisMin")?.Value, out double yAxisMin) ? yAxisMin : 0,
+                YAxisMax = double.TryParse(chartElement.Element("YAxisMax")?.Value, out double yAxisMax) ? yAxisMax : 0,
+                YAxisMajorUnit = double.TryParse(chartElement.Element("YAxisMajorUnit")?.Value, out double yAxisMajorUnit) ? yAxisMajorUnit : 0,
+                ShowValue = showValue,
+                ShowPercentage = showPercentage,
+                Explosion = int.TryParse(chartElement.Element("Explosion")?.Value, out int explosion) ? explosion : 0,
+                FillMissingValues = chartElement.Element("FillMissingValues") == null
+                    || (bool.TryParse(chartElement.Element("FillMissingValues")?.Value, out bool fillMissingValues) && fillMissingValues)
+            };
+            return true;
         }
 
         private static string ReadAxisField(XElement axisElement, string name, string defaultValue = "")

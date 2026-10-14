@@ -83,7 +83,7 @@ namespace ExcelWorkbookRoundtripTest
             WithBook(run, s, "xlg-neg-rows", (id, ch) =>
             {
                 string name = s.FirstSheetName(ch);
-                const string xml = "<ChartConfig><Chart><Type>column_clustered</Type>"
+                const string xml = "<ChartConfig><Chart><Type>column</Type>"
                     + "<DataTable><Rows><Row>1,2</Row></Rows></DataTable></Chart></ChartConfig>";
                 ToolResult r = s.Chart(id, "create", Dest(name, "E2:K18"), xml);
                 return r.Success ? "Rows 应失败" : (Has(r.Error, "Rows") || Has(r.Error, "禁止") ? null : r.Error);
@@ -267,7 +267,7 @@ namespace ExcelWorkbookRoundtripTest
                     return created.Error;
                 }
 
-                const string fmt = "<ChartConfig><Chart><Type>column_clustered</Type>"
+                const string fmt = "<ChartConfig><Chart><Type>column</Type>"
                     + "<Title>改过的标题</Title></Chart></ChartConfig>";
                 ToolResult ap = s.Chart(id, "apply", xml: fmt, chartName: "销量图", scope: "format");
                 if (!ap.Success)
@@ -469,7 +469,7 @@ namespace ExcelWorkbookRoundtripTest
                     ["channel_id"] = id,
                     ["action"] = "apply",
                     ["chart_name"] = "没有",
-                    ["xml_content"] = "<ChartConfig><Chart><Type>column_clustered</Type></Chart></ChartConfig>"
+                    ["xml_content"] = "<ChartConfig><Chart><Type>column</Type></Chart></ChartConfig>"
                 });
                 return r.Success ? "缺 scope 应失败" : (Has(r.Error, "scope") ? null : r.Error);
             });
@@ -477,7 +477,7 @@ namespace ExcelWorkbookRoundtripTest
             WithBook(run, s, "xlg-neg-source-header", (id, ch) =>
             {
                 string name = s.FirstSheetName(ch);
-                string xml = "<ChartConfig><Chart><Type>column_clustered</Type><DataTable>"
+                string xml = "<ChartConfig><Chart><Type>column</Type><DataTable>"
                     + "<Source sheet=\"" + name + "\" range=\"A1:B4\" plotBy=\"columns\"/>"
                     + "<Header><Column type=\"category\" sheet=\"" + name + "\" range=\"A2:A4\">年</Column>"
                     + "<Column type=\"value\" sheet=\"" + name + "\" range=\"B2:B4\">量</Column></Header>"
@@ -493,7 +493,7 @@ namespace ExcelWorkbookRoundtripTest
                     + "<DataTable><Source sheet=\"S\" range=\"A1:B4\" plotBy=\"columns\"/></DataTable>"
                     + "</Chart></ChartConfig>";
                 ToolResult r = s.Chart(id, "create", Dest(name, "E2:K18"), xml);
-                return r.Success ? "bubble 应失败" : (Has(r.Error, "未知") || Has(r.Error, "类型") ? null : r.Error);
+                return r.Success ? "bubble 应失败" : (Has(r.Error, "未知") || Has(r.Error, "类型") || Has(r.Error, "无效") ? null : r.Error);
             });
 
             WithBook(run, s, "xlg-neg-extract-missing", (id, ch) =>
@@ -756,7 +756,7 @@ namespace ExcelWorkbookRoundtripTest
             };
         }
 
-        private static string SourceXml(string sheet, string range = "A1:B4", string type = "column_clustered")
+        private static string SourceXml(string sheet, string range = "A1:B4", string type = "column")
         {
             return "<ChartConfig><Chart><Type>" + type + "</Type><Title>销量</Title>"
                 + "<DataTable><Source sheet=\"" + sheet + "\" range=\"" + range
@@ -765,7 +765,7 @@ namespace ExcelWorkbookRoundtripTest
 
         private static string HeaderXml(string sheet)
         {
-            return "<ChartConfig><Chart><Type>column_clustered</Type><Title>销量</Title><DataTable><Header>"
+            return "<ChartConfig><Chart><Type>column</Type><Title>销量</Title><DataTable><Header>"
                 + "<Column type=\"category\" sheet=\"" + sheet + "\" range=\"A2:A4\">年份</Column>"
                 + "<Column type=\"value\" sheet=\"" + sheet + "\" range=\"B2:B4\">销量</Column>"
                 + "</Header></DataTable></Chart></ChartConfig>";

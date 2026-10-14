@@ -676,7 +676,7 @@ namespace WordAddIn1
                         var seriesInfo = new SeriesInfo
                         {
                             Name = series.Name ?? $"系列{i}",
-                            AxisY = "primary",
+                            AxisY = ChartConfigSyntax.AxisYPrimary,
                             Color = "",
                             ChartType = "",
                             ShowDataLabels = "false",
@@ -689,7 +689,7 @@ namespace WordAddIn1
                             dynamic axisGroup = series.AxisGroup;
                             if (axisGroup == Word.XlAxisGroup.xlSecondary)
                             {
-                                seriesInfo.AxisY = "secondary";
+                                seriesInfo.AxisY = ChartConfigSyntax.AxisYSecondary;
                             }
                         }
                         catch { }

@@ -32,7 +32,8 @@ namespace WordAddIn1
     public double YAxisMin { get; set; }
     public double YAxisMax { get; set; }
     public double YAxisMajorUnit { get; set; }
-    public string DataLabelType { get; set; }
+    public bool? ShowValue { get; set; }
+    public bool? ShowPercentage { get; set; }
     public int Explosion { get; set; }
     public bool FillMissingValues { get; set; }
   }
@@ -60,7 +61,7 @@ namespace WordAddIn1
     public string Format { get; set; }
     public int? TickLabelCount { get; set; }
     public int? TickLabelSpacing { get; set; }
-    /// <summary>null 时按 Chart.Type 默认：line=false，column_clustered=true</summary>
+    /// <summary>null 时按 Chart.Type 默认：line=false，column=true</summary>
     public bool? BetweenCategories { get; set; }
   }
 

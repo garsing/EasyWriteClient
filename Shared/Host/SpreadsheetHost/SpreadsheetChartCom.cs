@@ -92,8 +92,15 @@ namespace WordAddIn1.SpreadsheetHost
             {
                 try
                 {
-                    chart.HasLegend = true;
-                    chart.Legend.Position = (Excel.XlLegendPosition)ChartEngine.GetLegendPosition(info.LegendPosition);
+                    if (string.Equals(info.LegendPosition, ChartConfigSyntax.LegendNone, StringComparison.Ordinal))
+                    {
+                        chart.HasLegend = false;
+                    }
+                    else
+                    {
+                        chart.HasLegend = true;
+                        chart.Legend.Position = (Excel.XlLegendPosition)ChartEngine.GetLegendPosition(info.LegendPosition);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -134,14 +141,19 @@ namespace WordAddIn1.SpreadsheetHost
             try
             {
                 Excel.Axis valueAxis = (Excel.Axis)chart.Axes(Excel.XlAxisType.xlValue, Excel.XlAxisGroup.xlPrimary);
-                string g = (gridlines ?? "").Trim().ToLowerInvariant();
-                valueAxis.HasMajorGridlines = g == "major" || g == "both";
-                valueAxis.HasMinorGridlines = g == "minor" || g == "both";
-                if (g == "none")
+                if (!ChartConfigSyntax.TryCanonicalGridlines(gridlines, out string g, out string gridError))
                 {
-                    valueAxis.HasMajorGridlines = false;
-                    valueAxis.HasMinorGridlines = false;
+                    warnings.Add(gridError ?? "Gridlines 无效");
+                    return;
                 }
+
+                if (string.IsNullOrEmpty(g))
+                {
+                    return;
+                }
+
+                valueAxis.HasMajorGridlines = g == ChartConfigSyntax.GridOn;
+                valueAxis.HasMinorGridlines = false;
             }
             catch (Exception ex)
             {
@@ -257,19 +269,20 @@ namespace WordAddIn1.SpreadsheetHost
         {
             try
             {
-                if (info.ShowDataLabels || !string.IsNullOrWhiteSpace(info.DataLabelType))
+                if (info.ShowDataLabels || info.ShowValue.HasValue || info.ShowPercentage.HasValue)
                 {
                     Excel.SeriesCollection sc = (Excel.SeriesCollection)chart.SeriesCollection();
                     for (int i = 1; i <= sc.Count; i++)
                     {
                         Excel.Series s = sc.Item(i);
                         s.HasDataLabels = info.ShowDataLabels
-                            || !string.IsNullOrWhiteSpace(info.DataLabelType);
-                        if (string.Equals(info.DataLabelType, "percent", StringComparison.OrdinalIgnoreCase))
+                            || info.ShowValue == true
+                            || info.ShowPercentage == true;
+                        if (info.ShowValue.HasValue || info.ShowPercentage.HasValue)
                         {
                             Excel.DataLabels labels = (Excel.DataLabels)s.DataLabels();
-                            labels.ShowPercentage = true;
-                            labels.ShowValue = false;
+                            labels.ShowValue = info.ShowValue ?? false;
+                            labels.ShowPercentage = info.ShowPercentage ?? false;
                         }
                     }
                 }

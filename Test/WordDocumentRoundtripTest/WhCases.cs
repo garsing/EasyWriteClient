@@ -140,7 +140,7 @@ namespace WordDocumentRoundtripTest
                 s.CreateChartFromXml(CreateArgs(null, Path.Combine(Path.GetTempPath(), "ew-wh-missing-" + Guid.NewGuid().ToString("N") + ".xml"))),
                 "不存在");
             ExpectFail(run, "wh-neg-create-bad-xml",
-                s.CreateChartFromXml(CreateArgs(null, WriteXml("<NotChart><Chart><Type>column_clustered</Type></Chart></NotChart>"))),
+                s.CreateChartFromXml(CreateArgs(null, WriteXml("<NotChart><Chart><Type>column</Type></Chart></NotChart>"))),
                 "ChartConfig");
             ExpectFail(run, "wh-neg-create-no-type",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(
@@ -425,7 +425,8 @@ namespace WordDocumentRoundtripTest
         private static readonly string[] ConNegIds =
         {
             "wh-con-n-root-case", "wh-con-n-no-chart", "wh-con-n-type-case", "wh-con-n-bar",
-            "wh-con-n-area", "wh-con-n-pie", "wh-con-n-no-header", "wh-con-n-empty-header",
+            "wh-con-n-area", "wh-con-n-pie",
+            "wh-con-n-no-header", "wh-con-n-empty-header",
             "wh-con-n-no-value", "wh-con-n-no-rows", "wh-con-n-empty-rows", "wh-con-n-df-noattr",
             "wh-con-n-csv-missing", "wh-con-n-csv-empty", "wh-con-n-axisy-bad", "wh-con-n-broken-xml",
             "wh-con-n-format-only", "wh-con-n-row-short"
@@ -495,7 +496,7 @@ namespace WordDocumentRoundtripTest
         {
             ExpectFail(run, "wh-con-n-root-case",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(
-                    "<chartconfig><Chart><Type>column_clustered</Type><DataTable><Header>"
+                    "<chartconfig><Chart><Type>column</Type><DataTable><Header>"
                     + "<Column type=\"category\">年</Column><Column type=\"value\">销量</Column></Header>"
                     + "<Rows><Row>2023,10</Row></Rows></DataTable></Chart></chartconfig>"))),
                 "ChartConfig");
@@ -506,45 +507,45 @@ namespace WordDocumentRoundtripTest
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("LINE", TitleA, V1, R3)))),
                 "无效");
             ExpectFail(run, "wh-con-n-bar",
-                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("bar_clustered", TitleA, V1, R3)))),
-                "无效");
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("bar", TitleA, V1, R3)))),
+                "简版");
             ExpectFail(run, "wh-con-n-area",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("area", TitleA, V1, R3)))),
                 "无效");
             ExpectFail(run, "wh-con-n-pie",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("pie", TitleA, V1, R3)))),
-                "无效");
+                "简版");
             ExpectFail(run, "wh-con-n-no-header",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(
-                    "<ChartConfig><Chart><Type>column_clustered</Type><DataTable>"
+                    "<ChartConfig><Chart><Type>column</Type><DataTable>"
                     + "<Rows><Row>2023,10</Row></Rows></DataTable></Chart></ChartConfig>"))),
                 "Header");
             ExpectFail(run, "wh-con-n-empty-header",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(
-                    "<ChartConfig><Chart><Type>column_clustered</Type><DataTable><Header></Header>"
+                    "<ChartConfig><Chart><Type>column</Type><DataTable><Header></Header>"
                     + "<Rows><Row>2023,10</Row></Rows></DataTable></Chart></ChartConfig>"))),
                 "Column");
             ExpectFail(run, "wh-con-n-no-value",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(
-                    "<ChartConfig><Chart><Type>column_clustered</Type><DataTable><Header>"
+                    "<ChartConfig><Chart><Type>column</Type><DataTable><Header>"
                     + "<Column type=\"category\">年</Column></Header>"
                     + "<Rows><Row>2023</Row></Rows></DataTable></Chart></ChartConfig>"))),
                 "value");
             ExpectFail(run, "wh-con-n-no-rows",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(
-                    "<ChartConfig><Chart><Type>column_clustered</Type><DataTable><Header>"
+                    "<ChartConfig><Chart><Type>column</Type><DataTable><Header>"
                     + "<Column type=\"category\">年</Column><Column type=\"value\">销量</Column></Header>"
                     + "</DataTable></Chart></ChartConfig>"))),
                 "Rows");
             ExpectFail(run, "wh-con-n-empty-rows",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(
-                    "<ChartConfig><Chart><Type>column_clustered</Type><DataTable><Header>"
+                    "<ChartConfig><Chart><Type>column</Type><DataTable><Header>"
                     + "<Column type=\"category\">年</Column><Column type=\"value\">销量</Column></Header>"
                     + "<Rows></Rows></DataTable></Chart></ChartConfig>"))),
                 "Row");
             ExpectFail(run, "wh-con-n-df-noattr",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(
-                    "<ChartConfig><Chart><Type>column_clustered</Type><DataTable><Header>"
+                    "<ChartConfig><Chart><Type>column</Type><DataTable><Header>"
                     + "<Column type=\"category\">年</Column><Column type=\"value\">销量</Column></Header>"
                     + "<DataFile/></DataTable></Chart></ChartConfig>"))),
                 "fileName");
@@ -563,18 +564,18 @@ namespace WordDocumentRoundtripTest
 
             ExpectFail(run, "wh-con-n-axisy-bad",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(
-                    GenXml("column_clustered", TitleA, V1, R3, null, " axisY=\"middle\"", null)))),
+                    GenXml("column", TitleA, V1, R3, null, " axisY=\"middle\"", null)))),
                 "AxisY");
             ExpectFail(run, "wh-con-n-broken-xml",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(
-                    "<ChartConfig><Chart><Type>column_clustered</Type>"))),
+                    "<ChartConfig><Chart><Type>column</Type>"))),
                 "XML");
             ExpectFail(run, "wh-con-n-format-only",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(FormatXml(TitleA)))),
                 "SeriesCollection");
             ExpectFail(run, "wh-con-n-row-short",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(
-                    GenXml("column_clustered", TitleA, V1, new[] { "2023" })))),
+                    GenXml("column", TitleA, V1, new[] { "2023" })))),
                 "Point");
         }
 
@@ -582,42 +583,42 @@ namespace WordDocumentRoundtripTest
         private static void RunConCreate(TestRun run, WdSession s)
         {
             AssertCreateSolo(run, s, "wh-con-x-no-title",
-                GenXml("column_clustered", null, V1, Rows("101")));
+                GenXml("column", null, V1, Rows("101")));
             AssertCreateSolo(run, s, "wh-con-x-width",
-                GenXml("column_clustered", TitleA, V1, Rows("102"), "<Width>500</Width>"));
+                GenXml("column", TitleA, V1, Rows("102"), "<Width>500</Width>"));
             AssertCreateSolo(run, s, "wh-con-x-height",
-                GenXml("column_clustered", TitleA, V1, Rows("103"), "<Height>300</Height>"));
+                GenXml("column", TitleA, V1, Rows("103"), "<Height>300</Height>"));
             AssertCreateSolo(run, s, "wh-con-x-two-series",
-                GenXml("column_clustered", TitleA, V2, new[] { "2023,10,1", "2024,20,2", "2025,30,3" }));
+                GenXml("column", TitleA, V2, new[] { "2023,10,1", "2024,20,2", "2025,30,3" }));
             AssertCreateSolo(run, s, "wh-con-x-three-series",
-                GenXml("column_clustered", TitleA, V3, new[] { "2023,10,1,5", "2024,20,2,6", "2025,30,3,7" }));
+                GenXml("column", TitleA, V3, new[] { "2023,10,1,5", "2024,20,2,6", "2025,30,3,7" }));
             AssertCreateSolo(run, s, "wh-con-x-ten-rows",
-                GenXml("column_clustered", TitleA, V1, R10));
+                GenXml("column", TitleA, V1, R10));
             AssertCreateSolo(run, s, "wh-con-x-one-row",
-                GenXml("column_clustered", TitleA, V1, new[] { "2023,104" }));
+                GenXml("column", TitleA, V1, new[] { "2023,104" }));
             AssertCreateSolo(run, s, "wh-con-x-decimal",
-                GenXml("column_clustered", TitleA, V1, new[] { "2023,3.14", "2024,2.71", "2025,1.41" }));
+                GenXml("column", TitleA, V1, new[] { "2023,3.14", "2024,2.71", "2025,1.41" }));
             AssertCreateSolo(run, s, "wh-con-x-negative",
-                GenXml("column_clustered", TitleA, V1, new[] { "2023,-5", "2024,20", "2025,-30" }));
+                GenXml("column", TitleA, V1, new[] { "2023,-5", "2024,20", "2025,-30" }));
             AssertCreateSolo(run, s, "wh-con-x-big",
-                GenXml("column_clustered", TitleA, V1, new[] { "2023,1234567", "2024,20", "2025,30" }));
+                GenXml("column", TitleA, V1, new[] { "2023,1234567", "2024,20", "2025,30" }));
             AssertCreateSolo(run, s, "wh-con-x-empty-y",
-                GenXml("column_clustered", TitleA, V1, new[] { "2023,105", "2024,", "2025,30" }));
+                GenXml("column", TitleA, V1, new[] { "2023,105", "2024,", "2025,30" }));
             AssertCreateSolo(run, s, "wh-con-x-nan-y",
-                GenXml("column_clustered", TitleA, V1, new[] { "2023,106", "2024,abc", "2025,30" }));
+                GenXml("column", TitleA, V1, new[] { "2023,106", "2024,abc", "2025,30" }));
             AssertCreateSolo(run, s, "wh-con-x-fill-off",
-                GenXml("column_clustered", TitleA, V1, new[] { "2023,107", "2024,", "2025,30" },
+                GenXml("column", TitleA, V1, new[] { "2023,107", "2024,", "2025,30" },
                     "<FillMissingValues>false</FillMissingValues>"));
             AssertCreateSolo(run, s, "wh-con-x-axisx",
-                GenXml("column_clustered", TitleA, V1, Rows("108"), "<AxisX><Title>年份</Title></AxisX>"));
+                GenXml("column", TitleA, V1, Rows("108"), "<AxisX><Title>年份</Title></AxisX>"));
             AssertCreateSolo(run, s, "wh-con-x-axisy",
-                GenXml("column_clustered", TitleA, V1, Rows("109"), "<AxisY><PrimaryTitle>万台</PrimaryTitle></AxisY>"));
+                GenXml("column", TitleA, V1, Rows("109"), "<AxisY><PrimaryTitle>万台</PrimaryTitle></AxisY>"));
             AssertCreateSolo(run, s, "wh-con-x-legend",
-                GenXml("column_clustered", TitleA, V1, Rows("110"), "<LegendPosition>bottom</LegendPosition>"));
+                GenXml("column", TitleA, V1, Rows("110"), "<LegendPosition>bottom</LegendPosition>"));
             AssertCreateSolo(run, s, "wh-con-x-datalabels",
-                GenXml("column_clustered", TitleA, V1, Rows("111"), "<ShowDataLabels>true</ShowDataLabels>"));
+                GenXml("column", TitleA, V1, Rows("111"), "<ShowDataLabels>true</ShowDataLabels>"));
             AssertCreateSolo(run, s, "wh-con-x-color",
-                GenXml("column_clustered", TitleA, V1, Rows("112"), null, " color=\"#FF0000\"", null));
+                GenXml("column", TitleA, V1, Rows("112"), null, " color=\"#FF0000\"", null));
 
             string csvOk = Path.Combine(Path.GetTempPath(), "ew-wh-csv-" + Guid.NewGuid().ToString("N") + ".csv");
             File.WriteAllText(csvOk, "年,销量\r\n2023,113\r\n2024,20\r\n2025,30\r\n");
@@ -637,7 +638,7 @@ namespace WordDocumentRoundtripTest
                         s.ActivateDoc(path3);
                         s.GetContent(id3);
                         string err;
-                        bool threeOk = CreateOk(s, id3, GenXml("column_clustered", TitleA, V1, Rows("201")), null, out err);
+                        bool threeOk = CreateOk(s, id3, GenXml("column", TitleA, V1, Rows("201")), null, out err);
                         s.MoveSelectionToEnd(path3);
                         threeOk = threeOk && CreateOk(s, id3, GenXml("line", TitleLine, V1, Rows("202")), null, out err);
                         s.MoveSelectionToEnd(path3);
@@ -654,11 +655,11 @@ namespace WordDocumentRoundtripTest
             }
 
             AssertCreateSolo(run, s, "wh-con-p-zero",
-                GenXml("column_clustered", TitleA, V1, Rows("301")), 0);
+                GenXml("column", TitleA, V1, Rows("301")), 0);
             AssertCreateSolo(run, s, "wh-con-p-big",
-                GenXml("column_clustered", TitleA, V1, Rows("302")), 99999);
+                GenXml("column", TitleA, V1, Rows("302")), 99999);
             AssertCreateSoloRaw(run, s, "wh-con-p-nonint",
-                GenXml("column_clustered", TitleA, V1, Rows("303")), "abc");
+                GenXml("column", TitleA, V1, Rows("303")), "abc");
 
             string pathKeep, idKeep;
             if (TryOpen(run, s, out pathKeep, out idKeep, "wh-con-p-keep-sent"))
@@ -674,7 +675,7 @@ namespace WordDocumentRoundtripTest
                         s.ActivateDoc(pathKeep);
                         s.GetContent(idKeep);
                         string err;
-                        bool keepOk = CreateOk(s, idKeep, GenXml("column_clustered", TitleA, V1, Rows("304")), 0, out err);
+                        bool keepOk = CreateOk(s, idKeep, GenXml("column", TitleA, V1, Rows("304")), 0, out err);
                         Ok(run, "wh-con-p-keep-sent",
                             keepOk && StillHas(s, idKeep, ConSent),
                             keepOk ? "position=0 建图丢了巩固句" : err);
@@ -688,18 +689,18 @@ namespace WordDocumentRoundtripTest
 
             AssertCreateSoloFile(run, s, "wh-con-p-xml-decl",
                 WriteXml("<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-                    + GenXml("column_clustered", TitleA, V1, Rows("305"))));
+                    + GenXml("column", TitleA, V1, Rows("305"))));
 
             string bomPath = Path.Combine(Path.GetTempPath(), "ew-wh-bom-" + Guid.NewGuid().ToString("N") + ".xml");
-            File.WriteAllText(bomPath, GenXml("column_clustered", TitleA, V1, Rows("306")), new System.Text.UTF8Encoding(true));
+            File.WriteAllText(bomPath, GenXml("column", TitleA, V1, Rows("306")), new System.Text.UTF8Encoding(true));
             AssertCreateSoloFile(run, s, "wh-con-p-bom", bomPath);
 
             AssertCreateSolo(run, s, "wh-con-p-title-escape",
-                GenXml("column_clustered", "易写图&amp;销量", V1, Rows("307")));
+                GenXml("column", "易写图&amp;销量", V1, Rows("307")));
             AssertCreateSolo(run, s, "wh-con-p-title-cn",
-                GenXml("column_clustered", "易写图「销量」（2025）", V1, Rows("308")));
+                GenXml("column", "易写图「销量」（2025）", V1, Rows("308")));
             AssertCreateSolo(run, s, "wh-con-p-theme",
-                GenXml("column_clustered", TitleA, V1, Rows("309"), "<Theme>Office</Theme>"));
+                GenXml("column", TitleA, V1, Rows("309"), "<Theme>Office</Theme>"));
         }
 
         /// <summary>抽图巩固 15。</summary>
@@ -719,7 +720,7 @@ namespace WordDocumentRoundtripTest
             }
 
             s.ActivateDoc(path);
-            ToolResult c1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("401")))));
+            ToolResult c1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("401")))));
             s.MoveSelectionToEnd(path);
             ToolResult c2 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("line", TitleLine, V1, Rows("402")))));
             string chart1 = WdSession.Str(c1, "chart_id");
@@ -810,11 +811,11 @@ namespace WordDocumentRoundtripTest
             }
 
             s.ActivateDoc(path);
-            ToolResult c1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("501")))));
+            ToolResult c1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("501")))));
             s.MoveSelectionToEnd(path);
-            ToolResult c2 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", "易写图巩固乙", V1, Rows("502")))));
+            ToolResult c2 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", "易写图巩固乙", V1, Rows("502")))));
             s.MoveSelectionToEnd(path);
-            ToolResult c3 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V2, new[] { "2023,10,1", "2024,20,2", "2025,30,3" }))));
+            ToolResult c3 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V2, new[] { "2023,10,1", "2024,20,2", "2025,30,3" }))));
             string chart1 = WdSession.Str(c1, "chart_id");
             string chart2 = WdSession.Str(c2, "chart_id");
             string chart3 = WdSession.Str(c3, "chart_id");
@@ -934,11 +935,11 @@ namespace WordDocumentRoundtripTest
             }
 
             s.ActivateDoc(path);
-            ToolResult c1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("601")))));
+            ToolResult c1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("601")))));
             s.MoveSelectionToEnd(path);
-            ToolResult c2 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("602")))));
+            ToolResult c2 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("602")))));
             s.MoveSelectionToEnd(path);
-            ToolResult c3 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("603")))));
+            ToolResult c3 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("603")))));
             string chart1 = WdSession.Str(c1, "chart_id");
             string chart2 = WdSession.Str(c2, "chart_id");
             string chart3 = WdSession.Str(c3, "chart_id");
@@ -973,11 +974,11 @@ namespace WordDocumentRoundtripTest
             Ok(run, "wh-con-d-all", d1.Success && d3.Success && ChartCount(s, id) == 0, "全删后正文还有 Chart");
 
             s.MoveSelectionToEnd(path);
-            ToolResult r1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("611")))));
+            ToolResult r1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("611")))));
             s.MoveSelectionToEnd(path);
-            ToolResult r2 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("612")))));
+            ToolResult r2 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("612")))));
             s.MoveSelectionToEnd(path);
-            ToolResult r3 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("613")))));
+            ToolResult r3 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("613")))));
             string n1 = WdSession.Str(r1, "chart_id");
             string n2 = WdSession.Str(r2, "chart_id");
             string n3 = WdSession.Str(r3, "chart_id");
@@ -1019,7 +1020,7 @@ namespace WordDocumentRoundtripTest
             }
 
             s.ActivateDoc(path);
-            ToolResult fc = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("701")))));
+            ToolResult fc = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("701")))));
             string fchart = WdSession.Str(fc, "chart_id");
             bool chain = fc.Success && !string.IsNullOrEmpty(fchart);
             chain = chain && s.ExtractChartXml(ExtractArgs(id, fchart, null, "all")).Success;
@@ -1036,9 +1037,9 @@ namespace WordDocumentRoundtripTest
             Ok(run, "wh-con-f-cycle-clean", ChartCount(s, id) == 0, "全链删后正文还有 Chart");
 
             s.MoveSelectionToEnd(path);
-            ToolResult ca = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("711")))));
+            ToolResult ca = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("711")))));
             s.MoveSelectionToEnd(path);
-            ToolResult cb = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("712")))));
+            ToolResult cb = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("712")))));
             string caId = WdSession.Str(ca, "chart_id");
             string cbId = WdSession.Str(cb, "chart_id");
             bool twoOk = ca.Success && cb.Success
@@ -1221,7 +1222,7 @@ namespace WordDocumentRoundtripTest
         private static void RunCon2Neg(TestRun run, WdSession s)
         {
             ExpectFail(run, "wh-c2-n-column",
-                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("column", TitleA, V1, R3)))), "无效");
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("column_clustered", TitleA, V1, R3)))), "须改成");
             ExpectFail(run, "wh-c2-n-scatter",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("scatter", TitleA, V1, R3)))), "无效");
             ExpectFail(run, "wh-c2-n-radar",
@@ -1237,10 +1238,10 @@ namespace WordDocumentRoundtripTest
             ExpectFail(run, "wh-c2-n-dir",
                 s.CreateChartFromXml(CreateArgs(null, Path.GetTempPath().TrimEnd('\\'))), "不存在");
             ExpectFail(run, "wh-c2-n-type-pad",
-                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml(" column_clustered ", TitleA, V1, R3)))), "无效");
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml(" column_clustered ", TitleA, V1, R3)))), "须改成");
             ExpectFail(run, "wh-c2-n-row-empty",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(
-                    "<ChartConfig><Chart><Type>column_clustered</Type><DataTable><Header>"
+                    "<ChartConfig><Chart><Type>column</Type><DataTable><Header>"
                     + "<Column type=\"category\">年</Column><Column type=\"value\">销量</Column></Header>"
                     + "<Rows><Row></Row></Rows></DataTable></Chart></ChartConfig>"))),
                 "Point");
@@ -1278,7 +1279,7 @@ namespace WordDocumentRoundtripTest
 
             try
             {
-                string xml = GenXml("column_clustered", TitleA, V1, Rows("801"));
+                string xml = GenXml("column", TitleA, V1, Rows("801"));
                 ToolResult c1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(xml)));
                 s.MoveSelectionToEnd(path);
                 ToolResult c2 = s.CreateChartFromXml(CreateArgs(id, WriteXml(xml)));
@@ -1327,7 +1328,7 @@ namespace WordDocumentRoundtripTest
 
             try
             {
-                ToolResult created = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("811")))));
+                ToolResult created = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("811")))));
                 string chart = WdSession.Str(created, "chart_id");
                 if (!created.Success || string.IsNullOrEmpty(chart))
                 {
@@ -1387,7 +1388,7 @@ namespace WordDocumentRoundtripTest
 
                 s.ActivateDoc(path);
                 s.MoveSelectionToEnd(path);
-                ToolResult c1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("821")))));
+                ToolResult c1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("821")))));
                 string chart1 = WdSession.Str(c1, "chart_id");
                 Ok(run, "wh-c2-mix-after-table", c1.Success && !string.IsNullOrEmpty(chart1), c1.Error ?? "表后建图失败");
                 Ok(run, "wh-c2-mix-keep-table", StillHas(s, id, TableCellText), "建图丢了表");
@@ -1396,7 +1397,7 @@ namespace WordDocumentRoundtripTest
 
                 s.MoveSelectionToEnd(path);
                 string cnXml =
-                    "<ChartConfig><Chart><Type>column_clustered</Type><Title>易写图甲乙</Title><DataTable><Header>"
+                    "<ChartConfig><Chart><Type>column</Type><Title>易写图甲乙</Title><DataTable><Header>"
                     + "<Column type=\"category\">类</Column><Column type=\"value\">值</Column></Header><Rows>"
                     + "<Row>甲,11</Row><Row>乙,22</Row><Row>丙,33</Row></Rows></DataTable></Chart></ChartConfig>";
                 ToolResult cn = s.CreateChartFromXml(CreateArgs(id, WriteXml(cnXml)));
@@ -1404,14 +1405,14 @@ namespace WordDocumentRoundtripTest
 
                 s.MoveSelectionToEnd(path);
                 string longTitle = "易写图长标题" + new string('甲', 40);
-                ToolResult lng = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", longTitle, V1, Rows("822")))));
+                ToolResult lng = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", longTitle, V1, Rows("822")))));
                 Ok(run, "wh-c2-mix-long-title", lng.Success, lng.Error ?? "长标题建图失败");
 
                 s.MoveSelectionToEnd(path);
-                ToolResult dup = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, new[] { "销量", "销量" }, new[] { "2023,1,2", "2024,3,4", "2025,5,6" }))));
+                ToolResult dup = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, new[] { "销量", "销量" }, new[] { "2023,1,2", "2024,3,4", "2025,5,6" }))));
                 Ok(run, "wh-c2-mix-dup-col", dup.Success, dup.Error ?? "同名两列建图失败");
 
-                string both = WriteXml(GenXml("column_clustered", TitleA, V1, Rows("823")));
+                string both = WriteXml(GenXml("column", TitleA, V1, Rows("823")));
                 s.MoveSelectionToEnd(path);
                 ToolResult pf = s.CreateChartFromXml(new Dictionary<string, object>
                 {
@@ -1446,7 +1447,7 @@ namespace WordDocumentRoundtripTest
                 else
                 {
                     s.MoveSelectionToEnd(path);
-                    ToolResult c3 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("826")))));
+                    ToolResult c3 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("826")))));
                     Ok(run, "wh-c2-mix-chart-tbl-chart",
                         c3.Success && ChartCount(s, id) >= 2 && StillHas(s, id, TableCellText),
                         c3.Error ?? "图-表-图失败");
@@ -1464,12 +1465,12 @@ namespace WordDocumentRoundtripTest
                 }
 
                 s.MoveSelectionToEnd(path);
-                ToolResult zero = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, new[] { "2023,0", "2024,0", "2025,0" }))));
+                ToolResult zero = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, new[] { "2023,0", "2024,0", "2025,0" }))));
                 Ok(run, "wh-c2-mix-zero-y", zero.Success, zero.Error ?? "全 0 建图失败");
 
                 s.MoveSelectionToEnd(path);
                 ToolResult five = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml(
-                    "column_clustered",
+                    "column",
                     TitleA,
                     new[] { "a", "b", "c", "d", "e" },
                     new[] { "2023,1,2,3,4,5", "2024,6,7,8,9,10", "2025,11,12,13,14,15" }))));
@@ -1491,7 +1492,7 @@ namespace WordDocumentRoundtripTest
 
             try
             {
-                ToolResult col = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("831")))));
+                ToolResult col = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("831")))));
                 s.MoveSelectionToEnd(path);
                 ToolResult line = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("line", TitleLine, V1, Rows("832")))));
                 s.MoveSelectionToEnd(path);
@@ -1593,7 +1594,7 @@ namespace WordDocumentRoundtripTest
 
             try
             {
-                ToolResult created = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("841")))));
+                ToolResult created = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("841")))));
                 string chart = WdSession.Str(created, "chart_id");
                 if (!created.Success || string.IsNullOrEmpty(chart))
                 {
@@ -1678,11 +1679,11 @@ namespace WordDocumentRoundtripTest
 
             try
             {
-                ToolResult c1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("851")))));
+                ToolResult c1 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("851")))));
                 s.MoveSelectionToEnd(path);
                 ToolResult c2 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("line", TitleLine, V1, Rows("852")))));
                 s.MoveSelectionToEnd(path);
-                ToolResult c3 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("853")))));
+                ToolResult c3 = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("853")))));
                 string a = WdSession.Str(c1, "chart_id");
                 string b = WdSession.Str(c2, "chart_id");
                 string c = WdSession.Str(c3, "chart_id");
@@ -1712,7 +1713,7 @@ namespace WordDocumentRoundtripTest
                     "找不到");
 
                 s.MoveSelectionToEnd(path);
-                ToolResult reb = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column_clustered", TitleA, V1, Rows("854")))));
+                ToolResult reb = s.CreateChartFromXml(CreateArgs(id, WriteXml(GenXml("column", TitleA, V1, Rows("854")))));
                 Ok(run, "wh-c2-d-rebuild",
                     reb.Success && WdSession.Str(reb, "chart_id").StartsWith("C_", StringComparison.Ordinal) && StillHas(s, id, ConSent),
                     reb.Error ?? "删后重建失败");
@@ -1919,7 +1920,7 @@ namespace WordDocumentRoundtripTest
         private static string CsvXml(string csvPath)
         {
             return GenXml(
-                "column_clustered",
+                "column",
                 TitleA,
                 V1,
                 null,
@@ -1930,13 +1931,13 @@ namespace WordDocumentRoundtripTest
 
         private static string DataXml2(string a, string b)
         {
-            return GenXml("column_clustered", TitleA, V1, new[] { "2023," + a, "2024," + b });
+            return GenXml("column", TitleA, V1, new[] { "2023," + a, "2024," + b });
         }
 
         private static string DataXml4(string a, string b, string c, string d)
         {
             return GenXml(
-                "column_clustered",
+                "column",
                 TitleA,
                 V1,
                 new[] { "2023," + a, "2024," + b, "2025," + c, "2026," + d });
@@ -2253,7 +2254,7 @@ namespace WordDocumentRoundtripTest
 
         private static string ColumnXml(string title)
         {
-            return TypedXml("column_clustered", title);
+            return TypedXml("column", title);
         }
 
         private static string TypedXml(string type, string title)
@@ -2271,7 +2272,7 @@ namespace WordDocumentRoundtripTest
         private static string DataXml(string a, string b, string c)
         {
             return
-                "<ChartConfig><Chart><Type>column_clustered</Type><Title>" + TitleA + "</Title>"
+                "<ChartConfig><Chart><Type>column</Type><Title>" + TitleA + "</Title>"
                 + "<DataTable><Header>"
                 + "<Column type=\"category\">年</Column>"
                 + "<Column type=\"value\">销量</Column>"
@@ -2283,7 +2284,7 @@ namespace WordDocumentRoundtripTest
         private static string MismatchXml()
         {
             return
-                "<ChartConfig><Chart><Type>column_clustered</Type><Title>" + TitleA + "</Title>"
+                "<ChartConfig><Chart><Type>column</Type><Title>" + TitleA + "</Title>"
                 + "<DataTable><Header>"
                 + "<Column type=\"category\">年</Column>"
                 + "<Column type=\"value\">销量</Column>"
@@ -2295,7 +2296,7 @@ namespace WordDocumentRoundtripTest
 
         private static string FormatXml(string title)
         {
-            return "<ChartConfig><Chart><Type>column_clustered</Type><Title>" + title + "</Title></Chart></ChartConfig>";
+            return "<ChartConfig><Chart><Type>column</Type><Title>" + title + "</Title></Chart></ChartConfig>";
         }
 
         private static string WriteXml(string xml)

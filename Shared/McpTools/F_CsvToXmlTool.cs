@@ -485,7 +485,7 @@ namespace WordAddIn1
                     else
                     {
                         // 使用默认属性
-                        columnElement.SetAttributeValue("axisY", "primary");
+                        columnElement.SetAttributeValue("axisY", ChartConfigSyntax.AxisYPrimary);
                         columnElement.SetAttributeValue("showDataLabels", "false");
                     }
 

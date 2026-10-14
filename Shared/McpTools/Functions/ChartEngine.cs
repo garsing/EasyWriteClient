@@ -12,16 +12,42 @@ namespace WordAddIn1
     {
         public static Excel.XlChartType GetChartType(string type)
         {
-            switch (type.ToLower())
+            switch ((type ?? "").Trim())
             {
-                case "column_clustered":
-                    return Excel.XlChartType.xlColumnClustered;
-                case "line":
+                case ChartConfigSyntax.TypeLine:
                     return Excel.XlChartType.xlLine;
-                case "pie3d":
+                case ChartConfigSyntax.TypePie3d:
                     return Excel.XlChartType.xl3DPie;
                 default:
                     return Excel.XlChartType.xlColumnClustered;
+            }
+        }
+
+        public static void ApplyLegend(Word.Chart chart, string legendPosition, List<string> errors)
+        {
+            try
+            {
+                if (string.Equals(legendPosition, ChartConfigSyntax.LegendNone, StringComparison.Ordinal))
+                {
+                    chart.HasLegend = false;
+                    return;
+                }
+
+                chart.HasLegend = true;
+                string position = string.IsNullOrEmpty(legendPosition) ? "top" : legendPosition;
+                chart.Legend.Position = (Word.XlLegendPosition)GetLegendPosition(position);
+                try
+                {
+                    chart.Legend.Font.Size = 8;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] 设置图例字体大小失败: " + ex.Message);
+                }
+            }
+            catch (Exception ex)
+            {
+                errors?.Add("设置图例位置失败: " + ex.Message);
             }
         }
 
@@ -215,7 +241,7 @@ namespace WordAddIn1
                         }
 
                         // 设置Y轴（primary或secondary）
-                        if (!string.IsNullOrEmpty(seriesInfo.AxisY) && seriesInfo.AxisY == "secondary")
+                        if (ChartConfigSyntax.IsSecondaryAxis(seriesInfo.AxisY))
                         {
                             try
                             {
@@ -223,7 +249,7 @@ namespace WordAddIn1
                             }
                             catch (Exception ex)
                             {
-                                errors.Add($"设置Series{i + 1}为secondary轴失败: {ex.Message}");
+                                errors.Add($"设置Series{i + 1}为次轴失败: {ex.Message}");
                             }
                         }
 
@@ -339,54 +365,37 @@ namespace WordAddIn1
             {
                 Word.Axis valueAxis = chart.Axes(Word.XlAxisType.xlValue);
                 
-                switch (gridlines.ToLower())
+                if (!ChartConfigSyntax.TryCanonicalGridlines(gridlines, out string grid, out string gridError))
                 {
-                    case "none":
-                        valueAxis.HasMajorGridlines = false;
-                        valueAxis.HasMinorGridlines = false;
-                        break;
-                    case "major":
-                        valueAxis.HasMajorGridlines = true;
-                        valueAxis.HasMinorGridlines = false;
-                        // 设置主要网格线为虚线
-                        try
-                        {
-                            valueAxis.MajorGridlines.Format.Line.DashStyle = Microsoft.Office.Core.MsoLineDashStyle.msoLineDash;
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 设置主要网格线虚线样式失败: {ex.Message}");
-                        }
-                        break;
-                    case "minor":
-                        valueAxis.HasMajorGridlines = false;
-                        valueAxis.HasMinorGridlines = true;
-                        // 设置次要网格线为虚线
-                        try
-                        {
-                            valueAxis.MinorGridlines.Format.Line.DashStyle = Microsoft.Office.Core.MsoLineDashStyle.msoLineDash;
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 设置次要网格线虚线样式失败: {ex.Message}");
-                        }
-                        break;
-                    case "both":
-                        valueAxis.HasMajorGridlines = true;
-                        valueAxis.HasMinorGridlines = true;
-                        // 设置主要和次要网格线为虚线
-                        try
-                        {
-                            valueAxis.MajorGridlines.Format.Line.DashStyle = Microsoft.Office.Core.MsoLineDashStyle.msoLineDash;
-                            valueAxis.MinorGridlines.Format.Line.DashStyle = Microsoft.Office.Core.MsoLineDashStyle.msoLineDash;
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 设置网格线虚线样式失败: {ex.Message}");
-                        }
-                        break;
-                    default:
-                        return new ChartOperationResult { Success = false, Error = $"Gridlines值无效: '{gridlines}'，有效值为: none, major, minor, both" };
+                    return new ChartOperationResult
+                    {
+                        Success = false,
+                        Error = gridError ?? "Gridlines值无效"
+                    };
+                }
+
+                if (string.IsNullOrEmpty(grid))
+                {
+                    return new ChartOperationResult { Success = true, Error = null };
+                }
+
+                if (grid == ChartConfigSyntax.GridOff)
+                {
+                    valueAxis.HasMajorGridlines = false;
+                    valueAxis.HasMinorGridlines = false;
+                }
+                else
+                {
+                    valueAxis.HasMajorGridlines = true;
+                    valueAxis.HasMinorGridlines = false;
+                    try
+                    {
+                        valueAxis.MajorGridlines.Format.Line.DashStyle = Microsoft.Office.Core.MsoLineDashStyle.msoLineDash;
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] 设置主要网格线虚线样式失败: {ex.Message}");
+                    }
                 }
 
                 return new ChartOperationResult { Success = true, Error = null };
@@ -518,7 +527,7 @@ namespace WordAddIn1
         /// 根据数据自动计算Y轴范围（针对指定轴）
         /// </summary>
 #pragma warning disable CS8632 // 禁用可空引用类型警告
-        private static YAxisRange? CalculateYAxisRange(ChartInfo chartInfo, string axisY = "primary")
+        private static YAxisRange? CalculateYAxisRange(ChartInfo chartInfo, string axisY = ChartConfigSyntax.AxisYPrimary)
 #pragma warning restore CS8632
         {
             if (chartInfo.SeriesCollection == null || chartInfo.SeriesCollection.Count == 0)
@@ -536,7 +545,7 @@ namespace WordAddIn1
                 if (series == null || series.Points == null) continue;
 
                 // 只处理指定轴的Series
-                string seriesAxisY = string.IsNullOrEmpty(series.AxisY) ? "primary" : series.AxisY;
+                string seriesAxisY = string.IsNullOrEmpty(series.AxisY) ? ChartConfigSyntax.AxisYPrimary : series.AxisY;
                 if (seriesAxisY != axisY) continue;
 
                 foreach (var point in series.Points)
@@ -649,7 +658,7 @@ namespace WordAddIn1
             try
             {
                 // 默认隐藏Y轴线，但保留左侧数值刻度标签（适用于折线图和柱状图）
-                if (chartInfo.Type == "line" || chartInfo.Type == "column_clustered")
+                if (chartInfo.Type == "line" || ChartConfigSyntax.IsColumn(chartInfo.Type))
                 {
                     try
                     {
@@ -711,7 +720,7 @@ namespace WordAddIn1
                                 series.HasDataLabels = true;
 
                             // 对于折线图和柱状图，设置数据标签位置为上方，避免与线条重叠
-                            if (chartInfo.Type == "line" || chartInfo.Type == "column_clustered")
+                            if (chartInfo.Type == "line" || ChartConfigSyntax.IsColumn(chartInfo.Type))
                             {
                                 try
                                 {
@@ -735,34 +744,17 @@ namespace WordAddIn1
                             }
 
                             // 设置数据标签类型（针对饼图）
-                            if (chartInfo.Type == "pie3d" && !string.IsNullOrEmpty(chartInfo.DataLabelType))
+                            if (chartInfo.Type == "pie3d"
+                                && (chartInfo.ShowValue.HasValue || chartInfo.ShowPercentage.HasValue))
                             {
                                 try
                                 {
-                                    switch (chartInfo.DataLabelType.ToLower())
-                                    {
-                                        case "percent":
-                                            series.DataLabels.ShowPercentage = true;
-                                            series.DataLabels.ShowValue = false;
-                                            break;
-                                        case "value":
-                                            series.DataLabels.ShowPercentage = false;
-                                            series.DataLabels.ShowValue = true;
-                                            break;
-                                        case "both":
-                                            series.DataLabels.ShowPercentage = true;
-                                            series.DataLabels.ShowValue = true;
-                                            break;
-                                        default:
-                                            errors.Add($"DataLabelType值无效: '{chartInfo.DataLabelType}'，有效值为: percent, value, both");
-                                            break;
-                                    }
+                                    series.DataLabels.ShowValue = chartInfo.ShowValue ?? false;
+                                    series.DataLabels.ShowPercentage = chartInfo.ShowPercentage ?? false;
                                 }
                                 catch (Exception ex)
                                 {
-                                    string errorMsg = $"设置数据标签类型失败: {ex.Message}";
-                                    errors.Add(errorMsg);
-                                    System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                                    errors.Add("设置数据标签失败: " + ex.Message);
                                 }
                             }
                             }
@@ -806,7 +798,7 @@ namespace WordAddIn1
                                 series.HasDataLabels = true;
                                 
                                 // 对于折线图和柱状图，设置数据标签位置为上方
-                                if (chartInfo.Type == "line" || chartInfo.Type == "column_clustered")
+                                if (chartInfo.Type == "line" || ChartConfigSyntax.IsColumn(chartInfo.Type))
                                 {
                                     try
                                     {
@@ -888,7 +880,7 @@ namespace WordAddIn1
                 }
 
                 // 柱状图特定设置
-                if (chartInfo.Type == "column_clustered" && chartInfo.GapWidth > 0)
+                if (ChartConfigSyntax.IsColumn(chartInfo.Type) && chartInfo.GapWidth > 0)
                 {
                     try
                     {
@@ -984,7 +976,7 @@ namespace WordAddIn1
                 }
 
                 // 设置Y轴范围（适用于折线图和柱状图）
-                if (chartInfo.Type == "line" || chartInfo.Type == "column_clustered")
+                if (chartInfo.Type == "line" || ChartConfigSyntax.IsColumn(chartInfo.Type))
                 {
                     try
                     {
@@ -994,7 +986,7 @@ namespace WordAddIn1
                         {
                             foreach (var series in chartInfo.SeriesCollection)
                             {
-                                if (series != null && series.AxisY == "secondary")
+                                if (series != null && ChartConfigSyntax.IsSecondaryAxis(series.AxisY))
                                 {
                                     hasSecondaryAxis = true;
                                     break;
@@ -1008,7 +1000,7 @@ namespace WordAddIn1
                         // 如果用户没有设置Y轴范围，自动根据数据计算
                         if (chartInfo.YAxisMin == 0 && chartInfo.YAxisMax == 0)
                         {
-                            var calculatedRange = CalculateYAxisRange(chartInfo, "primary");
+                            var calculatedRange = CalculateYAxisRange(chartInfo, ChartConfigSyntax.AxisYPrimary);
                             if (calculatedRange != null)
                             {
                                 primaryYAxis.MinimumScale = calculatedRange.Min;
@@ -1042,7 +1034,7 @@ namespace WordAddIn1
                             Word.Axis secondaryYAxis = chart.Axes(Word.XlAxisType.xlValue, Word.XlAxisGroup.xlSecondary);
                             
                             // 自动计算次Y轴范围
-                            var secondaryRange = CalculateYAxisRange(chartInfo, "secondary");
+                            var secondaryRange = CalculateYAxisRange(chartInfo, ChartConfigSyntax.AxisYSecondary);
                             if (secondaryRange != null)
                             {
                                 secondaryYAxis.MinimumScale = secondaryRange.Min;
@@ -1072,7 +1064,7 @@ namespace WordAddIn1
                 }
 
                 // 设置X轴刻度线类型和刻度标签显示（适用于折线图和柱状图）
-                if (chartInfo.Type == "line" || chartInfo.Type == "column_clustered")
+                if (chartInfo.Type == "line" || ChartConfigSyntax.IsColumn(chartInfo.Type))
                 {
                     try
                     {
@@ -1485,18 +1477,7 @@ namespace WordAddIn1
                 }
             }
 
-            try
-            {
-                chart.HasLegend = true;
-                string legendPosition = !string.IsNullOrEmpty(chartInfo.LegendPosition)
-                    ? chartInfo.LegendPosition
-                    : "top";
-                chart.Legend.Position = (Word.XlLegendPosition)GetLegendPosition(legendPosition);
-            }
-            catch (Exception ex)
-            {
-                warnings.Add($"设置图例失败: {ex.Message}");
-            }
+            ApplyLegend(chart, chartInfo.LegendPosition, warnings);
 
             if (!string.IsNullOrEmpty(chartInfo.Gridlines))
             {

@@ -157,7 +157,7 @@ namespace WordAddIn1
                 int chartType = (int)chart.ChartType;
                 if (chartType == (int)Excel.XlChartType.xlColumnClustered)
                 {
-                    return "column_clustered";
+                    return ChartConfigSyntax.TypeColumn;
                 }
 
                 if (chartType == (int)Excel.XlChartType.xlLine)

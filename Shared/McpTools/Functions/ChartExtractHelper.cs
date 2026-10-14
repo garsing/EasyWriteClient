@@ -120,6 +120,10 @@ namespace WordAddIn1
                 {
                     chartInfo.LegendPosition = MapLegendPosition(chart.Legend.Position);
                 }
+                else
+                {
+                    chartInfo.LegendPosition = ChartConfigSyntax.LegendNone;
+                }
 
                 bool anyDataLabels = false;
                 dynamic seriesCollection = chart.SeriesCollection();
@@ -138,6 +142,10 @@ namespace WordAddIn1
                 }
 
                 chartInfo.ShowDataLabels = anyDataLabels;
+                if (string.Equals(chartInfo.Type, ChartConfigSyntax.TypePie3d, StringComparison.Ordinal))
+                {
+                    TryExtractPieLabelFlags(seriesCollection, chartInfo);
+                }
             }
             catch (Exception ex)
             {
@@ -152,7 +160,7 @@ namespace WordAddIn1
 
             try
             {
-                if (chartInfo.Type == "column_clustered")
+                if (ChartConfigSyntax.IsColumn(chartInfo.Type))
                 {
                     dynamic series1 = chart.SeriesCollection(1);
                     if (series1 != null)
@@ -180,7 +188,7 @@ namespace WordAddIn1
                     Type = "category"
                 };
 
-                if (chartInfo.Type == "line" || chartInfo.Type == "column_clustered")
+                if (ChartConfigSyntax.IsLineOrColumn(chartInfo.Type))
                 {
                     try
                     {
@@ -225,7 +233,7 @@ namespace WordAddIn1
                         var seriesInfo = new SeriesInfo
                         {
                             Name = series.Name ?? $"系列{i}",
-                            AxisY = "primary",
+                            AxisY = ChartConfigSyntax.AxisYPrimary,
                             Color = "",
                             ChartType = "",
                             ShowDataLabels = null,
@@ -237,7 +245,7 @@ namespace WordAddIn1
                             dynamic axisGroup = series.AxisGroup;
                             if (axisGroup == Word.XlAxisGroup.xlSecondary)
                             {
-                                seriesInfo.AxisY = "secondary";
+                                seriesInfo.AxisY = ChartConfigSyntax.AxisYSecondary;
                             }
                         }
                         catch { }
@@ -362,7 +370,7 @@ namespace WordAddIn1
             int chartType = (int)chart.ChartType;
             if (chartType == (int)Excel.XlChartType.xlColumnClustered)
             {
-                return "column_clustered";
+                return ChartConfigSyntax.TypeColumn;
             }
 
             if (chartType == (int)Excel.XlChartType.xlLine)
@@ -408,28 +416,11 @@ namespace WordAddIn1
             try
             {
                 Word.Axis valueAxis = chart.Axes(Word.XlAxisType.xlValue);
-                bool major = valueAxis.HasMajorGridlines;
-                bool minor = valueAxis.HasMinorGridlines;
-                if (major && minor)
-                {
-                    return "both";
-                }
-
-                if (major)
-                {
-                    return "major";
-                }
-
-                if (minor)
-                {
-                    return "minor";
-                }
-
-                return "none";
+                return valueAxis.HasMajorGridlines ? ChartConfigSyntax.GridOn : ChartConfigSyntax.GridOff;
             }
             catch
             {
-                return "none";
+                return ChartConfigSyntax.GridOff;
             }
         }
 
@@ -446,6 +437,38 @@ namespace WordAddIn1
             catch { }
 
             return "";
+        }
+
+        private static void TryExtractPieLabelFlags(dynamic seriesCollection, ChartInfo chartInfo)
+        {
+            try
+            {
+                dynamic first = seriesCollection(1);
+                if (first == null || !first.HasDataLabels)
+                {
+                    return;
+                }
+
+                dynamic labels = first.DataLabels;
+                try
+                {
+                    chartInfo.ShowValue = (bool)labels.ShowValue;
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    chartInfo.ShowPercentage = (bool)labels.ShowPercentage;
+                }
+                catch
+                {
+                }
+            }
+            catch
+            {
+            }
         }
 
         private static string ExtractSeriesColorHex(dynamic series, string chartType)
