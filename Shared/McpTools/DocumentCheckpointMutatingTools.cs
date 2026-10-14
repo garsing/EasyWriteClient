@@ -30,6 +30,7 @@ namespace WordAddIn1
             "F_insert_blank_page",
             "F_insert_page_break",
             "F_apply_data_provenance",
+            "F_clear_data_provenance",
         };
 
         public static bool ShouldCheckpoint(string toolName, IReadOnlyDictionary<string, object> parameters)
@@ -113,6 +114,8 @@ namespace WordAddIn1
                     return F_InsertPageBreakTool.TryGetContractParseFailure(args, out failure);
                 case "F_apply_data_provenance":
                     return F_ApplyDataProvenanceTool.TryGetContractParseFailure(args, out failure);
+                case "F_clear_data_provenance":
+                    return false;
                 default:
                     return false;
             }

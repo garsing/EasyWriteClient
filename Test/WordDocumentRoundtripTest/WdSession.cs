@@ -270,6 +270,17 @@ namespace WordDocumentRoundtripTest
                 args ?? new Dictionary<string, object>());
         }
 
+        public ToolResult ClearDataProvenance(string channelId)
+        {
+            var args = new Dictionary<string, object>();
+            if (channelId != null)
+            {
+                args["channel_id"] = channelId;
+            }
+
+            return DesktopToolPipe.Call("F_clear_data_provenance", args);
+        }
+
         public ToolResult GetDataProvenance(string channelId)
         {
             var args = new Dictionary<string, object>();

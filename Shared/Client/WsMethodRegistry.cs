@@ -11,12 +11,14 @@ namespace WordAddIn1
     /// </summary>
     public class WsMethodRegistry
     {
+        private readonly object _wordApplication;
         private readonly Dictionary<string, string> _methodToToolName;
         private readonly Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> _toolHandlers;
         private readonly JavaScriptSerializer _jsonSerializer = new JavaScriptSerializer();
 
         public WsMethodRegistry(object wordApplication)
         {
+            _wordApplication = wordApplication;
             DocumentCheckpointService.SetWordApplication(wordApplication);
 
             _toolHandlers = new Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>>();
@@ -55,6 +57,7 @@ namespace WordAddIn1
                 { "document.processActions", "F_process_document_actions" },
                 // document.setTrackRevisions / F_set_track_revisions 已下线（2026-08）
                 { "document.applyDataProvenance", "F_apply_data_provenance" },
+                { "document.clearDataProvenance", "F_clear_data_provenance" },
                 { "document.getDataProvenance", "F_get_data_provenance" },
                 { "document.insertFromFile", "F_insert_document_from_file" },
                 { "document.replaceFromFile", "F_replace_document_from_file" },
@@ -212,7 +215,7 @@ namespace WordAddIn1
             }
         }
 
-        private static async Task<ToolResult> InvokeHandlerCoreAsync(
+        private async Task<ToolResult> InvokeHandlerCoreAsync(
             string toolName,
             Func<Dictionary<string, object>, Task<ToolResult>> handler,
             Dictionary<string, object> args)
@@ -234,6 +237,11 @@ namespace WordAddIn1
                     "invoke-skip-ckpt-parse",
                     parseFail == null ? "" : parseFail.Error);
                 return parseFail;
+            }
+
+            if (TryReturnBeforeCheckpoint(toolName, args, out ToolResult early))
+            {
+                return early;
             }
 
             CheckpointBeforeResult before = DocumentCheckpointService.CreateBeforeMutation(toolName, args);
@@ -293,6 +301,66 @@ namespace WordAddIn1
 
             DocumentCheckpointService.AppendActionLogAfterMutation(toolName, args);
             return result;
+        }
+
+        /// <summary>
+        /// 清除 / 写入在建副本之前探测引用。没有引用的清除直接成功；已有引用的写入直接失败。
+        /// </summary>
+        private bool TryReturnBeforeCheckpoint(
+            string toolName,
+            Dictionary<string, object> args,
+            out ToolResult early)
+        {
+            early = null;
+            bool isClear = toolName == "F_clear_data_provenance";
+            bool isApply = toolName == "F_apply_data_provenance";
+            if (!isClear && !isApply)
+            {
+                return false;
+            }
+
+            if (!DocumentHost.DocumentHostAdapter.TryResolveInteropDocument(
+                    args,
+                    _wordApplication,
+                    out DocumentHost.InteropDocumentHandle handle,
+                    out ToolResult resolveError))
+            {
+                early = resolveError ?? new ToolResult { Success = false, Error = "无法解析文档渠道" };
+                return true;
+            }
+
+            bool has;
+            try
+            {
+                has = DataProvenanceClearHelper.HasProvenance(handle.Document);
+            }
+            catch (Exception ex)
+            {
+                early = new ToolResult { Success = false, Error = "执行失败: " + ex.Message };
+                return true;
+            }
+
+            if (isClear && !has)
+            {
+                early = new ToolResult
+                {
+                    Success = true,
+                    Data = new { cleared = false },
+                };
+                return true;
+            }
+
+            if (isApply && has)
+            {
+                early = new ToolResult
+                {
+                    Success = false,
+                    Error = DataProvenanceClearHelper.AlreadyHasProvenanceError,
+                };
+                return true;
+            }
+
+            return false;
         }
 
         public async Task<string> InvokeAsync(string method, Dictionary<string, object> parameters)

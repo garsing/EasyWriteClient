@@ -33,6 +33,7 @@ namespace WordAddIn1
             "F_insert_blank_page",
             "F_insert_page_break",
             "F_apply_data_provenance",
+            "F_clear_data_provenance",
             "F_restore_document_checkpoint",
             "F_write_excel_range",
             "F_manage_excel_sheet",

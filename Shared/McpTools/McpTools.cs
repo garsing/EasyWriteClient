@@ -84,6 +84,7 @@ namespace WordAddIn1
             // F_SetTrackRevisionsTool 已下线注册（2026-08）：实现保留，勿再 Register；WS 映射已移除
             // F_SetTrackRevisionsTool.Register(toolRegistry, wordApplication);
             F_ApplyDataProvenanceTool.Register(toolRegistry, wordApplication);
+            F_ClearDataProvenanceTool.Register(toolRegistry, wordApplication);
             F_GetDataProvenanceTool.Register(toolRegistry, wordApplication);
             F_InsertDocumentFromFileTool.Register(toolRegistry, wordApplication);
             F_ReplaceDocumentFromFileTool.Register(toolRegistry, wordApplication);

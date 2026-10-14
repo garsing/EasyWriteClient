@@ -11,19 +11,32 @@ namespace WordAddIn1
         private static readonly Regex MarkerFormatRegex = new Regex(@"^\[\d+\]$", RegexOptions.Compiled);
         private const int MaxFormatScanSteps = 200000;
 
-        public static List<string> ClearIfNeeded(Word.Document doc)
+        public const string AlreadyHasProvenanceError =
+            "文档已有引用，须先 F_clear_data_provenance，再按清除后的编码建新引用。";
+
+        public static bool HasProvenance(Word.Document doc)
         {
-            var warnings = new List<string>();
             if (doc == null)
             {
-                return warnings;
+                return false;
+            }
+
+            if (CollectProvenanceBookmarkInfos(doc).Count > 0)
+            {
+                return true;
+            }
+
+            return ScanSuperscriptMarkers(doc, delete: false);
+        }
+
+        public static void ClearAll(Word.Document doc)
+        {
+            if (!HasProvenance(doc))
+            {
+                return;
             }
 
             var infos = CollectProvenanceBookmarkInfos(doc);
-            if (infos.Count == 0)
-            {
-                return warnings;
-            }
 
             var deletedSpans = new List<(int Start, int End)>();
             foreach (BookmarkInfo info in infos.Where(i => i.IsBlock).OrderByDescending(i => i.Start))
@@ -41,14 +54,8 @@ namespace WordAddIn1
                 TryDeleteBookmarkByName(doc, info.Name, deletedSpans);
             }
 
-            bool formatHit = ScanAndRemoveSuperscriptMarkers(doc);
-            if (formatHit)
-            {
-                warnings.Add("marker_removed_by_format_scan");
-            }
-
+            ScanSuperscriptMarkers(doc, delete: true);
             TrimTrailingEmptyParagraphs(doc);
-            return warnings;
         }
 
         private struct BookmarkInfo
@@ -135,7 +142,8 @@ namespace WordAddIn1
             }
 
             return name.StartsWith("yw_prov_tbl_block_", StringComparison.Ordinal)
-                || name.StartsWith("yw_prov_cht_block_", StringComparison.Ordinal);
+                || name.StartsWith("yw_prov_cht_block_", StringComparison.Ordinal)
+                || name.StartsWith("yw_prov_img_block_", StringComparison.Ordinal);
         }
 
         private static void TrimTrailingEmptyParagraphs(Word.Document doc)
@@ -161,7 +169,7 @@ namespace WordAddIn1
             }
         }
 
-        private static bool ScanAndRemoveSuperscriptMarkers(Word.Document doc)
+        private static bool ScanSuperscriptMarkers(Word.Document doc, bool delete)
         {
             bool hit = false;
             try
@@ -189,8 +197,13 @@ namespace WordAddIn1
                             string text = (candidate.Text ?? "").Trim();
                             if (MarkerFormatRegex.IsMatch(text) && candidate.Font.Superscript != 0)
                             {
-                                candidate.Delete();
                                 hit = true;
+                                if (!delete)
+                                {
+                                    return true;
+                                }
+
+                                candidate.Delete();
                                 end = doc.Content.End;
                                 continue;
                             }

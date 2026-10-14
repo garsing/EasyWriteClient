@@ -423,8 +423,6 @@ namespace WordDocumentRoundtripTest
                     : (applied.Error ?? ""));
 
             string body = ReadBody(s, id);
-            Console.WriteLine("[after-apply] codes=" + string.Join(",", ListCodes(body, "S")));
-            Console.WriteLine("[after-apply] body=" + body.Replace("\r", "\\r"));
             Ok(run, "wv-s-mark",
                 applied.Success && Contains(body, ProvSent) && Contains(body, "[1]"),
                 applied.Success ? "缺原句或 [1]: " + Snip(body) : (applied.Error ?? ""));
@@ -443,11 +441,26 @@ namespace WordDocumentRoundtripTest
                 code2 = code;
             }
 
-            ToolResult cover = s.ApplyDataProvenance(ApplyArgs(id, new List<object> { SentItem(code2, SrcB) }));
+            ToolResult refused = s.ApplyDataProvenance(ApplyArgs(id, new List<object> { SentItem(code2, SrcB) }));
+            string still = ReadBody(s, id);
+            ToolResult cleared = s.ClearDataProvenance(id);
+            string restored = ReadBody(s, id);
+            string codeBack = FirstCode(restored, "S");
+            ToolResult again = s.ApplyDataProvenance(ApplyArgs(id, new List<object> { SentItem(codeBack, SrcB) }));
             string after = ReadBody(s, id);
             Ok(run, "wv-s-cover",
-                cover.Success && Contains(after, SrcB) && !Contains(after, SrcA),
-                cover.Success ? "覆盖后参考区不对: " + Snip(after) : (cover.Error ?? ""));
+                !refused.Success
+                    && Contains(refused.Error ?? "", "已有引用")
+                    && Contains(still, SrcA)
+                    && !Contains(still, SrcB)
+                    && cleared.Success
+                    && codeBack == code
+                    && again.Success
+                    && Contains(after, SrcB)
+                    && !Contains(after, SrcA),
+                !refused.Success
+                    ? "清后码=" + codeBack + " 原码=" + code + " again=" + (again.Error ?? Snip(after))
+                    : ("再 apply 仍成功: " + Snip(still)));
             s.CloseDocByPath(path);
         }
 
@@ -521,13 +534,18 @@ namespace WordDocumentRoundtripTest
                         Ok(run, "wv-t-ok",
                             applied.Success && WdSession.IntOf(applied, "table_count") == 1,
                             applied.Success ? "table_count=" + WdSession.IntOf(applied, "table_count") : (applied.Error ?? ""));
+                        ToolResult againTbl = s.ApplyDataProvenance(ApplyArgs(id, new List<object> { ObjItem(tid, TblSrc) }));
+                        string afterTbl = ReadBody(s, id);
                         Ok(run, "wv-t-star",
                             applied.Success
                                 && Contains(body, TblCell)
                                 && Contains(body, "*")
                                 && Contains(body, TblSrc)
-                                && !Contains(body, "[1]"),
-                            applied.Success ? "表下说明不对: " + Snip(body) : (applied.Error ?? ""));
+                                && !Contains(body, "[1]")
+                                && !againTbl.Success
+                                && Contains(againTbl.Error ?? "", "已有引用")
+                                && Contains(afterTbl, TblSrc),
+                            applied.Success ? "表下说明或再写入: " + (againTbl.Error ?? Snip(afterTbl)) : (applied.Error ?? ""));
                     }
 
                     s.CloseDocByPath(path);
@@ -554,9 +572,13 @@ namespace WordDocumentRoundtripTest
             }
 
             ToolResult img = s.ApplyDataProvenance(ApplyArgs(id, new List<object> { ObjItem(imageId, ImgSrc) }));
+            ToolResult againImg = s.ApplyDataProvenance(ApplyArgs(id, new List<object> { ObjItem(imageId, ImgSrc) }));
             Ok(run, "wv-i-ok",
-                img.Success && WdSession.IntOf(img, "image_count") == 1,
-                img.Success ? "image_count=" + WdSession.IntOf(img, "image_count") : (img.Error ?? ""));
+                img.Success
+                    && WdSession.IntOf(img, "image_count") == 1
+                    && !againImg.Success
+                    && Contains(againImg.Error ?? "", "已有引用"),
+                img.Success ? (againImg.Error ?? "image_count=" + WdSession.IntOf(img, "image_count")) : (img.Error ?? ""));
             s.CloseDocByPath(path);
         }
 

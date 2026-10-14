@@ -39,9 +39,6 @@ namespace WordAddIn1
                     DataProvenanceJsonParser.TryParseItems(args, out List<ProvenanceItemInput> items, out _);
                     DataProvenanceParamValidator.ValidateStructure(items);
 
-                    // 覆盖须先清旧再定位。清旧后作废指纹缓存，按门面同源刷快照。
-                    List<string> warnings = DataProvenanceClearHelper.ClearIfNeeded(doc);
-                    DocumentState.ClearProcessDocumentCache("apply_data_provenance_cleared");
                     WordDocumentExtractor.ProcessDocument(
                         doc,
                         ProcessDocumentOptions.ForProcessActions("locate"));
@@ -123,8 +120,6 @@ namespace WordAddIn1
                             item.SentenceNumber.Value);
                     }
 
-                    DataProvenanceWriteHelper.DumpCharactersAfterMarkers(doc);
-
                     DataProvenanceWriteHelper.WriteReferenceSection(doc, sentenceItems);
 
                     return new ToolResult
@@ -137,7 +132,6 @@ namespace WordAddIn1
                             chart_count = chartCount,
                             image_count = imageCount,
                             item_count = items.Count,
-                            warnings,
                         },
                     };
                 }

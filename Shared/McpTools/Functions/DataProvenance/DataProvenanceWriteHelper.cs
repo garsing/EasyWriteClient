@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
@@ -207,111 +205,6 @@ namespace WordAddIn1
             }
 
             return range.Paragraphs[range.Paragraphs.Count].Range;
-        }
-
-        /// <summary>
-        /// 探针：写完句末角标、写参考区之前，按 Characters 打出每个字符和 Start/End。
-        /// </summary>
-        public static void DumpCharactersAfterMarkers(Word.Document doc)
-        {
-            if (doc == null)
-            {
-                return;
-            }
-
-            var sb = new StringBuilder();
-            int contentStart = doc.Content.Start;
-            int contentEnd = doc.Content.End;
-            sb.AppendLine("=== after [n] / before 参考区 ===");
-            sb.AppendLine("Content.Start=" + contentStart + " Content.End=" + contentEnd);
-            sb.AppendLine("Paragraphs.Count=" + doc.Paragraphs.Count);
-            Word.Paragraph last = doc.Paragraphs[doc.Paragraphs.Count];
-            sb.AppendLine(
-                "LastPara Start=" + last.Range.Start
-                + " End=" + last.Range.End
-                + " Text=" + EscapeStoryChar(last.Range.Text));
-            int planned = contentEnd - 1;
-            sb.AppendLine("planned insert pos=Content.End-1=" + planned);
-            if (planned >= contentStart && planned < contentEnd)
-            {
-                try
-                {
-                    string at = doc.Range(planned, planned + 1).Text;
-                    sb.AppendLine("char@End-1=" + EscapeStoryChar(at));
-                }
-                catch (Exception ex)
-                {
-                    sb.AppendLine("char@End-1 THROW " + ex.Message);
-                }
-            }
-
-            Word.Characters chars = doc.Characters;
-            sb.AppendLine("Characters.Count=" + chars.Count);
-            sb.AppendLine("--- Characters ---");
-            for (int i = 1; i <= chars.Count; i++)
-            {
-                Word.Range c = chars[i];
-                sb.AppendLine(
-                    "i=" + i
-                    + " Start=" + c.Start
-                    + " End=" + c.End
-                    + " " + EscapeStoryChar(c.Text));
-            }
-
-            string path = Path.Combine(
-                @"D:\project\EasyWrite",
-                "char-stream-after-marker.txt");
-            File.AppendAllText(path, sb.ToString() + Environment.NewLine, Encoding.UTF8);
-            Console.WriteLine(sb.ToString());
-        }
-
-        private static string EscapeStoryChar(string text)
-        {
-            if (text == null)
-            {
-                return "text=<null>";
-            }
-
-            var sb = new StringBuilder("text=");
-            foreach (char ch in text)
-            {
-                if (ch == '\r')
-                {
-                    sb.Append("\\r");
-                }
-                else if (ch == '\n')
-                {
-                    sb.Append("\\n");
-                }
-                else if (ch == '\a')
-                {
-                    sb.Append("\\a");
-                }
-                else if (ch == '\f')
-                {
-                    sb.Append("\\f");
-                }
-                else if (ch == '\x01')
-                {
-                    sb.Append("\\x01");
-                }
-                else if (ch < 32)
-                {
-                    sb.Append("\\x").Append(((int)ch).ToString("X2"));
-                }
-                else
-                {
-                    sb.Append(ch);
-                }
-            }
-
-            sb.Append(" codes=");
-            foreach (char ch in text)
-            {
-                sb.Append(((int)ch).ToString()).Append(' ');
-            }
-
-            return sb.ToString().TrimEnd();
         }
 
         private static void CollapseEndBeforeTrailingBreaks(Word.Range sentence)
