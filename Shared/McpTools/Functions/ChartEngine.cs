@@ -1222,7 +1222,8 @@ namespace WordAddIn1
             Word.Chart chart,
             Word.InlineShape inlineShape,
             ChartInfo chartInfo,
-            string scope)
+            string scope,
+            Word.Shape floatingShape = null)
         {
             var result = new ChartApplyResult();
             if (chart == null || chartInfo == null)
@@ -1246,7 +1247,7 @@ namespace WordAddIn1
 
             try
             {
-                return ApplyToExistingChartCore(chart, inlineShape, chartInfo, scope);
+                return ApplyToExistingChartCore(chart, inlineShape, chartInfo, scope, floatingShape);
             }
             finally
             {
@@ -1258,7 +1259,8 @@ namespace WordAddIn1
             Word.Chart chart,
             Word.InlineShape inlineShape,
             ChartInfo chartInfo,
-            string scope)
+            string scope,
+            Word.Shape floatingShape = null)
         {
             var result = new ChartApplyResult();
             if (chart == null || chartInfo == null)
@@ -1298,7 +1300,7 @@ namespace WordAddIn1
 
                 if (normalizedScope == "format" || normalizedScope == "all")
                 {
-                    var formatWarnings = ApplyFormatToExistingChart(chart, inlineShape, chartInfo);
+                    var formatWarnings = ApplyFormatToExistingChart(chart, inlineShape, chartInfo, floatingShape);
                     warnings.AddRange(formatWarnings);
                 }
 
@@ -1368,7 +1370,8 @@ namespace WordAddIn1
         public static List<string> ApplyFormatToExistingChart(
             Word.Chart chart,
             Word.InlineShape inlineShape,
-            ChartInfo chartInfo)
+            ChartInfo chartInfo,
+            Word.Shape floatingShape = null)
         {
             var warnings = new List<string>();
 
@@ -1384,22 +1387,39 @@ namespace WordAddIn1
                 }
             }
 
-            if (inlineShape != null)
+            if (inlineShape != null || floatingShape != null)
             {
                 try
                 {
-                    int configuredWidth = chartInfo.Width > 0 ? chartInfo.Width : (int)inlineShape.Width;
-                    int configuredHeight = chartInfo.Height > 0 ? chartInfo.Height : (int)inlineShape.Height;
+                    float currentWidth = inlineShape != null ? inlineShape.Width : floatingShape.Width;
+                    float currentHeight = inlineShape != null ? inlineShape.Height : floatingShape.Height;
+                    int configuredWidth = chartInfo.Width > 0 ? chartInfo.Width : (int)currentWidth;
+                    int configuredHeight = chartInfo.Height > 0 ? chartInfo.Height : (int)currentHeight;
+                    int width = configuredWidth;
+                    int height = configuredHeight;
                     if (configuredWidth > 400)
                     {
                         double scaleRatio = 400.0 / configuredWidth;
-                        inlineShape.Width = 400;
-                        inlineShape.Height = (int)Math.Round(configuredHeight * scaleRatio);
+                        width = 400;
+                        height = (int)Math.Round(configuredHeight * scaleRatio);
                     }
-                    else if (chartInfo.Width > 0 || chartInfo.Height > 0)
+                    else if (chartInfo.Width <= 0 && chartInfo.Height <= 0)
                     {
-                        inlineShape.Width = configuredWidth;
-                        inlineShape.Height = configuredHeight;
+                        width = 0;
+                    }
+
+                    if (width > 0)
+                    {
+                        if (inlineShape != null)
+                        {
+                            inlineShape.Width = width;
+                            inlineShape.Height = height;
+                        }
+                        else
+                        {
+                            floatingShape.Width = width;
+                            floatingShape.Height = height;
+                        }
                     }
                 }
                 catch (Exception ex)

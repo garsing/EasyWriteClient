@@ -40,6 +40,10 @@ namespace WordAddIn1
 
         private static List<ChartOrderedEntry> _chartOrderedEntries;
         private static int _chartConsumeIndex;
+        private static int _chartDrawingsSeen;
+        private static bool _chartStampOnWord;
+        private static List<ChartResolveHelper.BodyChart> _chartSlotsForStamp;
+        private static List<string> _chartIdsForStamp;
 
         private static HashSet<string> _readOccupiedTableIds;
         private static List<string> _readWordAssignedIds;
@@ -149,6 +153,10 @@ namespace WordAddIn1
                 string pathForImages = null;
 
                 // 图表走 COM 预提取，OOXML 遍历时按 chart drawing 顺序消费
+                _chartDrawingsSeen = 0;
+                _chartStampOnWord = false;
+                _chartSlotsForStamp = null;
+                _chartIdsForStamp = null;
                 _chartOrderedEntries = ExtractAllChartsOrdered(document, prevChartOrder);
                 _chartConsumeIndex = 0;
 
@@ -186,6 +194,24 @@ namespace WordAddIn1
 
                 BuildTableIdOrderFromText(result);
                 result = ApplyTableStampsAfterRead(document, result);
+                if (_chartStampOnWord)
+                {
+                    int expected = _chartOrderedEntries == null ? 0 : _chartOrderedEntries.Count;
+                    if (_chartDrawingsSeen != expected || _chartConsumeIndex != expected)
+                    {
+                        throw new Exception(
+                            "图表队列与正文绘图不一致：COM "
+                            + expected
+                            + "，绘图 "
+                            + _chartDrawingsSeen);
+                    }
+
+                    if (!ChartTitleStampHelper.ApplyAssignedIds(_chartSlotsForStamp, _chartIdsForStamp))
+                    {
+                        throw new Exception("图表编号写入形状标题失败");
+                    }
+                }
+
                 BuildChartIdOrderFromText(result);
                 BuildImageIdOrderFromText(result);
                 
@@ -389,58 +415,37 @@ namespace WordAddIn1
                 return wps;
             }
 
-            var orderedShapes = new List<(int Start, Word.Chart Chart)>();
-
-            try
-            {
-                foreach (Word.InlineShape shape in document.InlineShapes)
-                {
-                    if (shape.Type == Word.WdInlineShapeType.wdInlineShapeChart)
-                    {
-                        try
-                        {
-                            orderedShapes.Add((shape.Range.Start, shape.Chart));
-                        }
-                        catch (Exception ex)
-                        {
-                            LogExtractVerbose($"[WordReader] 读取 InlineShape 图表失败: {ex.Message}");
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                LogExtractVerbose($"[WordReader] 提取图表列表失败: {ex.Message}");
-                return new List<ChartOrderedEntry>();
-            }
-
-            orderedShapes.Sort((a, b) => a.Start.CompareTo(b.Start));
-
+            List<ChartResolveHelper.BodyChart> slots = ChartResolveHelper.GetBodyChartsInOrder(document);
+            var occupied = new HashSet<string>(StringComparer.Ordinal);
+            var ids = new List<string>();
             var result = new List<ChartOrderedEntry>();
-            var raws = new List<string>();
-            var bodies = new List<string>();
-            var starts = new List<int>();
-            foreach (var item in orderedShapes)
+            foreach (ChartResolveHelper.BodyChart slot in slots)
             {
-                string rawXml = ExtractChartSeriesCollection(item.Chart);
+                if (!slot.TryReadTitle(out string title))
+                {
+                    throw new Exception("读取图表形状标题失败");
+                }
+
+                string chartId = ChartTitleStampHelper.DecideChartId(title, occupied);
+                if (string.IsNullOrEmpty(chartId))
+                {
+                    throw new Exception("无法为图表分配编号");
+                }
+
+                string rawXml = ExtractChartSeriesCollection(slot.Chart);
                 if (string.IsNullOrEmpty(rawXml))
                 {
-                    continue;
+                    throw new Exception("提取图表数据失败");
                 }
 
-                raws.Add(rawXml);
-                bodies.Add(ExtractChartBodyContent(rawXml));
-                starts.Add(item.Start);
+                ids.Add(chartId);
+                result.Add(new ChartOrderedEntry { TaggedXml = BuildChartXmlWithId(chartId, rawXml) });
+                LogExtractVerbose($"[ChartId] 预提取 chart_id={chartId}，Start={slot.Start}");
             }
 
-            List<string> chartIds = DocumentState.AssignChartIdsForRead(bodies, prevChartOrder);
-            for (int i = 0; i < raws.Count; i++)
-            {
-                string chartId = i < chartIds.Count ? chartIds[i] : "";
-                result.Add(new ChartOrderedEntry { TaggedXml = BuildChartXmlWithId(chartId, raws[i]) });
-                LogExtractVerbose($"[ChartId] 预提取 chart_id={chartId}，Range.Start={starts[i]}");
-            }
-
+            _chartStampOnWord = true;
+            _chartSlotsForStamp = slots;
+            _chartIdsForStamp = ids;
             LogExtractVerbose($"[WordReader] 共预提取 {result.Count} 个图表（有序）");
             return result;
         }
@@ -519,22 +524,74 @@ namespace WordAddIn1
             return xml;
         }
 
+        private static readonly XNamespace NS_W_MAIN =
+            "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+        private static bool IsInsideTextBox(XElement element)
+        {
+            return element != null && element.Ancestors(NS_W_MAIN + "txbxContent").Any();
+        }
+
+        private static bool IsChartElement(XElement element)
+        {
+            if (element == null)
+            {
+                return false;
+            }
+
+            return element.Name == NS_CHART + "chart"
+                || element.Name == NS_CHART + "chartSpace"
+                || element.Name == NS_CHART + "userShapes";
+        }
+
         private static bool IsChartDrawing(XElement drawing)
+        {
+            if (drawing == null || IsInsideTextBox(drawing))
+            {
+                return false;
+            }
+
+            foreach (XElement node in drawing.Descendants())
+            {
+                if (!IsChartElement(node) || IsInsideTextBox(node))
+                {
+                    continue;
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool ContainsChartInTextBox(XElement drawing)
         {
             if (drawing == null)
             {
                 return false;
             }
 
-            return drawing.Descendants(NS_CHART + "chart").Any()
-                || drawing.Descendants(NS_CHART + "chartSpace").Any()
-                || drawing.Descendants(NS_CHART + "userShapes").Any();
+            foreach (XElement node in drawing.Descendants())
+            {
+                if (IsChartElement(node) && IsInsideTextBox(node))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static string AppendDrawingContent(XElement drawing, XNamespace w)
         {
+            if (IsInsideTextBox(drawing) || ContainsChartInTextBox(drawing))
+            {
+                return "";
+            }
+
             if (IsChartDrawing(drawing))
             {
+                _chartDrawingsSeen++;
                 string chartXml = TryConsumeNextChartTaggedXml();
                 if (!string.IsNullOrEmpty(chartXml))
                 {

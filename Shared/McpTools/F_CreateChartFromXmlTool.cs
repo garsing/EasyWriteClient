@@ -78,30 +78,52 @@ namespace WordAddIn1
                         warnings.Add(createResult.Error);
                     }
 
-                    string resolvedChartId = null;
+                    Word.InlineShape createdShape = createResult.InlineShape;
+                    if (createdShape == null)
+                    {
+                        return new ToolResult { Success = false, Error = "图表创建失败: 未拿到新图" };
+                    }
+
+                    var occupied = new HashSet<string>(StringComparer.Ordinal);
+                    foreach (ChartResolveHelper.BodyChart existing in ChartResolveHelper.GetBodyChartsInOrder(document))
+                    {
+                        if (existing.TryReadTitle(out string title)
+                            && ChartTitleStampHelper.TryParse(title, out string existingId, out _))
+                        {
+                            occupied.Add(existingId);
+                        }
+                    }
+
+                    string resolvedChartId = ChartTitleStampHelper.NewRandomChartId(occupied);
+                    if (string.IsNullOrEmpty(resolvedChartId)
+                        || !ChartTitleStampHelper.TryWriteStamp(
+                            new ChartResolveHelper.BodyChart { Inline = createdShape, Chart = createdShape.Chart },
+                            resolvedChartId))
+                    {
+                        try
+                        {
+                            createdShape.Delete();
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine("[CreateChart] 打戳失败后删图失败: " + ex.Message);
+                        }
+
+                        return new ToolResult { Success = false, Error = "图表编号写入形状标题失败" };
+                    }
+
                     try
                     {
-                        int chartStart = createResult.ChartStart;
                         WordReader.ReadWord(document);
-
-                        List<Word.InlineShape> allCharts = ChartResolveHelper.GetInlineChartsInOrder(document);
-                        int chartIndex = allCharts.FindIndex(s => s.Range.Start == chartStart);
-
-                        var idOrder = DocumentState.GetChartIdOrder();
-                        if (chartIndex >= 0 && chartIndex < idOrder.Count)
-                        {
-                            resolvedChartId = idOrder[chartIndex];
-                            System.Diagnostics.Debug.WriteLine(
-                                $"[DEBUG] 建图 chart_id={resolvedChartId}（Range.Start={chartStart}, index={chartIndex}）");
-                        }
-                        else
-                        {
-                            warnings.Add("未能解析 chart_id（图表索引与编号映射不一致）");
-                        }
                     }
                     catch (Exception ex)
                     {
-                        warnings.Add($"未能解析 chart_id: {ex.Message}");
+                        return new ToolResult { Success = false, Error = "生成图表映射表失败：" + ex.Message };
+                    }
+
+                    if (DocumentState.GetChartIndex(resolvedChartId) < 0)
+                    {
+                        return new ToolResult { Success = false, Error = "图表编号未进入正文队列" };
                     }
 
                     string message = "图表创建成功";

@@ -19,7 +19,8 @@ namespace WordAddIn1
             Word.InlineShape inlineShape,
             ChartInfo chartInfo,
             string scope,
-            string mode)
+            string mode,
+            Word.Shape floatingShape = null)
         {
             string normalizedMode = string.IsNullOrEmpty(mode) ? "full" : mode.Trim().ToLowerInvariant();
             if (normalizedMode != "full")
@@ -27,7 +28,7 @@ namespace WordAddIn1
                 return new ChartApplyResult { Success = false, Error = $"mode 无效: '{mode}'，当前仅支持 full" };
             }
 
-            return ChartEngine.ApplyToExistingChart(chart, inlineShape, chartInfo, scope);
+            return ChartEngine.ApplyToExistingChart(chart, inlineShape, chartInfo, scope, floatingShape);
         }
     }
 }

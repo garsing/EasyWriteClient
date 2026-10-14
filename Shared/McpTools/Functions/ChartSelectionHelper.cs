@@ -80,7 +80,7 @@ namespace WordAddIn1
                 return result;
             }
 
-            List<Word.InlineShape> allCharts = ChartResolveHelper.GetInlineChartsInOrder(document);
+            List<ChartResolveHelper.BodyChart> allCharts = ChartResolveHelper.GetBodyChartsInOrder(document);
             if (chartOrderIndex >= allCharts.Count)
             {
                 result.Error =

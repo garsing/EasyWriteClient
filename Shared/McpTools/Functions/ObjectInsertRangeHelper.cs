@@ -78,14 +78,18 @@ namespace WordAddIn1
 
             try
             {
-                Word.InlineShape chart = ChartResolveHelper.ResolveInlineShapeByChartId(doc, chartId);
+                ChartResolveHelper.BodyChart chart = ChartResolveHelper.ResolveBodyChartByChartId(doc, chartId);
                 if (chart == null)
                 {
                     EasyWriteDiagnostics.Log(DebugCategory.Chart, "[ObjectInsertRange] 找不到图表 '" + chartId + "'");
                     return null;
                 }
 
-                Word.Range insertRange = chart.Range;
+                Word.Range insertRange = chart.NavigateRange();
+                if (insertRange == null)
+                {
+                    return null;
+                }
                 insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
                 insertRange.InsertParagraphAfter();
                 insertRange.Collapse(Word.WdCollapseDirection.wdCollapseStart);
@@ -130,7 +134,7 @@ namespace WordAddIn1
 
             try
             {
-                return ChartResolveHelper.ResolveInlineShapeByChartId(doc, chartId) != null;
+                return ChartResolveHelper.ResolveBodyChartByChartId(doc, chartId) != null;
             }
             catch
             {

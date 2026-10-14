@@ -23,7 +23,7 @@ namespace WordAddIn1
         private static string _activeDocUuid = "";
 
         /// <summary>递增后清空 ProcessDocument 会话缓存（指纹算法或缓存条目结构变更时）。</summary>
-        public const int FingerprintVersion = 9;
+        public const int FingerprintVersion = 10;
 
         /// <summary>当前活动文档分片；无绑定时为临时空分片（不写回 SessionsByUuid）。</summary>
         private static DocumentSessionState Session

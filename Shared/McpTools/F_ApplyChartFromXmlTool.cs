@@ -73,8 +73,8 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = $"生成图表映射表失败：{ex.Message}" };
                     }
 
-                    Word.InlineShape inlineShape = ChartResolveHelper.ResolveInlineShapeByChartId(document, chartId);
-                    if (inlineShape == null)
+                    ChartResolveHelper.BodyChart bodyChart = ChartResolveHelper.ResolveBodyChartByChartId(document, chartId);
+                    if (bodyChart == null)
                     {
                         return new ToolResult
                         {
@@ -89,7 +89,7 @@ namespace WordAddIn1
                     try
                     {
                         application.DisplayAlerts = Word.WdAlertLevel.wdAlertsNone;
-                        ChartComUiHelper.TryBreakExternalChartLink(inlineShape.Chart);
+                        ChartComUiHelper.TryBreakExternalChartLink(bodyChart.Chart);
                     }
                     finally
                     {
@@ -103,7 +103,7 @@ namespace WordAddIn1
                     }
 
                     var validation = ChartStructureValidator.Validate(
-                        inlineShape.Chart,
+                        bodyChart.Chart,
                         parseResult.Config.Chart,
                         scope);
                     if (!validation.Success)
@@ -112,11 +112,12 @@ namespace WordAddIn1
                     }
 
                     var applyResult = ChartApplyHelper.Apply(
-                        inlineShape.Chart,
-                        inlineShape,
+                        bodyChart.Chart,
+                        bodyChart.Inline,
                         parseResult.Config.Chart,
                         scope,
-                        mode);
+                        mode,
+                        bodyChart.Floating);
                     if (!applyResult.Success)
                     {
                         return new ToolResult
@@ -127,22 +128,18 @@ namespace WordAddIn1
                         };
                     }
 
-                    if (scope == "data" || scope == "all")
-                    {
-                        WordReader.RebindLiveChartId(inlineShape.Chart, chartId);
-                    }
-
+                    Word.Range navigateRange = bodyChart.NavigateRange();
                     try
                     {
                         WordReader.ReadWord(document);
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[ApplyChart] 套用后 ReadWord 失败: {ex.Message}");
+                        return new ToolResult { Success = false, Error = "套用后刷新映射失败：" + ex.Message };
                     }
 
                     PostModifyNavigateHelper.NavigateAfterEnd(
-                        application, inlineShape.Range, $"apply_chart:{chartId}");
+                        application, navigateRange, $"apply_chart:{chartId}");
 
                     await Task.CompletedTask;
 

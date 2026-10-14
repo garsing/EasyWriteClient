@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
@@ -78,6 +79,7 @@ namespace WordAddIn1
   public sealed class ChartCreateResult : ChartOperationResult
   {
     public int ChartStart { get; set; }
+    public Word.InlineShape InlineShape { get; set; }
   }
 
   public sealed class ChartValidationResult

@@ -88,10 +88,10 @@ namespace WordAddIn1
                         saveToFile = true;
                     }
 
-                    Word.InlineShape inlineShape = ChartResolveHelper.ResolveInlineShapeByChartId(
+                    ChartResolveHelper.BodyChart bodyChart = ChartResolveHelper.ResolveBodyChartByChartId(
                         document,
                         selection.ChartId);
-                    if (inlineShape == null)
+                    if (bodyChart == null)
                     {
                         return new ToolResult
                         {
@@ -100,8 +100,8 @@ namespace WordAddIn1
                         };
                     }
 
-                    Word.Chart chart = inlineShape.Chart;
-                    var config = ChartExtractHelper.Extract(chart, inlineShape, scope);
+                    Word.Chart chart = bodyChart.Chart;
+                    var config = ChartExtractHelper.Extract(chart, bodyChart.Inline, scope, bodyChart.Floating);
                     string xmlContent = ChartFormatXmlBuilder.Build(config, scope);
 
                     string xmlFile = null;

@@ -67,10 +67,10 @@ namespace WordAddIn1
                         };
                     }
 
-                    Word.InlineShape inlineShape = ChartResolveHelper.ResolveInlineShapeByChartId(document, chartId);
-                    if (inlineShape == null)
+                    ChartResolveHelper.BodyChart bodyChart = ChartResolveHelper.ResolveBodyChartByChartId(document, chartId);
+                    if (bodyChart == null)
                     {
-                        List<Word.InlineShape> allCharts = ChartResolveHelper.GetInlineChartsInOrder(document);
+                        List<ChartResolveHelper.BodyChart> allCharts = ChartResolveHelper.GetBodyChartsInOrder(document);
                         return new ToolResult
                         {
                             Success = false,
@@ -79,9 +79,9 @@ namespace WordAddIn1
                         };
                     }
 
-                    int endPos = inlineShape.Range.End;
-                    string chartType = TryGetChartTypeString(inlineShape.Chart);
-                    int seriesCount = TryGetSeriesCount(inlineShape.Chart);
+                    int endPos = bodyChart.End;
+                    string chartType = TryGetChartTypeString(bodyChart.Chart);
+                    int seriesCount = TryGetSeriesCount(bodyChart.Chart);
 
                     System.Diagnostics.Debug.WriteLine(
                         $"[DeleteChart] 即将删除 chart_id={chartId}, endPos={endPos}, " +
@@ -89,7 +89,7 @@ namespace WordAddIn1
 
                     try
                     {
-                        inlineShape.Delete();
+                        bodyChart.Delete();
                     }
                     catch (Exception ex)
                     {

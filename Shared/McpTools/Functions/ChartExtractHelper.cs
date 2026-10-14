@@ -13,7 +13,8 @@ namespace WordAddIn1
         public static ChartConfig Extract(
             Word.Chart chart,
             Word.InlineShape inlineShape,
-            string scope)
+            string scope,
+            Word.Shape floatingShape = null)
         {
             string normalizedScope = string.IsNullOrEmpty(scope) ? "all" : scope.Trim().ToLowerInvariant();
             var config = new ChartConfig
@@ -28,7 +29,7 @@ namespace WordAddIn1
 
             if (normalizedScope == "format" || normalizedScope == "all")
             {
-                ExtractFormat(chart, inlineShape, config.Chart);
+                ExtractFormat(chart, inlineShape, config.Chart, floatingShape);
             }
 
             return config;
@@ -37,7 +38,8 @@ namespace WordAddIn1
         private static void ExtractFormat(
             Word.Chart chart,
             Word.InlineShape inlineShape,
-            ChartInfo chartInfo)
+            ChartInfo chartInfo,
+            Word.Shape floatingShape)
         {
             if (chart == null || chartInfo == null)
             {
@@ -94,17 +96,22 @@ namespace WordAddIn1
             }
             catch { }
 
-            if (inlineShape != null)
+            try
             {
-                try
+                if (inlineShape != null)
                 {
                     chartInfo.Width = (int)Math.Round(inlineShape.Width);
                     chartInfo.Height = (int)Math.Round(inlineShape.Height);
                 }
-                catch (Exception ex)
+                else if (floatingShape != null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[ExtractChart] 读取尺寸失败: {ex.Message}");
+                    chartInfo.Width = (int)Math.Round(floatingShape.Width);
+                    chartInfo.Height = (int)Math.Round(floatingShape.Height);
                 }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ExtractChart] 读取尺寸失败: {ex.Message}");
             }
 
             try

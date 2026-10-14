@@ -421,11 +421,18 @@ namespace WordAddIn1
                     {
                         Success = true,
                         Error = $"图表已创建，但存在以下警告: {string.Join("; ", errors)}",
-                        ChartStart = chartShape.Range.Start
+                        ChartStart = chartShape.Range.Start,
+                        InlineShape = chartShape
                     };
                 }
 
-                return new ChartCreateResult { Success = true, Error = null, ChartStart = chartShape.Range.Start };
+                return new ChartCreateResult
+                {
+                    Success = true,
+                    Error = null,
+                    ChartStart = chartShape.Range.Start,
+                    InlineShape = chartShape
+                };
             }
             catch (Exception ex)
             {

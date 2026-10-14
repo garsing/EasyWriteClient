@@ -1832,6 +1832,26 @@ namespace WordAddIn1
             DocumentState.SetTableIndexToIdMap(map);
         }
 
+        private static void ApplyBackendChartStamps(Word.Document document)
+        {
+            if (document == null || WpsChartExtract.IsWpsDocument(document))
+            {
+                return;
+            }
+
+            List<string> ids = DocumentState.GetChartIdOrder();
+            if (ids == null || ids.Count == 0)
+            {
+                return;
+            }
+
+            List<ChartResolveHelper.BodyChart> charts = ChartResolveHelper.GetBodyChartsInOrder(document);
+            if (!ChartTitleStampHelper.ApplyAssignedIds(charts, ids))
+            {
+                throw new InvalidOperationException("图表编号写入形状标题失败");
+            }
+        }
+
         /// <summary>
         /// 解析 API 响应并更新 DocumentState（须在 Word STA 线程调用，不可在 async 续延线程中访问 COM）。
         /// </summary>
@@ -1989,6 +2009,7 @@ namespace WordAddIn1
                                                 .Select(k => chartIndexToIdMapFromApi[k]).ToList());
                                         System.Diagnostics.Debug.WriteLine(
                                             $"[API] 已设置图表序号到编号映射，共 {chartIndexToIdMapFromApi.Count} 个图表");
+                                        ApplyBackendChartStamps(document);
                                     }
                                 }
 
