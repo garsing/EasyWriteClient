@@ -14,6 +14,56 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static class WhWpsChartOoxmlProbe
     {
+        public static int RunWhyDead()
+        {
+            var s = new WdSession("wps");
+            WdSession.SweepBeforeRun("wps");
+            try
+            {
+                string seedRaw = s.CreateChartFixtureDocx(1);
+                if (string.IsNullOrEmpty(seedRaw) || !File.Exists(seedRaw))
+                {
+                    Console.WriteLine("FAIL 种子失败");
+                    return 1;
+                }
+
+                string seed = Path.Combine(
+                    Path.GetTempPath(),
+                    "ew-wd-seed-keep-" + Guid.NewGuid().ToString("N") + ".docx");
+                File.Copy(seedRaw, seed, true);
+                Line("种子", seed);
+
+                Section("A 直接打开后另存", () =>
+                {
+                    ProbeOpenExisting(s, seed, "打开");
+                    string snap = SaveOpenDocCopy(s, seed, "打开后另存");
+                    return snap == null ? 1 : DumpChartParts(snap, "打开后另存");
+                });
+
+                string insertPath = s.NewDocxPath();
+                string insertId = null;
+                Section("B InsertFile 后另存", () =>
+                {
+                    int n = ProbeInsertFile(s, seed, insertPath, out insertId, comInsert: true);
+                    DumpOpenXmlHints(s, insertPath, "InsertFile 现场 WordOpenXML");
+                    string snap = SaveOpenDocCopy(s, insertPath, "InsertFile后另存");
+                    if (snap != null)
+                    {
+                        DumpChartParts(snap, "InsertFile后另存");
+                    }
+
+                    return n;
+                });
+
+                Section("C PasteSpecial 几档", () => ProbePasteFlavors(s, seed));
+                return 0;
+            }
+            finally
+            {
+                WdSession.SweepAfterRun("wps");
+            }
+        }
+
         public static int Run()
         {
             var s = new WdSession("wps");
@@ -434,6 +484,154 @@ namespace WordDocumentRoundtripTest
             Line("粘贴后读文片段", Snip(body, 220));
             s.CloseDocByPath(seed);
             return copied ? 0 : 1;
+        }
+
+        private static string SaveOpenDocCopy(WdSession s, string openPath, string tag)
+        {
+            string dest = Path.Combine(
+                Path.GetTempPath(),
+                "ew-wd-snap-" + Guid.NewGuid().ToString("N") + ".docx");
+            bool saved = s.TryWpsDoc(openPath, doc =>
+            {
+                try
+                {
+                    Invoke(doc, "SaveAs", dest);
+                    return File.Exists(dest);
+                }
+                catch (Exception ex)
+                {
+                    Line(tag + " SaveAs", TrimErr(ex.Message));
+                    return false;
+                }
+            });
+            if (!saved)
+            {
+                Line(tag, "另存失败");
+                return null;
+            }
+
+            string copy = dest + ".read.docx";
+            try
+            {
+                File.Copy(dest, copy, true);
+                return copy;
+            }
+            catch
+            {
+                return dest;
+            }
+        }
+
+        private static void DumpOpenXmlHints(WdSession s, string fullPath, string tag)
+        {
+            string xml = "";
+            s.TryWpsDoc(fullPath, doc =>
+            {
+                try
+                {
+                    object content = GetProp(doc, "Content");
+                    xml = Convert.ToString(GetProp(content, "WordOpenXML") ?? "");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Line(tag, "取 WordOpenXML 失败: " + TrimErr(ex.Message));
+                    return false;
+                }
+            });
+            if (string.IsNullOrEmpty(xml))
+            {
+                Line(tag, "空");
+                return;
+            }
+
+            Line(tag + " 长度", xml.Length.ToString());
+            Line(tag + " 含 c:chart", xml.IndexOf("chart", StringComparison.OrdinalIgnoreCase) >= 0 ? "是" : "否");
+            Line(tag + " 含 pic:", xml.IndexOf("pic:", StringComparison.Ordinal) >= 0 ? "是" : "否");
+            Line(tag + " 含 w:drawing", xml.IndexOf("w:drawing", StringComparison.Ordinal) >= 0 ? "是" : "否");
+            int i = xml.IndexOf("drawing", StringComparison.OrdinalIgnoreCase);
+            Line(tag + " 片段", i < 0 ? Snip(xml, 180) : Snip(xml.Substring(Math.Max(0, i - 40)), 220));
+        }
+
+        private static int ProbePasteFlavors(WdSession s, string seed)
+        {
+            string srcKeep = Path.Combine(
+                Path.GetTempPath(),
+                "ew-wd-src-" + Guid.NewGuid().ToString("N") + ".docx");
+            File.Copy(seed, srcKeep, true);
+            ToolResult src = s.Open(srcKeep, false, "wps");
+            if (!src.Success)
+            {
+                Line("开源", src.Error ?? "失败");
+                return 1;
+            }
+
+            bool copied = s.TryWpsDoc(srcKeep, srcDoc =>
+            {
+                object shape = FirstInline(srcDoc);
+                if (shape == null)
+                {
+                    Line("源", "无 InlineShape");
+                    return false;
+                }
+
+                try
+                {
+                    Invoke(GetProp(shape, "Range"), "Copy");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Line("Copy", TrimErr(ex.Message));
+                    return false;
+                }
+            });
+            if (!copied)
+            {
+                return 1;
+            }
+
+            int[] formats = { 0, 3, 8, 10, 13 };
+            foreach (int fmt in formats)
+            {
+                string destPath = s.NewDocxPath();
+                ToolResult dest = s.Open(destPath, true, "wps");
+                if (!dest.Success)
+                {
+                    Line("PasteSpecial " + fmt, dest.Error ?? "开空稿失败");
+                    continue;
+                }
+
+                s.TryWpsDoc(destPath, destDoc =>
+                {
+                    TrySilenceAlerts(destDoc);
+                    object sel = GetProp(GetProp(destDoc, "Application"), "Selection");
+                    try
+                    {
+                        Invoke(sel, "PasteSpecial", fmt);
+                        Line("PasteSpecial " + fmt, "成功 " + DescribeCharts(s, destPath));
+                    }
+                    catch (Exception ex)
+                    {
+                        try
+                        {
+                            Invoke(GetProp(destDoc, "Content"), "PasteSpecial", fmt);
+                            Line("PasteSpecial(content) " + fmt, "成功 " + DescribeCharts(s, destPath));
+                        }
+                        catch
+                        {
+                            Line("PasteSpecial " + fmt, TrimErr(ex.Message));
+                            return true;
+                        }
+                    }
+
+                    DumpOpenXmlHints(s, destPath, "PasteSpecial " + fmt + " XML");
+                    return true;
+                });
+            }
+
+            s.CloseDocByPath(srcKeep);
+            return 0;
         }
 
         private static int DumpChartParts(string path, string tag)

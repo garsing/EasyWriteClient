@@ -17,6 +17,19 @@ namespace WordDocumentRoundtripTest
             bool runLayout = !runFindStale
                 && (caseFilter.StartsWith("lb-", StringComparison.OrdinalIgnoreCase)
                     || caseFilter.StartsWith("wc-lb-", StringComparison.OrdinalIgnoreCase));
+            if (string.Equals(caseFilter, "wps-chart-why-dead", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("WPS 文字图：插入后 Series 废了是包丢了还是 COM 废了");
+                Console.WriteLine("不 Quit 用户 WPS / Word；只动临时稿");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                return WhWpsChartOoxmlProbe.RunWhyDead();
+            }
+
             if (string.Equals(caseFilter, "wps-chart-ooxml-probe", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("WPS 文字图 OOXML / InsertFile 探针（wps-chart-ooxml-probe）");
