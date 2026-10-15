@@ -10,6 +10,8 @@ namespace PptChartRoundtripTest
         private static int Main(string[] args)
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
+            var stdout = new StreamWriter(Console.OpenStandardOutput(), Console.OutputEncoding) { AutoFlush = true };
+            Console.SetOut(stdout);
             var run = new TestRun();
             bool parseOnly = HasFlag(args, "--parse-only");
             bool formalOnly = HasFlag(args, "--formal-only");
