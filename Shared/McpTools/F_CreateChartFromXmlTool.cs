@@ -42,18 +42,49 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_create_chart_from_xml] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
-                    // WPS 对 InlineShapes.AddChart（内嵌 Excel）不稳定，真机 RPC_E_SERVERFAULT；明确失败勿假成功
-                    if (docHandle.Context != null && docHandle.Context.Kind == ChannelKind.Wps)
-                    {
-                        return DocumentHostAdapter.UnsupportedResult(
-                            ChannelKind.Wps,
-                            docHandle.ChannelId,
-                            "create_chart (WPS 不支持 Word/Excel 内嵌图表 COM；请用 Word 或改用 SVG/图片)");
-                    }
-
                     FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath xmlResolved, out _, "path", "filename");
                     string filename = xmlResolved.Display;
                     var parseResult = ChartXmlParser.ParseXmlFile(xmlResolved.LocalPath).GetAwaiter().GetResult();
+                    if (parseResult == null || parseResult.Config == null)
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = parseResult != null ? parseResult.Error : "XML解析失败"
+                        };
+                    }
+
+                    if (docHandle.Context != null && docHandle.Context.Kind == ChannelKind.Wps)
+                    {
+                        if (!WordAddIn1.ChartOoxmlHost.WpsChartSeed.TryCreate(
+                                document,
+                                parseResult.Config,
+                                out string createdId,
+                                out string createErr))
+                        {
+                            return new ToolResult { Success = false, Error = "图表创建失败: " + createErr };
+                        }
+
+                        try
+                        {
+                            WordReader.ReadWord(document);
+                        }
+                        catch (Exception ex)
+                        {
+                            return new ToolResult { Success = false, Error = "生成图表映射表失败：" + ex.Message };
+                        }
+
+                        await Task.CompletedTask;
+                        return new ToolResult
+                        {
+                            Success = true,
+                            Data = new
+                            {
+                                chart_id = createdId,
+                                message = "图表创建成功"
+                            }
+                        };
+                    }
 
                     int? position = null;
                     if (args.ContainsKey("position"))

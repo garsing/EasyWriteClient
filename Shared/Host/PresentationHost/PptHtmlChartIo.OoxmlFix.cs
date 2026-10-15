@@ -929,7 +929,7 @@ namespace WordAddIn1.PresentationHost
 
             string readErr;
             XDocument doc = null;
-            bool ok = PptHtmlOoxmlIo.TryReadSavedPackage(
+            bool ok = WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryReadSavedPackage(
                 pres,
                 path => TryReadChartDocFromPptx(path, slideIndex, shapeId, warnings, "读皮", out doc),
                 out readErr,
@@ -1016,7 +1016,7 @@ namespace WordAddIn1.PresentationHost
 
                 object copyChartShape = null;
                 object pastedShape = null;
-                if (!PptHtmlOoxmlIo.TryRewriteAndCopyBack(
+                if (!WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryRewriteAndCopyBack(
                     pres,
                     slideIndex,
                     (zip, parts) => TryRewriteChartXmlInPackage(
@@ -1030,7 +1030,7 @@ namespace WordAddIn1.PresentationHost
                         embedGrid),
                     (copyPres, openSlide) =>
                     {
-                        copyChartShape = PptHtmlOoxmlIo.TryFindShapeById(copyPres, openSlide, shapeId);
+                        copyChartShape = WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryFindShapeById(copyPres, openSlide, shapeId);
                         if (copyChartShape == null)
                         {
                             return null;
@@ -1938,7 +1938,7 @@ namespace WordAddIn1.PresentationHost
 
             var warnings = new List<string>();
             XDocument chartDoc = null;
-            if (!PptHtmlOoxmlIo.TryReadSavedPackage(
+            if (!WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryReadSavedPackage(
                 pres,
                 path => TryReadChartDocFromPptx(path, slideIndex, shapeId, warnings, "读数", out chartDoc),
                 out error,

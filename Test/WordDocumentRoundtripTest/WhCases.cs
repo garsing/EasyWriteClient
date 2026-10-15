@@ -424,8 +424,8 @@ namespace WordDocumentRoundtripTest
 
         private static readonly string[] ConNegIds =
         {
-            "wh-con-n-root-case", "wh-con-n-no-chart", "wh-con-n-type-case", "wh-con-n-bar",
-            "wh-con-n-area", "wh-con-n-pie",
+            "wh-con-n-root-case", "wh-con-n-no-chart", "wh-con-n-type-case",
+            "wh-con-n-area", "wh-con-n-primarytitle",
             "wh-con-n-no-header", "wh-con-n-empty-header",
             "wh-con-n-no-value", "wh-con-n-no-rows", "wh-con-n-empty-rows", "wh-con-n-df-noattr",
             "wh-con-n-csv-missing", "wh-con-n-csv-empty", "wh-con-n-axisy-bad", "wh-con-n-broken-xml",
@@ -439,6 +439,7 @@ namespace WordDocumentRoundtripTest
             "wh-con-x-negative", "wh-con-x-big", "wh-con-x-empty-y", "wh-con-x-nan-y",
             "wh-con-x-fill-off", "wh-con-x-axisx", "wh-con-x-axisy", "wh-con-x-legend",
             "wh-con-x-datalabels", "wh-con-x-color", "wh-con-x-csv", "wh-con-x-three-charts",
+            "wh-con-x-bar", "wh-con-x-pie2d",
             "wh-con-p-zero", "wh-con-p-big", "wh-con-p-nonint", "wh-con-p-keep-sent",
             "wh-con-p-xml-decl", "wh-con-p-bom", "wh-con-p-title-escape", "wh-con-p-title-cn",
             "wh-con-p-theme"
@@ -506,15 +507,13 @@ namespace WordDocumentRoundtripTest
             ExpectFail(run, "wh-con-n-type-case",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("LINE", TitleA, V1, R3)))),
                 "无效");
-            ExpectFail(run, "wh-con-n-bar",
-                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("bar", TitleA, V1, R3)))),
-                "简版");
             ExpectFail(run, "wh-con-n-area",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("area", TitleA, V1, R3)))),
                 "无效");
-            ExpectFail(run, "wh-con-n-pie",
-                s.CreateChartFromXml(CreateArgs(null, WriteXml(GenXml("pie", TitleA, V1, R3)))),
-                "简版");
+            ExpectFail(run, "wh-con-n-primarytitle",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(
+                    GenXml("column", TitleA, V1, R3, "<AxisY><PrimaryTitle>万台</PrimaryTitle></AxisY>")))),
+                "须改成");
             ExpectFail(run, "wh-con-n-no-header",
                 s.CreateChartFromXml(CreateArgs(null, WriteXml(
                     "<ChartConfig><Chart><Type>column</Type><DataTable>"
@@ -612,13 +611,17 @@ namespace WordDocumentRoundtripTest
             AssertCreateSolo(run, s, "wh-con-x-axisx",
                 GenXml("column", TitleA, V1, Rows("108"), "<AxisX><Title>年份</Title></AxisX>"));
             AssertCreateSolo(run, s, "wh-con-x-axisy",
-                GenXml("column", TitleA, V1, Rows("109"), "<AxisY><PrimaryTitle>万台</PrimaryTitle></AxisY>"));
+                GenXml("column", TitleA, V1, Rows("109"), "<AxisY><Title>万台</Title></AxisY>"));
             AssertCreateSolo(run, s, "wh-con-x-legend",
                 GenXml("column", TitleA, V1, Rows("110"), "<LegendPosition>bottom</LegendPosition>"));
             AssertCreateSolo(run, s, "wh-con-x-datalabels",
                 GenXml("column", TitleA, V1, Rows("111"), "<ShowDataLabels>true</ShowDataLabels>"));
             AssertCreateSolo(run, s, "wh-con-x-color",
                 GenXml("column", TitleA, V1, Rows("112"), null, " color=\"#FF0000\"", null));
+            AssertCreateSolo(run, s, "wh-con-x-bar",
+                GenXml("bar", TitleA, V1, Rows("114")));
+            AssertCreateSolo(run, s, "wh-con-x-pie2d",
+                GenXml("pie2d", TitleA, V1, Rows("115")));
 
             string csvOk = Path.Combine(Path.GetTempPath(), "ew-wh-csv-" + Guid.NewGuid().ToString("N") + ".csv");
             File.WriteAllText(csvOk, "年,销量\r\n2023,113\r\n2024,20\r\n2025,30\r\n");

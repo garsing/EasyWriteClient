@@ -200,8 +200,13 @@ namespace WordAddIn1
 
                 chartInfo.AxisY = new AxisYInfo
                 {
-                    PrimaryTitle = TryGetAxisTitle(chart, Word.XlAxisType.xlValue)
+                    Title = TryGetAxisTitle(chart, Word.XlAxisType.xlValue)
                 };
+                string y2 = TryGetAxisTitle(chart, Word.XlAxisType.xlValue, Word.XlAxisGroup.xlSecondary);
+                if (!string.IsNullOrEmpty(y2))
+                {
+                    chartInfo.AxisY2 = new AxisYInfo { Title = y2 };
+                }
             }
             catch { }
         }
@@ -257,15 +262,23 @@ namespace WordAddIn1
                             dynamic chartTypeValue = series.ChartType;
                             if (chartTypeValue == Excel.XlChartType.xlColumnClustered)
                             {
-                                seriesInfo.ChartType = "column";
+                                seriesInfo.ChartType = ChartConfigSyntax.TypeColumn;
+                            }
+                            else if (chartTypeValue == Excel.XlChartType.xlBarClustered)
+                            {
+                                seriesInfo.ChartType = ChartConfigSyntax.TypeBar;
                             }
                             else if (chartTypeValue == Excel.XlChartType.xlLine)
                             {
-                                seriesInfo.ChartType = "line";
+                                seriesInfo.ChartType = ChartConfigSyntax.TypeLine;
+                            }
+                            else if (chartTypeValue == Excel.XlChartType.xlPie)
+                            {
+                                seriesInfo.ChartType = ChartConfigSyntax.TypePie2d;
                             }
                             else if (chartTypeValue == Excel.XlChartType.xl3DPie)
                             {
-                                seriesInfo.ChartType = "pie3d";
+                                seriesInfo.ChartType = ChartConfigSyntax.TypePie3d;
                             }
                         }
                         catch { }
@@ -373,14 +386,24 @@ namespace WordAddIn1
                 return ChartConfigSyntax.TypeColumn;
             }
 
+            if (chartType == (int)Excel.XlChartType.xlBarClustered)
+            {
+                return ChartConfigSyntax.TypeBar;
+            }
+
             if (chartType == (int)Excel.XlChartType.xlLine)
             {
-                return "line";
+                return ChartConfigSyntax.TypeLine;
+            }
+
+            if (chartType == (int)Excel.XlChartType.xlPie)
+            {
+                return ChartConfigSyntax.TypePie2d;
             }
 
             if (chartType == (int)Excel.XlChartType.xl3DPie)
             {
-                return "pie3d";
+                return ChartConfigSyntax.TypePie3d;
             }
 
             return chart.ChartType.ToString().ToLowerInvariant();
@@ -424,11 +447,14 @@ namespace WordAddIn1
             }
         }
 
-        private static string TryGetAxisTitle(Word.Chart chart, Word.XlAxisType axisType)
+        private static string TryGetAxisTitle(
+            Word.Chart chart,
+            Word.XlAxisType axisType,
+            Word.XlAxisGroup group = Word.XlAxisGroup.xlPrimary)
         {
             try
             {
-                Word.Axis axis = chart.Axes(axisType);
+                Word.Axis axis = chart.Axes(axisType, group);
                 if (axis.HasTitle)
                 {
                     return axis.AxisTitle?.Text ?? "";

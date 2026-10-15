@@ -11,7 +11,9 @@ namespace WordAddIn1
     public static class ChartConfigSyntax
     {
         public const string TypeColumn = "column";
+        public const string TypeBar = "bar";
         public const string TypeLine = "line";
+        public const string TypePie2d = "pie2d";
         public const string TypePie3d = "pie3d";
         public const string AxisYPrimary = "y";
         public const string AxisYSecondary = "y2";
@@ -19,15 +21,13 @@ namespace WordAddIn1
         public const string GridOff = "false";
         public const string LegendNone = "none";
 
-        public static readonly string AllowedTypesText = TypeColumn + " / " + TypeLine + " / " + TypePie3d;
+        public static readonly string AllowedTypesText =
+            TypeColumn + " / " + TypeBar + " / " + TypeLine + " / " + TypePie2d + " / " + TypePie3d;
+
+        public static readonly string ExcelLiveTypesText = TypeColumn + " / " + TypeLine + " / " + TypePie3d;
 
         private static readonly HashSet<string> ForbiddenChartChildren = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "PlotBox",
-            "PlotInside",
-            "ChartAreaColor",
-            "Overlap",
-            "ChartStyle",
             "DataLabelType"
         };
 
@@ -38,7 +38,9 @@ namespace WordAddIn1
 
         public static bool IsLineOrColumn(string type)
         {
-            return string.Equals(type, TypeLine, StringComparison.Ordinal) || IsColumn(type);
+            return string.Equals(type, TypeLine, StringComparison.Ordinal)
+                || string.Equals(type, TypeBar, StringComparison.Ordinal)
+                || IsColumn(type);
         }
 
         public static bool IsSecondaryAxis(string axisY)
@@ -62,9 +64,15 @@ namespace WordAddIn1
                 return false;
             }
 
-            if (t == TypeColumn || t == TypeLine || t == TypePie3d)
+            if (t == TypeColumn || t == TypeBar || t == TypeLine || t == TypePie2d || t == TypePie3d)
             {
                 type = t;
+                return true;
+            }
+
+            if (t == "pie")
+            {
+                type = TypePie2d;
                 return true;
             }
 
@@ -74,13 +82,26 @@ namespace WordAddIn1
                 return false;
             }
 
-            if (t == "bar" || t == "pie" || t == "pie2d")
+            error = "Chart.Type值无效: '" + t + "'，有效值为: " + AllowedTypesText;
+            return false;
+        }
+
+        public static bool TryCanonicalExcelLiveType(string raw, out string type, out string error)
+        {
+            type = null;
+            error = null;
+            if (!TryCanonicalType(raw, out string canon, out error))
             {
-                error = "Word 简版不支持该类型 '" + t + "'，可建类型: " + AllowedTypesText;
                 return false;
             }
 
-            error = "Chart.Type值无效: '" + t + "'，有效值为: " + AllowedTypesText;
+            if (canon == TypeColumn || canon == TypeLine || canon == TypePie3d)
+            {
+                type = canon;
+                return true;
+            }
+
+            error = "Excel 活图本期不支持该类型 '" + (raw ?? "").Trim() + "'，可建类型: " + ExcelLiveTypesText;
             return false;
         }
 
@@ -215,11 +236,16 @@ namespace WordAddIn1
                 return false;
             }
 
+            if (!TryRejectOldAxisTitles(chart, out error))
+            {
+                return false;
+            }
+
             foreach (XElement child in chart.Elements())
             {
                 if (ForbiddenChartChildren.Contains(child.Name.LocalName))
                 {
-                    error = "不支持 '" + child.Name.LocalName + "'（Word 简版无此皮）";
+                    error = OldTokenError(child.Name.LocalName, "ShowValue / ShowPercentage");
                     return false;
                 }
 
@@ -242,6 +268,28 @@ namespace WordAddIn1
             {
                 error = "ChartConfig 禁止 data-* 属性，须用 Chart 子元素";
                 return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryRejectOldAxisTitles(XElement chart, out string error)
+        {
+            error = null;
+            XElement axisY = chart.Element("AxisY");
+            if (axisY != null)
+            {
+                if (axisY.Element("PrimaryTitle") != null || axisY.Attribute("PrimaryTitle") != null)
+                {
+                    error = OldTokenError("PrimaryTitle", "AxisY/Title");
+                    return false;
+                }
+
+                if (axisY.Element("SecondaryTitle") != null || axisY.Attribute("SecondaryTitle") != null)
+                {
+                    error = OldTokenError("SecondaryTitle", "AxisY2/Title");
+                    return false;
+                }
             }
 
             return true;

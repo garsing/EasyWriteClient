@@ -329,14 +329,21 @@ namespace WordAddIn1
                         };
                     }
 
-                    // 解析AxisY
                     var axisYElement = chartElement.Element("AxisY");
                     if (axisYElement != null)
                     {
                         config.Chart.AxisY = new AxisYInfo
                         {
-                            PrimaryTitle = ReadAxisField(axisYElement, "PrimaryTitle"),
-                            SecondaryTitle = ReadAxisField(axisYElement, "SecondaryTitle")
+                            Title = ReadAxisField(axisYElement, "Title")
+                        };
+                    }
+
+                    var axisY2Element = chartElement.Element("AxisY2");
+                    if (axisY2Element != null)
+                    {
+                        config.Chart.AxisY2 = new AxisYInfo
+                        {
+                            Title = ReadAxisField(axisY2Element, "Title")
                         };
                     }
                 }
@@ -494,7 +501,13 @@ namespace WordAddIn1
                 ShowPercentage = showPercentage,
                 Explosion = int.TryParse(chartElement.Element("Explosion")?.Value, out int explosion) ? explosion : 0,
                 FillMissingValues = chartElement.Element("FillMissingValues") == null
-                    || (bool.TryParse(chartElement.Element("FillMissingValues")?.Value, out bool fillMissingValues) && fillMissingValues)
+                    || (bool.TryParse(chartElement.Element("FillMissingValues")?.Value, out bool fillMissingValues) && fillMissingValues),
+                Overlap = int.TryParse(chartElement.Element("Overlap")?.Value, out int overlap) ? overlap : 0,
+                PlotBox = chartElement.Element("PlotBox")?.Value ?? "",
+                PlotInside = chartElement.Element("PlotInside")?.Value ?? "",
+                ChartAreaColor = chartElement.Element("ChartAreaColor")?.Value ?? "",
+                ChartStyle = int.TryParse(chartElement.Element("ChartStyle")?.Value, out int chartStyle) ? chartStyle : 0,
+                LegendFontColor = chartElement.Element("LegendFontColor")?.Value ?? ""
             };
             return true;
         }

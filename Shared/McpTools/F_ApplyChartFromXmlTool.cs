@@ -41,14 +41,6 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_apply_chart_from_xml] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
-                    if (docHandle.Context != null && docHandle.Context.Kind == ChannelKind.Wps)
-                    {
-                        return DocumentHostAdapter.UnsupportedResult(
-                            ChannelKind.Wps,
-                            docHandle.ChannelId,
-                            "apply_chart (WPS 不支持 Word/Excel 内嵌图表 COM；请用 Word)");
-                    }
-
                     string chartId = args.ContainsKey("chart_id") ? args["chart_id"]?.ToString() : "";
                     string scope = "all";
                     if (args.ContainsKey("scope") && args["scope"] != null)
@@ -80,6 +72,53 @@ namespace WordAddIn1
                         {
                             Success = false,
                             Error = $"找不到图表编号 '{chartId}'，请确认图表编号是否正确"
+                        };
+                    }
+
+                    if (WpsChartExtract.IsWpsDocument(document) || bodyChart.Chart == null)
+                    {
+                        var wpsParse = await ChartConfigXmlParser.ParseAsync(xmlContent);
+                        if (!wpsParse.Success)
+                        {
+                            return new ToolResult { Success = false, Error = wpsParse.Error ?? "XML解析失败" };
+                        }
+
+                        int ordinal = DocumentState.GetChartIndex(chartId);
+                        bool pin = scope == "data" || scope == "all";
+                        if (!WordAddIn1.ChartOoxmlHost.ChartOoxmlFacade.TryRewriteDataAndCopyBack(
+                                document,
+                                ordinal,
+                                WordAddIn1.ChartOoxmlHost.ChartOoxmlFacade.GridFromChartInfo(wpsParse.Config.Chart),
+                                pin,
+                                out string rewriteErr))
+                        {
+                            return new ToolResult
+                            {
+                                Success = false,
+                                Error = rewriteErr ?? "改包贴回失败",
+                                Data = new { chart_id = chartId, scope = scope }
+                            };
+                        }
+
+                        try
+                        {
+                            WordReader.ReadWord(document);
+                        }
+                        catch (Exception ex)
+                        {
+                            return new ToolResult { Success = false, Error = "套用后刷新映射失败：" + ex.Message };
+                        }
+
+                        await Task.CompletedTask;
+                        return new ToolResult
+                        {
+                            Success = true,
+                            Data = new
+                            {
+                                chart_id = chartId,
+                                scope = scope,
+                                message = $"图表套用成功（scope={scope}）"
+                            }
                         };
                     }
 

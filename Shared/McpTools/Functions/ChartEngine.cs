@@ -16,6 +16,10 @@ namespace WordAddIn1
             {
                 case ChartConfigSyntax.TypeLine:
                     return Excel.XlChartType.xlLine;
+                case ChartConfigSyntax.TypeBar:
+                    return Excel.XlChartType.xlBarClustered;
+                case ChartConfigSyntax.TypePie2d:
+                    return Excel.XlChartType.xlPie;
                 case ChartConfigSyntax.TypePie3d:
                     return Excel.XlChartType.xl3DPie;
                 default:
@@ -122,14 +126,14 @@ namespace WordAddIn1
                 }
             }
 
-            if (chartInfo.AxisY != null && !string.IsNullOrWhiteSpace(chartInfo.AxisY.PrimaryTitle))
+            if (chartInfo.AxisY != null && !string.IsNullOrWhiteSpace(chartInfo.AxisY.Title))
             {
                 try
                 {
                     Word.Axis primaryYAxis = chart.Axes(Word.XlAxisType.xlValue);
                     primaryYAxis.HasTitle = true;
-                    primaryYAxis.AxisTitle.Text = chartInfo.AxisY.PrimaryTitle.Trim();
-                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 已设置Y轴标题: {chartInfo.AxisY.PrimaryTitle}");
+                    primaryYAxis.AxisTitle.Text = chartInfo.AxisY.Title.Trim();
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 已设置Y轴标题: {chartInfo.AxisY.Title}");
                 }
                 catch (Exception ex)
                 {
@@ -139,7 +143,7 @@ namespace WordAddIn1
                 }
             }
 
-            if (chartInfo.AxisY != null && !string.IsNullOrWhiteSpace(chartInfo.AxisY.SecondaryTitle))
+            if (chartInfo.AxisY2 != null && !string.IsNullOrWhiteSpace(chartInfo.AxisY2.Title))
             {
                 try
                 {
@@ -147,8 +151,8 @@ namespace WordAddIn1
                         Word.XlAxisType.xlValue,
                         Word.XlAxisGroup.xlSecondary);
                     secondaryYAxis.HasTitle = true;
-                    secondaryYAxis.AxisTitle.Text = chartInfo.AxisY.SecondaryTitle.Trim();
-                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 已设置次Y轴标题: {chartInfo.AxisY.SecondaryTitle}");
+                    secondaryYAxis.AxisTitle.Text = chartInfo.AxisY2.Title.Trim();
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 已设置次Y轴标题: {chartInfo.AxisY2.Title}");
                 }
                 catch (Exception ex)
                 {

@@ -35,14 +35,6 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_extract_chart_xml] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
-                    if (docHandle.Context != null && docHandle.Context.Kind == ChannelKind.Wps)
-                    {
-                        return DocumentHostAdapter.UnsupportedResult(
-                            ChannelKind.Wps,
-                            docHandle.ChannelId,
-                            "extract_chart (WPS 不支持 Word/Excel 内嵌图表 COM；请用 Word)");
-                    }
-
                     try
                     {
                         WordReader.ReadWord(document);
@@ -100,8 +92,29 @@ namespace WordAddIn1
                         };
                     }
 
-                    Word.Chart chart = bodyChart.Chart;
-                    var config = ChartExtractHelper.Extract(chart, bodyChart.Inline, scope, bodyChart.Floating);
+                    ChartConfig config;
+                    if (bodyChart.Chart == null || WpsChartExtract.IsWpsDocument(document))
+                    {
+                        int ordinal = DocumentState.GetChartIndex(selection.ChartId);
+                        if (!WordAddIn1.ChartOoxmlHost.ChartOoxmlFacade.TryBuildChartConfig(
+                                document,
+                                ordinal,
+                                scope,
+                                out config,
+                                out string ooxErr))
+                        {
+                            return new ToolResult { Success = false, Error = ooxErr ?? "OOXML 抽出失败" };
+                        }
+                    }
+                    else
+                    {
+                        config = ChartExtractHelper.Extract(
+                            bodyChart.Chart,
+                            bodyChart.Inline,
+                            scope,
+                            bodyChart.Floating);
+                    }
+
                     string xmlContent = ChartFormatXmlBuilder.Build(config, scope);
 
                     string xmlFile = null;

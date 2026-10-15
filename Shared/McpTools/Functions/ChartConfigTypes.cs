@@ -25,6 +25,13 @@ namespace WordAddIn1
     public string Gridlines { get; set; }
     public AxisXInfo AxisX { get; set; }
     public AxisYInfo AxisY { get; set; }
+    public AxisYInfo AxisY2 { get; set; }
+    public int Overlap { get; set; }
+    public string PlotBox { get; set; }
+    public string PlotInside { get; set; }
+    public string ChartAreaColor { get; set; }
+    public int ChartStyle { get; set; }
+    public string LegendFontColor { get; set; }
     public int GapWidth { get; set; }
     public bool DataMarkers { get; set; }
     public int MarkerSize { get; set; }
@@ -67,8 +74,7 @@ namespace WordAddIn1
 
   public class AxisYInfo
   {
-    public string PrimaryTitle { get; set; }
-    public string SecondaryTitle { get; set; }
+    public string Title { get; set; }
   }
 
   public class ChartOperationResult

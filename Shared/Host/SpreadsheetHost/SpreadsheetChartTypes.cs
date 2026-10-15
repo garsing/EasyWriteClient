@@ -503,8 +503,7 @@ namespace WordAddIn1.SpreadsheetHost
             {
                 format.AxisY = new AxisYInfo
                 {
-                    PrimaryTitle = AxisField(axisY, "PrimaryTitle"),
-                    SecondaryTitle = AxisField(axisY, "SecondaryTitle")
+                    Title = AxisField(axisY, "Title")
                 };
             }
 
@@ -641,7 +640,8 @@ namespace WordAddIn1.SpreadsheetHost
                 return false;
             }
 
-            if (!ChartConfigSyntax.TryCanonicalOptionalType(format.Type, out string canonType, out error))
+            if (!ChartConfigSyntax.TryCanonicalExcelLiveType(format.Type ?? "", out string canonType, out error)
+                && !string.IsNullOrWhiteSpace(format.Type))
             {
                 return false;
             }
@@ -692,7 +692,7 @@ namespace WordAddIn1.SpreadsheetHost
         {
             xlType = Excel.XlChartType.xlColumnClustered;
             error = null;
-            if (!ChartConfigSyntax.TryCanonicalType(type, out string canon, out error))
+            if (!ChartConfigSyntax.TryCanonicalExcelLiveType(type, out string canon, out error))
             {
                 return false;
             }
@@ -927,21 +927,10 @@ namespace WordAddIn1.SpreadsheetHost
                         chart.Add(ax);
                     }
 
-                    if (format.AxisY != null
-                        && (!string.IsNullOrEmpty(format.AxisY.PrimaryTitle)
-                            || !string.IsNullOrEmpty(format.AxisY.SecondaryTitle)))
+                    if (format.AxisY != null && !string.IsNullOrEmpty(format.AxisY.Title))
                     {
                         var ay = new XElement("AxisY");
-                        if (!string.IsNullOrEmpty(format.AxisY.PrimaryTitle))
-                        {
-                            ay.SetAttributeValue("PrimaryTitle", format.AxisY.PrimaryTitle);
-                        }
-
-                        if (!string.IsNullOrEmpty(format.AxisY.SecondaryTitle))
-                        {
-                            ay.SetAttributeValue("SecondaryTitle", format.AxisY.SecondaryTitle);
-                        }
-
+                        ay.Add(new XElement("Title", format.AxisY.Title));
                         chart.Add(ay);
                     }
                 }

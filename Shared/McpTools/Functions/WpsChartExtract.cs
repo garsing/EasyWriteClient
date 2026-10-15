@@ -44,6 +44,26 @@ namespace WordAddIn1
             }
         }
 
+        public sealed class WpsShape
+        {
+            public int Start { get; set; }
+            public object Shape { get; set; }
+        }
+
+        public static List<WpsShape> CollectShapes(object document)
+        {
+            var found = new List<WpsShape>();
+            if (document == null)
+            {
+                return found;
+            }
+
+            CollectFromCollection(WpsCom.GetProperty(document, "InlineShapes"), found, preferChartType: true);
+            CollectFromCollection(WpsCom.GetProperty(document, "Shapes"), found, preferChartType: false);
+            found.Sort((a, b) => a.Start.CompareTo(b.Start));
+            return found;
+        }
+
         public static List<string> CollectTaggedXml(object document, IReadOnlyList<string> prevChartOrder = null)
         {
             var tagged = new List<string>();
@@ -52,34 +72,59 @@ namespace WordAddIn1
                 return tagged;
             }
 
-            var found = new List<(int Start, object Chart)>();
-            CollectFromCollection(WpsCom.GetProperty(document, "InlineShapes"), found, preferChartType: true);
-            CollectFromCollection(WpsCom.GetProperty(document, "Shapes"), found, preferChartType: false);
-            found.Sort((a, b) => a.Start.CompareTo(b.Start));
-
+            List<WpsShape> found = CollectShapes(document);
             Log("shapes=" + found.Count);
-            var raws = new List<string>();
-            var bodies = new List<string>();
-            var starts = new List<int>();
-            foreach (var item in found)
+            if (found.Count == 0)
             {
-                string raw = ExtractDataTableXml(item.Chart);
-                if (string.IsNullOrEmpty(raw))
-                {
-                    raw = EmptyChartXml();
-                }
-
-                raws.Add(raw);
-                bodies.Add(ExtractChartBodyContent(raw));
-                starts.Add(item.Start);
+                return tagged;
             }
 
-            List<string> chartIds = DocumentState.AssignChartIdsForRead(bodies, prevChartOrder);
-            for (int i = 0; i < raws.Count; i++)
+            if (!WordAddIn1.ChartOoxmlHost.ChartOoxmlFacade.TryReadWordChartParts(
+                    document,
+                    out List<WordAddIn1.ChartOoxmlHost.ChartPartRef> parts,
+                    out string partError))
             {
-                string chartId = i < chartIds.Count ? chartIds[i] : "";
-                tagged.Add(BuildChartXmlWithId(chartId, raws[i]));
-                Log("tagged " + chartId + " start=" + starts[i]);
+                throw new Exception("WPS 读 chart 部件失败: " + partError);
+            }
+
+            if (parts == null || parts.Count != found.Count)
+            {
+                throw new Exception(
+                    "WPS 图表队列与包不一致：形状 "
+                    + found.Count
+                    + "，部件 "
+                    + (parts == null ? 0 : parts.Count));
+            }
+
+            var occupied = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < found.Count; i++)
+            {
+                object shape = found[i].Shape;
+                if (!WordAddIn1.ChartOoxmlHost.WordChartPackageHost.TryReadShapeTitle(shape, out string title))
+                {
+                    title = "";
+                }
+
+                string chartId = ChartTitleStampHelper.DecideChartId(title, occupied);
+                if (string.IsNullOrEmpty(chartId))
+                {
+                    throw new Exception("无法为图表分配编号");
+                }
+
+                bool alreadyOk = ChartTitleStampHelper.TryParse(title, out string existing, out _)
+                    && existing == chartId;
+                if (!alreadyOk)
+                {
+                    ChartResolveHelper.BodyChart slot = new ChartResolveHelper.BodyChart { Raw = shape };
+                    if (!ChartTitleStampHelper.TryWriteStamp(slot, chartId))
+                    {
+                        throw new Exception("图表编号写入形状标题失败");
+                    }
+                }
+
+                string raw = WordAddIn1.ChartOoxmlHost.ChartOoxmlFacade.BuildDisplayDataTable(parts[i]);
+                tagged.Add(BuildChartXmlWithId(chartId, raw));
+                Log("tagged " + chartId + " start=" + found[i].Start);
             }
 
             return tagged;
@@ -87,7 +132,7 @@ namespace WordAddIn1
 
         private static void CollectFromCollection(
             object collection,
-            List<(int Start, object Chart)> found,
+            List<WpsShape> found,
             bool preferChartType)
         {
             if (collection == null)
@@ -115,8 +160,9 @@ namespace WordAddIn1
                 }
 
                 int type = TryInt(WpsCom.GetProperty(shape, "Type"), -1);
+                bool typed = type == WdInlineShapeChart || type == MsoChart;
                 object chart = TryGetChart(shape);
-                if (chart == null)
+                if (!typed && chart == null)
                 {
                     if (preferChartType && type != WdInlineShapeChart && type != MsoChart)
                     {
@@ -128,7 +174,7 @@ namespace WordAddIn1
                 }
 
                 int start = TryRangeStart(shape, i);
-                found.Add((start, chart));
+                found.Add(new WpsShape { Start = start, Shape = shape });
                 Log("shape[" + i + "] type=" + type + " start=" + start);
             }
         }

@@ -67,6 +67,21 @@ namespace WordAddIn1
                 chartEl.Add(new XElement("GapWidth", chart.GapWidth));
             }
 
+            if (chart.Overlap != 0)
+            {
+                chartEl.Add(new XElement("Overlap", chart.Overlap));
+            }
+
+            AppendElementIfNotEmpty(chartEl, "PlotBox", chart.PlotBox);
+            AppendElementIfNotEmpty(chartEl, "PlotInside", chart.PlotInside);
+            AppendElementIfNotEmpty(chartEl, "ChartAreaColor", chart.ChartAreaColor);
+            if (chart.ChartStyle > 0)
+            {
+                chartEl.Add(new XElement("ChartStyle", chart.ChartStyle));
+            }
+
+            AppendElementIfNotEmpty(chartEl, "LegendFontColor", chart.LegendFontColor);
+
             chartEl.Add(new XElement("DataMarkers", chart.DataMarkers));
             if (chart.MarkerSize > 0)
             {
@@ -134,9 +149,15 @@ namespace WordAddIn1
             if (chart.AxisY != null)
             {
                 var axisY = new XElement("AxisY");
-                AppendElementIfNotEmpty(axisY, "PrimaryTitle", chart.AxisY.PrimaryTitle);
-                AppendElementIfNotEmpty(axisY, "SecondaryTitle", chart.AxisY.SecondaryTitle);
+                AppendElementIfNotEmpty(axisY, "Title", chart.AxisY.Title);
                 chartEl.Add(axisY);
+            }
+
+            if (chart.AxisY2 != null)
+            {
+                var axisY2 = new XElement("AxisY2");
+                AppendElementIfNotEmpty(axisY2, "Title", chart.AxisY2.Title);
+                chartEl.Add(axisY2);
             }
         }
 

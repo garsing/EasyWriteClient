@@ -177,17 +177,17 @@ namespace WordAddIn1.SpreadsheetHost
                 }
             }
 
-            if (info.AxisY != null && !string.IsNullOrWhiteSpace(info.AxisY.PrimaryTitle))
+            if (info.AxisY != null && !string.IsNullOrWhiteSpace(info.AxisY.Title))
             {
                 try
                 {
                     Excel.Axis y = (Excel.Axis)chart.Axes(Excel.XlAxisType.xlValue, Excel.XlAxisGroup.xlPrimary);
                     y.HasTitle = true;
-                    y.AxisTitle.Text = info.AxisY.PrimaryTitle.Trim();
+                    y.AxisTitle.Text = info.AxisY.Title.Trim();
                 }
                 catch (Exception ex)
                 {
-                    warnings.Add("AxisY.PrimaryTitle: " + ex.Message);
+                    warnings.Add("AxisY.Title: " + ex.Message);
                 }
             }
 

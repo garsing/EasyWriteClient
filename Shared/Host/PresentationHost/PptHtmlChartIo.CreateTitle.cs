@@ -226,12 +226,12 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            string tempPath = PptHtmlOoxmlIo.NewTempPath("旁路建图");
+            string tempPath = WordAddIn1.ChartOoxmlHost.PptChartPackageHost.NewTempPath("旁路建图");
             object blank = null;
             object blankShape = null;
             try
             {
-                if (!PptHtmlOoxmlIo.TrySaveCopy(destPres, tempPath, out error))
+                if (!WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TrySaveCopy(destPres, tempPath, out error))
                 {
                     if (string.IsNullOrEmpty(error))
                     {
@@ -242,7 +242,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 object appForOpen = destPres == null ? null : WppCom.GetProperty(destPres, "Application");
-                blank = PptHtmlOoxmlIo.TryOpenCopy(appForOpen ?? app, tempPath, out error);
+                blank = WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryOpenCopy(appForOpen ?? app, tempPath, out error);
                 if (blank == null)
                 {
                     error = "PPT 旁路建图：打不开副本";
@@ -318,12 +318,12 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                PptHtmlOoxmlIo.TryCloseCopy(blank);
+                WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryCloseCopy(blank);
                 blank = null;
 
                 object pouredShape = null;
                 object pastedShape = null;
-                if (!PptHtmlOoxmlIo.TryRewriteAndCopyBack(
+                if (!WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryRewriteAndCopyBack(
                     destPres,
                     destIndex,
                     (zip, parts) => TryRewriteChartXmlInPackage(
@@ -337,7 +337,7 @@ namespace WordAddIn1.PresentationHost
                         grid),
                     (copyPres, openSlide) =>
                     {
-                        pouredShape = PptHtmlOoxmlIo.TryFindShapeById(copyPres, openSlide, shapeId);
+                        pouredShape = WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryFindShapeById(copyPres, openSlide, shapeId);
                         return pouredShape;
                     },
                     () =>
@@ -377,8 +377,8 @@ namespace WordAddIn1.PresentationHost
             }
             finally
             {
-                PptHtmlOoxmlIo.TryCloseCopy(blank);
-                PptHtmlOoxmlIo.TryDeleteFile(tempPath);
+                WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryCloseCopy(blank);
+                WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryDeleteFile(tempPath);
             }
         }
 
@@ -447,7 +447,7 @@ namespace WordAddIn1.PresentationHost
             }
 
             string copyErr;
-            if (!PptHtmlOoxmlIo.TrySaveCopy(presentation, path, out copyErr))
+            if (!WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TrySaveCopy(presentation, path, out copyErr))
             {
                 PourLog(warnings, "旁路 SaveCopy 失败: " + copyErr);
                 return false;

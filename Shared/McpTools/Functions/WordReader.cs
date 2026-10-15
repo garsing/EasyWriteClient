@@ -152,7 +152,7 @@ namespace WordAddIn1
                 string imageSaveDir = null;
                 string pathForImages = null;
 
-                // 图表走 COM 预提取，OOXML 遍历时按 chart drawing 顺序消费
+                // 图表预提取：队列/戳走形状，DataTable 走 WordOpenXML c:pt
                 _chartDrawingsSeen = 0;
                 _chartStampOnWord = false;
                 _chartSlotsForStamp = null;
@@ -416,11 +416,29 @@ namespace WordAddIn1
             }
 
             List<ChartResolveHelper.BodyChart> slots = ChartResolveHelper.GetBodyChartsInOrder(document);
+            if (!WordAddIn1.ChartOoxmlHost.ChartOoxmlFacade.TryReadWordChartParts(
+                    document,
+                    out List<WordAddIn1.ChartOoxmlHost.ChartPartRef> parts,
+                    out string partError))
+            {
+                throw new Exception("读 chart 部件失败: " + partError);
+            }
+
+            if (parts == null || parts.Count != slots.Count)
+            {
+                throw new Exception(
+                    "图表队列与包不一致：形状 "
+                    + slots.Count
+                    + "，部件 "
+                    + (parts == null ? 0 : parts.Count));
+            }
+
             var occupied = new HashSet<string>(StringComparer.Ordinal);
             var ids = new List<string>();
             var result = new List<ChartOrderedEntry>();
-            foreach (ChartResolveHelper.BodyChart slot in slots)
+            for (int i = 0; i < slots.Count; i++)
             {
+                ChartResolveHelper.BodyChart slot = slots[i];
                 if (!slot.TryReadTitle(out string title))
                 {
                     throw new Exception("读取图表形状标题失败");
@@ -432,7 +450,7 @@ namespace WordAddIn1
                     throw new Exception("无法为图表分配编号");
                 }
 
-                string rawXml = ExtractChartSeriesCollection(slot.Chart);
+                string rawXml = WordAddIn1.ChartOoxmlHost.ChartOoxmlFacade.BuildDisplayDataTable(parts[i]);
                 if (string.IsNullOrEmpty(rawXml))
                 {
                     throw new Exception("提取图表数据失败");

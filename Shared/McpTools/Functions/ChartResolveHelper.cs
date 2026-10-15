@@ -16,6 +16,7 @@ namespace WordAddIn1
             public Word.InlineShape Inline { get; set; }
             public Word.Shape Floating { get; set; }
             public Word.Chart Chart { get; set; }
+            public object Raw { get; set; }
 
             public bool IsFloating
             {
@@ -27,8 +28,19 @@ namespace WordAddIn1
                 title = "";
                 try
                 {
-                    title = (Inline != null ? Inline.Title : Floating.Title) ?? "";
-                    return true;
+                    if (Inline != null)
+                    {
+                        title = Inline.Title ?? "";
+                        return true;
+                    }
+
+                    if (Floating != null)
+                    {
+                        title = Floating.Title ?? "";
+                        return true;
+                    }
+
+                    return WordAddIn1.ChartOoxmlHost.WordChartPackageHost.TryReadShapeTitle(Raw, out title);
                 }
                 catch (Exception ex)
                 {
@@ -44,13 +56,16 @@ namespace WordAddIn1
                     if (Inline != null)
                     {
                         Inline.Title = title ?? "";
-                    }
-                    else
-                    {
-                        Floating.Title = title ?? "";
+                        return true;
                     }
 
-                    return true;
+                    if (Floating != null)
+                    {
+                        Floating.Title = title ?? "";
+                        return true;
+                    }
+
+                    return WordAddIn1.ChartOoxmlHost.WordChartPackageHost.TryWriteShapeTitle(Raw, title);
                 }
                 catch (Exception ex)
                 {
@@ -64,10 +79,18 @@ namespace WordAddIn1
                 if (Inline != null)
                 {
                     Inline.Delete();
+                    return;
                 }
-                else
+
+                if (Floating != null)
                 {
                     Floating.Delete();
+                    return;
+                }
+
+                if (Raw != null)
+                {
+                    WordAddIn1.OpenFiles.WpsCom.Invoke(Raw, "Delete");
                 }
             }
 
@@ -115,6 +138,24 @@ namespace WordAddIn1
                 return charts;
             }
 
+            if (WpsChartExtract.IsWpsDocument(document))
+            {
+                foreach (var item in WpsChartExtract.CollectShapes(document))
+                {
+                    charts.Add(new BodyChart
+                    {
+                        Start = item.Start,
+                        Raw = item.Shape,
+                        Inline = item.Shape as Word.InlineShape,
+                        Floating = item.Shape as Word.Shape,
+                        Chart = TryChartFromRaw(item.Shape)
+                    });
+                }
+
+                charts.Sort((a, b) => a.Start.CompareTo(b.Start));
+                return charts;
+            }
+
             try
             {
                 foreach (Word.InlineShape shape in document.InlineShapes)
@@ -129,17 +170,11 @@ namespace WordAddIn1
                         continue;
                     }
 
-                    Word.Chart chart = TryGetInlineChart(shape);
-                    if (chart == null)
-                    {
-                        continue;
-                    }
-
                     charts.Add(new BodyChart
                     {
                         Start = shape.Range.Start,
                         Inline = shape,
-                        Chart = chart,
+                        Chart = TryGetInlineChart(shape),
                     });
                 }
             }
@@ -162,17 +197,11 @@ namespace WordAddIn1
                         continue;
                     }
 
-                    Word.Chart chart = TryGetFloatingChart(shape);
-                    if (chart == null)
-                    {
-                        continue;
-                    }
-
                     charts.Add(new BodyChart
                     {
                         Start = shape.Anchor.Start,
                         Floating = shape,
-                        Chart = chart,
+                        Chart = TryGetFloatingChart(shape),
                     });
                 }
             }
@@ -270,6 +299,34 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine("[ChartResolve] 内嵌 Chart 失败: " + ex.Message);
                 return null;
             }
+        }
+
+        private static Word.Chart TryChartFromRaw(object shape)
+        {
+            if (shape == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                Word.InlineShape inline = shape as Word.InlineShape;
+                if (inline != null)
+                {
+                    return TryGetInlineChart(inline);
+                }
+
+                Word.Shape floating = shape as Word.Shape;
+                if (floating != null)
+                {
+                    return TryGetFloatingChart(floating);
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
         }
 
         private static Word.Chart TryGetFloatingChart(Word.Shape shape)
