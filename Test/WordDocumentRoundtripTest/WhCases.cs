@@ -13,7 +13,7 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static class WhCases
     {
-        public const int Target = 244;
+        public const int Target = 265;
 
         private const string AfterSent = "易写图前句。";
         private const string TitleA = "易写图销量";
@@ -47,6 +47,7 @@ namespace WordDocumentRoundtripTest
             bool runBase = !runFrom136 && (string.IsNullOrEmpty(part) || part == "base");
             bool runCon = !runFrom136 && (string.IsNullOrEmpty(part) || part == "con");
             bool runC2 = !runFrom136 && (string.IsNullOrEmpty(part) || part == "c2");
+            bool runAttr = !runFrom136 && (string.IsNullOrEmpty(part) || part == "attr");
             var s = new WdSession(host);
             s.DismissOrphanExcelOnClose = !s.IsWps;
             if (runFrom136)
@@ -76,6 +77,10 @@ namespace WordDocumentRoundtripTest
                     }
 
                     RunConsolidate2(run, s);
+                }
+                if (runAttr)
+                {
+                    RunAttrs(run, s);
                 }
                 if (runBase || runFrom136)
                 {
@@ -1610,6 +1615,376 @@ namespace WordDocumentRoundtripTest
             }
 
             return token.Length > 0;
+        }
+
+        // ============ 属性覆盖（wh-attr-*）：每个支持字段写 → 抽回 → 再套，C_ 不变 ============
+
+        private static readonly string[] AttrIds =
+        {
+            "wh-attr-n-data",
+            "wh-attr-col", "wh-attr-bool",
+            "wh-attr-axis-x", "wh-attr-axis-y", "wh-attr-axis-y2", "wh-attr-tick-rest",
+            "wh-attr-series", "wh-attr-markers", "wh-attr-labels",
+            "wh-attr-type-bar", "wh-attr-type-line", "wh-attr-type-pie2d", "wh-attr-type-pie", "wh-attr-type-pie3d",
+            "wh-attr-pie", "wh-attr-pie-pct",
+            "wh-attr-legend-top", "wh-attr-legend-left", "wh-attr-legend-right", "wh-attr-legend-none"
+        };
+
+        private static void RunAttrs(TestRun run, WdSession s)
+        {
+            if (AttrIds.Length != 21)
+            {
+                FailMany(run, "属性用例登记不是 21 条", AttrIds);
+                return;
+            }
+
+            ExpectFail(run, "wh-attr-n-data",
+                s.CreateChartFromXml(CreateArgs(null, WriteXml(
+                    "<ChartConfig><Chart data-plot-box=\"0.1,0.2,0.7,0.6\"><Type>column</Type><Title>易写图禁前缀</Title>"
+                    + "<DataTable><Header><Column type=\"category\">年</Column><Column type=\"value\">销量</Column></Header>"
+                    + "<Rows><Row>2023,1</Row><Row>2024,2</Row><Row>2025,3</Row></Rows></DataTable></Chart></ChartConfig>"))),
+                "data-");
+
+            AssertAttrRoundtrip(run, s, "wh-attr-col",
+                AttrChart("column", "易写图柱皮",
+                    "<Theme>office</Theme><Width>360</Width><Height>240</Height>"
+                    + "<ShowDataLabels>false</ShowDataLabels><LegendPosition>bottom</LegendPosition>"
+                    + "<PlotColor>#D9E2F3</PlotColor><TitleFontSize>16</TitleFontSize><TitleFontBold>true</TitleFontBold>"
+                    + "<TitleFontColor>#1F4E79</TitleFontColor><Gridlines>false</Gridlines><GapWidth>80</GapWidth>"
+                    + "<Overlap>20</Overlap><PlotBox>0.12,0.18,0.70,0.62</PlotBox><PlotInside>0.16,0.22,0.60,0.50</PlotInside>"
+                    + "<ChartAreaColor>#F2F2F2</ChartAreaColor><ChartStyle>10</ChartStyle><LegendFontColor>#333333</LegendFontColor>"
+                    + "<DataMarkers>false</DataMarkers><YAxisMin>10</YAxisMin><YAxisMax>100</YAxisMax><YAxisMajorUnit>10</YAxisMajorUnit>"
+                    + "<FillMissingValues>true</FillMissingValues>",
+                    Col("", "销量"),
+                    Rows3(401)),
+                "<Type>column</Type>", "<Title>易写图柱皮</Title>", "<Theme>office</Theme>",
+                "<Width>360</Width>", "<Height>240</Height>",
+                "<ShowDataLabels>false</ShowDataLabels>", "<LegendPosition>bottom</LegendPosition>",
+                "D9E2F3", "<TitleFontSize>16</TitleFontSize>", "<TitleFontBold>true</TitleFontBold>", "1F4E79",
+                "<Gridlines>false</Gridlines>", "<GapWidth>80</GapWidth>", "<Overlap>20</Overlap>",
+                "0.12,0.18,0.70,0.62", "0.16,0.22,0.60,0.50", "F2F2F2", "<ChartStyle>10</ChartStyle>", "333333",
+                "<DataMarkers>false</DataMarkers>", "<YAxisMin>10</YAxisMin>", "<YAxisMax>100</YAxisMax>",
+                "<YAxisMajorUnit>10</YAxisMajorUnit>", "<FillMissingValues>true</FillMissingValues>");
+
+            AssertAttrRoundtrip(run, s, "wh-attr-bool",
+                AttrChart("column", "易写图布尔",
+                    "<ShowDataLabels>true</ShowDataLabels><Gridlines>true</Gridlines>"
+                    + "<TitleFontBold>false</TitleFontBold><FillMissingValues>false</FillMissingValues>",
+                    Col("", "销量"),
+                    Rows3(411)),
+                "<ShowDataLabels>true</ShowDataLabels>", "<Gridlines>true</Gridlines>",
+                "<TitleFontBold>false</TitleFontBold>", "<FillMissingValues>false</FillMissingValues>");
+
+            AssertAttrRoundtrip(run, s, "wh-attr-axis-x",
+                AttrChart("column", "易写图横轴",
+                    "<AxisX>" + AxisChrome("年份", "next", "outside", "inside", "true", "true",
+                        "<Type>category</Type><TickLabelCount>3</TickLabelCount><TickLabelSpacing>1</TickLabelSpacing><BetweenCategories>true</BetweenCategories>")
+                    + "</AxisX>",
+                    Col("", "销量"),
+                    Rows3(421)),
+                AxisNeedles("年份", "next", "outside", "inside", "true", "true",
+                    "<Type>category</Type>", "<TickLabelCount>3</TickLabelCount>", "<TickLabelSpacing>1</TickLabelSpacing>", "BetweenCategories"));
+
+            AssertAttrRoundtrip(run, s, "wh-attr-axis-y",
+                AttrChart("column", "易写图纵轴",
+                    "<AxisY>" + AxisChrome("万台", "low", "inside", "outside", "true", "false") + "</AxisY>",
+                    Col("", "销量"),
+                    Rows3(431)),
+                AxisNeedles("万台", "low", "inside", "outside", "true", "false"));
+
+            AssertAttrRoundtrip(run, s, "wh-attr-axis-y2",
+                AttrChart("column", "易写图次轴",
+                    "<AxisY2>" + AxisChrome("增速", "high", "cross", "cross", "false", "true") + "</AxisY2>",
+                    Col("axisY=\"y\" chartType=\"column\"", "销量") + Col("axisY=\"y2\" chartType=\"line\"", "增速"),
+                    "<Row>2023,441,1</Row><Row>2024,442,2</Row><Row>2025,443,3</Row>"),
+                AxisNeedles("增速", "high", "cross", "cross", "false", "true"));
+
+            AssertAttrRoundtrip(run, s, "wh-attr-tick-rest",
+                AttrChart("column", "易写图刻度",
+                    "<AxisX><TickPosition>none</TickPosition><MajorTick>none</MajorTick><MinorTick>none</MinorTick></AxisX>",
+                    Col("", "销量"),
+                    Rows3(451)),
+                "<TickPosition>none</TickPosition>", "<MajorTick>none</MajorTick>", "<MinorTick>none</MinorTick>");
+
+            AssertAttrRoundtrip(run, s, "wh-attr-series",
+                AttrChart("line", "易写图系列",
+                    null,
+                    Col("axisY=\"y2\" color=\"#ED7D31\" chartType=\"line\" showDataLabels=\"true\" showValue=\"true\" showPercentage=\"false\""
+                        + " fillGradient=\"0:#FF0000@0;1:#0000FF@0\" fillAngle=\"45\" line=\"#ED7D31\" lineWeight=\"2.5\""
+                        + " marker=\"circle\" markerSize=\"8\" markerColor=\"#000000\" markerFill=\"#FFFFFF\""
+                        + " labelPosition=\"center\" labelFont=\"微软雅黑\" labelSize=\"12\" labelColor=\"#333333\" labelFormat=\"0.0\"",
+                        "增速")
+                    + Col("axisY=\"y\" showDataLabels=\"false\" showValue=\"false\" showPercentage=\"true\"", "销量"),
+                    "<Row>2023,1,461</Row><Row>2024,2,462</Row><Row>2025,3,463</Row>"),
+                "axisY=\"y2\"", "axisY=\"y\"", "ED7D31", "chartType=\"line\"",
+                "showDataLabels=\"true\"", "showDataLabels=\"false\"",
+                "showValue=\"true\"", "showValue=\"false\"", "showPercentage=\"false\"", "showPercentage=\"true\"",
+                "0:#FF0000@0;1:#0000FF@0", "fillAngle=\"45\"", "line=", "lineWeight=\"2.5\"",
+                "marker=\"circle\"", "markerSize=\"8\"", "markerColor=\"#000000\"", "markerFill=\"#FFFFFF\"",
+                "labelPosition=\"center\"", "labelFont=\"微软雅黑\"", "labelSize=\"12\"", "333333", "labelFormat=\"0.0\"");
+
+            AssertAttrRoundtrip(run, s, "wh-attr-markers",
+                AttrChart("line", "易写图标记", null, MarkerColumns(), MarkerRows()),
+                "marker=\"none\"", "marker=\"circle\"", "marker=\"diamond\"", "marker=\"square\"",
+                "marker=\"triangle\"", "marker=\"star\"", "marker=\"plus\"", "marker=\"x\"", "marker=\"dot\"");
+
+            AssertAttrRoundtrip(run, s, "wh-attr-labels",
+                AttrChart("column", "易写图标签位", null, LabelColumns(), LabelRows()),
+                "labelPosition=\"center\"", "labelPosition=\"above\"", "labelPosition=\"below\"",
+                "labelPosition=\"left\"", "labelPosition=\"right\"", "labelPosition=\"outside\"",
+                "labelPosition=\"inside-end\"", "labelPosition=\"inside-base\"");
+
+            AssertAttrRoundtrip(run, s, "wh-attr-type-bar",
+                AttrChart("bar", "易写图条形", null, Col("", "销量"), Rows3(471)),
+                "<Type>bar</Type>");
+            AssertAttrRoundtrip(run, s, "wh-attr-type-line",
+                AttrChart("line", "易写图折线皮",
+                    "<DataMarkers>true</DataMarkers><MarkerSize>8</MarkerSize><LineWeight>2.25</LineWeight>",
+                    Col("", "销量"),
+                    Rows3(481)),
+                "<Type>line</Type>", "<DataMarkers>true</DataMarkers>", "<MarkerSize>8</MarkerSize>", "<LineWeight>2.25</LineWeight>");
+            AssertAttrRoundtrip(run, s, "wh-attr-type-pie2d",
+                AttrChart("pie2d", "易写图饼二", null, Col("", "销量"), Rows3(491)),
+                "<Type>pie2d</Type>");
+            AssertAttrRoundtrip(run, s, "wh-attr-type-pie",
+                AttrChart("pie", "易写图饼别名", null, Col("", "销量"), Rows3(501)),
+                "<Type>pie2d</Type>");
+            AssertAttrRoundtrip(run, s, "wh-attr-type-pie3d",
+                AttrChart("pie3d", "易写图饼三", null, Col("", "销量"), Rows3(511)),
+                "<Type>pie3d</Type>");
+
+            AssertAttrRoundtrip(run, s, "wh-attr-pie",
+                AttrChart("pie3d", "易写图爆炸",
+                    "<Explosion>15</Explosion><ShowValue>true</ShowValue><ShowPercentage>false</ShowPercentage>",
+                    Col("", "销量"),
+                    Rows3(521)),
+                "<Type>pie3d</Type>", "<Explosion>15</Explosion>", "<ShowValue>true</ShowValue>", "<ShowPercentage>false</ShowPercentage>");
+            AssertAttrRoundtrip(run, s, "wh-attr-pie-pct",
+                AttrChart("pie3d", "易写图百分比",
+                    "<ShowValue>false</ShowValue><ShowPercentage>true</ShowPercentage>",
+                    Col("", "销量"),
+                    Rows3(531)),
+                "<ShowValue>false</ShowValue>", "<ShowPercentage>true</ShowPercentage>");
+
+            AssertAttrRoundtrip(run, s, "wh-attr-legend-top",
+                AttrChart("column", "易写图例上", "<LegendPosition>top</LegendPosition>", Col("", "销量"), Rows3(541)),
+                "<LegendPosition>top</LegendPosition>");
+            AssertAttrRoundtrip(run, s, "wh-attr-legend-left",
+                AttrChart("column", "易写图例左", "<LegendPosition>left</LegendPosition>", Col("", "销量"), Rows3(551)),
+                "<LegendPosition>left</LegendPosition>");
+            AssertAttrRoundtrip(run, s, "wh-attr-legend-right",
+                AttrChart("column", "易写图例右", "<LegendPosition>right</LegendPosition>", Col("", "销量"), Rows3(561)),
+                "<LegendPosition>right</LegendPosition>");
+            AssertAttrRoundtrip(run, s, "wh-attr-legend-none",
+                AttrChart("column", "易写图例无", "<LegendPosition>none</LegendPosition>", Col("", "销量"), Rows3(571)),
+                "<LegendPosition>none</LegendPosition>");
+        }
+
+        private static string[] AxisNeedles(
+            string title,
+            string tickPosition,
+            string major,
+            string minor,
+            string visible,
+            string grid,
+            params string[] extra)
+        {
+            var list = new List<string>
+            {
+                "<Title>" + title + "</Title>",
+                "<Visible>" + visible + "</Visible>",
+                "微软雅黑",
+                "C00000",
+                "<TickSize>9</TickSize>",
+                "<TickPosition>" + tickPosition + "</TickPosition>",
+                "<MajorTick>" + major + "</MajorTick>",
+                "<MinorTick>" + minor + "</MinorTick>",
+                "<Format>0.0</Format>",
+                "<Grid>" + grid + "</Grid>",
+                "D9D9D9",
+                "7F7F7F",
+                "<LineWeight>1.5</LineWeight>"
+            };
+            if (extra != null)
+            {
+                list.AddRange(extra);
+            }
+
+            return list.ToArray();
+        }
+
+        private static string AxisChrome(
+            string title,
+            string tickPosition,
+            string major,
+            string minor,
+            string visible,
+            string grid,
+            string extra = null)
+        {
+            return "<Title>" + title + "</Title>"
+                + (extra ?? "")
+                + "<Visible>" + visible + "</Visible><TickFont>微软雅黑</TickFont><TickColor>#C00000</TickColor><TickSize>9</TickSize>"
+                + "<TickPosition>" + tickPosition + "</TickPosition><MajorTick>" + major + "</MajorTick><MinorTick>" + minor + "</MinorTick>"
+                + "<Format>0.0</Format><Grid>" + grid + "</Grid><GridColor>#D9D9D9</GridColor><Line>#7F7F7F</Line><LineWeight>1.5</LineWeight>";
+        }
+
+        private static string MarkerColumns()
+        {
+            string[] markers = { "none", "circle", "diamond", "square", "triangle", "star", "plus", "x", "dot" };
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < markers.Length; i++)
+            {
+                sb.Append(Col("chartType=\"line\" marker=\"" + markers[i] + "\"", "标" + (i + 1)));
+            }
+
+            return sb.ToString();
+        }
+
+        private static string MarkerRows()
+        {
+            return "<Row>2023,1,2,3,4,5,6,7,8,9</Row><Row>2024,2,3,4,5,6,7,8,9,10</Row><Row>2025,3,4,5,6,7,8,9,10,11</Row>";
+        }
+
+        private static string LabelColumns()
+        {
+            string[] positions = { "center", "above", "below", "left", "right", "outside", "inside-end", "inside-base" };
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < positions.Length; i++)
+            {
+                sb.Append(Col("labelPosition=\"" + positions[i] + "\"", "位" + (i + 1)));
+            }
+
+            return sb.ToString();
+        }
+
+        private static string LabelRows()
+        {
+            return "<Row>2023,11,12,13,14,15,16,17,18</Row><Row>2024,21,22,23,24,25,26,27,28</Row><Row>2025,31,32,33,34,35,36,37,38</Row>";
+        }
+
+        private static string AttrChart(string type, string title, string extras, string columns, string rows)
+        {
+            return "<ChartConfig><Chart><Type>" + type + "</Type><Title>" + title + "</Title>"
+                + (extras ?? "")
+                + "<DataTable><Header><Column type=\"category\">年</Column>"
+                + columns
+                + "</Header><Rows>" + rows + "</Rows></DataTable></Chart></ChartConfig>";
+        }
+
+        private static string Col(string attrs, string name)
+        {
+            return "<Column type=\"value\""
+                + (string.IsNullOrEmpty(attrs) ? "" : " " + attrs)
+                + ">" + name + "</Column>";
+        }
+
+        private static string Rows3(int y0)
+        {
+            return "<Row>2023," + y0 + "</Row><Row>2024," + (y0 + 1) + "</Row><Row>2025," + (y0 + 2) + "</Row>";
+        }
+
+        private static void AssertAttrRoundtrip(TestRun run, WdSession s, string caseId, string xml, params string[] needles)
+        {
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, caseId))
+            {
+                return;
+            }
+
+            try
+            {
+                if (!s.TypePlain(path, ConSent))
+                {
+                    run.CaseFail(caseId, "COM 写巩固句失败");
+                    return;
+                }
+
+                s.ActivateDoc(path);
+                s.GetContent(id);
+                ToolResult created = s.CreateChartFromXml(CreateArgs(id, WriteXml(xml)));
+                string chartId = WdSession.Str(created, "chart_id");
+                if (created == null || !created.Success || string.IsNullOrEmpty(chartId)
+                    || !chartId.StartsWith("C_", StringComparison.Ordinal))
+                {
+                    run.CaseFail(caseId, created == null ? "空调用结果" : (created.Error ?? "建图失败"));
+                    return;
+                }
+
+                string missing = FirstMissing(ExtractXml(s, id, chartId), needles);
+                if (missing != null)
+                {
+                    run.CaseFail(caseId, "抽出缺少 " + missing);
+                    return;
+                }
+
+                ToolResult applied = s.ApplyChartFromXml(ApplyArgs(id, chartId, "all", xml));
+                bool idOk = applied != null && applied.Success && HasChartId(s, id, chartId);
+                string echoed = applied == null ? "" : WdSession.Str(applied, "chart_id");
+                if (idOk && !string.IsNullOrEmpty(echoed) && !string.Equals(echoed, chartId, StringComparison.Ordinal))
+                {
+                    idOk = false;
+                }
+
+                if (!idOk)
+                {
+                    run.CaseFail(caseId, applied != null && applied.Success ? "再套后 C_ 变了" : (applied == null ? "再套失败" : (applied.Error ?? "再套失败")));
+                    return;
+                }
+
+                missing = FirstMissing(ExtractXml(s, id, chartId), needles);
+                if (missing != null)
+                {
+                    run.CaseFail(caseId, "再套后抽出缺少 " + missing);
+                    return;
+                }
+
+                if (!StillHas(s, id, ConSent))
+                {
+                    run.CaseFail(caseId, "前句丢了");
+                    return;
+                }
+
+                run.CaseOk(caseId);
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static string ExtractXml(WdSession s, string channelId, string chartId)
+        {
+            ToolResult extracted = s.ExtractChartXml(ExtractArgs(channelId, chartId, null, "all"));
+            if (extracted == null || !extracted.Success)
+            {
+                return "";
+            }
+
+            return WdSession.Str(extracted, "xml_content") ?? "";
+        }
+
+        private static string FirstMissing(string xml, string[] needles)
+        {
+            if (string.IsNullOrEmpty(xml))
+            {
+                return "抽出 XML";
+            }
+
+            if (needles == null)
+            {
+                return null;
+            }
+
+            foreach (string needle in needles)
+            {
+                if (!Contains(xml, needle))
+                {
+                    return needle;
+                }
+            }
+
+            return null;
         }
 
         // ---- 巩固块夹具 ----
