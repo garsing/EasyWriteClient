@@ -109,6 +109,121 @@ namespace WordDocumentRoundtripTest
             public int Bottom;
         }
 
+        public static int RunRewriteCopyBack()
+        {
+            const string fromVal = "4.3";
+            const string toVal = "9.91";
+            var s = new WdSession("wps");
+            string src = Path.Combine(Path.GetTempPath(), "yiwrite-wps-chart-src.docx");
+            string blank = Path.Combine(Path.GetTempPath(), "yiwrite-wps-chart-blank.docx");
+            if (!File.Exists(src) || !File.Exists(blank))
+            {
+                Console.WriteLine("找不到样例稿");
+                return 1;
+            }
+
+            ToolResult openSrc = s.Open(src, false, "wps");
+            ToolResult openBlank = s.Open(blank, false, "wps");
+            if (!openSrc.Success || !openBlank.Success)
+            {
+                Console.WriteLine("打开失败 src=" + (openSrc.Error ?? "") + " blank=" + (openBlank.Error ?? ""));
+                return 1;
+            }
+
+            if (!LooksLiveDump(DescribeCharts(s, blank))
+                && DescribeCharts(s, blank).IndexOf("有Chart", StringComparison.Ordinal) < 0)
+            {
+                s.TryWpsDoc(blank, destDoc =>
+                {
+                    DeleteInlineShapes(destDoc);
+                    return true;
+                });
+                if (!PasteSrcChartToBlank(s, src, blank, out string pasteErr))
+                {
+                    Console.WriteLine("FAIL 空稿没有图: " + pasteErr);
+                    return 1;
+                }
+            }
+
+            Line("贴回前 COM", DescribeCharts(s, blank));
+            string snap = SnapshotWithoutStealPath(s, blank);
+            if (string.IsNullOrEmpty(snap) || !File.Exists(snap))
+            {
+                Console.WriteLine("FAIL 副本没落盘");
+                return 1;
+            }
+
+            string rewritten = Path.Combine(Path.GetTempPath(), "yiwrite-wps-chart-rewritten.docx");
+            File.Copy(snap, rewritten, true);
+            int hits = RewriteChartValueInDocx(rewritten, fromVal, toVal);
+            Line("改包", rewritten + " 替换 " + fromVal + "→" + toVal + " 处=" + hits);
+            if (hits < 1)
+            {
+                Console.WriteLine("FAIL 副本里没找到 " + fromVal);
+                return 1;
+            }
+
+            Line("改后包", ReadChartSeriesFromDocx(rewritten));
+            ToolResult openRw = s.Open(rewritten, false, "wps");
+            Line("打开改包", openRw.Success ? "成功" : (openRw.Error ?? "失败"));
+            if (!openRw.Success)
+            {
+                s.ActivateDoc(blank);
+                return 1;
+            }
+
+            Line("改包 COM", DescribeCharts(s, rewritten));
+            string rwOpenXml = "";
+            s.TryWpsDoc(rewritten, doc =>
+            {
+                rwOpenXml = ReadChartSeriesFromWordOpenXml(doc);
+                return true;
+            });
+            Line("改包 WordOpenXML", rwOpenXml);
+
+            s.TryWpsDoc(blank, destDoc =>
+            {
+                DeleteInlineShapes(destDoc);
+                return true;
+            });
+            bool copied = PasteSrcChartToBlank(s, rewritten, blank, out string err);
+            Line("复制回去", copied ? "成功" : err);
+            if (!copied)
+            {
+                s.ActivateDoc(blank);
+                return 1;
+            }
+
+            string comBack = DescribeCharts(s, blank);
+            Line("贴回后 COM", comBack);
+            string backXml = "";
+            s.TryWpsDoc(blank, doc =>
+            {
+                backXml = ReadChartSeriesFromWordOpenXml(doc);
+                return true;
+            });
+            Line("贴回后 WordOpenXML", backXml);
+            ToolResult got = s.GetContent(WdSession.Str(openBlank, "channel_id"));
+            Line("贴回后读文", Snip(ReadBody(got), 220));
+
+            bool ooxmlHasNew = (backXml ?? "").IndexOf(toVal, StringComparison.Ordinal) >= 0;
+            bool comHasNew = (comBack ?? "").IndexOf(toVal, StringComparison.Ordinal) >= 0;
+            Console.WriteLine();
+            if (ooxmlHasNew)
+            {
+                Console.WriteLine(comHasNew
+                    ? "贴回后 OOXML 和 COM 都有新数。改包复制回去通。"
+                    : "贴回后 OOXML 有新数，COM Series 仍可能是废的。读走 OOXML 则这条路通。");
+            }
+            else
+            {
+                Console.WriteLine("贴回后 OOXML 没有新数，复制回去没把改包带上。");
+            }
+
+            s.ActivateDoc(blank);
+            return ooxmlHasNew ? 0 : 1;
+        }
+
         public static int RunOoxmlReadWhenSeriesDead()
         {
             var s = new WdSession("wps");
@@ -470,6 +585,104 @@ namespace WordDocumentRoundtripTest
             });
             err = copyErr;
             return copied;
+        }
+
+        private static int RewriteChartValueInDocx(string path, string from, string to)
+        {
+            int hits = 0;
+            string tokenFrom = ">" + from + "<";
+            string tokenTo = ">" + to + "<";
+            using (ZipArchive z = ZipFile.Open(path, ZipArchiveMode.Update))
+            {
+                var names = new List<string>();
+                foreach (ZipArchiveEntry e in z.Entries)
+                {
+                    names.Add(e.FullName);
+                }
+
+                foreach (string name in names)
+                {
+                    string n = name.Replace('\\', '/');
+                    bool chartXml = n.IndexOf("word/charts/chart", StringComparison.OrdinalIgnoreCase) >= 0
+                        && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase);
+                    bool embed = n.IndexOf("word/embeddings/", StringComparison.OrdinalIgnoreCase) >= 0
+                        && n.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase);
+                    if (!chartXml && !embed)
+                    {
+                        continue;
+                    }
+
+                    ZipArchiveEntry entry = z.GetEntry(name);
+                    if (entry == null)
+                    {
+                        continue;
+                    }
+
+                    byte[] raw;
+                    using (Stream input = entry.Open())
+                    using (var ms = new MemoryStream())
+                    {
+                        input.CopyTo(ms);
+                        raw = ms.ToArray();
+                    }
+
+                    if (chartXml)
+                    {
+                        string text = Encoding.UTF8.GetString(raw);
+                        int nHits = CountToken(text, tokenFrom);
+                        if (nHits == 0)
+                        {
+                            continue;
+                        }
+
+                        text = text.Replace(tokenFrom, tokenTo);
+                        hits += nHits;
+                        entry.Delete();
+                        ZipArchiveEntry next = z.CreateEntry(name, CompressionLevel.Optimal);
+                        using (Stream output = next.Open())
+                        {
+                            byte[] bytes = Encoding.UTF8.GetBytes(text);
+                            output.Write(bytes, 0, bytes.Length);
+                        }
+                    }
+                    else
+                    {
+                        byte[] nextXlsx = ReplaceInXlsx(raw, tokenFrom, tokenTo);
+                        if (nextXlsx == null)
+                        {
+                            continue;
+                        }
+
+                        hits++;
+                        entry.Delete();
+                        ZipArchiveEntry next = z.CreateEntry(name, CompressionLevel.Optimal);
+                        using (Stream output = next.Open())
+                        {
+                            output.Write(nextXlsx, 0, nextXlsx.Length);
+                        }
+                    }
+                }
+            }
+
+            return hits;
+        }
+
+        private static int CountToken(string text, string token)
+        {
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(token))
+            {
+                return 0;
+            }
+
+            int n = 0;
+            int i = 0;
+            while ((i = text.IndexOf(token, i, StringComparison.Ordinal)) >= 0)
+            {
+                n++;
+                i += token.Length;
+            }
+
+            return n;
         }
 
         private static string SnapshotWithoutStealPath(WdSession s, string openPath)

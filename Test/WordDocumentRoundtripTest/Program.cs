@@ -17,6 +17,18 @@ namespace WordDocumentRoundtripTest
             bool runLayout = !runFindStale
                 && (caseFilter.StartsWith("lb-", StringComparison.OrdinalIgnoreCase)
                     || caseFilter.StartsWith("wc-lb-", StringComparison.OrdinalIgnoreCase));
+            if (string.Equals(caseFilter, "wps-chart-rewrite-copyback", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("WPS：存副本改 OOXML 再复制回用户窗口");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                return WhWpsChartOoxmlProbe.RunRewriteCopyBack();
+            }
+
             if (string.Equals(caseFilter, "wps-chart-ooxml-read-dead", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("WPS 贴图 Series 废了时，另存副本用 OOXML 读数");
