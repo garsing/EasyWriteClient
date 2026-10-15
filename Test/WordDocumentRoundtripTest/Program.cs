@@ -17,6 +17,20 @@ namespace WordDocumentRoundtripTest
             bool runLayout = !runFindStale
                 && (caseFilter.StartsWith("lb-", StringComparison.OrdinalIgnoreCase)
                     || caseFilter.StartsWith("wc-lb-", StringComparison.OrdinalIgnoreCase));
+            if (string.Equals(caseFilter, "wps-chart-ooxml-probe", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("WPS 文字图 OOXML / InsertFile 探针（wps-chart-ooxml-probe）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine("不 Quit 用户 WPS / Word；只动临时稿");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                return WhWpsChartOoxmlProbe.Run();
+            }
+
             if (string.Equals(caseFilter, "wa-rollback-live", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("文字 改字回滚探针（wa-rollback-live）");

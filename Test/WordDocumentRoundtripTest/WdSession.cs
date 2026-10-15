@@ -1649,6 +1649,11 @@ namespace WordDocumentRoundtripTest
             });
         }
 
+        public bool TryWpsDoc(string fullPath, Func<object, bool> action)
+        {
+            return WithWpsDoc(fullPath, action);
+        }
+
         private static bool WithWpsDoc(string fullPath, Func<object, bool> action)
         {
             foreach (object app in EnumerateWpsApps())

@@ -47,6 +47,8 @@
       <EmbedInteropTypes>true</EmbedInteropTypes>
       <Private>False</Private>
     </Reference>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Windows.Forms" />
   </ItemGroup>
 </Project>
