@@ -17,6 +17,78 @@ namespace WordDocumentRoundtripTest
             bool runLayout = !runFindStale
                 && (caseFilter.StartsWith("lb-", StringComparison.OrdinalIgnoreCase)
                     || caseFilter.StartsWith("wc-lb-", StringComparison.OrdinalIgnoreCase));
+            if (string.Equals(caseFilter, "wps-chart-ooxml-read-dead", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("WPS 贴图 Series 废了时，另存副本用 OOXML 读数");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                return WhWpsChartOoxmlProbe.RunOoxmlReadWhenSeriesDead();
+            }
+
+            if (string.Equals(caseFilter, "wps-chart-click-wake", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("WPS 贴图后取屏幕坐标，模拟点击看能不能唤醒 Series");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                return WhWpsChartOoxmlProbe.RunClickWakeAfterPaste();
+            }
+
+            if (string.Equals(caseFilter, "wps-chart-wake-paste", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("WPS 贴图后唤醒 Series，不关用户窗口");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                return WhWpsChartOoxmlProbe.RunWakeAfterPaste();
+            }
+
+            if (string.Equals(caseFilter, "wps-chart-auto-copy", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("把带图稿的图用 COM 复制到空稿");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                return WhWpsChartOoxmlProbe.RunAutoCopyToBlank();
+            }
+
+            if (string.Equals(caseFilter, "wps-chart-inspect-blank", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("检查手动粘贴后的空稿是否仍是活图");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                return WhWpsChartOoxmlProbe.RunInspectManualDest();
+            }
+
+            if (string.Equals(caseFilter, "wps-chart-manual-samples", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("WPS 文字图：打开两份样例供手动复制");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                return WhWpsChartOoxmlProbe.RunManualSamples();
+            }
+
             if (string.Equals(caseFilter, "wps-chart-why-dead", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("WPS 文字图：插入后 Series 废了是包丢了还是 COM 废了");
