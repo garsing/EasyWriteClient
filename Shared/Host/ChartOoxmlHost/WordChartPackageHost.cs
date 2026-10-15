@@ -257,6 +257,34 @@ namespace WordAddIn1.ChartOoxmlHost
                 return false;
             }
 
+            return TryDeleteShape(shape, out error);
+        }
+
+        /// <summary>删掉第 ordinal 张后，把剪贴板里的图贴回同一位置。甲乙丙改甲仍是新甲乙丙。</summary>
+        public static bool TryReplaceChartAtOrdinal(object destDoc, int ordinal, out string error)
+        {
+            if (!TryFindChartShape(destDoc, ordinal, out object shape, out error))
+            {
+                return false;
+            }
+
+            if (!TryReadInsertStart(shape, out int start))
+            {
+                error = "原图位置读不到";
+                return false;
+            }
+
+            if (!TryDeleteShape(shape, out error))
+            {
+                return false;
+            }
+
+            return TryPasteAt(destDoc, start, out error);
+        }
+
+        private static bool TryDeleteShape(object shape, out string error)
+        {
+            error = null;
             try
             {
                 Word.InlineShape inline = shape as Word.InlineShape;
@@ -283,7 +311,51 @@ namespace WordAddIn1.ChartOoxmlHost
             }
         }
 
-        public static bool TryPasteToDoc(object destDoc, out string error)
+        private static bool TryReadInsertStart(object shape, out int start)
+        {
+            start = 0;
+            try
+            {
+                Word.InlineShape inline = shape as Word.InlineShape;
+                if (inline != null)
+                {
+                    start = inline.Range.Start;
+                    return true;
+                }
+
+                Word.Shape floating = shape as Word.Shape;
+                if (floating != null && floating.Anchor != null)
+                {
+                    start = floating.Anchor.Start;
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+
+            object range = WpsCom.GetProperty(shape, "Range");
+            if (range == null)
+            {
+                range = WpsCom.GetProperty(shape, "Anchor");
+            }
+
+            if (range == null)
+            {
+                return false;
+            }
+
+            object raw = WpsCom.GetProperty(range, "Start");
+            if (raw == null)
+            {
+                return false;
+            }
+
+            start = Convert.ToInt32(raw);
+            return true;
+        }
+
+        private static bool TryPasteAt(object destDoc, int start, out string error)
         {
             error = null;
             try
@@ -292,7 +364,8 @@ namespace WordAddIn1.ChartOoxmlHost
                 if (word != null && !WpsChartExtract.IsWpsDocument(destDoc))
                 {
                     word.Activate();
-                    word.Application.Selection.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                    Word.Range hole = word.Range(start, start);
+                    hole.Select();
                     word.Application.Selection.Paste();
                     return true;
                 }
@@ -305,10 +378,9 @@ namespace WordAddIn1.ChartOoxmlHost
                 {
                 }
 
+                object wpsHole = WpsCom.Invoke(destDoc, "Range", start, start);
+                WpsCom.Invoke(wpsHole, "Select");
                 object app = WpsCom.GetProperty(destDoc, "Application");
-                object content = WpsCom.GetProperty(destDoc, "Content");
-                WpsCom.Invoke(content, "Collapse", 0);
-                WpsCom.Invoke(content, "Select");
                 object selection = WpsCom.GetProperty(app, "Selection");
                 WpsCom.Invoke(selection, "Paste");
                 return true;

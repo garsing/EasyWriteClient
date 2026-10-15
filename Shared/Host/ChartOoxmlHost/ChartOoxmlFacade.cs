@@ -173,12 +173,7 @@ namespace WordAddIn1.ChartOoxmlHost
                     return false;
                 }
 
-                if (!WordChartPackageHost.TryDeleteChartOnDoc(destDoc, ordinal, out error))
-                {
-                    return false;
-                }
-
-                if (!WordChartPackageHost.TryPasteToDoc(destDoc, out error))
+                if (!WordChartPackageHost.TryReplaceChartAtOrdinal(destDoc, ordinal, out error))
                 {
                     return false;
                 }
@@ -187,26 +182,25 @@ namespace WordAddIn1.ChartOoxmlHost
                 {
                     if (!TryReadWordChartParts(destDoc, out List<ChartPartRef> after, out error)
                         || after == null
-                        || after.Count == 0)
+                        || ordinal < 0
+                        || ordinal >= after.Count)
                     {
-                        error = string.IsNullOrEmpty(error) ? "贴回后读不到图" : error;
+                        error = string.IsNullOrEmpty(error) ? "贴回后对不上原位置" : error;
                         return false;
                     }
 
-                    // 贴在文末，新图是最后一张，不能再用删除前的下标。
-                    int pasted = after.Count - 1;
-                    List<string> afterColors = ChartPartXml.SnapshotSeriesColors(after[pasted].ChartXml);
+                    List<string> afterColors = ChartPartXml.SnapshotSeriesColors(after[ordinal].ChartXml);
                     if (!ChartPartXml.ColorsMatch(colorSnap, afterColors))
                     {
-                        if (!ChartPartXml.TryPinSeriesColors(after[pasted].ChartXml, colorSnap))
+                        if (!ChartPartXml.TryPinSeriesColors(after[ordinal].ChartXml, colorSnap))
                         {
-                            error = ColorPinError(colorSnap, afterColors, ordinal, pasted);
+                            error = ColorPinError(colorSnap, afterColors, ordinal);
                             return false;
                         }
 
                         var pin = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
-                        pin[(after[pasted].ChartPartName ?? "").TrimStart('/')] =
-                            ChartPartXml.XmlPartBytes(after[pasted].ChartXml);
+                        pin[(after[ordinal].ChartPartName ?? "").TrimStart('/')] =
+                            ChartPartXml.XmlPartBytes(after[ordinal].ChartXml);
                         WordChartPackageHost.TryCloseCopy(copy);
                         copy = null;
                         File.Copy(WordChartPackageHost.TryReadFullName(destDoc), temp, true);
@@ -220,24 +214,23 @@ namespace WordAddIn1.ChartOoxmlHost
                             return false;
                         }
 
-                        if (!WordChartPackageHost.TryCopyChartOnDoc(copy, pasted, out error)
-                            || !WordChartPackageHost.TryDeleteChartOnDoc(destDoc, pasted, out error)
-                            || !WordChartPackageHost.TryPasteToDoc(destDoc, out error))
+                        if (!WordChartPackageHost.TryCopyChartOnDoc(copy, ordinal, out error)
+                            || !WordChartPackageHost.TryReplaceChartAtOrdinal(destDoc, ordinal, out error))
                         {
                             return false;
                         }
 
                         if (!TryReadWordChartParts(destDoc, out List<ChartPartRef> pinned, out error)
                             || pinned == null
-                            || pinned.Count == 0
+                            || ordinal >= pinned.Count
                             || !ChartPartXml.ColorsMatch(
                                 colorSnap,
-                                ChartPartXml.SnapshotSeriesColors(pinned[pinned.Count - 1].ChartXml)))
+                                ChartPartXml.SnapshotSeriesColors(pinned[ordinal].ChartXml)))
                         {
-                            List<string> pinnedColors = pinned != null && pinned.Count > 0
-                                ? ChartPartXml.SnapshotSeriesColors(pinned[pinned.Count - 1].ChartXml)
+                            List<string> pinnedColors = pinned != null && ordinal >= 0 && ordinal < pinned.Count
+                                ? ChartPartXml.SnapshotSeriesColors(pinned[ordinal].ChartXml)
                                 : new List<string>();
-                            error = ColorPinError(colorSnap, pinnedColors, ordinal, pinned != null ? pinned.Count - 1 : -1);
+                            error = ColorPinError(colorSnap, pinnedColors, ordinal);
                             return false;
                         }
                     }
@@ -245,14 +238,12 @@ namespace WordAddIn1.ChartOoxmlHost
 
                 if (!string.IsNullOrEmpty(stamp))
                 {
-                    List<object> afterShapes = WordChartPackageHost.CollectChartShapes(destDoc);
-                    object next = afterShapes.Count > 0 ? afterShapes[afterShapes.Count - 1] : null;
-                    System.Diagnostics.Debug.WriteLine(
-                        "[ApplyChartWps] stamp last=" + afterShapes.Count + " ordinalWas=" + ordinal);
-                    if (next == null
+                    System.Diagnostics.Debug.WriteLine("[ApplyChartWps] stamp ordinal=" + ordinal);
+                    if (!WordChartPackageHost.TryFindChartShape(destDoc, ordinal, out object next, out error)
                         || !WordChartPackageHost.TryWriteShapeTitle(next, stamp))
                     {
-                        error = "贴回后写回 Title 戳失败: 末张=" + afterShapes.Count + " 原下标=" + ordinal;
+                        error = "贴回后写回 Title 戳失败: 下标=" + ordinal
+                            + (string.IsNullOrEmpty(error) ? "" : " " + error);
                         return false;
                     }
                 }
@@ -291,14 +282,13 @@ namespace WordAddIn1.ChartOoxmlHost
             return false;
         }
 
-        private static string ColorPinError(IList<string> snap, IList<string> after, int ordinal, int pasted)
+        private static string ColorPinError(IList<string> snap, IList<string> after, int ordinal)
         {
             string left = snap == null ? "" : string.Join(",", snap);
             string right = after == null ? "" : string.Join(",", after);
             return "贴回后系列色被换且钉不住: 快照=" + left
                 + " 贴回=" + right
-                + " 原下标=" + ordinal
-                + " 末张=" + pasted;
+                + " 下标=" + ordinal;
         }
 
         /// <summary>
