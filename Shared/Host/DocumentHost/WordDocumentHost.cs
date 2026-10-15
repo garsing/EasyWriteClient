@@ -62,7 +62,12 @@ namespace WordAddIn1.DocumentHost
                 if (createBlank)
                 {
                     doc = app.Documents.Add();
-                    doc.SaveAs2(fullPath, FileFormat: Word.WdSaveFormat.wdFormatDocumentDefault);
+                    if (!TrySaveNewDocument(app, doc, fullPath, out error))
+                    {
+                        TryCloseWithoutSave(doc);
+                        return false;
+                    }
+
                     created = true;
                 }
                 else
@@ -173,6 +178,60 @@ namespace WordAddIn1.DocumentHost
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// 建图后收无窗 Excel 时，下一份空白稿的 SaveAs 会偶发「文件许可权」。
+        /// 退出图表编辑后重试，失败则关掉这次没存上的空稿，避免留着 DocumentN。
+        /// </summary>
+        private static bool TrySaveNewDocument(
+            Word.Application app,
+            Word.Document doc,
+            string fullPath,
+            out string error)
+        {
+            error = null;
+            const int attempts = 3;
+            for (int i = 0; i < attempts; i++)
+            {
+                try
+                {
+                    ChartComUiHelper.TryExitChartDataEditMode(app);
+                    doc.SaveAs2(fullPath, FileFormat: Word.WdSaveFormat.wdFormatDocumentDefault);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    error = "打开/新建 Word 文档失败: " + ex.Message;
+                    bool permission = ex.Message != null
+                        && (ex.Message.IndexOf("许可权", StringComparison.Ordinal) >= 0
+                            || ex.Message.IndexOf("permission", StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (!permission || i == attempts - 1)
+                    {
+                        return false;
+                    }
+
+                    System.Threading.Thread.Sleep(500);
+                }
+            }
+
+            return false;
+        }
+
+        private static void TryCloseWithoutSave(Word.Document doc)
+        {
+            if (doc == null)
+            {
+                return;
+            }
+
+            try
+            {
+                doc.Close(Word.WdSaveOptions.wdDoNotSaveChanges);
+            }
+            catch (Exception)
+            {
+            }
         }
 
         public static GetDocumentContentHostResult GetDocumentContent(

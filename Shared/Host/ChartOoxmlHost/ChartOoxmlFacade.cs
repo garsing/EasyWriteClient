@@ -162,6 +162,12 @@ namespace WordAddIn1.ChartOoxmlHost
                     return false;
                 }
 
+                if (!string.IsNullOrEmpty(stamp)
+                    && WordChartPackageHost.TryFindChartShape(copy, ordinal, out object sourceShape, out _))
+                {
+                    WordChartPackageHost.TryWriteShapeTitle(sourceShape, stamp);
+                }
+
                 if (!WordChartPackageHost.TryCopyChartOnDoc(copy, ordinal, out error))
                 {
                     return false;
@@ -236,10 +242,21 @@ namespace WordAddIn1.ChartOoxmlHost
 
                 if (!string.IsNullOrEmpty(stamp))
                 {
-                    if (!WordChartPackageHost.TryFindChartShape(destDoc, ordinal, out object next, out error)
+                    if (!WordChartPackageHost.TryFindChartShape(destDoc, ordinal, out object next, out error))
+                    {
+                        List<object> afterShapes = WordChartPackageHost.CollectChartShapes(destDoc);
+                        if (afterShapes.Count > 0)
+                        {
+                            next = afterShapes[afterShapes.Count - 1];
+                            error = null;
+                        }
+                    }
+
+                    if (next == null
                         || !WordChartPackageHost.TryWriteShapeTitle(next, stamp))
                     {
-                        error = "贴回后写回 Title 戳失败";
+                        error = "贴回后写回 Title 戳失败"
+                            + (string.IsNullOrEmpty(error) ? "" : ": " + error);
                         return false;
                     }
                 }

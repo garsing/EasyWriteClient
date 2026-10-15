@@ -9,7 +9,7 @@ namespace WordDocumentRoundtripTest
 {
     /// <summary>
     /// 第 7 波：ChartConfig 建图、抽 XML、套格式/数据、删图重建。
-    /// Word 正例须成功。WPS 四件明确 unsupported，同一套 ID，不 SKIP。
+    /// Word 与 WPS 正例都须成功，同一套 ID，不 SKIP。契约负例两侧同一断言。
     /// </summary>
     internal static class WhCases
     {
@@ -189,13 +189,6 @@ namespace WordDocumentRoundtripTest
             s.ActivateDoc(path);
             s.GetContent(id);
 
-            if (s.IsWps)
-            {
-                RunWpsUnsupported(run, s, id);
-                s.CloseDocByPath(path);
-                return;
-            }
-
             ToolResult created = s.CreateChartFromXml(CreateArgs(id, WriteXml(ColumnXml(TitleA))));
             string chartId = WdSession.Str(created, "chart_id");
             Ok(run, "wh-create-ok", created.Success, created.Error ?? "建图失败");
@@ -364,57 +357,6 @@ namespace WordDocumentRoundtripTest
             s.CloseDocByPath(path);
         }
 
-        private static void RunWpsUnsupported(TestRun run, WdSession s, string id)
-        {
-            ToolResult create = s.CreateChartFromXml(CreateArgs(id, WriteXml(ColumnXml(TitleA))));
-            ExpectFail(run, "wh-create-ok", create, "unsupported");
-            ExpectFail(run, "wh-create-id", create, "unsupported");
-            ExpectFail(run, "wh-create-fields", create, "unsupported");
-            ExpectFail(run, "wh-create-text", create, "unsupported");
-            ExpectFail(run, "wh-create-keep-sent", create, "unsupported");
-            ExpectFail(run, "wh-create-filename",
-                s.CreateChartFromXml(CreateArgsFilename(id, WriteXml(TypedXml("line", TitleLine)))),
-                "unsupported");
-            ExpectFail(run, "wh-create-line", create, "unsupported");
-            ExpectFail(run, "wh-create-pie", create, "unsupported");
-            ExpectFail(run, "wh-create-two", create, "unsupported");
-
-            var extract = s.ExtractChartXml(ExtractArgs(id, "C_00001", null, "all"));
-            ExpectFail(run, "wh-xext-ok", extract, "unsupported");
-            ExpectFail(run, "wh-xext-file", extract, "unsupported");
-            ExpectFail(run, "wh-xext-data", extract, "unsupported");
-            ExpectFail(run, "wh-xext-format", extract, "unsupported");
-            ExpectFail(run, "wh-xext-no-sel", extract, "unsupported");
-            ExpectFail(run, "wh-xext-unk", extract, "unsupported");
-            ExpectFail(run, "wh-xext-ctx", extract, "unsupported");
-            ExpectFail(run, "wh-xext-bad-scope", extract, "unsupported");
-
-            var apply = s.ApplyChartFromXml(new Dictionary<string, object>
-            {
-                ["channel_id"] = id,
-                ["chart_id"] = "C_00001",
-                ["xml_content"] = FormatXml(TitleB)
-            });
-            ExpectFail(run, "wh-apply-fmt-ok", apply, "unsupported");
-            ExpectFail(run, "wh-apply-data-ok", apply, "unsupported");
-            ExpectFail(run, "wh-apply-data-mismatch", apply, "unsupported");
-            ExpectFail(run, "wh-apply-unk", apply, "unsupported");
-            ExpectFail(run, "wh-apply-echo", apply, "unsupported");
-            ExpectFail(run, "wh-apply-keep-sent", apply, "unsupported");
-
-            var del = s.DeleteChart(new Dictionary<string, object>
-            {
-                ["channel_id"] = id,
-                ["chart_id"] = "C_00001"
-            });
-            ExpectFail(run, "wh-del-ok", del, "unsupported");
-            ExpectFail(run, "wh-del-gone", del, "unsupported");
-            ExpectFail(run, "wh-del-keep-sent", del, "unsupported");
-            ExpectFail(run, "wh-del-twice", del, "unsupported");
-            ExpectFail(run, "wh-del-unk", del, "unsupported");
-            ExpectFail(run, "wh-rebuild-ok", create, "unsupported");
-        }
-
         // ============ 巩固 100（wh-con-*）============
 
         private const string TitleC = "易写图再改";
@@ -479,12 +421,6 @@ namespace WordDocumentRoundtripTest
         private static void RunConsolidate(TestRun run, WdSession s)
         {
             RunConNeg(run, s);
-            if (s.IsWps)
-            {
-                RunConWpsRest(run, s);
-                return;
-            }
-
             RunConCreate(run, s);
             RunConExtract(run, s);
             RunConApply(run, s);
@@ -1060,97 +996,6 @@ namespace WordDocumentRoundtripTest
             s.CloseDocByPath(path);
         }
 
-        /// <summary>WPS：建/抽/套/删 unsupported 逐条断言；渠道/契约层负例两侧同一断言。</summary>
-        private static void RunConWpsRest(TestRun run, WdSession s)
-        {
-            string path, id;
-            if (!TryOpen(run, s, out path, out id, WpsConAll()))
-            {
-                return;
-            }
-
-            s.ActivateDoc(path);
-            s.GetContent(id);
-
-            ToolResult create = s.CreateChartFromXml(CreateArgs(id, WriteXml(ColumnXml(TitleA))));
-            foreach (string cid in ConCreateIds)
-            {
-                ExpectFail(run, cid, create, "unsupported");
-            }
-
-            foreach (string cid in ConFlowIds)
-            {
-                ExpectFail(run, cid, create, "unsupported");
-            }
-
-            ToolResult extract = s.ExtractChartXml(ExtractArgs(id, "C_00001", null, "all"));
-            foreach (string cid in ConExtractIds)
-            {
-                if (cid == "wh-con-e-unk-channel")
-                {
-                    continue;
-                }
-
-                ExpectFail(run, cid, extract, "unsupported");
-            }
-
-            ExpectFail(run, "wh-con-e-unk-channel",
-                s.ExtractChartXml(ExtractArgs("w999", "C_00001", null, "all")),
-                "未知");
-
-            ToolResult apply = s.ApplyChartFromXml(ApplyArgs(id, "C_00001", "format", FormatXml(TitleB)));
-            foreach (string cid in ConApplyIds)
-            {
-                if (cid == "wh-con-a-bad-xml" || cid == "wh-con-a-root"
-                    || cid == "wh-con-a-unk-channel" || cid == "wh-con-a-empty-id")
-                {
-                    continue;
-                }
-
-                ExpectFail(run, cid, apply, "unsupported");
-            }
-
-            ExpectFail(run, "wh-con-a-bad-xml",
-                s.ApplyChartFromXml(ApplyArgs(id, "C_00001", "format", "<ChartConfig><Chart>")),
-                "XML");
-            ExpectFail(run, "wh-con-a-root",
-                s.ApplyChartFromXml(ApplyArgs(id, "C_00001", "format", "<NotChart></NotChart>")),
-                "ChartConfig");
-            ExpectFail(run, "wh-con-a-unk-channel",
-                s.ApplyChartFromXml(ApplyArgs("w999", "C_00001", "format", FormatXml(TitleB))),
-                "未知");
-            ExpectFail(run, "wh-con-a-empty-id",
-                s.ApplyChartFromXml(ApplyArgs(id, "", "format", FormatXml(TitleB))),
-                "编号");
-
-            ToolResult del = s.DeleteChart(DelArgs(id, "C_00001"));
-            foreach (string cid in ConDeleteIds)
-            {
-                if (cid == "wh-con-d-unk-channel" || cid == "wh-con-d-empty-id")
-                {
-                    continue;
-                }
-
-                ExpectFail(run, cid, del, "unsupported");
-            }
-
-            ExpectFail(run, "wh-con-d-unk-channel", s.DeleteChart(DelArgs("w999", "C_00001")), "未知");
-            ExpectFail(run, "wh-con-d-empty-id", s.DeleteChart(DelArgs(id, "")), "编号");
-
-            s.CloseDocByPath(path);
-        }
-
-        private static string[] WpsConAll()
-        {
-            var all = new List<string>();
-            all.AddRange(ConCreateIds);
-            all.AddRange(ConExtractIds);
-            all.AddRange(ConApplyIds);
-            all.AddRange(ConDeleteIds);
-            all.AddRange(ConFlowIds);
-            return all.ToArray();
-        }
-
         // ============ 巩固再 100（wh-c2-*）============
 
         private static readonly string[] Con2NegIds =
@@ -1208,12 +1053,6 @@ namespace WordDocumentRoundtripTest
         private static void RunConsolidate2(TestRun run, WdSession s)
         {
             RunCon2Neg(run, s);
-            if (s.IsWps)
-            {
-                RunCon2WpsRest(run, s);
-                return;
-            }
-
             RunCon2Twin(run, s);
             RunCon2Id(run, s);
             RunCon2Mix(run, s);
@@ -1727,86 +1566,6 @@ namespace WordDocumentRoundtripTest
             }
         }
 
-        private static void RunCon2WpsRest(TestRun run, WdSession s)
-        {
-            string path, id;
-            if (!TryOpen(run, s, out path, out id, WpsCon2Host()))
-            {
-                return;
-            }
-
-            try
-            {
-                s.ActivateDoc(path);
-                s.GetContent(id);
-                ToolResult create = s.CreateChartFromXml(CreateArgs(id, WriteXml(ColumnXml(TitleA))));
-                foreach (string cid in Con2TwinIds)
-                {
-                    ExpectFail(run, cid, create, "unsupported");
-                }
-
-                foreach (string cid in Con2IdIds)
-                {
-                    ExpectFail(run, cid, create, "unsupported");
-                }
-
-                foreach (string cid in Con2MixIds)
-                {
-                    ExpectFail(run, cid, create, "unsupported");
-                }
-
-                ToolResult extract = s.ExtractChartXml(ExtractArgs(id, "C_00001", null, "all"));
-                foreach (string cid in Con2ExtIds)
-                {
-                    ExpectFail(run, cid, extract, "unsupported");
-                }
-
-                ToolResult apply = s.ApplyChartFromXml(ApplyArgs(id, "C_00001", "format", FormatXml(TitleB)));
-                foreach (string cid in Con2AppIds)
-                {
-                    if (cid == "wh-c2-a-empty-xml")
-                    {
-                        continue;
-                    }
-
-                    ExpectFail(run, cid, apply, "unsupported");
-                }
-
-                ExpectFail(run, "wh-c2-a-empty-xml",
-                    s.ApplyChartFromXml(ApplyArgs(id, "C_00001", "format", "   ")), "XML");
-
-                ToolResult del = s.DeleteChart(DelArgs(id, "C_00001"));
-                foreach (string cid in Con2DelIds)
-                {
-                    if (cid == "wh-c2-d-nopfx" || cid == "wh-c2-d-conly")
-                    {
-                        continue;
-                    }
-
-                    ExpectFail(run, cid, del, "unsupported");
-                }
-
-                ExpectFail(run, "wh-c2-d-nopfx", s.DeleteChart(DelArgs(id, "00001")), "unsupported");
-                ExpectFail(run, "wh-c2-d-conly", s.DeleteChart(DelArgs(id, "C_")), "unsupported");
-            }
-            finally
-            {
-                s.CloseDocByPath(path);
-            }
-        }
-
-        private static string[] WpsCon2Host()
-        {
-            var all = new List<string>();
-            all.AddRange(Con2TwinIds);
-            all.AddRange(Con2IdIds);
-            all.AddRange(Con2MixIds);
-            all.AddRange(Con2ExtIds);
-            all.AddRange(Con2AppIds);
-            all.AddRange(Con2DelIds);
-            return all.ToArray();
-        }
-
         private static bool TryOpenLaid(
             TestRun run,
             WdSession s,
@@ -2197,17 +1956,34 @@ namespace WordDocumentRoundtripTest
             out string id,
             params string[] failIds)
         {
-            path = s.NewDocxPath();
+            path = null;
             id = null;
-            ToolResult opened = s.Open(path, true, s.App);
-            if (!opened.Success)
+            ToolResult opened = null;
+            for (int attempt = 0; attempt < 3; attempt++)
             {
-                FailMany(run, opened.Error ?? "新建失败", failIds);
-                return false;
+                path = s.NewDocxPath();
+                opened = s.Open(path, true, s.App);
+                if (opened.Success)
+                {
+                    id = WdSession.Str(opened, "channel_id");
+                    return true;
+                }
+
+                string err = opened.Error ?? "";
+                bool permission = err.IndexOf("许可权", StringComparison.Ordinal) >= 0
+                    || err.IndexOf("permission", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!permission || attempt == 2)
+                {
+                    FailMany(run, opened.Error ?? "新建失败", failIds);
+                    return false;
+                }
+
+                WdSession.DismissOrphanExcel();
+                System.Threading.Thread.Sleep(800);
             }
 
-            id = WdSession.Str(opened, "channel_id");
-            return true;
+            FailMany(run, opened != null ? (opened.Error ?? "新建失败") : "新建失败", failIds);
+            return false;
         }
 
         private static Dictionary<string, object> CreateArgs(string channelId, string path)

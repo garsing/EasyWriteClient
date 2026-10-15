@@ -289,14 +289,26 @@ namespace WordAddIn1.ChartOoxmlHost
             try
             {
                 Word.Document word = destDoc as Word.Document;
-                if (word != null)
+                if (word != null && !WpsChartExtract.IsWpsDocument(destDoc))
                 {
+                    word.Activate();
                     word.Application.Selection.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
                     word.Application.Selection.Paste();
                     return true;
                 }
 
+                try
+                {
+                    WpsCom.Invoke(destDoc, "Activate");
+                }
+                catch
+                {
+                }
+
                 object app = WpsCom.GetProperty(destDoc, "Application");
+                object content = WpsCom.GetProperty(destDoc, "Content");
+                WpsCom.Invoke(content, "Collapse", 0);
+                WpsCom.Invoke(content, "Select");
                 object selection = WpsCom.GetProperty(app, "Selection");
                 WpsCom.Invoke(selection, "Paste");
                 return true;
@@ -390,29 +402,88 @@ namespace WordAddIn1.ChartOoxmlHost
                 return false;
             }
 
+            string want = title ?? "";
+            try
+            {
+                if (TitleEquals(shape, want))
+                {
+                    return true;
+                }
+
+                AssignTitle(shape, want);
+                if (TitleEquals(shape, want))
+                {
+                    return true;
+                }
+
+                TrySelectShape(shape);
+                AssignTitle(shape, want);
+                return TitleEquals(shape, want);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void AssignTitle(object shape, string title)
+        {
             try
             {
                 Word.InlineShape inline = shape as Word.InlineShape;
                 if (inline != null)
                 {
                     inline.Title = title ?? "";
-                    return true;
+                    return;
                 }
+            }
+            catch
+            {
+            }
 
+            try
+            {
                 Word.Shape floating = shape as Word.Shape;
                 if (floating != null)
                 {
                     floating.Title = title ?? "";
-                    return true;
+                    return;
                 }
-
-                WpsCom.TrySetProperty(shape, "Title", title ?? "");
-                return TryReadShapeTitle(shape, out string back)
-                    && string.Equals(back, title ?? "", StringComparison.Ordinal);
             }
             catch
             {
-                return false;
+            }
+
+            WpsCom.TrySetProperty(shape, "Title", title ?? "");
+        }
+
+        private static bool TitleEquals(object shape, string want)
+        {
+            return TryReadShapeTitle(shape, out string back)
+                && string.Equals(back ?? "", want ?? "", StringComparison.Ordinal);
+        }
+
+        private static void TrySelectShape(object shape)
+        {
+            try
+            {
+                object range = WpsCom.GetProperty(shape, "Range");
+                if (range != null)
+                {
+                    WpsCom.Invoke(range, "Select");
+                    return;
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                WpsCom.Invoke(shape, "Select");
+            }
+            catch
+            {
             }
         }
     }

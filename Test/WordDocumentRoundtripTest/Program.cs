@@ -10,6 +10,8 @@ namespace WordDocumentRoundtripTest
         private static int Main(string[] args)
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
+            var stdout = new System.IO.StreamWriter(Console.OpenStandardOutput(), Console.OutputEncoding) { AutoFlush = true };
+            Console.SetOut(stdout);
             string host = GetHost(args);
             string caseFilter = GetArg(args, "--case=");
             string docPath = GetArg(args, "--doc=");
