@@ -56,6 +56,11 @@ namespace WordAddIn1
 
                     if (docHandle.Context != null && docHandle.Context.Kind == ChannelKind.Wps)
                     {
+                        if (!WpsChartQueueMatches(document, out string queueError))
+                        {
+                            return new ToolResult { Success = false, Error = queueError };
+                        }
+
                         if (!WordAddIn1.ChartOoxmlHost.WpsChartSeed.TryCreate(
                                 document,
                                 parseResult.Config,
@@ -80,10 +85,19 @@ namespace WordAddIn1
                             Success = true,
                             Data = new
                             {
+                                chart_created = true,
                                 chart_id = createdId,
+                                chart_type = parseResult.Config.Chart.Type,
+                                title = parseResult.Config.Chart.Title,
+                                xml_file = filename,
                                 message = "图表创建成功"
                             }
                         };
+                    }
+
+                    if (!WpsChartQueueMatches(document, out string wordQueueError))
+                    {
+                        return new ToolResult { Success = false, Error = wordQueueError };
                     }
 
                     int? position = null;
@@ -216,6 +230,36 @@ namespace WordAddIn1
                 return true;
             }
 
+            return false;
+        }
+
+        /// <summary>包里已有图表部件但 COM 看不见形状时，拒绝再往这份稿里插图。</summary>
+        private static bool WpsChartQueueMatches(Word.Document document, out string error)
+        {
+            error = null;
+            int shapes = WpsChartExtract.IsWpsDocument(document)
+                ? WpsChartExtract.CollectShapes(document).Count
+                : ChartResolveHelper.GetBodyChartsInOrder(document).Count;
+            if (!WordAddIn1.ChartOoxmlHost.ChartOoxmlFacade.TryReadWordChartParts(
+                    document,
+                    out System.Collections.Generic.List<WordAddIn1.ChartOoxmlHost.ChartPartRef> parts,
+                    out string partError))
+            {
+                error = "建图前读包失败: " + partError;
+                return false;
+            }
+
+            int partCount = parts == null ? 0 : parts.Count;
+            if (partCount == shapes)
+            {
+                return true;
+            }
+
+            string fullName = WordAddIn1.ChartOoxmlHost.WordChartPackageHost.TryReadFullName(document);
+            error = "图表队列与包不一致：形状 " + shapes
+                + "，部件 " + partCount
+                + (string.IsNullOrEmpty(fullName) ? "" : "，文档 " + fullName)
+                + "。未写入";
             return false;
         }
     }

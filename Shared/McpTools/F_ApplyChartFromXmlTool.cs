@@ -83,12 +83,38 @@ namespace WordAddIn1
                             return new ToolResult { Success = false, Error = wpsParse.Error ?? "XML解析失败" };
                         }
 
+                        if (mode != "full")
+                        {
+                            return new ToolResult
+                            {
+                                Success = false,
+                                Error = "mode 无效: '" + mode + "'，当前仅支持 full",
+                                Data = new { chart_id = chartId, scope = scope }
+                            };
+                        }
+
                         int ordinal = DocumentState.GetChartIndex(chartId);
+                        if (!WordAddIn1.ChartOoxmlHost.ChartOoxmlFacade.TryPrepareApplyGrid(
+                                document,
+                                ordinal,
+                                wpsParse.Config.Chart,
+                                scope,
+                                out WordAddIn1.ChartOoxmlHost.ChartPartXml.SeriesGrid applyGrid,
+                                out string prepareErr))
+                        {
+                            return new ToolResult
+                            {
+                                Success = false,
+                                Error = prepareErr ?? "套用网格准备失败",
+                                Data = new { chart_id = chartId, scope = scope }
+                            };
+                        }
+
                         bool pin = scope == "data" || scope == "all";
                         if (!WordAddIn1.ChartOoxmlHost.ChartOoxmlFacade.TryRewriteDataAndCopyBack(
                                 document,
                                 ordinal,
-                                WordAddIn1.ChartOoxmlHost.ChartOoxmlFacade.GridFromChartInfo(wpsParse.Config.Chart),
+                                applyGrid,
                                 pin,
                                 out string rewriteErr))
                         {
@@ -110,13 +136,17 @@ namespace WordAddIn1
                         }
 
                         await Task.CompletedTask;
+                        int seriesUpdated = applyGrid.Series != null ? applyGrid.Series.Count : 0;
                         return new ToolResult
                         {
                             Success = true,
                             Data = new
                             {
+                                chart_applied = true,
                                 chart_id = chartId,
                                 scope = scope,
+                                series_updated = seriesUpdated,
+                                title = applyGrid.Title ?? "",
                                 message = $"图表套用成功（scope={scope}）"
                             }
                         };

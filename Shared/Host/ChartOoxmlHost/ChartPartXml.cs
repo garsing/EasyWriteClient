@@ -168,7 +168,71 @@ namespace WordAddIn1.ChartOoxmlHost
                 RewritePts(ser, C + "val", vals);
             }
 
+            if (!string.IsNullOrEmpty(grid.Title))
+            {
+                UpsertTitle(chartDoc, grid.Title);
+            }
+
             return true;
+        }
+
+        /// <summary>有标题才写 c:title；空标题留着原节点，避免套数据把标题冲掉。</summary>
+        private static void UpsertTitle(XDocument chartDoc, string title)
+        {
+            XElement chart = chartDoc.Descendants(C + "chart").FirstOrDefault();
+            if (chart == null)
+            {
+                return;
+            }
+
+            foreach (XElement old in chart.Elements(C + "title").ToList())
+            {
+                old.Remove();
+            }
+
+            var bodyPr = new XElement(
+                A + "bodyPr",
+                new XAttribute("rot", "0"),
+                new XAttribute("spcFirstLastPara", "0"),
+                new XAttribute("vertOverflow", "ellipsis"),
+                new XAttribute("vert", "horz"),
+                new XAttribute("wrap", "square"),
+                new XAttribute("anchor", "ctr"),
+                new XAttribute("anchorCtr", "1"));
+            var titleEl = new XElement(
+                C + "title",
+                new XElement(
+                    C + "tx",
+                    new XElement(
+                        C + "rich",
+                        new XElement(bodyPr),
+                        new XElement(A + "lstStyle"),
+                        new XElement(
+                            A + "p",
+                            new XElement(
+                                A + "r",
+                                new XElement(A + "rPr", new XAttribute("lang", "zh-CN")),
+                                new XElement(A + "t", title))))),
+                new XElement(C + "overlay", new XAttribute("val", "0")));
+            XElement plot = chart.Element(C + "plotArea");
+            if (plot != null)
+            {
+                plot.AddBeforeSelf(titleEl);
+            }
+            else
+            {
+                chart.AddFirst(titleEl);
+            }
+
+            XElement auto = chart.Element(C + "autoTitleDeleted");
+            if (auto == null)
+            {
+                titleEl.AddAfterSelf(new XElement(C + "autoTitleDeleted", new XAttribute("val", "0")));
+            }
+            else
+            {
+                auto.SetAttributeValue("val", "0");
+            }
         }
 
         public static List<string> SnapshotSeriesColors(XDocument chartDoc)

@@ -183,31 +183,30 @@ namespace WordAddIn1.ChartOoxmlHost
                     return false;
                 }
 
-                if (pinColors)
+                if (pinColors && HasExplicitColor(colorSnap))
                 {
-                    if (!TryReadWordChartParts(destDoc, out List<ChartPartRef> after, out error))
+                    if (!TryReadWordChartParts(destDoc, out List<ChartPartRef> after, out error)
+                        || after == null
+                        || after.Count == 0)
                     {
+                        error = string.IsNullOrEmpty(error) ? "贴回后读不到图" : error;
                         return false;
                     }
 
-                    if (ordinal >= after.Count)
-                    {
-                        error = "贴回后对不上图";
-                        return false;
-                    }
-
-                    List<string> afterColors = ChartPartXml.SnapshotSeriesColors(after[ordinal].ChartXml);
+                    // 贴在文末，新图是最后一张，不能再用删除前的下标。
+                    int pasted = after.Count - 1;
+                    List<string> afterColors = ChartPartXml.SnapshotSeriesColors(after[pasted].ChartXml);
                     if (!ChartPartXml.ColorsMatch(colorSnap, afterColors))
                     {
-                        if (!ChartPartXml.TryPinSeriesColors(after[ordinal].ChartXml, colorSnap))
+                        if (!ChartPartXml.TryPinSeriesColors(after[pasted].ChartXml, colorSnap))
                         {
-                            error = "贴回后系列色被换且钉不住";
+                            error = ColorPinError(colorSnap, afterColors, ordinal, pasted);
                             return false;
                         }
 
                         var pin = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
-                        pin[(after[ordinal].ChartPartName ?? "").TrimStart('/')] =
-                            ChartPartXml.XmlPartBytes(after[ordinal].ChartXml);
+                        pin[(after[pasted].ChartPartName ?? "").TrimStart('/')] =
+                            ChartPartXml.XmlPartBytes(after[pasted].ChartXml);
                         WordChartPackageHost.TryCloseCopy(copy);
                         copy = null;
                         File.Copy(WordChartPackageHost.TryReadFullName(destDoc), temp, true);
@@ -221,20 +220,24 @@ namespace WordAddIn1.ChartOoxmlHost
                             return false;
                         }
 
-                        if (!WordChartPackageHost.TryCopyChartOnDoc(copy, ordinal, out error)
-                            || !WordChartPackageHost.TryDeleteChartOnDoc(destDoc, ordinal, out error)
+                        if (!WordChartPackageHost.TryCopyChartOnDoc(copy, pasted, out error)
+                            || !WordChartPackageHost.TryDeleteChartOnDoc(destDoc, pasted, out error)
                             || !WordChartPackageHost.TryPasteToDoc(destDoc, out error))
                         {
                             return false;
                         }
 
                         if (!TryReadWordChartParts(destDoc, out List<ChartPartRef> pinned, out error)
-                            || ordinal >= pinned.Count
+                            || pinned == null
+                            || pinned.Count == 0
                             || !ChartPartXml.ColorsMatch(
                                 colorSnap,
-                                ChartPartXml.SnapshotSeriesColors(pinned[ordinal].ChartXml)))
+                                ChartPartXml.SnapshotSeriesColors(pinned[pinned.Count - 1].ChartXml)))
                         {
-                            error = "贴回后系列色被换且钉不住";
+                            List<string> pinnedColors = pinned != null && pinned.Count > 0
+                                ? ChartPartXml.SnapshotSeriesColors(pinned[pinned.Count - 1].ChartXml)
+                                : new List<string>();
+                            error = ColorPinError(colorSnap, pinnedColors, ordinal, pinned != null ? pinned.Count - 1 : -1);
                             return false;
                         }
                     }
@@ -242,21 +245,14 @@ namespace WordAddIn1.ChartOoxmlHost
 
                 if (!string.IsNullOrEmpty(stamp))
                 {
-                    if (!WordChartPackageHost.TryFindChartShape(destDoc, ordinal, out object next, out error))
-                    {
-                        List<object> afterShapes = WordChartPackageHost.CollectChartShapes(destDoc);
-                        if (afterShapes.Count > 0)
-                        {
-                            next = afterShapes[afterShapes.Count - 1];
-                            error = null;
-                        }
-                    }
-
+                    List<object> afterShapes = WordChartPackageHost.CollectChartShapes(destDoc);
+                    object next = afterShapes.Count > 0 ? afterShapes[afterShapes.Count - 1] : null;
+                    System.Diagnostics.Debug.WriteLine(
+                        "[ApplyChartWps] stamp last=" + afterShapes.Count + " ordinalWas=" + ordinal);
                     if (next == null
                         || !WordChartPackageHost.TryWriteShapeTitle(next, stamp))
                     {
-                        error = "贴回后写回 Title 戳失败"
-                            + (string.IsNullOrEmpty(error) ? "" : ": " + error);
+                        error = "贴回后写回 Title 戳失败: 末张=" + afterShapes.Count + " 原下标=" + ordinal;
                         return false;
                     }
                 }
@@ -275,6 +271,123 @@ namespace WordAddIn1.ChartOoxmlHost
                 WordChartPackageHost.TryCloseCopy(copy);
                 WordChartPackageHost.TryDeleteFile(temp);
             }
+        }
+
+        private static bool HasExplicitColor(IList<string> colors)
+        {
+            if (colors == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < colors.Count; i++)
+            {
+                if (!string.IsNullOrEmpty(colors[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string ColorPinError(IList<string> snap, IList<string> after, int ordinal, int pasted)
+        {
+            string left = snap == null ? "" : string.Join(",", snap);
+            string right = after == null ? "" : string.Join(",", after);
+            return "贴回后系列色被换且钉不住: 快照=" + left
+                + " 贴回=" + right
+                + " 原下标=" + ordinal
+                + " 末张=" + pasted;
+        }
+
+        /// <summary>
+        /// 套用前对齐已有图：format 只换标题、沿用原系列；data/all 系列或点数不一致则失败且不写。
+        /// </summary>
+        public static bool TryPrepareApplyGrid(
+            object document,
+            int ordinal,
+            ChartInfo incoming,
+            string scope,
+            out ChartPartXml.SeriesGrid grid,
+            out string error)
+        {
+            grid = null;
+            if (!TryBuildChartConfig(document, ordinal, "all", out ChartConfig existing, out error))
+            {
+                return false;
+            }
+
+            ChartPartXml.SeriesGrid have = GridFromChartInfo(existing != null ? existing.Chart : null);
+            ChartPartXml.SeriesGrid want = GridFromChartInfo(incoming);
+            string normalized = string.IsNullOrEmpty(scope) ? "all" : scope.Trim().ToLowerInvariant();
+            int haveSeries = have.Series != null ? have.Series.Count : 0;
+            int havePoints = FirstPointCount(have);
+            int wantSeries = want.Series != null ? want.Series.Count : 0;
+
+            System.Diagnostics.Debug.WriteLine(
+                "[ApplyChartWps] ordinal=" + ordinal
+                + " scope=" + normalized
+                + " haveSeries=" + haveSeries
+                + " havePoints=" + havePoints
+                + " wantSeries=" + wantSeries
+                + " wantTitle=" + (want.Title ?? ""));
+
+            if (normalized == "format")
+            {
+                if (wantSeries > 0 && wantSeries != haveSeries)
+                {
+                    error = MismatchMessage(haveSeries, wantSeries, havePoints, 0);
+                    return false;
+                }
+
+                grid = have;
+                if (!string.IsNullOrEmpty(want.Title))
+                {
+                    grid.Title = want.Title;
+                }
+
+                return true;
+            }
+
+            if (wantSeries == 0)
+            {
+                error = "套用数据 scope 需要 DataTable 系列数据";
+                return false;
+            }
+
+            int wantPoints = FirstPointCount(want);
+            if (wantSeries != haveSeries || wantPoints != havePoints)
+            {
+                error = MismatchMessage(haveSeries, wantSeries, havePoints, wantPoints);
+                return false;
+            }
+
+            if (normalized == "data" || string.IsNullOrEmpty(want.Title))
+            {
+                want.Title = have.Title;
+            }
+
+            grid = want;
+            return true;
+        }
+
+        private static int FirstPointCount(ChartPartXml.SeriesGrid grid)
+        {
+            if (grid == null || grid.Series == null || grid.Series.Count == 0 || grid.Series[0].Values == null)
+            {
+                return 0;
+            }
+
+            return grid.Series[0].Values.Count;
+        }
+
+        private static string MismatchMessage(int expectedSeries, int actualSeries, int expectedPoints, int actualPoints)
+        {
+            return "chart_data_structure_mismatch: 期望系列数=" + expectedSeries
+                + " 点数=" + expectedPoints
+                + "，XML 系列数=" + actualSeries
+                + " 点数=" + actualPoints;
         }
 
         public static ChartPartXml.SeriesGrid GridFromChartInfo(ChartInfo info)
