@@ -1,0 +1,106 @@
+ppt-struct | [FAIL] B2P07 #57 create-bar-right-r5
+    建图失败: PPT 旁路建图灌数失败: 灌数：贴回失败 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+ppt-struct | [FAIL] B2P07 #57 create-bar-right-r5
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-struct | [FAIL] B3P01 #101 create-pie2d-top-r6
+    建图失败: PPT 旁路建图灌数失败: 灌数：贴回失败 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+ppt-struct | [FAIL] B3P01 #101 create-pie2d-top-r6
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-struct | [FAIL] B3P02 #102 create-pie2d-top-r6-lbl
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-struct | [FAIL] B3P03 #103 create-pie2d-bottom-r4
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-struct | [FAIL] B3P04 #104 create-pie2d-bottom-r4-lbl
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-struct | [FAIL] B3P05 #105 create-pie2d-bottom-r5
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-struct | [FAIL] B3P06 #106 create-pie2d-bottom-r5-lbl
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-struct | [FAIL] B3P07 #107 create-pie2d-bottom-r6
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-struct | [FAIL] B4P01 #151 replace-values-none-r4
+    读回失败: 无法读取图表 Chart 对象
+ppt-struct | [FAIL] B4P01 #151 replace-values-none-r4
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-struct | [FAIL] B4P02 #152 replace-values-top-r5
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-struct | [FAIL] B4P03 #153 replace-to-bar-bottom-r6
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-struct | [FAIL] B4P04 #154 replace-to-line-left-r4
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-struct | [FAIL] B4P05 #155 replace-to-pie2d-right-r5
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-struct | [FAIL] B4P06 #156 replace-to-pie3d-none-r6
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-struct | [FAIL] B4P07 #157 replace-to-combo-y2-top-r4
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B1P02 #2 create-sink-line
+    S0.MarkerFill 期望 #FFFFFF 实际 (null) | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+ppt-attrs | [FAIL] B1P125 #125 create-mix-y2-skin-5
+    读回失败: 无法读取图表 Chart 对象
+ppt-attrs | [FAIL] B2P02 #127 replace-sink-line
+    建图失败: PPT 旁路建图灌数失败: 灌数：贴回失败 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+ppt-attrs | [FAIL] B2P02 #127 replace-sink-line
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P03 #128 replace-sink-pie
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P04 #129 replace-sink-combo
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P05 #130 replace-title-text
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P06 #131 replace-title-font-size
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P07 #132 replace-title-font-bold
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P09 #134 replace-title-off
+    建图失败: PPT 旁路建图灌数失败: 灌数：贴回失败 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+ppt-attrs | [FAIL] B2P09 #134 replace-title-off
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P10 #135 replace-title-full
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P11 #136 replace-title-long
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P12 #137 replace-title-off-line
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P13 #138 replace-title-off-pie
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P14 #139 replace-title-off-combo
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P75 #200 replace-combo-gradient-label-gap
+    换数失败: PPT 旁路建图灌数失败: 灌数：贴回失败 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+ppt-attrs | [FAIL] B2P75 #200 replace-combo-gradient-label-gap
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P76 #201 replace-mix-title-legend-top
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P77 #202 replace-mix-title-legend-left
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P85 #210 replace-mix-gap-ov-5
+    读回失败: 无法读取图表 Chart 对象
+ppt-attrs | [FAIL] B2P85 #210 replace-mix-gap-ov-5
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P92 #217 replace-mix-line-skin-2
+    换数失败: PPT 旁路建图灌数失败: 灌数：贴回失败 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+ppt-attrs | [FAIL] B2P92 #217 replace-mix-line-skin-2
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P98 #223 replace-mix-pie-3
+    读回失败: 无法读取图表 Chart 对象
+ppt-attrs | [FAIL] B2P98 #223 replace-mix-pie-3
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P99 #224 replace-mix-pie-4
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P106 #231 replace-mix-label-chrome-1
+    换数失败: PPT 旁路建图灌数失败: 灌数：贴回失败 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+ppt-attrs | [FAIL] B2P106 #231 replace-mix-label-chrome-1
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P110 #235 replace-mix-label-chrome-5
+    读回失败: 无法读取图表 Chart 对象
+ppt-attrs | [FAIL] B2P110 #235 replace-mix-label-chrome-5
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P111 #236 replace-mix-style-chrome-1
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P112 #237 replace-mix-style-chrome-2
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P113 #238 replace-mix-style-chrome-3
+    COMException: Presentation (unknown member) : Object does not exist.
+ppt-attrs | [FAIL] B2P121 #246 replace-mix-y2-skin-1
+    读回失败: 无法读取图表 Chart 对象
