@@ -108,8 +108,65 @@ namespace WordAddIn1
             }
             catch (Exception)
             {
+                if (!TryRebindFromRunningApp(out PowerPoint.Presentation fresh))
+                {
+                    return false;
+                }
+
+                UpdatePresentation(fresh);
+                presentation = fresh;
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// 手中的 Presentation 已断、PowerPoint 进程还在时，按文件路径从 Presentations 再取一次。不新开 PowerPoint。
+        /// </summary>
+        private bool TryRebindFromRunningApp(out PowerPoint.Presentation presentation)
+        {
+            presentation = null;
+            string want = WordChannel.NormalizePath(_filePath);
+            if (string.IsNullOrEmpty(want))
+            {
                 return false;
             }
+
+            if (!PowerPointApplicationResolver.TryResolveTyped(
+                    out PowerPoint.Application app,
+                    out _,
+                    createIfMissing: false,
+                    makeVisible: false)
+                || app == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                foreach (PowerPoint.Presentation one in app.Presentations)
+                {
+                    string full = null;
+                    try
+                    {
+                        full = WordChannel.NormalizePath(one.FullName);
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    if (!string.IsNullOrEmpty(full)
+                        && string.Equals(full, want, StringComparison.OrdinalIgnoreCase))
+                    {
+                        presentation = one;
+                        return true;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return false;
         }
 
         public string TryGetDisplayName()

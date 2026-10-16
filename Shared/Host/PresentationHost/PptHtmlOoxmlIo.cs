@@ -213,28 +213,32 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                try
+                if (!TryCopyShape(source, out string copyError))
                 {
-                    PowerPoint.Shape pptShape = source as PowerPoint.Shape;
-                    if (pptShape != null)
-                    {
-                        pptShape.Copy();
-                    }
-                    else
-                    {
-                        WppCom.Invoke(source, "Copy");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    error = tag + "：Copy 失败: " + ex.Message;
+                    error = tag + "：Copy 失败: " + copyError;
                     return false;
                 }
 
                 if (!pasteToDest())
                 {
-                    error = tag + "：贴回失败";
-                    return false;
+                    if (!IsPresentationAlive(destPres))
+                    {
+                        error = tag + "：贴回失败";
+                        return false;
+                    }
+
+                    Log(warnings, tag + "：贴回未成，原稿仍在，再 Copy 一次");
+                    if (!TryCopyShape(source, out copyError))
+                    {
+                        error = tag + "：Copy 失败: " + copyError;
+                        return false;
+                    }
+
+                    if (!pasteToDest())
+                    {
+                        error = tag + "：贴回失败";
+                        return false;
+                    }
                 }
 
                 return true;
@@ -351,6 +355,48 @@ namespace WordAddIn1.PresentationHost
             }
 
             return null;
+        }
+
+        private static bool TryCopyShape(object source, out string error)
+        {
+            error = null;
+            try
+            {
+                PowerPoint.Shape pptShape = source as PowerPoint.Shape;
+                if (pptShape != null)
+                {
+                    pptShape.Copy();
+                }
+                else
+                {
+                    WppCom.Invoke(source, "Copy");
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static bool IsPresentationAlive(object presentation)
+        {
+            if (presentation == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                WppCom.GetProperty(presentation, "Name");
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         public static void TryCloseCopy(object presentation)

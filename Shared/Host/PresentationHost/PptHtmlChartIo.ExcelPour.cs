@@ -322,6 +322,61 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
+        /// 贴回完成前只藏图表 Excel。不 Quit，也不给窗口发关闭。OLE 贴回还要用这份 Excel。
+        /// </summary>
+        internal static void HideChartExcelUiOnly()
+        {
+            foreach (string progId in new[] { "Excel.Application", "Ket.Application", "et.Application" })
+            {
+                object excelApp = null;
+                try
+                {
+                    excelApp = Marshal.GetActiveObject(progId);
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+
+                if (excelApp == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    SuppressExcel(excelApp);
+                    object windows = WppCom.GetProperty(excelApp, "Windows");
+                    int count = windows == null
+                        ? 0
+                        : Convert.ToInt32(WppCom.GetProperty(windows, "Count") ?? 0);
+                    for (int i = 1; i <= count; i++)
+                    {
+                        object win = WppCom.GetIndexed(windows, i);
+                        string caption = Convert.ToString(WppCom.GetProperty(win, "Caption") ?? "");
+                        if (IsPowerPointChartExcelCaption(caption))
+                        {
+                            WppCom.TrySetProperty(win, "Visible", false);
+                        }
+                    }
+
+                    object raw = WppCom.GetProperty(excelApp, "Hwnd");
+                    if (raw != null)
+                    {
+                        IntPtr hwnd = new IntPtr(Convert.ToInt64(raw, CultureInfo.InvariantCulture));
+                        if (hwnd != IntPtr.Zero)
+                        {
+                            ShowWindow(hwnd, SwHide);
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        /// <summary>
         /// apply 整页结束后再清一次：AddChart2 常在 COM 返回后才把编辑框画出来。
         /// 藏完后退出只剩图表簿 / 空壳的 Excel，不碰用户自己的表。
         /// </summary>

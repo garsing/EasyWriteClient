@@ -463,13 +463,15 @@ namespace WordAddIn1.PresentationHost
 
             TryRestorePieChartType(newChart, snap);
 
-            DismissChartExcelUiForChart(newChart);
+            TryCloseChartDataWorkbook(newChart);
+            HideChartExcelUiOnly();
             if (deferTitleOff)
             {
                 TrySetTitle(newChart, "", warnings);
             }
 
             TryStripWppSrgbTintAfterChrome(ref newShape, ref newChart, snap, warnings);
+            DismissChartExcelUi();
 
             TryDelete(oldShape);
             warnings?.Add("已按旧图属性新建图表（HTML 未写的属性用快照补上）");

@@ -89,7 +89,7 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            DismissChartExcelUiForChart(chart);
+            HideChartExcelUiOnly();
             if (!TryEditChartXmlAndCopyBack(
                 shape,
                 warnings,

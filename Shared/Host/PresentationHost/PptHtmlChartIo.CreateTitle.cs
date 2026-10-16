@@ -304,8 +304,8 @@ namespace WordAddIn1.PresentationHost
                 int shapeId = Convert.ToInt32(WppCom.GetProperty(blankShape, "Id") ?? 0);
                 PourLog(warnings, "空白稿已建图，先关旁路再改包 shapeId=" + shapeId
                     + " slideIndex=" + destIndex);
-                DismissChartExcelUiForChart(chart);
-                DismissChartExcelUi();
+                TryCloseChartDataWorkbook(chart);
+                HideChartExcelUiOnly();
                 if (shapeId < 1)
                 {
                     error = "PPT 旁路建图：shapeId 非法";
@@ -379,6 +379,10 @@ namespace WordAddIn1.PresentationHost
             {
                 WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryCloseCopy(blank);
                 WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryDeleteFile(tempPath);
+                if (shape == null)
+                {
+                    DismissChartExcelUi();
+                }
             }
         }
 

@@ -162,7 +162,7 @@ namespace PptChartRoundtripTest
                     string tag = "B" + batch + "P" + one.Page.ToString("00", CultureInfo.InvariantCulture)
                         + " #" + one.Index + " " + one.Name;
 
-                    if (!IsAppAlive(app) || pres == null)
+                    if (!IsAppAlive(app) || !IsPresAlive(pres))
                     {
                         Console.WriteLine("  PowerPoint 已断开，重启后续跑…");
                         if (!TryRecycle(ref app, ref pres, path, out string recErr))
@@ -203,13 +203,20 @@ namespace PptChartRoundtripTest
                         {
                             SaveQuiet(pres, path);
                             sinceRecycle++;
-                            Console.WriteLine("  … " + (i + 1) + "/" + cases.Count
-                                + " 页=" + pres.Slides.Count);
+                            if (IsPresAlive(pres))
+                            {
+                                Console.WriteLine("  … " + (i + 1) + "/" + cases.Count
+                                    + " 页=" + pres.Slides.Count);
+                            }
+                            else
+                            {
+                                Console.WriteLine("  … " + (i + 1) + "/" + cases.Count + " 稿已断开");
+                            }
                         }
                     }
                     catch (Exception ex)
                     {
-                        if (IsRpcText(ex.Message))
+                        if (IsRetryableCom(ex.Message))
                         {
                             retry = true;
                         }
@@ -720,7 +727,37 @@ namespace PptChartRoundtripTest
 
         internal static bool IsRetryableCom(string error)
         {
-            return IsRpcText(error) || IsChartDataBusy(error);
+            return IsRpcText(error) || IsChartDataBusy(error) || IsHostTorn(error);
+        }
+
+        private static bool IsHostTorn(string error)
+        {
+            if (string.IsNullOrEmpty(error))
+            {
+                return false;
+            }
+
+            return error.IndexOf("贴回失败", StringComparison.Ordinal) >= 0
+                || error.IndexOf("Object does not exist", StringComparison.OrdinalIgnoreCase) >= 0
+                || error.IndexOf("对象不存在", StringComparison.Ordinal) >= 0;
+        }
+
+        private static bool IsPresAlive(PowerPoint.Presentation pres)
+        {
+            if (pres == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                string _ = pres.Name;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static void TryAddCaseLabel(PowerPoint.Slide slide, string text)
