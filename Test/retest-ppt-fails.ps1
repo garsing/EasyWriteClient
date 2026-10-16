@@ -2,7 +2,7 @@
 # Object does not exist 的条再单独跑一次。
 $ErrorActionPreference = 'Continue'
 $exe = 'D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\PptChartRoundtripTest.exe'
-$dir = 'D:\project\EasyWrite\EasyWriteClient\Test\overnight-logs\ppt-retest'
+$dir = 'D:\project\EasyWrite\EasyWriteClient\Test\overnight-logs\ppt-retest\after-fix'
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $summary = Join-Path $dir 'summary.txt'
 Set-Content -LiteralPath $summary -Value '' -Encoding utf8

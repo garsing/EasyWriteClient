@@ -1210,6 +1210,8 @@ namespace WordAddIn1.PresentationHost
                     object first = TryGetIndexedSafe(pasted, 1) ?? pasted;
                     return first;
                 }
+
+                PourLog(warnings, "Paste 返回空");
             }
             catch (Exception ex)
             {

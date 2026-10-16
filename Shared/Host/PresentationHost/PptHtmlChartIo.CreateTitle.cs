@@ -306,6 +306,7 @@ namespace WordAddIn1.PresentationHost
                     + " slideIndex=" + destIndex);
                 TryCloseChartDataWorkbook(chart);
                 HideChartExcelUiOnly();
+                PourLog(warnings, "关空白稿前 | " + DescribePasteHost(destPres));
                 if (shapeId < 1)
                 {
                     error = "PPT 旁路建图：shapeId 非法";
@@ -320,6 +321,7 @@ namespace WordAddIn1.PresentationHost
 
                 WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryCloseCopy(blank);
                 blank = null;
+                PourLog(warnings, "关空白稿后 | " + DescribePasteHost(destPres));
 
                 object pouredShape = null;
                 object pastedShape = null;

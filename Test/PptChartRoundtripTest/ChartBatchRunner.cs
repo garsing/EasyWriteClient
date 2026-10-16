@@ -162,7 +162,7 @@ namespace PptChartRoundtripTest
                     string tag = "B" + batch + "P" + one.Page.ToString("00", CultureInfo.InvariantCulture)
                         + " #" + one.Index + " " + one.Name;
 
-                    if (!IsAppAlive(app) || !IsPresAlive(pres))
+                    if (!IsAppAlive(app) || pres == null)
                     {
                         Console.WriteLine("  PowerPoint 已断开，重启后续跑…");
                         if (!TryRecycle(ref app, ref pres, path, out string recErr))
@@ -216,7 +216,7 @@ namespace PptChartRoundtripTest
                     }
                     catch (Exception ex)
                     {
-                        if (IsRetryableCom(ex.Message))
+                        if (IsRpcText(ex.Message))
                         {
                             retry = true;
                         }
@@ -727,19 +727,7 @@ namespace PptChartRoundtripTest
 
         internal static bool IsRetryableCom(string error)
         {
-            return IsRpcText(error) || IsChartDataBusy(error) || IsHostTorn(error);
-        }
-
-        private static bool IsHostTorn(string error)
-        {
-            if (string.IsNullOrEmpty(error))
-            {
-                return false;
-            }
-
-            return error.IndexOf("贴回失败", StringComparison.Ordinal) >= 0
-                || error.IndexOf("Object does not exist", StringComparison.OrdinalIgnoreCase) >= 0
-                || error.IndexOf("对象不存在", StringComparison.Ordinal) >= 0;
+            return IsRpcText(error) || IsChartDataBusy(error);
         }
 
         private static bool IsPresAlive(PowerPoint.Presentation pres)
