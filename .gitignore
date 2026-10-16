@@ -29,6 +29,10 @@ Shared/Frontend/node_modules/
 Shared/Frontend/dist/
 Shared/Frontend/.vite/
 
+# Desktop 安装包产物（build-setup.ps1 可再生成）
+Desktop/Installer/output/
+Desktop/Installer/redist/
+
 # OS
 Thumbs.db
 Desktop.ini
