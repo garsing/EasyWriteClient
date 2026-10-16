@@ -1,0 +1,107 @@
+{
+  "Api": {
+    "BaseUrl": "http://localhost:18028",
+    // "BaseUrl": "https://addin-api.yi-write.com",
+    "TimeoutSeconds": 30,
+    "MaxRetries": 3,
+    "Endpoints": {
+      "Login": "/auth/login",
+      "LoginSms": "/auth/login/sms",
+      "Register": "/auth/register",
+      "SmsSend": "/auth/sms/send",
+      "Refresh": "/auth/refresh",
+      "Health": "/health"
+    }
+  },
+  "LLMApi": {
+    "BaseUrl": "http://localhost:18028",
+    // "BaseUrl": "https://addin-api.yi-write.com",
+    "TimeoutSeconds": 30,
+    "Endpoints": {
+      "ChatCompletions": "/llm/chat/completions"
+    }
+  },
+  "App": {
+    "Name": "WordAddIn1",
+    "Version": "1.0.0",
+    "DebugCategories": [],
+    "PreferPdfActivePrinterOnStartup": true,
+    "BackendProcessTextLengthThreshold": 60000
+  },
+  "UI": {
+    "Theme": "Black",
+    "Language": "zh-CN"
+  },
+  "DocumentColors": {
+    "StrikethroughBackground": "wdColorGray05",
+    "InsertBackground": "0xC0FFFF",
+    "AcceptButtonBackground": "wdColorLightGreen",
+    "RejectButtonBackground": "0xFF99FF"
+  },
+  "DocumentNavigate": {
+    "AutoNavigateAfterModify": true,
+    "NavigateAnchor": "first_new_sentence"
+  },
+  "DocumentActionsAmbiguity": {
+    "ContextLeftSentences": 2,
+    "ContextRightSentences": 2
+  },
+  "Workspace": {
+    "Mode": "sessions"
+  },
+  "OpenFiles": {
+    "Apps": [
+      {
+        "Type": "word",
+        "DisplayName": "Word",
+        "ProcessNames": ["WINWORD"],
+        "Extensions": [".doc", ".docx", ".docm", ".dotx", ".dotm"]
+      },
+      {
+        "Type": "wps",
+        "DisplayName": "WPS文字",
+        "ProcessNames": ["wps"],
+        "Extensions": [".doc", ".docx", ".wps", ".wpt"]
+      },
+      {
+        "Type": "excel",
+        "DisplayName": "Excel",
+        "ProcessNames": ["EXCEL"],
+        "Extensions": [".xls", ".xlsx", ".xlsm"]
+      },
+      {
+        "Type": "et",
+        "DisplayName": "WPS表格",
+        "ProcessNames": ["et"],
+        "Extensions": [".xls", ".xlsx", ".xlsm", ".et"]
+      },
+      {
+        "Type": "ppt",
+        "DisplayName": "PowerPoint",
+        "ProcessNames": ["POWERPNT"],
+        "Extensions": [".ppt", ".pptx", ".pptm"]
+      },
+      {
+        "Type": "wpp",
+        "DisplayName": "WPS演示",
+        "ProcessNames": ["wpp"],
+        "Extensions": [".ppt", ".pptx", ".pptm"]
+      }
+    ]
+  },
+  "Browser": {
+    "ClickMode": "pointer",
+    "AttachPointer": "synthetic",
+    "YiWrite": {
+      "ClickMode": "pointer"
+    },
+    "Chrome": {
+      "ClickMode": "legacy",
+      "AttachPointer": "cdp"
+    },
+    "Edge": {
+      "ClickMode": "legacy",
+      "AttachPointer": "cdp"
+    }
+  }
+}

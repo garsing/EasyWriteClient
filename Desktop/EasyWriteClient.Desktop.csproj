@@ -46,7 +46,7 @@
 
   <!-- 运行时配置与前端产物 -->
   <ItemGroup>
-    <Content Include="..\Plugin\config.json" Link="config.json">
+    <Content Include="..\Shared\config.json" Link="config.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <EmbeddedResource Include="Assets\yi-write_logo1.png" />
