@@ -1507,17 +1507,20 @@ namespace WordAddIn1.PresentationHost
                     one.MarkerSize = Convert.ToInt32(size);
                 }
 
-                one.MarkerForeRgb = TryReadSeriesMarkerRgb(
-                    series, "MarkerForegroundColor", "MarkerForegroundColorFormat");
-                one.MarkerBackRgb = TryReadSeriesMarkerRgb(
-                    series, "MarkerBackgroundColor", "MarkerBackgroundColorFormat");
-                if (!one.MarkerForeRgb.HasValue || !one.MarkerBackRgb.HasValue)
+                if (!HostAvoidsChartDataCom(WppCom.GetProperty(series, "Parent")))
                 {
-                    int? lineRgb = one.Line == null ? null : one.Line.Rgb;
-                    if (lineRgb.HasValue)
+                    one.MarkerForeRgb = TryReadSeriesMarkerRgb(
+                        series, "MarkerForegroundColor", "MarkerForegroundColorFormat");
+                    one.MarkerBackRgb = TryReadSeriesMarkerRgb(
+                        series, "MarkerBackgroundColor", "MarkerBackgroundColorFormat");
+                    if (!one.MarkerForeRgb.HasValue || !one.MarkerBackRgb.HasValue)
                     {
-                        one.MarkerForeRgb = one.MarkerForeRgb ?? lineRgb;
-                        one.MarkerBackRgb = one.MarkerBackRgb ?? lineRgb;
+                        int? lineRgb = one.Line == null ? null : one.Line.Rgb;
+                        if (lineRgb.HasValue)
+                        {
+                            one.MarkerForeRgb = one.MarkerForeRgb ?? lineRgb;
+                            one.MarkerBackRgb = one.MarkerBackRgb ?? lineRgb;
+                        }
                     }
                 }
             }

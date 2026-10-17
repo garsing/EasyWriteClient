@@ -64,6 +64,7 @@ namespace WordAddIn1.PresentationHost
                     height,
                     xlType,
                     grid,
+                    format,
                     warnings,
                     chartStyle,
                     newLayout,
@@ -220,6 +221,7 @@ namespace WordAddIn1.PresentationHost
             float height,
             int xlType,
             PptHtmlChartGrid grid,
+            PptHtmlChartFormat format,
             List<string> warnings,
             int chartStyle,
             bool newLayout,
@@ -325,7 +327,21 @@ namespace WordAddIn1.PresentationHost
                         parts,
                         destIndex,
                         shapeId,
-                        (doc, w) => RewriteChartSeries(doc, grid, w),
+                        (doc, w) =>
+                        {
+                            if (!RewriteChartSeries(doc, grid, w))
+                            {
+                                return false;
+                            }
+
+                            ChartStyleSnap chrome = SnapFromFormat(format, grid);
+                            if (chrome != null && RewriteSeriesChromeFromSnap(doc, chrome, w))
+                            {
+                                PourLog(w, "PPT 磁盘钉皮：标记/线色已写入改包");
+                            }
+
+                            return true;
+                        },
                         warnings,
                         "灌数",
                         grid),
