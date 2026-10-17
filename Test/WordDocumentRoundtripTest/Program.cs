@@ -255,7 +255,10 @@ namespace WordDocumentRoundtripTest
                 && caseFilter.StartsWith("wg-", StringComparison.OrdinalIgnoreCase);
             bool runTable = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat
                 && caseFilter.StartsWith("wt-", StringComparison.OrdinalIgnoreCase);
+            bool runPptChart = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
+                && caseFilter.StartsWith("wh-ppt", StringComparison.OrdinalIgnoreCase);
             bool runChart = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
+                && !runPptChart
                 && caseFilter.StartsWith("wh-", StringComparison.OrdinalIgnoreCase);
             bool runImage = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
                 && !runChart
@@ -370,6 +373,10 @@ namespace WordDocumentRoundtripTest
                 {
                     WtCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
                 }
+                else if (runPptChart)
+                {
+                    WhPptSuite.Run(run, host, caseFilter);
+                }
                 else if (runChart)
                 {
                     WhCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore, GetArg(args, "--wh-part="));
@@ -408,9 +415,11 @@ namespace WordDocumentRoundtripTest
                                 ? WgCases.Target
                                     : (runTable
                                         ? WtCases.Target
-                                        : (runChart
+                                        : (runPptChart
+                                            ? WhPptSuite.Target
+                                            : (runChart
                                             ? WhCases.Target
-                                            : (runImage ? WiCases.Target : (runCkpt ? WkCases.Target : (runContent ? WcCases.Target : 30)))))))));
+                                            : (runImage ? WiCases.Target : (runCkpt ? WkCases.Target : (runContent ? WcCases.Target : 30))))))))));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
