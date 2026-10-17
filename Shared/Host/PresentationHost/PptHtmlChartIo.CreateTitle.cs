@@ -438,6 +438,10 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
+            // 暂时停用关旧进程。原进程不断，新稿也不关，用来看换稿建图会不会再断。恢复时删掉下面两行和 #if false / #endif。
+            PptHtmlApplyHangLog.Mark("重开机制已停用，原进程和新稿都保持打开");
+            return true;
+#if false
             if (pid == Process.GetCurrentProcess().Id)
             {
                 error = "PPT 旧进程换稿：代码跑在 PowerPoint 内部，无法结束自身后再开";
@@ -563,6 +567,7 @@ namespace WordAddIn1.PresentationHost
                 error = "PPT 旧进程换稿：新进程打开失败: " + ex.Message;
                 return false;
             }
+#endif
         }
 
         private static bool IsDeckAlive(object pres)
