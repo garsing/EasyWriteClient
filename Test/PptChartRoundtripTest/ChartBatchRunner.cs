@@ -201,6 +201,11 @@ namespace PptChartRoundtripTest
                         }
                         else
                         {
+                            if (!IsPresAlive(pres) || !IsAppAlive(app))
+                            {
+                                TryFollowRestartedPowerPoint(ref app, ref pres);
+                            }
+
                             SaveQuiet(pres, path);
                             sinceRecycle++;
                             if (IsPresAlive(pres))
@@ -845,6 +850,40 @@ namespace PptChartRoundtripTest
         {
             ChartPourLog.WriteCase("(unnamed)", "FAIL", null, warnings, toConsole: true);
             return ChartPourLog.SeeFile();
+        }
+
+        private static void TryFollowRestartedPowerPoint(
+            ref PowerPoint.Application app,
+            ref PowerPoint.Presentation pres)
+        {
+            try
+            {
+                PowerPoint.Application restarted = null;
+                for (int i = 0; i < 8; i++)
+                {
+                    restarted = new PowerPoint.Application();
+                    if (IsAppAlive(restarted) && restarted.Presentations.Count >= 1)
+                    {
+                        break;
+                    }
+
+                    Thread.Sleep(400);
+                }
+
+                if (restarted == null || !IsAppAlive(restarted) || restarted.Presentations.Count < 1)
+                {
+                    Console.WriteLine("  产品重开了 PowerPoint，但没有接到新稿");
+                    return;
+                }
+
+                app = restarted;
+                pres = restarted.Presentations[restarted.Presentations.Count];
+                Console.WriteLine("  已接到产品重开的 PowerPoint，稿=" + pres.Name);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("  接到重开的 PowerPoint 失败: " + ex.Message);
+            }
         }
 
         private static bool IsAppAlive(PowerPoint.Application app)

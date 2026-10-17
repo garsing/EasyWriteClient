@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -51,7 +53,7 @@ namespace WordAddIn1.PresentationHost
             PrepareChartExcelUiSuppression();
             if (HostAvoidsFromShapes(shapes))
             {
-                PourLog(warnings, "PPT 在空白稿建图再贴回，避免原稿 AddChart2/ChartData");
+                PourLog(warnings, "PPT 磁盘改内嵌表后插入，不在本进程打开副本");
                 if (!TryCreateChartOffLiveDeck(
                     shapes,
                     left,
@@ -217,20 +219,64 @@ namespace WordAddIn1.PresentationHost
         {
             shape = null;
             error = null;
-            object destSlide = destShapes == null ? null : WppCom.GetProperty(destShapes, "Parent");
-            object destPres = destSlide == null ? null : WppCom.GetProperty(destSlide, "Parent");
-            object app = destPres == null ? null : WppCom.GetProperty(destPres, "Application");
+            object destSlide = null;
+            object destPres = null;
+            object app = null;
+            try
+            {
+                destSlide = destShapes == null ? null : WppCom.GetProperty(destShapes, "Parent");
+                destPres = destSlide == null ? null : WppCom.GetProperty(destSlide, "Parent");
+                app = destPres == null ? null : WppCom.GetProperty(destPres, "Application");
+            }
+            catch (Exception)
+            {
+                destSlide = null;
+                destPres = null;
+                app = null;
+            }
+            if ((destPres == null || !IsDeckAlive(destPres)) && IsDeckAlive(_chartPres))
+            {
+                if (!TryAdoptReopenedDeck(ref destSlide, ref destPres, ref app, ref destShapes))
+                {
+                    error = "PPT 旧进程换稿：接不回新进程里的稿";
+                    return false;
+                }
+            }
+
             if (destPres == null || app == null)
             {
                 error = "PPT 旁路建图：没有 Presentation";
                 return false;
             }
 
+            if (!TryRestartPowerPointWhenDeckChanged(
+                ref destSlide,
+                ref destPres,
+                ref app,
+                ref destShapes,
+                warnings,
+                out error))
+            {
+                return false;
+            }
+
             string tempPath = WordAddIn1.ChartOoxmlHost.PptChartPackageHost.NewTempPath("旁路建图");
-            object blank = null;
-            object blankShape = null;
             try
             {
+                int destIndex = 1;
+                try
+                {
+                    destIndex = Convert.ToInt32(WppCom.GetProperty(destSlide, "SlideIndex") ?? 1);
+                }
+                catch (Exception)
+                {
+                }
+
+                if (destIndex < 1)
+                {
+                    destIndex = 1;
+                }
+
                 if (!WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TrySaveCopy(destPres, tempPath, out error))
                 {
                     if (string.IsNullOrEmpty(error))
@@ -241,91 +287,23 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                object appForOpen = destPres == null ? null : WppCom.GetProperty(destPres, "Application");
-                blank = WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryOpenCopy(appForOpen ?? app, tempPath, out error);
-                if (blank == null)
-                {
-                    error = "PPT 旁路建图：打不开副本";
-                    return false;
-                }
-
-                object slides = WppCom.GetProperty(blank, "Slides");
-                int destIndex = 1;
-                try
-                {
-                    destIndex = Convert.ToInt32(WppCom.GetProperty(destSlide, "SlideIndex") ?? 1);
-                }
-                catch (Exception)
-                {
-                }
-
-                int slideCount = Convert.ToInt32(WppCom.GetProperty(slides, "Count") ?? 0);
-                if (destIndex < 1 || destIndex > slideCount)
-                {
-                    destIndex = slideCount < 1 ? 1 : slideCount;
-                }
-
-                object slide = WppCom.GetIndexed(slides, destIndex);
-                object blankShapes = slide == null ? null : WppCom.GetProperty(slide, "Shapes");
-                if (blankShapes == null)
-                {
-                    error = "PPT 旁路建图：副本页不存在";
-                    return false;
-                }
-
-                blankShape = TryAddChartOnShapes(
-                    blankShapes,
+                if (!TryEnsureEmbeddedChart(
+                    tempPath,
+                    destIndex,
                     left,
                     top,
                     width,
                     height,
-                    xlType,
-                    chartStyle,
-                    newLayout,
+                    grid,
                     warnings,
-                    out error);
-                if (blankShape == null)
+                    out int shapeId,
+                    out error))
                 {
-                    if (string.IsNullOrEmpty(error))
-                    {
-                        error = "PPT 旁路建图：AddChart 失败";
-                    }
-
                     return false;
                 }
 
-                object chart = TryGetChart(blankShape);
-                if (chart == null)
-                {
-                    error = "PPT 旁路建图：无法访问 Chart";
-                    return false;
-                }
-
-                int shapeId = Convert.ToInt32(WppCom.GetProperty(blankShape, "Id") ?? 0);
-                PourLog(warnings, "空白稿已建图，先关旁路再改包 shapeId=" + shapeId
-                    + " slideIndex=" + destIndex);
-                TryCloseChartDataWorkbook(chart);
-                HideChartExcelUiOnly();
-                if (shapeId < 1)
-                {
-                    error = "PPT 旁路建图：shapeId 非法";
-                    return false;
-                }
-
-                if (!TrySavePresentationTo(blank, tempPath, warnings))
-                {
-                    error = "PPT 旁路建图：旁路稿存盘失败";
-                    return false;
-                }
-
-                WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryCloseCopy(blank);
-                blank = null;
-
-                object pouredShape = null;
-                object pastedShape = null;
-                if (!WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryRewriteAndCopyBack(
-                    destPres,
-                    destIndex,
+                if (!PptHtmlOoxmlIo.TryRewriteSavedFile(
+                    tempPath,
                     (zip, parts) => TryRewriteChartXmlInPackage(
                         zip,
                         parts,
@@ -335,37 +313,36 @@ namespace WordAddIn1.PresentationHost
                         warnings,
                         "灌数",
                         grid),
-                    (copyPres, openSlide) =>
-                    {
-                        pouredShape = WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryFindShapeById(copyPres, openSlide, shapeId);
-                        return pouredShape;
-                    },
-                    () =>
-                    {
-                        object pasted = TryPasteChart(destShapes, warnings);
-                        if (pasted == null)
-                        {
-                            return false;
-                        }
-
-                        TryCopyBox(pouredShape, pasted);
-                        pastedShape = pasted;
-                        return true;
-                    },
-                    out string ooxmlErr,
-                    alreadySavedPath: tempPath,
-                    tag: "灌数",
-                    warnings: warnings)
-                    || pastedShape == null)
+                    out error,
+                    "灌数",
+                    warnings))
                 {
-                    error = "PPT 旁路建图灌数失败: "
-                        + (string.IsNullOrEmpty(ooxmlErr) ? "OOXML 失败" : ooxmlErr);
                     return false;
                 }
 
-                shape = pastedShape;
+                shape = TryInsertChartSlide(
+                    destPres,
+                    destShapes,
+                    destIndex,
+                    tempPath,
+                    left,
+                    top,
+                    width,
+                    height,
+                    warnings,
+                    out error);
+                if (shape == null)
+                {
+                    if (string.IsNullOrEmpty(error))
+                    {
+                        error = "PPT 插入改包页失败";
+                    }
 
-                PourLog(warnings, "空白稿图已贴回 " + DescribeLiveSeries(TryGetChart(shape)));
+                    return false;
+                }
+
+                PourLog(warnings, "改包页已插入 " + DescribeLiveSeries(TryGetChart(shape)));
+                RememberChartDeck(app, destPres);
                 return true;
             }
             catch (Exception ex)
@@ -377,13 +354,903 @@ namespace WordAddIn1.PresentationHost
             }
             finally
             {
-                WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryCloseCopy(blank);
                 WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryDeleteFile(tempPath);
                 if (shape == null)
                 {
                     DismissChartExcelUi();
                 }
             }
+        }
+
+        private static int _chartPid;
+        private static int _chartSlideIndex = 1;
+        private static object _chartPres;
+        private static bool _chartUsed;
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(int hWnd, out uint processId);
+
+        private static void RememberChartDeck(object app, object pres)
+        {
+            int pid = TryAppPid(app);
+            if (pid > 0 && pres != null)
+            {
+                _chartUsed = true;
+                _chartPid = pid;
+                _chartPres = pres;
+                try
+                {
+                    object slide = WppCom.GetProperty(pres, "Slides");
+                    int count = Convert.ToInt32(WppCom.GetProperty(slide, "Count") ?? 1);
+                    if (count > 0)
+                    {
+                        _chartSlideIndex = count;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        /// <summary>
+        /// 这个进程已经建过图，又打开了另一份稿：保存后结束进程，用新进程打开，再继续。
+        /// 同一份还开着的稿不重开。
+        /// </summary>
+        private static bool TryRestartPowerPointWhenDeckChanged(
+            ref object destSlide,
+            ref object destPres,
+            ref object app,
+            ref object destShapes,
+            List<string> warnings,
+            out string error)
+        {
+            error = null;
+            int pid = TryAppPid(app);
+            bool same = SameOpenDeck(_chartPres, destPres);
+            if (!_chartUsed || pid <= 0 || pid != _chartPid || same)
+            {
+                return true;
+            }
+
+            if (pid == Process.GetCurrentProcess().Id)
+            {
+                error = "PPT 旧进程换稿：代码跑在 PowerPoint 内部，无法结束自身后再开";
+                return false;
+            }
+
+            int slideIndex = 1;
+            try
+            {
+                slideIndex = Convert.ToInt32(WppCom.GetProperty(destSlide, "SlideIndex") ?? 1);
+            }
+            catch (Exception)
+            {
+            }
+
+            string fullPath;
+            try
+            {
+                string dir = Convert.ToString(WppCom.GetProperty(destPres, "Path") ?? "");
+                if (string.IsNullOrEmpty(dir))
+                {
+                    fullPath = PptHtmlOoxmlIo.NewTempPath("重开");
+                    try
+                    {
+                        WppCom.Invoke(destPres, "SaveAs", fullPath, 24);
+                    }
+                    catch (Exception)
+                    {
+                        WppCom.Invoke(destPres, "SaveAs", fullPath);
+                    }
+                }
+                else
+                {
+                    fullPath = Convert.ToString(WppCom.GetProperty(destPres, "FullName") ?? "");
+                    WppCom.Invoke(destPres, "Save");
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "PPT 旧进程换稿：保存失败: " + ex.Message;
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(fullPath) || !File.Exists(fullPath))
+            {
+                error = "PPT 旧进程换稿：保存后文件不在";
+                return false;
+            }
+
+            try
+            {
+                object presentations = WppCom.GetProperty(app, "Presentations");
+                int count = presentations == null
+                    ? 0
+                    : Convert.ToInt32(WppCom.GetProperty(presentations, "Count") ?? 0);
+                for (int i = 1; i <= count; i++)
+                {
+                    object one = WppCom.GetIndexed(presentations, i);
+                    if (one == null || ReferenceEquals(one, destPres))
+                    {
+                        continue;
+                    }
+
+                    string oneDir = Convert.ToString(WppCom.GetProperty(one, "Path") ?? "");
+                    if (!string.IsNullOrEmpty(oneDir))
+                    {
+                        try
+                        {
+                            WppCom.Invoke(one, "Save");
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                WppCom.TrySetProperty(destPres, "Saved", true);
+                WppCom.Invoke(destPres, "Close");
+            }
+            catch (Exception)
+            {
+            }
+
+            PourLog(warnings, "旧进程已建过图，结束 pid=" + pid + " 后用新进程打开 " + fullPath);
+            if (!WaitUntilPidGone(pid))
+            {
+                error = "PPT 旧进程换稿：进程没有退出 pid=" + pid;
+                return false;
+            }
+
+            try
+            {
+                var restarted = new Microsoft.Office.Interop.PowerPoint.Application();
+                restarted.Visible = Microsoft.Office.Core.MsoTriState.msoTrue;
+                Microsoft.Office.Interop.PowerPoint.Presentation opened = restarted.Presentations.Open(
+                    fullPath,
+                    Microsoft.Office.Core.MsoTriState.msoFalse,
+                    Microsoft.Office.Core.MsoTriState.msoFalse,
+                    Microsoft.Office.Core.MsoTriState.msoTrue);
+                Microsoft.Office.Interop.PowerPoint.Slide slide = opened.Slides[slideIndex];
+                destPres = opened;
+                destSlide = slide;
+                destShapes = slide.Shapes;
+                app = restarted;
+                _chartPres = opened;
+                _chartSlideIndex = slideIndex;
+                _chartPid = TryAppPid(restarted);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "PPT 旧进程换稿：新进程打开失败: " + ex.Message;
+                return false;
+            }
+        }
+
+        private static bool IsDeckAlive(object pres)
+        {
+            if (pres == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                WppCom.GetProperty(pres, "Name");
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool TryAdoptReopenedDeck(
+            ref object destSlide,
+            ref object destPres,
+            ref object app,
+            ref object destShapes)
+        {
+            try
+            {
+                object slides = WppCom.GetProperty(_chartPres, "Slides");
+                object slide = WppCom.GetIndexed(slides, _chartSlideIndex < 1 ? 1 : _chartSlideIndex);
+                object shapes = slide == null ? null : WppCom.GetProperty(slide, "Shapes");
+                object application = WppCom.GetProperty(_chartPres, "Application");
+                if (slide == null || shapes == null || application == null)
+                {
+                    return false;
+                }
+
+                destPres = _chartPres;
+                destSlide = slide;
+                destShapes = shapes;
+                app = application;
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool SameOpenDeck(object left, object right)
+        {
+            if (left == null || right == null)
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(left, right))
+            {
+                return true;
+            }
+
+            int leftHwnd = TryPresWindowHwnd(left);
+            int rightHwnd = TryPresWindowHwnd(right);
+            if (leftHwnd > 0 && rightHwnd > 0)
+            {
+                return leftHwnd == rightHwnd;
+            }
+
+            try
+            {
+                string leftName = Convert.ToString(WppCom.GetProperty(left, "FullName") ?? "");
+                string rightName = Convert.ToString(WppCom.GetProperty(right, "FullName") ?? "");
+                return leftName.Length > 0 && string.Equals(leftName, rightName, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static int TryAppPid(object app)
+        {
+            try
+            {
+                int hwnd = 0;
+                Microsoft.Office.Interop.PowerPoint.Application typed =
+                    app as Microsoft.Office.Interop.PowerPoint.Application;
+                if (typed != null)
+                {
+                    hwnd = typed.HWND;
+                }
+                else
+                {
+                    hwnd = Convert.ToInt32(WppCom.GetProperty(app, "HWND") ?? 0);
+                }
+
+                if (hwnd != 0)
+                {
+                    uint pid;
+                    GetWindowThreadProcessId(hwnd, out pid);
+                    if (pid > 0)
+                    {
+                        return (int)pid;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                Process[] found = Process.GetProcessesByName("POWERPNT");
+                if (found != null && found.Length == 1)
+                {
+                    return found[0].Id;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return 0;
+        }
+
+        private static int TryPresWindowHwnd(object pres)
+        {
+            try
+            {
+                object windows = WppCom.GetProperty(pres, "Windows");
+                int count = windows == null
+                    ? 0
+                    : Convert.ToInt32(WppCom.GetProperty(windows, "Count") ?? 0);
+                if (count < 1)
+                {
+                    return 0;
+                }
+
+                object window = WppCom.GetIndexed(windows, 1);
+                return Convert.ToInt32(WppCom.GetProperty(window, "HWND") ?? 0);
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+        }
+
+        private static bool WaitUntilPidGone(int pid)
+        {
+            Process process = null;
+            try
+            {
+                process = Process.GetProcessById(pid);
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill();
+                }
+
+                return process.HasExited || process.WaitForExit(15000);
+            }
+            catch (Exception)
+            {
+                try
+                {
+                    return Process.GetProcessById(pid).HasExited;
+                }
+                catch (Exception)
+                {
+                    return true;
+                }
+            }
+        }
+
+        private static bool TryEnsureEmbeddedChart(
+            string path,
+            int slideIndex,
+            float left,
+            float top,
+            float width,
+            float height,
+            PptHtmlChartGrid grid,
+            List<string> warnings,
+            out int shapeId,
+            out string error)
+        {
+            shapeId = 0;
+            error = null;
+            string slidePart = "ppt/slides/slide" + slideIndex.ToString(CultureInfo.InvariantCulture) + ".xml";
+            string relsPart = "ppt/slides/_rels/slide" + slideIndex.ToString(CultureInfo.InvariantCulture) + ".xml.rels";
+            try
+            {
+                using (ZipArchive zip = ZipFile.Open(path, ZipArchiveMode.Update))
+                {
+                    ZipArchiveEntry slideEntry = FindZipEntry(zip, slidePart);
+                    ZipArchiveEntry relsEntry = FindZipEntry(zip, relsPart);
+                    if (slideEntry == null || relsEntry == null)
+                    {
+                        error = "PPT 旁路建图：副本没有 " + slidePart;
+                        return false;
+                    }
+
+                    XDocument slideDoc = LoadZipXml(slideEntry);
+                    XDocument relsDoc = LoadZipXml(relsEntry);
+                    string relId = FindChartRelId(slideDoc, out shapeId);
+                    if (shapeId < 1)
+                    {
+                        shapeId = NextShapeId(slideDoc);
+                        relId = NextRelId(relsDoc);
+                        int chartNo = NextChartNumber(zip);
+                        string chartPart = "ppt/charts/chart" + chartNo.ToString(CultureInfo.InvariantCulture) + ".xml";
+                        string xlsxPart = "ppt/embeddings/ew-chart" + chartNo.ToString(CultureInfo.InvariantCulture) + ".xlsx";
+                        AddChartFrame(slideDoc, shapeId, relId, left, top, width, height);
+                        AddRelationship(relsDoc, relId, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart", "../charts/chart" + chartNo.ToString(CultureInfo.InvariantCulture) + ".xml");
+                        WriteZipBytes(zip, chartPart, XmlUtf8(MinimalColumnChartXml()));
+                        WriteZipBytes(zip, ChartRelsPart(chartPart), XmlUtf8(EmbeddingRelsXml("rId1", "../embeddings/ew-chart" + chartNo.ToString(CultureInfo.InvariantCulture) + ".xlsx")));
+                        WriteZipBytes(zip, xlsxPart, BuildMinimalChartWorkbook(grid));
+                        EnsureContentTypes(zip, chartPart, xlsxPart);
+                        ReplaceZipXml(zip, slidePart, slideDoc);
+                        ReplaceZipXml(zip, relsPart, relsDoc);
+                        PourLog(warnings, "副本无图，已写入内嵌图 shapeId=" + shapeId);
+                        return true;
+                    }
+
+                    string chartTarget = FindRelTarget(relsDoc, relId);
+                    string chartPartExisting = NormalizeChartPartPath(chartTarget);
+                    if (!ChartHasEmbedding(zip, chartPartExisting))
+                    {
+                        int chartNo = NextChartNumber(zip);
+                        string xlsxPart = "ppt/embeddings/ew-chart" + chartNo.ToString(CultureInfo.InvariantCulture) + ".xlsx";
+                        string embedRel = EnsurePackageRel(zip, chartPartExisting, xlsxPart);
+                        PointChartAtEmbedding(zip, chartPartExisting, embedRel);
+                        WriteZipBytes(zip, xlsxPart, BuildMinimalChartWorkbook(grid));
+                        EnsureContentTypes(zip, null, xlsxPart);
+                        PourLog(warnings, "副本图无内嵌表，已补上并去掉外链 shapeId=" + shapeId);
+                    }
+
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "PPT 旁路建图：写内嵌图失败: " + ex.Message;
+                return false;
+            }
+        }
+
+        private static object TryInsertChartSlide(
+            object destPres,
+            object destShapes,
+            int destIndex,
+            string path,
+            float left,
+            float top,
+            float width,
+            float height,
+            List<string> warnings,
+            out string error)
+        {
+            error = null;
+            object slides = WppCom.GetProperty(destPres, "Slides");
+            int before = Convert.ToInt32(WppCom.GetProperty(slides, "Count") ?? 0);
+            object inserted = WppCom.Invoke(slides, "InsertFromFile", path, destIndex, destIndex, destIndex);
+            int after = Convert.ToInt32(WppCom.GetProperty(slides, "Count") ?? 0);
+            if (after <= before)
+            {
+                error = "InsertFromFile 没有插入页";
+                return null;
+            }
+
+            int newIndex = destIndex + 1;
+            try
+            {
+                object first = inserted == null || inserted is int || inserted is string
+                    ? null
+                    : TryGetIndexedSafe(inserted, 1);
+                if (first != null)
+                {
+                    newIndex = Convert.ToInt32(WppCom.GetProperty(first, "SlideIndex") ?? newIndex);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            PourLog(warnings, "InsertFromFile 后页 " + before + "→" + after + " 取页=" + newIndex);
+
+            object newSlide = WppCom.GetIndexed(slides, newIndex);
+            object newShapes = newSlide == null ? null : WppCom.GetProperty(newSlide, "Shapes");
+            object chartShape = TryFindChartShape(newShapes);
+            if (chartShape == null)
+            {
+                TryDeleteSlide(newSlide);
+                error = "插入页上没有图表";
+                return null;
+            }
+
+            WppCom.Invoke(chartShape, "Copy");
+            object pasted = TryPasteChart(destShapes, warnings);
+            TryDeleteSlide(newSlide);
+            if (pasted == null)
+            {
+                error = "插入页上的图未能放到当前页";
+                return null;
+            }
+
+            try
+            {
+                WppCom.TrySetProperty(pasted, "Left", left);
+                WppCom.TrySetProperty(pasted, "Top", top);
+                WppCom.TrySetProperty(pasted, "Width", width);
+                WppCom.TrySetProperty(pasted, "Height", height);
+            }
+            catch (Exception)
+            {
+            }
+
+            return pasted;
+        }
+
+        private static object TryFindChartShape(object shapes)
+        {
+            if (shapes == null)
+            {
+                return null;
+            }
+
+            int count = Convert.ToInt32(WppCom.GetProperty(shapes, "Count") ?? 0);
+            for (int i = 1; i <= count; i++)
+            {
+                object shape = WppCom.GetIndexed(shapes, i);
+                try
+                {
+                    object has = WppCom.GetProperty(shape, "HasChart");
+                    if (has != null && Convert.ToInt32(has) != 0)
+                    {
+                        return shape;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return null;
+        }
+
+        private static void TryDeleteSlide(object slide)
+        {
+            if (slide == null)
+            {
+                return;
+            }
+
+            try
+            {
+                WppCom.Invoke(slide, "Delete");
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static ZipArchiveEntry FindZipEntry(ZipArchive zip, string part)
+        {
+            string want = part.Replace('\\', '/');
+            foreach (ZipArchiveEntry entry in zip.Entries)
+            {
+                if (string.Equals(entry.FullName.Replace('\\', '/'), want, StringComparison.OrdinalIgnoreCase))
+                {
+                    return entry;
+                }
+            }
+
+            return null;
+        }
+
+        private static XDocument LoadZipXml(ZipArchiveEntry entry)
+        {
+            using (Stream stream = entry.Open())
+            {
+                return XDocument.Load(stream);
+            }
+        }
+
+        private static void ReplaceZipXml(ZipArchive zip, string part, XDocument doc)
+        {
+            ZipArchiveEntry old = FindZipEntry(zip, part);
+            if (old != null)
+            {
+                old.Delete();
+            }
+
+            WriteZipBytes(zip, part, XmlUtf8(doc));
+        }
+
+        private static void WriteZipBytes(ZipArchive zip, string part, byte[] data)
+        {
+            ZipArchiveEntry old = FindZipEntry(zip, part);
+            if (old != null)
+            {
+                old.Delete();
+            }
+
+            ZipArchiveEntry entry = zip.CreateEntry(part.Replace('\\', '/'));
+            using (Stream stream = entry.Open())
+            {
+                stream.Write(data, 0, data.Length);
+            }
+        }
+
+        private static byte[] XmlUtf8(XDocument doc)
+        {
+            using (var ms = new MemoryStream())
+            {
+                doc.Save(ms);
+                return ms.ToArray();
+            }
+        }
+
+        private static byte[] XmlUtf8(string xml)
+        {
+            return Encoding.UTF8.GetBytes(xml);
+        }
+
+        private static string FindChartRelId(XDocument slideDoc, out int shapeId)
+        {
+            shapeId = 0;
+            foreach (XElement frame in slideDoc.Descendants(PNs + "graphicFrame"))
+            {
+                XElement chartEl = frame.Descendants(CNs + "chart").FirstOrDefault();
+                XElement cNvPr = frame.Descendants(PNs + "cNvPr").FirstOrDefault();
+                if (chartEl == null || cNvPr == null)
+                {
+                    continue;
+                }
+
+                if (int.TryParse((string)cNvPr.Attribute("id"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int id))
+                {
+                    shapeId = id;
+                }
+
+                return (string)chartEl.Attribute(RNs + "id");
+            }
+
+            return null;
+        }
+
+        private static int NextShapeId(XDocument slideDoc)
+        {
+            int max = 1;
+            foreach (XElement cNvPr in slideDoc.Descendants(PNs + "cNvPr"))
+            {
+                if (int.TryParse((string)cNvPr.Attribute("id"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int id) && id > max)
+                {
+                    max = id;
+                }
+            }
+
+            return max + 1;
+        }
+
+        private static string NextRelId(XDocument relsDoc)
+        {
+            int max = 0;
+            foreach (XElement rel in relsDoc.Descendants(RelPkgNs + "Relationship"))
+            {
+                string id = (string)rel.Attribute("Id") ?? "";
+                if (id.StartsWith("rId", StringComparison.Ordinal)
+                    && int.TryParse(id.Substring(3), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)
+                    && n > max)
+                {
+                    max = n;
+                }
+            }
+
+            return "rId" + (max + 1).ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static int NextChartNumber(ZipArchive zip)
+        {
+            int max = 0;
+            foreach (ZipArchiveEntry entry in zip.Entries)
+            {
+                string name = entry.FullName.Replace('\\', '/');
+                if (name.StartsWith("ppt/charts/chart", StringComparison.OrdinalIgnoreCase)
+                    && name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+                    && name.IndexOf("/_rels/", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    string digits = name.Substring("ppt/charts/chart".Length);
+                    digits = digits.Substring(0, digits.Length - 4);
+                    if (int.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n > max)
+                    {
+                        max = n;
+                    }
+                }
+            }
+
+            return max + 1;
+        }
+
+        private static void AddChartFrame(
+            XDocument slideDoc,
+            int shapeId,
+            string relId,
+            float left,
+            float top,
+            float width,
+            float height)
+        {
+            XElement tree = slideDoc.Descendants(PNs + "spTree").FirstOrDefault();
+            if (tree == null)
+            {
+                throw new InvalidOperationException("slide 没有 spTree");
+            }
+
+            long x = (long)(left * 12700f);
+            long y = (long)(top * 12700f);
+            long cx = (long)(width * 12700f);
+            long cy = (long)(height * 12700f);
+            var frame = new XElement(PNs + "graphicFrame",
+                new XElement(PNs + "nvGraphicFramePr",
+                    new XElement(PNs + "cNvPr",
+                        new XAttribute("id", shapeId.ToString(CultureInfo.InvariantCulture)),
+                        new XAttribute("name", "Chart " + shapeId.ToString(CultureInfo.InvariantCulture))),
+                    new XElement(PNs + "cNvGraphicFramePr",
+                        new XElement(ANs + "graphicFrameLocks", new XAttribute("noGrp", "1"))),
+                    new XElement(PNs + "nvPr")),
+                new XElement(PNs + "xfrm",
+                    new XElement(ANs + "off",
+                        new XAttribute("x", x.ToString(CultureInfo.InvariantCulture)),
+                        new XAttribute("y", y.ToString(CultureInfo.InvariantCulture))),
+                    new XElement(ANs + "ext",
+                        new XAttribute("cx", cx.ToString(CultureInfo.InvariantCulture)),
+                        new XAttribute("cy", cy.ToString(CultureInfo.InvariantCulture)))),
+                new XElement(ANs + "graphic",
+                    new XElement(ANs + "graphicData",
+                        new XAttribute("uri", "http://schemas.openxmlformats.org/drawingml/2006/chart"),
+                        new XElement(CNs + "chart", new XAttribute(RNs + "id", relId)))));
+            XElement ext = tree.Element(PNs + "extLst");
+            if (ext != null)
+            {
+                ext.AddBeforeSelf(frame);
+            }
+            else
+            {
+                tree.Add(frame);
+            }
+        }
+
+        private static void AddRelationship(XDocument relsDoc, string id, string type, string target)
+        {
+            XElement root = relsDoc.Root;
+            if (root == null)
+            {
+                throw new InvalidOperationException("rels 空");
+            }
+
+            root.Add(new XElement(RelPkgNs + "Relationship",
+                new XAttribute("Id", id),
+                new XAttribute("Type", type),
+                new XAttribute("Target", target)));
+        }
+
+        private static bool ChartHasEmbedding(ZipArchive zip, string chartPart)
+        {
+            if (string.IsNullOrEmpty(chartPart))
+            {
+                return false;
+            }
+
+            ZipArchiveEntry rels = FindZipEntry(zip, ChartRelsPart(chartPart));
+            if (rels == null)
+            {
+                return false;
+            }
+
+            return !string.IsNullOrEmpty(FindEmbeddingTarget(LoadZipXml(rels)));
+        }
+
+        private static string EnsurePackageRel(ZipArchive zip, string chartPart, string xlsxPart)
+        {
+            string relsPart = ChartRelsPart(chartPart);
+            ZipArchiveEntry relsEntry = FindZipEntry(zip, relsPart);
+            XDocument relsDoc = relsEntry == null
+                ? new XDocument(new XElement(RelPkgNs + "Relationships"))
+                : LoadZipXml(relsEntry);
+            string target = "../embeddings/" + Path.GetFileName(xlsxPart);
+            string id = NextRelId(relsDoc);
+            AddRelationship(
+                relsDoc,
+                id,
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/package",
+                target);
+            foreach (XElement rel in relsDoc.Descendants(RelPkgNs + "Relationship").ToList())
+            {
+                string type = (string)rel.Attribute("Type") ?? "";
+                string relTarget = (string)rel.Attribute("Target") ?? "";
+                if (string.Equals((string)rel.Attribute("Id"), id, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (type.IndexOf("oleObject", StringComparison.OrdinalIgnoreCase) >= 0
+                    && !relTarget.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)
+                    && !relTarget.EndsWith(".xls", StringComparison.OrdinalIgnoreCase))
+                {
+                    rel.Remove();
+                }
+            }
+
+            ReplaceZipXml(zip, relsPart, relsDoc);
+            return id;
+        }
+
+        private static void PointChartAtEmbedding(ZipArchive zip, string chartPart, string relId)
+        {
+            ZipArchiveEntry entry = FindZipEntry(zip, chartPart);
+            if (entry == null || string.IsNullOrEmpty(relId))
+            {
+                return;
+            }
+
+            XDocument doc = LoadZipXml(entry);
+            XElement data = doc.Descendants(CNs + "externalData").FirstOrDefault();
+            if (data == null)
+            {
+                XElement chart = doc.Descendants(CNs + "chart").FirstOrDefault();
+                if (chart == null)
+                {
+                    return;
+                }
+
+                data = new XElement(CNs + "externalData",
+                    new XAttribute(RNs + "id", relId),
+                    new XElement(CNs + "autoUpdate", new XAttribute("val", "0")));
+                chart.Add(data);
+            }
+            else
+            {
+                data.SetAttributeValue(RNs + "id", relId);
+            }
+
+            ReplaceZipXml(zip, chartPart, doc);
+        }
+
+        private static void EnsureContentTypes(ZipArchive zip, string chartPart, string xlsxPart)
+        {
+            const string typesPart = "[Content_Types].xml";
+            ZipArchiveEntry entry = FindZipEntry(zip, typesPart);
+            if (entry == null)
+            {
+                return;
+            }
+
+            XNamespace ct = "http://schemas.openxmlformats.org/package/2006/content-types";
+            XDocument doc = LoadZipXml(entry);
+            XElement root = doc.Root;
+            if (root == null)
+            {
+                return;
+            }
+
+            bool hasXlsx = root.Elements(ct + "Default")
+                .Any(e => string.Equals((string)e.Attribute("Extension"), "xlsx", StringComparison.OrdinalIgnoreCase));
+            if (!hasXlsx)
+            {
+                root.Add(new XElement(ct + "Default",
+                    new XAttribute("Extension", "xlsx"),
+                    new XAttribute("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")));
+            }
+
+            if (!string.IsNullOrEmpty(chartPart))
+            {
+                string partName = "/" + chartPart.Replace('\\', '/');
+                bool hasChart = root.Elements(ct + "Override")
+                    .Any(e => string.Equals((string)e.Attribute("PartName"), partName, StringComparison.OrdinalIgnoreCase));
+                if (!hasChart)
+                {
+                    root.Add(new XElement(ct + "Override",
+                        new XAttribute("PartName", partName),
+                        new XAttribute("ContentType", "application/vnd.openxmlformats-officedocument.drawingml.chart+xml")));
+                }
+            }
+
+            ReplaceZipXml(zip, typesPart, doc);
+        }
+
+        private static string MinimalColumnChartXml()
+        {
+            return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+                + "<c:chartSpace xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
+                + "<c:chart><c:plotArea><c:barChart><c:barDir val=\"col\"/><c:grouping val=\"clustered\"/>"
+                + "<c:ser><c:idx val=\"0\"/><c:order val=\"0\"/>"
+                + "<c:tx><c:strRef><c:f>Sheet1!$B$1</c:f><c:strCache><c:ptCount val=\"1\"/><c:pt idx=\"0\"><c:v>系列</c:v></c:pt></c:strCache></c:strRef></c:tx>"
+                + "<c:cat><c:strRef><c:f>Sheet1!$A$2:$A$2</c:f><c:strCache><c:ptCount val=\"1\"/><c:pt idx=\"0\"><c:v></c:v></c:pt></c:strCache></c:strRef></c:cat>"
+                + "<c:val><c:numRef><c:f>Sheet1!$B$2:$B$2</c:f><c:numCache><c:formatCode>General</c:formatCode><c:ptCount val=\"1\"/><c:pt idx=\"0\"><c:v>0</c:v></c:pt></c:numCache></c:numRef></c:val>"
+                + "</c:ser><c:axId val=\"1\"/><c:axId val=\"2\"/></c:barChart>"
+                + "<c:catAx><c:axId val=\"1\"/><c:scaling><c:orientation val=\"minMax\"/></c:scaling><c:delete val=\"0\"/><c:axPos val=\"b\"/><c:crossAx val=\"2\"/></c:catAx>"
+                + "<c:valAx><c:axId val=\"2\"/><c:scaling><c:orientation val=\"minMax\"/></c:scaling><c:delete val=\"0\"/><c:axPos val=\"l\"/><c:crossAx val=\"1\"/></c:valAx>"
+                + "</c:plotArea><c:plotVisOnly val=\"1\"/></c:chart>"
+                + "<c:externalData r:id=\"rId1\"><c:autoUpdate val=\"0\"/></c:externalData>"
+                + "</c:chartSpace>";
+        }
+
+        private static string EmbeddingRelsXml(string id, string target)
+        {
+            return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+                + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+                + "<Relationship Id=\"" + id + "\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/package\" Target=\"" + target + "\"/>"
+                + "</Relationships>";
         }
 
         private static object TryAddChartOnShapes(

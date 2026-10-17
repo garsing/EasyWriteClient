@@ -102,6 +102,53 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        /// <summary>只改磁盘上的 pptx，不在 PowerPoint 里打开。</summary>
+        public static bool TryRewriteSavedFile(
+            string path,
+            Func<ZipArchive, IDictionary<string, byte[]>, bool> rewrite,
+            out string error,
+            string tag = "改包",
+            List<string> warnings = null)
+        {
+            error = null;
+            if (string.IsNullOrEmpty(path) || rewrite == null || !File.Exists(path))
+            {
+                error = tag + "：改包文件空";
+                return false;
+            }
+
+            try
+            {
+                var replacements = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+                using (ZipArchive zin = ZipFile.OpenRead(path))
+                {
+                    if (!rewrite(zin, replacements))
+                    {
+                        error = tag + "：改 zip 失败";
+                        return false;
+                    }
+                }
+
+                if (!TryApplyReplacements(path, replacements, out error))
+                {
+                    if (string.IsNullOrEmpty(error))
+                    {
+                        error = tag + "：回写失败";
+                    }
+
+                    return false;
+                }
+
+                Log(warnings, tag + "：已改磁盘包，未在 PowerPoint 中打开 " + path);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = tag + "异常: " + ex.Message;
+                return false;
+            }
+        }
+
         public static bool TryRewriteAndCopyBack(
             object destPres,
             int destSlideIndex,
