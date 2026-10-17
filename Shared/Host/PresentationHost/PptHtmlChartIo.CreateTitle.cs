@@ -198,7 +198,7 @@ namespace WordAddIn1.PresentationHost
                     EnsureNewPieVariesByCategory(chart, grid, warnings);
                     TryApplyPieExplosionFromFormat(chart, format, warnings);
                     TryRestorePieChartType(chart, htmlSnap);
-                    TryStripWppSrgbTintAfterChrome(ref shape, ref chart, htmlSnap, warnings);
+                    TryPinOoxmlChrome(ref shape, ref chart, htmlSnap, warnings, xlType);
                 }
                 else
                 {
@@ -334,13 +334,7 @@ namespace WordAddIn1.PresentationHost
                                 return false;
                             }
 
-                            EnsureXmlChartKind(doc, xlType, w);
-                            ChartStyleSnap chrome = SnapFromFormat(format, grid);
-                            if (chrome != null && RewriteSeriesChromeFromSnap(doc, chrome, w))
-                            {
-                                PourLog(w, "PPT 磁盘钉皮：标记/线色已写入改包");
-                            }
-
+                            RewriteOoxmlChrome(doc, SnapFromFormat(format, grid), w, xlType);
                             return true;
                         },
                         warnings,

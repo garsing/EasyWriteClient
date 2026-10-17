@@ -474,7 +474,7 @@ namespace WordAddIn1.PresentationHost
                 TrySetTitle(newChart, "", warnings);
             }
 
-            TryStripWppSrgbTintAfterChrome(ref newShape, ref newChart, snap, warnings);
+            TryPinOoxmlChrome(ref newShape, ref newChart, snap, warnings, xlType);
             DismissChartExcelUi();
 
             TryDelete(oldShape);

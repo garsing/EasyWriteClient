@@ -16,7 +16,7 @@ namespace WordAddIn1.PresentationHost
     /// 写自定义 RGB 后同一套路剥 srgbClr 上的 tint/shade（默认 ChartStyle 会扣，COM 清不掉）。
     /// 渐变/标记色/线色 COM 写不稳、读常空：同一趟把 c:spPr / c:marker 钉进 XML。
     /// PPT 灌数也走这条：同时改内嵌 xlsx，不 ChartData.Activate（脏会话会 RPC 弄死稿）。
-    /// 钉皮仍只在 WPP 走。
+    /// 钉皮 XML 一律 RewriteOoxmlChrome；贴回 WPP 走 Open 副本，PPT 走磁盘改包（不 Open）。
     /// </summary>
     internal static partial class PptHtmlChartIo
     {
@@ -75,28 +75,68 @@ namespace WordAddIn1.PresentationHost
         }
 
         /// <summary>
-        /// 默认 ChartStyle 会把 tint 扣在自定义 srgb 上，COM 清不掉。
-        /// 渐变/标记/线 COM 写完也常读空。写色后 SaveCopyAs → 钉 c:spPr/c:marker 并剥 tint → Copy 回原页。
+        /// 钉皮 XML：图种（需要时）→ 系列 c:spPr/c:marker → 剥 tint。
+        /// PPT 旁路改包和 WPP Open 副本都走这里；宿主差只在贴回，属性差只在 snap。
         /// </summary>
-        private static void TryStripWppSrgbTintAfterChrome(
+        private static bool RewriteOoxmlChrome(
+            XDocument doc,
+            ChartStyleSnap snap,
+            List<string> warnings,
+            int xlType = 0)
+        {
+            if (xlType != 0)
+            {
+                EnsureXmlChartKind(doc, xlType, warnings);
+            }
+
+            bool pinned = RewriteSeriesChromeFromSnap(doc, snap, warnings);
+            bool stripped = StripSrgbClrTint(doc, warnings);
+            return pinned || stripped;
+        }
+
+        private static int ChromeXlType(ChartStyleSnap snap, int fallback = 0)
+        {
+            if (snap != null && snap.Series != null)
+            {
+                for (int i = 0; i < snap.Series.Count; i++)
+                {
+                    SeriesStyleSnap one = snap.Series[i];
+                    if (one != null && one.ChartType.HasValue)
+                    {
+                        return one.ChartType.Value;
+                    }
+                }
+            }
+
+            return fallback;
+        }
+
+        /// <summary>
+        /// 套 COM 皮之后把 XML 钉回活图。WPP：SaveCopy → 改包 → Open 副本 Copy 回。
+        /// PPT：旁路建图已经 RewriteOoxmlChrome，这里不再 Open。
+        /// </summary>
+        private static void TryPinOoxmlChrome(
             ref object shape,
             ref object chart,
             ChartStyleSnap snap,
-            List<string> warnings)
+            List<string> warnings,
+            int xlType = 0)
         {
             if (shape == null || snap == null)
             {
                 return;
             }
 
-            if (HostAvoidsChartDataCom(chart))
+            if (!SnapNeedsOoxmlChrome(snap))
             {
-                PptHtmlApplyHangLog.Mark("钉皮跳过：PowerPoint 不在本进程打开副本");
                 return;
             }
 
-            if (!SnapNeedsWppOoxmlChrome(snap))
+            int pinType = ChromeXlType(snap, xlType);
+
+            if (HostAvoidsChartDataCom(chart))
             {
+                PptHtmlApplyHangLog.Mark("钉皮：PPT 已在磁盘改包写入，跳过 Open 副本");
                 return;
             }
 
@@ -107,12 +147,7 @@ namespace WordAddIn1.PresentationHost
                 shape,
                 warnings,
                 "钉皮",
-                (doc, w) =>
-                {
-                    bool pinned = RewriteSeriesChromeFromSnap(doc, snap, w);
-                    bool stripped = StripSrgbClrTint(doc, w);
-                    return pinned || stripped;
-                },
+                (doc, w) => RewriteOoxmlChrome(doc, snap, w, pinType),
                 null,
                 out object next,
                 out _)
@@ -123,7 +158,7 @@ namespace WordAddIn1.PresentationHost
 
             shape = next;
             chart = TryGetChart(shape);
-            if (chart != null && snap != null)
+            if (chart != null)
             {
                 TryWriteAreaFill(chart, "ChartArea", snap.ChartAreaFillVisible, snap.ChartAreaFillRgb);
                 TryWriteAreaFill(chart, "PlotArea", snap.PlotFillVisible, snap.PlotFillRgb);
@@ -132,7 +167,7 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static bool SnapNeedsWppOoxmlChrome(ChartStyleSnap snap)
+        private static bool SnapNeedsOoxmlChrome(ChartStyleSnap snap)
         {
             if (snap == null || snap.Series == null)
             {
@@ -293,7 +328,7 @@ namespace WordAddIn1.PresentationHost
             }
 
             bar.ReplaceWith(line);
-            PourLog(warnings, "PPT 磁盘钉皮：barChart 已改为 lineChart");
+            PourLog(warnings, "OOXML 钉皮：barChart 已改为 lineChart");
         }
 
         private static bool RewriteSeriesChromeFromSnap(XDocument chartDoc, ChartStyleSnap snap, List<string> warnings)
