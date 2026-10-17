@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
+using WordAddIn1.OpenFiles;
 using WordAddIn1.PresentationHost;
 using Office = Microsoft.Office.Core;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
@@ -345,6 +346,17 @@ namespace PptChartRoundtripTest
                 }
             }
 
+            if (!TryAdoptLiveChart(shapes, ref shape, out error))
+            {
+                if (IsRetryableCom(error))
+                {
+                    return error;
+                }
+
+                run.CaseFail(tag, "读回失败: " + error);
+                return null;
+            }
+
             if (!PptHtmlChartIo.TryRead(shape, out PptHtmlChartReadModel model, out error))
             {
                 if (IsRetryableCom(error))
@@ -441,6 +453,53 @@ namespace PptChartRoundtripTest
             }
 
             return ChartAttrMatch.Check(one.Attrs, model);
+        }
+
+        /// <summary>
+        /// 套用后从当前页重新取图再读，对齐智能体「读取演示文稿HTML」。
+        /// 不读建图/换数返回的 RCW，也不用空等把失败盖掉。
+        /// </summary>
+        private static bool TryAdoptLiveChart(object shapes, ref object shape, out string error)
+        {
+            error = null;
+            object found = FindLastChartShape(shapes);
+            if (found == null)
+            {
+                error = "页上没有图表";
+                return false;
+            }
+
+            shape = found;
+            return true;
+        }
+
+        private static object FindLastChartShape(object shapes)
+        {
+            if (shapes == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                int count = Convert.ToInt32(WppCom.GetProperty(shapes, "Count") ?? 0);
+                object last = null;
+                for (int i = 1; i <= count; i++)
+                {
+                    object one = WppCom.GetIndexed(shapes, i);
+                    object has = one == null ? null : WppCom.GetProperty(one, "HasChart");
+                    if (has != null && Convert.ToInt32(has) != 0)
+                    {
+                        last = one;
+                    }
+                }
+
+                return last;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         internal static bool TryCreate(
