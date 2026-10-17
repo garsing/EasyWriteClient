@@ -159,8 +159,6 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
 
-                Log(warnings, tag + "：改包 zip 已放开 | " + PptHtmlChartIo.DescribePasteHost(destPres));
-
                 if (openPath == path)
                 {
                     if (!TryApplyReplacements(path, replacements, out error))
@@ -177,11 +175,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 object app = TryGetApp(destPres);
-                Log(warnings, tag + "：Open 改包稿前 | " + PptHtmlChartIo.DescribePasteHost(destPres));
                 copyPres = TryOpenCopy(app, openPath, out error, readOnly: true);
-                Log(warnings, tag + "：Open 改包稿后 copy=" + (copyPres == null ? "null" : "有")
-                    + " err=" + (error ?? "")
-                    + " | " + PptHtmlChartIo.DescribePasteHost(destPres));
                 if (copyPres == null && openPath != path)
                 {
                     Log(warnings, tag + "：瘦包 Open 失败（" + (error ?? "?") + "），回退整份");
@@ -211,8 +205,7 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                Log(warnings, tag + "：已 Open 改包稿 slide=" + openSlideIndex
-                    + " | " + PptHtmlChartIo.DescribePasteHost(destPres));
+                Log(warnings, tag + "：已 Open 改包稿 slide=" + openSlideIndex);
                 object source = findOnCopy(copyPres, openSlideIndex);
                 if (source == null)
                 {
@@ -228,7 +221,6 @@ namespace WordAddIn1.PresentationHost
 
                 if (!pasteToDest())
                 {
-                    Log(warnings, tag + "：贴回未成 | " + PptHtmlChartIo.DescribePasteHost(destPres));
                     if (!IsPresentationAlive(destPres))
                     {
                         error = tag + "：贴回失败";
@@ -258,16 +250,7 @@ namespace WordAddIn1.PresentationHost
             }
             finally
             {
-                if (copyPres != null)
-                {
-                    Log(warnings, tag + "：关改包稿前 | " + PptHtmlChartIo.DescribePasteHost(destPres));
-                }
-
                 TryCloseCopy(copyPres);
-                if (copyPres != null)
-                {
-                    Log(warnings, tag + "：关改包稿后 | " + PptHtmlChartIo.DescribePasteHost(destPres));
-                }
                 TryDeleteFile(slimPath);
                 if (ownPath)
                 {
