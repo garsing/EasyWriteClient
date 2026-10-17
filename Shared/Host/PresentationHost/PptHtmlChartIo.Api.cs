@@ -383,6 +383,7 @@ namespace WordAddIn1.PresentationHost
             SyncFormatToOldSnap(useFormat, xlType, warnings);
             MergeGridlinesFromFormat(snap, useFormat);
 
+            PptHtmlApplyHangLog.Mark("换数即将建图");
             if (!TryCreateOnSlide(
                 shapes,
                 useLeft,
@@ -402,12 +403,15 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            PptHtmlApplyHangLog.Mark("换数建图返回，套快照前");
             object newChart = TryGetChart(newShape);
             FinishLineChartLayout(newChart, xlType, useFormat, warnings);
             // 关标题须在 Dismiss Excel 之后：Dismiss 会把默认标题再掀开成「系列A」，套样式阶段先跳过关。
             bool deferTitleOff = snap != null
                 && (snap.HasTitle == false || (snap.Title != null && snap.Title.Length == 0));
+            PptHtmlApplyHangLog.Mark("套快照调用前");
             TryApplyStyleSnap(newChart, snap, warnings, useGrid, useFormat, deferTitleOff);
+            PptHtmlApplyHangLog.Mark("套快照返回");
             PourLog(warnings, "套快照后 " + DescribeLiveSeries(newChart));
             // 套快照（含 3D）可能把数据打回字面量；必须再验，对不上再灌一次，仍不对就失败并删新图。
             if (!TryVerifyPouredGrid(newChart, useGrid, out error, warnings))

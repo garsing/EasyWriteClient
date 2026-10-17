@@ -51,7 +51,9 @@ namespace WordAddIn1.PresentationHost
             }
 
             PrepareChartExcelUiSuppression();
-            if (HostAvoidsFromShapes(shapes))
+            bool avoidLive = HostAvoidsFromShapes(shapes);
+            PptHtmlApplyHangLog.Mark("建图进入 avoidLive=" + avoidLive);
+            if (avoidLive)
             {
                 PourLog(warnings, "PPT 磁盘改内嵌表后插入，不在本进程打开副本");
                 if (!TryCreateChartOffLiveDeck(
@@ -80,7 +82,8 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                return TryFinishNewChart(
+                PptHtmlApplyHangLog.Mark("建图贴回完成，开始收尾 chrome=" + applyHtmlChrome);
+                bool finished = TryFinishNewChart(
                     ref shape,
                     ref pastedChart,
                     grid,
@@ -89,6 +92,8 @@ namespace WordAddIn1.PresentationHost
                     applyHtmlChrome,
                     warnings,
                     out error);
+                PptHtmlApplyHangLog.Mark("建图收尾返回 ok=" + finished);
+                return finished;
             }
 
             PourLog(warnings, "即将 AddChart2 style=" + chartStyle
@@ -168,10 +173,12 @@ namespace WordAddIn1.PresentationHost
             out string error)
         {
             error = null;
+            PptHtmlApplyHangLog.Mark("收尾进入 chrome=" + applyHtmlChrome);
             try
             {
                 if (applyHtmlChrome)
                 {
+                    PptHtmlApplyHangLog.Mark("收尾套格式前");
                     if (!TryApplyFormat(chart, format, warnings, out error))
                     {
                         TryDelete(shape);
@@ -179,11 +186,13 @@ namespace WordAddIn1.PresentationHost
                         return false;
                     }
 
+                    PptHtmlApplyHangLog.Mark("收尾套格式返回");
                     ChartStyleSnap htmlSnap = SnapFromFormat(format, grid);
                     // 新建无旧图：展示开关按「未提默认关」，避免 AddChart2 默认 ChartTitle=系列名
                     EnsureDisplaySwitches(oldSnap: null, format, htmlSnap, warnings);
                     FinishLineChartLayout(chart, xlType, format, warnings);
                     TryApplyStyleSnap(chart, htmlSnap, warnings, grid, format);
+                    PptHtmlApplyHangLog.Mark("收尾套样式返回");
                     TryInheritAxisChrome(chart, htmlSnap, warnings);
                     EnsureNewPieVariesByCategory(chart, grid, warnings);
                     TryApplyPieExplosionFromFormat(chart, format, warnings);
@@ -249,6 +258,7 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
+            PptHtmlApplyHangLog.Mark("旁路即将检查是否换进程重开");
             if (!TryRestartPowerPointWhenDeckChanged(
                 ref destSlide,
                 ref destPres,
@@ -257,8 +267,11 @@ namespace WordAddIn1.PresentationHost
                 warnings,
                 out error))
             {
+                PptHtmlApplyHangLog.Mark("旁路重开失败 " + (error ?? ""));
                 return false;
             }
+
+            PptHtmlApplyHangLog.Mark("旁路重开检查结束");
 
             string tempPath = WordAddIn1.ChartOoxmlHost.PptChartPackageHost.NewTempPath("旁路建图");
             try
@@ -277,6 +290,7 @@ namespace WordAddIn1.PresentationHost
                     destIndex = 1;
                 }
 
+                PptHtmlApplyHangLog.Mark("旁路 SaveCopy 前 " + tempPath);
                 if (!WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TrySaveCopy(destPres, tempPath, out error))
                 {
                     if (string.IsNullOrEmpty(error))
@@ -287,6 +301,7 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                PptHtmlApplyHangLog.Mark("旁路 SaveCopy 后，写内嵌图前");
                 if (!TryEnsureEmbeddedChart(
                     tempPath,
                     destIndex,
@@ -302,6 +317,7 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                PptHtmlApplyHangLog.Mark("旁路写内嵌图后，改包前");
                 if (!PptHtmlOoxmlIo.TryRewriteSavedFile(
                     tempPath,
                     (zip, parts) => TryRewriteChartXmlInPackage(
@@ -320,6 +336,7 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
+                PptHtmlApplyHangLog.Mark("旁路改包后，插入前");
                 shape = TryInsertChartSlide(
                     destPres,
                     destShapes,
@@ -342,6 +359,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 PourLog(warnings, "改包页已插入 " + DescribeLiveSeries(TryGetChart(shape)));
+                PptHtmlApplyHangLog.Mark("旁路插入返回，记住本进程已建图");
                 RememberChartDeck(app, destPres);
                 return true;
             }
@@ -408,7 +426,14 @@ namespace WordAddIn1.PresentationHost
             error = null;
             int pid = TryAppPid(app);
             bool same = SameOpenDeck(_chartPres, destPres);
-            if (!_chartUsed || pid <= 0 || pid != _chartPid || same)
+            bool skip = !_chartUsed || pid <= 0 || pid != _chartPid || same;
+            PptHtmlApplyHangLog.Mark(
+                "重开判断 used=" + _chartUsed
+                + " pid=" + pid
+                + " chartPid=" + _chartPid
+                + " same=" + same
+                + " skip=" + skip);
+            if (skip)
             {
                 return true;
             }
@@ -428,6 +453,7 @@ namespace WordAddIn1.PresentationHost
             {
             }
 
+            PptHtmlApplyHangLog.Mark("重开保存前");
             string fullPath;
             try
             {
@@ -493,6 +519,7 @@ namespace WordAddIn1.PresentationHost
             {
             }
 
+            PptHtmlApplyHangLog.Mark("重开保存后，关闭当前稿前 " + fullPath);
             try
             {
                 WppCom.TrySetProperty(destPres, "Saved", true);
@@ -503,12 +530,14 @@ namespace WordAddIn1.PresentationHost
             }
 
             PourLog(warnings, "旧进程已建过图，结束 pid=" + pid + " 后用新进程打开 " + fullPath);
+            PptHtmlApplyHangLog.Mark("重开杀进程前 pid=" + pid);
             if (!WaitUntilPidGone(pid))
             {
                 error = "PPT 旧进程换稿：进程没有退出 pid=" + pid;
                 return false;
             }
 
+            PptHtmlApplyHangLog.Mark("重开进程已退出，新进程打开前");
             try
             {
                 var restarted = new Microsoft.Office.Interop.PowerPoint.Application();
@@ -526,6 +555,7 @@ namespace WordAddIn1.PresentationHost
                 _chartPres = opened;
                 _chartSlideIndex = slideIndex;
                 _chartPid = TryAppPid(restarted);
+                PptHtmlApplyHangLog.Mark("重开打开后 pid=" + _chartPid);
                 return true;
             }
             catch (Exception ex)
@@ -802,7 +832,9 @@ namespace WordAddIn1.PresentationHost
             error = null;
             object slides = WppCom.GetProperty(destPres, "Slides");
             int before = Convert.ToInt32(WppCom.GetProperty(slides, "Count") ?? 0);
+            PptHtmlApplyHangLog.Mark("InsertFromFile 前 index=" + destIndex + " pages=" + before);
             object inserted = WppCom.Invoke(slides, "InsertFromFile", path, destIndex, destIndex, destIndex);
+            PptHtmlApplyHangLog.Mark("InsertFromFile 返回");
             int after = Convert.ToInt32(WppCom.GetProperty(slides, "Count") ?? 0);
             if (after <= before)
             {
@@ -837,9 +869,14 @@ namespace WordAddIn1.PresentationHost
                 return null;
             }
 
+            PptHtmlApplyHangLog.Mark("Copy 前");
             WppCom.Invoke(chartShape, "Copy");
+            PptHtmlApplyHangLog.Mark("Paste 前");
             object pasted = TryPasteChart(destShapes, warnings);
+            PptHtmlApplyHangLog.Mark("Paste 返回 pasted=" + (pasted == null ? "null" : "ok"));
+            PptHtmlApplyHangLog.Mark("删插入页前");
             TryDeleteSlide(newSlide);
+            PptHtmlApplyHangLog.Mark("删插入页后");
             if (pasted == null)
             {
                 error = "插入页上的图未能放到当前页";

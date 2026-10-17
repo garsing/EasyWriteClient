@@ -119,14 +119,24 @@ namespace WordAddIn1
                     PptHtmlApplyTiming.Step("resolve_file_sources", stepSw.ElapsedMilliseconds);
                     stepSw.Restart();
 
+                    int hangApply = PptHtmlApplyHangLog.NextApply();
+                    PptHtmlApplyHangLog.Mark(
+                        "套用#" + hangApply + " 进入 slide=" + slideId + " file=" + htmlFilename);
                     if (!PresentationHostAdapter.TryApplyPptHtml(
                             channel,
                             plan,
                             out PptHtmlApplyResult hostResult,
                             out ToolResult errorResult))
                     {
+                        PptHtmlApplyHangLog.Mark(
+                            "套用#" + hangApply + " 返回失败 "
+                            + (errorResult == null ? "" : errorResult.Error));
                         return errorResult;
                     }
+
+                    PptHtmlApplyHangLog.Mark(
+                        "套用#" + hangApply + " 返回成功 updated=" + hostResult.UpdatedCount
+                        + " created=" + hostResult.CreatedCount);
 
                     PptHtmlApplyTiming.Step(
                         "com_apply",

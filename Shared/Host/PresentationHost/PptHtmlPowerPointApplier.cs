@@ -1262,6 +1262,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 var chartSw = Stopwatch.StartNew();
+                PptHtmlApplyHangLog.Mark("换图前 id=" + (oldId ?? ""));
                 if (!PptHtmlChartIo.TryReplaceOnSlide(
                     slide.Shapes,
                     shape,
@@ -1275,10 +1276,12 @@ namespace WordAddIn1.PresentationHost
                     out object created,
                     out error))
                 {
+                    PptHtmlApplyHangLog.Mark("换图失败 id=" + (oldId ?? "") + " " + (error ?? ""));
                     PptHtmlApplyTiming.Step("chart_replace", chartSw.ElapsedMilliseconds, "fail id=" + (node.ShapeId ?? ""));
                     return false;
                 }
 
+                PptHtmlApplyHangLog.Mark("换图返回 id=" + (oldId ?? ""));
                 PptHtmlApplyTiming.Step("chart_replace", chartSw.ElapsedMilliseconds, "id=" + (node.ShapeId ?? ""));
 
                 shape = (PowerPoint.Shape)created;
@@ -1559,6 +1562,7 @@ namespace WordAddIn1.PresentationHost
                     }
 
                     var chartSw = Stopwatch.StartNew();
+                    PptHtmlApplyHangLog.Mark("新建图前 type=" + (node.ChartType ?? ""));
                     if (!PptHtmlChartIo.TryCreateOnSlide(
                         slide.Shapes,
                         left,
@@ -1572,10 +1576,12 @@ namespace WordAddIn1.PresentationHost
                         out object created,
                         out error))
                     {
+                        PptHtmlApplyHangLog.Mark("新建图失败 " + (error ?? ""));
                         PptHtmlApplyTiming.Step("chart_create", chartSw.ElapsedMilliseconds, "fail");
                         return false;
                     }
 
+                    PptHtmlApplyHangLog.Mark("新建图返回");
                     PptHtmlApplyTiming.Step("chart_create", chartSw.ElapsedMilliseconds);
 
                     shape = (PowerPoint.Shape)created;
