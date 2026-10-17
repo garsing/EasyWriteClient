@@ -83,5 +83,54 @@ acc4.feedDeltaToolCalls([
 ])
 const segs5 = acc4.buildSegments('')
 assert(segs5[0].isComplete === true, 'path-only JSON is syntactically complete')
+assert(segs4[0].startIndex === segs5[0].startIndex, 'tool card key stays stable while args stream')
+
+// 只有序号、名字还没到：不画卡片
+const acc5 = new ToolCallAccumulator()
+acc5.feedDeltaToolCalls([{ index: 0, id: 'call_late' }])
+const hidden = acc5.buildSegments('读取一下')
+assert(!hidden.some((s) => s.type === 'toolCall'), 'nameless fragment is not a card')
+
+acc5.feedFinishReason('tool_calls', '读取一下')
+acc5.feedFinishReason('tool_calls', '读取一下')
+const afterFinish = acc5.buildSegments('读取一下')
+assert(afterFinish.length === 1 && afterFinish[0].type === 'text', 'finish without name commits text only')
+
+acc5.feedDeltaToolCalls([
+  { index: 0, function: { name: 'F_get_document_content', arguments: '{}' } }
+])
+const filled = acc5.buildSegments('读取一下')
+const filledTools = filled.filter((s) => s.type === 'toolCall')
+assert(filledTools.length === 1, 'late name fills one card')
+assert(filledTools[0].toolName === 'F_get_document_content', 'late name is attached')
+assert(filledTools[0].toolCallId === 'call_late', 'late name keeps the original id')
+
+// 提交后再到的参数追加到原卡，不另开一行
+const acc6 = new ToolCallAccumulator()
+acc6.feedDeltaToolCalls([
+  { index: 0, id: 'c_args', function: { name: 'B_calculate', arguments: '{"a":' } }
+])
+acc6.feedFinishReason('tool_calls', '算')
+acc6.feedDeltaToolCalls([{ index: 0, function: { arguments: '1}' } }])
+const segs6 = acc6.buildSegments('算')
+const tools6 = segs6.filter((s) => s.type === 'toolCall')
+assert(tools6.length === 1, 'late args do not open a second card')
+assert(tools6[0].content === '{"a":1}', 'late args append')
+
+// 后到的名字按序号插回本轮，不排到已提交的后一张卡后面
+const acc7 = new ToolCallAccumulator()
+acc7.feedDeltaToolCalls([
+  { index: 0, id: 'n0' },
+  { index: 1, id: 'n1', function: { name: 'B_write_python', arguments: '{}' } }
+])
+acc7.feedFinishReason('tool_calls', '两下')
+acc7.feedDeltaToolCalls([
+  { index: 0, function: { name: 'B_read_skill_file', arguments: '{}' } }
+])
+const segs7 = acc7.buildSegments('两下')
+const tools7 = segs7.filter((s) => s.type === 'toolCall')
+assert(tools7.length === 2, 'both tools visible')
+assert(tools7[0].toolName === 'B_read_skill_file', 'late name stays first')
+assert(tools7[1].toolName === 'B_write_python', 'already-named tool stays second')
 
 console.log('[OK] toolCallAccumulator tests passed')

@@ -19,12 +19,19 @@ export class ToolCallAccumulator {
   constructor() {
     /** 当前轮次进行中的 tool_calls（按 SSE index 拼接） */
     this._partials = new Map()
+    /**
+     * 本轮已提交，但提交时还没有 function.name 的调用。
+     * 名字后到时补进原卡，不再另开一行。
+     */
+    this._awaitingName = new Map()
+    /** 刚提交的这一轮，index → 已进入 _committedSegments 的工具卡 */
+    this._lastRoundTools = new Map()
     this._finishReason = null
     /** 已提交、按顺序固定的 segments */
     this._committedSegments = []
     /** 已写入 committed 的正文长度（对应 C# 累计 content 前缀） */
     this._committedContentLength = 0
-    /** 单调递增，用于 ToolCallBox key */
+    /** 单调递增，用于 ToolCallBox key。一张卡只分配一次 */
     this._toolSeq = 0
     /** 单调递增，用于 ThinkingBox key */
     this._thinkingSeq = 0
@@ -53,16 +60,101 @@ export class ToolCallAccumulator {
     if (!Array.isArray(deltaToolCalls) || deltaToolCalls.length === 0) return
 
     for (const item of deltaToolCalls) {
-      const index = Number(item.index ?? 0)
-      if (!this._partials.has(index)) {
-        this._partials.set(index, { index, id: null, name: null, argumentsParts: [] })
-      }
-      const partial = this._partials.get(index)
-      if (item.id) partial.id = item.id
-      const fn = item.function || {}
-      if (fn.name) partial.name = fn.name
-      if (fn.arguments) partial.argumentsParts.push(fn.arguments)
+      this._feedOneToolDelta(item)
     }
+  }
+
+  _feedOneToolDelta(item) {
+    const index = Number(item.index ?? 0)
+    if (this._partials.has(index)) {
+      this._applyDelta(this._partials.get(index), item)
+      return
+    }
+
+    const awaiting = this._awaitingName.get(index)
+    if (awaiting && !this._isDifferentCall(awaiting.id, item.id)) {
+      this._applyDelta(awaiting, item)
+      if (awaiting.name) {
+        const seg = this._toSegment(awaiting, true)
+        this._insertCommittedTool(seg)
+        this._awaitingName.delete(index)
+        this._lastRoundTools.set(index, seg)
+      }
+      return
+    }
+
+    const committed = this._lastRoundTools.get(index)
+    if (
+      committed &&
+      !this._isDifferentCall(committed.toolCallId, item.id) &&
+      !this._nameConflicts(committed.toolName, item)
+    ) {
+      this._patchSegment(committed, item)
+      return
+    }
+
+    // 序号被下一轮复用（id 或名字对不上）：丢掉上一轮还没补上的空位
+    if (
+      (awaiting && this._isDifferentCall(awaiting.id, item.id)) ||
+      (committed &&
+        (this._isDifferentCall(committed.toolCallId, item.id) ||
+          this._nameConflicts(committed.toolName, item)))
+    ) {
+      this._awaitingName.clear()
+      this._lastRoundTools.clear()
+    }
+
+    const partial = {
+      index,
+      id: null,
+      name: null,
+      argumentsParts: [],
+      startIndex: this._toolSeq++
+    }
+    this._partials.set(index, partial)
+    this._applyDelta(partial, item)
+  }
+
+  /** 两边都有 id 且不同，才是另一次调用 */
+  _isDifferentCall(existingId, incomingId) {
+    return !!(existingId && incomingId && existingId !== incomingId)
+  }
+
+  _nameConflicts(existingName, item) {
+    const incoming = item && item.function && item.function.name
+    return !!(existingName && incoming && existingName !== incoming)
+  }
+
+  _applyDelta(partial, item) {
+    if (item.id) partial.id = item.id
+    const fn = item.function || {}
+    if (fn.name) partial.name = fn.name
+    if (fn.arguments) partial.argumentsParts.push(fn.arguments)
+  }
+
+  _patchSegment(seg, item) {
+    if (item.id && !seg.toolCallId) seg.toolCallId = item.id
+    const fn = item.function || {}
+    if (fn.name && !seg.toolName) seg.toolName = fn.name
+    if (fn.arguments) seg.content = (seg.content || '') + fn.arguments
+    seg.isComplete = isValidJson(seg.content)
+  }
+
+  /** 按本轮 callIndex 插回工具卡序列，避免后到的名字排到下一轮正文后面 */
+  _insertCommittedTool(seg) {
+    let runStart = this._committedSegments.length
+    while (runStart > 0 && this._committedSegments[runStart - 1].type === 'toolCall') {
+      runStart--
+    }
+    let insertAt = this._committedSegments.length
+    for (let i = runStart; i < this._committedSegments.length; i++) {
+      const callIndex = this._committedSegments[i].callIndex
+      if (callIndex !== undefined && callIndex !== null && callIndex > seg.callIndex) {
+        insertAt = i
+        break
+      }
+    }
+    this._committedSegments.splice(insertAt, 0, seg)
   }
 
   /**
@@ -127,24 +219,30 @@ export class ToolCallAccumulator {
     }
   }
 
+  _toSegment(partial, forceComplete) {
+    const args = partial.argumentsParts.join('')
+    return {
+      type: 'toolCall',
+      toolName: partial.name || '',
+      toolCallId: partial.id || '',
+      content: args,
+      outputText: '',
+      outputDone: false,
+      isComplete: !!forceComplete || isValidJson(args),
+      startIndex: partial.startIndex,
+      callIndex: partial.index
+    }
+  }
+
   _partialsToToolSegments({ forceComplete }) {
     const segments = []
     const indices = [...this._partials.keys()].sort((a, b) => a - b)
 
     for (const index of indices) {
       const partial = this._partials.get(index)
-      const args = partial.argumentsParts.join('')
-      const complete = forceComplete || isValidJson(args)
-      segments.push({
-        type: 'toolCall',
-        toolName: partial.name || '',
-        toolCallId: partial.id || '',
-        content: args,
-        outputText: '',
-        outputDone: false,
-        isComplete: complete,
-        startIndex: this._toolSeq++
-      })
+      // 名字还没到：先不画卡片，避免只剩一个折角
+      if (!partial.name) continue
+      segments.push(this._toSegment(partial, forceComplete))
     }
     return segments
   }
@@ -155,17 +253,31 @@ export class ToolCallAccumulator {
 
     const full = contentAtFinish || ''
     const newText = full.slice(this._committedContentLength)
-    const toolSegs = this._partialsToToolSegments({ forceComplete: true })
+    const named = []
+    const stillWaiting = new Map()
+    const indices = [...this._partials.keys()].sort((a, b) => a - b)
+    for (const index of indices) {
+      const partial = this._partials.get(index)
+      if (partial.name) named.push(this._toSegment(partial, true))
+      else stillWaiting.set(index, partial)
+    }
 
-    if (!newText && toolSegs.length === 0) {
+    // 收尾包会再送一次 finish_reason。没有新片段时保持上一轮的补名入口
+    if (!newText && named.length === 0 && stillWaiting.size === 0) {
       return
+    }
+
+    this._partials.clear()
+    this._awaitingName = stillWaiting
+    this._lastRoundTools = new Map()
+    for (const seg of named) {
+      this._lastRoundTools.set(seg.callIndex, seg)
     }
 
     if (newText) {
       this._committedSegments.push({ type: 'text', content: newText })
     }
-    this._committedSegments.push(...toolSegs)
-    this._partials.clear()
+    this._committedSegments.push(...named)
     this._committedContentLength = full.length
     this._finishReason = null
   }

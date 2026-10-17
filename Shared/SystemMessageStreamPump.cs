@@ -34,14 +34,14 @@ namespace WordAddIn1
 
         public void Enqueue(string content, string reasoning, object toolCallsDelta, string finishReason)
         {
-            if (_disposed)
-            {
-                return;
-            }
-
             bool schedule;
             lock (_gate)
             {
+                if (_disposed)
+                {
+                    return;
+                }
+
                 _content = content ?? "";
                 _reasoning = reasoning;
                 AppendToolDelta(toolCallsDelta);
@@ -65,9 +65,60 @@ namespace WordAddIn1
             }
         }
 
+        /// <summary>
+        /// 流结束时把队列里还没刷出的 tool_calls 再送一次。
+        /// 发布版界面更快，最后一包（往往才带 function.name）会卡在 16ms 间隔里被丢掉。
+        /// </summary>
         public void Dispose()
         {
-            _disposed = true;
+            string content;
+            string reasoning;
+            object tools;
+            string finish;
+            bool first;
+            bool shouldSend;
+            lock (_gate)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+                shouldSend = _toolItems.Count > 0
+                    || !string.IsNullOrEmpty(_finishReason)
+                    || !string.Equals(_content, _lastSentContent, StringComparison.Ordinal);
+                content = _content;
+                reasoning = _reasoning;
+                tools = _toolItems.Count > 0 ? new List<object>(_toolItems) : null;
+                _toolItems.Clear();
+                finish = _finishReason;
+                _finishReason = null;
+                first = _isFirst;
+                _isFirst = false;
+                _lastSentContent = content;
+                _queued = false;
+            }
+
+            if (!shouldSend)
+            {
+                return;
+            }
+
+            try
+            {
+                if (_ui.IsHandleCreated && _ui.InvokeRequired)
+                {
+                    _ui.Invoke(new Action(() => _send(content, reasoning, tools, finish, first)));
+                }
+                else
+                {
+                    _send(content, reasoning, tools, finish, first);
+                }
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private void BeginFlush()
