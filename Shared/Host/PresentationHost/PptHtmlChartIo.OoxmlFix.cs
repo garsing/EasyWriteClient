@@ -78,6 +78,72 @@ namespace WordAddIn1.PresentationHost
         /// 钉皮 XML：图种（需要时）→ 系列 c:spPr/c:marker → 剥 tint。
         /// PPT 旁路改包和 WPP Open 副本都走这里；宿主差只在贴回，属性差只在 snap。
         /// </summary>
+        /// <summary>上次 PPT 读回对不上的只有折线 MarkerFill。只钉这一项。</summary>
+        private static bool SeriesNeedsPptMarkerPin(SeriesStyleSnap one)
+        {
+            return one != null
+                && one.MarkerBackRgb.HasValue
+                && (!one.ChartType.HasValue || IsLineLike(one.ChartType));
+        }
+
+        private static bool SnapNeedsPptMarkerPin(ChartStyleSnap snap)
+        {
+            if (snap == null || snap.Series == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < snap.Series.Count; i++)
+            {
+                if (SeriesNeedsPptMarkerPin(snap.Series[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>PPT 磁盘包只把折线标记填色写进 c:marker，并先把种子柱图改成折线。</summary>
+        private static void RewritePptMarkerFill(
+            XDocument chartDoc,
+            ChartStyleSnap snap,
+            List<string> warnings,
+            int xlType)
+        {
+            if (!SnapNeedsPptMarkerPin(snap))
+            {
+                return;
+            }
+
+            int kind = ChromeXlType(snap, xlType);
+            if (IsLineLike(kind))
+            {
+                EnsureXmlChartKind(chartDoc, kind, warnings);
+            }
+
+            List<XElement> series = chartDoc.Descendants(CNs + "ser").ToList();
+            if (series.Count == 0)
+            {
+                series = chartDoc.Descendants().Where(e => e.Name.LocalName == "ser").ToList();
+            }
+
+            int pinned = 0;
+            int n = Math.Min(series.Count, snap.Series.Count);
+            for (int i = 0; i < n; i++)
+            {
+                if (!SeriesNeedsPptMarkerPin(snap.Series[i]))
+                {
+                    continue;
+                }
+
+                WriteMarker(series[i], snap.Series[i]);
+                pinned++;
+            }
+
+            PourLog(warnings, "OOXML 钉皮：PPT 只钉标记填色 " + pinned + "/" + n);
+        }
+
         private static bool RewriteOoxmlChrome(
             XDocument doc,
             ChartStyleSnap snap,
@@ -113,7 +179,7 @@ namespace WordAddIn1.PresentationHost
 
         /// <summary>
         /// 套 COM 皮之后把 XML 钉回活图。WPP：SaveCopy → 改包 → Open 副本 Copy 回。
-        /// PPT：旁路建图已经 RewriteOoxmlChrome，这里不再 Open。
+        /// PPT 不走这份 Open 副本；磁盘包只在 RewritePptMarkerFill 里钉折线标记填色。
         /// </summary>
         private static void TryPinOoxmlChrome(
             ref object shape,

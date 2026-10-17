@@ -63,7 +63,7 @@ namespace WordAddIn1.PresentationHost
                 }
 
                 SeriesStyleSnap one = snap.Series[i];
-                if (pptSkipLineFill && one != null && one.ChartType.HasValue && IsLineLike(one.ChartType.Value))
+                if (pptSkipLineFill && SeriesNeedsPptMarkerPin(one))
                 {
                     continue;
                 }

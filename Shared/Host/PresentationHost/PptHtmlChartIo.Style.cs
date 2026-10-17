@@ -232,11 +232,6 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            if (HostAvoidsChartDataCom(chart))
-            {
-                return;
-            }
-
             for (int i = 0; i < snap.Series.Count; i++)
             {
                 object series = GetSeries(chart, i + 1);
@@ -246,7 +241,9 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
+                bool markerPinned = HostAvoidsChartDataCom(chart) && SeriesNeedsPptMarkerPin(one);
                 if (one.ChartType.HasValue
+                    && !markerPinned
                     && !(IsPieXl(one.ChartType.Value) && IsPieChart(chart)))
                 {
                     WppCom.TrySetProperty(series, "ChartType", one.ChartType.Value);
@@ -381,21 +378,18 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
-            if (HostAvoidsChartDataCom(chart))
-            {
-                return;
-            }
-
             for (int i = 0; i < snap.Series.Count; i++)
             {
                 object series = GetSeries(chart, i + 1);
-                if (series == null || snap.Series[i] == null)
+                SeriesStyleSnap one = snap.Series[i];
+                if (series == null || one == null)
                 {
                     continue;
                 }
 
-                TryApplyLine(series, snap.Series[i].Line, warnings, "S" + (i + 1));
-                TryApplyMarker(series, snap.Series[i]);
+                TryApplyLine(series, one.Line, warnings, "S" + (i + 1));
+                bool markerPinned = HostAvoidsChartDataCom(chart) && SeriesNeedsPptMarkerPin(one);
+                TryApplyMarker(series, one, markerPinned);
             }
         }
 
@@ -1540,7 +1534,7 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static void TryApplyMarker(object series, SeriesStyleSnap one)
+        private static void TryApplyMarker(object series, SeriesStyleSnap one, bool skipBackground = false)
         {
             if (one == null)
             {
@@ -1571,7 +1565,7 @@ namespace WordAddIn1.PresentationHost
                             one.MarkerForeRgb.Value);
                     }
 
-                    if (one.MarkerBackRgb.HasValue)
+                    if (!skipBackground && one.MarkerBackRgb.HasValue)
                     {
                         TryWriteSeriesMarkerRgb(
                             series,

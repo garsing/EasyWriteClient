@@ -44,6 +44,32 @@ OK	replace-to-combo-y2-top-r4
 OK	replace-to-combo-y2-top-r4	
 OK	replace-to-combo-y2-top-r4	
 OK	replace-to-combo-y2-top-r4	
-FAIL	create-sink-line	S0.MarkerFill 期望 #FFFFFF 实际 (null) | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+OK	create-sink-line	
 OK	create-mix-y2-skin-5	
-FAIL	replace-sink-line	S0.MarkerFill 期望 #FFFFFF 实际 #000000 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+OK	replace-sink-line	
+OK	replace-sink-pie	
+OK	replace-sink-combo	
+OK	replace-title-text	
+OK	replace-title-font-size	
+OK	replace-title-font-bold	
+OK	replace-title-off	
+OK	replace-title-off-line	
+OK	replace-title-off-pie	
+OK	replace-title-off-combo	
+OK	replace-title-off-from-on	
+OK	replace-title-full	
+OK	replace-title-long	
+OK	replace-combo-gradient-label-gap	
+OK	replace-mix-title-legend-top	
+OK	replace-mix-title-legend-left	
+OK	replace-mix-gap-ov-5	
+OK	replace-mix-line-skin-2	
+OK	replace-mix-pie-3	
+OK	replace-mix-pie-4	
+OK	replace-mix-label-chrome-1	
+OK	replace-mix-label-chrome-5	
+OK	replace-mix-style-chrome-1	
+OK	replace-mix-style-chrome-2	
+OK	replace-mix-style-chrome-3	
+OK	replace-mix-y2-skin-1	
+ALL DONE

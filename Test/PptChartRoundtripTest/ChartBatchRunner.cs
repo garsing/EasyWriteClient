@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -15,6 +16,11 @@ namespace PptChartRoundtripTest
     internal static class ChartBatchRunner
     {
         private const int RecycleEvery = 8;
+
+        private static int _hostPid;
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
         public static void Run(TestRun run, int? onlyBatch, string outDir, IList<string> nameFilters)
         {
@@ -616,6 +622,7 @@ namespace PptChartRoundtripTest
             try
             {
                 app = new PowerPoint.Application();
+                _hostPid = TryHostPid(app);
                 app.Visible = Office.MsoTriState.msoTrue;
                 try
                 {
@@ -749,24 +756,83 @@ namespace PptChartRoundtripTest
 
         private static void SoftQuit(ref PowerPoint.Application app)
         {
-            if (app == null)
+            int pid = _hostPid;
+            _hostPid = 0;
+            if (app != null)
+            {
+                try
+                {
+                    if (IsAppAlive(app))
+                    {
+                        try
+                        {
+                            while (app.Presentations.Count > 0)
+                            {
+                                app.Presentations[1].Close();
+                            }
+                        }
+                        catch
+                        {
+                        }
+
+                        try
+                        {
+                            app.Quit();
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+                catch
+                {
+                }
+
+                TryRelease(app);
+                app = null;
+            }
+
+            TryEndHostProcess(pid);
+        }
+
+        private static int TryHostPid(PowerPoint.Application app)
+        {
+            try
+            {
+                uint pid;
+                GetWindowThreadProcessId(new IntPtr(app.HWND), out pid);
+                return (int)pid;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private static void TryEndHostProcess(int pid)
+        {
+            if (pid <= 0)
             {
                 return;
             }
 
             try
             {
-                if (IsAppAlive(app) && app.Presentations.Count == 0)
+                Process process = Process.GetProcessById(pid);
+                if (process.HasExited || !string.Equals(process.ProcessName, "POWERPNT", StringComparison.OrdinalIgnoreCase))
                 {
-                    app.Quit();
+                    return;
+                }
+
+                process.WaitForExit(2000);
+                if (!process.HasExited)
+                {
+                    process.Kill();
                 }
             }
             catch
             {
             }
-
-            TryRelease(app);
-            app = null;
         }
 
         private static void SkipRest(TestRun run, List<ChartCase> cases, int fromIndex, string reason)
