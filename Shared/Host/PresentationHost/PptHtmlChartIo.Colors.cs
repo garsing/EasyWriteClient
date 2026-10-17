@@ -53,6 +53,7 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
+            bool pptSkipLineFill = HostAvoidsChartDataCom(chart);
             for (int i = 0; i < snap.Series.Count; i++)
             {
                 object series = GetSeries(chart, i + 1);
@@ -61,8 +62,14 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
-                TryApplyFill(series, snap.Series[i].Fill, warnings, "S" + (i + 1));
-                TryApplyPointFills(series, snap.Series[i].PointFills, warnings, "S" + (i + 1));
+                SeriesStyleSnap one = snap.Series[i];
+                if (pptSkipLineFill && one != null && one.ChartType.HasValue && IsLineLike(one.ChartType.Value))
+                {
+                    continue;
+                }
+
+                TryApplyFill(series, one == null ? null : one.Fill, warnings, "S" + (i + 1));
+                TryApplyPointFills(series, one == null ? null : one.PointFills, warnings, "S" + (i + 1));
             }
         }
 

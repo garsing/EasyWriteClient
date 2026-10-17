@@ -232,6 +232,11 @@ namespace WordAddIn1.PresentationHost
                 return;
             }
 
+            if (HostAvoidsChartDataCom(chart))
+            {
+                return;
+            }
+
             for (int i = 0; i < snap.Series.Count; i++)
             {
                 object series = GetSeries(chart, i + 1);
@@ -372,6 +377,11 @@ namespace WordAddIn1.PresentationHost
         private static void TryInheritSeriesLineAndMarker(object chart, ChartStyleSnap snap, List<string> warnings)
         {
             if (snap.Series == null)
+            {
+                return;
+            }
+
+            if (HostAvoidsChartDataCom(chart))
             {
                 return;
             }
@@ -1507,7 +1517,8 @@ namespace WordAddIn1.PresentationHost
                     one.MarkerSize = Convert.ToInt32(size);
                 }
 
-                if (!HostAvoidsChartDataCom(WppCom.GetProperty(series, "Parent")))
+                object chart = WppCom.GetProperty(series, "Parent");
+                if (chart == null || !HostAvoidsChartDataCom(chart))
                 {
                     one.MarkerForeRgb = TryReadSeriesMarkerRgb(
                         series, "MarkerForegroundColor", "MarkerForegroundColorFormat");
@@ -1548,22 +1559,26 @@ namespace WordAddIn1.PresentationHost
                     WppCom.TrySetProperty(series, "MarkerSize", one.MarkerSize.Value);
                 }
 
-                if (one.MarkerForeRgb.HasValue)
+                object chart = WppCom.GetProperty(series, "Parent");
+                if (chart == null || !HostAvoidsChartDataCom(chart))
                 {
-                    TryWriteSeriesMarkerRgb(
-                        series,
-                        "MarkerForegroundColor",
-                        "MarkerForegroundColorFormat",
-                        one.MarkerForeRgb.Value);
-                }
+                    if (one.MarkerForeRgb.HasValue)
+                    {
+                        TryWriteSeriesMarkerRgb(
+                            series,
+                            "MarkerForegroundColor",
+                            "MarkerForegroundColorFormat",
+                            one.MarkerForeRgb.Value);
+                    }
 
-                if (one.MarkerBackRgb.HasValue)
-                {
-                    TryWriteSeriesMarkerRgb(
-                        series,
-                        "MarkerBackgroundColor",
-                        "MarkerBackgroundColorFormat",
-                        one.MarkerBackRgb.Value);
+                    if (one.MarkerBackRgb.HasValue)
+                    {
+                        TryWriteSeriesMarkerRgb(
+                            series,
+                            "MarkerBackgroundColor",
+                            "MarkerBackgroundColorFormat",
+                            one.MarkerBackRgb.Value);
+                    }
                 }
             }
             catch (Exception)

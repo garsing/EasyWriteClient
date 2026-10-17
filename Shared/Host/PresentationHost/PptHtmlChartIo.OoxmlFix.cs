@@ -258,6 +258,44 @@ namespace WordAddIn1.PresentationHost
             "ln", "effectLst", "effectDag", "scene3d", "sp3d", "extLst"
         };
 
+        private static void EnsureXmlChartKind(XDocument chartDoc, int xlType, List<string> warnings)
+        {
+            if (chartDoc == null || !IsLineLike(xlType))
+            {
+                return;
+            }
+
+            XElement plot = chartDoc.Descendants(CNs + "plotArea").FirstOrDefault()
+                ?? chartDoc.Descendants().FirstOrDefault(e => e.Name.LocalName == "plotArea");
+            if (plot == null)
+            {
+                return;
+            }
+
+            XElement bar = LocalChild(plot, "barChart");
+            if (bar == null)
+            {
+                return;
+            }
+
+            var line = new XElement(CNs + "lineChart");
+            line.Add(new XElement(CNs + "grouping", new XAttribute("val", "standard")));
+            foreach (XElement child in bar.Elements().ToList())
+            {
+                string local = child.Name.LocalName;
+                if (local == "barDir" || local == "grouping" || local == "overlap" || local == "gapWidth")
+                {
+                    continue;
+                }
+
+                child.Remove();
+                line.Add(child);
+            }
+
+            bar.ReplaceWith(line);
+            PourLog(warnings, "PPT 磁盘钉皮：barChart 已改为 lineChart");
+        }
+
         private static bool RewriteSeriesChromeFromSnap(XDocument chartDoc, ChartStyleSnap snap, List<string> warnings)
         {
             if (chartDoc == null || snap == null || snap.Series == null)

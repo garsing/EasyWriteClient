@@ -334,6 +334,7 @@ namespace WordAddIn1.PresentationHost
                                 return false;
                             }
 
+                            EnsureXmlChartKind(doc, xlType, w);
                             ChartStyleSnap chrome = SnapFromFormat(format, grid);
                             if (chrome != null && RewriteSeriesChromeFromSnap(doc, chrome, w))
                             {
