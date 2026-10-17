@@ -84,10 +84,23 @@ namespace WordAddIn1.PresentationHost
             ChartStyleSnap snap,
             List<string> warnings)
         {
-            if (shape == null || !SnapNeedsWppOoxmlChrome(snap))
+            if (shape == null || snap == null)
             {
                 return;
             }
+
+            if (HostAvoidsChartDataCom(chart))
+            {
+                PptHtmlApplyHangLog.Mark("钉皮跳过：PowerPoint 不在本进程打开副本");
+                return;
+            }
+
+            if (!SnapNeedsWppOoxmlChrome(snap))
+            {
+                return;
+            }
+
+            PptHtmlApplyHangLog.Mark("钉皮进入");
 
             HideChartExcelUiOnly();
             if (!TryEditChartXmlAndCopyBack(

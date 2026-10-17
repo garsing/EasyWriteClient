@@ -2067,44 +2067,57 @@ namespace WordAddIn1.PresentationHost
             StyleLog(warnings, "轴皮最后一层 "
                 + "catTick=" + (snap.Category == null ? "-" : HexOf(snap.Category.TickFontColor))
                 + " valTick=" + (snap.Value == null ? "-" : HexOf(snap.Value.TickFontColor)));
-            TryInheritOneAxisChrome(chart, XlCategory, XlPrimary, snap.Category);
-            TryInheritOneAxisChrome(chart, XlValue, XlPrimary, snap.Value);
-            TryInheritOneAxisChrome(chart, XlValue, XlSecondary, snap.ValueSecondary);
+            PptHtmlApplyHangLog.Mark("补轴线开始");
+            TryInheritOneAxisChrome(chart, XlCategory, XlPrimary, snap.Category, "cat");
+            TryInheritOneAxisChrome(chart, XlValue, XlPrimary, snap.Value, "val");
+            TryInheritOneAxisChrome(chart, XlValue, XlSecondary, snap.ValueSecondary, "val2");
+            PptHtmlApplyHangLog.Mark("补轴线写完，读回轴格式前");
             LogAxisFormats(chart, warnings, "轴皮后");
+            PptHtmlApplyHangLog.Mark("补轴线结束");
         }
 
-        private static void TryInheritOneAxisChrome(object chart, int axisType, int group, AxisStyleSnap snap)
+        private static void TryInheritOneAxisChrome(object chart, int axisType, int group, AxisStyleSnap snap, string tag)
         {
             if (chart == null || snap == null || snap.Deleted == true)
             {
+                PptHtmlApplyHangLog.Mark("补轴线 " + tag + " 跳过");
                 return;
             }
 
             try
             {
+                PptHtmlApplyHangLog.Mark("补轴线 " + tag + " Axes 前");
                 object axis = TryInvoke(chart, "Axes", axisType, group);
+                PptHtmlApplyHangLog.Mark("补轴线 " + tag + " Axes 后 " + (axis == null ? "null" : "ok"));
                 if (axis == null)
                 {
                     return;
                 }
 
+                PptHtmlApplyHangLog.Mark("补轴线 " + tag + " TickLabels 前");
                 object ticks = WppCom.GetProperty(axis, "TickLabels");
+                PptHtmlApplyHangLog.Mark("补轴线 " + tag + " 刻度字前");
                 TryWriteTickFont(ticks, snap);
-                TryApplyAxisLine(axis, snap);
+                PptHtmlApplyHangLog.Mark("补轴线 " + tag + " 轴线前");
+                TryApplyAxisLine(axis, snap, tag);
+                PptHtmlApplyHangLog.Mark("补轴线 " + tag + " 完成");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                PptHtmlApplyHangLog.Mark("补轴线 " + tag + " 异常 " + ex.Message);
             }
         }
 
-        private static void TryApplyAxisLine(object axis, AxisStyleSnap snap)
+        private static void TryApplyAxisLine(object axis, AxisStyleSnap snap, string tag = "")
         {
             if (axis == null || snap == null)
             {
                 return;
             }
 
+            PptHtmlApplyHangLog.Mark("补轴线 " + tag + " Format.Line 前");
             object axisLine = WppCom.GetProperty(WppCom.GetProperty(axis, "Format"), "Line");
+            PptHtmlApplyHangLog.Mark("补轴线 " + tag + " Format.Line 后 " + (axisLine == null ? "null" : "ok"));
             if (axisLine == null)
             {
                 return;
@@ -2112,14 +2125,18 @@ namespace WordAddIn1.PresentationHost
 
             if (snap.LineVisible == false)
             {
+                PptHtmlApplyHangLog.Mark("补轴线 " + tag + " Visible=0 前");
                 WppCom.TrySetProperty(axisLine, "Visible", 0);
                 return;
             }
 
             // AddChart2 + ChartStyle 默认常无线；Visible 为 true/未拍到时都要把线打开。
+            PptHtmlApplyHangLog.Mark("补轴线 " + tag + " Visible=-1 前 lineRgb=" + (snap.LineRgb.HasValue ? snap.LineRgb.Value.ToString() : "null"));
             WppCom.TrySetProperty(axisLine, "Visible", -1);
+            PptHtmlApplyHangLog.Mark("补轴线 " + tag + " ForeColor 前");
             int rgb = snap.LineRgb ?? 0x00FFFFFF;
             TryWriteLineRgb(axisLine, rgb);
+            PptHtmlApplyHangLog.Mark("补轴线 " + tag + " ForeColor 后");
             if (snap.LineWeight.HasValue && !IsPhantomWeight(snap.LineWeight.Value))
             {
                 WppCom.TrySetProperty(axisLine, "Weight", snap.LineWeight.Value);
