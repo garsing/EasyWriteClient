@@ -176,6 +176,7 @@ namespace WordAddIn1
                     {
                         chartInfo.GapWidth = Convert.ToInt32(group.GapWidth);
                         chartInfo.Overlap = Convert.ToInt32(group.Overlap);
+                        chartInfo.HasOverlap = true;
                     }
                 }
             }

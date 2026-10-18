@@ -998,7 +998,7 @@ namespace WordAddIn1
                 }
 
                 if (ChartConfigSyntax.IsColumn(chartInfo.Type)
-                    && (chartInfo.GapWidth > 0 || chartInfo.Overlap != 0))
+                    && (chartInfo.GapWidth > 0 || chartInfo.HasOverlap || chartInfo.Overlap != 0))
                 {
                     try
                     {
@@ -1008,7 +1008,7 @@ namespace WordAddIn1
                             group.GapWidth = chartInfo.GapWidth;
                         }
 
-                        if (chartInfo.Overlap != 0)
+                        if (chartInfo.HasOverlap || chartInfo.Overlap != 0)
                         {
                             group.Overlap = chartInfo.Overlap;
                         }
