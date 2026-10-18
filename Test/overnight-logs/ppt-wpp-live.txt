@@ -1,0 +1,278 @@
+﻿2026-10-19 01:15:53  START pid=31616
+2026-10-19 01:15:53  BUILD PptChartRoundtripTest
+  姝ｅ湪纭畾瑕佽繕鍘熺殑椤圭洰鈥?
+  鎵€鏈夐」鐩潎鏄渶鏂扮殑锛屾棤娉曡繕鍘熴€?
+  EasyWriteClient.Shared -> D:\project\EasyWrite\EasyWriteClient\Shared\bin\Debug\net472\EasyWriteClient.Shared.dll
+  PptChartRoundtripTest -> D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\PptChartRoundtripTest.exe
+
+宸叉垚鍔熺敓鎴愩€?
+    0 涓鍛?
+    0 涓敊璇?
+
+宸茬敤鏃堕棿 00:00:01.55
+〲㘲ㄭⴰ㤱〠㨱㔱㔺‵䈠䥕䑌攠楸㵴ര㈊㈰ⴶ〱ㄭ‹㄰ㄺ㨵㔵†啒⁎灰⵴瑳畲瑣਍믯傿呐뺛ꇨ讵꿨ඕ뾮룤₻偐⁔럂못鯥⾾跦낕뮯鯥낵倠瑰瑈汭桃牡䥴袼潐敷偲楯瑮䤠瑮牥灯볯ඉ鎻黦ꢔ뻤骼뫧₦〵떡쌠ₗ‶믤鮼뇥Ꞁ铧设볯閍苧⮹뫤規쌠ₗ′믤袼ⴭ瑡牴⵳湯祬볯ඉഊ瀊畯⁲韦鞿›㩄灜潲敪瑣䕜獡坹楲整䕜獡坹楲整汃敩瑮呜獥屴灐䍴慨瑲潒湵瑤楲呰獥屴楢屮敄畢屧敮㑴㈷捜慨瑲戭瑡档獥捜慨瑲瀭畯⹲潬൧ഊⴊⴭꎭ볥ꢔ뻤₋触ꆬㄠ㘯袼뫧₦〵떡볯銆䐠尺牰橯捥屴慅祳牗瑩履慅祳牗瑩䍥楬湥屴敔瑳停瑰桃牡剴畯摮牴灩敔瑳扜湩䑜扥杵湜瑥㜴尲档牡⵴慢捴敨屳档牡⵴慢捴⵨⸱灰硴ⴠⴭ਍†[OK] B1P01 #1 create-column-none-r4
+  … 1/50 页=1
+  [OK] B1P02 #2 create-column-none-r4-lbl
+  … 2/50 页=2
+  [OK] B1P03 #3 create-column-none-r5
+  … 3/50 页=3
+  [OK] B1P04 #4 create-column-none-r5-lbl
+  … 4/50 页=4
+  [OK] B1P05 #5 create-column-none-r6
+  … 5/50 页=5
+  [OK] B1P06 #6 create-column-none-r6-lbl
+  … 6/50 页=6
+  [OK] B1P07 #7 create-column-top-r4
+  … 7/50 页=7
+  [OK] B1P08 #8 create-column-top-r4-lbl
+  … 8/50 页=8
+  [OK] B1P09 #9 create-column-top-r5
+  … 9/50 页=9
+  [OK] B1P10 #10 create-column-top-r5-lbl
+  … 10/50 页=10
+  [OK] B1P11 #11 create-column-top-r6
+  … 11/50 页=11
+  [OK] B1P12 #12 create-column-top-r6-lbl
+  … 12/50 页=12
+  [OK] B1P13 #13 create-column-bottom-r4
+  … 13/50 页=13
+  [OK] B1P14 #14 create-column-bottom-r4-lbl
+  … 14/50 页=14
+  [OK] B1P15 #15 create-column-bottom-r5
+  … 15/50 页=15
+  [OK] B1P16 #16 create-column-bottom-r5-lbl
+  … 16/50 页=16
+  [OK] B1P17 #17 create-column-bottom-r6
+  … 17/50 页=17
+  [OK] B1P18 #18 create-column-bottom-r6-lbl
+  … 18/50 页=18
+  [OK] B1P19 #19 create-column-left-r4
+  … 19/50 页=19
+  [OK] B1P20 #20 create-column-left-r4-lbl
+  … 20/50 页=20
+  [OK] B1P21 #21 create-column-left-r5
+  … 21/50 页=21
+  [OK] B1P22 #22 create-column-left-r5-lbl
+  … 22/50 页=22
+  [OK] B1P23 #23 create-column-left-r6
+  … 23/50 页=23
+  [OK] B1P24 #24 create-column-left-r6-lbl
+  … 24/50 页=24
+  [OK] B1P25 #25 create-column-right-r4
+  … 25/50 页=25
+  [OK] B1P26 #26 create-column-right-r4-lbl
+  … 26/50 页=26
+  [OK] B1P27 #27 create-column-right-r5
+  … 27/50 页=27
+  [OK] B1P28 #28 create-column-right-r5-lbl
+  … 28/50 页=28
+  [OK] B1P29 #29 create-column-right-r6
+  … 29/50 页=29
+  [OK] B1P30 #30 create-column-right-r6-lbl
+  … 30/50 页=30
+  [OK] B1P31 #31 create-bar-none-r4
+  … 31/50 页=31
+  [OK] B1P32 #32 create-bar-none-r4-lbl
+  … 32/50 页=32
+  [OK] B1P33 #33 create-bar-none-r5
+  … 33/50 页=33
+  [OK] B1P34 #34 create-bar-none-r5-lbl
+  … 34/50 页=34
+  [OK] B1P35 #35 create-bar-none-r6
+  … 35/50 页=35
+  [OK] B1P36 #36 create-bar-none-r6-lbl
+  … 36/50 页=36
+  [OK] B1P37 #37 create-bar-top-r4
+  … 37/50 页=37
+  [OK] B1P38 #38 create-bar-top-r4-lbl
+  … 38/50 页=38
+  [OK] B1P39 #39 create-bar-top-r5
+  … 39/50 页=39
+  [OK] B1P40 #40 create-bar-top-r5-lbl
+  … 40/50 页=40
+  [OK] B1P41 #41 create-bar-top-r6
+  … 41/50 页=41
+  [OK] B1P42 #42 create-bar-top-r6-lbl
+  … 42/50 页=42
+  [OK] B1P43 #43 create-bar-bottom-r4
+  … 43/50 页=43
+  [OK] B1P44 #44 create-bar-bottom-r4-lbl
+  … 44/50 页=44
+  [OK] B1P45 #45 create-bar-bottom-r5
+  … 45/50 页=45
+  [OK] B1P46 #46 create-bar-bottom-r5-lbl
+  … 46/50 页=46
+  [OK] B1P47 #47 create-bar-bottom-r6
+  … 47/50 页=47
+  [OK] B1P48 #48 create-bar-bottom-r6-lbl
+  … 48/50 页=48
+  [OK] B1P49 #49 create-bar-left-r4
+  … 49/50 页=49
+  [OK] B1P50 #50 create-bar-left-r4-lbl
+  … 50/50 页=50
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-batch-1.pptx 页数=50
+
+--- 正式用例 批次 2/6 （约 50 页）→ D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-batch-2.pptx ---
+  [OK] B2P01 #51 create-bar-left-r5
+  … 1/50 页=1
+  [OK] B2P02 #52 create-bar-left-r5-lbl
+  … 2/50 页=2
+  [OK] B2P03 #53 create-bar-left-r6
+  … 3/50 页=3
+  [OK] B2P04 #54 create-bar-left-r6-lbl
+  … 4/50 页=4
+  [OK] B2P05 #55 create-bar-right-r4
+  … 5/50 页=5
+  [OK] B2P06 #56 create-bar-right-r4-lbl
+  … 6/50 页=6
+  [OK] B2P07 #57 create-bar-right-r5
+  … 7/50 页=7
+  [OK] B2P08 #58 create-bar-right-r5-lbl
+  … 8/50 页=8
+  [OK] B2P09 #59 create-bar-right-r6
+  … 9/50 页=9
+  [OK] B2P10 #60 create-bar-right-r6-lbl
+  … 10/50 页=10
+  [OK] B2P11 #61 create-line-none-r4
+  … 11/50 页=11
+  [OK] B2P12 #62 create-line-none-r4-lbl
+  … 12/50 页=12
+  [OK] B2P13 #63 create-line-none-r5
+  … 13/50 页=13
+  [OK] B2P14 #64 create-line-none-r5-lbl
+  … 14/50 页=14
+  [OK] B2P15 #65 create-line-none-r6
+  … 15/50 页=15
+  [OK] B2P16 #66 create-line-none-r6-lbl
+  … 16/50 页=16
+  [OK] B2P17 #67 create-line-top-r4
+  … 17/50 页=17
+  [OK] B2P18 #68 create-line-top-r4-lbl
+  … 18/50 页=18
+  [OK] B2P19 #69 create-line-top-r5
+  … 19/50 页=19
+  [OK] B2P20 #70 create-line-top-r5-lbl
+  … 20/50 页=20
+  [OK] B2P21 #71 create-line-top-r6
+  … 21/50 页=21
+  [OK] B2P22 #72 create-line-top-r6-lbl
+  … 22/50 页=22
+  [OK] B2P23 #73 create-line-bottom-r4
+  … 23/50 页=23
+  [OK] B2P24 #74 create-line-bottom-r4-lbl
+  … 24/50 页=24
+  [OK] B2P25 #75 create-line-bottom-r5
+  … 25/50 页=25
+  [OK] B2P26 #76 create-line-bottom-r5-lbl
+  … 26/50 页=26
+  [OK] B2P27 #77 create-line-bottom-r6
+  … 27/50 页=27
+  [OK] B2P28 #78 create-line-bottom-r6-lbl
+  … 28/50 页=28
+  [OK] B2P29 #79 create-line-left-r4
+  … 29/50 页=29
+  [OK] B2P30 #80 create-line-left-r4-lbl
+  … 30/50 页=30
+  [OK] B2P31 #81 create-line-left-r5
+  … 31/50 页=31
+  [OK] B2P32 #82 create-line-left-r5-lbl
+  … 32/50 页=32
+  [OK] B2P33 #83 create-line-left-r6
+  … 33/50 页=33
+  [OK] B2P34 #84 create-line-left-r6-lbl
+  … 34/50 页=34
+  [OK] B2P35 #85 create-line-right-r4
+  … 35/50 页=35
+  [OK] B2P36 #86 create-line-right-r4-lbl
+  … 36/50 页=36
+  [OK] B2P37 #87 create-line-right-r5
+  … 37/50 页=37
+  [OK] B2P38 #88 create-line-right-r5-lbl
+  … 38/50 页=38
+  [OK] B2P39 #89 create-line-right-r6
+  … 39/50 页=39
+  [OK] B2P40 #90 create-line-right-r6-lbl
+  … 40/50 页=40
+  [OK] B2P41 #91 create-pie2d-none-r4
+  … 41/50 页=41
+  [OK] B2P42 #92 create-pie2d-none-r4-lbl
+  … 42/50 页=42
+  [OK] B2P43 #93 create-pie2d-none-r5
+  … 43/50 页=43
+  [OK] B2P44 #94 create-pie2d-none-r5-lbl
+  … 44/50 页=44
+  [OK] B2P45 #95 create-pie2d-none-r6
+  … 45/50 页=45
+  [OK] B2P46 #96 create-pie2d-none-r6-lbl
+  … 46/50 页=46
+  [OK] B2P47 #97 create-pie2d-top-r4
+  … 47/50 页=47
+  [OK] B2P48 #98 create-pie2d-top-r4-lbl
+  … 48/50 页=48
+  [OK] B2P49 #99 create-pie2d-top-r5
+  … 49/50 页=49
+  [OK] B2P50 #100 create-pie2d-top-r5-lbl
+  … 50/50 页=50
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-batch-2.pptx 页数=50
+
+--- 正式用例 批次 3/6 （约 50 页）→ D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-batch-3.pptx ---
+  [OK] B3P01 #101 create-pie2d-top-r6
+  … 1/50 页=1
+  [OK] B3P02 #102 create-pie2d-top-r6-lbl
+  … 2/50 页=2
+  [OK] B3P03 #103 create-pie2d-bottom-r4
+  … 3/50 页=3
+  [OK] B3P04 #104 create-pie2d-bottom-r4-lbl
+  … 4/50 页=4
+  [OK] B3P05 #105 create-pie2d-bottom-r5
+  … 5/50 页=5
+  [OK] B3P06 #106 create-pie2d-bottom-r5-lbl
+  … 6/50 页=6
+  [OK] B3P07 #107 create-pie2d-bottom-r6
+  … 7/50 页=7
+  [OK] B3P08 #108 create-pie2d-bottom-r6-lbl
+  … 8/50 页=8
+  [OK] B3P09 #109 create-pie2d-left-r4
+  … 9/50 页=9
+  [OK] B3P10 #110 create-pie2d-left-r4-lbl
+  … 10/50 页=10
+  [OK] B3P11 #111 create-pie2d-left-r5
+  … 11/50 页=11
+  [OK] B3P12 #112 create-pie2d-left-r5-lbl
+  … 12/50 页=12
+  [OK] B3P13 #113 create-pie2d-left-r6
+  … 13/50 页=13
+  [OK] B3P14 #114 create-pie2d-left-r6-lbl
+  … 14/50 页=14
+  [OK] B3P15 #115 create-pie2d-right-r4
+  … 15/50 页=15
+  [OK] B3P16 #116 create-pie2d-right-r4-lbl
+  … 16/50 页=16
+  [OK] B3P17 #117 create-pie2d-right-r5
+  … 17/50 页=17
+  [OK] B3P18 #118 create-pie2d-right-r5-lbl
+  … 18/50 页=18
+  [OK] B3P19 #119 create-pie2d-right-r6
+  … 19/50 页=19
+  [OK] B3P20 #120 create-pie2d-right-r6-lbl
+  … 20/50 页=20
+  [OK] B3P21 #121 create-pie3d-none-r4
+  … 21/50 页=21
+  [OK] B3P22 #122 create-pie3d-none-r4-lbl
+  … 22/50 页=22
+  [OK] B3P23 #123 create-pie3d-none-r5
+  … 23/50 页=23
+  [OK] B3P24 #124 create-pie3d-none-r5-lbl
+  … 24/50 页=24
+  [OK] B3P25 #125 create-pie3d-none-r6
+  … 25/50 页=25
+  [OK] B3P26 #126 create-pie3d-none-r6-lbl
+  … 26/50 页=26
+  [OK] B3P27 #127 create-pie3d-top-r4
+  … 27/50 页=27
+  [OK] B3P28 #128 create-pie3d-top-r4-lbl
+  … 28/50 页=28
+  [OK] B3P29 #129 create-pie3d-top-r5
+  … 29/50 页=29
+  [OK] B3P30 #130 create-pie3d-top-r5-lbl
+  … 30/50 页=30

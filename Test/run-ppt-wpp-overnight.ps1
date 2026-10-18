@@ -21,7 +21,7 @@ function Write-Status([string]$text) {
 
 Write-Status "START pid=$PID"
 Write-Status 'BUILD PptChartRoundtripTest'
-& dotnet build $proj -c Debug --nologo *>> $log
+& dotnet build $proj -c Debug --nologo 2>&1 | ForEach-Object { Add-Content -Path $log -Value ([string]$_) -Encoding utf8 }
 $build = $LASTEXITCODE
 Write-Status "BUILD exit=$build"
 if ($build -ne 0) {
