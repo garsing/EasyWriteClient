@@ -52,6 +52,20 @@ namespace WordAddIn1
     public string Color { get; set; }
     public string ChartType { get; set; }
     public bool? ShowDataLabels { get; set; }
+    public bool? ShowValue { get; set; }
+    public bool? ShowPercentage { get; set; }
+    public string Line { get; set; }
+    public string LineWeight { get; set; }
+    public string Marker { get; set; }
+    public string MarkerSize { get; set; }
+    public string MarkerColor { get; set; }
+    public string MarkerFill { get; set; }
+    public string LabelPosition { get; set; }
+    public string LabelFont { get; set; }
+    public string LabelSize { get; set; }
+    public string LabelColor { get; set; }
+    public string FillGradient { get; set; }
+    public string FillAngle { get; set; }
     public List<PointInfo> Points { get; set; }
   }
 
@@ -66,6 +80,14 @@ namespace WordAddIn1
     public string Title { get; set; }
     public string Type { get; set; }
     public string Format { get; set; }
+    public string Visible { get; set; }
+    public string TickFont { get; set; }
+    public string TickColor { get; set; }
+    public string TickSize { get; set; }
+    public string TickPosition { get; set; }
+    public string MajorTick { get; set; }
+    public string MinorTick { get; set; }
+    public string Grid { get; set; }
     public int? TickLabelCount { get; set; }
     public int? TickLabelSpacing { get; set; }
     /// <summary>null 时按 Chart.Type 默认：line=false，column=true</summary>
@@ -75,6 +97,14 @@ namespace WordAddIn1
   public class AxisYInfo
   {
     public string Title { get; set; }
+    public string Visible { get; set; }
+    public string TickFont { get; set; }
+    public string TickColor { get; set; }
+    public string TickSize { get; set; }
+    public string TickPosition { get; set; }
+    public string MajorTick { get; set; }
+    public string MinorTick { get; set; }
+    public string Grid { get; set; }
   }
 
   public class ChartOperationResult

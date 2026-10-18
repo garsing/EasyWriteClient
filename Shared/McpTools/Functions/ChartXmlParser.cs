@@ -202,6 +202,8 @@ namespace WordAddIn1
                         {
                             series.ShowDataLabels = seriesShowDataLabels;
                         }
+
+                        ChartSeriesChrome.ReadColumnAttrs(series, columnElement);
                         
                         // 从数据行中提取该列的数据
                         int columnIndex = columns.IndexOf(columnElement); // 列索引（从0开始，包含category列）
@@ -323,6 +325,14 @@ namespace WordAddIn1
                             Title = ReadAxisField(axisXElement, "Title"),
                             Type = ReadAxisField(axisXElement, "Type", "category"),
                             Format = ReadAxisField(axisXElement, "Format"),
+                            Visible = ReadAxisField(axisXElement, "Visible"),
+                            TickFont = ReadAxisField(axisXElement, "TickFont"),
+                            TickColor = ReadAxisField(axisXElement, "TickColor"),
+                            TickSize = ReadAxisField(axisXElement, "TickSize"),
+                            TickPosition = ReadAxisField(axisXElement, "TickPosition"),
+                            MajorTick = ReadAxisField(axisXElement, "MajorTick"),
+                            MinorTick = ReadAxisField(axisXElement, "MinorTick"),
+                            Grid = ReadAxisField(axisXElement, "Grid"),
                             TickLabelCount = ParseOptionalInt(ReadAxisField(axisXElement, "TickLabelCount")),
                             TickLabelSpacing = ParseOptionalInt(ReadAxisField(axisXElement, "TickLabelSpacing")),
                             BetweenCategories = ParseOptionalBool(ReadAxisField(axisXElement, "BetweenCategories"))
@@ -334,7 +344,15 @@ namespace WordAddIn1
                     {
                         config.Chart.AxisY = new AxisYInfo
                         {
-                            Title = ReadAxisField(axisYElement, "Title")
+                            Title = ReadAxisField(axisYElement, "Title"),
+                            Visible = ReadAxisField(axisYElement, "Visible"),
+                            TickFont = ReadAxisField(axisYElement, "TickFont"),
+                            TickColor = ReadAxisField(axisYElement, "TickColor"),
+                            TickSize = ReadAxisField(axisYElement, "TickSize"),
+                            TickPosition = ReadAxisField(axisYElement, "TickPosition"),
+                            MajorTick = ReadAxisField(axisYElement, "MajorTick"),
+                            MinorTick = ReadAxisField(axisYElement, "MinorTick"),
+                            Grid = ReadAxisField(axisYElement, "Grid")
                         };
                     }
 

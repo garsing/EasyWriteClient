@@ -14,6 +14,7 @@ namespace WordDocumentRoundtripTest
     /// 把 PPT 结构 300 + 属性 250 改成文字 ChartConfig，在已打开的 Word / WPS 文字稿上建、换、抽。
     /// 换图种或系列数不一致时删掉再建。不 Quit 用户本来开着的稿。
     /// 过滤：--case=wh-ppt 全套；--case=wh-ppt-sink-line 只跑名字里含 sink-line 的条。
+    /// --wh-ids=158,167 只跑套件序号（1–550）。同名用例会重复出现，不能靠名字区分。
     /// </summary>
     internal static class WhPptSuite
     {
@@ -23,7 +24,8 @@ namespace WordDocumentRoundtripTest
         }
 
         /// <param name="startAfter">这条的名字跑完后从下一条开始。空则从头。</param>
-        public static void Run(TestRun run, string host, string caseFilter, string startAfter)
+        /// <param name="onlyIds">套件序号，逗号分隔。空则不按序号收窄。</param>
+        public static void Run(TestRun run, string host, string caseFilter, string startAfter, string onlyIds)
         {
             string nameFilter = "";
             const string prefix = "wh-ppt";
@@ -34,12 +36,28 @@ namespace WordDocumentRoundtripTest
                 nameFilter = caseFilter.Substring(prefix.Length).TrimStart('-');
             }
 
+            var built = new List<ChartCase>();
+            built.AddRange(ChartCaseCatalog.Build());
+            built.AddRange(ChartAttrCatalog.Build());
+            var idSet = ParseIds(onlyIds);
             var cases = new List<ChartCase>();
-            cases.AddRange(ChartCaseCatalog.Build());
-            cases.AddRange(ChartAttrCatalog.Build());
-            if (!string.IsNullOrEmpty(nameFilter))
+            var suiteIds = new List<int>();
+            for (int n = 0; n < built.Count; n++)
             {
-                cases = cases.Where(c => c.Name != null && c.Name.IndexOf(nameFilter, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+                int suiteId = n + 1;
+                if (idSet.Count > 0 && !idSet.Contains(suiteId))
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(nameFilter)
+                    && (built[n].Name == null || built[n].Name.IndexOf(nameFilter, StringComparison.OrdinalIgnoreCase) < 0))
+                {
+                    continue;
+                }
+
+                cases.Add(built[n]);
+                suiteIds.Add(suiteId);
             }
 
             int start = 0;
@@ -64,9 +82,11 @@ namespace WordDocumentRoundtripTest
                 start = found + 1;
             }
 
+            run.TotalTarget = cases.Count - start;
             Console.WriteLine("文字图表套件 " + host + "  条数=" + (cases.Count - start)
-                + (start == 0 ? "" : "  从 " + (start + 1) + " 条起，上一条 " + startAfter)
-                + (string.IsNullOrEmpty(nameFilter) ? "" : "  过滤=" + nameFilter));
+                + (start == 0 ? "" : "  从过滤后第 " + (start + 1) + " 条起，上一条 " + startAfter)
+                + (string.IsNullOrEmpty(nameFilter) ? "" : "  过滤=" + nameFilter)
+                + (idSet.Count == 0 ? "" : "  编号=" + onlyIds));
 
             var session = new WdSession(host);
             session.DismissOrphanExcelOnClose = !session.IsWps;
@@ -83,8 +103,9 @@ namespace WordDocumentRoundtripTest
             {
                 for (int i = start; i < cases.Count; i++)
                 {
+                    Console.WriteLine("  #" + suiteIds[i] + " " + (cases[i].Name ?? "?"));
                     RunOneBounded(run, session, ref channel, ref path, cases[i]);
-                    if ((i + 1) % 25 == 0)
+                    if ((i + 1) % 25 == 0 || i == cases.Count - 1)
                     {
                         Console.WriteLine("  … " + (i + 1) + "/" + cases.Count
                             + " 过=" + run.CasesPassed + " 败=" + run.CasesFailed);
@@ -95,6 +116,27 @@ namespace WordDocumentRoundtripTest
             {
                 session.CloseDocByPath(path);
             }
+        }
+
+        private static HashSet<int> ParseIds(string onlyIds)
+        {
+            var set = new HashSet<int>();
+            if (string.IsNullOrWhiteSpace(onlyIds))
+            {
+                return set;
+            }
+
+            string[] parts = onlyIds.Split(new[] { ',', ' ', ';' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < parts.Length; i++)
+            {
+                int id;
+                if (int.TryParse(parts[i].Trim(), out id) && id > 0)
+                {
+                    set.Add(id);
+                }
+            }
+
+            return set;
         }
 
         /// <summary>

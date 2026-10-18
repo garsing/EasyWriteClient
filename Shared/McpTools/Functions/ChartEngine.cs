@@ -244,7 +244,20 @@ namespace WordAddIn1
                             series.Name = seriesInfo.Name;
                         }
 
-                        // 设置Y轴（primary或secondary）
+                        // 先改系列图种，再放次轴。先放次轴再改图种时，Word 会把轴组退回主轴。
+                        if (!string.IsNullOrEmpty(seriesInfo.ChartType))
+                        {
+                            try
+                            {
+                                Excel.XlChartType chartType = GetChartType(seriesInfo.ChartType);
+                                series.ChartType = chartType;
+                            }
+                            catch (Exception ex)
+                            {
+                                errors.Add($"设置Series{i + 1}图表类型失败: {ex.Message}");
+                            }
+                        }
+
                         if (ChartConfigSyntax.IsSecondaryAxis(seriesInfo.AxisY))
                         {
                             try
@@ -258,27 +271,10 @@ namespace WordAddIn1
                         }
 
                         // 设置系列颜色（如果指定）
-                        if (!string.IsNullOrEmpty(seriesInfo.Color))
+                        if (TryParseOfficeBgr(seriesInfo.Color, out int colorValue))
                         {
                             try
                             {
-                                string colorStr = seriesInfo.Color.Trim();
-                                int colorValue;
-                                if (colorStr.Length == 6)
-                                {
-                                    // RGB格式，转换为BGR（Word API使用BGR）
-                                    string r = colorStr.Substring(0, 2);
-                                    string g = colorStr.Substring(2, 2);
-                                    string b = colorStr.Substring(4, 2);
-                                    string bgrStr = b + g + r; // BGR格式
-                                    colorValue = Convert.ToInt32(bgrStr, 16);
-                                }
-                                else
-                                {
-                                    colorValue = Convert.ToInt32(colorStr, 16);
-                                }
-
-                                // 根据图表类型设置颜色
                                 if (chartInfo.Type == "line")
                                 {
                                     series.Format.Line.ForeColor.RGB = colorValue;
@@ -294,19 +290,7 @@ namespace WordAddIn1
                             }
                         }
 
-                        // 设置混合图表类型（如果Series指定了ChartType）
-                        if (!string.IsNullOrEmpty(seriesInfo.ChartType))
-                        {
-                            try
-                            {
-                                Excel.XlChartType chartType = GetChartType(seriesInfo.ChartType);
-                                series.ChartType = chartType;
-                            }
-                            catch (Exception ex)
-                            {
-                                errors.Add($"设置Series{i + 1}图表类型失败: {ex.Message}");
-                            }
-                        }
+                        ChartSeriesChrome.Apply(series, seriesInfo);
                     }
                     catch (Exception ex)
                     {
@@ -426,6 +410,76 @@ namespace WordAddIn1
         /// 获取默认颜色数组（BGR格式）
         /// 颜色顺序：粉色、蓝色、橙色、绿色
         /// </summary>
+        /// <summary>#RRGGBB 或 RRGGBB，转成 Word ForeColor.RGB 用的 BGR 整数。</summary>
+        public static bool TryParseOfficeBgr(string raw, out int bgr)
+        {
+            bgr = 0;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            string s = raw.Trim();
+            if (s.StartsWith("#", StringComparison.Ordinal))
+            {
+                s = s.Substring(1);
+            }
+
+            if (s.Length != 6)
+            {
+                return false;
+            }
+
+            int rgb;
+            try
+            {
+                rgb = Convert.ToInt32(s, 16);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            int r = (rgb >> 16) & 0xFF;
+            int g = (rgb >> 8) & 0xFF;
+            int b = rgb & 0xFF;
+            bgr = (b << 16) | (g << 8) | r;
+            return true;
+        }
+
+        private static void TryApplyAreaColor(dynamic area, string color)
+        {
+            if (!TryParseOfficeBgr(color, out int bgr) || area == null)
+            {
+                return;
+            }
+
+            try
+            {
+                try
+                {
+                    area.Interior.Color = bgr;
+                }
+                catch (Exception)
+                {
+                }
+
+                area.Format.Fill.Visible = Microsoft.Office.Core.MsoTriState.msoTrue;
+                try
+                {
+                    area.Format.Fill.Solid();
+                }
+                catch (Exception)
+                {
+                }
+
+                area.Format.Fill.ForeColor.RGB = bgr;
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         public static int[] GetDefaultColors()
         {
             // RGB颜色转换为BGR格式（Word API使用BGR）
@@ -685,6 +739,23 @@ namespace WordAddIn1
                         {
                             System.Diagnostics.Debug.WriteLine($"[DEBUG] 设置Y轴标签字体大小失败: {ex.Message}");
                         }
+
+                        if (chartInfo.AxisY != null)
+                        {
+                            ChartSeriesChrome.ApplyAxis(
+                                yAxis,
+                                chartInfo.AxisY.Visible,
+                                chartInfo.AxisY.TickFont,
+                                chartInfo.AxisY.TickColor,
+                                chartInfo.AxisY.TickSize,
+                                null);
+                            ChartSeriesChrome.ApplyTicks(
+                                yAxis,
+                                chartInfo.AxisY.TickPosition,
+                                chartInfo.AxisY.MajorTick,
+                                chartInfo.AxisY.MinorTick,
+                                chartInfo.AxisY.Grid);
+                        }
                         
                         System.Diagnostics.Debug.WriteLine("[DEBUG] 已隐藏Y轴线，保留左侧刻度标签");
                     }
@@ -748,13 +819,18 @@ namespace WordAddIn1
                             }
 
                             // 设置数据标签类型（针对饼图）
-                            if (chartInfo.Type == "pie3d"
-                                && (chartInfo.ShowValue.HasValue || chartInfo.ShowPercentage.HasValue))
+                            if ((chartInfo.Type == "pie3d" || chartInfo.Type == "pie2d")
+                                && (chartInfo.ShowValue.HasValue || chartInfo.ShowPercentage.HasValue
+                                    || (seriesInfo != null && (seriesInfo.ShowValue.HasValue || seriesInfo.ShowPercentage.HasValue))))
                             {
                                 try
                                 {
-                                    series.DataLabels.ShowValue = chartInfo.ShowValue ?? false;
-                                    series.DataLabels.ShowPercentage = chartInfo.ShowPercentage ?? false;
+                                    series.DataLabels.ShowValue = seriesInfo != null && seriesInfo.ShowValue.HasValue
+                                        ? seriesInfo.ShowValue.Value
+                                        : (chartInfo.ShowValue ?? false);
+                                    series.DataLabels.ShowPercentage = seriesInfo != null && seriesInfo.ShowPercentage.HasValue
+                                        ? seriesInfo.ShowPercentage.Value
+                                        : (chartInfo.ShowPercentage ?? false);
                                 }
                                 catch (Exception ex)
                                 {
@@ -845,35 +921,23 @@ namespace WordAddIn1
                         for (int i = 1; i <= seriesCount; i++)
                         {
                             dynamic series = chart.SeriesCollection(i);
+                            SeriesInfo seriesInfo = TryGetSeriesInfoFromXml(chartInfo, i);
                             int colorValue;
-                            
-                            if (!string.IsNullOrEmpty(chartInfo.PlotColor))
+                            if (seriesInfo != null && TryParseOfficeBgr(seriesInfo.Color, out int seriesBgr))
                             {
-                                // 用户指定了颜色，使用用户指定的颜色
-                                string colorStr = chartInfo.PlotColor.Trim();
-                                if (colorStr.Length == 6)
-                                {
-                                    // 将RGB转换为BGR格式（交换R和B的位置）
-                                    string r = colorStr.Substring(0, 2);
-                                    string g = colorStr.Substring(2, 2);
-                                    string b = colorStr.Substring(4, 2);
-                                    string bgrStr = b + g + r; // BGR格式
-                                    colorValue = Convert.ToInt32(bgrStr, 16);
-                                }
-                                else
-                                {
-                                    colorValue = Convert.ToInt32(colorStr, 16);
-                                }
+                                colorValue = seriesBgr;
                             }
                             else
                             {
-                                // 用户没有指定颜色，使用默认颜色（按系列顺序）
-                                int colorIndex = (i - 1) % defaultColors.Length; // 循环使用颜色
+                                int colorIndex = (i - 1) % defaultColors.Length;
                                 colorValue = defaultColors[colorIndex];
                             }
-                            
+
                             series.Format.Fill.ForeColor.RGB = colorValue;
                         }
+
+                        TryApplyAreaColor(chart.PlotArea, chartInfo.PlotColor);
+                        TryApplyAreaColor(chart.ChartArea, chartInfo.ChartAreaColor);
                     }
                     catch (Exception ex)
                     {
@@ -883,13 +947,21 @@ namespace WordAddIn1
                     }
                 }
 
-                // 柱状图特定设置
-                if (ChartConfigSyntax.IsColumn(chartInfo.Type) && chartInfo.GapWidth > 0)
+                if (ChartConfigSyntax.IsColumn(chartInfo.Type)
+                    && (chartInfo.GapWidth > 0 || chartInfo.Overlap != 0))
                 {
                     try
                     {
-                        dynamic series1 = chart.SeriesCollection(1);
-                        series1.GapWidth = chartInfo.GapWidth;
+                        dynamic group = chart.ChartGroups(1);
+                        if (chartInfo.GapWidth > 0)
+                        {
+                            group.GapWidth = chartInfo.GapWidth;
+                        }
+
+                        if (chartInfo.Overlap != 0)
+                        {
+                            group.Overlap = chartInfo.Overlap;
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -951,7 +1023,8 @@ namespace WordAddIn1
                             }
                             
                             // 默认不显示数据点标记（节点）
-                            if (chartInfo.DataMarkers)
+                            SeriesInfo markerInfo = TryGetSeriesInfoFromXml(chartInfo, i);
+                            if (chartInfo.DataMarkers && (markerInfo == null || string.IsNullOrEmpty(markerInfo.Marker)))
                             {
                                 series.MarkerStyle = Word.XlMarkerStyle.xlMarkerStyleCircle;
                                 if (chartInfo.MarkerSize > 0)
@@ -1167,6 +1240,23 @@ namespace WordAddIn1
                         {
                             System.Diagnostics.Debug.WriteLine($"[DEBUG] 设置X轴标签字体大小失败: {ex.Message}");
                         }
+
+                        if (chartInfo.AxisX != null)
+                        {
+                            ChartSeriesChrome.ApplyAxis(
+                                xAxis,
+                                chartInfo.AxisX.Visible,
+                                chartInfo.AxisX.TickFont,
+                                chartInfo.AxisX.TickColor,
+                                chartInfo.AxisX.TickSize,
+                                chartInfo.AxisX.Format);
+                            ChartSeriesChrome.ApplyTicks(
+                                xAxis,
+                                chartInfo.AxisX.TickPosition,
+                                chartInfo.AxisX.MajorTick,
+                                chartInfo.AxisX.MinorTick,
+                                chartInfo.AxisX.Grid);
+                        }
                         
                         System.Diagnostics.Debug.WriteLine($"[DEBUG] 设置X轴刻度线：主刻度线=外部（显示），次刻度线=无（隐藏），标签间隔={tickLabelSpacing}，刻度线间隔={tickLabelSpacing}，AxisBetweenCategories={ResolveAxisBetweenCategories(chartInfo)}");
                     }
@@ -1181,7 +1271,7 @@ namespace WordAddIn1
                 ApplyAxisTitles(chart, chartInfo, errors);
 
                 // 饼图特定设置
-                if (chartInfo.Type == "pie3d" && chartInfo.Explosion > 0)
+                if ((chartInfo.Type == "pie3d" || chartInfo.Type == "pie2d") && chartInfo.Explosion > 0)
                 {
                     try
                     {
@@ -1194,6 +1284,30 @@ namespace WordAddIn1
                         errors.Add(errorMsg);
                         System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
                     }
+                }
+
+                try
+                {
+                    int seriesCount = chart.SeriesCollection().Count;
+                    for (int i = 1; i <= seriesCount; i++)
+                    {
+                        SeriesInfo one = TryGetSeriesInfoFromXml(chartInfo, i);
+                        if (one == null)
+                        {
+                            continue;
+                        }
+
+                        dynamic live = chart.SeriesCollection(i);
+                        ChartSeriesChrome.Apply(live, one);
+                        if (ChartConfigSyntax.IsSecondaryAxis(one.AxisY))
+                        {
+                            live.AxisGroup = Word.XlAxisGroup.xlSecondary;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    errors.Add("补系列格式失败: " + ex.Message);
                 }
 
                 if (errors.Count > 0)

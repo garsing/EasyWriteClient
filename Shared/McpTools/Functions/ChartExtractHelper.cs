@@ -92,6 +92,7 @@ namespace WordAddIn1
             try
             {
                 int style = chart.ChartStyle;
+                chartInfo.ChartStyle = style;
                 chartInfo.Theme = style == 1 ? "office" : "office";
             }
             catch { }
@@ -142,7 +143,8 @@ namespace WordAddIn1
                 }
 
                 chartInfo.ShowDataLabels = anyDataLabels;
-                if (string.Equals(chartInfo.Type, ChartConfigSyntax.TypePie3d, StringComparison.Ordinal))
+                if (string.Equals(chartInfo.Type, ChartConfigSyntax.TypePie3d, StringComparison.Ordinal)
+                    || string.Equals(chartInfo.Type, ChartConfigSyntax.TypePie2d, StringComparison.Ordinal))
                 {
                     TryExtractPieLabelFlags(seriesCollection, chartInfo);
                 }
@@ -160,16 +162,20 @@ namespace WordAddIn1
 
             try
             {
-                if (ChartConfigSyntax.IsColumn(chartInfo.Type))
+                if (ChartConfigSyntax.IsColumn(chartInfo.Type) || ChartConfigSyntax.IsLineOrColumn(chartInfo.Type))
                 {
-                    dynamic series1 = chart.SeriesCollection(1);
-                    if (series1 != null)
+                    dynamic group = chart.ChartGroups(1);
+                    if (group != null)
                     {
-                        chartInfo.GapWidth = (int)series1.GapWidth;
+                        chartInfo.GapWidth = Convert.ToInt32(group.GapWidth);
+                        chartInfo.Overlap = Convert.ToInt32(group.Overlap);
                     }
                 }
             }
             catch { }
+
+            TryReadAreaColor(chart.PlotArea, value => chartInfo.PlotColor = value);
+            TryReadAreaColor(chart.ChartArea, value => chartInfo.ChartAreaColor = value);
 
             try
             {
@@ -187,6 +193,26 @@ namespace WordAddIn1
                     Title = TryGetAxisTitle(chart, Word.XlAxisType.xlCategory),
                     Type = "category"
                 };
+                try
+                {
+                    Word.Axis xAxis = chart.Axes(Word.XlAxisType.xlCategory);
+                    ChartSeriesChrome.CaptureAxis(xAxis, (visible, font, color, size, format) =>
+                    {
+                        chartInfo.AxisX.Visible = visible;
+                        chartInfo.AxisX.TickFont = font;
+                        chartInfo.AxisX.TickColor = color;
+                        chartInfo.AxisX.TickSize = size;
+                        chartInfo.AxisX.Format = format;
+                    });
+                    ChartSeriesChrome.CaptureTicks(xAxis, (pos, major, minor, grid) =>
+                    {
+                        chartInfo.AxisX.TickPosition = pos;
+                        chartInfo.AxisX.MajorTick = major;
+                        chartInfo.AxisX.MinorTick = minor;
+                        chartInfo.AxisX.Grid = grid;
+                    });
+                }
+                catch { }
 
                 if (ChartConfigSyntax.IsLineOrColumn(chartInfo.Type))
                 {
@@ -202,6 +228,36 @@ namespace WordAddIn1
                 {
                     Title = TryGetAxisTitle(chart, Word.XlAxisType.xlValue)
                 };
+                try
+                {
+                    Word.Axis yAxisForChrome = chart.Axes(Word.XlAxisType.xlValue);
+                    ChartSeriesChrome.CaptureAxis(yAxisForChrome, (visible, font, color, size, format) =>
+                    {
+                        chartInfo.AxisY.Visible = visible;
+                        chartInfo.AxisY.TickFont = font;
+                        chartInfo.AxisY.TickColor = color;
+                        chartInfo.AxisY.TickSize = size;
+                    });
+                    ChartSeriesChrome.CaptureTicks(yAxisForChrome, (pos, major, minor, grid) =>
+                    {
+                        chartInfo.AxisY.TickPosition = pos;
+                        chartInfo.AxisY.MajorTick = major;
+                        chartInfo.AxisY.MinorTick = minor;
+                        chartInfo.AxisY.Grid = grid;
+                    });
+                }
+                catch { }
+
+                if (string.Equals(chartInfo.Type, ChartConfigSyntax.TypePie2d, StringComparison.Ordinal)
+                    || string.Equals(chartInfo.Type, ChartConfigSyntax.TypePie3d, StringComparison.Ordinal))
+                {
+                    try
+                    {
+                        dynamic pie = chart.SeriesCollection(1);
+                        chartInfo.Explosion = Convert.ToInt32(pie.Explosion);
+                    }
+                    catch { }
+                }
                 string y2 = TryGetAxisTitle(chart, Word.XlAxisType.xlValue, Word.XlAxisGroup.xlSecondary);
                 if (!string.IsNullOrEmpty(y2))
                 {
@@ -247,8 +303,7 @@ namespace WordAddIn1
 
                         try
                         {
-                            dynamic axisGroup = series.AxisGroup;
-                            if (axisGroup == Word.XlAxisGroup.xlSecondary)
+                            if (IsSecondaryAxisGroup(series.AxisGroup))
                             {
                                 seriesInfo.AxisY = ChartConfigSyntax.AxisYSecondary;
                             }
@@ -256,29 +311,14 @@ namespace WordAddIn1
                         catch { }
 
                         seriesInfo.Color = ExtractSeriesColorHex(series, chartType);
+                        ChartSeriesChrome.Capture(series, seriesInfo);
 
                         try
                         {
-                            dynamic chartTypeValue = series.ChartType;
-                            if (chartTypeValue == Excel.XlChartType.xlColumnClustered)
+                            string seriesType = MapXlChartType((int)series.ChartType);
+                            if (!string.IsNullOrEmpty(seriesType))
                             {
-                                seriesInfo.ChartType = ChartConfigSyntax.TypeColumn;
-                            }
-                            else if (chartTypeValue == Excel.XlChartType.xlBarClustered)
-                            {
-                                seriesInfo.ChartType = ChartConfigSyntax.TypeBar;
-                            }
-                            else if (chartTypeValue == Excel.XlChartType.xlLine)
-                            {
-                                seriesInfo.ChartType = ChartConfigSyntax.TypeLine;
-                            }
-                            else if (chartTypeValue == Excel.XlChartType.xlPie)
-                            {
-                                seriesInfo.ChartType = ChartConfigSyntax.TypePie2d;
-                            }
-                            else if (chartTypeValue == Excel.XlChartType.xl3DPie)
-                            {
-                                seriesInfo.ChartType = ChartConfigSyntax.TypePie3d;
+                                seriesInfo.ChartType = seriesType;
                             }
                         }
                         catch { }
@@ -378,20 +418,83 @@ namespace WordAddIn1
             }
         }
 
+        /// <summary>
+        /// 系列 AxisGroup 从 Excel 回来常常是整数或另一套枚举，和 Word.XlAxisGroup 直接比较会失败，次轴就被记成 y。
+        /// </summary>
+        private static bool IsSecondaryAxisGroup(object axisGroup)
+        {
+            if (axisGroup == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return Convert.ToInt32(axisGroup) == (int)Word.XlAxisGroup.xlSecondary;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static string MapChartType(Word.Chart chart)
         {
             int chartType = (int)chart.ChartType;
-            if (chartType == (int)Excel.XlChartType.xlColumnClustered)
+            string mapped = MapXlChartType(chartType);
+            if (!string.IsNullOrEmpty(mapped))
+            {
+                return mapped;
+            }
+
+            if (chartType == -4111)
+            {
+                try
+                {
+                    dynamic first = chart.SeriesCollection(1);
+                    string fromSeries = MapXlChartType((int)first.ChartType);
+                    if (!string.IsNullOrEmpty(fromSeries))
+                    {
+                        return fromSeries;
+                    }
+                }
+                catch
+                {
+                }
+
+                return ChartConfigSyntax.TypeColumn;
+            }
+
+            string raw = chart.ChartType.ToString().ToLowerInvariant();
+            if (raw.IndexOf("pie", StringComparison.Ordinal) >= 0
+                && raw.IndexOf("3d", StringComparison.Ordinal) < 0)
+            {
+                return ChartConfigSyntax.TypePie2d;
+            }
+
+            return raw;
+        }
+
+        private static string MapXlChartType(int chartType)
+        {
+            if (chartType == (int)Excel.XlChartType.xlColumnClustered
+                || chartType == (int)Excel.XlChartType.xlColumnStacked
+                || chartType == (int)Excel.XlChartType.xlColumnStacked100)
             {
                 return ChartConfigSyntax.TypeColumn;
             }
 
-            if (chartType == (int)Excel.XlChartType.xlBarClustered)
+            if (chartType == (int)Excel.XlChartType.xlBarClustered
+                || chartType == (int)Excel.XlChartType.xlBarStacked
+                || chartType == (int)Excel.XlChartType.xlBarStacked100)
             {
                 return ChartConfigSyntax.TypeBar;
             }
 
-            if (chartType == (int)Excel.XlChartType.xlLine)
+            if (chartType == (int)Excel.XlChartType.xlLine
+                || chartType == (int)Excel.XlChartType.xlLineMarkers
+                || chartType == (int)Excel.XlChartType.xlLineStacked
+                || chartType == (int)Excel.XlChartType.xlLineMarkersStacked)
             {
                 return ChartConfigSyntax.TypeLine;
             }
@@ -406,7 +509,43 @@ namespace WordAddIn1
                 return ChartConfigSyntax.TypePie3d;
             }
 
-            return chart.ChartType.ToString().ToLowerInvariant();
+            return null;
+        }
+
+        private static void TryReadAreaColor(dynamic area, Action<string> assign)
+        {
+            try
+            {
+                if (area == null)
+                {
+                    return;
+                }
+
+                dynamic fill = area.Format.Fill;
+                if (fill.Visible != Microsoft.Office.Core.MsoTriState.msoTrue)
+                {
+                    return;
+                }
+
+                try
+                {
+                    int interior = Convert.ToInt32(area.Interior.Color);
+                    if (interior != 0)
+                    {
+                        assign(ConvertRgbToHex(interior));
+                        return;
+                    }
+                }
+                catch
+                {
+                }
+
+                dynamic fore = fill.ForeColor;
+                assign(ConvertRgbToHex(Convert.ToInt32(fore.RGB)));
+            }
+            catch
+            {
+            }
         }
 
         private static string MapLegendPosition(Word.XlLegendPosition position)

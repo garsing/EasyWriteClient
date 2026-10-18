@@ -291,7 +291,19 @@ namespace PptChartRoundtripTest
                 if (int.TryParse(key.Substring(1, dot - 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int idx)
                     && idx >= 0 && idx < series.Count)
                 {
-                    return SeriesProp(series[idx], key.Substring(dot + 1));
+                    string prop = key.Substring(dot + 1);
+                    string fromSeries = SeriesProp(series[idx], prop);
+                    if (!string.IsNullOrEmpty(fromSeries))
+                    {
+                        return fromSeries;
+                    }
+
+                    if (prop == "ShowValue" || prop == "ShowPercentage")
+                    {
+                        return Text(chart, prop);
+                    }
+
+                    return null;
                 }
 
                 return null;
@@ -324,6 +336,12 @@ namespace PptChartRoundtripTest
                     return AxisProp(chart, "AxisY2", "Title");
                 case "FillMissing":
                     return Text(chart, "FillMissingValues");
+                case "AxisYMin":
+                    return Text(chart, "YAxisMin");
+                case "AxisYMax":
+                    return Text(chart, "YAxisMax");
+                case "AxisYMajorUnit":
+                    return Text(chart, "YAxisMajorUnit");
                 case "ChartLineWeight":
                     return Text(chart, "LineWeight");
                 default:

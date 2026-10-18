@@ -270,11 +270,13 @@ namespace WordAddIn1
                 }
 
                 // 设置图表主题
-                if (!string.IsNullOrEmpty(config.Chart.Theme))
+                if (config.Chart.ChartStyle > 0 || !string.IsNullOrEmpty(config.Chart.Theme))
                 {
                     try
                     {
-                        chart.ChartStyle = ChartEngine.GetChartStyle(config.Chart.Theme);
+                        chart.ChartStyle = config.Chart.ChartStyle > 0
+                            ? config.Chart.ChartStyle
+                            : ChartEngine.GetChartStyle(config.Chart.Theme);
                     }
                     catch (Exception ex)
                     {

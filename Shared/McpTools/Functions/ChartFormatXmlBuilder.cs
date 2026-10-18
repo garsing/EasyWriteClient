@@ -126,6 +126,14 @@ namespace WordAddIn1
                 AppendElementIfNotEmpty(axisX, "Title", chart.AxisX.Title);
                 AppendElementIfNotEmpty(axisX, "Type", chart.AxisX.Type);
                 AppendElementIfNotEmpty(axisX, "Format", chart.AxisX.Format);
+                AppendElementIfNotEmpty(axisX, "Visible", chart.AxisX.Visible);
+                AppendElementIfNotEmpty(axisX, "TickFont", chart.AxisX.TickFont);
+                AppendElementIfNotEmpty(axisX, "TickColor", chart.AxisX.TickColor);
+                AppendElementIfNotEmpty(axisX, "TickSize", chart.AxisX.TickSize);
+                AppendElementIfNotEmpty(axisX, "TickPosition", chart.AxisX.TickPosition);
+                AppendElementIfNotEmpty(axisX, "MajorTick", chart.AxisX.MajorTick);
+                AppendElementIfNotEmpty(axisX, "MinorTick", chart.AxisX.MinorTick);
+                AppendElementIfNotEmpty(axisX, "Grid", chart.AxisX.Grid);
                 if (chart.AxisX.TickLabelCount.HasValue)
                 {
                     axisX.Add(new XElement("TickLabelCount", chart.AxisX.TickLabelCount.Value));
@@ -150,6 +158,14 @@ namespace WordAddIn1
             {
                 var axisY = new XElement("AxisY");
                 AppendElementIfNotEmpty(axisY, "Title", chart.AxisY.Title);
+                AppendElementIfNotEmpty(axisY, "Visible", chart.AxisY.Visible);
+                AppendElementIfNotEmpty(axisY, "TickFont", chart.AxisY.TickFont);
+                AppendElementIfNotEmpty(axisY, "TickColor", chart.AxisY.TickColor);
+                AppendElementIfNotEmpty(axisY, "TickSize", chart.AxisY.TickSize);
+                AppendElementIfNotEmpty(axisY, "TickPosition", chart.AxisY.TickPosition);
+                AppendElementIfNotEmpty(axisY, "MajorTick", chart.AxisY.MajorTick);
+                AppendElementIfNotEmpty(axisY, "MinorTick", chart.AxisY.MinorTick);
+                AppendElementIfNotEmpty(axisY, "Grid", chart.AxisY.Grid);
                 chartEl.Add(axisY);
             }
 
@@ -189,6 +205,8 @@ namespace WordAddIn1
                 {
                     col.Add(new XAttribute("showDataLabels", series.ShowDataLabels.Value ? "true" : "false"));
                 }
+
+                ChartSeriesChrome.WriteColumnAttrs(col, series);
 
                 col.Value = series.Name ?? "";
                 header.Add(col);
