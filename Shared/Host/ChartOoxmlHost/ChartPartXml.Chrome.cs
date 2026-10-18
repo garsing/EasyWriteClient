@@ -31,8 +31,13 @@ namespace WordAddIn1.ChartOoxmlHost
             }
 
             XElement cat = plot != null ? plot.Elements(C + "catAx").FirstOrDefault() : null;
-            WriteAxisTitle(cat, grid.AxisXTitle);
+            string xTitle = !string.IsNullOrEmpty(grid.AxisXTitle)
+                ? grid.AxisXTitle
+                : grid.AxisX != null ? grid.AxisX.Title : null;
+            WriteAxisTitle(cat, xTitle);
+            WriteAxisStyle(cat, StyleFromAxisX(grid.AxisX));
             WriteChartStyle(chartDoc, grid.ChartStyle);
+            WriteBarGap(chartDoc, grid.GapWidth, grid.Overlap);
 
             XElement secondary = FindValAx(chartDoc, true);
             if (secondary != null)
@@ -76,7 +81,7 @@ namespace WordAddIn1.ChartOoxmlHost
                 SetVal(marker, "symbol", col.Marker.Trim());
             }
 
-            if (col.ShowDataLabels.HasValue)
+            if (col.ShowDataLabels.HasValue || !string.IsNullOrEmpty(col.LabelPosition))
             {
                 XElement labels = ser.Element(C + "dLbls");
                 if (labels == null)
@@ -85,10 +90,19 @@ namespace WordAddIn1.ChartOoxmlHost
                     ser.Add(labels);
                 }
 
-                SetVal(labels, "showVal", col.ShowDataLabels.Value ? "1" : "0");
-                SetVal(labels, "showCatName", "0");
-                SetVal(labels, "showSerName", "0");
-                SetVal(labels, "showPercent", "0");
+                string pos = LabelPosToOoxml(col.LabelPosition);
+                if (!string.IsNullOrEmpty(pos))
+                {
+                    SetVal(labels, "dLblPos", pos);
+                }
+
+                if (col.ShowDataLabels.HasValue)
+                {
+                    SetVal(labels, "showVal", col.ShowDataLabels.Value ? "1" : "0");
+                    SetVal(labels, "showCatName", "0");
+                    SetVal(labels, "showSerName", "0");
+                    SetVal(labels, "showPercent", "0");
+                }
             }
         }
 
@@ -434,6 +448,11 @@ namespace WordAddIn1.ChartOoxmlHost
         {
             XElement chart = chartDoc?.Descendants(C + "chart").FirstOrDefault();
             XElement legend = chart?.Elements(C + "legend").FirstOrDefault();
+            if (chart != null && legend == null)
+            {
+                return "none";
+            }
+
             string pos = legend?.Element(C + "legendPos")?.Attribute("val")?.Value;
             return LegendName(pos);
         }
@@ -457,6 +476,81 @@ namespace WordAddIn1.ChartOoxmlHost
             XElement axis = FindValAx(chartDoc, secondary);
             XElement text = axis?.Element(C + "title")?.Descendants(A + "t").FirstOrDefault();
             return text != null ? text.Value : null;
+        }
+
+        private static AxisYInfo StyleFromAxisX(AxisXInfo axis)
+        {
+            if (axis == null)
+            {
+                return null;
+            }
+
+            string format = axis.Format;
+            if (string.Equals(format, "General", StringComparison.OrdinalIgnoreCase))
+            {
+                format = "@";
+            }
+
+            bool any = !string.IsNullOrEmpty(axis.Visible)
+                || !string.IsNullOrEmpty(axis.TickFont)
+                || !string.IsNullOrEmpty(axis.TickColor)
+                || !string.IsNullOrEmpty(axis.TickSize)
+                || !string.IsNullOrEmpty(axis.TickPosition)
+                || !string.IsNullOrEmpty(axis.MajorTick)
+                || !string.IsNullOrEmpty(axis.MinorTick)
+                || !string.IsNullOrEmpty(axis.Grid)
+                || !string.IsNullOrEmpty(format)
+                || !string.IsNullOrEmpty(axis.Line)
+                || !string.IsNullOrEmpty(axis.LineWeight)
+                || !string.IsNullOrEmpty(axis.GridColor);
+            if (!any)
+            {
+                return null;
+            }
+
+            return new AxisYInfo
+            {
+                Visible = axis.Visible,
+                TickFont = axis.TickFont,
+                TickColor = axis.TickColor,
+                TickSize = axis.TickSize,
+                TickPosition = axis.TickPosition,
+                MajorTick = axis.MajorTick,
+                MinorTick = axis.MinorTick,
+                Grid = axis.Grid,
+                Format = format,
+                Line = axis.Line,
+                LineWeight = axis.LineWeight,
+                GridColor = axis.GridColor
+            };
+        }
+
+        private static AxisXInfo ReadCatAxis(XDocument chartDoc)
+        {
+            XElement plot = chartDoc?.Descendants(C + "plotArea").FirstOrDefault();
+            XElement cat = plot?.Elements(C + "catAx").FirstOrDefault();
+            AxisYInfo style = ReadAxisChrome(cat);
+            if (style == null)
+            {
+                return null;
+            }
+
+            return new AxisXInfo
+            {
+                Title = style.Title,
+                Visible = style.Visible,
+                TickFont = style.TickFont,
+                TickColor = style.TickColor,
+                TickSize = style.TickSize,
+                TickPosition = style.TickPosition,
+                MajorTick = style.MajorTick,
+                MinorTick = style.MinorTick,
+                Grid = style.Grid,
+                Format = style.Format,
+                Line = style.Line,
+                LineWeight = style.LineWeight,
+                GridColor = style.GridColor
+            };
         }
 
         private static string ReadCatAxisTitle(XDocument chartDoc)
@@ -525,6 +619,52 @@ namespace WordAddIn1.ChartOoxmlHost
             {
                 axis.Add(new XElement(C + "majorGridlines"));
             }
+        }
+
+        private static void WriteBarGap(XDocument chartDoc, int? gap, int? overlap)
+        {
+            XElement bar = chartDoc?.Descendants(C + "barChart").FirstOrDefault();
+            if (bar == null || (!gap.HasValue && !overlap.HasValue))
+            {
+                return;
+            }
+
+            XElement anchor = bar.Element(C + "axId");
+            if (gap.HasValue)
+            {
+                UpsertBefore(bar, anchor, "gapWidth", gap.Value.ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (overlap.HasValue)
+            {
+                UpsertBefore(bar, anchor, "overlap", overlap.Value.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        private static void UpsertBefore(XElement parent, XElement before, string name, string value)
+        {
+            XElement child = parent.Element(C + name);
+            if (child == null)
+            {
+                child = new XElement(C + name);
+                if (before != null)
+                {
+                    before.AddBeforeSelf(child);
+                }
+                else
+                {
+                    parent.Add(child);
+                }
+            }
+
+            child.SetAttributeValue("val", value ?? "");
+        }
+
+        private static int? ReadIntVal(XElement el)
+        {
+            int n;
+            string val = el?.Attribute("val")?.Value;
+            return int.TryParse(val, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) ? (int?)n : null;
         }
 
         private static void WriteChartStyle(XDocument chartDoc, int style)
@@ -674,6 +814,45 @@ namespace WordAddIn1.ChartOoxmlHost
         private static string ReadMarker(XElement ser)
         {
             return ser?.Element(C + "marker")?.Element(C + "symbol")?.Attribute("val")?.Value;
+        }
+
+        private static string LabelPosToOoxml(string name)
+        {
+            switch ((name ?? "").Trim().ToLowerInvariant())
+            {
+                case "outside":
+                    return "outEnd";
+                case "above":
+                    return "t";
+                case "below":
+                    return "b";
+                case "center":
+                    return "ctr";
+                case "inside":
+                    return "inEnd";
+                default:
+                    return null;
+            }
+        }
+
+        private static string ReadLabelPos(XElement ser)
+        {
+            string pos = ser?.Element(C + "dLbls")?.Element(C + "dLblPos")?.Attribute("val")?.Value;
+            switch ((pos ?? "").Trim())
+            {
+                case "outEnd":
+                    return "outside";
+                case "t":
+                    return "above";
+                case "b":
+                    return "below";
+                case "ctr":
+                    return "center";
+                case "inEnd":
+                    return "inside";
+                default:
+                    return null;
+            }
         }
 
         private static bool? ReadShowVal(XElement ser)

@@ -328,7 +328,7 @@ namespace WordAddIn1
                     }
                 }
 
-                ChartEngine.ApplyLegend(chart, config.Chart.LegendPosition, errors);
+                ChartEngine.ApplyLegend(chart, config.Chart.LegendPosition, errors, config.Chart.LegendFontColor);
 
                 // 设置网格线（默认显示虚线主要网格线）
                 if (!string.IsNullOrEmpty(config.Chart.Gridlines))

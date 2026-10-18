@@ -783,6 +783,11 @@ namespace WordAddIn1
             }
         }
 
+        public static string RgbHex(int rgbValue)
+        {
+            return Hex(rgbValue);
+        }
+
         private static string Hex(int rgbValue)
         {
             int r = rgbValue & 0xFF;

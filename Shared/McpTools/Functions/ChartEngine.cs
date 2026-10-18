@@ -27,7 +27,7 @@ namespace WordAddIn1
             }
         }
 
-        public static void ApplyLegend(Word.Chart chart, string legendPosition, List<string> errors)
+        public static void ApplyLegend(Word.Chart chart, string legendPosition, List<string> errors, string fontColor = null)
         {
             try
             {
@@ -47,6 +47,18 @@ namespace WordAddIn1
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine("[DEBUG] 设置图例字体大小失败: " + ex.Message);
+                }
+
+                try
+                {
+                    if (TryParseOfficeBgr(fontColor, out int legendBgr))
+                    {
+                        chart.Legend.Font.Color = legendBgr;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("[DEBUG] 设置图例字色失败: " + ex.Message);
                 }
             }
             catch (Exception ex)
@@ -759,13 +771,18 @@ namespace WordAddIn1
                                 chartInfo.AxisY.TickFont,
                                 chartInfo.AxisY.TickColor,
                                 chartInfo.AxisY.TickSize,
-                                null);
+                                chartInfo.AxisY.Format);
                             ChartSeriesChrome.ApplyTicks(
                                 yAxis,
                                 chartInfo.AxisY.TickPosition,
                                 chartInfo.AxisY.MajorTick,
                                 chartInfo.AxisY.MinorTick,
                                 chartInfo.AxisY.Grid);
+                            ChartSeriesChrome.ApplyAxisStroke(
+                                yAxis,
+                                chartInfo.AxisY.Line,
+                                chartInfo.AxisY.LineWeight,
+                                chartInfo.AxisY.GridColor);
                         }
                         
                         System.Diagnostics.Debug.WriteLine("[DEBUG] 已隐藏Y轴线，保留左侧刻度标签");
@@ -775,6 +792,15 @@ namespace WordAddIn1
                         string errorMsg = $"设置Y轴格式失败: {ex.Message}";
                         errors.Add(errorMsg);
                         System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(chartInfo.Gridlines))
+                {
+                    ChartOperationResult gridAgain = SetGridlines(chart, chartInfo.Gridlines);
+                    if (!gridAgain.Success && !string.IsNullOrEmpty(gridAgain.Error))
+                    {
+                        errors.Add(gridAgain.Error);
                     }
                 }
 
@@ -1285,6 +1311,11 @@ namespace WordAddIn1
                                 chartInfo.AxisX.MajorTick,
                                 chartInfo.AxisX.MinorTick,
                                 chartInfo.AxisX.Grid);
+                            ChartSeriesChrome.ApplyAxisStroke(
+                                xAxis,
+                                chartInfo.AxisX.Line,
+                                chartInfo.AxisX.LineWeight,
+                                chartInfo.AxisX.GridColor);
                         }
                         
                         System.Diagnostics.Debug.WriteLine($"[DEBUG] 设置X轴刻度线：主刻度线=外部（显示），次刻度线=无（隐藏），标签间隔={tickLabelSpacing}，刻度线间隔={tickLabelSpacing}，AxisBetweenCategories={ResolveAxisBetweenCategories(chartInfo)}");
@@ -1702,7 +1733,7 @@ namespace WordAddIn1
                 }
             }
 
-            ApplyLegend(chart, chartInfo.LegendPosition, warnings);
+            ApplyLegend(chart, chartInfo.LegendPosition, warnings, chartInfo.LegendFontColor);
 
             if (!string.IsNullOrEmpty(chartInfo.Gridlines))
             {

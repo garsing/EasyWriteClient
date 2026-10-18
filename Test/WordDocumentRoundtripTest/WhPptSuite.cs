@@ -25,6 +25,114 @@ namespace WordDocumentRoundtripTest
 
         /// <param name="startAfter">这条的名字跑完后从下一条开始。空则从头。</param>
         /// <param name="onlyIds">套件序号，逗号分隔。空则不按序号收窄。</param>
+        /// <summary>
+        /// 同一条建图，只换 ChartStyle，打印请求值和读回值。不改 550 套件的期望。
+        /// </summary>
+        public static void StyleSweep(TestRun run, string host)
+        {
+            // WPS 文字只留 101–148。请求 1–48 时读回是原号加 100；这个区间外收成默认 102。
+            int[] styles = { 2, 10, 48, 100, 101, 148, 149, 201, 286 };
+            ChartCase combo = null;
+            ChartCase column = null;
+            foreach (ChartCase one in ChartAttrCatalog.Build())
+            {
+                if (one.IsReplace || one.Name == null)
+                {
+                    continue;
+                }
+
+                if (one.Name.EndsWith("combo-style-scale-color", StringComparison.OrdinalIgnoreCase))
+                {
+                    combo = one;
+                }
+                else if (one.Name.EndsWith("chart-style", StringComparison.OrdinalIgnoreCase))
+                {
+                    column = one;
+                }
+            }
+
+            if (combo == null || column == null)
+            {
+                run.CaseFail("wh-ppt-style-sweep", "找不到样式探针底图");
+                return;
+            }
+
+            var session = new WdSession(host);
+            session.DismissOrphanExcelOnClose = !session.IsWps;
+            string path = session.NewDocxPath();
+            ToolResult opened = session.Open(path, true, session.App);
+            if (opened == null || !opened.Success)
+            {
+                run.CaseFail("wh-ppt-style-sweep", opened == null ? "打开空白稿失败" : (opened.Error ?? "打开空白稿失败"));
+                return;
+            }
+
+            string channel = WdSession.Str(opened, "channel_id");
+            try
+            {
+                SweepOne(run, session, channel, "combo", combo.CreateHtml, styles);
+                SweepOne(run, session, channel, "column", column.CreateHtml, new[] { 10, 48, 102, 201, 286 });
+            }
+            finally
+            {
+                session.CloseDocByPath(path);
+            }
+        }
+
+        private static void SweepOne(TestRun run, WdSession session, string channel, string kind, string html, int[] styles)
+        {
+            for (int i = 0; i < styles.Length; i++)
+            {
+                int style = styles[i];
+                string swapped = html.Replace("data-chart-style=\"286\"", "data-chart-style=\"" + style.ToString() + "\"");
+                if (swapped.IndexOf("data-chart-style=\"" + style.ToString() + "\"", StringComparison.Ordinal) < 0)
+                {
+                    Console.WriteLine("  STYLE " + kind + " " + style + " -> 换号失败");
+                    run.CaseFail("wh-ppt-style-" + kind + "-" + style, "HTML 里没有 data-chart-style");
+                    continue;
+                }
+
+                if (!WhPptChartXml.TryExport(swapped, out string xml, out string error))
+                {
+                    Console.WriteLine("  STYLE " + kind + " " + style + " -> 转 XML 失败 " + error);
+                    run.CaseFail("wh-ppt-style-" + kind + "-" + style, error ?? "转 XML 失败");
+                    continue;
+                }
+
+                string chartId = Create(session, channel, xml, out error);
+                if (chartId == null)
+                {
+                    Console.WriteLine("  STYLE " + kind + " " + style + " -> 建图失败 " + error);
+                    run.CaseFail("wh-ppt-style-" + kind + "-" + style, error ?? "建图失败");
+                    continue;
+                }
+
+                try
+                {
+                    ToolResult extracted = session.ExtractChartXml(ExtractArgs(channel, chartId));
+                    string back = extracted == null ? null : WdSession.Str(extracted, "xml_content");
+                    string got = "(无)";
+                    if (!string.IsNullOrEmpty(back))
+                    {
+                        XElement el = XDocument.Parse(back).Descendants()
+                            .FirstOrDefault(e => e.Name.LocalName == "ChartStyle");
+                        got = el == null || string.IsNullOrEmpty(el.Value) ? "(null)" : el.Value.Trim();
+                    }
+                    else
+                    {
+                        got = extracted == null ? "抽图空" : (extracted.Error ?? "无 xml");
+                    }
+
+                    Console.WriteLine("  STYLE " + kind + " 请求 " + style + " 读回 " + got);
+                    run.CaseOk("wh-ppt-style-" + kind + "-" + style);
+                }
+                finally
+                {
+                    session.DeleteChart(DelArgs(channel, chartId));
+                }
+            }
+        }
+
         public static void Run(TestRun run, string host, string caseFilter, string startAfter, string onlyIds)
         {
             string nameFilter = "";
@@ -259,10 +367,19 @@ namespace WordDocumentRoundtripTest
             channel = WdSession.Str(opened, "channel_id");
         }
 
+        /// <summary>WPS 文字能原样留下的样式号。286 会收成默认 102，改请求和期望，Word / WPP 仍用 286。</summary>
+        private const string WpsChartStyle = "148";
+
         private static void RunOne(TestRun run, WdSession session, string channel, ChartCase one)
         {
             string tag = "wh-ppt-" + (one.Name ?? "?");
+            string createHtml = one.CreateHtml;
             string finalHtml = one.IsReplace ? one.ReplaceHtml : one.CreateHtml;
+            if (session.IsWps)
+            {
+                ApplyWpsChartStyle(one, ref createHtml, ref finalHtml);
+            }
+
             if (!WhPptChartXml.TryExport(finalHtml, out string finalXml, out string error))
             {
                 run.CaseFail(tag, error ?? "HTML 转 ChartConfig 失败");
@@ -274,7 +391,7 @@ namespace WordDocumentRoundtripTest
             {
                 if (one.IsReplace)
                 {
-                    if (!WhPptChartXml.TryExport(one.CreateHtml, out string baseXml, out error))
+                    if (!WhPptChartXml.TryExport(createHtml, out string baseXml, out error))
                     {
                         run.CaseFail(tag, error ?? "底图转 ChartConfig 失败");
                         return;
@@ -347,6 +464,47 @@ namespace WordDocumentRoundtripTest
                     session.DeleteChart(DelArgs(channel, chartId));
                 }
             }
+        }
+
+        private static void ApplyWpsChartStyle(ChartCase one, ref string createHtml, ref string finalHtml)
+        {
+            if (one?.Attrs == null)
+            {
+                return;
+            }
+
+            bool styleCase = false;
+            for (int i = 0; i < one.Attrs.Count; i++)
+            {
+                AttrCheck check = one.Attrs[i];
+                if (check == null
+                    || !string.Equals(check.Key, "ChartStyle", StringComparison.Ordinal)
+                    || !string.Equals(check.Expected, "286", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                check.Expected = WpsChartStyle;
+                styleCase = true;
+            }
+
+            if (!styleCase)
+            {
+                return;
+            }
+
+            createHtml = SwapChartStyle(createHtml);
+            finalHtml = SwapChartStyle(finalHtml);
+        }
+
+        private static string SwapChartStyle(string html)
+        {
+            if (string.IsNullOrEmpty(html))
+            {
+                return html;
+            }
+
+            return html.Replace("data-chart-style=\"286\"", "data-chart-style=\"" + WpsChartStyle + "\"");
         }
 
         private static string Create(WdSession session, string channel, string xml, out string error)

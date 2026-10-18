@@ -333,6 +333,9 @@ namespace WordAddIn1
                             MajorTick = ReadAxisField(axisXElement, "MajorTick"),
                             MinorTick = ReadAxisField(axisXElement, "MinorTick"),
                             Grid = ReadAxisField(axisXElement, "Grid"),
+                            Line = ReadAxisField(axisXElement, "Line"),
+                            LineWeight = ReadAxisField(axisXElement, "LineWeight"),
+                            GridColor = ReadAxisField(axisXElement, "GridColor"),
                             TickLabelCount = ParseOptionalInt(ReadAxisField(axisXElement, "TickLabelCount")),
                             TickLabelSpacing = ParseOptionalInt(ReadAxisField(axisXElement, "TickLabelSpacing")),
                             BetweenCategories = ParseOptionalBool(ReadAxisField(axisXElement, "BetweenCategories"))
@@ -538,6 +541,7 @@ namespace WordAddIn1
                 FillMissingValues = chartElement.Element("FillMissingValues") == null
                     || (bool.TryParse(chartElement.Element("FillMissingValues")?.Value, out bool fillMissingValues) && fillMissingValues),
                 Overlap = int.TryParse(chartElement.Element("Overlap")?.Value, out int overlap) ? overlap : 0,
+                HasOverlap = chartElement.Element("Overlap") != null,
                 PlotBox = chartElement.Element("PlotBox")?.Value ?? "",
                 PlotInside = chartElement.Element("PlotInside")?.Value ?? "",
                 ChartAreaColor = chartElement.Element("ChartAreaColor")?.Value ?? "",

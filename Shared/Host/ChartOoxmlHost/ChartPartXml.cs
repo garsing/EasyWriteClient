@@ -23,6 +23,7 @@ namespace WordAddIn1.ChartOoxmlHost
             public string LineWeight { get; set; }
             public string Marker { get; set; }
             public bool? ShowDataLabels { get; set; }
+            public string LabelPosition { get; set; }
             public List<string> Categories { get; set; }
             public List<string> Values { get; set; }
         }
@@ -35,6 +36,7 @@ namespace WordAddIn1.ChartOoxmlHost
             public string AxisYTitle { get; set; }
             public string AxisY2Title { get; set; }
             public string AxisXTitle { get; set; }
+            public AxisXInfo AxisX { get; set; }
             public string Gridlines { get; set; }
             public int ChartStyle { get; set; }
             public AxisYInfo AxisY { get; set; }
@@ -43,6 +45,8 @@ namespace WordAddIn1.ChartOoxmlHost
             public double? YMin { get; set; }
             public double? YMax { get; set; }
             public double? YMajor { get; set; }
+            public int? GapWidth { get; set; }
+            public int? Overlap { get; set; }
             public AxisYInfo AxisY2 { get; set; }
             public List<SeriesCol> Series { get; set; }
         }
@@ -73,11 +77,14 @@ namespace WordAddIn1.ChartOoxmlHost
                 AxisY2Title = ReadValAxisTitle(chartDoc, secondary: true),
                 AxisY = ReadAxisChrome(FindValAx(chartDoc, false)),
                 AxisXTitle = ReadCatAxisTitle(chartDoc),
+                AxisX = ReadCatAxis(chartDoc),
                 Gridlines = ReadGridlines(chartDoc),
                 ChartStyle = ReadChartStyle(chartDoc),
                 AxisY2 = ReadValAxisChrome(chartDoc),
                 PlotColor = ReadAreaFill(chartDoc.Descendants(C + "plotArea").FirstOrDefault()),
-                ChartAreaColor = ReadAreaFill(chartDoc.Root)
+                ChartAreaColor = ReadAreaFill(chartDoc.Root),
+                GapWidth = ReadIntVal(chartDoc.Descendants(C + "barChart").FirstOrDefault()?.Element(C + "gapWidth")),
+                Overlap = ReadIntVal(chartDoc.Descendants(C + "barChart").FirstOrDefault()?.Element(C + "overlap"))
             };
             ReadPrimaryScale(chartDoc, grid);
             return true;
@@ -577,6 +584,7 @@ namespace WordAddIn1.ChartOoxmlHost
                 LineWeight = ReadLineWeight(ser),
                 Marker = ReadMarker(ser),
                 ShowDataLabels = ReadShowVal(ser),
+                LabelPosition = ReadLabelPos(ser),
                 ChartType = "",
                 Categories = ReadPts(ser.Element(C + "cat")),
                 Values = ReadPts(ser.Element(C + "val"))

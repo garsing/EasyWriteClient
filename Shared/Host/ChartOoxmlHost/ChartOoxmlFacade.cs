@@ -89,15 +89,35 @@ namespace WordAddIn1.ChartOoxmlHost
                     info.AxisY.Title = grid.AxisYTitle;
                 }
 
-                if (!string.IsNullOrEmpty(grid.AxisXTitle))
+                if (grid.AxisX != null)
+                {
+                    info.AxisX = grid.AxisX;
+                }
+                else if (!string.IsNullOrEmpty(grid.AxisXTitle))
                 {
                     info.AxisX = new AxisXInfo { Title = grid.AxisXTitle };
+                }
+
+                if (info.AxisX != null && !string.IsNullOrEmpty(grid.AxisXTitle))
+                {
+                    info.AxisX.Title = grid.AxisXTitle;
                 }
 
                 info.Gridlines = grid.Gridlines;
                 if (grid.ChartStyle > 0)
                 {
                     info.ChartStyle = grid.ChartStyle;
+                }
+
+                if (grid.GapWidth.HasValue)
+                {
+                    info.GapWidth = grid.GapWidth.Value;
+                }
+
+                if (grid.Overlap.HasValue)
+                {
+                    info.Overlap = grid.Overlap.Value;
+                    info.HasOverlap = true;
                 }
 
                 info.AxisY2 = grid.AxisY2;
@@ -442,10 +462,13 @@ namespace WordAddIn1.ChartOoxmlHost
                 AxisYTitle = info != null && info.AxisY != null ? info.AxisY.Title : null,
                 AxisY2Title = info != null && info.AxisY2 != null ? info.AxisY2.Title : null,
                 AxisXTitle = info != null && info.AxisX != null ? info.AxisX.Title : null,
+                AxisX = info != null ? info.AxisX : null,
                 Gridlines = info != null ? info.Gridlines : null,
                 ChartStyle = info != null ? info.ChartStyle : 0,
                 AxisY = info != null ? info.AxisY : null,
                 AxisY2 = info != null ? info.AxisY2 : null,
+                GapWidth = info != null && info.GapWidth > 0 ? (int?)info.GapWidth : null,
+                Overlap = info != null && (info.HasOverlap || info.Overlap != 0) ? (int?)info.Overlap : null,
                 PlotColor = info != null ? info.PlotColor : null,
                 ChartAreaColor = info != null ? info.ChartAreaColor : null,
                 Series = new List<ChartPartXml.SeriesCol>()
@@ -476,6 +499,7 @@ namespace WordAddIn1.ChartOoxmlHost
                     LineWeight = s.LineWeight,
                     Marker = s.Marker,
                     ShowDataLabels = s.ShowDataLabels,
+                    LabelPosition = s.LabelPosition,
                     ChartType = s.ChartType,
                     Categories = new List<string>(),
                     Values = new List<string>()
@@ -515,6 +539,7 @@ namespace WordAddIn1.ChartOoxmlHost
                     LineWeight = col.LineWeight,
                     Marker = col.Marker,
                     ShowDataLabels = col.ShowDataLabels,
+                    LabelPosition = col.LabelPosition,
                     Points = new List<PointInfo>()
                 };
                 int n = col.Values != null ? col.Values.Count : 0;

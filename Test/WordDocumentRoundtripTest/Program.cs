@@ -375,7 +375,14 @@ namespace WordDocumentRoundtripTest
                 }
                 else if (runPptChart)
                 {
-                    WhPptSuite.Run(run, host, caseFilter, GetArg(args, "--wh-from="), GetArg(args, "--wh-ids="));
+                    if (string.Equals(caseFilter, "wh-ppt-style-sweep", StringComparison.OrdinalIgnoreCase))
+                    {
+                        WhPptSuite.StyleSweep(run, host);
+                    }
+                    else
+                    {
+                        WhPptSuite.Run(run, host, caseFilter, GetArg(args, "--wh-from="), GetArg(args, "--wh-ids="));
+                    }
                 }
                 else if (runChart)
                 {

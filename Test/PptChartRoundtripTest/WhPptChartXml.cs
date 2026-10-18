@@ -330,6 +330,8 @@ namespace PptChartRoundtripTest
                     return Text(chart, "LegendPosition");
                 case "AxisX":
                     return AxisProp(chart, "AxisX", "Title");
+                case "AxisXFormat":
+                    return First(AxisProp(chart, "AxisX", "Format"), Text(chart, "AxisXFormat"));
                 case "AxisY":
                     return AxisProp(chart, "AxisY", "Title");
                 case "AxisYSecondary":

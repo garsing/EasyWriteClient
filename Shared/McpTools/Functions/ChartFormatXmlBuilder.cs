@@ -67,7 +67,7 @@ namespace WordAddIn1
                 chartEl.Add(new XElement("GapWidth", chart.GapWidth));
             }
 
-            if (chart.Overlap != 0)
+            if (chart.HasOverlap || chart.Overlap != 0)
             {
                 chartEl.Add(new XElement("Overlap", chart.Overlap));
             }
@@ -134,6 +134,9 @@ namespace WordAddIn1
                 AppendElementIfNotEmpty(axisX, "MajorTick", chart.AxisX.MajorTick);
                 AppendElementIfNotEmpty(axisX, "MinorTick", chart.AxisX.MinorTick);
                 AppendElementIfNotEmpty(axisX, "Grid", chart.AxisX.Grid);
+                AppendElementIfNotEmpty(axisX, "Line", chart.AxisX.Line);
+                AppendElementIfNotEmpty(axisX, "LineWeight", chart.AxisX.LineWeight);
+                AppendElementIfNotEmpty(axisX, "GridColor", chart.AxisX.GridColor);
                 if (chart.AxisX.TickLabelCount.HasValue)
                 {
                     axisX.Add(new XElement("TickLabelCount", chart.AxisX.TickLabelCount.Value));

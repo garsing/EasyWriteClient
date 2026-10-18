@@ -27,6 +27,8 @@ namespace WordAddIn1
     public AxisYInfo AxisY { get; set; }
     public AxisYInfo AxisY2 { get; set; }
     public int Overlap { get; set; }
+    /// <summary>稿里写了 Overlap 才为 true。0 也要写回。</summary>
+    public bool HasOverlap { get; set; }
     public string PlotBox { get; set; }
     public string PlotInside { get; set; }
     public string ChartAreaColor { get; set; }
@@ -90,6 +92,9 @@ namespace WordAddIn1
     public string MajorTick { get; set; }
     public string MinorTick { get; set; }
     public string Grid { get; set; }
+    public string Line { get; set; }
+    public string LineWeight { get; set; }
+    public string GridColor { get; set; }
     public int? TickLabelCount { get; set; }
     public int? TickLabelSpacing { get; set; }
     /// <summary>null 时按 Chart.Type 默认：line=false，column=true</summary>

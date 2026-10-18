@@ -120,6 +120,13 @@ namespace WordAddIn1
                 if (chart.HasLegend)
                 {
                     chartInfo.LegendPosition = MapLegendPosition(chart.Legend.Position);
+                    try
+                    {
+                        chartInfo.LegendFontColor = ChartSeriesChrome.RgbHex(Convert.ToInt32(chart.Legend.Font.Color));
+                    }
+                    catch
+                    {
+                    }
                 }
                 else
                 {
@@ -211,6 +218,12 @@ namespace WordAddIn1
                         chartInfo.AxisX.MinorTick = minor;
                         chartInfo.AxisX.Grid = grid;
                     });
+                    ChartSeriesChrome.CaptureAxisStroke(xAxis, (line, weight, gridColor) =>
+                    {
+                        chartInfo.AxisX.Line = line;
+                        chartInfo.AxisX.LineWeight = weight;
+                        chartInfo.AxisX.GridColor = gridColor;
+                    });
                 }
                 catch { }
 
@@ -237,6 +250,7 @@ namespace WordAddIn1
                         chartInfo.AxisY.TickFont = font;
                         chartInfo.AxisY.TickColor = color;
                         chartInfo.AxisY.TickSize = size;
+                        chartInfo.AxisY.Format = format;
                     });
                     ChartSeriesChrome.CaptureTicks(yAxisForChrome, (pos, major, minor, grid) =>
                     {
@@ -244,6 +258,12 @@ namespace WordAddIn1
                         chartInfo.AxisY.MajorTick = major;
                         chartInfo.AxisY.MinorTick = minor;
                         chartInfo.AxisY.Grid = grid;
+                    });
+                    ChartSeriesChrome.CaptureAxisStroke(yAxisForChrome, (line, weight, gridColor) =>
+                    {
+                        chartInfo.AxisY.Line = line;
+                        chartInfo.AxisY.LineWeight = weight;
+                        chartInfo.AxisY.GridColor = gridColor;
                     });
                 }
                 catch { }
