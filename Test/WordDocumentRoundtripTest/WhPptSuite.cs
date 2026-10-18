@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Xml.Linq;
 using PptChartRoundtripTest;
 using WordAddIn1;
@@ -20,7 +22,8 @@ namespace WordDocumentRoundtripTest
             get { return ChartCaseCatalog.Total + ChartAttrCatalog.Total; }
         }
 
-        public static void Run(TestRun run, string host, string caseFilter)
+        /// <param name="startAfter">这条的名字跑完后从下一条开始。空则从头。</param>
+        public static void Run(TestRun run, string host, string caseFilter, string startAfter)
         {
             string nameFilter = "";
             const string prefix = "wh-ppt";
@@ -39,7 +42,30 @@ namespace WordDocumentRoundtripTest
                 cases = cases.Where(c => c.Name != null && c.Name.IndexOf(nameFilter, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
             }
 
-            Console.WriteLine("文字图表套件 " + host + "  条数=" + cases.Count
+            int start = 0;
+            if (!string.IsNullOrEmpty(startAfter))
+            {
+                int found = -1;
+                for (int n = 0; n < cases.Count; n++)
+                {
+                    if (string.Equals(cases[n].Name, startAfter, StringComparison.OrdinalIgnoreCase))
+                    {
+                        found = n;
+                        break;
+                    }
+                }
+
+                if (found < 0)
+                {
+                    run.CaseFail("wh-ppt-from", "找不到起点 " + startAfter);
+                    return;
+                }
+
+                start = found + 1;
+            }
+
+            Console.WriteLine("文字图表套件 " + host + "  条数=" + (cases.Count - start)
+                + (start == 0 ? "" : "  从 " + (start + 1) + " 条起，上一条 " + startAfter)
                 + (string.IsNullOrEmpty(nameFilter) ? "" : "  过滤=" + nameFilter));
 
             var session = new WdSession(host);
@@ -55,9 +81,9 @@ namespace WordDocumentRoundtripTest
             string channel = WdSession.Str(opened, "channel_id");
             try
             {
-                for (int i = 0; i < cases.Count; i++)
+                for (int i = start; i < cases.Count; i++)
                 {
-                    RunOne(run, session, channel, cases[i]);
+                    RunOneBounded(run, session, ref channel, ref path, cases[i]);
                     if ((i + 1) % 25 == 0)
                     {
                         Console.WriteLine("  … " + (i + 1) + "/" + cases.Count
@@ -69,6 +95,126 @@ namespace WordDocumentRoundtripTest
             {
                 session.CloseDocByPath(path);
             }
+        }
+
+        /// <summary>
+        /// 单条超过 100 秒就关掉卡住的 Desktop 和无窗口 Excel，再开一份空白稿继续。
+        /// 管道读取消停不住已经挂起的调用。
+        /// </summary>
+        private static void RunOneBounded(
+            TestRun run,
+            WdSession session,
+            ref string channel,
+            ref string path,
+            ChartCase one)
+        {
+            string ch = channel;
+            int mark = run.CasesPassed + run.CasesFailed;
+            Exception boom = null;
+            var done = new ManualResetEventSlim(false);
+            var worker = new Thread(() =>
+            {
+                try
+                {
+                    RunOne(run, session, ch, one);
+                }
+                catch (Exception ex)
+                {
+                    boom = ex;
+                }
+                finally
+                {
+                    done.Set();
+                }
+            });
+            worker.IsBackground = true;
+            worker.Start();
+            if (done.Wait(TimeSpan.FromSeconds(100)))
+            {
+                if (boom != null)
+                {
+                    run.CaseFail("wh-ppt-" + (one.Name ?? "?"), boom.Message);
+                }
+
+                return;
+            }
+
+            Console.WriteLine("  [超时] " + (one.Name ?? "?") + " 超过 100 秒，重启 Desktop 后继续");
+            StopStuckHost();
+            if (!done.Wait(TimeSpan.FromSeconds(20)))
+            {
+                if (run.CasesPassed + run.CasesFailed == mark)
+                {
+                    run.CaseFail("wh-ppt-" + (one.Name ?? "?"), "超时，调用未返回");
+                }
+            }
+            else if (boom != null && run.CasesPassed + run.CasesFailed == mark)
+            {
+                run.CaseFail("wh-ppt-" + (one.Name ?? "?"), boom.Message);
+            }
+
+            Reopen(session, ref channel, ref path, run);
+        }
+
+        private static void StopStuckHost()
+        {
+            foreach (Process p in Process.GetProcessesByName("EasyWriteClient.Desktop"))
+            {
+                try
+                {
+                    p.Kill();
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            foreach (Process p in Process.GetProcessesByName("EXCEL"))
+            {
+                try
+                {
+                    if (p.MainWindowHandle == IntPtr.Zero)
+                    {
+                        p.Kill();
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            Thread.Sleep(1500);
+        }
+
+        private static void Reopen(WdSession session, ref string channel, ref string path, TestRun run)
+        {
+            string previous = path;
+            if (!DesktopLauncher.EnsureAvailable())
+            {
+                run.CaseFail("wh-ppt-open", "超时后 Desktop 没有起来");
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(previous))
+            {
+                try
+                {
+                    session.CloseDocByPath(previous);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            path = session.NewDocxPath();
+            ToolResult opened = session.Open(path, true, session.App);
+            if (opened == null || !opened.Success)
+            {
+                run.CaseFail("wh-ppt-open", opened == null ? "超时后重开空白稿失败" : (opened.Error ?? "超时后重开空白稿失败"));
+                return;
+            }
+
+            channel = WdSession.Str(opened, "channel_id");
         }
 
         private static void RunOne(TestRun run, WdSession session, string channel, ChartCase one)

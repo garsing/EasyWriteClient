@@ -1,0 +1,24 @@
+Set-Content : 文件“D:\project\EasyWrite\EasyWriteClient\Test\overnight-logs\wh-ppt\word.log”正由另一进程使用，因此该
+进程无法访问此文件。
+所在位置 D:\project\EasyWrite\EasyWriteClient\Test\run-wh-ppt-overnight.ps1:16 字符: 37
++ ... "START $stamp host=$hostName" | Set-Content -Path $log -Encoding UTF8
++                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [Set-Content], IOException
+    + FullyQualifiedErrorId : System.IO.IOException,Microsoft.PowerShell.Commands.SetContentCommand
+ 
+Out-File : 文件“D:\project\EasyWrite\EasyWriteClient\Test\overnight-logs\wh-ppt\word.log”正由另一进程使用，因此该进程
+无法访问此文件。
+所在位置 D:\project\EasyWrite\EasyWriteClient\Test\run-wh-ppt-overnight.ps1:17 字符: 50
++ ... -host=$hostName *>&1 | Out-File -FilePath $log -Append -Encoding utf8
++                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OpenError: (:) [Out-File], IOException
+    + FullyQualifiedErrorId : FileOpenFailure,Microsoft.PowerShell.Commands.OutFileCommand
+ 
+out-file : 文件“D:\project\EasyWrite\EasyWriteClient\Test\overnight-logs\wh-ppt\word.log”正由另一进程使用，因此该进程
+无法访问此文件。
+所在位置 D:\project\EasyWrite\EasyWriteClient\Test\run-wh-ppt-overnight.ps1:19 字符: 19
++     "EXIT $code $(Get-Date -Format o)" | Tee-Object -FilePath $log -A ...
++                   ~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OpenError: (:) [out-file], IOException
+    + FullyQualifiedErrorId : FileOpenFailure,Microsoft.PowerShell.Commands.OutFileCommand
+ 
