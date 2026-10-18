@@ -24,6 +24,12 @@ namespace WordAddIn1.ChartOoxmlHost
             public string Marker { get; set; }
             public bool? ShowDataLabels { get; set; }
             public string LabelPosition { get; set; }
+            public string LabelFont { get; set; }
+            public string LabelSize { get; set; }
+            public string LabelColor { get; set; }
+            public string LabelFormat { get; set; }
+            public string FillGradient { get; set; }
+            public string FillAngle { get; set; }
             public List<string> Categories { get; set; }
             public List<string> Values { get; set; }
         }
@@ -585,6 +591,12 @@ namespace WordAddIn1.ChartOoxmlHost
                 Marker = ReadMarker(ser),
                 ShowDataLabels = ReadShowVal(ser),
                 LabelPosition = ReadLabelPos(ser),
+                LabelFont = ReadLabelFont(ser),
+                LabelSize = ReadLabelSize(ser),
+                LabelColor = ReadLabelColor(ser),
+                LabelFormat = ReadLabelFormat(ser),
+                FillGradient = ReadGradient(ser),
+                FillAngle = ReadGradientAngle(ser),
                 ChartType = "",
                 Categories = ReadPts(ser.Element(C + "cat")),
                 Values = ReadPts(ser.Element(C + "val"))

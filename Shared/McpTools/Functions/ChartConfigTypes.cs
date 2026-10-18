@@ -68,6 +68,7 @@ namespace WordAddIn1
     public string LabelFont { get; set; }
     public string LabelSize { get; set; }
     public string LabelColor { get; set; }
+    public string LabelFormat { get; set; }
     public string FillGradient { get; set; }
     public string FillAngle { get; set; }
     public List<PointInfo> Points { get; set; }

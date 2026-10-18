@@ -500,6 +500,12 @@ namespace WordAddIn1.ChartOoxmlHost
                     Marker = s.Marker,
                     ShowDataLabels = s.ShowDataLabels,
                     LabelPosition = s.LabelPosition,
+                    LabelFont = s.LabelFont,
+                    LabelSize = s.LabelSize,
+                    LabelColor = s.LabelColor,
+                    LabelFormat = s.LabelFormat,
+                    FillGradient = s.FillGradient,
+                    FillAngle = s.FillAngle,
                     ChartType = s.ChartType,
                     Categories = new List<string>(),
                     Values = new List<string>()
@@ -540,6 +546,12 @@ namespace WordAddIn1.ChartOoxmlHost
                     Marker = col.Marker,
                     ShowDataLabels = col.ShowDataLabels,
                     LabelPosition = col.LabelPosition,
+                    LabelFont = col.LabelFont,
+                    LabelSize = col.LabelSize,
+                    LabelColor = HexOrNull(col.LabelColor),
+                    LabelFormat = col.LabelFormat,
+                    FillGradient = col.FillGradient,
+                    FillAngle = col.FillAngle,
                     Points = new List<PointInfo>()
                 };
                 int n = col.Values != null ? col.Values.Count : 0;
@@ -562,6 +574,16 @@ namespace WordAddIn1.ChartOoxmlHost
             }
 
             return list;
+        }
+
+        private static string HexOrNull(string hex)
+        {
+            if (string.IsNullOrEmpty(hex))
+            {
+                return null;
+            }
+
+            return "#" + hex.TrimStart('#');
         }
     }
 }

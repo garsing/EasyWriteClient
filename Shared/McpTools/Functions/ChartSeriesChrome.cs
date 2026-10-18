@@ -27,6 +27,7 @@ namespace WordAddIn1
             series.LabelFont = Attr(column, "labelFont");
             series.LabelSize = Attr(column, "labelSize");
             series.LabelColor = Attr(column, "labelColor");
+            series.LabelFormat = Attr(column, "labelFormat");
             series.FillGradient = Attr(column, "fillGradient");
             series.FillAngle = Attr(column, "fillAngle");
             if (bool.TryParse(Attr(column, "showValue"), out bool showValue))
@@ -57,6 +58,7 @@ namespace WordAddIn1
             Add(col, "labelFont", series.LabelFont);
             Add(col, "labelSize", series.LabelSize);
             Add(col, "labelColor", series.LabelColor);
+            Add(col, "labelFormat", series.LabelFormat);
             Add(col, "fillGradient", series.FillGradient);
             Add(col, "fillAngle", series.FillAngle);
             if (series.ShowValue.HasValue)

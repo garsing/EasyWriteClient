@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Xml.Linq;
 
 namespace WordAddIn1.ChartOoxmlHost
@@ -57,10 +59,13 @@ namespace WordAddIn1.ChartOoxmlHost
                 return;
             }
 
-            string fill = NormColor(col.Color);
-            if (!string.IsNullOrEmpty(fill) && !IsNone(col.Color))
+            if (!WriteGradient(ser, col.FillGradient, col.FillAngle))
             {
-                PinSerColor(ser, fill);
+                string fill = NormColor(col.Color);
+                if (!string.IsNullOrEmpty(fill) && !IsNone(col.Color))
+                {
+                    PinSerColor(ser, fill);
+                }
             }
 
             string line = NormColor(col.Line);
@@ -81,7 +86,12 @@ namespace WordAddIn1.ChartOoxmlHost
                 SetVal(marker, "symbol", col.Marker.Trim());
             }
 
-            if (col.ShowDataLabels.HasValue || !string.IsNullOrEmpty(col.LabelPosition))
+            if (col.ShowDataLabels.HasValue
+                || !string.IsNullOrEmpty(col.LabelPosition)
+                || !string.IsNullOrEmpty(col.LabelFont)
+                || !string.IsNullOrEmpty(col.LabelSize)
+                || !string.IsNullOrEmpty(col.LabelColor)
+                || !string.IsNullOrEmpty(col.LabelFormat))
             {
                 XElement labels = ser.Element(C + "dLbls");
                 if (labels == null)
@@ -103,7 +113,172 @@ namespace WordAddIn1.ChartOoxmlHost
                     SetVal(labels, "showSerName", "0");
                     SetVal(labels, "showPercent", "0");
                 }
+
+                WriteLabelNumFmt(labels, col.LabelFormat);
+                WriteLabelText(labels, col.LabelFont, col.LabelSize, col.LabelColor);
             }
+        }
+
+        private static void WriteLabelNumFmt(XElement labels, string format)
+        {
+            if (labels == null || string.IsNullOrEmpty(format))
+            {
+                return;
+            }
+
+            labels.Element(C + "numFmt")?.Remove();
+            var num = new XElement(C + "numFmt");
+            num.SetAttributeValue("formatCode", format);
+            num.SetAttributeValue("sourceLinked", "0");
+            labels.AddFirst(num);
+        }
+
+        private static void WriteLabelText(XElement labels, string font, string size, string color)
+        {
+            if (labels == null
+                || (string.IsNullOrEmpty(font) && string.IsNullOrEmpty(size) && string.IsNullOrEmpty(color)))
+            {
+                return;
+            }
+
+            labels.Element(C + "txPr")?.Remove();
+            var def = new XElement(A + "defRPr");
+            double pt;
+            if (!string.IsNullOrEmpty(size)
+                && double.TryParse(size, NumberStyles.Float, CultureInfo.InvariantCulture, out pt))
+            {
+                int hundredths = (int)Math.Round(pt * 100.0);
+                def.SetAttributeValue("sz", hundredths.ToString(CultureInfo.InvariantCulture));
+            }
+
+            string hex = NormColor(color);
+            if (!string.IsNullOrEmpty(hex))
+            {
+                def.Add(new XElement(A + "solidFill", new XElement(A + "srgbClr", new XAttribute("val", hex))));
+            }
+
+            if (!string.IsNullOrEmpty(font))
+            {
+                def.Add(new XElement(A + "latin", new XAttribute("typeface", font)));
+                def.Add(new XElement(A + "ea", new XAttribute("typeface", font)));
+            }
+
+            var tx = new XElement(
+                C + "txPr",
+                new XElement(A + "bodyPr"),
+                new XElement(A + "lstStyle"),
+                new XElement(A + "p", new XElement(A + "pPr", def), new XElement(A + "endParaRPr")));
+            XElement num = labels.Element(C + "numFmt");
+            if (num != null)
+            {
+                num.AddAfterSelf(tx);
+            }
+            else
+            {
+                labels.AddFirst(tx);
+            }
+        }
+
+        private static bool WriteGradient(XElement ser, string gradient, string angle)
+        {
+            if (ser == null || string.IsNullOrEmpty(gradient))
+            {
+                return false;
+            }
+
+            string[] parts = gradient.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+            var stops = new List<XElement>();
+            for (int i = 0; i < parts.Length; i++)
+            {
+                XElement gs = GradientStop(parts[i]);
+                if (gs != null)
+                {
+                    stops.Add(gs);
+                }
+            }
+
+            if (stops.Count < 2)
+            {
+                return false;
+            }
+
+            XElement spPr = ser.Element(C + "spPr");
+            if (spPr == null)
+            {
+                spPr = new XElement(C + "spPr");
+                ser.Add(spPr);
+            }
+
+            spPr.Element(A + "solidFill")?.Remove();
+            spPr.Element(A + "gradFill")?.Remove();
+            spPr.Element(A + "noFill")?.Remove();
+            var grad = new XElement(A + "gradFill", new XElement(A + "gsLst", stops));
+            double deg;
+            if (!string.IsNullOrEmpty(angle)
+                && double.TryParse(angle, NumberStyles.Float, CultureInfo.InvariantCulture, out deg))
+            {
+                int ang = (int)Math.Round(deg * 60000.0);
+                var lin = new XElement(A + "lin");
+                lin.SetAttributeValue("ang", ang.ToString(CultureInfo.InvariantCulture));
+                lin.SetAttributeValue("scaled", "1");
+                grad.Add(lin);
+            }
+
+            spPr.AddFirst(grad);
+            return true;
+        }
+
+        private static XElement GradientStop(string part)
+        {
+            if (string.IsNullOrEmpty(part))
+            {
+                return null;
+            }
+
+            int colon = part.IndexOf(':');
+            if (colon <= 0)
+            {
+                return null;
+            }
+
+            double pos;
+            if (!double.TryParse(part.Substring(0, colon), NumberStyles.Float, CultureInfo.InvariantCulture, out pos))
+            {
+                return null;
+            }
+
+            string rest = part.Substring(colon + 1);
+            int at = rest.LastIndexOf('@');
+            string color = at >= 0 ? rest.Substring(0, at) : rest;
+            double transparency = 0;
+            if (at >= 0)
+            {
+                double.TryParse(rest.Substring(at + 1), NumberStyles.Float, CultureInfo.InvariantCulture, out transparency);
+            }
+
+            string hex = NormColor(color);
+            if (string.IsNullOrEmpty(hex))
+            {
+                return null;
+            }
+
+            int gsPos = (int)Math.Round(Math.Max(0, Math.Min(1, pos)) * 100000.0);
+            int alpha = (int)Math.Round((1.0 - transparency) * 100000.0);
+            if (alpha < 0)
+            {
+                alpha = 0;
+            }
+
+            if (alpha > 100000)
+            {
+                alpha = 100000;
+            }
+
+            var srgb = new XElement(A + "srgbClr", new XAttribute("val", hex));
+            srgb.Add(new XElement(A + "alpha", new XAttribute("val", alpha.ToString(CultureInfo.InvariantCulture))));
+            var gs = new XElement(A + "gs", new XAttribute("pos", gsPos.ToString(CultureInfo.InvariantCulture)));
+            gs.Add(srgb);
+            return gs;
         }
 
         private static void WriteAreaFill(XElement owner, string color)
@@ -833,6 +1008,100 @@ namespace WordAddIn1.ChartOoxmlHost
                 default:
                     return null;
             }
+        }
+
+        private static XElement LabelDefRPr(XElement ser)
+        {
+            return ser?.Element(C + "dLbls")?.Element(C + "txPr")?.Descendants(A + "defRPr").FirstOrDefault();
+        }
+
+        private static string ReadLabelFont(XElement ser)
+        {
+            XElement latin = LabelDefRPr(ser)?.Element(A + "latin");
+            string face = latin?.Attribute("typeface")?.Value;
+            return string.IsNullOrEmpty(face) ? null : face;
+        }
+
+        private static string ReadLabelSize(XElement ser)
+        {
+            string sz = LabelDefRPr(ser)?.Attribute("sz")?.Value;
+            int hundredths;
+            if (!int.TryParse(sz, NumberStyles.Integer, CultureInfo.InvariantCulture, out hundredths) || hundredths <= 0)
+            {
+                return null;
+            }
+
+            return (hundredths / 100.0).ToString("0.##", CultureInfo.InvariantCulture);
+        }
+
+        private static string ReadLabelColor(XElement ser)
+        {
+            return LabelDefRPr(ser)?.Element(A + "solidFill")?.Element(A + "srgbClr")?.Attribute("val")?.Value;
+        }
+
+        private static string ReadLabelFormat(XElement ser)
+        {
+            return ser?.Element(C + "dLbls")?.Element(C + "numFmt")?.Attribute("formatCode")?.Value;
+        }
+
+        private static string ReadGradient(XElement ser)
+        {
+            XElement gsLst = ser?.Element(C + "spPr")?.Element(A + "gradFill")?.Element(A + "gsLst");
+            if (gsLst == null)
+            {
+                return null;
+            }
+
+            var sb = new StringBuilder();
+            foreach (XElement gs in gsLst.Elements(A + "gs"))
+            {
+                int posRaw;
+                if (!int.TryParse(gs.Attribute("pos")?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out posRaw))
+                {
+                    continue;
+                }
+
+                string hex = gs.Element(A + "srgbClr")?.Attribute("val")?.Value;
+                if (string.IsNullOrEmpty(hex))
+                {
+                    continue;
+                }
+
+                int alpha = 100000;
+                string alphaRaw = gs.Element(A + "srgbClr")?.Element(A + "alpha")?.Attribute("val")?.Value;
+                int parsedAlpha;
+                if (int.TryParse(alphaRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsedAlpha))
+                {
+                    alpha = parsedAlpha;
+                }
+
+                if (sb.Length > 0)
+                {
+                    sb.Append(';');
+                }
+
+                double pos = posRaw / 100000.0;
+                double transparency = 1.0 - (alpha / 100000.0);
+                sb.Append(pos.ToString("0.##", CultureInfo.InvariantCulture))
+                    .Append(":#")
+                    .Append(hex.TrimStart('#').ToUpperInvariant())
+                    .Append('@')
+                    .Append(transparency.ToString("0.##", CultureInfo.InvariantCulture));
+            }
+
+            return sb.Length == 0 ? null : sb.ToString();
+        }
+
+        private static string ReadGradientAngle(XElement ser)
+        {
+            string ang = ser?.Element(C + "spPr")?.Element(A + "gradFill")?.Element(A + "lin")?.Attribute("ang")?.Value;
+            int raw;
+            if (!int.TryParse(ang, NumberStyles.Integer, CultureInfo.InvariantCulture, out raw))
+            {
+                return null;
+            }
+
+            return (raw / 60000.0).ToString("0.##", CultureInfo.InvariantCulture);
         }
 
         private static string ReadLabelPos(XElement ser)
