@@ -514,6 +514,9 @@ namespace WordAddIn1.ChartOoxmlHost
                     Line = s.Line,
                     LineWeight = s.LineWeight,
                     Marker = s.Marker,
+                    MarkerSize = SeriesMarkerSize(s, info),
+                    MarkerColor = s.MarkerColor,
+                    MarkerFill = s.MarkerFill,
                     ShowDataLabels = s.ShowDataLabels ?? (info.HasShowDataLabels ? (bool?)info.ShowDataLabels : null),
                     ShowValue = s.ShowValue ?? info.ShowValue,
                     ShowPercentage = s.ShowPercentage ?? info.ShowPercentage,
@@ -557,11 +560,14 @@ namespace WordAddIn1.ChartOoxmlHost
                 {
                     Name = col.Name,
                     AxisY = col.AxisY,
-                    Color = string.IsNullOrEmpty(col.Color) ? "" : "#" + col.Color.TrimStart('#'),
+                    Color = SeriesColorText(col.Color),
                     ChartType = col.ChartType,
                     Line = string.IsNullOrEmpty(col.Line) ? null : "#" + col.Line.TrimStart('#'),
                     LineWeight = col.LineWeight,
                     Marker = col.Marker,
+                    MarkerSize = col.MarkerSize,
+                    MarkerColor = HexOrNull(col.MarkerColor),
+                    MarkerFill = HexOrNull(col.MarkerFill),
                     ShowDataLabels = col.ShowDataLabels,
                     ShowValue = col.ShowValue,
                     ShowPercentage = col.ShowPercentage,
@@ -594,6 +600,37 @@ namespace WordAddIn1.ChartOoxmlHost
             }
 
             return list;
+        }
+
+        private static string SeriesMarkerSize(SeriesInfo series, ChartInfo chart)
+        {
+            if (series != null && !string.IsNullOrEmpty(series.MarkerSize))
+            {
+                return series.MarkerSize;
+            }
+
+            if (chart != null && chart.MarkerSize > 0
+                && (chart.DataMarkers || (series != null && !string.IsNullOrEmpty(series.Marker))))
+            {
+                return chart.MarkerSize.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+
+            return null;
+        }
+
+        private static string SeriesColorText(string color)
+        {
+            if (string.IsNullOrEmpty(color))
+            {
+                return "";
+            }
+
+            if (string.Equals(color.Trim(), "none", StringComparison.OrdinalIgnoreCase))
+            {
+                return "none";
+            }
+
+            return "#" + color.TrimStart('#');
         }
 
         private static string HexOrNull(string hex)

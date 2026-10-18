@@ -715,6 +715,11 @@ namespace WordAddIn1
         {
             try
             {
+                if (useFill && Convert.ToInt32(series.Format.Fill.Visible) == 0)
+                {
+                    return "none";
+                }
+
                 int rgbValue = useFill
                     ? (int)series.Format.Fill.ForeColor.RGB
                     : (int)series.Format.Line.ForeColor.RGB;

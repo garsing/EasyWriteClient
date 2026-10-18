@@ -22,6 +22,9 @@ namespace WordAddIn1.ChartOoxmlHost
             public string Line { get; set; }
             public string LineWeight { get; set; }
             public string Marker { get; set; }
+            public string MarkerSize { get; set; }
+            public string MarkerColor { get; set; }
+            public string MarkerFill { get; set; }
             public bool? ShowDataLabels { get; set; }
             public bool? ShowValue { get; set; }
             public bool? ShowPercentage { get; set; }
@@ -489,7 +492,7 @@ namespace WordAddIn1.ChartOoxmlHost
 
             foreach (XElement ser in chartDoc.Descendants(C + "ser"))
             {
-                colors.Add(FirstSrgb(ser) ?? "");
+                colors.Add(SnapshotFill(ser));
             }
 
             return colors;
@@ -524,6 +527,13 @@ namespace WordAddIn1.ChartOoxmlHost
             List<XElement> sers = chartDoc.Descendants(C + "ser").ToList();
             for (int i = 0; i < sers.Count && i < colors.Count; i++)
             {
+                if (IsNone(colors[i]))
+                {
+                    WriteSeriesNoFill(sers[i]);
+                    any = true;
+                    continue;
+                }
+
                 string want = NormColor(colors[i]);
                 if (string.IsNullOrEmpty(want))
                 {
@@ -667,6 +677,9 @@ namespace WordAddIn1.ChartOoxmlHost
                 Line = ReadLineColor(ser),
                 LineWeight = ReadLineWeight(ser),
                 Marker = ReadMarker(ser),
+                MarkerSize = ReadMarkerSize(ser),
+                MarkerColor = ReadMarkerColor(ser),
+                MarkerFill = ReadMarkerFill(ser),
                 ShowDataLabels = ReadShowDataLabels(ser),
                 ShowValue = ReadShowVal(ser),
                 ShowPercentage = ReadShowPercent(ser),
@@ -822,6 +835,18 @@ namespace WordAddIn1.ChartOoxmlHost
             {
                 orderEl.SetAttributeValue("val", text);
             }
+        }
+
+        private static string SnapshotFill(XElement ser)
+        {
+            XElement spPr = ser?.Element(C + "spPr");
+            if (spPr?.Element(A + "noFill") != null)
+            {
+                return "none";
+            }
+
+            string hex = spPr?.Element(A + "solidFill")?.Element(A + "srgbClr")?.Attribute("val")?.Value;
+            return hex ?? "";
         }
 
         private static string FirstSrgb(XElement root)

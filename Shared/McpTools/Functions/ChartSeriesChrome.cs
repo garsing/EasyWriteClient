@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using Word = Microsoft.Office.Interop.Word;
@@ -635,17 +636,34 @@ namespace WordAddIn1
                     return;
                 }
 
-                if (!TryStopColor(parts[0], out int first) || !TryStopColor(parts[parts.Length - 1], out int last))
+                List<GradientStop> stops = ParseGradientStops(parts);
+                if (stops.Count < 2)
                 {
                     return;
                 }
 
                 series.Format.Fill.TwoColorGradient(Microsoft.Office.Core.MsoGradientStyle.msoGradientVertical, 1);
-                series.Format.Fill.ForeColor.RGB = first;
-                series.Format.Fill.BackColor.RGB = last;
+                series.Format.Fill.ForeColor.RGB = stops[stops.Count - 1].Rgb;
+                series.Format.Fill.BackColor.RGB = stops[0].Rgb;
                 if (double.TryParse(angle, NumberStyles.Float, CultureInfo.InvariantCulture, out double deg))
                 {
                     series.Format.Fill.GradientAngle = (float)deg;
+                }
+
+                dynamic gs = series.Format.Fill.GradientStops;
+                int count = (int)gs.Count;
+                int use = Math.Min(count, stops.Count);
+                for (int i = 0; i < use; i++)
+                {
+                    dynamic stop = gs.Item(i + 1);
+                    stop.Position = (float)stops[i].Position;
+                    stop.Color.RGB = stops[i].Rgb;
+                    stop.Transparency = (float)stops[i].Transparency;
+                }
+
+                for (int i = count; i < stops.Count; i++)
+                {
+                    gs.Insert(stops[i].Rgb, (float)stops[i].Position, (float)stops[i].Transparency);
                 }
             }
             catch (Exception)
@@ -705,18 +723,43 @@ namespace WordAddIn1
             }
         }
 
-        private static bool TryStopColor(string part, out int bgr)
+        private sealed class GradientStop
         {
-            bgr = 0;
-            int colon = part.IndexOf(':');
-            int at = part.LastIndexOf('@');
-            if (colon < 0)
+            public double Position;
+            public int Rgb;
+            public double Transparency;
+        }
+
+        private static List<GradientStop> ParseGradientStops(string[] parts)
+        {
+            var stops = new List<GradientStop>();
+            foreach (string part in parts)
             {
-                return false;
+                int colon = part.IndexOf(':');
+                int at = part.LastIndexOf('@');
+                if (colon < 0)
+                {
+                    continue;
+                }
+
+                string hex = at > colon ? part.Substring(colon + 1, at - colon - 1) : part.Substring(colon + 1);
+                if (!ChartEngine.TryParseOfficeBgr(hex, out int bgr))
+                {
+                    continue;
+                }
+
+                double pos = 0;
+                double.TryParse(part.Substring(0, colon), NumberStyles.Float, CultureInfo.InvariantCulture, out pos);
+                double transparency = 0;
+                if (at > colon)
+                {
+                    double.TryParse(part.Substring(at + 1), NumberStyles.Float, CultureInfo.InvariantCulture, out transparency);
+                }
+
+                stops.Add(new GradientStop { Position = pos, Rgb = bgr, Transparency = transparency });
             }
 
-            string hex = at > colon ? part.Substring(colon + 1, at - colon - 1) : part.Substring(colon + 1);
-            return ChartEngine.TryParseOfficeBgr(hex, out bgr);
+            return stops;
         }
 
         private static int? MarkerToXl(string name)

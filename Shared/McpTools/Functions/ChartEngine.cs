@@ -972,6 +972,18 @@ namespace WordAddIn1
                         {
                             dynamic series = chart.SeriesCollection(i);
                             SeriesInfo seriesInfo = TryGetSeriesInfoFromXml(chartInfo, i);
+                            if (seriesInfo != null
+                                && string.Equals(seriesInfo.Color, "none", StringComparison.OrdinalIgnoreCase))
+                            {
+                                series.Format.Fill.Visible = Microsoft.Office.Core.MsoTriState.msoFalse;
+                                continue;
+                            }
+
+                            if (seriesInfo != null && string.IsNullOrEmpty(seriesInfo.Color))
+                            {
+                                continue;
+                            }
+
                             int colorValue;
                             if (seriesInfo != null && TryParseOfficeBgr(seriesInfo.Color, out int seriesBgr))
                             {
@@ -983,6 +995,7 @@ namespace WordAddIn1
                                 colorValue = defaultColors[colorIndex];
                             }
 
+                            series.Format.Fill.Visible = Microsoft.Office.Core.MsoTriState.msoTrue;
                             series.Format.Fill.ForeColor.RGB = colorValue;
                         }
 

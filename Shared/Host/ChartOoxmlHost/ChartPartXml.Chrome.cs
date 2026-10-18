@@ -59,10 +59,14 @@ namespace WordAddIn1.ChartOoxmlHost
                 return;
             }
 
-            if (!WriteGradient(ser, col.FillGradient, col.FillAngle))
+            if (IsNone(col.Color))
+            {
+                WriteSeriesNoFill(ser);
+            }
+            else if (!WriteGradient(ser, col.FillGradient, col.FillAngle))
             {
                 string fill = NormColor(col.Color);
-                if (!string.IsNullOrEmpty(fill) && !IsNone(col.Color))
+                if (!string.IsNullOrEmpty(fill))
                 {
                     PinSerColor(ser, fill);
                 }
@@ -74,17 +78,7 @@ namespace WordAddIn1.ChartOoxmlHost
                 WriteLn(ser, line, col.LineWeight);
             }
 
-            if (!string.IsNullOrEmpty(col.Marker) && !IsNone(col.Marker))
-            {
-                XElement marker = ser.Element(C + "marker");
-                if (marker == null)
-                {
-                    marker = new XElement(C + "marker");
-                    ser.Add(marker);
-                }
-
-                SetVal(marker, "symbol", col.Marker.Trim());
-            }
+            WriteMarker(ser, col);
 
             if (col.ShowDataLabels.HasValue
                 || col.ShowValue.HasValue
@@ -997,9 +991,42 @@ namespace WordAddIn1.ChartOoxmlHost
             return style;
         }
 
+        private static void WriteSeriesNoFill(XElement ser)
+        {
+            if (ser == null)
+            {
+                return;
+            }
+
+            XElement spPr = ser.Element(C + "spPr");
+            if (spPr == null)
+            {
+                spPr = new XElement(C + "spPr");
+                ser.Add(spPr);
+            }
+
+            spPr.Element(A + "solidFill")?.Remove();
+            spPr.Element(A + "gradFill")?.Remove();
+            if (spPr.Element(A + "noFill") == null)
+            {
+                spPr.AddFirst(new XElement(A + "noFill"));
+            }
+        }
+
         private static string ReadFillColor(XElement ser)
         {
-            return ser?.Element(C + "spPr")?.Element(A + "solidFill")?.Element(A + "srgbClr")?.Attribute("val")?.Value;
+            XElement spPr = ser?.Element(C + "spPr");
+            if (spPr == null)
+            {
+                return null;
+            }
+
+            if (spPr.Element(A + "noFill") != null)
+            {
+                return "none";
+            }
+
+            return spPr.Element(A + "solidFill")?.Element(A + "srgbClr")?.Attribute("val")?.Value;
         }
 
         private static string ReadLineColor(XElement ser)
@@ -1012,9 +1039,121 @@ namespace WordAddIn1.ChartOoxmlHost
             return ReadLnWeight(ser);
         }
 
+        private static void WriteMarker(XElement ser, SeriesCol col)
+        {
+            if (ser == null || col == null || IsNone(col.Marker))
+            {
+                return;
+            }
+
+            string fill = NormColor(col.MarkerFill);
+            string line = NormColor(col.MarkerColor);
+            int size;
+            bool hasSize = int.TryParse(col.MarkerSize, NumberStyles.Integer, CultureInfo.InvariantCulture, out size) && size > 0;
+            bool hasSymbol = !string.IsNullOrEmpty(col.Marker);
+            if (!hasSymbol && !hasSize && string.IsNullOrEmpty(fill) && string.IsNullOrEmpty(line))
+            {
+                return;
+            }
+
+            XElement marker = ser.Element(C + "marker");
+            if (marker == null)
+            {
+                marker = new XElement(C + "marker");
+                ser.Add(marker);
+            }
+
+            if (hasSymbol)
+            {
+                SetVal(marker, "symbol", col.Marker.Trim());
+            }
+
+            if (hasSize)
+            {
+                SetVal(marker, "size", size.ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (!string.IsNullOrEmpty(fill))
+            {
+                WriteMarkerFill(marker, fill);
+            }
+
+            if (!string.IsNullOrEmpty(line))
+            {
+                WriteLn(marker, line, null);
+            }
+        }
+
+        private static void WriteMarkerFill(XElement marker, string hex)
+        {
+            XElement spPr = marker.Element(C + "spPr");
+            if (spPr == null)
+            {
+                spPr = new XElement(C + "spPr");
+                marker.Add(spPr);
+            }
+
+            spPr.Element(A + "noFill")?.Remove();
+            spPr.Element(A + "gradFill")?.Remove();
+            XElement solid = spPr.Element(A + "solidFill");
+            if (solid == null)
+            {
+                solid = new XElement(A + "solidFill");
+                XElement ln = spPr.Element(A + "ln");
+                if (ln != null)
+                {
+                    ln.AddBeforeSelf(solid);
+                }
+                else
+                {
+                    spPr.Add(solid);
+                }
+            }
+
+            XElement srgb = solid.Element(A + "srgbClr");
+            if (srgb == null)
+            {
+                srgb = new XElement(A + "srgbClr");
+                solid.Add(srgb);
+            }
+
+            srgb.SetAttributeValue("val", hex);
+        }
+
         private static string ReadMarker(XElement ser)
         {
             return ser?.Element(C + "marker")?.Element(C + "symbol")?.Attribute("val")?.Value;
+        }
+
+        private static string ReadMarkerSize(XElement ser)
+        {
+            string val = ser?.Element(C + "marker")?.Element(C + "size")?.Attribute("val")?.Value;
+            int size;
+            if (int.TryParse(val, NumberStyles.Integer, CultureInfo.InvariantCulture, out size) && size > 0)
+            {
+                return size.ToString(CultureInfo.InvariantCulture);
+            }
+
+            return null;
+        }
+
+        private static string ReadMarkerColor(XElement ser)
+        {
+            return ser?.Element(C + "marker")
+                ?.Element(C + "spPr")
+                ?.Element(A + "ln")
+                ?.Element(A + "solidFill")
+                ?.Element(A + "srgbClr")
+                ?.Attribute("val")?.Value;
+        }
+
+        private static string ReadMarkerFill(XElement ser)
+        {
+            return ser?.Element(C + "marker")
+                ?.Element(C + "spPr")
+                ?.Element(A + "solidFill")
+                ?.Element(A + "srgbClr")
+                ?.Attribute("val")?.Value;
         }
 
         private static string LabelPosToOoxml(string name)
