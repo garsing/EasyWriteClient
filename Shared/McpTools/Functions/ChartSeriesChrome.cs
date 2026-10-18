@@ -173,6 +173,11 @@ namespace WordAddIn1
                     {
                         labels.Font.Color = labelColor;
                     }
+
+                    if (!string.IsNullOrEmpty(info.LabelFormat))
+                    {
+                        labels.NumberFormat = info.LabelFormat;
+                    }
                 }
             }
             catch (Exception)
@@ -266,6 +271,11 @@ namespace WordAddIn1
                         }
 
                         info.LabelColor = Hex(Convert.ToInt32(labels.Font.Color));
+                        string format = Convert.ToString(labels.NumberFormat);
+                        if (!string.IsNullOrWhiteSpace(format))
+                        {
+                            info.LabelFormat = format;
+                        }
                     }
                     catch (Exception)
                     {
