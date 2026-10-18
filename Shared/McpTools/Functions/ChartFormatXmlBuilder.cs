@@ -113,7 +113,7 @@ namespace WordAddIn1
             {
                 chartEl.Add(new XElement("ShowPercentage", chart.ShowPercentage.Value ? "true" : "false"));
             }
-            if (chart.Explosion > 0)
+            if (chart.HasExplosion || chart.Explosion != 0)
             {
                 chartEl.Add(new XElement("Explosion", chart.Explosion));
             }

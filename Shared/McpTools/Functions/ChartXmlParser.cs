@@ -521,6 +521,7 @@ namespace WordAddIn1
                 Width = int.TryParse(chartElement.Element("Width")?.Value, out int width) ? width : 0,
                 Height = int.TryParse(chartElement.Element("Height")?.Value, out int height) ? height : 0,
                 ShowDataLabels = bool.TryParse(chartElement.Element("ShowDataLabels")?.Value, out bool showDataLabels) && showDataLabels,
+                HasShowDataLabels = chartElement.Element("ShowDataLabels") != null,
                 LegendPosition = legend,
                 PlotColor = chartElement.Element("PlotColor")?.Value ?? "",
                 TitleFontSize = int.TryParse(chartElement.Element("TitleFontSize")?.Value, out int titleFontSize) ? titleFontSize : 0,

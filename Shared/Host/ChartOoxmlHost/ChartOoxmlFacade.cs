@@ -59,6 +59,18 @@ namespace WordAddIn1.ChartOoxmlHost
             {
                 info.Type = grid.Type;
                 info.Title = grid.Title;
+                info.TitleFontColor = string.IsNullOrEmpty(grid.TitleFontColor) ? "" : "#" + grid.TitleFontColor.TrimStart('#');
+                if (grid.TitleFontSize > 0)
+                {
+                    info.TitleFontSize = grid.TitleFontSize;
+                }
+
+                info.TitleFontBold = grid.TitleFontBold;
+                if (grid.Explosion.HasValue)
+                {
+                    info.Explosion = grid.Explosion.Value;
+                    info.HasExplosion = true;
+                }
                 info.LegendPosition = grid.Legend;
                 if (grid.YMin.HasValue)
                 {
@@ -471,6 +483,10 @@ namespace WordAddIn1.ChartOoxmlHost
                 Overlap = info != null && (info.HasOverlap || info.Overlap != 0) ? (int?)info.Overlap : null,
                 PlotColor = info != null ? info.PlotColor : null,
                 ChartAreaColor = info != null ? info.ChartAreaColor : null,
+                TitleFontColor = info != null ? info.TitleFontColor : null,
+                TitleFontSize = info != null ? info.TitleFontSize : 0,
+                TitleFontBold = info != null && info.TitleFontBold,
+                Explosion = info != null && info.HasExplosion ? (int?)info.Explosion : null,
                 Series = new List<ChartPartXml.SeriesCol>()
             };
             if (info != null && (info.YAxisMin != 0 || info.YAxisMax != 0))
@@ -498,7 +514,9 @@ namespace WordAddIn1.ChartOoxmlHost
                     Line = s.Line,
                     LineWeight = s.LineWeight,
                     Marker = s.Marker,
-                    ShowDataLabels = s.ShowDataLabels,
+                    ShowDataLabels = s.ShowDataLabels ?? (info.HasShowDataLabels ? (bool?)info.ShowDataLabels : null),
+                    ShowValue = s.ShowValue ?? info.ShowValue,
+                    ShowPercentage = s.ShowPercentage ?? info.ShowPercentage,
                     LabelPosition = s.LabelPosition,
                     LabelFont = s.LabelFont,
                     LabelSize = s.LabelSize,
@@ -545,6 +563,8 @@ namespace WordAddIn1.ChartOoxmlHost
                     LineWeight = col.LineWeight,
                     Marker = col.Marker,
                     ShowDataLabels = col.ShowDataLabels,
+                    ShowValue = col.ShowValue,
+                    ShowPercentage = col.ShowPercentage,
                     LabelPosition = col.LabelPosition,
                     LabelFont = col.LabelFont,
                     LabelSize = col.LabelSize,

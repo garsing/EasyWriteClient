@@ -23,6 +23,8 @@ namespace WordAddIn1.ChartOoxmlHost
             public string LineWeight { get; set; }
             public string Marker { get; set; }
             public bool? ShowDataLabels { get; set; }
+            public bool? ShowValue { get; set; }
+            public bool? ShowPercentage { get; set; }
             public string LabelPosition { get; set; }
             public string LabelFont { get; set; }
             public string LabelSize { get; set; }
@@ -48,6 +50,10 @@ namespace WordAddIn1.ChartOoxmlHost
             public AxisYInfo AxisY { get; set; }
             public string PlotColor { get; set; }
             public string ChartAreaColor { get; set; }
+            public string TitleFontColor { get; set; }
+            public int TitleFontSize { get; set; }
+            public bool TitleFontBold { get; set; }
+            public int? Explosion { get; set; }
             public double? YMin { get; set; }
             public double? YMax { get; set; }
             public double? YMajor { get; set; }
@@ -77,6 +83,10 @@ namespace WordAddIn1.ChartOoxmlHost
             {
                 Type = DetectType(chartDoc),
                 Title = ReadChartTitle(chartDoc),
+                TitleFontColor = ReadTitleFontColor(chartDoc),
+                TitleFontSize = ReadTitleFontSize(chartDoc),
+                TitleFontBold = ReadTitleFontBold(chartDoc),
+                Explosion = ReadExplosion(chartDoc),
                 Series = series,
                 Legend = ReadLegend(chartDoc),
                 AxisYTitle = ReadValAxisTitle(chartDoc, secondary: false),
@@ -215,7 +225,12 @@ namespace WordAddIn1.ChartOoxmlHost
 
             if (!string.IsNullOrEmpty(grid.Title))
             {
-                UpsertTitle(chartDoc, grid.Title);
+                UpsertTitle(chartDoc, grid);
+            }
+
+            if (grid.Explosion.HasValue)
+            {
+                WriteExplosion(chartDoc, grid.Explosion.Value);
             }
 
             return true;
@@ -389,7 +404,7 @@ namespace WordAddIn1.ChartOoxmlHost
         }
 
         /// <summary>有标题才写 c:title；空标题留着原节点，避免套数据把标题冲掉。</summary>
-        private static void UpsertTitle(XDocument chartDoc, string title)
+        private static void UpsertTitle(XDocument chartDoc, SeriesGrid grid)
         {
             XElement chart = chartDoc.Descendants(C + "chart").FirstOrDefault();
             if (chart == null)
@@ -411,6 +426,23 @@ namespace WordAddIn1.ChartOoxmlHost
                 new XAttribute("wrap", "square"),
                 new XAttribute("anchor", "ctr"),
                 new XAttribute("anchorCtr", "1"));
+            var rPr = new XElement(A + "rPr", new XAttribute("lang", "zh-CN"));
+            if (grid.TitleFontSize > 0)
+            {
+                rPr.SetAttributeValue("sz", ((int)Math.Round(grid.TitleFontSize * 100.0)).ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (grid.TitleFontBold)
+            {
+                rPr.SetAttributeValue("b", "1");
+            }
+
+            string titleColor = NormColor(grid.TitleFontColor);
+            if (!string.IsNullOrEmpty(titleColor))
+            {
+                rPr.Add(new XElement(A + "solidFill", new XElement(A + "srgbClr", new XAttribute("val", titleColor))));
+            }
+
             var titleEl = new XElement(
                 C + "title",
                 new XElement(
@@ -423,8 +455,8 @@ namespace WordAddIn1.ChartOoxmlHost
                             A + "p",
                             new XElement(
                                 A + "r",
-                                new XElement(A + "rPr", new XAttribute("lang", "zh-CN")),
-                                new XElement(A + "t", title))))),
+                                rPr,
+                                new XElement(A + "t", grid.Title ?? ""))))),
                 new XElement(C + "overlay", new XAttribute("val", "0")));
             XElement plot = chart.Element(C + "plotArea");
             if (plot != null)
@@ -571,6 +603,52 @@ namespace WordAddIn1.ChartOoxmlHost
             return t != null ? (t.Value ?? "") : "";
         }
 
+        private static XElement TitleRunProps(XDocument chartDoc)
+        {
+            return chartDoc?.Descendants(C + "title").FirstOrDefault()?.Descendants(A + "rPr").FirstOrDefault();
+        }
+
+        private static string ReadTitleFontColor(XDocument chartDoc)
+        {
+            return TitleRunProps(chartDoc)?.Element(A + "solidFill")?.Element(A + "srgbClr")?.Attribute("val")?.Value;
+        }
+
+        private static int ReadTitleFontSize(XDocument chartDoc)
+        {
+            int hundredths;
+            string sz = TitleRunProps(chartDoc)?.Attribute("sz")?.Value;
+            if (!int.TryParse(sz, NumberStyles.Integer, CultureInfo.InvariantCulture, out hundredths) || hundredths <= 0)
+            {
+                return 0;
+            }
+
+            return (int)Math.Round(hundredths / 100.0);
+        }
+
+        private static bool ReadTitleFontBold(XDocument chartDoc)
+        {
+            string bold = TitleRunProps(chartDoc)?.Attribute("b")?.Value;
+            return bold == "1" || string.Equals(bold, "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static int? ReadExplosion(XDocument chartDoc)
+        {
+            string val = chartDoc?.Descendants(C + "explosion").FirstOrDefault()?.Attribute("val")?.Value;
+            int n;
+            return int.TryParse(val, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) ? (int?)n : null;
+        }
+
+        private static void WriteExplosion(XDocument chartDoc, int explosion)
+        {
+            XElement ser = chartDoc?.Descendants(C + "ser").FirstOrDefault();
+            if (ser == null)
+            {
+                return;
+            }
+
+            SetVal(ser, "explosion", explosion.ToString(CultureInfo.InvariantCulture));
+        }
+
         public static byte[] XmlPartBytes(XDocument doc)
         {
             var sb = new StringBuilder();
@@ -589,7 +667,9 @@ namespace WordAddIn1.ChartOoxmlHost
                 Line = ReadLineColor(ser),
                 LineWeight = ReadLineWeight(ser),
                 Marker = ReadMarker(ser),
-                ShowDataLabels = ReadShowVal(ser),
+                ShowDataLabels = ReadShowDataLabels(ser),
+                ShowValue = ReadShowVal(ser),
+                ShowPercentage = ReadShowPercent(ser),
                 LabelPosition = ReadLabelPos(ser),
                 LabelFont = ReadLabelFont(ser),
                 LabelSize = ReadLabelSize(ser),

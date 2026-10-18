@@ -87,6 +87,8 @@ namespace WordAddIn1.ChartOoxmlHost
             }
 
             if (col.ShowDataLabels.HasValue
+                || col.ShowValue.HasValue
+                || col.ShowPercentage.HasValue
                 || !string.IsNullOrEmpty(col.LabelPosition)
                 || !string.IsNullOrEmpty(col.LabelFont)
                 || !string.IsNullOrEmpty(col.LabelSize)
@@ -106,12 +108,36 @@ namespace WordAddIn1.ChartOoxmlHost
                     SetVal(labels, "dLblPos", pos);
                 }
 
-                if (col.ShowDataLabels.HasValue)
+                if (col.ShowDataLabels == false
+                    && !col.ShowValue.HasValue
+                    && !col.ShowPercentage.HasValue)
                 {
-                    SetVal(labels, "showVal", col.ShowDataLabels.Value ? "1" : "0");
-                    SetVal(labels, "showCatName", "0");
-                    SetVal(labels, "showSerName", "0");
-                    SetVal(labels, "showPercent", "0");
+                    SetVal(labels, "delete", "1");
+                }
+                else
+                {
+                    labels.Element(C + "delete")?.Remove();
+                    bool? showVal = col.ShowValue;
+                    if (!showVal.HasValue && col.ShowDataLabels == true)
+                    {
+                        showVal = true;
+                    }
+
+                    if (showVal.HasValue)
+                    {
+                        SetVal(labels, "showVal", showVal.Value ? "1" : "0");
+                        SetVal(labels, "showCatName", "0");
+                        SetVal(labels, "showSerName", "0");
+                    }
+
+                    if (col.ShowPercentage.HasValue)
+                    {
+                        SetVal(labels, "showPercent", col.ShowPercentage.Value ? "1" : "0");
+                    }
+                    else if (col.ShowDataLabels == true && !col.ShowValue.HasValue)
+                    {
+                        SetVal(labels, "showPercent", "0");
+                    }
                 }
 
                 WriteLabelNumFmt(labels, col.LabelFormat);
@@ -1122,6 +1148,39 @@ namespace WordAddIn1.ChartOoxmlHost
                 default:
                     return null;
             }
+        }
+
+        private static bool? ReadShowDataLabels(XElement ser)
+        {
+            XElement labels = ser?.Element(C + "dLbls");
+            if (labels == null)
+            {
+                return null;
+            }
+
+            string deleted = labels.Element(C + "delete")?.Attribute("val")?.Value;
+            if (deleted == "1" || string.Equals(deleted, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool? ReadShowPercent(XElement ser)
+        {
+            string val = ser?.Element(C + "dLbls")?.Element(C + "showPercent")?.Attribute("val")?.Value;
+            if (val == "1" || string.Equals(val, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (val == "0" || string.Equals(val, "false", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return null;
         }
 
         private static bool? ReadShowVal(XElement ser)

@@ -17,6 +17,8 @@ namespace WordAddIn1
     public int Width { get; set; }
     public int Height { get; set; }
     public bool ShowDataLabels { get; set; }
+    /// <summary>稿里写了 ShowDataLabels 才为 true。false 也要写回。</summary>
+    public bool HasShowDataLabels { get; set; }
     public string LegendPosition { get; set; }
     public string PlotColor { get; set; }
     public int TitleFontSize { get; set; }
