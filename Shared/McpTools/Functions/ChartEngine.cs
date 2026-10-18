@@ -114,6 +114,19 @@ namespace WordAddIn1
             return string.Equals(chartInfo?.Type, "line", StringComparison.OrdinalIgnoreCase) ? false : true;
         }
 
+        /// <summary>
+        /// 分类轴的 General 收成文本 @，避免年份等类目被再猜成数字或日期。
+        /// </summary>
+        private static string CategoryAxisFormat(string format)
+        {
+            if (string.Equals(format, "General", StringComparison.OrdinalIgnoreCase))
+            {
+                return "@";
+            }
+
+            return format;
+        }
+
         private static void ApplyAxisTitles(Word.Chart chart, ChartInfo chartInfo, List<string> errors)
         {
             if (chart == null || chartInfo == null)
@@ -1304,7 +1317,7 @@ namespace WordAddIn1
                                 chartInfo.AxisX.TickFont,
                                 chartInfo.AxisX.TickColor,
                                 chartInfo.AxisX.TickSize,
-                                chartInfo.AxisX.Format);
+                                CategoryAxisFormat(chartInfo.AxisX.Format));
                             ChartSeriesChrome.ApplyTicks(
                                 xAxis,
                                 chartInfo.AxisX.TickPosition,
