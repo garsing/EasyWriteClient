@@ -133,7 +133,10 @@ namespace PptChartRoundtripTest
             El(sb, "Type", type);
             if (fmt != null)
             {
-                El(sb, "Title", fmt.Title);
+                if (fmt.Title != null)
+                {
+                    sb.Append("<Title>").Append(Esc(fmt.Title)).Append("</Title>");
+                }
                 El(sb, "Theme", fmt.Theme);
                 El(sb, "LegendPosition", fmt.Legend);
                 El(sb, "ShowDataLabels", fmt.ShowDataLabels);

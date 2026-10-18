@@ -1357,7 +1357,8 @@ namespace WordAddIn1
                 ApplyAxisTitles(chart, chartInfo, errors);
 
                 // 饼图特定设置
-                if ((chartInfo.Type == "pie3d" || chartInfo.Type == "pie2d") && chartInfo.Explosion > 0)
+                if ((chartInfo.Type == "pie3d" || chartInfo.Type == "pie2d")
+                    && (chartInfo.HasExplosion || chartInfo.Explosion > 0))
                 {
                     try
                     {
@@ -1595,10 +1596,12 @@ namespace WordAddIn1
                 int titleFontSize = chartInfo.TitleFontSize > 0 ? chartInfo.TitleFontSize : 11;
                 chart.ChartTitle.Format.TextFrame2.TextRange.Font.Size = titleFontSize;
 
-                if (chartInfo.TitleFontBold)
+                if (chartInfo.HasTitleFontBold || chartInfo.TitleFontBold)
                 {
-                    chart.ChartTitle.Format.TextFrame2.TextRange.Font.Bold =
-                        Microsoft.Office.Core.MsoTriState.msoTrue;
+                    Microsoft.Office.Core.MsoTriState bold = chartInfo.TitleFontBold
+                        ? Microsoft.Office.Core.MsoTriState.msoTrue
+                        : Microsoft.Office.Core.MsoTriState.msoFalse;
+                    chart.ChartTitle.Format.TextFrame2.TextRange.Font.Bold = bold;
                 }
 
                 if (!string.IsNullOrEmpty(chartInfo.TitleFontColor))
@@ -1747,7 +1750,7 @@ namespace WordAddIn1
                     warnings.Add($"设置标题字体失败: {ex.Message}");
                 }
             }
-            else
+            else if (chartInfo.HasTitleText)
             {
                 try
                 {

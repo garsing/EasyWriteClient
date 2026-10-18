@@ -517,6 +517,7 @@ namespace WordAddIn1
             {
                 Type = type,
                 Title = chartElement.Element("Title")?.Value ?? "",
+                HasTitleText = chartElement.Element("Title") != null,
                 Theme = chartElement.Element("Theme")?.Value ?? "",
                 Width = int.TryParse(chartElement.Element("Width")?.Value, out int width) ? width : 0,
                 Height = int.TryParse(chartElement.Element("Height")?.Value, out int height) ? height : 0,
@@ -526,6 +527,7 @@ namespace WordAddIn1
                 PlotColor = chartElement.Element("PlotColor")?.Value ?? "",
                 TitleFontSize = int.TryParse(chartElement.Element("TitleFontSize")?.Value, out int titleFontSize) ? titleFontSize : 0,
                 TitleFontBold = bool.TryParse(chartElement.Element("TitleFontBold")?.Value, out bool titleFontBold) && titleFontBold,
+                HasTitleFontBold = chartElement.Element("TitleFontBold") != null,
                 TitleFontColor = chartElement.Element("TitleFontColor")?.Value ?? "",
                 Gridlines = gridlines,
                 GapWidth = int.TryParse(chartElement.Element("GapWidth")?.Value, out int gapWidth) ? gapWidth : 0,

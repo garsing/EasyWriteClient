@@ -72,6 +72,9 @@ namespace WordAddIn1.ChartOoxmlHost
                     info.HasExplosion = true;
                 }
                 info.LegendPosition = grid.Legend;
+                info.LegendFontColor = string.IsNullOrEmpty(grid.LegendFontColor)
+                    ? ""
+                    : "#" + grid.LegendFontColor.TrimStart('#');
                 if (grid.YMin.HasValue)
                 {
                     info.YAxisMin = grid.YMin.Value;
@@ -471,6 +474,7 @@ namespace WordAddIn1.ChartOoxmlHost
                 Type = info != null ? info.Type : "",
                 Title = info != null ? info.Title : "",
                 Legend = info != null ? info.LegendPosition : null,
+                LegendFontColor = info != null ? info.LegendFontColor : null,
                 AxisYTitle = info != null && info.AxisY != null ? info.AxisY.Title : null,
                 AxisY2Title = info != null && info.AxisY2 != null ? info.AxisY2.Title : null,
                 AxisXTitle = info != null && info.AxisX != null ? info.AxisX.Title : null,

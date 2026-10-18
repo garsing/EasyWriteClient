@@ -16,7 +16,7 @@ namespace WordAddIn1.ChartOoxmlHost
                 return;
             }
 
-            WriteLegend(chartDoc, grid.Legend);
+            WriteLegend(chartDoc, grid.Legend, grid.LegendFontColor);
             XElement plot = chartDoc.Descendants(C + "plotArea").FirstOrDefault();
             WriteAreaFill(plot, grid.PlotColor);
             WriteAreaFill(chartDoc.Root, grid.ChartAreaColor);
@@ -359,9 +359,9 @@ namespace WordAddIn1.ChartOoxmlHost
             return HashColor(hex);
         }
 
-        private static void WriteLegend(XDocument chartDoc, string legend)
+        private static void WriteLegend(XDocument chartDoc, string legend, string fontColor)
         {
-            if (string.IsNullOrEmpty(legend))
+            if (string.IsNullOrEmpty(legend) && string.IsNullOrEmpty(NormColor(fontColor)))
             {
                 return;
             }
@@ -401,6 +401,33 @@ namespace WordAddIn1.ChartOoxmlHost
 
             SetVal(node, "legendPos", pos);
             SetVal(node, "overlay", "0");
+            WriteLegendFont(node, fontColor);
+        }
+
+        private static void WriteLegendFont(XElement legend, string color)
+        {
+            string hex = NormColor(color);
+            if (legend == null || string.IsNullOrEmpty(hex))
+            {
+                return;
+            }
+
+            legend.Element(C + "txPr")?.Remove();
+            var def = new XElement(
+                A + "defRPr",
+                new XElement(A + "solidFill", new XElement(A + "srgbClr", new XAttribute("val", hex))));
+            legend.Add(new XElement(
+                C + "txPr",
+                new XElement(A + "bodyPr"),
+                new XElement(A + "lstStyle"),
+                new XElement(A + "p", new XElement(A + "pPr", def), new XElement(A + "endParaRPr"))));
+        }
+
+        private static string ReadLegendFontColor(XDocument chartDoc)
+        {
+            XElement legend = chartDoc?.Descendants(C + "chart").FirstOrDefault()?.Elements(C + "legend").FirstOrDefault();
+            return legend?.Element(C + "txPr")?.Descendants(A + "defRPr").FirstOrDefault()
+                ?.Element(A + "solidFill")?.Element(A + "srgbClr")?.Attribute("val")?.Value;
         }
 
         private static void WriteAxisTitle(XElement axis, string title)

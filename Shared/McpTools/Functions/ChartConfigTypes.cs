@@ -22,7 +22,11 @@ namespace WordAddIn1
     public string LegendPosition { get; set; }
     public string PlotColor { get; set; }
     public int TitleFontSize { get; set; }
+    /// <summary>稿里写了 Title 才为 true。空字符串表示关掉标题；没写则换数时留下旧标题。</summary>
+    public bool HasTitleText { get; set; }
     public bool TitleFontBold { get; set; }
+    /// <summary>稿里写了 TitleFontBold 才为 true。false 也要套上，否则 Word 默认粗体。</summary>
+    public bool HasTitleFontBold { get; set; }
     public string TitleFontColor { get; set; }
     public string Gridlines { get; set; }
     public AxisXInfo AxisX { get; set; }

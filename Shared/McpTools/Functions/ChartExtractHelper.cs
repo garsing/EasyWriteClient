@@ -276,6 +276,7 @@ namespace WordAddIn1
                     {
                         dynamic pie = chart.SeriesCollection(1);
                         chartInfo.Explosion = Convert.ToInt32(pie.Explosion);
+                        chartInfo.HasExplosion = true;
                     }
                     catch { }
                 }

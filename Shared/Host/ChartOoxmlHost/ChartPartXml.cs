@@ -44,6 +44,7 @@ namespace WordAddIn1.ChartOoxmlHost
             public string Type { get; set; }
             public string Title { get; set; }
             public string Legend { get; set; }
+            public string LegendFontColor { get; set; }
             public string AxisYTitle { get; set; }
             public string AxisY2Title { get; set; }
             public string AxisXTitle { get; set; }
@@ -92,6 +93,7 @@ namespace WordAddIn1.ChartOoxmlHost
                 Explosion = ReadExplosion(chartDoc),
                 Series = series,
                 Legend = ReadLegend(chartDoc),
+                LegendFontColor = ReadLegendFontColor(chartDoc),
                 AxisYTitle = ReadValAxisTitle(chartDoc, secondary: false),
                 AxisY2Title = ReadValAxisTitle(chartDoc, secondary: true),
                 AxisY = ReadAxisChrome(FindValAx(chartDoc, false)),
