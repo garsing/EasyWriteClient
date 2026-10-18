@@ -449,13 +449,24 @@ namespace WordAddIn1
 
         private static void TryApplyAreaColor(dynamic area, string color)
         {
-            if (!TryParseOfficeBgr(color, out int bgr) || area == null)
+            if (area == null || string.IsNullOrEmpty(color))
             {
                 return;
             }
 
             try
             {
+                if (string.Equals(color, "none", StringComparison.OrdinalIgnoreCase))
+                {
+                    area.Format.Fill.Visible = Microsoft.Office.Core.MsoTriState.msoFalse;
+                    return;
+                }
+
+                if (!TryParseOfficeBgr(color, out int bgr))
+                {
+                    return;
+                }
+
                 try
                 {
                     area.Interior.Color = bgr;
@@ -1089,9 +1100,27 @@ namespace WordAddIn1
                         }
                         else
                         {
-                            // 用户明确设置了Y轴范围（仅适用于主Y轴）
-                            if (chartInfo.YAxisMin != 0) primaryYAxis.MinimumScale = chartInfo.YAxisMin;
-                            if (chartInfo.YAxisMax != 0) primaryYAxis.MaximumScale = chartInfo.YAxisMax;
+                            try
+                            {
+                                primaryYAxis.MinimumScaleIsAuto = false;
+                            }
+                            catch (Exception)
+                            {
+                            }
+
+                            primaryYAxis.MinimumScale = chartInfo.YAxisMin;
+                            if (chartInfo.YAxisMax != 0)
+                            {
+                                try
+                                {
+                                    primaryYAxis.MaximumScaleIsAuto = false;
+                                }
+                                catch (Exception)
+                                {
+                                }
+
+                                primaryYAxis.MaximumScale = chartInfo.YAxisMax;
+                            }
                         }
                         
                         // 设置主要单位（如果用户没有设置，且自动计算也没有设置，则使用默认值）
@@ -1310,6 +1339,36 @@ namespace WordAddIn1
                     errors.Add("补系列格式失败: " + ex.Message);
                 }
 
+                if (chartInfo.AxisY2 != null)
+                {
+                    try
+                    {
+                        dynamic y2Axis = chart.Axes(Word.XlAxisType.xlValue, Word.XlAxisGroup.xlSecondary);
+                        ChartSeriesChrome.ApplyAxis(
+                            y2Axis,
+                            chartInfo.AxisY2.Visible,
+                            chartInfo.AxisY2.TickFont,
+                            chartInfo.AxisY2.TickColor,
+                            chartInfo.AxisY2.TickSize,
+                            chartInfo.AxisY2.Format);
+                        ChartSeriesChrome.ApplyTicks(
+                            y2Axis,
+                            chartInfo.AxisY2.TickPosition,
+                            chartInfo.AxisY2.MajorTick,
+                            chartInfo.AxisY2.MinorTick,
+                            chartInfo.AxisY2.Grid);
+                        ChartSeriesChrome.ApplyAxisStroke(
+                            y2Axis,
+                            chartInfo.AxisY2.Line,
+                            chartInfo.AxisY2.LineWeight,
+                            chartInfo.AxisY2.GridColor);
+                    }
+                    catch (Exception ex)
+                    {
+                        errors.Add("次轴刻度失败: " + ex.Message);
+                    }
+                }
+
                 if (errors.Count > 0)
                 {
                     return new ChartOperationResult { Success = true, Error = string.Join("; ", errors) };
@@ -1322,6 +1381,31 @@ namespace WordAddIn1
                 string errorMsg = $"应用图表格式异常: {ex.Message}";
                 System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
                 return new ChartOperationResult { Success = false, Error = errorMsg };
+            }
+        }
+
+        private static int TryReadSeriesExplosion(Word.Chart chart)
+        {
+            try
+            {
+                dynamic series = chart.SeriesCollection(1);
+                return Convert.ToInt32(series.Explosion);
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private static void TryWriteSeriesExplosion(Word.Chart chart, int explosion)
+        {
+            try
+            {
+                dynamic series = chart.SeriesCollection(1);
+                series.Explosion = explosion;
+            }
+            catch
+            {
             }
         }
 
@@ -1382,11 +1466,17 @@ namespace WordAddIn1
 
             string normalizedScope = string.IsNullOrEmpty(scope) ? "all" : scope.Trim().ToLowerInvariant();
             var warnings = new List<string>();
+            int keptExplosion = -1;
 
             try
             {
                 if (normalizedScope == "data" || normalizedScope == "all")
                 {
+                    if (!chartInfo.HasExplosion)
+                    {
+                        keptExplosion = TryReadSeriesExplosion(chart);
+                    }
+
                     var fillResult = FillChartData(chart, chartInfo);
                     if (!fillResult.Success)
                     {
@@ -1412,6 +1502,11 @@ namespace WordAddIn1
                 {
                     var formatWarnings = ApplyFormatToExistingChart(chart, inlineShape, chartInfo, floatingShape);
                     warnings.AddRange(formatWarnings);
+                }
+
+                if (keptExplosion > 0)
+                {
+                    TryWriteSeriesExplosion(chart, keptExplosion);
                 }
 
                 result.Success = true;
@@ -1547,6 +1642,18 @@ namespace WordAddIn1
                 catch (Exception ex)
                 {
                     warnings.Add($"设置主题失败: {ex.Message}");
+                }
+            }
+
+            if (chartInfo.ChartStyle > 0)
+            {
+                try
+                {
+                    chart.ChartStyle = chartInfo.ChartStyle;
+                }
+                catch (Exception ex)
+                {
+                    warnings.Add("设置图表样式失败: " + ex.Message);
                 }
             }
 

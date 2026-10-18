@@ -277,6 +277,77 @@ namespace WordAddIn1
             CaptureGradient(series, info);
         }
 
+        public static void ApplyAxisStroke(dynamic axis, string line, string weight, string gridColor)
+        {
+            if (axis == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (ChartEngine.TryParseOfficeBgr(line, out int lineBgr))
+                {
+                    axis.Format.Line.Visible = Microsoft.Office.Core.MsoTriState.msoTrue;
+                    axis.Format.Line.ForeColor.RGB = lineBgr;
+                }
+
+                if (double.TryParse(weight, NumberStyles.Float, CultureInfo.InvariantCulture, out double w) && w > 0)
+                {
+                    axis.Format.Line.Weight = w;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                if (ChartEngine.TryParseOfficeBgr(gridColor, out int gridBgr))
+                {
+                    axis.HasMajorGridlines = true;
+                    axis.MajorGridlines.Format.Line.ForeColor.RGB = gridBgr;
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        public static void CaptureAxisStroke(dynamic axis, Action<string, string, string> assign)
+        {
+            if (axis == null || assign == null)
+            {
+                return;
+            }
+
+            string line = null;
+            string weight = null;
+            string gridColor = null;
+            try
+            {
+                line = Hex(Convert.ToInt32(axis.Format.Line.ForeColor.RGB));
+                double w = Convert.ToDouble(axis.Format.Line.Weight, CultureInfo.InvariantCulture);
+                if (w > 0)
+                {
+                    weight = w.ToString("0.##", CultureInfo.InvariantCulture);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                gridColor = Hex(Convert.ToInt32(axis.MajorGridlines.Format.Line.ForeColor.RGB));
+            }
+            catch (Exception)
+            {
+            }
+
+            assign(line, weight, gridColor);
+        }
+
         public static void ApplyAxis(dynamic axis, string visible, string font, string color, string size, string format)
         {
             if (axis == null)

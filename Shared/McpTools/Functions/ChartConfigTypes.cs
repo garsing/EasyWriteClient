@@ -42,6 +42,8 @@ namespace WordAddIn1
     public bool? ShowValue { get; set; }
     public bool? ShowPercentage { get; set; }
     public int Explosion { get; set; }
+    /// <summary>稿里写了 Explosion 才为 true。没写时套用保留图上已有的分离值。</summary>
+    public bool HasExplosion { get; set; }
     public bool FillMissingValues { get; set; }
   }
 
@@ -105,6 +107,10 @@ namespace WordAddIn1
     public string MajorTick { get; set; }
     public string MinorTick { get; set; }
     public string Grid { get; set; }
+    public string Format { get; set; }
+    public string Line { get; set; }
+    public string LineWeight { get; set; }
+    public string GridColor { get; set; }
   }
 
   public class ChartOperationResult

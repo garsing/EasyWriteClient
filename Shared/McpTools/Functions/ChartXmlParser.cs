@@ -352,7 +352,11 @@ namespace WordAddIn1
                             TickPosition = ReadAxisField(axisYElement, "TickPosition"),
                             MajorTick = ReadAxisField(axisYElement, "MajorTick"),
                             MinorTick = ReadAxisField(axisYElement, "MinorTick"),
-                            Grid = ReadAxisField(axisYElement, "Grid")
+                            Grid = ReadAxisField(axisYElement, "Grid"),
+                            Format = ReadAxisField(axisYElement, "Format"),
+                            Line = ReadAxisField(axisYElement, "Line"),
+                            LineWeight = ReadAxisField(axisYElement, "LineWeight"),
+                            GridColor = ReadAxisField(axisYElement, "GridColor")
                         };
                     }
 
@@ -361,7 +365,19 @@ namespace WordAddIn1
                     {
                         config.Chart.AxisY2 = new AxisYInfo
                         {
-                            Title = ReadAxisField(axisY2Element, "Title")
+                            Title = ReadAxisField(axisY2Element, "Title"),
+                            Visible = ReadAxisField(axisY2Element, "Visible"),
+                            TickFont = ReadAxisField(axisY2Element, "TickFont"),
+                            TickColor = ReadAxisField(axisY2Element, "TickColor"),
+                            TickSize = ReadAxisField(axisY2Element, "TickSize"),
+                            TickPosition = ReadAxisField(axisY2Element, "TickPosition"),
+                            MajorTick = ReadAxisField(axisY2Element, "MajorTick"),
+                            MinorTick = ReadAxisField(axisY2Element, "MinorTick"),
+                            Grid = ReadAxisField(axisY2Element, "Grid"),
+                            Format = ReadAxisField(axisY2Element, "Format"),
+                            Line = ReadAxisField(axisY2Element, "Line"),
+                            LineWeight = ReadAxisField(axisY2Element, "LineWeight"),
+                            GridColor = ReadAxisField(axisY2Element, "GridColor")
                         };
                     }
                 }
@@ -518,6 +534,7 @@ namespace WordAddIn1
                 ShowValue = showValue,
                 ShowPercentage = showPercentage,
                 Explosion = int.TryParse(chartElement.Element("Explosion")?.Value, out int explosion) ? explosion : 0,
+                HasExplosion = chartElement.Element("Explosion") != null,
                 FillMissingValues = chartElement.Element("FillMissingValues") == null
                     || (bool.TryParse(chartElement.Element("FillMissingValues")?.Value, out bool fillMissingValues) && fillMissingValues),
                 Overlap = int.TryParse(chartElement.Element("Overlap")?.Value, out int overlap) ? overlap : 0,

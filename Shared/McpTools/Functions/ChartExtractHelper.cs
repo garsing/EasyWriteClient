@@ -258,11 +258,43 @@ namespace WordAddIn1
                     }
                     catch { }
                 }
-                string y2 = TryGetAxisTitle(chart, Word.XlAxisType.xlValue, Word.XlAxisGroup.xlSecondary);
-                if (!string.IsNullOrEmpty(y2))
+                try
                 {
-                    chartInfo.AxisY2 = new AxisYInfo { Title = y2 };
+                    Word.Axis y2Axis = chart.Axes(Word.XlAxisType.xlValue, Word.XlAxisGroup.xlSecondary);
+                    if (chartInfo.AxisY2 == null)
+                    {
+                        chartInfo.AxisY2 = new AxisYInfo();
+                    }
+
+                    string y2Title = TryGetAxisTitle(chart, Word.XlAxisType.xlValue, Word.XlAxisGroup.xlSecondary);
+                    if (!string.IsNullOrEmpty(y2Title))
+                    {
+                        chartInfo.AxisY2.Title = y2Title;
+                    }
+
+                    ChartSeriesChrome.CaptureAxis(y2Axis, (visible, font, color, size, format) =>
+                    {
+                        chartInfo.AxisY2.Visible = visible;
+                        chartInfo.AxisY2.TickFont = font;
+                        chartInfo.AxisY2.TickColor = color;
+                        chartInfo.AxisY2.TickSize = size;
+                        chartInfo.AxisY2.Format = format;
+                    });
+                    ChartSeriesChrome.CaptureTicks(y2Axis, (pos, major, minor, grid) =>
+                    {
+                        chartInfo.AxisY2.TickPosition = pos;
+                        chartInfo.AxisY2.MajorTick = major;
+                        chartInfo.AxisY2.MinorTick = minor;
+                        chartInfo.AxisY2.Grid = grid;
+                    });
+                    ChartSeriesChrome.CaptureAxisStroke(y2Axis, (line, weight, gridColor) =>
+                    {
+                        chartInfo.AxisY2.Line = line;
+                        chartInfo.AxisY2.LineWeight = weight;
+                        chartInfo.AxisY2.GridColor = gridColor;
+                    });
                 }
+                catch { }
             }
             catch { }
         }
@@ -522,26 +554,24 @@ namespace WordAddIn1
                 }
 
                 dynamic fill = area.Format.Fill;
-                if (fill.Visible != Microsoft.Office.Core.MsoTriState.msoTrue)
+                int visible = Convert.ToInt32(fill.Visible);
+                if (visible == (int)Microsoft.Office.Core.MsoTriState.msoFalse)
                 {
+                    assign("none");
                     return;
                 }
 
                 try
                 {
-                    int interior = Convert.ToInt32(area.Interior.Color);
-                    if (interior != 0)
-                    {
-                        assign(ConvertRgbToHex(interior));
-                        return;
-                    }
+                    assign(ConvertRgbToHex(Convert.ToInt32(fill.ForeColor.RGB)));
+                    return;
                 }
                 catch
                 {
                 }
 
-                dynamic fore = fill.ForeColor;
-                assign(ConvertRgbToHex(Convert.ToInt32(fore.RGB)));
+                int interior = Convert.ToInt32(area.Interior.Color);
+                assign(ConvertRgbToHex(interior));
             }
             catch
             {

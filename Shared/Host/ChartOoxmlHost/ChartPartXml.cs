@@ -8,7 +8,7 @@ using System.Xml.Linq;
 namespace WordAddIn1.ChartOoxmlHost
 {
     /// <summary>宿主无关：chart 部件 c:ser / c:pt / 色快照。禁止引用 Word/PPT Interop。</summary>
-    internal static class ChartPartXml
+    internal static partial class ChartPartXml
     {
         public static readonly XNamespace C = "http://schemas.openxmlformats.org/drawingml/2006/chart";
         public static readonly XNamespace A = "http://schemas.openxmlformats.org/drawingml/2006/main";
@@ -19,6 +19,10 @@ namespace WordAddIn1.ChartOoxmlHost
             public string AxisY { get; set; }
             public string Color { get; set; }
             public string ChartType { get; set; }
+            public string Line { get; set; }
+            public string LineWeight { get; set; }
+            public string Marker { get; set; }
+            public bool? ShowDataLabels { get; set; }
             public List<string> Categories { get; set; }
             public List<string> Values { get; set; }
         }
@@ -27,6 +31,19 @@ namespace WordAddIn1.ChartOoxmlHost
         {
             public string Type { get; set; }
             public string Title { get; set; }
+            public string Legend { get; set; }
+            public string AxisYTitle { get; set; }
+            public string AxisY2Title { get; set; }
+            public string AxisXTitle { get; set; }
+            public string Gridlines { get; set; }
+            public int ChartStyle { get; set; }
+            public AxisYInfo AxisY { get; set; }
+            public string PlotColor { get; set; }
+            public string ChartAreaColor { get; set; }
+            public double? YMin { get; set; }
+            public double? YMax { get; set; }
+            public double? YMajor { get; set; }
+            public AxisYInfo AxisY2 { get; set; }
             public List<SeriesCol> Series { get; set; }
         }
 
@@ -50,8 +67,19 @@ namespace WordAddIn1.ChartOoxmlHost
             {
                 Type = DetectType(chartDoc),
                 Title = ReadChartTitle(chartDoc),
-                Series = series
+                Series = series,
+                Legend = ReadLegend(chartDoc),
+                AxisYTitle = ReadValAxisTitle(chartDoc, secondary: false),
+                AxisY2Title = ReadValAxisTitle(chartDoc, secondary: true),
+                AxisY = ReadAxisChrome(FindValAx(chartDoc, false)),
+                AxisXTitle = ReadCatAxisTitle(chartDoc),
+                Gridlines = ReadGridlines(chartDoc),
+                ChartStyle = ReadChartStyle(chartDoc),
+                AxisY2 = ReadValAxisChrome(chartDoc),
+                PlotColor = ReadAreaFill(chartDoc.Descendants(C + "plotArea").FirstOrDefault()),
+                ChartAreaColor = ReadAreaFill(chartDoc.Root)
             };
+            ReadPrimaryScale(chartDoc, grid);
             return true;
         }
 
@@ -166,7 +194,11 @@ namespace WordAddIn1.ChartOoxmlHost
                 List<string> vals = col.Values ?? new List<string>();
                 RewritePts(ser, C + "cat", cats);
                 RewritePts(ser, C + "val", vals);
+                WriteSeriesChrome(ser, col);
             }
+
+            PlaceSecondarySeries(chartDoc, grid);
+            WriteChartChrome(chartDoc, grid);
 
             if (!string.IsNullOrEmpty(grid.Title))
             {
@@ -174,6 +206,173 @@ namespace WordAddIn1.ChartOoxmlHost
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// 次轴系列从柱图组挪到折线图组，并挂到右侧数值轴。WPS 抽图只读包，不认 COM 的 AxisGroup。
+        /// </summary>
+        private static void PlaceSecondarySeries(XDocument chartDoc, SeriesGrid grid)
+        {
+            if (chartDoc == null || grid == null || grid.Series == null)
+            {
+                return;
+            }
+
+            bool any = false;
+            for (int i = 0; i < grid.Series.Count; i++)
+            {
+                if (ChartConfigSyntax.IsSecondaryAxis(grid.Series[i].AxisY))
+                {
+                    any = true;
+                    break;
+                }
+            }
+
+            if (!any)
+            {
+                return;
+            }
+
+            XElement plot = chartDoc.Descendants(C + "plotArea").FirstOrDefault();
+            if (plot == null)
+            {
+                return;
+            }
+
+            string catId = AxisId(plot, "catAx");
+            if (string.IsNullOrEmpty(catId))
+            {
+                catId = "1";
+            }
+
+            string secId = EnsureRightValueAxis(plot, catId);
+            XElement lineChart = plot.Elements(C + "lineChart").FirstOrDefault();
+            if (lineChart == null)
+            {
+                lineChart = new XElement(
+                    C + "lineChart",
+                    new XElement(C + "grouping", new XAttribute("val", "standard")),
+                    new XElement(C + "axId", new XAttribute("val", catId)),
+                    new XElement(C + "axId", new XAttribute("val", secId)));
+                XElement bar = plot.Elements(C + "barChart").FirstOrDefault()
+                    ?? plot.Elements(C + "bar3DChart").FirstOrDefault();
+                if (bar != null)
+                {
+                    bar.AddAfterSelf(lineChart);
+                }
+                else
+                {
+                    plot.AddFirst(lineChart);
+                }
+            }
+
+            List<XElement> sers = chartDoc.Descendants(C + "ser").ToList();
+            for (int i = 0; i < grid.Series.Count && i < sers.Count; i++)
+            {
+                if (!ChartConfigSyntax.IsSecondaryAxis(grid.Series[i].AxisY))
+                {
+                    continue;
+                }
+
+                XElement ser = sers[i];
+                if (ser.Parent == lineChart)
+                {
+                    continue;
+                }
+
+                ser.Remove();
+                XElement firstAx = lineChart.Elements(C + "axId").FirstOrDefault();
+                if (firstAx != null)
+                {
+                    firstAx.AddBeforeSelf(ser);
+                }
+                else
+                {
+                    lineChart.Add(ser);
+                }
+            }
+        }
+
+        private static string EnsureRightValueAxis(XElement plot, string catId)
+        {
+            foreach (XElement val in plot.Elements(C + "valAx"))
+            {
+                string pos = val.Element(C + "axPos")?.Attribute("val")?.Value;
+                if (string.Equals(pos, "r", StringComparison.OrdinalIgnoreCase))
+                {
+                    XElement id = val.Element(C + "axId");
+                    string existing = id?.Attribute("val")?.Value;
+                    if (!string.IsNullOrEmpty(existing))
+                    {
+                        return existing;
+                    }
+                }
+            }
+
+            int next = 3;
+            foreach (XElement idEl in plot.Descendants(C + "axId"))
+            {
+                int n;
+                if (int.TryParse(idEl.Attribute("val")?.Value, out n) && n >= next)
+                {
+                    next = n + 1;
+                }
+            }
+
+            string secId = next.ToString(CultureInfo.InvariantCulture);
+            plot.Add(new XElement(
+                C + "valAx",
+                new XElement(C + "axId", new XAttribute("val", secId)),
+                new XElement(
+                    C + "scaling",
+                    new XElement(C + "orientation", new XAttribute("val", "minMax"))),
+                new XElement(C + "axPos", new XAttribute("val", "r")),
+                new XElement(C + "crossAx", new XAttribute("val", catId)),
+                new XElement(C + "crosses", new XAttribute("val", "max"))));
+            return secId;
+        }
+
+        private static string AxisId(XElement plot, string axisName)
+        {
+            XElement axis = plot.Elements(C + axisName).FirstOrDefault();
+            return axis?.Element(C + "axId")?.Attribute("val")?.Value;
+        }
+
+        private static bool SeriesOnSecondary(XElement ser)
+        {
+            XElement chartEl = ser?.Parent;
+            XElement plot = chartEl?.Parent;
+            if (chartEl == null || plot == null)
+            {
+                return false;
+            }
+
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            foreach (XElement ax in chartEl.Elements(C + "axId"))
+            {
+                string id = ax.Attribute("val")?.Value;
+                if (!string.IsNullOrEmpty(id))
+                {
+                    ids.Add(id);
+                }
+            }
+
+            foreach (XElement val in plot.Elements(C + "valAx"))
+            {
+                string id = val.Element(C + "axId")?.Attribute("val")?.Value;
+                if (string.IsNullOrEmpty(id) || !ids.Contains(id))
+                {
+                    continue;
+                }
+
+                string pos = val.Element(C + "axPos")?.Attribute("val")?.Value;
+                if (string.Equals(pos, "r", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>有标题才写 c:title；空标题留着原节点，避免套数据把标题冲掉。</summary>
@@ -312,13 +511,15 @@ namespace WordAddIn1.ChartOoxmlHost
                 return "pie2d";
             }
 
-            if (chartDoc.Descendants(C + "lineChart").Any() || chartDoc.Descendants(C + "line3DChart").Any())
+            bool hasLine = chartDoc.Descendants(C + "lineChart").Any()
+                || chartDoc.Descendants(C + "line3DChart").Any();
+            XElement bar = chartDoc.Descendants(C + "barChart").FirstOrDefault()
+                ?? chartDoc.Descendants(C + "bar3DChart").FirstOrDefault();
+            if (hasLine && bar == null)
             {
                 return ChartConfigSyntax.TypeLine;
             }
 
-            XElement bar = chartDoc.Descendants(C + "barChart").FirstOrDefault()
-                ?? chartDoc.Descendants(C + "bar3DChart").FirstOrDefault();
             if (bar != null)
             {
                 XElement dir = bar.Element(C + "barDir");
@@ -370,8 +571,12 @@ namespace WordAddIn1.ChartOoxmlHost
             var col = new SeriesCol
             {
                 Name = ReadTx(ser),
-                AxisY = ChartConfigSyntax.AxisYPrimary,
-                Color = FirstSrgb(ser) ?? "",
+                AxisY = SeriesOnSecondary(ser) ? ChartConfigSyntax.AxisYSecondary : ChartConfigSyntax.AxisYPrimary,
+                Color = ReadFillColor(ser) ?? "",
+                Line = ReadLineColor(ser),
+                LineWeight = ReadLineWeight(ser),
+                Marker = ReadMarker(ser),
+                ShowDataLabels = ReadShowVal(ser),
                 ChartType = "",
                 Categories = ReadPts(ser.Element(C + "cat")),
                 Values = ReadPts(ser.Element(C + "val"))

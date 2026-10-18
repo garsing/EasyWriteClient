@@ -59,6 +59,58 @@ namespace WordAddIn1.ChartOoxmlHost
             {
                 info.Type = grid.Type;
                 info.Title = grid.Title;
+                info.LegendPosition = grid.Legend;
+                if (grid.YMin.HasValue)
+                {
+                    info.YAxisMin = grid.YMin.Value;
+                }
+
+                if (grid.YMax.HasValue)
+                {
+                    info.YAxisMax = grid.YMax.Value;
+                }
+
+                if (grid.YMajor.HasValue)
+                {
+                    info.YAxisMajorUnit = grid.YMajor.Value;
+                }
+
+                if (grid.AxisY != null)
+                {
+                    info.AxisY = grid.AxisY;
+                }
+                else if (!string.IsNullOrEmpty(grid.AxisYTitle))
+                {
+                    info.AxisY = new AxisYInfo { Title = grid.AxisYTitle };
+                }
+
+                if (info.AxisY != null && !string.IsNullOrEmpty(grid.AxisYTitle))
+                {
+                    info.AxisY.Title = grid.AxisYTitle;
+                }
+
+                if (!string.IsNullOrEmpty(grid.AxisXTitle))
+                {
+                    info.AxisX = new AxisXInfo { Title = grid.AxisXTitle };
+                }
+
+                info.Gridlines = grid.Gridlines;
+                if (grid.ChartStyle > 0)
+                {
+                    info.ChartStyle = grid.ChartStyle;
+                }
+
+                info.AxisY2 = grid.AxisY2;
+                info.PlotColor = grid.PlotColor;
+                info.ChartAreaColor = grid.ChartAreaColor;
+                if (info.AxisY2 != null && !string.IsNullOrEmpty(grid.AxisY2Title))
+                {
+                    info.AxisY2.Title = grid.AxisY2Title;
+                }
+                else if (info.AxisY2 == null && !string.IsNullOrEmpty(grid.AxisY2Title))
+                {
+                    info.AxisY2 = new AxisYInfo { Title = grid.AxisY2Title };
+                }
                 if (part.ExtentCx > 0)
                 {
                     info.Width = (int)Math.Round(part.ExtentCx / 12700.0);
@@ -292,7 +344,7 @@ namespace WordAddIn1.ChartOoxmlHost
         }
 
         /// <summary>
-        /// 套用前对齐已有图：format 只换标题、沿用原系列；data/all 系列或点数不一致则失败且不写。
+        /// 套用前对齐已有图：format 只换标题、沿用原系列；系列数不一致则失败且不写。点数可以变，按新稿改缓存。
         /// </summary>
         public static bool TryPrepareApplyGrid(
             object document,
@@ -347,7 +399,7 @@ namespace WordAddIn1.ChartOoxmlHost
             }
 
             int wantPoints = FirstPointCount(want);
-            if (wantSeries != haveSeries || wantPoints != havePoints)
+            if (wantSeries != haveSeries)
             {
                 error = MismatchMessage(haveSeries, wantSeries, havePoints, wantPoints);
                 return false;
@@ -386,8 +438,28 @@ namespace WordAddIn1.ChartOoxmlHost
             {
                 Type = info != null ? info.Type : "",
                 Title = info != null ? info.Title : "",
+                Legend = info != null ? info.LegendPosition : null,
+                AxisYTitle = info != null && info.AxisY != null ? info.AxisY.Title : null,
+                AxisY2Title = info != null && info.AxisY2 != null ? info.AxisY2.Title : null,
+                AxisXTitle = info != null && info.AxisX != null ? info.AxisX.Title : null,
+                Gridlines = info != null ? info.Gridlines : null,
+                ChartStyle = info != null ? info.ChartStyle : 0,
+                AxisY = info != null ? info.AxisY : null,
+                AxisY2 = info != null ? info.AxisY2 : null,
+                PlotColor = info != null ? info.PlotColor : null,
+                ChartAreaColor = info != null ? info.ChartAreaColor : null,
                 Series = new List<ChartPartXml.SeriesCol>()
             };
+            if (info != null && (info.YAxisMin != 0 || info.YAxisMax != 0))
+            {
+                grid.YMin = info.YAxisMin;
+                grid.YMax = info.YAxisMax;
+            }
+
+            if (info != null && info.YAxisMajorUnit > 0)
+            {
+                grid.YMajor = info.YAxisMajorUnit;
+            }
             if (info == null || info.SeriesCollection == null)
             {
                 return grid;
@@ -400,6 +472,10 @@ namespace WordAddIn1.ChartOoxmlHost
                     Name = s.Name,
                     AxisY = s.AxisY,
                     Color = s.Color,
+                    Line = s.Line,
+                    LineWeight = s.LineWeight,
+                    Marker = s.Marker,
+                    ShowDataLabels = s.ShowDataLabels,
                     ChartType = s.ChartType,
                     Categories = new List<string>(),
                     Values = new List<string>()
@@ -435,6 +511,10 @@ namespace WordAddIn1.ChartOoxmlHost
                     AxisY = col.AxisY,
                     Color = string.IsNullOrEmpty(col.Color) ? "" : "#" + col.Color.TrimStart('#'),
                     ChartType = col.ChartType,
+                    Line = string.IsNullOrEmpty(col.Line) ? null : "#" + col.Line.TrimStart('#'),
+                    LineWeight = col.LineWeight,
+                    Marker = col.Marker,
+                    ShowDataLabels = col.ShowDataLabels,
                     Points = new List<PointInfo>()
                 };
                 int n = col.Values != null ? col.Values.Count : 0;

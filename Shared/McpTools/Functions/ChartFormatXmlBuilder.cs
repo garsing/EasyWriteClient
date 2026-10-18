@@ -166,6 +166,10 @@ namespace WordAddIn1
                 AppendElementIfNotEmpty(axisY, "MajorTick", chart.AxisY.MajorTick);
                 AppendElementIfNotEmpty(axisY, "MinorTick", chart.AxisY.MinorTick);
                 AppendElementIfNotEmpty(axisY, "Grid", chart.AxisY.Grid);
+                AppendElementIfNotEmpty(axisY, "Format", chart.AxisY.Format);
+                AppendElementIfNotEmpty(axisY, "Line", chart.AxisY.Line);
+                AppendElementIfNotEmpty(axisY, "LineWeight", chart.AxisY.LineWeight);
+                AppendElementIfNotEmpty(axisY, "GridColor", chart.AxisY.GridColor);
                 chartEl.Add(axisY);
             }
 
@@ -173,6 +177,18 @@ namespace WordAddIn1
             {
                 var axisY2 = new XElement("AxisY2");
                 AppendElementIfNotEmpty(axisY2, "Title", chart.AxisY2.Title);
+                AppendElementIfNotEmpty(axisY2, "Visible", chart.AxisY2.Visible);
+                AppendElementIfNotEmpty(axisY2, "TickFont", chart.AxisY2.TickFont);
+                AppendElementIfNotEmpty(axisY2, "TickColor", chart.AxisY2.TickColor);
+                AppendElementIfNotEmpty(axisY2, "TickSize", chart.AxisY2.TickSize);
+                AppendElementIfNotEmpty(axisY2, "TickPosition", chart.AxisY2.TickPosition);
+                AppendElementIfNotEmpty(axisY2, "MajorTick", chart.AxisY2.MajorTick);
+                AppendElementIfNotEmpty(axisY2, "MinorTick", chart.AxisY2.MinorTick);
+                AppendElementIfNotEmpty(axisY2, "Grid", chart.AxisY2.Grid);
+                AppendElementIfNotEmpty(axisY2, "Format", chart.AxisY2.Format);
+                AppendElementIfNotEmpty(axisY2, "Line", chart.AxisY2.Line);
+                AppendElementIfNotEmpty(axisY2, "LineWeight", chart.AxisY2.LineWeight);
+                AppendElementIfNotEmpty(axisY2, "GridColor", chart.AxisY2.GridColor);
                 chartEl.Add(axisY2);
             }
         }

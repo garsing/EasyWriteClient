@@ -501,7 +501,13 @@ namespace PptChartRoundtripTest
             sb.Append("<").Append(name).Append(">");
             El(sb, "Title", title);
             El(sb, "Type", type);
-            El(sb, "Format", format);
+            string numberFormat = format;
+            if (string.IsNullOrEmpty(numberFormat) && style != null)
+            {
+                numberFormat = style.Format;
+            }
+
+            El(sb, "Format", numberFormat);
             El(sb, "TickLabelCount", tickCount);
             El(sb, "TickLabelSpacing", tickSpacing);
             El(sb, "BetweenCategories", between);

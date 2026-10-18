@@ -52,7 +52,7 @@ namespace WordAddIn1
             int parsedSeries = parsedChart.SeriesCollection.Count;
             int parsedPoints = parsedChart.SeriesCollection[0].Points?.Count ?? 0;
 
-            if (parsedSeries != existingSeries || parsedPoints != existingPoints)
+            if (parsedSeries != existingSeries)
             {
                 result.Error = BuildMismatchMessage(existingSeries, parsedSeries, existingPoints, parsedPoints);
                 return result;
