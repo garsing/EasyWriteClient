@@ -155,9 +155,10 @@ namespace WordAddIn1.PresentationHost
                 EnsureXmlChartKind(doc, xlType, warnings);
             }
 
+            bool axes = RewriteAxisChromeFromSnap(doc, snap, warnings);
             bool pinned = RewriteSeriesChromeFromSnap(doc, snap, warnings);
             bool stripped = StripSrgbClrTint(doc, warnings);
-            return pinned || stripped;
+            return axes || pinned || stripped;
         }
 
         private static int ChromeXlType(ChartStyleSnap snap, int fallback = 0)
@@ -228,7 +229,9 @@ namespace WordAddIn1.PresentationHost
             {
                 TryWriteAreaFill(chart, "ChartArea", snap.ChartAreaFillVisible, snap.ChartAreaFillRgb);
                 TryWriteAreaFill(chart, "PlotArea", snap.PlotFillVisible, snap.PlotFillRgb);
-                PourLog(warnings, "OOXML 钉皮：贴回后重钉绘图区/图表区填充");
+                TryInheritAxisChrome(chart, snap, warnings);
+                ReapplyAxisGridColors(chart, snap);
+                PourLog(warnings, "OOXML 钉皮：贴回后重钉绘图区/图表区填充和轴线");
                 LogAxisFormats(chart, warnings, "钉皮后");
             }
         }
@@ -238,6 +241,13 @@ namespace WordAddIn1.PresentationHost
             if (snap == null || snap.Series == null)
             {
                 return false;
+            }
+
+            if (AxisChromeWantsOoxml(snap.Category)
+                || AxisChromeWantsOoxml(snap.Value)
+                || AxisChromeWantsOoxml(snap.ValueSecondary))
+            {
+                return true;
             }
 
             for (int i = 0; i < snap.Series.Count; i++)
@@ -395,6 +405,131 @@ namespace WordAddIn1.PresentationHost
 
             bar.ReplaceWith(line);
             PourLog(warnings, "OOXML 钉皮：barChart 已改为 lineChart");
+        }
+
+        private static readonly string[] AxisChildOrder =
+        {
+            "axId", "scaling", "delete", "axPos", "majorGridlines", "minorGridlines",
+            "title", "numFmt", "majorTickMark", "minorTickMark", "tickLblPos",
+            "spPr", "txPr", "crossAx", "crosses", "crossesAt", "crossBetween"
+        };
+
+        private static bool AxisChromeWantsOoxml(AxisStyleSnap ax)
+        {
+            if (ax == null || ax.Deleted == true)
+            {
+                return false;
+            }
+
+            if (ax.LineRgb.HasValue && ax.LineVisible != false)
+            {
+                return true;
+            }
+
+            return ax.MajorGridlineRgb.HasValue && ax.HasMajorGridlines != false;
+        }
+
+        private static bool RewriteAxisChromeFromSnap(XDocument chartDoc, ChartStyleSnap snap, List<string> warnings)
+        {
+            if (chartDoc == null || snap == null)
+            {
+                return false;
+            }
+
+            bool changed = false;
+            changed |= PinAxisChrome(FindCategoryAxis(chartDoc), snap.Category);
+            changed |= PinAxisChrome(FindValueAxis(chartDoc, false), snap.Value);
+            changed |= PinAxisChrome(FindValueAxis(chartDoc, true), snap.ValueSecondary);
+            if (changed)
+            {
+                PourLog(warnings, "OOXML 钉皮：轴线/网格色");
+            }
+
+            return changed;
+        }
+
+        private static XElement FindCategoryAxis(XDocument chartDoc)
+        {
+            return chartDoc.Descendants(CNs + "catAx").FirstOrDefault()
+                ?? chartDoc.Descendants(CNs + "dateAx").FirstOrDefault()
+                ?? chartDoc.Descendants().FirstOrDefault(e => e.Name.LocalName == "catAx");
+        }
+
+        private static XElement FindValueAxis(XDocument chartDoc, bool secondary)
+        {
+            List<XElement> axes = chartDoc.Descendants(CNs + "valAx").ToList();
+            if (axes.Count == 0)
+            {
+                axes = chartDoc.Descendants().Where(e => e.Name.LocalName == "valAx").ToList();
+            }
+
+            foreach (XElement ax in axes)
+            {
+                string pos = LocalChild(ax, "axPos")?.Attribute("val")?.Value;
+                bool right = string.Equals(pos, "r", StringComparison.OrdinalIgnoreCase);
+                if (secondary == right)
+                {
+                    return ax;
+                }
+            }
+
+            return secondary ? null : (axes.Count > 0 ? axes[0] : null);
+        }
+
+        private static bool PinAxisChrome(XElement axis, AxisStyleSnap snap)
+        {
+            if (!AxisChromeWantsOoxml(snap) || axis == null)
+            {
+                return false;
+            }
+
+            bool changed = false;
+            if (snap.MajorGridlineRgb.HasValue && snap.HasMajorGridlines != false)
+            {
+                XElement grid = EnsureNamedChild(axis, CNs + "majorGridlines", AxisChildOrder);
+                WritePinnedLine(grid, snap.MajorGridlineRgb.Value, null);
+                changed = true;
+            }
+
+            if (snap.LineRgb.HasValue && snap.LineVisible != false)
+            {
+                WritePinnedLine(axis, snap.LineRgb.Value, snap.LineWeight);
+                changed = true;
+            }
+
+            return changed;
+        }
+
+        private static void WritePinnedLine(XElement owner, int rgb, double? weightPt)
+        {
+            if (owner == null)
+            {
+                return;
+            }
+
+            XElement spPr = EnsureNamedChild(owner, CNs + "spPr", owner.Name.LocalName == "majorGridlines"
+                ? new[] { "spPr" }
+                : AxisChildOrder);
+            XElement ln = LocalChild(spPr, "ln");
+            if (ln == null)
+            {
+                ln = new XElement(ANs + "ln");
+                spPr.Add(ln);
+            }
+
+            if (weightPt.HasValue && weightPt.Value > 0 && weightPt.Value <= 40)
+            {
+                int emu = (int)Math.Round(weightPt.Value * 12700.0);
+                ln.SetAttributeValue("w", emu.ToString(CultureInfo.InvariantCulture));
+            }
+
+            foreach (XElement solid in ln.Elements().Where(e =>
+                e.Name.LocalName == "solidFill" || e.Name.LocalName == "noFill").ToList())
+            {
+                solid.Remove();
+            }
+
+            ln.Add(new XElement(ANs + "solidFill", MakeSrgbClr(rgb, 0)));
         }
 
         private static bool RewriteSeriesChromeFromSnap(XDocument chartDoc, ChartStyleSnap snap, List<string> warnings)
@@ -2049,6 +2184,50 @@ namespace WordAddIn1.PresentationHost
 
             return zip.Entries.FirstOrDefault(x =>
                 string.Equals(x.FullName.Replace('\\', '/'), fullName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool TryLoadLiveChartDoc(object chart, out XDocument chartDoc)
+        {
+            chartDoc = null;
+            object shape = TryGetChartShape(chart);
+            object slide = shape == null ? null : TryGetShapeSlide(shape);
+            object pres = shape == null ? null : TryGetShapePresentation(shape);
+            if (slide == null || pres == null)
+            {
+                return false;
+            }
+
+            int shapeId;
+            int slideIndex;
+            try
+            {
+                shapeId = Convert.ToInt32(WppCom.GetProperty(shape, "Id") ?? 0);
+                slideIndex = Convert.ToInt32(WppCom.GetProperty(slide, "SlideIndex") ?? 0);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            if (shapeId < 1 || slideIndex < 1)
+            {
+                return false;
+            }
+
+            var warnings = new List<string>();
+            XDocument loaded = null;
+            if (!WordAddIn1.ChartOoxmlHost.PptChartPackageHost.TryReadSavedPackage(
+                pres,
+                path => TryReadChartDocFromPptx(path, slideIndex, shapeId, warnings, "读轴色", out loaded),
+                out _,
+                "读轴色")
+                || loaded == null)
+            {
+                return false;
+            }
+
+            chartDoc = loaded;
+            return true;
         }
 
         /// <summary>COM Series 半活时：SaveCopyAs 读 chart XML 的 c:pt（图上缓存，不是再 Activate）。</summary>

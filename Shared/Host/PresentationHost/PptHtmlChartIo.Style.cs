@@ -112,6 +112,7 @@ namespace WordAddIn1.PresentationHost
             snap.Value = TryCaptureAxis(chart, XlValue, XlPrimary);
             snap.ValueSecondary = TryCaptureAxis(chart, XlValue, XlSecondary);
             NormalizeAxisChrome(snap);
+            TryOverlayAxisRgbFromPackage(chart, snap);
 
             try
             {
@@ -2431,6 +2432,25 @@ namespace WordAddIn1.PresentationHost
             return list;
         }
 
+        private static bool GradientStopsReversed(object fill, List<GradientStopSnap> stops)
+        {
+            List<GradientStopSnap> got = TryReadGradientStops(fill);
+            if (got == null || got.Count < 2 || stops == null || stops.Count < 2)
+            {
+                return false;
+            }
+
+            GradientStopSnap want = stops[0];
+            GradientStopSnap first = got[0];
+            if (want == null || first == null)
+            {
+                return false;
+            }
+
+            return first.Rgb != want.Rgb
+                || Math.Abs(first.Transparency - want.Transparency) > 0.05;
+        }
+
         private static bool TryWriteGradientStops(object fill, List<GradientStopSnap> stops, double? angle = null)
         {
             if (fill == null || stops == null || stops.Count < 2)
@@ -2477,6 +2497,19 @@ namespace WordAddIn1.PresentationHost
                 {
                     object extra = WppCom.GetIndexed(gs, i);
                     TryInvoke(extra, "Delete");
+                }
+
+                if (GradientStopsReversed(fill, stops))
+                {
+                    for (int i = 0; i < use; i++)
+                    {
+                        object stop = WppCom.GetIndexed(gs, use - i);
+                        WppCom.TrySetProperty(stop, "Position", stops[i].Position);
+                        object color = WppCom.GetProperty(stop, "Color");
+                        TryWriteColorFormatRgb(color, stops[i].Rgb);
+                        WppCom.TrySetProperty(color, "RGB", stops[i].Rgb);
+                        WppCom.TrySetProperty(stop, "Transparency", stops[i].Transparency);
+                    }
                 }
 
                 return TryReadGradientStops(fill) != null;
@@ -2587,6 +2620,82 @@ namespace WordAddIn1.PresentationHost
 
                 object glColor = WppCom.GetProperty(glLine, "ForeColor");
                 snap.MajorGridlineRgb = TryReadExplicitRgb(glColor);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void TryOverlayAxisRgbFromPackage(object chart, ChartStyleSnap snap)
+        {
+            if (chart == null || snap == null || !TryLoadLiveChartDoc(chart, out XDocument chartDoc) || chartDoc == null)
+            {
+                return;
+            }
+
+            ApplyXmlAxisColor(FindCategoryAxis(chartDoc), snap.Category);
+            ApplyXmlAxisColor(FindValueAxis(chartDoc, false), snap.Value);
+            ApplyXmlAxisColor(FindValueAxis(chartDoc, true), snap.ValueSecondary);
+        }
+
+        private static void ApplyXmlAxisColor(XElement axis, AxisStyleSnap dest)
+        {
+            if (axis == null || dest == null)
+            {
+                return;
+            }
+
+            if (TryReadAxisLnSrgb(axis, out int line))
+            {
+                dest.LineRgb = line;
+                dest.LineVisible = true;
+            }
+
+            XElement grid = LocalChild(axis, "majorGridlines");
+            if (TryReadAxisLnSrgb(grid, out int gridRgb))
+            {
+                dest.MajorGridlineRgb = gridRgb;
+                dest.HasMajorGridlines = true;
+            }
+        }
+
+        private static bool TryReadAxisLnSrgb(XElement owner, out int officeRgb)
+        {
+            officeRgb = 0;
+            XElement ln = LocalChild(LocalChild(owner, "spPr"), "ln");
+            XElement srgb = LocalChild(LocalChild(ln, "solidFill"), "srgbClr");
+            string val = srgb?.Attribute("val")?.Value;
+            if (string.IsNullOrWhiteSpace(val))
+            {
+                return false;
+            }
+
+            return TryParseHexToOffice("#" + val.Trim().TrimStart('#'), out officeRgb);
+        }
+
+        private static void ReapplyAxisGridColors(object chart, ChartStyleSnap snap)
+        {
+            if (chart == null || snap == null)
+            {
+                return;
+            }
+
+            ReapplyOneAxisGrid(chart, XlCategory, XlPrimary, snap.Category);
+            ReapplyOneAxisGrid(chart, XlValue, XlPrimary, snap.Value);
+            ReapplyOneAxisGrid(chart, XlValue, XlSecondary, snap.ValueSecondary);
+        }
+
+        private static void ReapplyOneAxisGrid(object chart, int axisType, int group, AxisStyleSnap snap)
+        {
+            if (snap == null || snap.Deleted == true || !snap.MajorGridlineRgb.HasValue)
+            {
+                return;
+            }
+
+            try
+            {
+                object axis = TryInvoke(chart, "Axes", axisType, group);
+                TryApplyGridlineLine(axis, snap);
             }
             catch (Exception)
             {

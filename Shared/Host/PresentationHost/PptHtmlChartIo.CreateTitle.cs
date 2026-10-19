@@ -334,7 +334,9 @@ namespace WordAddIn1.PresentationHost
                                 return false;
                             }
 
-                            RewritePptMarkerFill(doc, SnapFromFormat(format, grid), w, xlType);
+                            ChartStyleSnap chrome = SnapFromFormat(format, grid);
+                            RewriteOoxmlChrome(doc, chrome, w, xlType);
+                            RewritePptMarkerFill(doc, chrome, w, xlType);
                             return true;
                         },
                         warnings,

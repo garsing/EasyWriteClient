@@ -2097,15 +2097,35 @@ namespace WordAddIn1.PresentationHost
                 return null;
             }
 
+            var ordered = new List<GradientStopSnap>(stops);
+            ordered.Sort((a, b) =>
+            {
+                if (a == null && b == null)
+                {
+                    return 0;
+                }
+
+                if (a == null)
+                {
+                    return 1;
+                }
+
+                if (b == null)
+                {
+                    return -1;
+                }
+
+                return a.Position.CompareTo(b.Position);
+            });
             var sb = new StringBuilder();
-            for (int i = 0; i < stops.Count; i++)
+            for (int i = 0; i < ordered.Count; i++)
             {
                 if (i > 0)
                 {
                     sb.Append(';');
                 }
 
-                GradientStopSnap s = stops[i];
+                GradientStopSnap s = ordered[i];
                 sb.Append(s.Position.ToString("0.##", CultureInfo.InvariantCulture))
                     .Append(':')
                     .Append(OfficeRgbToHex(s.Rgb))

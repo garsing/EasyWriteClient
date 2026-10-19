@@ -276,3 +276,3227 @@
   … 29/50 页=29
   [OK] B3P30 #130 create-pie3d-top-r5-lbl
   … 30/50 页=30
+  [OK] B3P31 #131 create-pie3d-top-r6
+  … 31/50 页=31
+  [OK] B3P32 #132 create-pie3d-top-r6-lbl
+  … 32/50 页=32
+  [OK] B3P33 #133 create-pie3d-bottom-r4
+  … 33/50 页=33
+  [OK] B3P34 #134 create-pie3d-bottom-r4-lbl
+  … 34/50 页=34
+  [OK] B3P35 #135 create-pie3d-bottom-r5
+  … 35/50 页=35
+  [OK] B3P36 #136 create-pie3d-bottom-r5-lbl
+  … 36/50 页=36
+  [OK] B3P37 #137 create-pie3d-bottom-r6
+  … 37/50 页=37
+  [OK] B3P38 #138 create-pie3d-bottom-r6-lbl
+  … 38/50 页=38
+  [OK] B3P39 #139 create-pie3d-left-r4
+  … 39/50 页=39
+  [OK] B3P40 #140 create-pie3d-left-r4-lbl
+  … 40/50 页=40
+  [OK] B3P41 #141 create-pie3d-left-r5
+  … 41/50 页=41
+  [OK] B3P42 #142 create-pie3d-left-r5-lbl
+  … 42/50 页=42
+  [OK] B3P43 #143 create-pie3d-left-r6
+  … 43/50 页=43
+  [OK] B3P44 #144 create-pie3d-left-r6-lbl
+  … 44/50 页=44
+  [OK] B3P45 #145 create-pie3d-right-r4
+  … 45/50 页=45
+  [OK] B3P46 #146 create-pie3d-right-r4-lbl
+  … 46/50 页=46
+  [OK] B3P47 #147 create-pie3d-right-r5
+  … 47/50 页=47
+  [OK] B3P48 #148 create-pie3d-right-r5-lbl
+  … 48/50 页=48
+  [OK] B3P49 #149 create-pie3d-right-r6
+  … 49/50 页=49
+  [OK] B3P50 #150 create-pie3d-right-r6-lbl
+  … 50/50 页=50
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-batch-3.pptx 页数=50
+
+--- 正式用例 批次 4/6 （约 50 页）→ D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-batch-4.pptx ---
+  [OK] B4P01 #151 replace-values-none-r4
+  … 1/50 页=1
+  [OK] B4P02 #152 replace-values-top-r5
+  … 2/50 页=2
+  [OK] B4P03 #153 replace-to-bar-bottom-r6
+  … 3/50 页=3
+  [OK] B4P04 #154 replace-to-line-left-r4
+  … 4/50 页=4
+  [OK] B4P05 #155 replace-to-pie2d-right-r5
+  … 5/50 页=5
+  [OK] B4P06 #156 replace-to-pie3d-none-r6
+  … 6/50 页=6
+  [OK] B4P07 #157 replace-to-combo-y2-top-r4
+  … 7/50 页=7
+  [OK] B4P08 #158 replace-to-combo-y-bottom-r5
+  … 8/50 页=8
+  [OK] B4P09 #159 replace-to-twocol-left-r6
+  … 9/50 页=9
+  [OK] B4P10 #160 replace-to-bar-right-r4
+  … 10/50 页=10
+  [OK] B4P11 #161 replace-values-none-r5
+  … 11/50 页=11
+  [OK] B4P12 #162 replace-values-top-r6
+  … 12/50 页=12
+  [OK] B4P13 #163 replace-to-bar-bottom-r4
+  … 13/50 页=13
+  [OK] B4P14 #164 replace-to-line-left-r5
+  … 14/50 页=14
+  [OK] B4P15 #165 replace-to-pie2d-right-r6
+  … 15/50 页=15
+  [OK] B4P16 #166 replace-to-pie3d-none-r4
+  … 16/50 页=16
+  [OK] B4P17 #167 replace-to-combo-y2-top-r5
+  … 17/50 页=17
+  [OK] B4P18 #168 replace-to-combo-y-bottom-r6
+  … 18/50 页=18
+  [OK] B4P19 #169 replace-to-twocol-left-r4
+  … 19/50 页=19
+  [OK] B4P20 #170 replace-to-bar-right-r5
+  … 20/50 页=20
+  [OK] B4P21 #171 replace-values-none-r6
+  … 21/50 页=21
+  [OK] B4P22 #172 replace-values-top-r4
+  … 22/50 页=22
+  [OK] B4P23 #173 replace-to-bar-bottom-r5
+  … 23/50 页=23
+  [OK] B4P24 #174 replace-to-line-left-r6
+  … 24/50 页=24
+  [OK] B4P25 #175 replace-to-pie2d-right-r4
+  … 25/50 页=25
+  [OK] B4P26 #176 replace-to-pie3d-none-r5
+  … 26/50 页=26
+  [OK] B4P27 #177 replace-to-combo-y2-top-r6
+  … 27/50 页=27
+  [OK] B4P28 #178 replace-to-combo-y-bottom-r4
+  … 28/50 页=28
+  [OK] B4P29 #179 replace-to-twocol-left-r5
+  … 29/50 页=29
+  [OK] B4P30 #180 replace-to-bar-right-r6
+  … 30/50 页=30
+  [OK] B4P31 #181 replace-values-none-r4
+  … 31/50 页=31
+  [OK] B4P32 #182 replace-values-top-r5
+  … 32/50 页=32
+  [OK] B4P33 #183 replace-to-bar-bottom-r6
+  … 33/50 页=33
+  [OK] B4P34 #184 replace-to-line-left-r4
+  … 34/50 页=34
+  [OK] B4P35 #185 replace-to-pie2d-right-r5
+  … 35/50 页=35
+  [OK] B4P36 #186 replace-to-pie3d-none-r6
+  … 36/50 页=36
+  [OK] B4P37 #187 replace-to-combo-y2-top-r4
+  … 37/50 页=37
+  [OK] B4P38 #188 replace-to-combo-y-bottom-r5
+  … 38/50 页=38
+  [OK] B4P39 #189 replace-to-twocol-left-r6
+  … 39/50 页=39
+  [OK] B4P40 #190 replace-to-bar-right-r4
+  … 40/50 页=40
+  [OK] B4P41 #191 replace-values-none-r5
+  … 41/50 页=41
+  [OK] B4P42 #192 replace-values-top-r6
+  … 42/50 页=42
+  [OK] B4P43 #193 replace-to-bar-bottom-r4
+  … 43/50 页=43
+  [OK] B4P44 #194 replace-to-line-left-r5
+  … 44/50 页=44
+  [OK] B4P45 #195 replace-to-pie2d-right-r6
+  … 45/50 页=45
+  [OK] B4P46 #196 replace-to-pie3d-none-r4
+  … 46/50 页=46
+  [OK] B4P47 #197 replace-to-combo-y2-top-r5
+  … 47/50 页=47
+  [OK] B4P48 #198 replace-to-combo-y-bottom-r6
+  … 48/50 页=48
+  [OK] B4P49 #199 replace-to-twocol-left-r4
+  … 49/50 页=49
+  [OK] B4P50 #200 replace-to-bar-right-r5
+  … 50/50 页=50
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-batch-4.pptx 页数=50
+
+--- 正式用例 批次 5/6 （约 50 页）→ D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-batch-5.pptx ---
+  [OK] B5P01 #201 replace-values-none-r6
+  … 1/50 页=1
+  [OK] B5P02 #202 replace-values-top-r4
+  … 2/50 页=2
+  [OK] B5P03 #203 replace-to-bar-bottom-r5
+  … 3/50 页=3
+  [OK] B5P04 #204 replace-to-line-left-r6
+  … 4/50 页=4
+  [OK] B5P05 #205 replace-to-pie2d-right-r4
+  … 5/50 页=5
+  [OK] B5P06 #206 replace-to-pie3d-none-r5
+  … 6/50 页=6
+  [OK] B5P07 #207 replace-to-combo-y2-top-r6
+  … 7/50 页=7
+  [OK] B5P08 #208 replace-to-combo-y-bottom-r4
+  … 8/50 页=8
+  [OK] B5P09 #209 replace-to-twocol-left-r5
+  … 9/50 页=9
+  [OK] B5P10 #210 replace-to-bar-right-r6
+  … 10/50 页=10
+  [OK] B5P11 #211 replace-values-none-r4
+  … 11/50 页=11
+  [OK] B5P12 #212 replace-values-top-r5
+  … 12/50 页=12
+  [OK] B5P13 #213 replace-to-bar-bottom-r6
+  … 13/50 页=13
+  [OK] B5P14 #214 replace-to-line-left-r4
+  … 14/50 页=14
+  [OK] B5P15 #215 replace-to-pie2d-right-r5
+  … 15/50 页=15
+  [OK] B5P16 #216 replace-to-pie3d-none-r6
+  … 16/50 页=16
+  [OK] B5P17 #217 replace-to-combo-y2-top-r4
+  … 17/50 页=17
+  [OK] B5P18 #218 replace-to-combo-y-bottom-r5
+  … 18/50 页=18
+  [OK] B5P19 #219 replace-to-twocol-left-r6
+  … 19/50 页=19
+  [OK] B5P20 #220 replace-to-bar-right-r4
+  … 20/50 页=20
+  [OK] B5P21 #221 replace-values-none-r5
+  … 21/50 页=21
+  [OK] B5P22 #222 replace-values-top-r6
+  … 22/50 页=22
+  [OK] B5P23 #223 replace-to-bar-bottom-r4
+  … 23/50 页=23
+  [OK] B5P24 #224 replace-to-line-left-r5
+  … 24/50 页=24
+  [OK] B5P25 #225 replace-to-pie2d-right-r6
+  … 25/50 页=25
+  [OK] B5P26 #226 replace-to-pie3d-none-r4
+  … 26/50 页=26
+  [OK] B5P27 #227 replace-to-combo-y2-top-r5
+  … 27/50 页=27
+  [OK] B5P28 #228 replace-to-combo-y-bottom-r6
+  … 28/50 页=28
+  [OK] B5P29 #229 replace-to-twocol-left-r4
+  … 29/50 页=29
+  [OK] B5P30 #230 replace-to-bar-right-r5
+  … 30/50 页=30
+  [OK] B5P31 #231 replace-values-none-r6
+  … 31/50 页=31
+  [OK] B5P32 #232 replace-values-top-r4
+  … 32/50 页=32
+  [OK] B5P33 #233 replace-to-bar-bottom-r5
+  … 33/50 页=33
+  [OK] B5P34 #234 replace-to-line-left-r6
+  … 34/50 页=34
+  [OK] B5P35 #235 replace-to-pie2d-right-r4
+  … 35/50 页=35
+  [OK] B5P36 #236 replace-to-pie3d-none-r5
+  … 36/50 页=36
+  [OK] B5P37 #237 replace-to-combo-y2-top-r6
+  … 37/50 页=37
+  [OK] B5P38 #238 replace-to-combo-y-bottom-r4
+  … 38/50 页=38
+  [OK] B5P39 #239 replace-to-twocol-left-r5
+  … 39/50 页=39
+  [OK] B5P40 #240 replace-to-bar-right-r6
+  … 40/50 页=40
+  [OK] B5P41 #241 replace-values-none-r4
+  … 41/50 页=41
+  [OK] B5P42 #242 replace-values-top-r5
+  … 42/50 页=42
+  [OK] B5P43 #243 replace-to-bar-bottom-r6
+  … 43/50 页=43
+  [OK] B5P44 #244 replace-to-line-left-r4
+  … 44/50 页=44
+  [OK] B5P45 #245 replace-to-pie2d-right-r5
+  … 45/50 页=45
+  [OK] B5P46 #246 replace-to-pie3d-none-r6
+  … 46/50 页=46
+  [OK] B5P47 #247 replace-to-combo-y2-top-r4
+  … 47/50 页=47
+  [OK] B5P48 #248 replace-to-combo-y-bottom-r5
+  … 48/50 页=48
+  [OK] B5P49 #249 replace-to-twocol-left-r6
+  … 49/50 页=49
+  [OK] B5P50 #250 replace-to-bar-right-r4
+  … 50/50 页=50
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-batch-5.pptx 页数=50
+
+--- 正式用例 批次 6/6 （约 50 页）→ D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-batch-6.pptx ---
+  [OK] B6P01 #251 replace-values-none-r5
+  … 1/50 页=1
+  [OK] B6P02 #252 replace-values-top-r6
+  … 2/50 页=2
+  [OK] B6P03 #253 replace-to-bar-bottom-r4
+  … 3/50 页=3
+  [OK] B6P04 #254 replace-to-line-left-r5
+  … 4/50 页=4
+  [OK] B6P05 #255 replace-to-pie2d-right-r6
+  … 5/50 页=5
+  [OK] B6P06 #256 replace-to-pie3d-none-r4
+  … 6/50 页=6
+  [OK] B6P07 #257 replace-to-combo-y2-top-r5
+  … 7/50 页=7
+  [OK] B6P08 #258 replace-to-combo-y-bottom-r6
+  … 8/50 页=8
+  [OK] B6P09 #259 replace-to-twocol-left-r4
+  … 9/50 页=9
+  [OK] B6P10 #260 replace-to-bar-right-r5
+  … 10/50 页=10
+  [OK] B6P11 #261 replace-values-none-r6
+  … 11/50 页=11
+  [OK] B6P12 #262 replace-values-top-r4
+  … 12/50 页=12
+  [OK] B6P13 #263 replace-to-bar-bottom-r5
+  … 13/50 页=13
+  [OK] B6P14 #264 replace-to-line-left-r6
+  … 14/50 页=14
+  [OK] B6P15 #265 replace-to-pie2d-right-r4
+  … 15/50 页=15
+  [OK] B6P16 #266 replace-to-pie3d-none-r5
+  … 16/50 页=16
+  [OK] B6P17 #267 replace-to-combo-y2-top-r6
+  … 17/50 页=17
+  [OK] B6P18 #268 replace-to-combo-y-bottom-r4
+  … 18/50 页=18
+  [OK] B6P19 #269 replace-to-twocol-left-r5
+  … 19/50 页=19
+  [OK] B6P20 #270 replace-to-bar-right-r6
+  … 20/50 页=20
+  [OK] B6P21 #271 replace-values-none-r4
+  … 21/50 页=21
+  [OK] B6P22 #272 replace-values-top-r5
+  … 22/50 页=22
+  [OK] B6P23 #273 replace-to-bar-bottom-r6
+  … 23/50 页=23
+  [OK] B6P24 #274 replace-to-line-left-r4
+  … 24/50 页=24
+  [OK] B6P25 #275 replace-to-pie2d-right-r5
+  … 25/50 页=25
+  [OK] B6P26 #276 replace-to-pie3d-none-r6
+  … 26/50 页=26
+  [OK] B6P27 #277 replace-to-combo-y2-top-r4
+  … 27/50 页=27
+  [OK] B6P28 #278 replace-to-combo-y-bottom-r5
+  … 28/50 页=28
+  [OK] B6P29 #279 replace-to-twocol-left-r6
+  … 29/50 页=29
+  [OK] B6P30 #280 replace-to-bar-right-r4
+  … 30/50 页=30
+  [OK] B6P31 #281 replace-values-none-r5
+  … 31/50 页=31
+  [OK] B6P32 #282 replace-values-top-r6
+  … 32/50 页=32
+  [OK] B6P33 #283 replace-to-bar-bottom-r4
+  … 33/50 页=33
+  [OK] B6P34 #284 replace-to-line-left-r5
+  … 34/50 页=34
+  [OK] B6P35 #285 replace-to-pie2d-right-r6
+  … 35/50 页=35
+  [OK] B6P36 #286 replace-to-pie3d-none-r4
+  … 36/50 页=36
+  [OK] B6P37 #287 replace-to-combo-y2-top-r5
+  … 37/50 页=37
+  [OK] B6P38 #288 replace-to-combo-y-bottom-r6
+  … 38/50 页=38
+  [OK] B6P39 #289 replace-to-twocol-left-r4
+  … 39/50 页=39
+  [OK] B6P40 #290 replace-to-bar-right-r5
+  … 40/50 页=40
+  [OK] B6P41 #291 replace-values-none-r6
+  … 41/50 页=41
+  [OK] B6P42 #292 replace-values-top-r4
+  … 42/50 页=42
+  [OK] B6P43 #293 replace-to-bar-bottom-r5
+  … 43/50 页=43
+  [OK] B6P44 #294 replace-to-line-left-r6
+  … 44/50 页=44
+  [OK] B6P45 #295 replace-to-pie2d-right-r4
+  … 45/50 页=45
+  [OK] B6P46 #296 replace-to-pie3d-none-r5
+  … 46/50 页=46
+  [OK] B6P47 #297 replace-to-combo-y2-top-r6
+  … 47/50 页=47
+  [OK] B6P48 #298 replace-to-combo-y-bottom-r4
+  … 48/50 页=48
+  [OK] B6P49 #299 replace-to-twocol-left-r5
+  … 49/50 页=49
+  [OK] B6P50 #300 replace-to-bar-right-r6
+  … 50/50 页=50
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-batch-6.pptx 页数=50
+
+结构用例 通过 300  失败 0  跳过 0  （目标 300 张图 / 6 份 PPT）
+
+断言 通过 300  失败 0  跳过 0
+pour 日志: D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+2026-10-19 02:14:59  DONE ppt-struct exit=0 minutes=59.1
+2026-10-19 02:14:59  RUN ppt-attrs
+﻿PPT 图表测试
+宿主 PPT · 建图/换数/读回走 PptHtmlChartIo（PowerPoint Interop）
+结构用例：约 50 页 × 6 份；属性用例：单点+交叉 × 2 份（--attrs-only）
+
+pour 日志: D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+
+--- 正式用例 批次 1/2 （约 50 页）→ D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-attr-batch-1.pptx ---
+  [OK] B1P01 #1 create-sink-column
+  … 1/125 页=1
+  [OK] B1P02 #2 create-sink-line
+  … 2/125 页=2
+  [OK] B1P03 #3 create-sink-pie
+  … 3/125 页=3
+  [OK] B1P04 #4 create-sink-combo
+  … 4/125 页=4
+  [OK] B1P05 #5 create-title-text
+  … 5/125 页=5
+  [OK] B1P06 #6 create-title-font-size
+  … 6/125 页=6
+  [OK] B1P07 #7 create-title-font-bold
+  … 7/125 页=7
+  [OK] B1P08 #8 create-title-font-color
+  … 8/125 页=8
+  [OK] B1P09 #9 create-title-off
+  … 9/125 页=9
+  [OK] B1P10 #10 create-title-full
+  … 10/125 页=10
+  [OK] B1P11 #11 create-title-long
+  … 11/125 页=11
+  [OK] B1P12 #12 create-title-off-line
+  … 12/125 页=12
+  [OK] B1P13 #13 create-title-off-pie
+  … 13/125 页=13
+  [OK] B1P14 #14 create-title-off-combo
+  … 14/125 页=14
+  [OK] B1P15 #15 create-title-off-from-on
+  … 15/125 页=15
+  [OK] B1P16 #16 create-title-keep-from-old
+  … 16/125 页=16
+  [OK] B1P17 #17 create-title-change-text
+  … 17/125 页=17
+  [OK] B1P18 #18 create-legend-top
+  … 18/125 页=18
+  [OK] B1P19 #19 create-legend-left
+  … 19/125 页=19
+  [OK] B1P20 #20 create-legend-right
+  … 20/125 页=20
+  [OK] B1P21 #21 create-legend-bottom
+  … 21/125 页=21
+  [OK] B1P22 #22 create-legend-none
+  … 22/125 页=22
+  [OK] B1P23 #23 create-legend-font-color
+  … 23/125 页=23
+  [OK] B1P24 #24 create-labels-on-value
+  … 24/125 页=24
+  [OK] B1P25 #25 create-labels-off
+  … 25/125 页=25
+  [OK] B1P26 #26 create-labels-pie-pct
+  … 26/125 页=26
+  [OK] B1P27 #27 create-gridlines-on
+  … 27/125 页=27
+  [OK] B1P28 #28 create-gridlines-off
+  … 28/125 页=28
+  [OK] B1P29 #29 create-gap-width
+  … 29/125 页=29
+  [OK] B1P30 #30 create-overlap
+  … 30/125 页=30
+  [OK] B1P31 #31 create-plot-color
+  … 31/125 页=31
+  [OK] B1P32 #32 create-chart-area-color
+  … 32/125 页=32
+  [OK] B1P33 #33 create-plot-none
+  … 33/125 页=33
+  [OK] B1P34 #34 create-plot-box
+  … 34/125 页=34
+  [OK] B1P35 #35 create-plot-inside
+  … 35/125 页=35
+  [OK] B1P36 #36 create-axis-y-scale
+  … 36/125 页=36
+  [OK] B1P37 #37 create-axis-x-title
+  … 37/125 页=37
+  [OK] B1P38 #38 create-axis-y-title
+  … 38/125 页=38
+  [OK] B1P39 #39 create-axis-y-secondary
+  … 39/125 页=39
+  [OK] B1P40 #40 create-axis-x-extras
+  … 40/125 页=40
+  [OK] B1P41 #41 create-axis-y-extras
+  … 41/125 页=41
+  [OK] B1P42 #42 create-axis-y2-extras
+  … 42/125 页=42
+  [OK] B1P43 #43 create-axis-x-hidden
+  … 43/125 页=43
+  [OK] B1P44 #44 create-axis-y-hidden
+  … 44/125 页=44
+  [OK] B1P45 #45 create-series-color
+  … 45/125 页=45
+  [OK] B1P46 #46 create-series-color-none
+  … 46/125 页=46
+  [OK] B1P47 #47 create-series-color-keep-none
+  … 47/125 页=47
+  [OK] B1P48 #48 create-series-gradient
+  … 48/125 页=48
+  [OK] B1P49 #49 create-series-line
+  … 49/125 页=49
+  [OK] B1P50 #50 create-series-marker
+  … 50/125 页=50
+  [OK] B1P51 #51 create-series-label-chrome
+  … 51/125 页=51
+  [OK] B1P52 #52 create-series-label-above-coerced
+  … 52/125 页=52
+  [OK] B1P53 #53 create-series-label-above-line
+  … 53/125 页=53
+  [OK] B1P54 #54 create-series-label-outside
+  … 54/125 页=54
+  [OK] B1P55 #55 create-explosion
+  … 55/125 页=55
+  [OK] B1P56 #56 create-explosion-keep-all
+  … 56/125 页=56
+  [OK] B1P57 #57 create-explosion-skip-partial
+  … 57/125 页=57
+  [OK] B1P58 #58 create-chart-style
+  … 58/125 页=58
+  [OK] B1P59 #59 create-theme
+  … 59/125 页=59
+  [OK] B1P60 #60 create-fill-missing
+  … 60/125 页=60
+  [OK] B1P61 #61 create-axis-x-ticks
+  … 61/125 页=61
+  [OK] B1P62 #62 create-data-markers
+  … 62/125 页=62
+  [OK] B1P63 #63 create-chart-line-weight
+  … 63/125 页=63
+  [OK] B1P64 #64 create-combo-title-legend-labels
+  … 64/125 页=64
+  [OK] B1P65 #65 create-combo-gap-overlap-color
+  … 65/125 页=65
+  [OK] B1P66 #66 create-combo-scale-axis-titles
+  … 66/125 页=66
+  [OK] B1P67 #67 create-combo-plot-series-title
+  … 67/125 页=67
+  [OK] B1P68 #68 create-combo-line-marker-label
+  … 68/125 页=68
+  [OK] B1P69 #69 create-combo-pie-explosion-pct
+  … 69/125 页=69
+  [OK] B1P70 #70 create-combo-y2-dual-skin
+  … 70/125 页=70
+  [OK] B1P71 #71 create-combo-xy-extras
+  … 71/125 页=71
+  [OK] B1P72 #72 create-combo-style-scale-color
+  … 72/125 页=72
+  [OK] B1P73 #73 create-combo-chrome-off-series
+  … 73/125 页=73
+  [OK] B1P74 #74 create-combo-x-ticks-extras
+  … 74/125 页=74
+  [OK] B1P75 #75 create-combo-gradient-label-gap
+  … 75/125 页=75
+  [OK] B1P76 #76 create-mix-title-legend-top
+  … 76/125 页=76
+  [OK] B1P77 #77 create-mix-title-legend-left
+  … 77/125 页=77
+  [OK] B1P78 #78 create-mix-title-legend-right
+  … 78/125 页=78
+  [OK] B1P79 #79 create-mix-title-legend-bot
+  … 79/125 页=79
+  [OK] B1P80 #80 create-mix-title-legend-none
+  … 80/125 页=80
+  [OK] B1P81 #81 create-mix-gap-ov-1
+  … 81/125 页=81
+  [OK] B1P82 #82 create-mix-gap-ov-2
+  … 82/125 页=82
+  [OK] B1P83 #83 create-mix-gap-ov-3
+  … 83/125 页=83
+  [OK] B1P84 #84 create-mix-gap-ov-4
+  … 84/125 页=84
+  [OK] B1P85 #85 create-mix-gap-ov-5
+  … 85/125 页=85
+  [OK] B1P86 #86 create-mix-scale-1
+  … 86/125 页=86
+  [OK] B1P87 #87 create-mix-scale-2
+  … 87/125 页=87
+  [OK] B1P88 #88 create-mix-scale-3
+  … 88/125 页=88
+  [OK] B1P89 #89 create-mix-scale-4
+  … 89/125 页=89
+  [OK] B1P90 #90 create-mix-scale-5
+  … 90/125 页=90
+  [OK] B1P91 #91 create-mix-line-skin-1
+  … 91/125 页=91
+  [OK] B1P92 #92 create-mix-line-skin-2
+  … 92/125 页=92
+  [OK] B1P93 #93 create-mix-line-skin-3
+  … 93/125 页=93
+  [OK] B1P94 #94 create-mix-line-skin-4
+  … 94/125 页=94
+  [OK] B1P95 #95 create-mix-line-skin-5
+  … 95/125 页=95
+  [OK] B1P96 #96 create-mix-pie-1
+  … 96/125 页=96
+  [OK] B1P97 #97 create-mix-pie-2
+  … 97/125 页=97
+  [OK] B1P98 #98 create-mix-pie-3
+  … 98/125 页=98
+  [OK] B1P99 #99 create-mix-pie-4
+  … 99/125 页=99
+  [OK] B1P100 #100 create-mix-pie-5
+  … 100/125 页=100
+  [OK] B1P101 #101 create-mix-plot-area-1
+  … 101/125 页=101
+  [OK] B1P102 #102 create-mix-plot-area-2
+  … 102/125 页=102
+  [OK] B1P103 #103 create-mix-plot-area-3
+  … 103/125 页=103
+  [OK] B1P104 #104 create-mix-plot-area-4
+  … 104/125 页=104
+  [OK] B1P105 #105 create-mix-plot-area-5
+  … 105/125 页=105
+  [OK] B1P106 #106 create-mix-label-chrome-1
+  … 106/125 页=106
+  [OK] B1P107 #107 create-mix-label-chrome-2
+  … 107/125 页=107
+  [OK] B1P108 #108 create-mix-label-chrome-3
+  … 108/125 页=108
+  [OK] B1P109 #109 create-mix-label-chrome-4
+  … 109/125 页=109
+  [OK] B1P110 #110 create-mix-label-chrome-5
+  … 110/125 页=110
+  [OK] B1P111 #111 create-mix-style-chrome-1
+  … 111/125 页=111
+  [OK] B1P112 #112 create-mix-style-chrome-2
+  … 112/125 页=112
+  [OK] B1P113 #113 create-mix-style-chrome-3
+  … 113/125 页=113
+  [OK] B1P114 #114 create-mix-style-chrome-4
+  … 114/125 页=114
+  [OK] B1P115 #115 create-mix-style-chrome-5
+  … 115/125 页=115
+  [OK] B1P116 #116 create-mix-y-extras-scale-1
+  … 116/125 页=116
+  [OK] B1P117 #117 create-mix-y-extras-scale-2
+  … 117/125 页=117
+  [OK] B1P118 #118 create-mix-y-extras-scale-3
+  … 118/125 页=118
+  [OK] B1P119 #119 create-mix-y-extras-scale-4
+  … 119/125 页=119
+  [OK] B1P120 #120 create-mix-y-extras-scale-5
+  … 120/125 页=120
+  [OK] B1P121 #121 create-mix-y2-skin-1
+  … 121/125 页=121
+  [OK] B1P122 #122 create-mix-y2-skin-2
+  … 122/125 页=122
+  [OK] B1P123 #123 create-mix-y2-skin-3
+  … 123/125 页=123
+  [OK] B1P124 #124 create-mix-y2-skin-4
+  … 124/125 页=124
+  [OK] B1P125 #125 create-mix-y2-skin-5
+  … 125/125 页=125
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-attr-batch-1.pptx 页数=125
+
+--- 正式用例 批次 2/2 （约 50 页）→ D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-attr-batch-2.pptx ---
+  [OK] B2P01 #126 replace-sink-column
+  … 1/125 页=1
+  [OK] B2P02 #127 replace-sink-line
+  … 2/125 页=2
+  [OK] B2P03 #128 replace-sink-pie
+  … 3/125 页=3
+  [OK] B2P04 #129 replace-sink-combo
+  … 4/125 页=4
+  [OK] B2P05 #130 replace-title-text
+  … 5/125 页=5
+  [OK] B2P06 #131 replace-title-font-size
+  … 6/125 页=6
+  [OK] B2P07 #132 replace-title-font-bold
+  … 7/125 页=7
+  [OK] B2P08 #133 replace-title-font-color
+  … 8/125 页=8
+  [OK] B2P09 #134 replace-title-off
+  … 9/125 页=9
+  [OK] B2P10 #135 replace-title-full
+  … 10/125 页=10
+  [OK] B2P11 #136 replace-title-long
+  … 11/125 页=11
+  [OK] B2P12 #137 replace-title-off-line
+  … 12/125 页=12
+  [OK] B2P13 #138 replace-title-off-pie
+  … 13/125 页=13
+  [OK] B2P14 #139 replace-title-off-combo
+  … 14/125 页=14
+  [OK] B2P15 #140 replace-title-off-from-on
+  … 15/125 页=15
+  [OK] B2P16 #141 replace-title-keep-from-old
+  … 16/125 页=16
+  [OK] B2P17 #142 replace-title-change-text
+  … 17/125 页=17
+  [OK] B2P18 #143 replace-legend-top
+  … 18/125 页=18
+  [OK] B2P19 #144 replace-legend-left
+  … 19/125 页=19
+  [OK] B2P20 #145 replace-legend-right
+  … 20/125 页=20
+  [OK] B2P21 #146 replace-legend-bottom
+  … 21/125 页=21
+  [OK] B2P22 #147 replace-legend-none
+  … 22/125 页=22
+  [OK] B2P23 #148 replace-legend-font-color
+  … 23/125 页=23
+  [OK] B2P24 #149 replace-labels-on-value
+  … 24/125 页=24
+  [OK] B2P25 #150 replace-labels-off
+  … 25/125 页=25
+  [OK] B2P26 #151 replace-labels-pie-pct
+  … 26/125 页=26
+  [OK] B2P27 #152 replace-gridlines-on
+  … 27/125 页=27
+  [OK] B2P28 #153 replace-gridlines-off
+  … 28/125 页=28
+  [OK] B2P29 #154 replace-gap-width
+  … 29/125 页=29
+  [OK] B2P30 #155 replace-overlap
+  … 30/125 页=30
+  [OK] B2P31 #156 replace-plot-color
+  … 31/125 页=31
+  [OK] B2P32 #157 replace-chart-area-color
+  … 32/125 页=32
+  [OK] B2P33 #158 replace-plot-none
+  … 33/125 页=33
+  [OK] B2P34 #159 replace-plot-box
+  … 34/125 页=34
+  [OK] B2P35 #160 replace-plot-inside
+  … 35/125 页=35
+  [OK] B2P36 #161 replace-axis-y-scale
+  … 36/125 页=36
+  [OK] B2P37 #162 replace-axis-x-title
+  … 37/125 页=37
+  [OK] B2P38 #163 replace-axis-y-title
+  … 38/125 页=38
+  [OK] B2P39 #164 replace-axis-y-secondary
+  … 39/125 页=39
+  [OK] B2P40 #165 replace-axis-x-extras
+  … 40/125 页=40
+  [OK] B2P41 #166 replace-axis-y-extras
+  … 41/125 页=41
+  [OK] B2P42 #167 replace-axis-y2-extras
+  … 42/125 页=42
+  [OK] B2P43 #168 replace-axis-x-hidden
+  … 43/125 页=43
+  [OK] B2P44 #169 replace-axis-y-hidden
+  … 44/125 页=44
+  [OK] B2P45 #170 replace-series-color
+  … 45/125 页=45
+  [OK] B2P46 #171 replace-series-color-none
+  … 46/125 页=46
+  [OK] B2P47 #172 replace-series-color-keep-none
+  … 47/125 页=47
+  [OK] B2P48 #173 replace-series-gradient
+  … 48/125 页=48
+  [OK] B2P49 #174 replace-series-line
+  … 49/125 页=49
+         ---- pour 49 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=-2 stops=0 solid=#000000
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=-2 stops=0 solid=#000000
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=-2 stops=0 solid=#000000
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=-2 stops=0 solid=#000000
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=-2 stops=0 solid=#000000
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=3 ForeColor.Type=1 ForeColor.RGB=8544277
+         [PptChartSnap] 旧图 S1 Line 读停靠点失败: 未知名称。 (异常来自 HRESULT:0x80020006 (DISP_E_UNKNOWNNAME))
+         [PptChartSnap] 旧图 S1 Line.Fill 不可用: 未知名称。 (异常来自 HRESULT:0x80020006 (DISP_E_UNKNOWNNAME))
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=100 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=4 axis=1 line=vis=True rgb=#156082 w=3 stops=0 marker=-4142/5 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=-2 fillRgb=#000000 fillStops=0 points=4
+         [PptChartSnap] 图例开关=开（稿写了图例属性）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（跟旧图）
+         [PptChartSnap] 网格开关=关（跟旧图）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=line xl=4 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 钉皮：PPT 只钉标记填色 1/1
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Microsoft_Excel_Worksheet49.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart50.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-21cd5742d5c54eb6b19e52a84b132b98.pptx
+         [PptChartPour] InsertFromFile 后页 50→51 取页=51
+         [PptChartPour] 改包页已插入 xl=65 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 轴格式 Refresh后 cat=@/link=False val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=True plotFill=True gap=150 overlap=100 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=65 axis=1 line=vis=True rgb=#156082 w=3 stops=0 marker=2/8 mkRgb=#00B0F0/#FFFFFF labels=False lblPos= lblColor=- fillVis=True fillType=-2 fillRgb=#000000 fillStops=0 points=4
+         [PptChartPour] 轴格式 主题后 cat=@/link=False val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=null val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=@ after=@/link=False
+         [PptChartPour] 轴格式 分类名后 cat=@/link=False val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 按原图/稿关闭网格线
+         [PptChartPour] 轴格式 套轴后 cat=@/link=False val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 套线 S1 vis=True rgb=#156082 stops=0 grad=False
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=@/link=False val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 套快照后 xl=65 series=1 | S1 pts=4 Xn=4 Yn=4 X=[,,,] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8] | xl=65 series=1 | S1 pts=4 Xn=4 Yn=4 X=[,,,] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验读回 内嵌表 4x2 cols=[category:类别|value:系列A] cat=[,,,] 系列A=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验通过（内嵌表与稿一致，系列 4 点）
+         [PptChartSnap] 轴皮最后一层 catTick=#000000 valTick=#000000
+         [PptChartPour] 轴格式 轴皮后 cat=@/link=False val=General/link=True/loc=G/通用格式 val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] B2P50 #175 replace-series-marker
+         S0.MarkerColor 期望 #00B0F0 实际 #156082 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+  … 50/125 页=50
+  [OK] B2P51 #176 replace-series-label-chrome
+  … 51/125 页=51
+  [OK] B2P52 #177 replace-series-label-above-coerced
+  … 52/125 页=52
+  [OK] B2P53 #178 replace-series-label-above-line
+  … 53/125 页=53
+  [OK] B2P54 #179 replace-series-label-outside
+  … 54/125 页=54
+  [OK] B2P55 #180 replace-explosion
+  … 55/125 页=55
+  [OK] B2P56 #181 replace-explosion-keep-all
+  … 56/125 页=56
+         ---- pour 49 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=-2 stops=0 solid=#156082
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=-2 stops=0 solid=#156082
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=-2 stops=0 solid=#E97132
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=-2 stops=0 solid=#196B24
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=-2 stops=0 solid=#0F9ED5
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=-2.147484E+09 ForeColor.Type=-2 ForeColor.RGB=0
+         [PptChartSnap] 旧图 S1 原图无线条（noFill/自动线），不描边
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=True valDel=True catLine=on/- tick=- valLine=on/- tick=- | S1 type=5 axis=1 line=vis=False rgb=- w=-2147483648 stops=0 marker=-4142/5 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=-2 fillRgb=#156082 fillStops=0 points=4
+         [PptChartSnap] 图例开关=开（稿写了图例属性）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=关（跟旧图）
+         [PptChartSnap] 纵轴显隐=关（跟旧图）
+         [PptChartSnap] 网格开关=关（跟旧图）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=pie2d xl=5 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Microsoft_Excel_Worksheet56.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart57.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-a1754a1627694a32b5e2f0809f46595f.pptx
+         [PptChartPour] InsertFromFile 后页 57→58 取页=58
+         [PptChartPour] 改包页已插入 xl=5 series=1 | S1 pts=4 Xn=4 Yn=4 X=[A,B,C,D] Y=[40,30,20,10]
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=True plotFill=True gap=150 overlap=0 catDel=True valDel=True catLine=on/- tick=- valLine=on/- tick=- | S1 type=5 axis=1 line=vis=False rgb=- w=-2147483648 stops=0 marker=-4142/5 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=-2 fillRgb=#156082 fillStops=0 points=4
+         [PptChartPour] 轴格式 主题后 cat=err:调用的目标发生了异常。 val=err:调用的目标发生了异常。 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=null val2=null
+         [PptChartSnap] 按原图/稿关闭网格线
+         [PptChartPour] 轴格式 套轴后 cat=err:调用的目标发生了异常。 val=err:调用的目标发生了异常。 val2=null
+         [PptChartSnap] 饼图在主题上覆盖扇区色 4 个
+         [PptChartSnap] 套填充 S1 P1 实色 #156082
+         [PptChartSnap] 套填充 S1 P2 实色 #E97132
+         [PptChartSnap] 套填充 S1 P3 实色 #196B24
+         [PptChartSnap] 套填充 S1 P4 实色 #0F9ED5
+         [PptChartSnap] 套线 S1 按原图不描边
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=err:调用的目标发生了异常。 val=err:调用的目标发生了异常。 val2=null
+         [PptChartPour] 套快照后 xl=5 series=1 | S1 pts=4 Xn=4 Yn=4 X=[A,B,C,D] Y=[40,30,20,10]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:份额] cat=[A,B,C,D] 份额=[40,30,20,10] | xl=5 series=1 | S1 pts=4 Xn=4 Yn=4 X=[A,B,C,D] Y=[40,30,20,10]
+         [PptChartPour] 校验读回 内嵌表 4x2 cols=[category:类别|value:份额] cat=[A,B,C,D] 份额=[40,30,20,10]
+         [PptChartPour] 校验通过（内嵌表与稿一致，系列 4 点）
+         [PptChartSnap] 轴皮最后一层 catTick=- valTick=-
+         [PptChartPour] 轴格式 轴皮后 cat=err:调用的目标发生了异常。 val=err:调用的目标发生了异常。 val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] B2P57 #182 replace-explosion-skip-partial
+         Explosion 期望 0 实际 (null) | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+  … 57/125 页=57
+  [OK] B2P58 #183 replace-chart-style
+  … 58/125 页=58
+  [OK] B2P59 #184 replace-theme
+  … 59/125 页=59
+  [OK] B2P60 #185 replace-fill-missing
+  … 60/125 页=60
+  [OK] B2P61 #186 replace-axis-x-ticks
+  … 61/125 页=61
+  [OK] B2P62 #187 replace-data-markers
+  … 62/125 页=62
+  [OK] B2P63 #188 replace-chart-line-weight
+  … 63/125 页=63
+  [OK] B2P64 #189 replace-combo-title-legend-labels
+  … 64/125 页=64
+  [OK] B2P65 #190 replace-combo-gap-overlap-color
+  … 65/125 页=65
+  [OK] B2P66 #191 replace-combo-scale-axis-titles
+  … 66/125 页=66
+  [OK] B2P67 #192 replace-combo-plot-series-title
+  … 67/125 页=67
+  [OK] B2P68 #193 replace-combo-line-marker-label
+  … 68/125 页=68
+  [OK] B2P69 #194 replace-combo-pie-explosion-pct
+  … 69/125 页=69
+  [OK] B2P70 #195 replace-combo-y2-dual-skin
+  … 70/125 页=70
+  [OK] B2P71 #196 replace-combo-xy-extras
+  … 71/125 页=71
+  [OK] B2P72 #197 replace-combo-style-scale-color
+  … 72/125 页=72
+  [OK] B2P73 #198 replace-combo-chrome-off-series
+  … 73/125 页=73
+  [OK] B2P74 #199 replace-combo-x-ticks-extras
+  … 74/125 页=74
+  [OK] B2P75 #200 replace-combo-gradient-label-gap
+  … 75/125 页=75
+  [OK] B2P76 #201 replace-mix-title-legend-top
+  … 76/125 页=76
+  [OK] B2P77 #202 replace-mix-title-legend-left
+  … 77/125 页=77
+  [OK] B2P78 #203 replace-mix-title-legend-right
+  … 78/125 页=78
+  [OK] B2P79 #204 replace-mix-title-legend-bot
+  … 79/125 页=79
+  [OK] B2P80 #205 replace-mix-title-legend-none
+  … 80/125 页=80
+  [OK] B2P81 #206 replace-mix-gap-ov-1
+  … 81/125 页=81
+  [OK] B2P82 #207 replace-mix-gap-ov-2
+  … 82/125 页=82
+  [OK] B2P83 #208 replace-mix-gap-ov-3
+  … 83/125 页=83
+  [OK] B2P84 #209 replace-mix-gap-ov-4
+  … 84/125 页=84
+  [OK] B2P85 #210 replace-mix-gap-ov-5
+  … 85/125 页=85
+  [OK] B2P86 #211 replace-mix-scale-1
+  … 86/125 页=86
+  [OK] B2P87 #212 replace-mix-scale-2
+  … 87/125 页=87
+  [OK] B2P88 #213 replace-mix-scale-3
+  … 88/125 页=88
+  [OK] B2P89 #214 replace-mix-scale-4
+  … 89/125 页=89
+  [OK] B2P90 #215 replace-mix-scale-5
+  … 90/125 页=90
+  [OK] B2P91 #216 replace-mix-line-skin-1
+  … 91/125 页=91
+  [OK] B2P92 #217 replace-mix-line-skin-2
+  … 92/125 页=92
+  [OK] B2P93 #218 replace-mix-line-skin-3
+  … 93/125 页=93
+  [OK] B2P94 #219 replace-mix-line-skin-4
+  … 94/125 页=94
+  [OK] B2P95 #220 replace-mix-line-skin-5
+  … 95/125 页=95
+  [OK] B2P96 #221 replace-mix-pie-1
+  … 96/125 页=96
+  [OK] B2P97 #222 replace-mix-pie-2
+  … 97/125 页=97
+  [OK] B2P98 #223 replace-mix-pie-3
+  … 98/125 页=98
+  [OK] B2P99 #224 replace-mix-pie-4
+  … 99/125 页=99
+  [OK] B2P100 #225 replace-mix-pie-5
+  … 100/125 页=100
+  [OK] B2P101 #226 replace-mix-plot-area-1
+  … 101/125 页=101
+  [OK] B2P102 #227 replace-mix-plot-area-2
+  … 102/125 页=102
+  [OK] B2P103 #228 replace-mix-plot-area-3
+  … 103/125 页=103
+  [OK] B2P104 #229 replace-mix-plot-area-4
+  … 104/125 页=104
+  [OK] B2P105 #230 replace-mix-plot-area-5
+  … 105/125 页=105
+  [OK] B2P106 #231 replace-mix-label-chrome-1
+  … 106/125 页=106
+  [OK] B2P107 #232 replace-mix-label-chrome-2
+  … 107/125 页=107
+  [OK] B2P108 #233 replace-mix-label-chrome-3
+  … 108/125 页=108
+  [OK] B2P109 #234 replace-mix-label-chrome-4
+  … 109/125 页=109
+  [OK] B2P110 #235 replace-mix-label-chrome-5
+  … 110/125 页=110
+  [OK] B2P111 #236 replace-mix-style-chrome-1
+  … 111/125 页=111
+  [OK] B2P112 #237 replace-mix-style-chrome-2
+  … 112/125 页=112
+  [OK] B2P113 #238 replace-mix-style-chrome-3
+  … 113/125 页=113
+  [OK] B2P114 #239 replace-mix-style-chrome-4
+  … 114/125 页=114
+  [OK] B2P115 #240 replace-mix-style-chrome-5
+  … 115/125 页=115
+  [OK] B2P116 #241 replace-mix-y-extras-scale-1
+  … 116/125 页=116
+  [OK] B2P117 #242 replace-mix-y-extras-scale-2
+  … 117/125 页=117
+  [OK] B2P118 #243 replace-mix-y-extras-scale-3
+  … 118/125 页=118
+  [OK] B2P119 #244 replace-mix-y-extras-scale-4
+  … 119/125 页=119
+  [OK] B2P120 #245 replace-mix-y-extras-scale-5
+  … 120/125 页=120
+  [OK] B2P121 #246 replace-mix-y2-skin-1
+  … 121/125 页=121
+  [OK] B2P122 #247 replace-mix-y2-skin-2
+  … 122/125 页=122
+  [OK] B2P123 #248 replace-mix-y2-skin-3
+  … 123/125 页=123
+  [OK] B2P124 #249 replace-mix-y2-skin-4
+  … 124/125 页=124
+  [OK] B2P125 #250 replace-mix-y2-skin-5
+  … 125/125 页=125
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-attr-batch-2.pptx 页数=125
+
+属性用例 通过 248  失败 2  跳过 0  （目标 250 张图 / 2 份 PPT）
+
+断言 通过 248  失败 2  跳过 0
+pour 日志: D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches\chart-pour.log
+2026-10-19 03:05:00  DONE ppt-attrs exit=1 minutes=50
+2026-10-19 03:05:00  RUN wpp-struct
+﻿PPT 图表测试
+宿主 WPP · 建图/换数/读回走 PptHtmlChartIo（WppCom 晚绑定）
+结构用例：约 50 页 × 6 份；属性用例：单点+交叉 × 2 份（--attrs-only）
+
+pour 日志: D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+宿主: WPP (Kwpp.Application 晚绑定)
+
+--- WPP 图表往返 批次 1/6 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-batch-wpp-1.pptx ---
+  [OK] WppB1P01 #1 create-column-none-r4
+  … 1/50 页=1
+  [OK] WppB1P02 #2 create-column-none-r4-lbl
+  … 2/50 页=2
+  [OK] WppB1P03 #3 create-column-none-r5
+  … 3/50 页=3
+  [OK] WppB1P04 #4 create-column-none-r5-lbl
+  … 4/50 页=4
+  [OK] WppB1P05 #5 create-column-none-r6
+  … 5/50 页=5
+  [OK] WppB1P06 #6 create-column-none-r6-lbl
+  … 6/50 页=6
+  [OK] WppB1P07 #7 create-column-top-r4
+  … 7/50 页=7
+  [OK] WppB1P08 #8 create-column-top-r4-lbl
+  … 8/50 页=8
+  [OK] WppB1P09 #9 create-column-top-r5
+  … 9/50 页=9
+  [OK] WppB1P10 #10 create-column-top-r5-lbl
+  … 10/50 页=10
+  [OK] WppB1P11 #11 create-column-top-r6
+  … 11/50 页=11
+  [OK] WppB1P12 #12 create-column-top-r6-lbl
+  … 12/50 页=12
+  [OK] WppB1P13 #13 create-column-bottom-r4
+  … 13/50 页=13
+  [OK] WppB1P14 #14 create-column-bottom-r4-lbl
+  … 14/50 页=14
+  [OK] WppB1P15 #15 create-column-bottom-r5
+  … 15/50 页=15
+  [OK] WppB1P16 #16 create-column-bottom-r5-lbl
+  … 16/50 页=16
+  [OK] WppB1P17 #17 create-column-bottom-r6
+  … 17/50 页=17
+  [OK] WppB1P18 #18 create-column-bottom-r6-lbl
+  … 18/50 页=18
+  [OK] WppB1P19 #19 create-column-left-r4
+  … 19/50 页=19
+  [OK] WppB1P20 #20 create-column-left-r4-lbl
+  … 20/50 页=20
+  [OK] WppB1P21 #21 create-column-left-r5
+  … 21/50 页=21
+  [OK] WppB1P22 #22 create-column-left-r5-lbl
+  … 22/50 页=22
+  [OK] WppB1P23 #23 create-column-left-r6
+  … 23/50 页=23
+  [OK] WppB1P24 #24 create-column-left-r6-lbl
+  … 24/50 页=24
+  [OK] WppB1P25 #25 create-column-right-r4
+  … 25/50 页=25
+  [OK] WppB1P26 #26 create-column-right-r4-lbl
+  … 26/50 页=26
+  [OK] WppB1P27 #27 create-column-right-r5
+  … 27/50 页=27
+  [OK] WppB1P28 #28 create-column-right-r5-lbl
+  … 28/50 页=28
+  [OK] WppB1P29 #29 create-column-right-r6
+  … 29/50 页=29
+  [OK] WppB1P30 #30 create-column-right-r6-lbl
+  … 30/50 页=30
+  [OK] WppB1P31 #31 create-bar-none-r4
+  … 31/50 页=31
+  [OK] WppB1P32 #32 create-bar-none-r4-lbl
+  … 32/50 页=32
+  [OK] WppB1P33 #33 create-bar-none-r5
+  … 33/50 页=33
+  [OK] WppB1P34 #34 create-bar-none-r5-lbl
+  … 34/50 页=34
+  [OK] WppB1P35 #35 create-bar-none-r6
+  … 35/50 页=35
+  [OK] WppB1P36 #36 create-bar-none-r6-lbl
+  … 36/50 页=36
+  [OK] WppB1P37 #37 create-bar-top-r4
+  … 37/50 页=37
+  [OK] WppB1P38 #38 create-bar-top-r4-lbl
+  … 38/50 页=38
+  [OK] WppB1P39 #39 create-bar-top-r5
+  … 39/50 页=39
+  [OK] WppB1P40 #40 create-bar-top-r5-lbl
+  … 40/50 页=40
+  [OK] WppB1P41 #41 create-bar-top-r6
+  … 41/50 页=41
+  [OK] WppB1P42 #42 create-bar-top-r6-lbl
+  … 42/50 页=42
+  [OK] WppB1P43 #43 create-bar-bottom-r4
+  … 43/50 页=43
+  [OK] WppB1P44 #44 create-bar-bottom-r4-lbl
+  … 44/50 页=44
+  [OK] WppB1P45 #45 create-bar-bottom-r5
+  … 45/50 页=45
+  [OK] WppB1P46 #46 create-bar-bottom-r5-lbl
+  … 46/50 页=46
+  [OK] WppB1P47 #47 create-bar-bottom-r6
+  … 47/50 页=47
+  [OK] WppB1P48 #48 create-bar-bottom-r6-lbl
+  … 48/50 页=48
+  [OK] WppB1P49 #49 create-bar-left-r4
+  … 49/50 页=49
+  [OK] WppB1P50 #50 create-bar-left-r4-lbl
+  … 50/50 页=50
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-batch-wpp-1.pptx
+
+--- WPP 图表往返 批次 2/6 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-batch-wpp-2.pptx ---
+  [OK] WppB2P01 #51 create-bar-left-r5
+  … 1/50 页=1
+  [OK] WppB2P02 #52 create-bar-left-r5-lbl
+  … 2/50 页=2
+  [OK] WppB2P03 #53 create-bar-left-r6
+  … 3/50 页=3
+  [OK] WppB2P04 #54 create-bar-left-r6-lbl
+  … 4/50 页=4
+  [OK] WppB2P05 #55 create-bar-right-r4
+  … 5/50 页=5
+  [OK] WppB2P06 #56 create-bar-right-r4-lbl
+  … 6/50 页=6
+  [OK] WppB2P07 #57 create-bar-right-r5
+  … 7/50 页=7
+  [OK] WppB2P08 #58 create-bar-right-r5-lbl
+  … 8/50 页=8
+  [OK] WppB2P09 #59 create-bar-right-r6
+  … 9/50 页=9
+  [OK] WppB2P10 #60 create-bar-right-r6-lbl
+  … 10/50 页=10
+  [OK] WppB2P11 #61 create-line-none-r4
+  … 11/50 页=11
+  [OK] WppB2P12 #62 create-line-none-r4-lbl
+  … 12/50 页=12
+  [OK] WppB2P13 #63 create-line-none-r5
+  … 13/50 页=13
+  [OK] WppB2P14 #64 create-line-none-r5-lbl
+  … 14/50 页=14
+  [OK] WppB2P15 #65 create-line-none-r6
+  … 15/50 页=15
+  [OK] WppB2P16 #66 create-line-none-r6-lbl
+  … 16/50 页=16
+  [OK] WppB2P17 #67 create-line-top-r4
+  … 17/50 页=17
+  [OK] WppB2P18 #68 create-line-top-r4-lbl
+  … 18/50 页=18
+  [OK] WppB2P19 #69 create-line-top-r5
+  … 19/50 页=19
+  [OK] WppB2P20 #70 create-line-top-r5-lbl
+  … 20/50 页=20
+  [OK] WppB2P21 #71 create-line-top-r6
+  … 21/50 页=21
+  [OK] WppB2P22 #72 create-line-top-r6-lbl
+  … 22/50 页=22
+  [OK] WppB2P23 #73 create-line-bottom-r4
+  … 23/50 页=23
+  [OK] WppB2P24 #74 create-line-bottom-r4-lbl
+  … 24/50 页=24
+  [OK] WppB2P25 #75 create-line-bottom-r5
+  … 25/50 页=25
+  [OK] WppB2P26 #76 create-line-bottom-r5-lbl
+  … 26/50 页=26
+  [OK] WppB2P27 #77 create-line-bottom-r6
+  … 27/50 页=27
+  [OK] WppB2P28 #78 create-line-bottom-r6-lbl
+  … 28/50 页=28
+  [OK] WppB2P29 #79 create-line-left-r4
+  … 29/50 页=29
+  [OK] WppB2P30 #80 create-line-left-r4-lbl
+  … 30/50 页=30
+  [OK] WppB2P31 #81 create-line-left-r5
+  … 31/50 页=31
+  [OK] WppB2P32 #82 create-line-left-r5-lbl
+  … 32/50 页=32
+  [OK] WppB2P33 #83 create-line-left-r6
+  … 33/50 页=33
+  [OK] WppB2P34 #84 create-line-left-r6-lbl
+  … 34/50 页=34
+  [OK] WppB2P35 #85 create-line-right-r4
+  … 35/50 页=35
+  [OK] WppB2P36 #86 create-line-right-r4-lbl
+  … 36/50 页=36
+  [OK] WppB2P37 #87 create-line-right-r5
+  … 37/50 页=37
+  [OK] WppB2P38 #88 create-line-right-r5-lbl
+  … 38/50 页=38
+  [OK] WppB2P39 #89 create-line-right-r6
+  … 39/50 页=39
+  [OK] WppB2P40 #90 create-line-right-r6-lbl
+  … 40/50 页=40
+  [OK] WppB2P41 #91 create-pie2d-none-r4
+  … 41/50 页=41
+  [OK] WppB2P42 #92 create-pie2d-none-r4-lbl
+  … 42/50 页=42
+  [OK] WppB2P43 #93 create-pie2d-none-r5
+  … 43/50 页=43
+  [OK] WppB2P44 #94 create-pie2d-none-r5-lbl
+  … 44/50 页=44
+  [OK] WppB2P45 #95 create-pie2d-none-r6
+  … 45/50 页=45
+  [OK] WppB2P46 #96 create-pie2d-none-r6-lbl
+  … 46/50 页=46
+  [OK] WppB2P47 #97 create-pie2d-top-r4
+  … 47/50 页=47
+  [OK] WppB2P48 #98 create-pie2d-top-r4-lbl
+  … 48/50 页=48
+  [OK] WppB2P49 #99 create-pie2d-top-r5
+  … 49/50 页=49
+  [OK] WppB2P50 #100 create-pie2d-top-r5-lbl
+  … 50/50 页=50
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-batch-wpp-2.pptx
+
+--- WPP 图表往返 批次 3/6 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-batch-wpp-3.pptx ---
+  [OK] WppB3P01 #101 create-pie2d-top-r6
+  … 1/50 页=1
+  [OK] WppB3P02 #102 create-pie2d-top-r6-lbl
+  … 2/50 页=2
+  [OK] WppB3P03 #103 create-pie2d-bottom-r4
+  … 3/50 页=3
+  [OK] WppB3P04 #104 create-pie2d-bottom-r4-lbl
+  … 4/50 页=4
+  [OK] WppB3P05 #105 create-pie2d-bottom-r5
+  … 5/50 页=5
+  [OK] WppB3P06 #106 create-pie2d-bottom-r5-lbl
+  … 6/50 页=6
+  [OK] WppB3P07 #107 create-pie2d-bottom-r6
+  … 7/50 页=7
+  [OK] WppB3P08 #108 create-pie2d-bottom-r6-lbl
+  … 8/50 页=8
+  [OK] WppB3P09 #109 create-pie2d-left-r4
+  … 9/50 页=9
+  [OK] WppB3P10 #110 create-pie2d-left-r4-lbl
+  … 10/50 页=10
+  [OK] WppB3P11 #111 create-pie2d-left-r5
+  … 11/50 页=11
+  [OK] WppB3P12 #112 create-pie2d-left-r5-lbl
+  … 12/50 页=12
+  [OK] WppB3P13 #113 create-pie2d-left-r6
+  … 13/50 页=13
+  [OK] WppB3P14 #114 create-pie2d-left-r6-lbl
+  … 14/50 页=14
+  [OK] WppB3P15 #115 create-pie2d-right-r4
+  … 15/50 页=15
+  [OK] WppB3P16 #116 create-pie2d-right-r4-lbl
+  … 16/50 页=16
+  [OK] WppB3P17 #117 create-pie2d-right-r5
+  … 17/50 页=17
+  [OK] WppB3P18 #118 create-pie2d-right-r5-lbl
+  … 18/50 页=18
+  [OK] WppB3P19 #119 create-pie2d-right-r6
+  … 19/50 页=19
+  [OK] WppB3P20 #120 create-pie2d-right-r6-lbl
+  … 20/50 页=20
+  [OK] WppB3P21 #121 create-pie3d-none-r4
+  … 21/50 页=21
+  [OK] WppB3P22 #122 create-pie3d-none-r4-lbl
+  … 22/50 页=22
+  [OK] WppB3P23 #123 create-pie3d-none-r5
+  … 23/50 页=23
+  [OK] WppB3P24 #124 create-pie3d-none-r5-lbl
+  … 24/50 页=24
+  [OK] WppB3P25 #125 create-pie3d-none-r6
+  … 25/50 页=25
+  [OK] WppB3P26 #126 create-pie3d-none-r6-lbl
+  … 26/50 页=26
+  [OK] WppB3P27 #127 create-pie3d-top-r4
+  … 27/50 页=27
+  [OK] WppB3P28 #128 create-pie3d-top-r4-lbl
+  … 28/50 页=28
+  [OK] WppB3P29 #129 create-pie3d-top-r5
+  … 29/50 页=29
+  [OK] WppB3P30 #130 create-pie3d-top-r5-lbl
+  … 30/50 页=30
+  [OK] WppB3P31 #131 create-pie3d-top-r6
+  … 31/50 页=31
+  [OK] WppB3P32 #132 create-pie3d-top-r6-lbl
+  … 32/50 页=32
+  [OK] WppB3P33 #133 create-pie3d-bottom-r4
+  … 33/50 页=33
+  [OK] WppB3P34 #134 create-pie3d-bottom-r4-lbl
+  … 34/50 页=34
+  [OK] WppB3P35 #135 create-pie3d-bottom-r5
+  … 35/50 页=35
+  [OK] WppB3P36 #136 create-pie3d-bottom-r5-lbl
+  … 36/50 页=36
+  [OK] WppB3P37 #137 create-pie3d-bottom-r6
+  … 37/50 页=37
+  [OK] WppB3P38 #138 create-pie3d-bottom-r6-lbl
+  … 38/50 页=38
+  [OK] WppB3P39 #139 create-pie3d-left-r4
+  … 39/50 页=39
+  [OK] WppB3P40 #140 create-pie3d-left-r4-lbl
+  … 40/50 页=40
+  [OK] WppB3P41 #141 create-pie3d-left-r5
+  … 41/50 页=41
+  [OK] WppB3P42 #142 create-pie3d-left-r5-lbl
+  … 42/50 页=42
+  [OK] WppB3P43 #143 create-pie3d-left-r6
+  … 43/50 页=43
+  [OK] WppB3P44 #144 create-pie3d-left-r6-lbl
+  … 44/50 页=44
+  [OK] WppB3P45 #145 create-pie3d-right-r4
+  … 45/50 页=45
+  [OK] WppB3P46 #146 create-pie3d-right-r4-lbl
+  … 46/50 页=46
+  [OK] WppB3P47 #147 create-pie3d-right-r5
+  … 47/50 页=47
+  [OK] WppB3P48 #148 create-pie3d-right-r5-lbl
+  … 48/50 页=48
+  [OK] WppB3P49 #149 create-pie3d-right-r6
+  … 49/50 页=49
+  [OK] WppB3P50 #150 create-pie3d-right-r6-lbl
+  … 50/50 页=50
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-batch-wpp-3.pptx
+
+--- WPP 图表往返 批次 4/6 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-batch-wpp-4.pptx ---
+  [OK] WppB4P01 #151 replace-values-none-r4
+  … 1/50 页=1
+  [OK] WppB4P02 #152 replace-values-top-r5
+  … 2/50 页=2
+  [OK] WppB4P03 #153 replace-to-bar-bottom-r6
+  … 3/50 页=3
+  [OK] WppB4P04 #154 replace-to-line-left-r4
+  … 4/50 页=4
+  [OK] WppB4P05 #155 replace-to-pie2d-right-r5
+  … 5/50 页=5
+  [OK] WppB4P06 #156 replace-to-pie3d-none-r6
+  … 6/50 页=6
+  [OK] WppB4P07 #157 replace-to-combo-y2-top-r4
+  … 7/50 页=7
+  [OK] WppB4P08 #158 replace-to-combo-y-bottom-r5
+  … 8/50 页=8
+  [OK] WppB4P09 #159 replace-to-twocol-left-r6
+  … 9/50 页=9
+  [OK] WppB4P10 #160 replace-to-bar-right-r4
+  … 10/50 页=10
+  [OK] WppB4P11 #161 replace-values-none-r5
+  … 11/50 页=11
+  [OK] WppB4P12 #162 replace-values-top-r6
+  … 12/50 页=12
+  [OK] WppB4P13 #163 replace-to-bar-bottom-r4
+  … 13/50 页=13
+  [OK] WppB4P14 #164 replace-to-line-left-r5
+  … 14/50 页=14
+  [OK] WppB4P15 #165 replace-to-pie2d-right-r6
+  … 15/50 页=15
+  [OK] WppB4P16 #166 replace-to-pie3d-none-r4
+  … 16/50 页=16
+  [OK] WppB4P17 #167 replace-to-combo-y2-top-r5
+  … 17/50 页=17
+  [OK] WppB4P18 #168 replace-to-combo-y-bottom-r6
+  … 18/50 页=18
+  [OK] WppB4P19 #169 replace-to-twocol-left-r4
+  … 19/50 页=19
+  [OK] WppB4P20 #170 replace-to-bar-right-r5
+  … 20/50 页=20
+  [OK] WppB4P21 #171 replace-values-none-r6
+  … 21/50 页=21
+  [OK] WppB4P22 #172 replace-values-top-r4
+  … 22/50 页=22
+  [OK] WppB4P23 #173 replace-to-bar-bottom-r5
+  … 23/50 页=23
+  [OK] WppB4P24 #174 replace-to-line-left-r6
+  … 24/50 页=24
+  [OK] WppB4P25 #175 replace-to-pie2d-right-r4
+  … 25/50 页=25
+  [OK] WppB4P26 #176 replace-to-pie3d-none-r5
+  … 26/50 页=26
+  [OK] WppB4P27 #177 replace-to-combo-y2-top-r6
+  … 27/50 页=27
+  [OK] WppB4P28 #178 replace-to-combo-y-bottom-r4
+  … 28/50 页=28
+  [OK] WppB4P29 #179 replace-to-twocol-left-r5
+  … 29/50 页=29
+  [OK] WppB4P30 #180 replace-to-bar-right-r6
+  … 30/50 页=30
+  [OK] WppB4P31 #181 replace-values-none-r4
+  … 31/50 页=31
+  [OK] WppB4P32 #182 replace-values-top-r5
+  … 32/50 页=32
+  [OK] WppB4P33 #183 replace-to-bar-bottom-r6
+  … 33/50 页=33
+  [OK] WppB4P34 #184 replace-to-line-left-r4
+  … 34/50 页=34
+  [OK] WppB4P35 #185 replace-to-pie2d-right-r5
+  … 35/50 页=35
+  [OK] WppB4P36 #186 replace-to-pie3d-none-r6
+  … 36/50 页=36
+  [OK] WppB4P37 #187 replace-to-combo-y2-top-r4
+  … 37/50 页=37
+  [OK] WppB4P38 #188 replace-to-combo-y-bottom-r5
+  … 38/50 页=38
+  [OK] WppB4P39 #189 replace-to-twocol-left-r6
+  … 39/50 页=39
+  [OK] WppB4P40 #190 replace-to-bar-right-r4
+  … 40/50 页=40
+  [OK] WppB4P41 #191 replace-values-none-r5
+  … 41/50 页=41
+  [OK] WppB4P42 #192 replace-values-top-r6
+  … 42/50 页=42
+  [OK] WppB4P43 #193 replace-to-bar-bottom-r4
+  … 43/50 页=43
+  [OK] WppB4P44 #194 replace-to-line-left-r5
+  … 44/50 页=44
+  [OK] WppB4P45 #195 replace-to-pie2d-right-r6
+  … 45/50 页=45
+  [OK] WppB4P46 #196 replace-to-pie3d-none-r4
+  … 46/50 页=46
+  [OK] WppB4P47 #197 replace-to-combo-y2-top-r5
+  … 47/50 页=47
+  [OK] WppB4P48 #198 replace-to-combo-y-bottom-r6
+  … 48/50 页=48
+  [OK] WppB4P49 #199 replace-to-twocol-left-r4
+  … 49/50 页=49
+  [OK] WppB4P50 #200 replace-to-bar-right-r5
+  … 50/50 页=50
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-batch-wpp-4.pptx
+
+--- WPP 图表往返 批次 5/6 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-batch-wpp-5.pptx ---
+  [OK] WppB5P01 #201 replace-values-none-r6
+  … 1/50 页=1
+  [OK] WppB5P02 #202 replace-values-top-r4
+  … 2/50 页=2
+  [OK] WppB5P03 #203 replace-to-bar-bottom-r5
+  … 3/50 页=3
+  [OK] WppB5P04 #204 replace-to-line-left-r6
+  … 4/50 页=4
+  [OK] WppB5P05 #205 replace-to-pie2d-right-r4
+  … 5/50 页=5
+  [OK] WppB5P06 #206 replace-to-pie3d-none-r5
+  … 6/50 页=6
+  [OK] WppB5P07 #207 replace-to-combo-y2-top-r6
+  … 7/50 页=7
+  [OK] WppB5P08 #208 replace-to-combo-y-bottom-r4
+  … 8/50 页=8
+  [OK] WppB5P09 #209 replace-to-twocol-left-r5
+  … 9/50 页=9
+  [OK] WppB5P10 #210 replace-to-bar-right-r6
+  … 10/50 页=10
+  [OK] WppB5P11 #211 replace-values-none-r4
+  … 11/50 页=11
+  [OK] WppB5P12 #212 replace-values-top-r5
+  … 12/50 页=12
+  [OK] WppB5P13 #213 replace-to-bar-bottom-r6
+  … 13/50 页=13
+  [OK] WppB5P14 #214 replace-to-line-left-r4
+  … 14/50 页=14
+  [OK] WppB5P15 #215 replace-to-pie2d-right-r5
+  … 15/50 页=15
+  [OK] WppB5P16 #216 replace-to-pie3d-none-r6
+  … 16/50 页=16
+  [OK] WppB5P17 #217 replace-to-combo-y2-top-r4
+  … 17/50 页=17
+  [OK] WppB5P18 #218 replace-to-combo-y-bottom-r5
+  … 18/50 页=18
+  [OK] WppB5P19 #219 replace-to-twocol-left-r6
+  … 19/50 页=19
+  [OK] WppB5P20 #220 replace-to-bar-right-r4
+  … 20/50 页=20
+  [OK] WppB5P21 #221 replace-values-none-r5
+  … 21/50 页=21
+  [OK] WppB5P22 #222 replace-values-top-r6
+  … 22/50 页=22
+  [OK] WppB5P23 #223 replace-to-bar-bottom-r4
+  … 23/50 页=23
+  [OK] WppB5P24 #224 replace-to-line-left-r5
+  … 24/50 页=24
+  [OK] WppB5P25 #225 replace-to-pie2d-right-r6
+  … 25/50 页=25
+  [OK] WppB5P26 #226 replace-to-pie3d-none-r4
+  … 26/50 页=26
+  [OK] WppB5P27 #227 replace-to-combo-y2-top-r5
+  … 27/50 页=27
+  [OK] WppB5P28 #228 replace-to-combo-y-bottom-r6
+  … 28/50 页=28
+  [OK] WppB5P29 #229 replace-to-twocol-left-r4
+  … 29/50 页=29
+  [OK] WppB5P30 #230 replace-to-bar-right-r5
+  … 30/50 页=30
+  [OK] WppB5P31 #231 replace-values-none-r6
+  … 31/50 页=31
+  [OK] WppB5P32 #232 replace-values-top-r4
+  … 32/50 页=32
+  [OK] WppB5P33 #233 replace-to-bar-bottom-r5
+  … 33/50 页=33
+  [OK] WppB5P34 #234 replace-to-line-left-r6
+  … 34/50 页=34
+  [OK] WppB5P35 #235 replace-to-pie2d-right-r4
+  … 35/50 页=35
+  [OK] WppB5P36 #236 replace-to-pie3d-none-r5
+  … 36/50 页=36
+  [OK] WppB5P37 #237 replace-to-combo-y2-top-r6
+  … 37/50 页=37
+  [OK] WppB5P38 #238 replace-to-combo-y-bottom-r4
+  … 38/50 页=38
+  [OK] WppB5P39 #239 replace-to-twocol-left-r5
+  … 39/50 页=39
+  [OK] WppB5P40 #240 replace-to-bar-right-r6
+  … 40/50 页=40
+  [OK] WppB5P41 #241 replace-values-none-r4
+  … 41/50 页=41
+  [OK] WppB5P42 #242 replace-values-top-r5
+  … 42/50 页=42
+  [OK] WppB5P43 #243 replace-to-bar-bottom-r6
+  … 43/50 页=43
+  [OK] WppB5P44 #244 replace-to-line-left-r4
+  … 44/50 页=44
+  [OK] WppB5P45 #245 replace-to-pie2d-right-r5
+  … 45/50 页=45
+  [OK] WppB5P46 #246 replace-to-pie3d-none-r6
+  … 46/50 页=46
+  [OK] WppB5P47 #247 replace-to-combo-y2-top-r4
+  … 47/50 页=47
+  [OK] WppB5P48 #248 replace-to-combo-y-bottom-r5
+  … 48/50 页=48
+  [OK] WppB5P49 #249 replace-to-twocol-left-r6
+  … 49/50 页=49
+  [OK] WppB5P50 #250 replace-to-bar-right-r4
+  … 50/50 页=50
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-batch-wpp-5.pptx
+
+--- WPP 图表往返 批次 6/6 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-batch-wpp-6.pptx ---
+  [OK] WppB6P01 #251 replace-values-none-r5
+  … 1/50 页=1
+  [OK] WppB6P02 #252 replace-values-top-r6
+  … 2/50 页=2
+  [OK] WppB6P03 #253 replace-to-bar-bottom-r4
+  … 3/50 页=3
+  [OK] WppB6P04 #254 replace-to-line-left-r5
+  … 4/50 页=4
+  [OK] WppB6P05 #255 replace-to-pie2d-right-r6
+  … 5/50 页=5
+  [OK] WppB6P06 #256 replace-to-pie3d-none-r4
+  … 6/50 页=6
+  [OK] WppB6P07 #257 replace-to-combo-y2-top-r5
+  … 7/50 页=7
+  [OK] WppB6P08 #258 replace-to-combo-y-bottom-r6
+  … 8/50 页=8
+  [OK] WppB6P09 #259 replace-to-twocol-left-r4
+  … 9/50 页=9
+  [OK] WppB6P10 #260 replace-to-bar-right-r5
+  … 10/50 页=10
+  [OK] WppB6P11 #261 replace-values-none-r6
+  … 11/50 页=11
+  [OK] WppB6P12 #262 replace-values-top-r4
+  … 12/50 页=12
+  [OK] WppB6P13 #263 replace-to-bar-bottom-r5
+  … 13/50 页=13
+  [OK] WppB6P14 #264 replace-to-line-left-r6
+  … 14/50 页=14
+  [OK] WppB6P15 #265 replace-to-pie2d-right-r4
+  … 15/50 页=15
+  [OK] WppB6P16 #266 replace-to-pie3d-none-r5
+  … 16/50 页=16
+  [OK] WppB6P17 #267 replace-to-combo-y2-top-r6
+  … 17/50 页=17
+  [OK] WppB6P18 #268 replace-to-combo-y-bottom-r4
+  … 18/50 页=18
+  [OK] WppB6P19 #269 replace-to-twocol-left-r5
+  … 19/50 页=19
+  [OK] WppB6P20 #270 replace-to-bar-right-r6
+  … 20/50 页=20
+  [OK] WppB6P21 #271 replace-values-none-r4
+  … 21/50 页=21
+  [OK] WppB6P22 #272 replace-values-top-r5
+  … 22/50 页=22
+  [OK] WppB6P23 #273 replace-to-bar-bottom-r6
+  … 23/50 页=23
+  [OK] WppB6P24 #274 replace-to-line-left-r4
+  … 24/50 页=24
+  [OK] WppB6P25 #275 replace-to-pie2d-right-r5
+  … 25/50 页=25
+  [OK] WppB6P26 #276 replace-to-pie3d-none-r6
+  … 26/50 页=26
+  [OK] WppB6P27 #277 replace-to-combo-y2-top-r4
+  … 27/50 页=27
+  [OK] WppB6P28 #278 replace-to-combo-y-bottom-r5
+  … 28/50 页=28
+  [OK] WppB6P29 #279 replace-to-twocol-left-r6
+  … 29/50 页=29
+  [OK] WppB6P30 #280 replace-to-bar-right-r4
+  … 30/50 页=30
+  [OK] WppB6P31 #281 replace-values-none-r5
+  … 31/50 页=31
+  [OK] WppB6P32 #282 replace-values-top-r6
+  … 32/50 页=32
+  [OK] WppB6P33 #283 replace-to-bar-bottom-r4
+  … 33/50 页=33
+  [OK] WppB6P34 #284 replace-to-line-left-r5
+  … 34/50 页=34
+  [OK] WppB6P35 #285 replace-to-pie2d-right-r6
+  … 35/50 页=35
+  [OK] WppB6P36 #286 replace-to-pie3d-none-r4
+  … 36/50 页=36
+  [OK] WppB6P37 #287 replace-to-combo-y2-top-r5
+  … 37/50 页=37
+  [OK] WppB6P38 #288 replace-to-combo-y-bottom-r6
+  … 38/50 页=38
+  [OK] WppB6P39 #289 replace-to-twocol-left-r4
+  … 39/50 页=39
+  [OK] WppB6P40 #290 replace-to-bar-right-r5
+  … 40/50 页=40
+  [OK] WppB6P41 #291 replace-values-none-r6
+  … 41/50 页=41
+  [OK] WppB6P42 #292 replace-values-top-r4
+  … 42/50 页=42
+  [OK] WppB6P43 #293 replace-to-bar-bottom-r5
+  … 43/50 页=43
+  [OK] WppB6P44 #294 replace-to-line-left-r6
+  … 44/50 页=44
+  [OK] WppB6P45 #295 replace-to-pie2d-right-r4
+  … 45/50 页=45
+  [OK] WppB6P46 #296 replace-to-pie3d-none-r5
+  … 46/50 页=46
+  [OK] WppB6P47 #297 replace-to-combo-y2-top-r6
+  … 47/50 页=47
+  [OK] WppB6P48 #298 replace-to-combo-y-bottom-r4
+  … 48/50 页=48
+  [OK] WppB6P49 #299 replace-to-twocol-left-r5
+  … 49/50 页=49
+  [OK] WppB6P50 #300 replace-to-bar-right-r6
+  … 50/50 页=50
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-batch-wpp-6.pptx
+
+结构用例 通过 300  失败 0  跳过 0  （目标 300 张图 / 6 份 PPT）
+
+断言 通过 300  失败 0  跳过 0
+pour 日志: D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+2026-10-19 04:00:06  DONE wpp-struct exit=0 minutes=55.1
+2026-10-19 04:00:06  RUN wpp-attrs
+﻿PPT 图表测试
+宿主 WPP · 建图/换数/读回走 PptHtmlChartIo（WppCom 晚绑定）
+结构用例：约 50 页 × 6 份；属性用例：单点+交叉 × 2 份（--attrs-only）
+
+pour 日志: D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+宿主: WPP (Kwpp.Application 晚绑定)
+
+--- WPP 图表往返 批次 1/2 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-attr-batch-wpp-1.pptx ---
+  [OK] WppB1P01 #1 create-sink-column
+  … 1/125 页=1
+  [OK] WppB1P02 #2 create-sink-line
+  … 2/125 页=2
+  [OK] WppB1P03 #3 create-sink-pie
+  … 3/125 页=3
+  [OK] WppB1P04 #4 create-sink-combo
+  … 4/125 页=4
+  [OK] WppB1P05 #5 create-title-text
+  … 5/125 页=5
+  [OK] WppB1P06 #6 create-title-font-size
+  … 6/125 页=6
+  [OK] WppB1P07 #7 create-title-font-bold
+  … 7/125 页=7
+  [OK] WppB1P08 #8 create-title-font-color
+  … 8/125 页=8
+  [OK] WppB1P09 #9 create-title-off
+  … 9/125 页=9
+  [OK] WppB1P10 #10 create-title-full
+  … 10/125 页=10
+  [OK] WppB1P11 #11 create-title-long
+  … 11/125 页=11
+  [OK] WppB1P12 #12 create-title-off-line
+  … 12/125 页=12
+  [OK] WppB1P13 #13 create-title-off-pie
+  … 13/125 页=13
+  [OK] WppB1P14 #14 create-title-off-combo
+  … 14/125 页=14
+  [OK] WppB1P15 #15 create-title-off-from-on
+  … 15/125 页=15
+  [OK] WppB1P16 #16 create-title-keep-from-old
+  … 16/125 页=16
+  [OK] WppB1P17 #17 create-title-change-text
+  … 17/125 页=17
+  [OK] WppB1P18 #18 create-legend-top
+  … 18/125 页=18
+  [OK] WppB1P19 #19 create-legend-left
+  … 19/125 页=19
+  [OK] WppB1P20 #20 create-legend-right
+  … 20/125 页=20
+  [OK] WppB1P21 #21 create-legend-bottom
+  … 21/125 页=21
+  [OK] WppB1P22 #22 create-legend-none
+  … 22/125 页=22
+  [OK] WppB1P23 #23 create-legend-font-color
+  … 23/125 页=23
+  [OK] WppB1P24 #24 create-labels-on-value
+  … 24/125 页=24
+  [OK] WppB1P25 #25 create-labels-off
+  … 25/125 页=25
+  [OK] WppB1P26 #26 create-labels-pie-pct
+  … 26/125 页=26
+  [OK] WppB1P27 #27 create-gridlines-on
+  … 27/125 页=27
+  [OK] WppB1P28 #28 create-gridlines-off
+  … 28/125 页=28
+  [OK] WppB1P29 #29 create-gap-width
+  … 29/125 页=29
+  [OK] WppB1P30 #30 create-overlap
+  … 30/125 页=30
+  [OK] WppB1P31 #31 create-plot-color
+  … 31/125 页=31
+  [OK] WppB1P32 #32 create-chart-area-color
+  … 32/125 页=32
+  [OK] WppB1P33 #33 create-plot-none
+  … 33/125 页=33
+  [OK] WppB1P34 #34 create-plot-box
+  … 34/125 页=34
+  [OK] WppB1P35 #35 create-plot-inside
+  … 35/125 页=35
+  [OK] WppB1P36 #36 create-axis-y-scale
+  … 36/125 页=36
+  [OK] WppB1P37 #37 create-axis-x-title
+  … 37/125 页=37
+  [OK] WppB1P38 #38 create-axis-y-title
+  … 38/125 页=38
+  [OK] WppB1P39 #39 create-axis-y-secondary
+  … 39/125 页=39
+         ---- pour 25 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] 副本无图，已写入内嵌图 shapeId=3
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/ew-chart40.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart40.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-d8e786d47ff44f2290f7c135f5c7f320.pptx
+         [PptChartPour] InsertFromFile 后页 40→41 取页=41
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（新建默认关）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 纵轴显隐=开（跟旧图）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 开始套回 快照 style= chartColor= title=False/ legend=False plotFill= gap= overlap= catDel=False valDel=False catLine=on/#000000 tick=#FF0000 valLine=on/- tick=- | S1 type=51 axis=1 line=null marker=/ mkRgb=-/- labels=False lblPos= lblColor=- fillVis=null fillType=- fillRgb=- fillStops=0 points=0
+         [PptChartPour] 轴格式 主题后 cat=General/link=True/loc=G/通用格式 val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=null val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 套线 S1 snap=null 跳过
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 轴皮最后一层 catTick=#FF0000 valTick=-
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+  [FAIL] WppB1P40 #40 create-axis-x-extras
+         AxisXStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisXStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 40/125 页=40
+         ---- pour 26 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] 副本无图，已写入内嵌图 shapeId=3
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/ew-chart41.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart41.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-7d7c5db65acd4ad7941e914d22c2d7f6.pptx
+         [PptChartPour] InsertFromFile 后页 41→42 取页=42
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（新建默认关）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 开始套回 快照 style= chartColor= title=False/ legend=False plotFill= gap= overlap= catDel=False valDel=False catLine=on/- tick=- valLine=on/#000000 tick=#0070C0 | S1 type=51 axis=1 line=null marker=/ mkRgb=-/- labels=False lblPos= lblColor=- fillVis=null fillType=- fillRgb=- fillStops=0 points=0
+         [PptChartPour] 轴格式 主题后 cat=General/link=True/loc=G/通用格式 val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=0.00 val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 套线 S1 snap=null 跳过
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 轴皮最后一层 catTick=- valTick=#0070C0
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+  [FAIL] WppB1P41 #41 create-axis-y-extras
+         AxisYStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisYStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 41/125 页=41
+         ---- pour 29 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] 副本无图，已写入内嵌图 shapeId=3
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/ew-chart42.xlsx 4x3
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart42.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-18723b0cadf5428eaacf12ff9a014cde.pptx
+         [PptChartPour] InsertFromFile 后页 42→43 取页=43
+         [PptChartPour] 改包页已插入 xl=51 series=2 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8] | S2 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[0.265,0.302,0.304,0.315]
+         [PptChartSnap] 图例开关=开（稿写了图例属性）
+         [PptChartSnap] 标题开关=关（新建默认关）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=2
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（跟旧图）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 开始套回 快照 style= chartColor= title=False/ legend=True plotFill= gap= overlap= catDel=False valDel=False catLine=on/- tick=- valLine=on/- tick=- | S1 type=51 axis=1 line=null marker=/ mkRgb=-/- labels=False lblPos= lblColor=- fillVis=null fillType=- fillRgb=- fillStops=0 points=0 | S2 type=4 axis=2 line=null marker=/ mkRgb=-/- labels=False lblPos= lblColor=- fillVis=null fillType=- fillRgb=- fillStops=0 points=0
+         [PptChartPour] 轴格式 主题后 cat=General/link=True/loc=G/通用格式 val=General/link=True/loc=G/通用格式 val2=General/link=True/loc=G/通用格式
+         [PptChartPour] 轴格式 快照 cat=null val=null val2=0.00
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val2 want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=General/link=False/loc=0.00
+         [PptChartSnap] 套线 S1 snap=null 跳过
+         [PptChartSnap] 套线 S2 snap=null 跳过
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartSnap] 套标签 S2 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S2 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=General/link=False/loc=0.00
+         [PptChartSnap] 轴皮最后一层 catTick=- valTick=-
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=General/link=False/loc=0.00
+  [FAIL] WppB1P42 #42 create-axis-y2-extras
+         AxisY2Style.GridColor 期望 #333333 实际 #8F8F8F；AxisY2Style.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 42/125 页=42
+  [OK] WppB1P43 #43 create-axis-x-hidden
+  … 43/125 页=43
+  [OK] WppB1P44 #44 create-axis-y-hidden
+  … 44/125 页=44
+  [OK] WppB1P45 #45 create-series-color
+  … 45/125 页=45
+  [OK] WppB1P46 #46 create-series-color-none
+  … 46/125 页=46
+  [OK] WppB1P47 #47 create-series-color-keep-none
+  … 47/125 页=47
+         ---- pour 28 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] 副本无图，已写入内嵌图 shapeId=3
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/ew-chart48.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart48.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-7567b00f47344a5487511df70bea21a1.pptx
+         [PptChartPour] InsertFromFile 后页 48→49 取页=49
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（新建默认关）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（跟旧图）
+         [PptChartSnap] 网格开关=关（跟旧图）
+         [PptChartSnap] 开始套回 快照 style= chartColor= title=False/ legend=False plotFill= gap= overlap= catDel=False valDel=False catLine=on/- tick=- valLine=on/- tick=- | S1 type=51 axis=1 line=null marker=/ mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=3 fillRgb=- fillStops=2[0:#FFFFFF@1][1:#2497EA@0] points=0
+         [PptChartPour] 轴格式 主题后 cat=General/link=True/loc=G/通用格式 val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=null val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 按原图/稿关闭网格线
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 套填充 S1 渐变 2[0:#FFFFFF@1][1:#2497EA@0] ok=False
+         [PptChartSnap] 套填充 S1 渐变 COM 失败，留给 OOXML
+         [PptChartSnap] 套线 S1 snap=null 跳过
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 轴皮最后一层 catTick=- valTick=-
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+  [FAIL] WppB1P48 #48 create-series-gradient
+         S0.FillGradient 期望 0:#FFFFFF@1;1:#2497EA@0 实际 (null)；S0.FillAngle 期望 270 实际 (null) | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 48/125 页=48
+  [OK] WppB1P49 #49 create-series-line
+  … 49/125 页=49
+  [OK] WppB1P50 #50 create-series-marker
+  … 50/125 页=50
+  [OK] WppB1P51 #51 create-series-label-chrome
+  … 51/125 页=51
+  [OK] WppB1P52 #52 create-series-label-above-coerced
+  … 52/125 页=52
+  [OK] WppB1P53 #53 create-series-label-above-line
+  … 53/125 页=53
+  [OK] WppB1P54 #54 create-series-label-outside
+  … 54/125 页=54
+  [OK] WppB1P55 #55 create-explosion
+  … 55/125 页=55
+  [OK] WppB1P56 #56 create-explosion-keep-all
+  … 56/125 页=56
+  [OK] WppB1P57 #57 create-explosion-skip-partial
+  … 57/125 页=57
+  [OK] WppB1P58 #58 create-chart-style
+  … 58/125 页=58
+  [OK] WppB1P59 #59 create-theme
+  … 59/125 页=59
+  [OK] WppB1P60 #60 create-fill-missing
+  … 60/125 页=60
+  [OK] WppB1P61 #61 create-axis-x-ticks
+  … 61/125 页=61
+  [OK] WppB1P62 #62 create-data-markers
+  … 62/125 页=62
+  [OK] WppB1P63 #63 create-chart-line-weight
+  … 63/125 页=63
+  [OK] WppB1P64 #64 create-combo-title-legend-labels
+  … 64/125 页=64
+  [OK] WppB1P65 #65 create-combo-gap-overlap-color
+  … 65/125 页=65
+  [OK] WppB1P66 #66 create-combo-scale-axis-titles
+  … 66/125 页=66
+  [OK] WppB1P67 #67 create-combo-plot-series-title
+  … 67/125 页=67
+  [OK] WppB1P68 #68 create-combo-line-marker-label
+  … 68/125 页=68
+  [OK] WppB1P69 #69 create-combo-pie-explosion-pct
+  … 69/125 页=69
+  [OK] WppB1P70 #70 create-combo-y2-dual-skin
+  … 70/125 页=70
+         ---- pour 26 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] 副本无图，已写入内嵌图 shapeId=3
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/ew-chart71.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart71.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-4ce9c284a1124c2da3559aeafe5c1ee3.pptx
+         [PptChartPour] InsertFromFile 后页 71→72 取页=72
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（新建默认关）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 纵轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 开始套回 快照 style= chartColor= title=False/ legend=False plotFill= gap= overlap= catDel=False valDel=False catLine=on/#000000 tick=#FF0000 valLine=on/#000000 tick=#0070C0 | S1 type=51 axis=1 line=null marker=/ mkRgb=-/- labels=False lblPos= lblColor=- fillVis=null fillType=- fillRgb=- fillStops=0 points=0
+         [PptChartPour] 轴格式 主题后 cat=General/link=True/loc=G/通用格式 val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=0.00 val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 套线 S1 snap=null 跳过
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 轴皮最后一层 catTick=#FF0000 valTick=#0070C0
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+  [FAIL] WppB1P71 #71 create-combo-xy-extras
+         AxisXStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisXStyle.Line 期望 #000000 实际 #898989；AxisYStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisYStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 71/125 页=71
+  [OK] WppB1P72 #72 create-combo-style-scale-color
+  … 72/125 页=72
+  [OK] WppB1P73 #73 create-combo-chrome-off-series
+  … 73/125 页=73
+         ---- pour 25 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] 副本无图，已写入内嵌图 shapeId=3
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/ew-chart74.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart74.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-0b648470939d42e4ab0c9beb42ee4dba.pptx
+         [PptChartPour] InsertFromFile 后页 74→75 取页=75
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（新建默认关）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 纵轴显隐=开（跟旧图）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 开始套回 快照 style= chartColor= title=False/ legend=False plotFill= gap= overlap= catDel=False valDel=False catLine=on/#000000 tick=#C00000 valLine=on/- tick=- | S1 type=51 axis=1 line=null marker=/ mkRgb=-/- labels=False lblPos= lblColor=- fillVis=null fillType=- fillRgb=- fillStops=0 points=0
+         [PptChartPour] 轴格式 主题后 cat=General/link=True/loc=G/通用格式 val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=General val=null val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 套线 S1 snap=null 跳过
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 轴皮最后一层 catTick=#C00000 valTick=-
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+  [FAIL] WppB1P74 #74 create-combo-x-ticks-extras
+         AxisXStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisXStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 74/125 页=74
+         ---- pour 28 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] 副本无图，已写入内嵌图 shapeId=3
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/ew-chart75.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart75.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-8d587f150cd94e41a480a79674880ec3.pptx
+         [PptChartPour] InsertFromFile 后页 75→76 取页=76
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 图例开关=开（稿写了图例属性）
+         [PptChartSnap] 标题开关=关（新建默认关）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（跟旧图）
+         [PptChartSnap] 网格开关=关（跟旧图）
+         [PptChartSnap] 开始套回 快照 style= chartColor= title=False/ legend=True plotFill= gap=100 overlap=-10 catDel=False valDel=False catLine=on/- tick=- valLine=on/- tick=- | S1 type=51 axis=1 line=null marker=/ mkRgb=-/- labels=True lblPos=2 lblColor=#2F5496 fillVis=True fillType=3 fillRgb=- fillStops=2[0:#FFFFFF@1][1:#5B9BD5@0] points=0
+         [PptChartPour] 轴格式 主题后 cat=General/link=True/loc=G/通用格式 val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=null val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 按原图/稿关闭网格线
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 套填充 S1 渐变 2[0:#FFFFFF@1][1:#5B9BD5@0] ok=False
+         [PptChartSnap] 套填充 S1 渐变 COM 失败，留给 OOXML
+         [PptChartSnap] 套线 S1 snap=null 跳过
+         [PptChartSnap] 套标签 S1 HasDataLabels=True want=True showValue=True showPct= pos=2 fontColor=#2F5496 fmt=
+         [PptChartSnap] 套标签 S1 ApplyDataLabels 返回 null，改设 HasDataLabels
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 轴皮最后一层 catTick=- valTick=-
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+  [FAIL] WppB1P75 #75 create-combo-gradient-label-gap
+         S0.FillGradient 期望 0:#FFFFFF@1;1:#5B9BD5@0 实际 (null)；S0.FillAngle 期望 270 实际 (null) | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 75/125 页=75
+  [OK] WppB1P76 #76 create-mix-title-legend-top
+  … 76/125 页=76
+  [OK] WppB1P77 #77 create-mix-title-legend-left
+  … 77/125 页=77
+  [OK] WppB1P78 #78 create-mix-title-legend-right
+  … 78/125 页=78
+  [OK] WppB1P79 #79 create-mix-title-legend-bot
+  … 79/125 页=79
+  [OK] WppB1P80 #80 create-mix-title-legend-none
+  … 80/125 页=80
+  [OK] WppB1P81 #81 create-mix-gap-ov-1
+  … 81/125 页=81
+  [OK] WppB1P82 #82 create-mix-gap-ov-2
+  … 82/125 页=82
+  [OK] WppB1P83 #83 create-mix-gap-ov-3
+  … 83/125 页=83
+  [OK] WppB1P84 #84 create-mix-gap-ov-4
+  … 84/125 页=84
+  [OK] WppB1P85 #85 create-mix-gap-ov-5
+  … 85/125 页=85
+  [OK] WppB1P86 #86 create-mix-scale-1
+  … 86/125 页=86
+  [OK] WppB1P87 #87 create-mix-scale-2
+  … 87/125 页=87
+  [OK] WppB1P88 #88 create-mix-scale-3
+  … 88/125 页=88
+  [OK] WppB1P89 #89 create-mix-scale-4
+  … 89/125 页=89
+  [OK] WppB1P90 #90 create-mix-scale-5
+  … 90/125 页=90
+  [OK] WppB1P91 #91 create-mix-line-skin-1
+  … 91/125 页=91
+  [OK] WppB1P92 #92 create-mix-line-skin-2
+  … 92/125 页=92
+  [OK] WppB1P93 #93 create-mix-line-skin-3
+  … 93/125 页=93
+  [OK] WppB1P94 #94 create-mix-line-skin-4
+  … 94/125 页=94
+  [OK] WppB1P95 #95 create-mix-line-skin-5
+  … 95/125 页=95
+  [OK] WppB1P96 #96 create-mix-pie-1
+  … 96/125 页=96
+  [OK] WppB1P97 #97 create-mix-pie-2
+  … 97/125 页=97
+  [OK] WppB1P98 #98 create-mix-pie-3
+  … 98/125 页=98
+  [OK] WppB1P99 #99 create-mix-pie-4
+  … 99/125 页=99
+  [OK] WppB1P100 #100 create-mix-pie-5
+  … 100/125 页=100
+  [OK] WppB1P101 #101 create-mix-plot-area-1
+  … 101/125 页=101
+  [OK] WppB1P102 #102 create-mix-plot-area-2
+  … 102/125 页=102
+  [OK] WppB1P103 #103 create-mix-plot-area-3
+  … 103/125 页=103
+  [OK] WppB1P104 #104 create-mix-plot-area-4
+  … 104/125 页=104
+  [OK] WppB1P105 #105 create-mix-plot-area-5
+  … 105/125 页=105
+  [OK] WppB1P106 #106 create-mix-label-chrome-1
+  … 106/125 页=106
+  [OK] WppB1P107 #107 create-mix-label-chrome-2
+  … 107/125 页=107
+  [OK] WppB1P108 #108 create-mix-label-chrome-3
+  … 108/125 页=108
+  [OK] WppB1P109 #109 create-mix-label-chrome-4
+  … 109/125 页=109
+  [OK] WppB1P110 #110 create-mix-label-chrome-5
+  … 110/125 页=110
+  [OK] WppB1P111 #111 create-mix-style-chrome-1
+  … 111/125 页=111
+  [OK] WppB1P112 #112 create-mix-style-chrome-2
+  … 112/125 页=112
+  [OK] WppB1P113 #113 create-mix-style-chrome-3
+  … 113/125 页=113
+  [OK] WppB1P114 #114 create-mix-style-chrome-4
+  … 114/125 页=114
+  [OK] WppB1P115 #115 create-mix-style-chrome-5
+  … 115/125 页=115
+         ---- pour 26 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] 副本无图，已写入内嵌图 shapeId=3
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/ew-chart116.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart116.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-5120063286de4bb396fe5083c2cbf506.pptx
+         [PptChartPour] InsertFromFile 后页 116→117 取页=117
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（新建默认关）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 开始套回 快照 style= chartColor= title=False/ legend=False plotFill= gap= overlap= catDel=False valDel=False catLine=on/- tick=- valLine=on/#000000 tick=#FF0000 | S1 type=51 axis=1 line=null marker=/ mkRgb=-/- labels=False lblPos= lblColor=- fillVis=null fillType=- fillRgb=- fillStops=0 points=0
+         [PptChartPour] 轴格式 主题后 cat=General/link=True/loc=G/通用格式 val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=0.00 val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 套线 S1 snap=null 跳过
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 轴皮最后一层 catTick=- valTick=#FF0000
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+  [FAIL] WppB1P116 #116 create-mix-y-extras-scale-1
+         AxisYStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisYStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 116/125 页=116
+         ---- pour 26 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] 副本无图，已写入内嵌图 shapeId=3
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/ew-chart117.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart117.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-91b93c153cb148999c6013501d28d7df.pptx
+         [PptChartPour] InsertFromFile 后页 117→118 取页=118
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（新建默认关）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 开始套回 快照 style= chartColor= title=False/ legend=False plotFill= gap= overlap= catDel=False valDel=False catLine=on/- tick=- valLine=on/#000000 tick=#0070C0 | S1 type=51 axis=1 line=null marker=/ mkRgb=-/- labels=False lblPos= lblColor=- fillVis=null fillType=- fillRgb=- fillStops=0 points=0
+         [PptChartPour] 轴格式 主题后 cat=General/link=True/loc=G/通用格式 val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=0.00 val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 套线 S1 snap=null 跳过
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 轴皮最后一层 catTick=- valTick=#0070C0
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+  [FAIL] WppB1P117 #117 create-mix-y-extras-scale-2
+         AxisYStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisYStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 117/125 页=117
+         ---- pour 26 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] 副本无图，已写入内嵌图 shapeId=3
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/ew-chart118.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart118.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-127f3036a0554ae498467ca5a082bfe2.pptx
+         [PptChartPour] InsertFromFile 后页 118→119 取页=119
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（新建默认关）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 开始套回 快照 style= chartColor= title=False/ legend=False plotFill= gap= overlap= catDel=False valDel=False catLine=on/- tick=- valLine=on/#000000 tick=#00B050 | S1 type=51 axis=1 line=null marker=/ mkRgb=-/- labels=False lblPos= lblColor=- fillVis=null fillType=- fillRgb=- fillStops=0 points=0
+         [PptChartPour] 轴格式 主题后 cat=General/link=True/loc=G/通用格式 val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=0.00 val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 套线 S1 snap=null 跳过
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 轴皮最后一层 catTick=- valTick=#00B050
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+  [FAIL] WppB1P118 #118 create-mix-y-extras-scale-3
+         AxisYStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisYStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 118/125 页=118
+         ---- pour 26 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] 副本无图，已写入内嵌图 shapeId=3
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/ew-chart119.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart119.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-755c842af69e4542bf2e10c52ec34625.pptx
+         [PptChartPour] InsertFromFile 后页 119→120 取页=120
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（新建默认关）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 开始套回 快照 style= chartColor= title=False/ legend=False plotFill= gap= overlap= catDel=False valDel=False catLine=on/- tick=- valLine=on/#000000 tick=#7030A0 | S1 type=51 axis=1 line=null marker=/ mkRgb=-/- labels=False lblPos= lblColor=- fillVis=null fillType=- fillRgb=- fillStops=0 points=0
+         [PptChartPour] 轴格式 主题后 cat=General/link=True/loc=G/通用格式 val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=0.00 val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 套线 S1 snap=null 跳过
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 轴皮最后一层 catTick=- valTick=#7030A0
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+  [FAIL] WppB1P119 #119 create-mix-y-extras-scale-4
+         AxisYStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisYStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 119/125 页=119
+         ---- pour 26 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] 副本无图，已写入内嵌图 shapeId=3
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/ew-chart120.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart120.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-396780dd249241d082c780fdf8a4f12f.pptx
+         [PptChartPour] InsertFromFile 后页 120→121 取页=121
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（新建默认关）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 开始套回 快照 style= chartColor= title=False/ legend=False plotFill= gap= overlap= catDel=False valDel=False catLine=on/- tick=- valLine=on/#000000 tick=#C65911 | S1 type=51 axis=1 line=null marker=/ mkRgb=-/- labels=False lblPos= lblColor=- fillVis=null fillType=- fillRgb=- fillStops=0 points=0
+         [PptChartPour] 轴格式 主题后 cat=General/link=True/loc=G/通用格式 val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=0.00 val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 套线 S1 snap=null 跳过
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 轴皮最后一层 catTick=- valTick=#C65911
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+  [FAIL] WppB1P120 #120 create-mix-y-extras-scale-5
+         AxisYStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisYStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 120/125 页=120
+  [OK] WppB1P121 #121 create-mix-y2-skin-1
+  … 121/125 页=121
+  [OK] WppB1P122 #122 create-mix-y2-skin-2
+  … 122/125 页=122
+  [OK] WppB1P123 #123 create-mix-y2-skin-3
+  … 123/125 页=123
+  [OK] WppB1P124 #124 create-mix-y2-skin-4
+  … 124/125 页=124
+  [OK] WppB1P125 #125 create-mix-y2-skin-5
+  … 125/125 页=125
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-attr-batch-wpp-1.pptx
+
+--- WPP 图表往返 批次 2/2 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-attr-batch-wpp-2.pptx ---
+  [OK] WppB2P01 #126 replace-sink-column
+  … 1/125 页=1
+  [OK] WppB2P02 #127 replace-sink-line
+  … 2/125 页=2
+  [OK] WppB2P03 #128 replace-sink-pie
+  … 3/125 页=3
+  [OK] WppB2P04 #129 replace-sink-combo
+  … 4/125 页=4
+  [OK] WppB2P05 #130 replace-title-text
+  … 5/125 页=5
+  [OK] WppB2P06 #131 replace-title-font-size
+  … 6/125 页=6
+  [OK] WppB2P07 #132 replace-title-font-bold
+  … 7/125 页=7
+  [OK] WppB2P08 #133 replace-title-font-color
+  … 8/125 页=8
+  [OK] WppB2P09 #134 replace-title-off
+  … 9/125 页=9
+  [OK] WppB2P10 #135 replace-title-full
+  … 10/125 页=10
+  [OK] WppB2P11 #136 replace-title-long
+  … 11/125 页=11
+  [OK] WppB2P12 #137 replace-title-off-line
+  … 12/125 页=12
+  [OK] WppB2P13 #138 replace-title-off-pie
+  … 13/125 页=13
+  [OK] WppB2P14 #139 replace-title-off-combo
+  … 14/125 页=14
+  [OK] WppB2P15 #140 replace-title-off-from-on
+  … 15/125 页=15
+  [OK] WppB2P16 #141 replace-title-keep-from-old
+  … 16/125 页=16
+  [OK] WppB2P17 #142 replace-title-change-text
+  … 17/125 页=17
+  [OK] WppB2P18 #143 replace-legend-top
+  … 18/125 页=18
+  [OK] WppB2P19 #144 replace-legend-left
+  … 19/125 页=19
+  [OK] WppB2P20 #145 replace-legend-right
+  … 20/125 页=20
+  [OK] WppB2P21 #146 replace-legend-bottom
+  … 21/125 页=21
+  [OK] WppB2P22 #147 replace-legend-none
+  … 22/125 页=22
+  [OK] WppB2P23 #148 replace-legend-font-color
+  … 23/125 页=23
+  [OK] WppB2P24 #149 replace-labels-on-value
+  … 24/125 页=24
+  [OK] WppB2P25 #150 replace-labels-off
+  … 25/125 页=25
+  [OK] WppB2P26 #151 replace-labels-pie-pct
+  … 26/125 页=26
+  [OK] WppB2P27 #152 replace-gridlines-on
+  … 27/125 页=27
+  [OK] WppB2P28 #153 replace-gridlines-off
+  … 28/125 页=28
+  [OK] WppB2P29 #154 replace-gap-width
+  … 29/125 页=29
+  [OK] WppB2P30 #155 replace-overlap
+  … 30/125 页=30
+  [OK] WppB2P31 #156 replace-plot-color
+  … 31/125 页=31
+  [OK] WppB2P32 #157 replace-chart-area-color
+  … 32/125 页=32
+  [OK] WppB2P33 #158 replace-plot-none
+  … 33/125 页=33
+  [OK] WppB2P34 #159 replace-plot-box
+  … 34/125 页=34
+  [OK] WppB2P35 #160 replace-plot-inside
+  … 35/125 页=35
+  [OK] WppB2P36 #161 replace-axis-y-scale
+  … 36/125 页=36
+  [OK] WppB2P37 #162 replace-axis-x-title
+  … 37/125 页=37
+  [OK] WppB2P38 #163 replace-axis-y-title
+  … 38/125 页=38
+  [OK] WppB2P39 #164 replace-axis-y-secondary
+  … 39/125 页=39
+         ---- pour 51 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=-2.147484E+09 ForeColor.Type=-2 ForeColor.RGB=16777215
+         [PptChartSnap] 旧图 S1 原图无线条（noFill/自动线），不描边
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 纵轴显隐=开（跟旧图）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=column xl=51 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Workbook40.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart40.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-3223d9850d8e478ea8ccc141e828e259.pptx
+         [PptChartPour] InsertFromFile 后页 40→41 取页=41
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#000000 tick=#FF0000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartPour] 轴格式 主题后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=null val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 套填充 S1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P2 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P3 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P4 实色 #4874CB
+         [PptChartSnap] 套线 S1 按原图不描边
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 套快照后 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8] | xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 Series 失败，改读 OOXML
+         [PptChartPour] 校验读回 OOXML 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验通过（OOXML 与稿一致）
+         [PptChartSnap] 轴皮最后一层 catTick=#FF0000 valTick=#000000
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] WppB2P40 #165 replace-axis-x-extras
+         AxisXStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisXStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 40/125 页=40
+         ---- pour 52 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=-2.147484E+09 ForeColor.Type=-2 ForeColor.RGB=16777215
+         [PptChartSnap] 旧图 S1 原图无线条（noFill/自动线），不描边
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=column xl=51 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Workbook41.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart41.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-5e5dcf54137c4ad5b9dafd4c12207ab0.pptx
+         [PptChartPour] InsertFromFile 后页 41→42 取页=42
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#000000 tick=#0070C0 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartPour] 轴格式 主题后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=0.00 val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 套填充 S1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P2 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P3 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P4 实色 #4874CB
+         [PptChartSnap] 套线 S1 按原图不描边
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 套快照后 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8] | xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 Series 失败，改读 OOXML
+         [PptChartPour] 校验读回 OOXML 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验通过（OOXML 与稿一致）
+         [PptChartSnap] 轴皮最后一层 catTick=#000000 valTick=#0070C0
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] WppB2P41 #166 replace-axis-y-extras
+         AxisYStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisYStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 41/125 页=41
+         ---- pour 56 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=-2.147484E+09 ForeColor.Type=-2 ForeColor.RGB=16777215
+         [PptChartSnap] 旧图 S1 原图无线条（noFill/自动线），不描边
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartSnap] 图例开关=开（稿写了图例属性）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=2
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（跟旧图）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=2
+         [PptChartSnap] 次轴结构打开 needY2=True htmlVisible=True
+         [PptChartSnap] 重建开始 type=column xl=51 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Workbook42.xlsx 4x3
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart42.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-ad69a594789649818862fdafe8c894dc.pptx
+         [PptChartPour] InsertFromFile 后页 42→43 取页=43
+         [PptChartPour] 改包页已插入 xl=51 series=2 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8] | S2 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[0.265,0.302,0.304,0.315]
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=True plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4 | S2 type=4 axis=2 line=null marker=/ mkRgb=-/- labels=False lblPos= lblColor=- fillVis=null fillType=- fillRgb=- fillStops=0 points=0
+         [PptChartPour] 轴格式 主题后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=General/link=True/loc=G/通用格式
+         [PptChartPour] 轴格式 快照 cat=null val=null val2=0.00
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val2 want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=General/link=False/loc=0.00
+         [PptChartSnap] 套填充 S1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P2 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P3 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P4 实色 #4874CB
+         [PptChartSnap] 套线 S1 按原图不描边
+         [PptChartSnap] 套线 S2 snap=null 跳过
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartSnap] 套标签 S2 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S2 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=General/link=False/loc=0.00
+         [PptChartPour] 套快照后 xl=-4111 series=2 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8] | S2 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[0.265,0.302,0.304,0.315]
+         [PptChartPour] 校验 稿 4x3 cols=[category:类别|value:规模|value:增速] cat=[2026,2027,2028,2029] 规模=[2.15,2.8,3.65,4.8] 增速=[0.265,0.302,0.304,0.315] | xl=-4111 series=2 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8] | S2 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[0.265,0.302,0.304,0.315]
+         [PptChartPour] 校验 Series 失败，改读 OOXML
+         [PptChartPour] 校验读回 OOXML 4x3 cols=[category:类别|value:规模|value:增速] cat=[2026,2027,2028,2029] 规模=[2.15,2.8,3.65,4.8] 增速=[0.265,0.302,0.304,0.315]
+         [PptChartPour] 校验通过（OOXML 与稿一致）
+         [PptChartSnap] 轴皮最后一层 catTick=#000000 valTick=#000000
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=General/link=False/loc=0.00
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] WppB2P42 #167 replace-axis-y2-extras
+         AxisY2Style.GridColor 期望 #333333 实际 #8F8F8F；AxisY2Style.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 42/125 页=42
+  [OK] WppB2P43 #168 replace-axis-x-hidden
+  … 43/125 页=43
+  [OK] WppB2P44 #169 replace-axis-y-hidden
+  … 44/125 页=44
+  [OK] WppB2P45 #170 replace-series-color
+  … 45/125 页=45
+  [OK] WppB2P46 #171 replace-series-color-none
+  … 46/125 页=46
+  [OK] WppB2P47 #172 replace-series-color-keep-none
+  … 47/125 页=47
+         ---- pour 53 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=-2.147484E+09 ForeColor.Type=-2 ForeColor.RGB=16777215
+         [PptChartSnap] 旧图 S1 原图无线条（noFill/自动线），不描边
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（跟旧图）
+         [PptChartSnap] 网格开关=关（跟旧图）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=column xl=51 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Workbook48.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart48.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-a66f7f5cb2b648b884beef3d09c31864.pptx
+         [PptChartPour] InsertFromFile 后页 48→49 取页=49
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=3 fillRgb=#4874CB fillStops=2[0:#FFFFFF@1][1:#2497EA@0] points=4
+         [PptChartPour] 轴格式 主题后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=null val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 按原图/稿关闭网格线
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 套填充 S1 渐变 2[0:#FFFFFF@1][1:#2497EA@0] ok=False
+         [PptChartSnap] 套填充 S1 渐变 COM 失败，留给 OOXML
+         [PptChartSnap] 套填充 S1 P1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P2 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P3 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P4 实色 #4874CB
+         [PptChartSnap] 套线 S1 按原图不描边
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 套快照后 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8] | xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 Series 失败，改读 OOXML
+         [PptChartPour] 校验读回 OOXML 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验通过（OOXML 与稿一致）
+         [PptChartSnap] 轴皮最后一层 catTick=#000000 valTick=#000000
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] WppB2P48 #173 replace-series-gradient
+         S0.FillGradient 期望 0:#FFFFFF@1;1:#2497EA@0 实际 (null)；S0.FillAngle 期望 270 实际 (null) | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 48/125 页=48
+  [OK] WppB2P49 #174 replace-series-line
+  … 49/125 页=49
+         ---- pour 50 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=-2 stops=0 solid=#000000
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=-2 stops=0 solid=#000000
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=-2 stops=0 solid=#000000
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=-2 stops=0 solid=#000000
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=-2 stops=0 solid=#000000
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=3 ForeColor.Type=2 ForeColor.RGB=13333576
+         [PptChartSnap] 旧图 S1 Line 读停靠点失败: 未知名称。 (异常来自 HRESULT:0x80020006 (DISP_E_UNKNOWNNAME))
+         [PptChartSnap] 旧图 S1 Line.Fill 不可用: 未知名称。 (异常来自 HRESULT:0x80020006 (DISP_E_UNKNOWNNAME))
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=100 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=4 axis=1 line=vis=True rgb=#4874CB w=3 stops=0 marker=-4142/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=-2 fillRgb=#000000 fillStops=0 points=4
+         [PptChartSnap] 图例开关=开（稿写了图例属性）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（跟旧图）
+         [PptChartSnap] 网格开关=关（跟旧图）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=line xl=4 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 钉皮：PPT 只钉标记填色 1/1
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Workbook50.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart50.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-34c6627b9c99416bac73257eb0b85aae.pptx
+         [PptChartPour] InsertFromFile 后页 50→51 取页=51
+         [PptChartPour] 改包页已插入 xl=65 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 轴格式 Refresh后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=True plotFill=True gap=150 overlap=100 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=65 axis=1 line=vis=True rgb=#4874CB w=3 stops=0 marker=2/8 mkRgb=#00B0F0/#FFFFFF labels=False lblPos= lblColor=- fillVis=True fillType=-2 fillRgb=#000000 fillStops=0 points=4
+         [PptChartPour] 轴格式 主题后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=null val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 按原图/稿关闭网格线
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 套线 S1 vis=True rgb=#4874CB stops=0 grad=False
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 套快照后 xl=65 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8] | xl=65 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 Series 失败，改读 OOXML
+         [PptChartPour] 校验读回 OOXML 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验通过（OOXML 与稿一致）
+         [PptChartSnap] 轴皮最后一层 catTick=#000000 valTick=#000000
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] WppB2P50 #175 replace-series-marker
+         S0.MarkerColor 期望 #00B0F0 实际 #4874CB | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 50/125 页=50
+  [OK] WppB2P51 #176 replace-series-label-chrome
+  … 51/125 页=51
+  [OK] WppB2P52 #177 replace-series-label-above-coerced
+  … 52/125 页=52
+  [OK] WppB2P53 #178 replace-series-label-above-line
+  … 53/125 页=53
+  [OK] WppB2P54 #179 replace-series-label-outside
+  … 54/125 页=54
+  [OK] WppB2P55 #180 replace-explosion
+  … 55/125 页=55
+  [OK] WppB2P56 #181 replace-explosion-keep-all
+  … 56/125 页=56
+         ---- pour 50 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=1 stops=0 solid=#EE822F
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=1 stops=0 solid=#F2BA02
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=1 stops=0 solid=#75BD42
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=-2.147484E+09 ForeColor.Type=-2 ForeColor.RGB=16777215
+         [PptChartSnap] 旧图 S1 原图无线条（noFill/自动线），不描边
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=100 catDel=True valDel=True catLine=on/- tick=- valLine=on/- tick=- | S1 type=5 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4142/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartSnap] 图例开关=开（稿写了图例属性）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=关（跟旧图）
+         [PptChartSnap] 纵轴显隐=关（跟旧图）
+         [PptChartSnap] 网格开关=关（跟旧图）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=pie2d xl=5 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Workbook57.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart57.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-d8592c0f8f4d46d18148131659481d36.pptx
+         [PptChartPour] InsertFromFile 后页 57→58 取页=58
+         [PptChartPour] 改包页已插入 xl=5 series=1 | S1 pts=4 Xn=4 Yn=4 X=[,,,] Y=[40,30,20,10]
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=True plotFill=True gap=150 overlap=100 catDel=True valDel=True catLine=on/- tick=- valLine=on/- tick=- | S1 type=5 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4142/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartPour] 轴格式 主题后 cat=null val=null val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=null val2=null
+         [PptChartSnap] 按原图/稿关闭网格线
+         [PptChartPour] 轴格式 套轴后 cat=null val=null val2=null
+         [PptChartSnap] 饼图在主题上覆盖扇区色 4 个
+         [PptChartSnap] 套填充 S1 P1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P2 实色 #EE822F
+         [PptChartSnap] 套填充 S1 P3 实色 #F2BA02
+         [PptChartSnap] 套填充 S1 P4 实色 #75BD42
+         [PptChartSnap] 套线 S1 按原图不描边
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=null val=null val2=null
+         [PptChartPour] 套快照后 xl=5 series=1 | S1 pts=4 Xn=4 Yn=4 X=[A,B,C,D] Y=[40,30,20,10]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:份额] cat=[A,B,C,D] 份额=[40,30,20,10] | xl=5 series=1 | S1 pts=4 Xn=4 Yn=4 X=[A,B,C,D] Y=[40,30,20,10]
+         [PptChartPour] 校验 Series 失败，改读 OOXML
+         [PptChartPour] 校验读回 OOXML 4x2 cols=[category:类别|value:份额] cat=[A,B,C,D] 份额=[40,30,20,10]
+         [PptChartPour] 校验通过（OOXML 与稿一致）
+         [PptChartSnap] 轴皮最后一层 catTick=- valTick=-
+         [PptChartPour] 轴格式 轴皮后 cat=null val=null val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] WppB2P57 #182 replace-explosion-skip-partial
+         Explosion 期望 0 实际 (null) | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 57/125 页=57
+  [OK] WppB2P58 #183 replace-chart-style
+  … 58/125 页=58
+  [OK] WppB2P59 #184 replace-theme
+  … 59/125 页=59
+  [OK] WppB2P60 #185 replace-fill-missing
+  … 60/125 页=60
+  [OK] WppB2P61 #186 replace-axis-x-ticks
+  … 61/125 页=61
+  [OK] WppB2P62 #187 replace-data-markers
+  … 62/125 页=62
+  [OK] WppB2P63 #188 replace-chart-line-weight
+  … 63/125 页=63
+  [OK] WppB2P64 #189 replace-combo-title-legend-labels
+  … 64/125 页=64
+  [OK] WppB2P65 #190 replace-combo-gap-overlap-color
+  … 65/125 页=65
+  [OK] WppB2P66 #191 replace-combo-scale-axis-titles
+  … 66/125 页=66
+  [OK] WppB2P67 #192 replace-combo-plot-series-title
+  … 67/125 页=67
+  [OK] WppB2P68 #193 replace-combo-line-marker-label
+  … 68/125 页=68
+  [OK] WppB2P69 #194 replace-combo-pie-explosion-pct
+  … 69/125 页=69
+  [OK] WppB2P70 #195 replace-combo-y2-dual-skin
+  … 70/125 页=70
+         ---- pour 52 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=-2.147484E+09 ForeColor.Type=-2 ForeColor.RGB=16777215
+         [PptChartSnap] 旧图 S1 原图无线条（noFill/自动线），不描边
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 纵轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=column xl=51 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Workbook71.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart71.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-d868653d2cbd471088f80eab4eb40f89.pptx
+         [PptChartPour] InsertFromFile 后页 71→72 取页=72
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#000000 tick=#FF0000 valLine=on/#000000 tick=#0070C0 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartPour] 轴格式 主题后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=0.00 val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 套填充 S1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P2 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P3 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P4 实色 #4874CB
+         [PptChartSnap] 套线 S1 按原图不描边
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 套快照后 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8] | xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 Series 失败，改读 OOXML
+         [PptChartPour] 校验读回 OOXML 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验通过（OOXML 与稿一致）
+         [PptChartSnap] 轴皮最后一层 catTick=#FF0000 valTick=#0070C0
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] WppB2P71 #196 replace-combo-xy-extras
+         AxisXStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisXStyle.Line 期望 #000000 实际 #898989；AxisYStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisYStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 71/125 页=71
+  [OK] WppB2P72 #197 replace-combo-style-scale-color
+  … 72/125 页=72
+  [OK] WppB2P73 #198 replace-combo-chrome-off-series
+  … 73/125 页=73
+         ---- pour 51 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=-2.147484E+09 ForeColor.Type=-2 ForeColor.RGB=16777215
+         [PptChartSnap] 旧图 S1 原图无线条（noFill/自动线），不描边
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 纵轴显隐=开（跟旧图）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=column xl=51 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Workbook74.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart74.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-0db2f9c07b704dc789f9ecef4aaac08d.pptx
+         [PptChartPour] InsertFromFile 后页 74→75 取页=75
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#000000 tick=#C00000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartPour] 轴格式 主题后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=General val=null val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 套填充 S1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P2 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P3 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P4 实色 #4874CB
+         [PptChartSnap] 套线 S1 按原图不描边
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 套快照后 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8] | xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 Series 失败，改读 OOXML
+         [PptChartPour] 校验读回 OOXML 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验通过（OOXML 与稿一致）
+         [PptChartSnap] 轴皮最后一层 catTick=#C00000 valTick=#000000
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] WppB2P74 #199 replace-combo-x-ticks-extras
+         AxisXStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisXStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 74/125 页=74
+         ---- pour 53 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=-2.147484E+09 ForeColor.Type=-2 ForeColor.RGB=16777215
+         [PptChartSnap] 旧图 S1 原图无线条（noFill/自动线），不描边
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartSnap] 图例开关=开（稿写了图例属性）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（跟旧图）
+         [PptChartSnap] 网格开关=关（跟旧图）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=100 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=column xl=51 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Workbook75.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart75.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-278169ef1d774d5e955419819f6ad11f.pptx
+         [PptChartPour] InsertFromFile 后页 75→76 取页=76
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=True plotFill=True gap=100 overlap=-10 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=True lblPos=2 lblColor=#2F5496 fillVis=True fillType=3 fillRgb=#4874CB fillStops=2[0:#FFFFFF@1][1:#5B9BD5@0] points=4
+         [PptChartPour] 轴格式 主题后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=null val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 按原图/稿关闭网格线
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartSnap] 套填充 S1 渐变 2[0:#FFFFFF@1][1:#5B9BD5@0] ok=False
+         [PptChartSnap] 套填充 S1 渐变 COM 失败，留给 OOXML
+         [PptChartSnap] 套填充 S1 P1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P2 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P3 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P4 实色 #4874CB
+         [PptChartSnap] 套线 S1 按原图不描边
+         [PptChartSnap] 套标签 S1 HasDataLabels=True want=True showValue=True showPct= pos=2 fontColor=#2F5496 fmt=
+         [PptChartSnap] 套标签 S1 ApplyDataLabels 返回 null，改设 HasDataLabels
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 套快照后 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8] | xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 Series 失败，改读 OOXML
+         [PptChartPour] 校验读回 OOXML 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验通过（OOXML 与稿一致）
+         [PptChartSnap] 轴皮最后一层 catTick=#000000 valTick=#000000
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] WppB2P75 #200 replace-combo-gradient-label-gap
+         S0.FillGradient 期望 0:#FFFFFF@1;1:#5B9BD5@0 实际 (null)；S0.FillAngle 期望 270 实际 (null) | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 75/125 页=75
+  [OK] WppB2P76 #201 replace-mix-title-legend-top
+  … 76/125 页=76
+  [OK] WppB2P77 #202 replace-mix-title-legend-left
+  … 77/125 页=77
+  [OK] WppB2P78 #203 replace-mix-title-legend-right
+  … 78/125 页=78
+  [OK] WppB2P79 #204 replace-mix-title-legend-bot
+  … 79/125 页=79
+  [OK] WppB2P80 #205 replace-mix-title-legend-none
+  … 80/125 页=80
+  [OK] WppB2P81 #206 replace-mix-gap-ov-1
+  … 81/125 页=81
+  [OK] WppB2P82 #207 replace-mix-gap-ov-2
+  … 82/125 页=82
+  [OK] WppB2P83 #208 replace-mix-gap-ov-3
+  … 83/125 页=83
+  [OK] WppB2P84 #209 replace-mix-gap-ov-4
+  … 84/125 页=84
+  [OK] WppB2P85 #210 replace-mix-gap-ov-5
+  … 85/125 页=85
+  [OK] WppB2P86 #211 replace-mix-scale-1
+  … 86/125 页=86
+  [OK] WppB2P87 #212 replace-mix-scale-2
+  … 87/125 页=87
+  [OK] WppB2P88 #213 replace-mix-scale-3
+  … 88/125 页=88
+  [OK] WppB2P89 #214 replace-mix-scale-4
+  … 89/125 页=89
+  [OK] WppB2P90 #215 replace-mix-scale-5
+  … 90/125 页=90
+  [OK] WppB2P91 #216 replace-mix-line-skin-1
+  … 91/125 页=91
+  [OK] WppB2P92 #217 replace-mix-line-skin-2
+  … 92/125 页=92
+  [OK] WppB2P93 #218 replace-mix-line-skin-3
+  … 93/125 页=93
+  [OK] WppB2P94 #219 replace-mix-line-skin-4
+  … 94/125 页=94
+  [OK] WppB2P95 #220 replace-mix-line-skin-5
+  … 95/125 页=95
+  [OK] WppB2P96 #221 replace-mix-pie-1
+  … 96/125 页=96
+  [OK] WppB2P97 #222 replace-mix-pie-2
+  … 97/125 页=97
+  [OK] WppB2P98 #223 replace-mix-pie-3
+  … 98/125 页=98
+  [OK] WppB2P99 #224 replace-mix-pie-4
+  … 99/125 页=99
+  [OK] WppB2P100 #225 replace-mix-pie-5
+  … 100/125 页=100
+  [OK] WppB2P101 #226 replace-mix-plot-area-1
+  … 101/125 页=101
+  [OK] WppB2P102 #227 replace-mix-plot-area-2
+  … 102/125 页=102
+  [OK] WppB2P103 #228 replace-mix-plot-area-3
+  … 103/125 页=103
+  [OK] WppB2P104 #229 replace-mix-plot-area-4
+  … 104/125 页=104
+  [OK] WppB2P105 #230 replace-mix-plot-area-5
+  … 105/125 页=105
+  [OK] WppB2P106 #231 replace-mix-label-chrome-1
+  … 106/125 页=106
+  [OK] WppB2P107 #232 replace-mix-label-chrome-2
+  … 107/125 页=107
+  [OK] WppB2P108 #233 replace-mix-label-chrome-3
+  … 108/125 页=108
+  [OK] WppB2P109 #234 replace-mix-label-chrome-4
+  … 109/125 页=109
+  [OK] WppB2P110 #235 replace-mix-label-chrome-5
+  … 110/125 页=110
+  [OK] WppB2P111 #236 replace-mix-style-chrome-1
+  … 111/125 页=111
+  [OK] WppB2P112 #237 replace-mix-style-chrome-2
+  … 112/125 页=112
+  [OK] WppB2P113 #238 replace-mix-style-chrome-3
+  … 113/125 页=113
+  [OK] WppB2P114 #239 replace-mix-style-chrome-4
+  … 114/125 页=114
+  [OK] WppB2P115 #240 replace-mix-style-chrome-5
+  … 115/125 页=115
+         ---- pour 52 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=-2.147484E+09 ForeColor.Type=-2 ForeColor.RGB=16777215
+         [PptChartSnap] 旧图 S1 原图无线条（noFill/自动线），不描边
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=column xl=51 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Workbook116.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart116.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-396f2544037d46c4bc7f75903dc8c4d5.pptx
+         [PptChartPour] InsertFromFile 后页 116→117 取页=117
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#000000 tick=#FF0000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartPour] 轴格式 主题后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=0.00 val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 套填充 S1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P2 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P3 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P4 实色 #4874CB
+         [PptChartSnap] 套线 S1 按原图不描边
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 套快照后 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8] | xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 Series 失败，改读 OOXML
+         [PptChartPour] 校验读回 OOXML 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验通过（OOXML 与稿一致）
+         [PptChartSnap] 轴皮最后一层 catTick=#000000 valTick=#FF0000
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] WppB2P116 #241 replace-mix-y-extras-scale-1
+         AxisYStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisYStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 116/125 页=116
+         ---- pour 52 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=-2.147484E+09 ForeColor.Type=-2 ForeColor.RGB=16777215
+         [PptChartSnap] 旧图 S1 原图无线条（noFill/自动线），不描边
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=column xl=51 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Workbook117.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart117.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-b24fd971115a4c54afc40d29a36e7dc2.pptx
+         [PptChartPour] InsertFromFile 后页 117→118 取页=118
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#000000 tick=#0070C0 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartPour] 轴格式 主题后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=0.00 val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 套填充 S1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P2 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P3 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P4 实色 #4874CB
+         [PptChartSnap] 套线 S1 按原图不描边
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 套快照后 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8] | xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 Series 失败，改读 OOXML
+         [PptChartPour] 校验读回 OOXML 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验通过（OOXML 与稿一致）
+         [PptChartSnap] 轴皮最后一层 catTick=#000000 valTick=#0070C0
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] WppB2P117 #242 replace-mix-y-extras-scale-2
+         AxisYStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisYStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 117/125 页=117
+         ---- pour 52 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=-2.147484E+09 ForeColor.Type=-2 ForeColor.RGB=16777215
+         [PptChartSnap] 旧图 S1 原图无线条（noFill/自动线），不描边
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=column xl=51 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Workbook118.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart118.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-3b5c6456d6fd46ce95b2d197de1a8011.pptx
+         [PptChartPour] InsertFromFile 后页 118→119 取页=119
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#000000 tick=#00B050 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartPour] 轴格式 主题后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=0.00 val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 套填充 S1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P2 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P3 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P4 实色 #4874CB
+         [PptChartSnap] 套线 S1 按原图不描边
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 套快照后 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8] | xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 Series 失败，改读 OOXML
+         [PptChartPour] 校验读回 OOXML 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验通过（OOXML 与稿一致）
+         [PptChartSnap] 轴皮最后一层 catTick=#000000 valTick=#00B050
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] WppB2P118 #243 replace-mix-y-extras-scale-3
+         AxisYStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisYStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 118/125 页=118
+         ---- pour 52 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=-2.147484E+09 ForeColor.Type=-2 ForeColor.RGB=16777215
+         [PptChartSnap] 旧图 S1 原图无线条（noFill/自动线），不描边
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=column xl=51 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Workbook119.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart119.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-0ba63cc6146c463f82ae40f468503758.pptx
+         [PptChartPour] InsertFromFile 后页 119→120 取页=120
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#000000 tick=#7030A0 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartPour] 轴格式 主题后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=0.00 val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 套填充 S1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P2 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P3 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P4 实色 #4874CB
+         [PptChartSnap] 套线 S1 按原图不描边
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 套快照后 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8] | xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 Series 失败，改读 OOXML
+         [PptChartPour] 校验读回 OOXML 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验通过（OOXML 与稿一致）
+         [PptChartSnap] 轴皮最后一层 catTick=#000000 valTick=#7030A0
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] WppB2P119 #244 replace-mix-y-extras-scale-4
+         AxisYStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisYStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 119/125 页=119
+         ---- pour 52 条 → D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log ----
+         [PptChartSnap] 旧图 S1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P1 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P1 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P2 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P2 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P3 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P3 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 P4 读停靠点失败: 调用的目标发生了异常。
+         [PptChartSnap] 旧图 S1 P4 Fill.Visible=True Type=1 stops=0 solid=#4874CB
+         [PptChartSnap] 旧图 S1 点填充 4/4
+         [PptChartSnap] 旧图 S1 Line.Visible=-1 Weight=-2.147484E+09 ForeColor.Type=-2 ForeColor.RGB=16777215
+         [PptChartSnap] 旧图 S1 原图无线条（noFill/自动线），不描边
+         [PptChartSnap] 旧图 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#FFFFFF tick=#000000 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartSnap] 图例开关=关（稿显式 none）
+         [PptChartSnap] 标题开关=关（跟旧图）
+         [PptChartSnap] 数据标签开关已按稿/旧图推断 series=1
+         [PptChartSnap] 横轴显隐=开（跟旧图）
+         [PptChartSnap] 纵轴显隐=开（稿写了轴属性）
+         [PptChartSnap] 网格开关=开（稿写了网格属性）
+         [PptChartSnap] 换数白名单贴皮 style=2 chartColor=2 gap=150 plotBox=yes series=1
+         [PptChartSnap] 重建开始 type=column xl=51 from=html box=72,80 480x280
+         [PptChartPour] PPT 磁盘改内嵌表后插入，不在本进程打开副本
+         [PptChartPour] OOXML 灌数：已写内嵌表 ppt/embeddings/Workbook120.xlsx 4x2
+         [PptChartPour] OOXML 灌数：已改 ppt/charts/chart120.xml
+         灌数：已改磁盘包，未在 PowerPoint 中打开 C:\Users\garsing\AppData\Local\Temp\ew-旁路建图-76cb6e64ff844e7fb3282deff594bf17.pptx
+         [PptChartPour] InsertFromFile 后页 120→121 取页=121
+         [PptChartPour] 改包页已插入 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartSnap] 开始套回 快照 style=2 chartColor=2 title=False/ legend=False plotFill=True gap=150 overlap=0 catDel=False valDel=False catLine=on/#FFFFFF tick=#000000 valLine=on/#000000 tick=#C65911 | S1 type=51 axis=1 line=vis=False rgb=- w=-2147483904 stops=0 marker=-4105/6 mkRgb=-/- labels=False lblPos= lblColor=- fillVis=True fillType=1 fillRgb=#4874CB fillStops=0 points=4
+         [PptChartPour] 轴格式 主题后 cat=General/link=False/loc=@ val=General/link=True/loc=G/通用格式 val2=null
+         [PptChartPour] 轴格式 快照 cat=null val=0.00 val2=null
+         [PptChartPour] 写轴格式 cat want=@ before=General after=General/link=False/loc=@
+         [PptChartPour] 写轴格式 val want=0.00 before=General after=General/link=False/loc=0.00
+         [PptChartPour] 轴格式 分类名后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 轴格式 套轴后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartSnap] 套填充 S1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P1 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P2 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P3 实色 #4874CB
+         [PptChartSnap] 套填充 S1 P4 实色 #4874CB
+         [PptChartSnap] 套线 S1 按原图不描边
+         [PptChartSnap] 套标签 S1 HasDataLabels=False want=False showValue= showPct= pos= fontColor=- fmt=
+         [PptChartSnap] 套标签 S1 按快照关闭标签
+         [PptChartPour] 轴格式 套回末 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         [PptChartPour] 套快照后 xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 稿 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8] | xl=51 series=1 | S1 pts=4 Xn=4 Yn=4 X=[2026,2027,2028,2029] Y=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验 Series 失败，改读 OOXML
+         [PptChartPour] 校验读回 OOXML 4x2 cols=[category:类别|value:系列A] cat=[2026,2027,2028,2029] 系列A=[2.15,2.8,3.65,4.8]
+         [PptChartPour] 校验通过（OOXML 与稿一致）
+         [PptChartSnap] 轴皮最后一层 catTick=#000000 valTick=#C65911
+         [PptChartPour] 轴格式 轴皮后 cat=General/link=False/loc=@ val=General/link=False/loc=0.00 val2=null
+         已按旧图属性新建图表（HTML 未写的属性用快照补上）
+  [FAIL] WppB2P120 #245 replace-mix-y-extras-scale-5
+         AxisYStyle.GridColor 期望 #333333 实际 #8F8F8F；AxisYStyle.Line 期望 #000000 实际 #898989 | 见 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+  … 120/125 页=120
+  [OK] WppB2P121 #246 replace-mix-y2-skin-1
+  … 121/125 页=121
+  [OK] WppB2P122 #247 replace-mix-y2-skin-2
+  … 122/125 页=122
+  [OK] WppB2P123 #248 replace-mix-y2-skin-3
+  … 123/125 页=123
+  [OK] WppB2P124 #249 replace-mix-y2-skin-4
+  … 124/125 页=124
+  [OK] WppB2P125 #250 replace-mix-y2-skin-5
+  … 125/125 页=125
+  已保存 D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-attr-batch-wpp-2.pptx
+
+属性用例 通过 224  失败 26  跳过 0  （目标 250 张图 / 2 份 PPT）
+
+断言 通过 224  失败 26  跳过 0
+pour 日志: D:\project\EasyWrite\EasyWriteClient\Test\PptChartRoundtripTest\bin\Debug\net472\chart-batches-wpp\chart-pour.log
+2026-10-19 04:51:41  DONE wpp-attrs exit=1 minutes=51.6
+2026-10-19 04:51:41  ALL DONE
