@@ -419,9 +419,15 @@ namespace WordAddIn1.ChartOoxmlHost
                 }
 
                 grid = have;
-                if (!string.IsNullOrEmpty(want.Title))
+                if (want.ClearTitle)
+                {
+                    grid.Title = "";
+                    grid.ClearTitle = true;
+                }
+                else if (!string.IsNullOrEmpty(want.Title))
                 {
                     grid.Title = want.Title;
+                    grid.ClearTitle = false;
                 }
 
                 return true;
@@ -440,9 +446,10 @@ namespace WordAddIn1.ChartOoxmlHost
                 return false;
             }
 
-            if (normalized == "data" || string.IsNullOrEmpty(want.Title))
+            if (normalized == "data" || (string.IsNullOrEmpty(want.Title) && !want.ClearTitle))
             {
                 want.Title = have.Title;
+                want.ClearTitle = false;
             }
 
             grid = want;
@@ -473,6 +480,7 @@ namespace WordAddIn1.ChartOoxmlHost
             {
                 Type = info != null ? info.Type : "",
                 Title = info != null ? info.Title : "",
+                ClearTitle = info != null && info.HasTitleText && string.IsNullOrEmpty(info.Title),
                 Legend = info != null ? info.LegendPosition : null,
                 LegendFontColor = info != null ? info.LegendFontColor : null,
                 AxisYTitle = info != null && info.AxisY != null ? info.AxisY.Title : null,

@@ -43,6 +43,8 @@ namespace WordAddIn1.ChartOoxmlHost
         {
             public string Type { get; set; }
             public string Title { get; set; }
+            /// <summary>稿里写了 Title 且正文为空。换数时删掉 c:title；没写则留下旧标题。</summary>
+            public bool ClearTitle { get; set; }
             public string Legend { get; set; }
             public string LegendFontColor { get; set; }
             public string AxisYTitle { get; set; }
@@ -232,6 +234,10 @@ namespace WordAddIn1.ChartOoxmlHost
             {
                 UpsertTitle(chartDoc, grid);
             }
+            else if (grid.ClearTitle)
+            {
+                RemoveTitle(chartDoc);
+            }
 
             if (grid.Explosion.HasValue)
             {
@@ -408,7 +414,41 @@ namespace WordAddIn1.ChartOoxmlHost
             return false;
         }
 
-        /// <summary>有标题才写 c:title；空标题留着原节点，避免套数据把标题冲掉。</summary>
+        /// <summary>稿明确关掉标题：去掉 c:title，并标 autoTitleDeleted，避免宿主把系列名补回标题。</summary>
+        private static void RemoveTitle(XDocument chartDoc)
+        {
+            XElement chart = chartDoc.Descendants(C + "chart").FirstOrDefault();
+            if (chart == null)
+            {
+                return;
+            }
+
+            foreach (XElement old in chart.Elements(C + "title").ToList())
+            {
+                old.Remove();
+            }
+
+            XElement auto = chart.Element(C + "autoTitleDeleted");
+            if (auto == null)
+            {
+                var deleted = new XElement(C + "autoTitleDeleted", new XAttribute("val", "1"));
+                XElement plot = chart.Element(C + "plotArea");
+                if (plot != null)
+                {
+                    plot.AddBeforeSelf(deleted);
+                }
+                else
+                {
+                    chart.AddFirst(deleted);
+                }
+            }
+            else
+            {
+                auto.SetAttributeValue("val", "1");
+            }
+        }
+
+        /// <summary>有标题才写 c:title。没写标题时不进这里，原节点留着。</summary>
         private static void UpsertTitle(XDocument chartDoc, SeriesGrid grid)
         {
             XElement chart = chartDoc.Descendants(C + "chart").FirstOrDefault();
