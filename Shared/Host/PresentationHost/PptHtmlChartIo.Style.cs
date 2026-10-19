@@ -1554,26 +1554,25 @@ namespace WordAddIn1.PresentationHost
                     WppCom.TrySetProperty(series, "MarkerSize", one.MarkerSize.Value);
                 }
 
-                object chart = WppCom.GetProperty(series, "Parent");
-                if (chart == null || !HostAvoidsChartDataCom(chart))
+                if (one.MarkerForeRgb.HasValue)
                 {
-                    if (one.MarkerForeRgb.HasValue)
-                    {
-                        TryWriteSeriesMarkerRgb(
-                            series,
-                            "MarkerForegroundColor",
-                            "MarkerForegroundColorFormat",
-                            one.MarkerForeRgb.Value);
-                    }
+                    TryWriteSeriesMarkerRgb(
+                        series,
+                        "MarkerForegroundColor",
+                        "MarkerForegroundColorFormat",
+                        one.MarkerForeRgb.Value);
+                }
 
-                    if (!skipBackground && one.MarkerBackRgb.HasValue)
-                    {
-                        TryWriteSeriesMarkerRgb(
-                            series,
-                            "MarkerBackgroundColor",
-                            "MarkerBackgroundColorFormat",
-                            one.MarkerBackRgb.Value);
-                    }
+                object chart = WppCom.GetProperty(series, "Parent");
+                if (!skipBackground
+                    && one.MarkerBackRgb.HasValue
+                    && (chart == null || !HostAvoidsChartDataCom(chart)))
+                {
+                    TryWriteSeriesMarkerRgb(
+                        series,
+                        "MarkerBackgroundColor",
+                        "MarkerBackgroundColorFormat",
+                        one.MarkerBackRgb.Value);
                 }
             }
             catch (Exception)

@@ -1446,6 +1446,111 @@ namespace WordAddIn1.PresentationHost
         /// WPP 内嵌簿由 Excel 12.0 渲染，chart.Application.Name 会报「Microsoft PowerPoint」。
         /// 不能只看 Name：试读 WPP 专有属性，再退化到 Name 含 wps/wpp。
         /// </summary>
+        private static void TryRepinMarkerEdge(
+            ref object shape,
+            ref object chart,
+            ChartStyleSnap snap,
+            List<string> warnings)
+        {
+            if (shape == null || snap == null || snap.Series == null)
+            {
+                return;
+            }
+
+            bool want = false;
+            for (int i = 0; i < snap.Series.Count; i++)
+            {
+                if (snap.Series[i] != null && snap.Series[i].MarkerForeRgb.HasValue)
+                {
+                    want = true;
+                    break;
+                }
+            }
+
+            if (!want)
+            {
+                return;
+            }
+
+            object pres = TryGetShapePresentation(shape);
+            object app = pres == null ? null : WppCom.GetProperty(pres, "Application");
+            if (!LooksLikeKingsoft(app))
+            {
+                return;
+            }
+
+            ChartStyleSnap pin = snap;
+            if (!TryEditChartXmlAndCopyBack(
+                shape,
+                warnings,
+                "标记边",
+                (doc, w) => RewriteMarkerEdgeFromSnap(doc, pin, w),
+                null,
+                out object next,
+                out _,
+                allowPpt: true)
+                || next == null)
+            {
+                return;
+            }
+
+            shape = next;
+            chart = TryGetChart(shape);
+        }
+
+        private static bool LooksLikeKingsoft(object app)
+        {
+            if (app == null)
+            {
+                return false;
+            }
+
+            string typeName = app.GetType().FullName ?? "";
+            if (typeName.IndexOf("PowerPoint", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return false;
+            }
+
+            string path = TryPropString(app, "Path") ?? "";
+            string name = TryPropString(app, "Name") ?? "";
+            string blob = typeName + " " + path + " " + name;
+            return blob.IndexOf("wpp", StringComparison.OrdinalIgnoreCase) >= 0
+                || blob.IndexOf("wps", StringComparison.OrdinalIgnoreCase) >= 0
+                || blob.IndexOf("kingsoft", StringComparison.OrdinalIgnoreCase) >= 0
+                || blob.IndexOf("kwpp", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool RewriteMarkerEdgeFromSnap(XDocument chartDoc, ChartStyleSnap snap, List<string> warnings)
+        {
+            if (chartDoc == null || snap == null || snap.Series == null)
+            {
+                return false;
+            }
+
+            List<XElement> series = chartDoc.Descendants(CNs + "ser").ToList();
+            if (series.Count == 0)
+            {
+                series = chartDoc.Descendants().Where(e => e.Name.LocalName == "ser").ToList();
+            }
+
+            int n = Math.Min(series.Count, snap.Series.Count);
+            int pinned = 0;
+            for (int i = 0; i < n; i++)
+            {
+                SeriesStyleSnap one = snap.Series[i];
+                if (one == null || !one.MarkerForeRgb.HasValue)
+                {
+                    continue;
+                }
+
+                WriteMarker(series[i], one);
+                pinned++;
+            }
+
+            PourLog(warnings, "OOXML 标记边：重钉 " + pinned + "/" + n);
+            return pinned > 0;
+        }
+
         private static bool LooksLikeWppApp(object app)
         {
             if (app == null)

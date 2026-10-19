@@ -464,6 +464,11 @@ namespace WordAddIn1.PresentationHost
             {
                 TryApplyPieExplosion(newChart, snap.Explosion.Value, warnings);
             }
+            else if (IsPieChart(newChart))
+            {
+                // 稿没写爆炸，旧图又不是各瓣同一个值：不继承不对称的那一瓣，整图钉成 0。
+                TryApplyPieExplosion(newChart, 0, warnings);
+            }
 
             TryRestorePieChartType(newChart, snap);
 
@@ -475,6 +480,7 @@ namespace WordAddIn1.PresentationHost
             }
 
             TryPinOoxmlChrome(ref newShape, ref newChart, snap, warnings, xlType);
+            TryRepinMarkerEdge(ref newShape, ref newChart, snap, warnings);
             DismissChartExcelUi();
 
             TryDelete(oldShape);
