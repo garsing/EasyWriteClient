@@ -640,7 +640,7 @@ namespace WordAddIn1.SpreadsheetHost
                 return false;
             }
 
-            if (!ChartConfigSyntax.TryCanonicalExcelLiveType(format.Type ?? "", out string canonType, out error)
+            if (!ChartConfigSyntax.TryCanonicalType(format.Type ?? "", out string canonType, out error)
                 && !string.IsNullOrWhiteSpace(format.Type))
             {
                 return false;
@@ -692,7 +692,7 @@ namespace WordAddIn1.SpreadsheetHost
         {
             xlType = Excel.XlChartType.xlColumnClustered;
             error = null;
-            if (!ChartConfigSyntax.TryCanonicalExcelLiveType(type, out string canon, out error))
+            if (!ChartConfigSyntax.TryCanonicalType(type, out string canon, out error))
             {
                 return false;
             }
@@ -707,8 +707,10 @@ namespace WordAddIn1.SpreadsheetHost
             {
                 case Excel.XlChartType.xlLine:
                     return "line";
+                case Excel.XlChartType.xlBarClustered:
+                    return "bar";
                 case Excel.XlChartType.xlPie:
-                    return "pie";
+                    return "pie2d";
                 case Excel.XlChartType.xl3DPie:
                     return "pie3d";
                 default:
@@ -876,9 +878,48 @@ namespace WordAddIn1.SpreadsheetHost
                         chart.Add(new XElement("Type", format.Type));
                     }
 
-                    if (!string.IsNullOrEmpty(format.Title))
+                    if (format.HasTitleText)
+                    {
+                        chart.Add(new XElement("Title", format.Title ?? ""));
+                    }
+                    else if (!string.IsNullOrEmpty(format.Title))
                     {
                         chart.Add(new XElement("Title", format.Title));
+                    }
+
+                    if (!string.IsNullOrEmpty(format.PlotColor))
+                    {
+                        chart.Add(new XElement("PlotColor", format.PlotColor));
+                    }
+
+                    if (!string.IsNullOrEmpty(format.ChartAreaColor))
+                    {
+                        chart.Add(new XElement("ChartAreaColor", format.ChartAreaColor));
+                    }
+
+                    if (format.HasOverlap || format.Overlap != 0)
+                    {
+                        chart.Add(new XElement("Overlap", format.Overlap));
+                    }
+
+                    if (format.GapWidth > 0)
+                    {
+                        chart.Add(new XElement("GapWidth", format.GapWidth));
+                    }
+
+                    if (format.HasExplosion)
+                    {
+                        chart.Add(new XElement("Explosion", format.Explosion));
+                    }
+
+                    if (format.ChartStyle > 0)
+                    {
+                        chart.Add(new XElement("ChartStyle", format.ChartStyle));
+                    }
+
+                    if (!string.IsNullOrEmpty(format.LegendFontColor))
+                    {
+                        chart.Add(new XElement("LegendFontColor", format.LegendFontColor));
                     }
 
                     if (!string.IsNullOrEmpty(format.Theme))

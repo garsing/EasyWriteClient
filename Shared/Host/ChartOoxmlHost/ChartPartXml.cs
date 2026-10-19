@@ -247,6 +247,45 @@ namespace WordAddIn1.ChartOoxmlHost
             return true;
         }
 
+        /// <summary>只写类型以外的皮和标题。不改 c:f，不改点缓存。</summary>
+        public static bool TryApplyChrome(XDocument chartDoc, SeriesGrid grid, out string error)
+        {
+            error = null;
+            if (chartDoc == null || grid == null)
+            {
+                error = "改包网格空";
+                return false;
+            }
+
+            WriteChartChrome(chartDoc, grid);
+            if (grid.Series != null)
+            {
+                List<XElement> sers = chartDoc.Descendants(C + "ser").ToList();
+                for (int i = 0; i < grid.Series.Count && i < sers.Count; i++)
+                {
+                    WriteSeriesChrome(sers[i], grid.Series[i]);
+                }
+
+                PlaceSecondarySeries(chartDoc, grid);
+            }
+
+            if (!string.IsNullOrEmpty(grid.Title))
+            {
+                UpsertTitle(chartDoc, grid);
+            }
+            else if (grid.ClearTitle)
+            {
+                RemoveTitle(chartDoc);
+            }
+
+            if (grid.Explosion.HasValue)
+            {
+                WriteExplosion(chartDoc, grid.Explosion.Value);
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// 次轴系列从柱图组挪到折线图组，并挂到右侧数值轴。WPS 抽图只读包，不认 COM 的 AxisGroup。
         /// </summary>

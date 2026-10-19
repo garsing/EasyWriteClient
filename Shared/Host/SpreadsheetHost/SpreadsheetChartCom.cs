@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Excel = Microsoft.Office.Interop.Excel;
+using WordAddIn1.ChartOoxmlHost;
 using WordAddIn1.OpenFiles;
 
 namespace WordAddIn1.SpreadsheetHost
@@ -738,7 +739,6 @@ namespace WordAddIn1.SpreadsheetHost
                     return false;
                 }
 
-                SpreadsheetChartFormat.ApplyToExcelChart(chart, request.Format, partial.Warnings);
                 ApplyColumnColors(book, chart, request.DataBind, partial.Warnings);
 
                 if (!string.IsNullOrEmpty(request.ChartName))
@@ -751,6 +751,34 @@ namespace WordAddIn1.SpreadsheetHost
                     {
                         partial.Warnings.Add("设置图名失败: " + ex.Message);
                     }
+                }
+
+                string keptName = co.Name;
+                if (request.Format != null
+                    && !SpreadsheetChartPackageHost.TryApplyChromeExcel(
+                        book, destSheet, co, request.Format, out error))
+                {
+                    if (error == null || error.IndexOf("钉住", StringComparison.Ordinal) < 0)
+                    {
+                        try
+                        {
+                            if (TryFindExcelChartByName(book, keptName, out _, out Excel.ChartObject leftover))
+                            {
+                                leftover.Delete();
+                            }
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+
+                    return false;
+                }
+
+                if (!TryFindExcelChartByName(book, keptName, out destSheet, out co))
+                {
+                    error = "贴回后找不到图";
+                    return false;
                 }
 
                 FillResultFromExcel(partial, destSheet.Name, co);
@@ -965,6 +993,11 @@ namespace WordAddIn1.SpreadsheetHost
             }
 
             ChartInfo format = SpreadsheetChartFormat.ReadFormatFromExcelChart(co.Chart);
+            if (SpreadsheetChartPackageHost.TryReadFormatExcel(book, sheet, co, out ChartInfo packed, out _))
+            {
+                OverlayPackageFormat(format, packed);
+            }
+
             SpreadsheetChartDataBind dataBind = TryReadDataBindFromExcel(co.Chart, sheet.Name);
             partial.Scope = request.Scope;
             partial.XmlContent = SpreadsheetChartParse.BuildExtractXml(
@@ -1087,9 +1120,31 @@ namespace WordAddIn1.SpreadsheetHost
                 ApplyColumnColors(book, chart, request.DataBind, partial.Warnings);
             }
 
-            if (scope == "format" || scope == "all")
+            if ((scope == "format" || scope == "all") && request.Format != null)
             {
-                SpreadsheetChartFormat.ApplyToExcelChart(chart, request.Format, partial.Warnings);
+                if (SpreadsheetChartParse.TryMapChartType(request.Format.Type, out Excel.XlChartType xlType, out _))
+                {
+                    try
+                    {
+                        chart.ChartType = xlType;
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                string keptName = co.Name;
+                if (!SpreadsheetChartPackageHost.TryApplyChromeExcel(
+                    book, sheet, co, request.Format, out error))
+                {
+                    return false;
+                }
+
+                if (!TryFindExcelChartByName(book, keptName, out sheet, out co))
+                {
+                    error = "贴回后找不到图";
+                    return false;
+                }
             }
 
             FillResultFromExcel(partial, sheet.Name, co);
@@ -1135,6 +1190,106 @@ namespace WordAddIn1.SpreadsheetHost
             }
             catch (Exception)
             {
+            }
+        }
+
+        private static void OverlayPackageFormat(ChartInfo dest, ChartInfo src)
+        {
+            if (dest == null || src == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(src.Type))
+            {
+                dest.Type = src.Type;
+            }
+
+            if (src.HasTitleText)
+            {
+                dest.HasTitleText = true;
+                dest.Title = src.Title ?? "";
+            }
+            else if (!string.IsNullOrEmpty(src.Title))
+            {
+                dest.Title = src.Title;
+            }
+
+            if (!string.IsNullOrEmpty(src.LegendPosition))
+            {
+                dest.LegendPosition = src.LegendPosition;
+            }
+
+            if (!string.IsNullOrEmpty(src.Gridlines))
+            {
+                dest.Gridlines = src.Gridlines;
+            }
+
+            if (!string.IsNullOrEmpty(src.PlotColor))
+            {
+                dest.PlotColor = src.PlotColor;
+            }
+
+            if (!string.IsNullOrEmpty(src.ChartAreaColor))
+            {
+                dest.ChartAreaColor = src.ChartAreaColor;
+            }
+
+            if (!string.IsNullOrEmpty(src.LegendFontColor))
+            {
+                dest.LegendFontColor = src.LegendFontColor;
+            }
+
+            if (!string.IsNullOrEmpty(src.TitleFontColor))
+            {
+                dest.TitleFontColor = src.TitleFontColor;
+            }
+
+            if (src.TitleFontSize > 0)
+            {
+                dest.TitleFontSize = src.TitleFontSize;
+            }
+
+            if (src.ChartStyle > 0)
+            {
+                dest.ChartStyle = src.ChartStyle;
+            }
+
+            if (src.HasOverlap)
+            {
+                dest.HasOverlap = true;
+                dest.Overlap = src.Overlap;
+            }
+
+            if (src.HasExplosion)
+            {
+                dest.HasExplosion = true;
+                dest.Explosion = src.Explosion;
+            }
+
+            if (src.GapWidth > 0)
+            {
+                dest.GapWidth = src.GapWidth;
+            }
+
+            if (src.AxisX != null)
+            {
+                dest.AxisX = src.AxisX;
+            }
+
+            if (src.AxisY != null)
+            {
+                dest.AxisY = src.AxisY;
+            }
+
+            if (src.AxisY2 != null)
+            {
+                dest.AxisY2 = src.AxisY2;
+            }
+
+            if (src.SeriesCollection != null && src.SeriesCollection.Count > 0)
+            {
+                dest.SeriesCollection = src.SeriesCollection;
             }
         }
 
@@ -1627,8 +1782,6 @@ namespace WordAddIn1.SpreadsheetHost
                     return false;
                 }
 
-                TryApplyFormatEt(chart, request.Format, partial.Warnings);
-
                 if (!string.IsNullOrEmpty(request.ChartName))
                 {
                     try
@@ -1639,6 +1792,34 @@ namespace WordAddIn1.SpreadsheetHost
                     {
                         partial.Warnings.Add("设置图名失败: " + ex.Message);
                     }
+                }
+
+                string keptName = Convert.ToString(EtCom.GetProperty(chartHost, "Name")) ?? "";
+                if (request.Format != null
+                    && !SpreadsheetChartPackageHost.TryApplyChromeEt(
+                        book, destSheet, chartHost, request.Format, out error))
+                {
+                    if (error == null || error.IndexOf("钉住", StringComparison.Ordinal) < 0)
+                    {
+                        try
+                        {
+                            if (TryFindEtChartByName(book, keptName, out _, out object leftover))
+                            {
+                                EtCom.Invoke(leftover, "Delete");
+                            }
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+
+                    return false;
+                }
+
+                if (!TryFindEtChartByName(book, keptName, out destSheet, out chartHost))
+                {
+                    error = "贴回后找不到图";
+                    return false;
                 }
 
                 FillResultFromEt(partial, EtCom.TryReadName(destSheet), chartHost);
@@ -2062,6 +2243,11 @@ namespace WordAddIn1.SpreadsheetHost
             {
             }
 
+            if (SpreadsheetChartPackageHost.TryReadFormatEt(book, sheet, co, out ChartInfo packedEt, out _))
+            {
+                OverlayPackageFormat(format, packedEt);
+            }
+
             string sheetName = EtCom.TryReadName(sheet) ?? "";
             SpreadsheetChartDataBind dataBind = TryReadDataBindFromEt(chart, sheetName);
             string name = Convert.ToString(EtCom.GetProperty(co, "Name")) ?? "";
@@ -2114,9 +2300,31 @@ namespace WordAddIn1.SpreadsheetHost
                 }
             }
 
-            if (scope == "format" || scope == "all")
+            if ((scope == "format" || scope == "all") && request.Format != null)
             {
-                TryApplyFormatEt(chart, request.Format, partial.Warnings);
+                if (SpreadsheetChartParse.TryMapChartType(request.Format.Type, out Excel.XlChartType xlType, out _))
+                {
+                    try
+                    {
+                        EtCom.TrySetProperty(chart, "ChartType", (int)xlType);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                string keptName = Convert.ToString(EtCom.GetProperty(co, "Name")) ?? "";
+                if (!SpreadsheetChartPackageHost.TryApplyChromeEt(
+                    book, sheet, co, request.Format, out error))
+                {
+                    return false;
+                }
+
+                if (!TryFindEtChartByName(book, keptName, out sheet, out co))
+                {
+                    error = "贴回后找不到图";
+                    return false;
+                }
             }
 
             FillResultFromEt(partial, EtCom.TryReadName(sheet), co);

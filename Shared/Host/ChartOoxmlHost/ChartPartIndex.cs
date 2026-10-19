@@ -328,6 +328,299 @@ namespace WordAddIn1.ChartOoxmlHost
             return new XDocument(new XElement(root));
         }
 
+        public static bool TryReadXlsxChart(
+            string xlsxPath,
+            string sheetName,
+            int chartIndex,
+            out string partName,
+            out XDocument chartXml,
+            out string error)
+        {
+            partName = null;
+            chartXml = null;
+            error = null;
+            if (string.IsNullOrEmpty(xlsxPath) || !File.Exists(xlsxPath))
+            {
+                error = "副本不存在";
+                return false;
+            }
+
+            if (chartIndex < 0)
+            {
+                error = "图下标无效";
+                return false;
+            }
+
+            try
+            {
+                using (ZipArchive zip = ZipFile.OpenRead(xlsxPath))
+                {
+                    if (!TryResolveXlsxChartPart(zip, sheetName, chartIndex, out partName, out error))
+                    {
+                        return false;
+                    }
+
+                    string text = ReadZipText(zip, partName);
+                    if (string.IsNullOrEmpty(text))
+                    {
+                        error = "chart 部件空";
+                        return false;
+                    }
+
+                    chartXml = XDocument.Parse(text);
+                    return chartXml.Root != null;
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "读 xlsx 图失败: " + ex.Message;
+                return false;
+            }
+        }
+
+        private static bool TryResolveXlsxChartPart(
+            ZipArchive zip,
+            string sheetName,
+            int chartIndex,
+            out string chartPart,
+            out string error)
+        {
+            chartPart = null;
+            error = null;
+            XDocument workbook = ParseZip(zip, "xl/workbook.xml");
+            XDocument workbookRels = ParseZip(zip, "xl/_rels/workbook.xml.rels");
+            if (workbook == null || workbookRels == null)
+            {
+                error = "xlsx 缺少 workbook";
+                return false;
+            }
+
+            XNamespace main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+            XNamespace rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+            string sheetRid = null;
+            foreach (XElement sheet in workbook.Descendants(main + "sheet"))
+            {
+                string name = sheet.Attribute("name")?.Value ?? "";
+                if (!string.Equals(name, sheetName ?? "", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                sheetRid = sheet.Attribute(rel + "id")?.Value;
+                break;
+            }
+
+            if (string.IsNullOrEmpty(sheetRid))
+            {
+                error = "副本里没有工作表 " + (sheetName ?? "");
+                return false;
+            }
+
+            string sheetTarget = FindRelTarget(workbookRels, sheetRid);
+            if (string.IsNullOrEmpty(sheetTarget))
+            {
+                error = "工作表关系缺失";
+                return false;
+            }
+
+            string sheetPart = sheetTarget.Replace('\\', '/').TrimStart('/');
+            if (!sheetPart.StartsWith("xl/", StringComparison.OrdinalIgnoreCase))
+            {
+                sheetPart = "xl/" + sheetPart;
+            }
+            string sheetRels = RelsPath(sheetPart);
+            XDocument sheetRelDoc = ParseZip(zip, sheetRels);
+            if (sheetRelDoc == null)
+            {
+                error = "工作表没有绘图";
+                return false;
+            }
+
+            string drawingTarget = null;
+            foreach (XElement relEl in sheetRelDoc.Descendants())
+            {
+                if (relEl.Name.LocalName != "Relationship")
+                {
+                    continue;
+                }
+
+                string type = relEl.Attribute("Type")?.Value ?? "";
+                if (type.IndexOf("/drawing", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                drawingTarget = relEl.Attribute("Target")?.Value;
+                break;
+            }
+
+            if (string.IsNullOrEmpty(drawingTarget))
+            {
+                error = "工作表没有绘图";
+                return false;
+            }
+
+            string drawingPart = CombineZip(sheetPart, drawingTarget);
+            XDocument drawing = ParseZip(zip, drawingPart);
+            XDocument drawingRels = ParseZip(zip, RelsPath(drawingPart));
+            if (drawing == null || drawingRels == null)
+            {
+                error = "绘图部件缺失";
+                return false;
+            }
+
+            var chartRids = new List<string>();
+            foreach (XElement el in drawing.Descendants())
+            {
+                if (el.Name.LocalName != "chart")
+                {
+                    continue;
+                }
+
+                string id = el.Attribute(rel + "id")?.Value;
+                if (!string.IsNullOrEmpty(id))
+                {
+                    chartRids.Add(id);
+                }
+            }
+
+            if (chartIndex >= chartRids.Count)
+            {
+                error = "副本绘图里没有第 " + (chartIndex + 1) + " 张图";
+                return false;
+            }
+
+            string target = FindRelTarget(drawingRels, chartRids[chartIndex]);
+            if (string.IsNullOrEmpty(target))
+            {
+                error = "chart 关系缺失";
+                return false;
+            }
+
+            chartPart = CombineZip(drawingPart, target);
+            return true;
+        }
+
+        private static string FindRelTarget(XDocument rels, string id)
+        {
+            if (rels == null || string.IsNullOrEmpty(id))
+            {
+                return null;
+            }
+
+            foreach (XElement relEl in rels.Descendants())
+            {
+                if (relEl.Name.LocalName != "Relationship")
+                {
+                    continue;
+                }
+
+                if (string.Equals(relEl.Attribute("Id")?.Value, id, StringComparison.Ordinal))
+                {
+                    return relEl.Attribute("Target")?.Value;
+                }
+            }
+
+            return null;
+        }
+
+        private static string RelsPath(string part)
+        {
+            string slash = part.Replace('\\', '/');
+            int cut = slash.LastIndexOf('/');
+            string dir = cut >= 0 ? slash.Substring(0, cut) : "";
+            string file = cut >= 0 ? slash.Substring(cut + 1) : slash;
+            return dir + "/_rels/" + file + ".rels";
+        }
+
+        private static string CombineZip(string fromPart, string target)
+        {
+            if (string.IsNullOrEmpty(target))
+            {
+                return "";
+            }
+
+            string t = target.Replace('\\', '/');
+            if (t.StartsWith("/", StringComparison.Ordinal))
+            {
+                return t.TrimStart('/');
+            }
+
+            string slash = fromPart.Replace('\\', '/');
+            int cut = slash.LastIndexOf('/');
+            string dir = cut >= 0 ? slash.Substring(0, cut) : "";
+            var stack = new List<string>();
+            foreach (string piece in (dir + "/" + t).Split('/'))
+            {
+                if (piece == "" || piece == ".")
+                {
+                    continue;
+                }
+
+                if (piece == "..")
+                {
+                    if (stack.Count > 0)
+                    {
+                        stack.RemoveAt(stack.Count - 1);
+                    }
+
+                    continue;
+                }
+
+                stack.Add(piece);
+            }
+
+            return string.Join("/", stack);
+        }
+
+        private static XDocument ParseZip(ZipArchive zip, string name)
+        {
+            string text = ReadZipText(zip, name);
+            if (string.IsNullOrEmpty(text))
+            {
+                return null;
+            }
+
+            try
+            {
+                return XDocument.Parse(text);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static string ReadZipText(ZipArchive zip, string name)
+        {
+            if (zip == null || string.IsNullOrEmpty(name))
+            {
+                return null;
+            }
+
+            string want = name.Replace('\\', '/').TrimStart('/');
+            ZipArchiveEntry entry = null;
+            foreach (ZipArchiveEntry e in zip.Entries)
+            {
+                if (string.Equals(e.FullName.Replace('\\', '/'), want, StringComparison.OrdinalIgnoreCase))
+                {
+                    entry = e;
+                    break;
+                }
+            }
+
+            if (entry == null)
+            {
+                return null;
+            }
+
+            using (Stream stream = entry.Open())
+            using (var reader = new StreamReader(stream))
+            {
+                return reader.ReadToEnd();
+            }
+        }
+
         private static bool IsInsideTextBox(XElement element)
         {
             return element != null && element.Ancestors(W + "txbxContent").Any();
