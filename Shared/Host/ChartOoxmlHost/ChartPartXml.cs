@@ -748,6 +748,33 @@ namespace WordAddIn1.ChartOoxmlHost
             return Encoding.UTF8.GetBytes(sb.ToString());
         }
 
+        private static string SeriesChartType(XElement ser)
+        {
+            string parent = ser == null || ser.Parent == null ? "" : ser.Parent.Name.LocalName;
+            if (parent == "lineChart")
+            {
+                return "line";
+            }
+
+            if (parent == "pieChart")
+            {
+                return "pie2d";
+            }
+
+            if (parent == "pie3DChart")
+            {
+                return "pie3d";
+            }
+
+            if (parent == "barChart")
+            {
+                string dir = ser.Parent.Element(C + "barDir")?.Attribute("val")?.Value;
+                return string.Equals(dir, "bar", StringComparison.OrdinalIgnoreCase) ? "bar" : "column";
+            }
+
+            return "";
+        }
+
         private static SeriesCol ParseSer(XElement ser)
         {
             var col = new SeriesCol
@@ -771,7 +798,7 @@ namespace WordAddIn1.ChartOoxmlHost
                 LabelFormat = ReadLabelFormat(ser),
                 FillGradient = ReadGradient(ser),
                 FillAngle = ReadGradientAngle(ser),
-                ChartType = "",
+                ChartType = SeriesChartType(ser),
                 Categories = ReadPts(ser.Element(C + "cat")),
                 Values = ReadPts(ser.Element(C + "val"))
             };

@@ -836,7 +836,7 @@ namespace ExcelWorkbookRoundtripTest
                 return;
             }
 
-            EtCom.TrySetProperty(range, "Value2", value);
+            EtCom.TrySetProperty(range, "Value", value);
         }
 
         private static void SetFormula(object ws, string a1, string formula)

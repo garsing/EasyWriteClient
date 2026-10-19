@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Shared\EasyWriteClient.Shared.csproj" />
+    <ProjectReference Include="..\PptChartRoundtripTest\PptChartRoundtripTest.csproj" />
   </ItemGroup>
 
   <ItemGroup>

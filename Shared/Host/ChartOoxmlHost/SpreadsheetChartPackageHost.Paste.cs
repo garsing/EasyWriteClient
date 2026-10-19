@@ -61,7 +61,8 @@ namespace WordAddIn1.ChartOoxmlHost
             }
             catch (Exception ex)
             {
-                error = "贴回失败: " + ex.Message;
+                error = "贴回失败: " + ex.GetType().Name + " " + ex.Message
+                    + (ex.InnerException == null ? "" : " / " + ex.InnerException.Message);
                 return false;
             }
             finally
@@ -76,6 +77,24 @@ namespace WordAddIn1.ChartOoxmlHost
                     {
                     }
                 }
+            }
+        }
+
+        private static object EtStep(string label, Func<object> act)
+        {
+            try
+            {
+                return act();
+            }
+            catch (Exception ex)
+            {
+                Exception inner = ex;
+                while (inner.InnerException != null)
+                {
+                    inner = inner.InnerException;
+                }
+
+                throw new InvalidOperationException(label + " " + inner.Message);
             }
         }
 
@@ -96,22 +115,43 @@ namespace WordAddIn1.ChartOoxmlHost
             string name = Convert.ToString(EtCom.GetProperty(target, "Name")) ?? "";
             try
             {
-                object app = EtCom.GetProperty(book, "Application");
-                object books = EtCom.GetProperty(app, "Workbooks");
-                copy = EtCom.Invoke(books, "Open", copyPath);
-                object copySheet = FindSheetEt(copy, EtCom.TryReadName(sheet));
-                object source = ChartObjectAtEt(copySheet, index);
+                object app = EtStep("Application", () => EtCom.GetProperty(book, "Application"));
+                object books = EtStep("Workbooks", () => EtCom.GetProperty(app, "Workbooks"));
+                copy = EtStep("Open", () => EtCom.Invoke(books, "Open", copyPath));
+                object copySheet = EtStep("FindSheet", () => FindSheetEt(copy, EtCom.TryReadName(sheet)));
+                object source = EtStep("ChartAt", () => ChartObjectAtEt(copySheet, index));
                 if (source == null)
                 {
                     error = "副本里没有这张图";
                     return false;
                 }
 
-                var before = ChartNamesEt(sheet);
-                EtCom.Invoke(source, "Copy");
-                EtCom.Invoke(target, "Delete");
+                var before = (HashSet<string>)EtStep("Names", () => ChartNamesEt(sheet));
+                EtStep("Copy", () =>
+                {
+                    try
+                    {
+                        EtCom.Invoke(source, "Copy");
+                    }
+                    catch (Exception)
+                    {
+                        object chart = EtCom.GetProperty(source, "Chart");
+                        object area = chart == null ? null : EtCom.GetProperty(chart, "ChartArea");
+                        if (area != null)
+                        {
+                            EtCom.Invoke(area, "Copy");
+                        }
+                        else
+                        {
+                            EtCom.Invoke(chart, "Copy");
+                        }
+                    }
+
+                    return null;
+                });
+                EtStep("Delete", () => EtCom.Invoke(target, "Delete"));
                 before.Remove(name);
-                EtCom.Invoke(sheet, "Paste");
+                EtStep("Paste", () => EtCom.Invoke(sheet, "Paste"));
                 object pasted = FindNewChartEt(sheet, before);
                 if (pasted == null)
                 {
@@ -128,7 +168,8 @@ namespace WordAddIn1.ChartOoxmlHost
             }
             catch (Exception ex)
             {
-                error = "贴回失败: " + ex.Message;
+                error = "贴回失败: " + ex.GetType().Name + " " + ex.Message
+                    + (ex.InnerException == null ? "" : " / " + ex.InnerException.Message);
                 return false;
             }
             finally
@@ -249,16 +290,37 @@ namespace WordAddIn1.ChartOoxmlHost
                 return null;
             }
 
-            return EtCom.Invoke(charts, "Item", index + 1);
+            return EtCom.GetIndexed(charts, index + 1);
         }
 
         private static object FindSheetEt(object book, string name)
         {
-            object sheets = EtCom.GetProperty(book, "Worksheets");
+            if (book == null)
+            {
+                throw new InvalidOperationException("Open 没有返回工作簿");
+            }
+
+            object sheets;
+            try
+            {
+                sheets = EtCom.GetProperty(book, "Worksheets");
+            }
+            catch (Exception)
+            {
+                try
+                {
+                    sheets = EtCom.GetProperty(book, "Sheets");
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException(book.GetType().FullName + " " + ex.Message);
+                }
+            }
+
             int count = Convert.ToInt32(EtCom.GetProperty(sheets, "Count"));
             for (int i = 1; i <= count; i++)
             {
-                object sheet = EtCom.Invoke(sheets, "Item", i);
+                object sheet = EtCom.GetIndexed(sheets, i);
                 if (string.Equals(EtCom.TryReadName(sheet), name, StringComparison.OrdinalIgnoreCase))
                 {
                     return sheet;

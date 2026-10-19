@@ -739,6 +739,7 @@ namespace WordAddIn1.SpreadsheetHost
                     return false;
                 }
 
+                ApplySeriesTypesExcel(chart, request.Format);
                 ApplyColumnColors(book, chart, request.DataBind, partial.Warnings);
 
                 if (!string.IsNullOrEmpty(request.ChartName))
@@ -1118,6 +1119,7 @@ namespace WordAddIn1.SpreadsheetHost
                 }
 
                 ApplyColumnColors(book, chart, request.DataBind, partial.Warnings);
+                ApplySeriesTypesExcel(chart, request.Format);
             }
 
             if ((scope == "format" || scope == "all") && request.Format != null)
@@ -1190,6 +1192,64 @@ namespace WordAddIn1.SpreadsheetHost
             }
             catch (Exception)
             {
+            }
+        }
+
+        private static void ApplySeriesTypesExcel(Excel.Chart chart, ChartInfo format)
+        {
+            if (chart == null || format == null || format.SeriesCollection == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < format.SeriesCollection.Count; i++)
+            {
+                SeriesInfo series = format.SeriesCollection[i];
+                if (series == null || string.IsNullOrEmpty(series.ChartType))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    Excel.Series live = (Excel.Series)chart.SeriesCollection(i + 1);
+                    live.ChartType = ChartEngine.GetChartType(series.ChartType);
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        private static void ApplySeriesTypesEt(object chart, ChartInfo format)
+        {
+            if (chart == null || format == null || format.SeriesCollection == null)
+            {
+                return;
+            }
+
+            object sc = EtCom.GetProperty(chart, "SeriesCollection");
+            if (sc == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < format.SeriesCollection.Count; i++)
+            {
+                SeriesInfo series = format.SeriesCollection[i];
+                if (series == null || string.IsNullOrEmpty(series.ChartType))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    object live = EtCom.Invoke(sc, "Item", i + 1);
+                    EtCom.TrySetProperty(live, "ChartType", (int)ChartEngine.GetChartType(series.ChartType));
+                }
+                catch (Exception)
+                {
+                }
             }
         }
 
@@ -1782,6 +1842,8 @@ namespace WordAddIn1.SpreadsheetHost
                     return false;
                 }
 
+                ApplySeriesTypesEt(chart, request.Format);
+
                 if (!string.IsNullOrEmpty(request.ChartName))
                 {
                     try
@@ -2298,6 +2360,8 @@ namespace WordAddIn1.SpreadsheetHost
                 {
                     return false;
                 }
+
+                ApplySeriesTypesEt(chart, request.Format);
             }
 
             if ((scope == "format" || scope == "all") && request.Format != null)

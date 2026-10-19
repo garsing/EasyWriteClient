@@ -4,6 +4,8 @@ namespace ExcelWorkbookRoundtripTest
 {
     internal sealed class TestRun
     {
+        public int TotalTarget { get; set; }
+
         public int CasesPassed { get; private set; }
         public int CasesFailed { get; private set; }
         public int CasesSkipped { get; private set; }

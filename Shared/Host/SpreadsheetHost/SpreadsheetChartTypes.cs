@@ -484,27 +484,51 @@ namespace WordAddIn1.SpreadsheetHost
                 format.FillMissingValues = ParseBool(fillMissing.Value);
             }
 
+            if (Child(chartEl, "Title") != null)
+            {
+                format.HasTitleText = true;
+            }
+
+            if (Child(chartEl, "TitleFontBold") != null)
+            {
+                format.HasTitleFontBold = true;
+            }
+
+            if (Child(chartEl, "ShowDataLabels") != null)
+            {
+                format.HasShowDataLabels = true;
+            }
+
+            XElement overlapEl = Child(chartEl, "Overlap");
+            if (overlapEl != null)
+            {
+                format.Overlap = ParseInt(overlapEl.Value);
+                format.HasOverlap = true;
+            }
+
+            XElement explosionEl = Child(chartEl, "Explosion");
+            if (explosionEl != null)
+            {
+                format.Explosion = ParseInt(explosionEl.Value);
+                format.HasExplosion = true;
+            }
+
             XElement axisX = Child(chartEl, "AxisX");
             if (axisX != null)
             {
-                format.AxisX = new AxisXInfo
-                {
-                    Title = AxisField(axisX, "Title"),
-                    Type = AxisField(axisX, "Type") ?? "category",
-                    Format = AxisField(axisX, "Format"),
-                    TickLabelCount = ParseNullableInt(AxisField(axisX, "TickLabelCount")),
-                    TickLabelSpacing = ParseNullableInt(AxisField(axisX, "TickLabelSpacing")),
-                    BetweenCategories = ParseNullableBool(AxisField(axisX, "BetweenCategories"))
-                };
+                format.AxisX = ReadAxisX(axisX);
             }
 
             XElement axisY = Child(chartEl, "AxisY");
             if (axisY != null)
             {
-                format.AxisY = new AxisYInfo
-                {
-                    Title = AxisField(axisY, "Title")
-                };
+                format.AxisY = ReadAxisY(axisY);
+            }
+
+            XElement axisY2 = Child(chartEl, "AxisY2");
+            if (axisY2 != null)
+            {
+                format.AxisY2 = ReadAxisY(axisY2);
             }
 
             XElement dataTable = Child(chartEl, "DataTable");
@@ -601,6 +625,10 @@ namespace WordAddIn1.SpreadsheetHost
                             Name = (col.Value ?? "").Trim(),
                             Color = Attr(col, "color")
                         });
+                        if (type == "value")
+                        {
+                            format.SeriesCollection.Add(ReadSeries(col));
+                        }
                     }
 
                     if (columns.Count(c => c.Type == "category") > 1)
@@ -954,25 +982,17 @@ namespace WordAddIn1.SpreadsheetHost
 
                     if (format.AxisX != null)
                     {
-                        var ax = new XElement("AxisX");
-                        if (!string.IsNullOrEmpty(format.AxisX.Title))
-                        {
-                            ax.SetAttributeValue("Title", format.AxisX.Title);
-                        }
-
-                        if (!string.IsNullOrEmpty(format.AxisX.Type))
-                        {
-                            ax.SetAttributeValue("Type", format.AxisX.Type);
-                        }
-
-                        chart.Add(ax);
+                        chart.Add(AxisElement("AxisX", format.AxisX, null));
                     }
 
-                    if (format.AxisY != null && !string.IsNullOrEmpty(format.AxisY.Title))
+                    if (format.AxisY != null)
                     {
-                        var ay = new XElement("AxisY");
-                        ay.Add(new XElement("Title", format.AxisY.Title));
-                        chart.Add(ay);
+                        chart.Add(AxisElement("AxisY", null, format.AxisY));
+                    }
+
+                    if (format.AxisY2 != null)
+                    {
+                        chart.Add(AxisElement("AxisY2", null, format.AxisY2));
                     }
                 }
             }
@@ -991,15 +1011,55 @@ namespace WordAddIn1.SpreadsheetHost
                 else if (dataBind.Columns != null)
                 {
                     var header = new XElement("Header");
+                    int valueIndex = 0;
                     foreach (SpreadsheetChartColumnBind col in dataBind.Columns)
                     {
                         var c = new XElement("Column", col.Name ?? "");
                         c.SetAttributeValue("type", col.Type ?? "value");
                         c.SetAttributeValue("sheet", col.Sheet ?? "");
                         c.SetAttributeValue("range", col.RangeA1 ?? "");
-                        if (!string.IsNullOrEmpty(col.Color))
+                        SeriesInfo series = null;
+                        if (string.Equals(col.Type, "value", StringComparison.OrdinalIgnoreCase)
+                            && format != null
+                            && format.SeriesCollection != null
+                            && valueIndex < format.SeriesCollection.Count)
                         {
-                            c.SetAttributeValue("color", col.Color);
+                            series = format.SeriesCollection[valueIndex];
+                            valueIndex++;
+                        }
+
+                        SetAttr(c, "color", FirstText(series == null ? null : series.Color, col.Color));
+                        if (series != null)
+                        {
+                            SetAttr(c, "axisY", series.AxisY);
+                            SetAttr(c, "chartType", series.ChartType);
+                            SetAttr(c, "line", series.Line);
+                            SetAttr(c, "lineWeight", series.LineWeight);
+                            SetAttr(c, "marker", series.Marker);
+                            SetAttr(c, "markerSize", series.MarkerSize);
+                            SetAttr(c, "markerColor", series.MarkerColor);
+                            SetAttr(c, "markerFill", series.MarkerFill);
+                            SetAttr(c, "labelPosition", series.LabelPosition);
+                            SetAttr(c, "labelFont", series.LabelFont);
+                            SetAttr(c, "labelSize", series.LabelSize);
+                            SetAttr(c, "labelColor", series.LabelColor);
+                            SetAttr(c, "labelFormat", series.LabelFormat);
+                            SetAttr(c, "fillGradient", series.FillGradient);
+                            SetAttr(c, "fillAngle", series.FillAngle);
+                            if (series.ShowDataLabels.HasValue)
+                            {
+                                SetAttr(c, "showDataLabels", series.ShowDataLabels.Value ? "true" : "false");
+                            }
+
+                            if (series.ShowValue.HasValue)
+                            {
+                                SetAttr(c, "showValue", series.ShowValue.Value ? "true" : "false");
+                            }
+
+                            if (series.ShowPercentage.HasValue)
+                            {
+                                SetAttr(c, "showPercentage", series.ShowPercentage.Value ? "true" : "false");
+                            }
                         }
 
                         header.Add(c);
@@ -1023,6 +1083,82 @@ namespace WordAddIn1.SpreadsheetHost
             }
 
             return SpreadsheetChartLimits.TryCheckSourceLimits(lr - fr + 1, lc - fc + 1, out error);
+        }
+
+        private static XElement AxisElement(string name, AxisXInfo x, AxisYInfo y)
+        {
+            var el = new XElement(name);
+            if (x != null)
+            {
+                AddChild(el, "Title", x.Title);
+                AddChild(el, "Type", x.Type);
+                AddChild(el, "Format", x.Format);
+                AddChild(el, "Visible", x.Visible);
+                AddChild(el, "TickFont", x.TickFont);
+                AddChild(el, "TickColor", x.TickColor);
+                AddChild(el, "TickSize", x.TickSize);
+                AddChild(el, "TickPosition", x.TickPosition);
+                AddChild(el, "MajorTick", x.MajorTick);
+                AddChild(el, "MinorTick", x.MinorTick);
+                AddChild(el, "Grid", x.Grid);
+                AddChild(el, "Line", x.Line);
+                AddChild(el, "LineWeight", x.LineWeight);
+                AddChild(el, "GridColor", x.GridColor);
+                if (x.TickLabelCount.HasValue)
+                {
+                    el.Add(new XElement("TickLabelCount", x.TickLabelCount.Value));
+                }
+
+                if (x.TickLabelSpacing.HasValue)
+                {
+                    el.Add(new XElement("TickLabelSpacing", x.TickLabelSpacing.Value));
+                }
+
+                if (x.BetweenCategories.HasValue)
+                {
+                    el.Add(new XElement("BetweenCategories", x.BetweenCategories.Value ? "true" : "false"));
+                }
+            }
+
+            if (y != null)
+            {
+                AddChild(el, "Title", y.Title);
+                AddChild(el, "Visible", y.Visible);
+                AddChild(el, "TickFont", y.TickFont);
+                AddChild(el, "TickColor", y.TickColor);
+                AddChild(el, "TickSize", y.TickSize);
+                AddChild(el, "TickPosition", y.TickPosition);
+                AddChild(el, "MajorTick", y.MajorTick);
+                AddChild(el, "MinorTick", y.MinorTick);
+                AddChild(el, "Grid", y.Grid);
+                AddChild(el, "Format", y.Format);
+                AddChild(el, "Line", y.Line);
+                AddChild(el, "LineWeight", y.LineWeight);
+                AddChild(el, "GridColor", y.GridColor);
+            }
+
+            return el;
+        }
+
+        private static void AddChild(XElement parent, string name, string value)
+        {
+            if (!string.IsNullOrEmpty(value))
+            {
+                parent.Add(new XElement(name, value));
+            }
+        }
+
+        private static void SetAttr(XElement el, string name, string value)
+        {
+            if (!string.IsNullOrEmpty(value))
+            {
+                el.SetAttributeValue(name, value);
+            }
+        }
+
+        private static string FirstText(string a, string b)
+        {
+            return string.IsNullOrEmpty(a) ? b : a;
         }
 
         private static string El(XElement parent, string name)
@@ -1051,6 +1187,103 @@ namespace WordAddIn1.SpreadsheetHost
             XAttribute a = el.Attributes().FirstOrDefault(x =>
                 string.Equals(x.Name.LocalName, name, StringComparison.OrdinalIgnoreCase));
             return a?.Value;
+        }
+
+        private static AxisXInfo ReadAxisX(XElement axis)
+        {
+            return new AxisXInfo
+            {
+                Title = AxisField(axis, "Title"),
+                Type = AxisField(axis, "Type") ?? "category",
+                Format = AxisField(axis, "Format"),
+                Visible = AxisField(axis, "Visible"),
+                TickFont = AxisField(axis, "TickFont"),
+                TickColor = AxisField(axis, "TickColor"),
+                TickSize = AxisField(axis, "TickSize"),
+                TickPosition = AxisField(axis, "TickPosition"),
+                MajorTick = AxisField(axis, "MajorTick"),
+                MinorTick = AxisField(axis, "MinorTick"),
+                Grid = AxisField(axis, "Grid"),
+                Line = AxisField(axis, "Line"),
+                LineWeight = AxisField(axis, "LineWeight"),
+                GridColor = AxisField(axis, "GridColor"),
+                TickLabelCount = ParseNullableInt(AxisField(axis, "TickLabelCount")),
+                TickLabelSpacing = ParseNullableInt(AxisField(axis, "TickLabelSpacing")),
+                BetweenCategories = ParseNullableBool(AxisField(axis, "BetweenCategories"))
+            };
+        }
+
+        private static AxisYInfo ReadAxisY(XElement axis)
+        {
+            return new AxisYInfo
+            {
+                Title = AxisField(axis, "Title"),
+                Visible = AxisField(axis, "Visible"),
+                TickFont = AxisField(axis, "TickFont"),
+                TickColor = AxisField(axis, "TickColor"),
+                TickSize = AxisField(axis, "TickSize"),
+                TickPosition = AxisField(axis, "TickPosition"),
+                MajorTick = AxisField(axis, "MajorTick"),
+                MinorTick = AxisField(axis, "MinorTick"),
+                Grid = AxisField(axis, "Grid"),
+                Format = AxisField(axis, "Format"),
+                Line = AxisField(axis, "Line"),
+                LineWeight = AxisField(axis, "LineWeight"),
+                GridColor = AxisField(axis, "GridColor")
+            };
+        }
+
+        private static SeriesInfo ReadSeries(XElement col)
+        {
+            return new SeriesInfo
+            {
+                Name = (col.Value ?? "").Trim(),
+                AxisY = Attr(col, "axisY"),
+                Color = Attr(col, "color"),
+                ChartType = Attr(col, "chartType"),
+                Line = Attr(col, "line"),
+                LineWeight = Attr(col, "lineWeight"),
+                Marker = Attr(col, "marker"),
+                MarkerSize = Attr(col, "markerSize"),
+                MarkerColor = Attr(col, "markerColor"),
+                MarkerFill = Attr(col, "markerFill"),
+                LabelPosition = Attr(col, "labelPosition"),
+                LabelFont = Attr(col, "labelFont"),
+                LabelSize = Attr(col, "labelSize"),
+                LabelColor = Attr(col, "labelColor"),
+                LabelFormat = Attr(col, "labelFormat"),
+                FillGradient = Attr(col, "fillGradient"),
+                FillAngle = Attr(col, "fillAngle"),
+                ShowDataLabels = AttrBool(col, "showDataLabels"),
+                ShowValue = AttrBool(col, "showValue"),
+                ShowPercentage = AttrBool(col, "showPercentage")
+            };
+        }
+
+        private static bool? AttrBool(XElement el, string name)
+        {
+            string v = Attr(el, name);
+            if (string.IsNullOrWhiteSpace(v))
+            {
+                return null;
+            }
+
+            if (bool.TryParse(v, out bool parsed))
+            {
+                return parsed;
+            }
+
+            if (v == "1")
+            {
+                return true;
+            }
+
+            if (v == "0")
+            {
+                return false;
+            }
+
+            return null;
         }
 
         private static string AxisField(XElement axis, string name)

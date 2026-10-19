@@ -14,7 +14,8 @@ namespace ExcelWorkbookRoundtripTest
             ChannelHost.Kind = ChannelHostKind.Desktop;
             bool useEt = IsEtHost(args);
             string caseFilter = GetCaseFilter(args);
-            bool runChart = ShouldRun(caseFilter, "xlg-");
+            bool run550 = caseFilter.StartsWith("xlg550", StringComparison.OrdinalIgnoreCase);
+            bool runChart = !run550 && ShouldRun(caseFilter, "xlg-");
             bool runPivot = ShouldRun(caseFilter, "xlp-");
             bool runCond = ShouldRun(caseFilter, "xlc-");
             bool runFmt = ShouldRun(caseFilter, "xlf-");
@@ -35,7 +36,11 @@ namespace ExcelWorkbookRoundtripTest
                 runRead = false;
             }
 
-            if (runChart)
+            if (run550)
+            {
+                Console.WriteLine("Excel / ET 图 550（xlg550）");
+            }
+            else if (runChart)
             {
                 Console.WriteLine("Excel / ET 图（xlg-）");
             }
@@ -107,6 +112,11 @@ namespace ExcelWorkbookRoundtripTest
                 XlpCases.Run(run, useEt);
             }
 
+            if (run550)
+            {
+                Xl550Suite.Run(run, useEt, args);
+            }
+
             if (runChart)
             {
                 XlgCases.Run(run, useEt);
@@ -115,7 +125,7 @@ namespace ExcelWorkbookRoundtripTest
             sw.Stop();
 
             Console.WriteLine();
-            int target = (runCond || runChart) ? 38 : 30;
+            int target = run550 ? run.TotalTarget : ((runCond || runChart) ? 38 : 30);
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
                 + "  跳过 " + run.CasesSkipped
