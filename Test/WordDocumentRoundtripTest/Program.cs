@@ -381,7 +381,7 @@ namespace WordDocumentRoundtripTest
                     }
                     else
                     {
-                        WhPptSuite.Run(run, host, caseFilter, GetArg(args, "--wh-from="), GetArg(args, "--wh-ids="));
+                        WhPptSuite.Run(run, host, caseFilter, GetArg(args, "--wh-from="), GetArg(args, "--wh-ids="), GetArg(args, "--wh-from-id="));
                     }
                 }
                 else if (runChart)

@@ -133,7 +133,7 @@ namespace WordDocumentRoundtripTest
             }
         }
 
-        public static void Run(TestRun run, string host, string caseFilter, string startAfter, string onlyIds)
+        public static void Run(TestRun run, string host, string caseFilter, string startAfter, string onlyIds, string fromIdText = null)
         {
             string nameFilter = "";
             const string prefix = "wh-ppt";
@@ -147,12 +147,19 @@ namespace WordDocumentRoundtripTest
             var built = new List<ChartCase>();
             built.AddRange(ChartCaseCatalog.Build());
             built.AddRange(ChartAttrCatalog.Build());
+            int fromId = 0;
+            int.TryParse((fromIdText ?? "").Trim(), out fromId);
             var idSet = ParseIds(onlyIds);
             var cases = new List<ChartCase>();
             var suiteIds = new List<int>();
             for (int n = 0; n < built.Count; n++)
             {
                 int suiteId = n + 1;
+                if (fromId > 0 && suiteId < fromId)
+                {
+                    continue;
+                }
+
                 if (idSet.Count > 0 && !idSet.Contains(suiteId))
                 {
                     continue;
@@ -194,7 +201,8 @@ namespace WordDocumentRoundtripTest
             Console.WriteLine("文字图表套件 " + host + "  条数=" + (cases.Count - start)
                 + (start == 0 ? "" : "  从过滤后第 " + (start + 1) + " 条起，上一条 " + startAfter)
                 + (string.IsNullOrEmpty(nameFilter) ? "" : "  过滤=" + nameFilter)
-                + (idSet.Count == 0 ? "" : "  编号=" + onlyIds));
+                + (idSet.Count == 0 ? "" : "  编号=" + onlyIds)
+                + (fromId > 0 ? "  从编号 " + fromId + " 起" : ""));
 
             var session = new WdSession(host);
             session.DismissOrphanExcelOnClose = !session.IsWps;
