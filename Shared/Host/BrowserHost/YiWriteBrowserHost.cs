@@ -1199,6 +1199,12 @@ namespace WordAddIn1.BrowserHost
                         }
                         catch (InvalidOperationException ex)
                         {
+                            string fail = ex.Message ?? "未产生浏览器下载";
+                            if (fail.IndexOf("下载被中断", StringComparison.Ordinal) >= 0)
+                            {
+                                return BrowserDownloadResult.Fail(fail);
+                            }
+
                             // 超时后再探一次；若点出了直链则补拉
                             DomNodeProbe again = null;
                             try
@@ -1230,7 +1236,7 @@ namespace WordAddIn1.BrowserHost
                                 }
 
                                 return BrowserDownloadResult.Fail(
-                                    (ex.Message ?? "未产生浏览器下载") + hint
+                                    fail + hint
                                     + "；纯展示图请用 url");
                             }
                         }
