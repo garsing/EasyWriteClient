@@ -37,6 +37,8 @@ namespace WordAddIn1
         public int CellsWritten { get; set; }
         public int LastWrittenRow { get; set; }
         public int LastWrittenCol { get; set; }
+        /// <summary>写入完成时格内文末的 story 位置（cell.Range.End-1）。</summary>
+        public int LastWrittenNavPos { get; set; }
         public List<string> Warnings { get; set; } = new List<string>();
     }
 
@@ -150,6 +152,19 @@ namespace WordAddIn1
         public static string BuildUnresolvableCellError(int row, int col)
         {
             return $"无法访问单元格({row},{col})";
+        }
+
+        /// <summary>写后定位：按逻辑行列重建 map 再取格。不要用 table.Cell(逻辑列)。</summary>
+        public static Word.Cell TryResolveWritableCell(Word.Table table, int row, int col)
+        {
+            if (table == null || row < 1 || col < 1)
+            {
+                return null;
+            }
+
+            ResetCellResolutionCache();
+            EnsureLogicalCellMap(table);
+            return TryResolveCell(table, row, col);
         }
 
         public static TableRowValuesReadResult ReadAllRows(Word.Table table)
@@ -614,6 +629,21 @@ namespace WordAddIn1
                     result.CellsWritten++;
                     result.LastWrittenRow = slots[i].Row;
                     result.LastWrittenCol = slots[i].Col;
+                    Word.Cell writtenCell = TryResolveCell(table, slots[i].Row, slots[i].Col);
+                    if (writtenCell != null)
+                    {
+                        try
+                        {
+                            Word.Range cellRange = writtenCell.Range;
+                            int pos = cellRange.End - 1;
+                            result.LastWrittenNavPos = pos < cellRange.Start ? cellRange.Start : pos;
+                        }
+                        catch (Exception ex)
+                        {
+                            EasyWriteDiagnostics.LogTableRowValues(
+                                $"[TableRowValues] 记录写入位置失败 ({slots[i].Row},{slots[i].Col}): {ex.Message}");
+                        }
+                    }
                 }
             }
 

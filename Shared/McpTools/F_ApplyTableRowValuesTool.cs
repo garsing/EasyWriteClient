@@ -159,23 +159,7 @@ namespace WordAddIn1
 
                     using (EasyWriteDiagnostics.Time("table_row_values.apply.navigate"))
                     {
-                        Word.Application app = wordApplication as Word.Application;
-                        Word.Table tableAfter = TableConfigApplyHelper.ResolveTableById(document, tableId, out _);
-                        if (app != null && tableAfter != null)
-                        {
-                            Word.Cell lastCell = TryCell(
-                                tableAfter, applyResult.LastWrittenRow, applyResult.LastWrittenCol);
-                            if (lastCell != null)
-                            {
-                                PostModifyNavigateHelper.NavigateInsideCellTextEnd(
-                                    app, lastCell, $"apply_table_row_values:{tableId}");
-                            }
-                            else
-                            {
-                                PostModifyNavigateHelper.NavigateAfterEnd(
-                                    app, tableAfter.Range, $"apply_table_row_values:{tableId}");
-                            }
-                        }
+                        NavigateAfterRowValuesApply(document, tableId, applyResult);
                     }
 
                     await Task.CompletedTask;
@@ -357,20 +341,70 @@ namespace WordAddIn1
             }
         }
 
-        private static Word.Cell TryCell(Word.Table table, int row, int col)
+        private static void NavigateAfterRowValuesApply(
+            Word.Document document,
+            string tableId,
+            TableRowValuesApplyResult applyResult)
         {
-            if (table == null || row < 1 || col < 1)
-            {
-                return null;
-            }
-
+            Word.Application app = null;
             try
             {
-                return table.Cell(row, col);
+                app = document.Application;
             }
             catch
             {
-                return null;
+            }
+
+            if (app == null)
+            {
+                EasyWriteDiagnostics.LogTableRowValues("[ApplyTableRowValues] navigate 无 Application");
+                return;
+            }
+
+            string tag = $"apply_table_row_values:{tableId}";
+            int lastRow = applyResult == null ? 0 : applyResult.LastWrittenRow;
+            int lastCol = applyResult == null ? 0 : applyResult.LastWrittenCol;
+            int pos = applyResult == null ? 0 : applyResult.LastWrittenNavPos;
+            EasyWriteDiagnostics.LogTableRowValues(
+                $"[ApplyTableRowValues] navigate last=({lastRow},{lastCol}) pos={pos}");
+
+            Word.Table tableAfter = TableConfigApplyHelper.ResolveTableById(document, tableId, out _);
+            if (tableAfter != null)
+            {
+                Word.Cell lastCell = TableRowValuesHelper.TryResolveWritableCell(
+                    tableAfter, lastRow, lastCol);
+                if (lastCell != null)
+                {
+                    PostModifyNavigateHelper.NavigateInsideCellTextEnd(app, lastCell, tag);
+                    return;
+                }
+            }
+
+            if (pos > 0)
+            {
+                try
+                {
+                    int storyEnd = document.Content.End;
+                    if (pos > storyEnd)
+                    {
+                        pos = storyEnd;
+                    }
+
+                    if (PostModifyNavigateHelper.NavigateToStoryPos(app, pos, tag))
+                    {
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    EasyWriteDiagnostics.LogTableRowValues(
+                        $"[ApplyTableRowValues] navigate pos 失败: {ex.Message}");
+                }
+            }
+
+            if (tableAfter != null)
+            {
+                PostModifyNavigateHelper.NavigateAfterEnd(app, tableAfter.Range, tag);
             }
         }
     }
