@@ -87,12 +87,13 @@ namespace WordAddIn1
 
                         string message =
                             $"已读取 {readResult.RowCount} 行；column_count={readResult.ColumnCount}。"
-                            + "apply 的 values 只填该行 empty=true 的槽，长度须等于 empty_count；不想填传 \"\"。"
-                            + "禁止参考 getContent 的 <table><td>/<th> HTML。";
+                            + "apply 的 values 对准该行全部可写槽，长度须等于 slots 个数；"
+                            + "不想改传 \"<keep/>\"，清空非空格传 \"\"。"
+                            + "empty_count 仅供对照。禁止参考 getContent 的 <table><td>/<th> HTML。";
 
                         const string layoutWarning =
-                            "表格填空：勿看 getContent 的 <table>/<td>/<th> HTML；"
-                            + "本返回的 empty_count / slots[].empty 决定 apply values 个数。";
+                            "表格行值：勿看 getContent 的 <table>/<td>/<th> HTML；"
+                            + "本返回的 slots 个数决定 apply values 个数；不想改传 <keep/>。";
 
                         return new ToolResult
                         {

@@ -720,23 +720,16 @@ namespace WordDocumentRoundtripTest
                 return;
             }
 
-            var tooLong = new string[emptyCount + 1];
-            for (int i = 0; i < tooLong.Length; i++)
-            {
-                tooLong[i] = "x";
-            }
+            int slotCount;
+            TryRowSlotCount(read, emptyRow, out slotCount);
+            var tooLong = RepeatSlots(slotCount + 1, "x");
 
             ToolResult badLen = s.ApplyTableRowValues(FillArgs(id, tableId, emptyRow, tooLong));
             Ok(run, "wt-fill-wrong-len",
                 !badLen.Success && StillHas(s, id, LabelA) && !StillHas(s, id, FillA),
                 badLen.Success ? "values 个数不对仍写入" : (badLen.Error ?? "错长度却改了字"));
 
-            var values = new string[emptyCount];
-            values[0] = FillA;
-            for (int i = 1; i < values.Length; i++)
-            {
-                values[i] = "";
-            }
+            string[] values = BuildApplyValues(read, emptyRow, FillA);
 
             ToolResult fill = s.ApplyTableRowValues(FillArgs(id, tableId, emptyRow, values));
             Ok(run, "wt-fill-ok", fill.Success, fill.Error ?? "填空失败");
@@ -1055,18 +1048,16 @@ namespace WordDocumentRoundtripTest
             }
             else
             {
-                var tooShort = emptyCount <= 1 ? new string[0] : new string[emptyCount - 1];
-                for (int i = 0; i < tooShort.Length; i++)
-                {
-                    tooShort[i] = "x";
-                }
+                int slotN;
+                TryRowSlotCount(read, emptyRow, out slotN);
+                var tooShort = RepeatSlots(Math.Max(0, slotN - 1), "x");
 
                 ToolResult shortLen = s.ApplyTableRowValues(FillArgs(id, tableId, emptyRow, tooShort));
                 Ok(run, "wt-fill-short-len",
                     !shortLen.Success && StillHas(s, id, ConsA) && !StillHas(s, id, FillA),
                     shortLen.Success ? "values 偏短仍写入" : (shortLen.Error ?? "错长度却改了字"));
 
-                var indexArgs = FillArgs(id, tableId, emptyRow, PadValues(emptyCount, FillA));
+                var indexArgs = FillArgs(id, tableId, emptyRow, BuildApplyValues(read, emptyRow, FillA));
                 ((Dictionary<string, object>)((object[])indexArgs["writes"])[0])["index"] = 1;
                 ExpectFail(run, "wt-fill-index", s.ApplyTableRowValues(indexArgs), "index");
                 ExpectFail(run, "wt-fill-bad-row",
@@ -1094,20 +1085,15 @@ namespace WordDocumentRoundtripTest
                     }),
                     "数组");
 
-                var blanks = new string[emptyCount];
-                for (int i = 0; i < blanks.Length; i++)
-                {
-                    blanks[i] = "";
-                }
-
-                ToolResult blank = s.ApplyTableRowValues(FillArgs(id, tableId, emptyRow, blanks));
+                ToolResult blank = s.ApplyTableRowValues(
+                    FillArgs(id, tableId, emptyRow, BuildApplyValues(read, emptyRow, "")));
                 Ok(run, "wt-fill-blank",
                     blank.Success && StillHas(s, id, ConsA) && StillHas(s, id, ConsB) && !StillHas(s, id, FillA),
                     blank.Success ? "全空写入改了标签或写出了数" : (blank.Error ?? ""));
 
                 int fillRow = hasRow2 ? row2 : emptyRow;
-                int fillN = hasRow2 ? empty2 : emptyCount;
-                ToolResult fill2 = s.ApplyTableRowValues(FillArgs(id, tableId, fillRow, PadValues(fillN, FillB)));
+                ToolResult fill2 = s.ApplyTableRowValues(
+                    FillArgs(id, tableId, fillRow, BuildApplyValues(read, fillRow, FillB)));
                 Ok(run, "wt-fill-row2", fill2.Success, fill2.Error ?? "第二空行填空失败");
                 Ok(run, "wt-fill-row2-text",
                     fill2.Success && StillHas(s, id, FillB) && !StillHas(s, id, FillA) && StillHas(s, id, ConsA),
@@ -1323,7 +1309,8 @@ namespace WordDocumentRoundtripTest
                 return;
             }
 
-            ToolResult fill = s.ApplyTableRowValues(FillArgs(id, tableId, emptyRow, PadValues(emptyCount, FillA)));
+            ToolResult fill = s.ApplyTableRowValues(
+                FillArgs(id, tableId, emptyRow, BuildApplyValues(read, emptyRow, FillA)));
             Ok(run, "wt-solo-fill", fill.Success, fill.Error ?? "单句表填空失败");
             Ok(run, "wt-solo-fill-text",
                 fill.Success && StillHas(s, id, FillA) && StillHas(s, id, ConsA) && StillHas(s, id, AfterSent),
@@ -1531,7 +1518,7 @@ namespace WordDocumentRoundtripTest
             else
             {
                 ToolResult fillFirst = s.ApplyTableRowValues(
-                    FillArgs(id, firstId, firstEmptyRow, PadValues(firstEmpty, FillA)));
+                    FillArgs(id, firstId, firstEmptyRow, BuildApplyValues(readFirst, firstEmptyRow, FillA)));
                 Ok(run, "wt-fill-first-late", fillFirst.Success, fillFirst.Error ?? "晚填甲失败");
                 Ok(run, "wt-fill-first-late-text",
                     fillFirst.Success && StillHas(s, id, FillA) && StillHas(s, id, ConsA) && StillHas(s, id, ConsC),
@@ -1563,11 +1550,9 @@ namespace WordDocumentRoundtripTest
             }
             else
             {
-                var tooShort = secondEmpty <= 1 ? new string[0] : new string[secondEmpty - 1];
-                for (int i = 0; i < tooShort.Length; i++)
-                {
-                    tooShort[i] = "";
-                }
+                int secondSlots;
+                TryRowSlotCount(readSecond, secondRow, out secondSlots);
+                var tooShort = RepeatSlots(Math.Max(0, secondSlots - 1), "");
 
                 ToolResult shortLen = s.ApplyTableRowValues(FillArgs(id, secondId, secondRow, tooShort));
                 Ok(run, "wt-fill-second-short",
@@ -1575,7 +1560,7 @@ namespace WordDocumentRoundtripTest
                     shortLen.Success ? "丙 values 偏短仍写入" : (shortLen.Error ?? "错长度却改了丙"));
 
                 ToolResult fillSecond = s.ApplyTableRowValues(
-                    FillArgs(id, secondId, secondRow, PadValues(secondEmpty, FillB)));
+                    FillArgs(id, secondId, secondRow, BuildApplyValues(readSecond, secondRow, FillB)));
                 Ok(run, "wt-fill-second", fillSecond.Success, fillSecond.Error ?? "填丙失败");
                 Ok(run, "wt-fill-second-text",
                     fillSecond.Success && StillHas(s, id, FillB) && StillHas(s, id, ConsC) && StillHas(s, id, ConsA),
@@ -1786,7 +1771,7 @@ namespace WordDocumentRoundtripTest
             else
             {
                 ToolResult fillWide = s.ApplyTableRowValues(
-                    FillArgs(id, wideId, wideRow, PadValues(wideEmpty, FillA)));
+                    FillArgs(id, wideId, wideRow, BuildApplyValues(readWide, wideRow, FillA)));
                 Ok(run, "wt-fill-2x3",
                     fillWide.Success && StillHas(s, id, FillA) && StillHas(s, id, WideA),
                     fillWide.Success ? "2x3 填空字不对" : (fillWide.Error ?? ""));
@@ -1935,17 +1920,123 @@ namespace WordDocumentRoundtripTest
             return created.Success && StillHas(s, id, needle);
         }
 
-        private static string[] PadValues(int emptyCount, string first)
+        private static string[] RepeatSlots(int count, string text)
         {
-            var values = new string[Math.Max(0, emptyCount)];
-            if (values.Length > 0)
+            var values = new string[Math.Max(0, count)];
+            for (int i = 0; i < values.Length; i++)
             {
-                values[0] = first ?? "";
+                values[i] = text ?? "";
             }
 
-            for (int i = 1; i < values.Length; i++)
+            return values;
+        }
+
+        private static bool TryRowSlotCount(ToolResult read, int row, out int slotCount)
+        {
+            slotCount = 0;
+            JObject rowObj = FindRowObject(read, row);
+            if (rowObj == null)
             {
-                values[i] = "";
+                return false;
+            }
+
+            slotCount = RowSlotCount(rowObj);
+            return true;
+        }
+
+        private static JObject FindRowObject(ToolResult read, int row)
+        {
+            JObject data = DataObj(read);
+            JArray rows = data == null ? null : data["rows"] as JArray;
+            if (rows == null)
+            {
+                return null;
+            }
+
+            foreach (JToken token in rows)
+            {
+                JObject o = token as JObject;
+                if (o == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (o["row"] != null && o["row"].Value<int>() == row)
+                    {
+                        return o;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return null;
+        }
+
+        private static int RowSlotCount(JObject rowObj)
+        {
+            if (rowObj == null)
+            {
+                return 0;
+            }
+
+            JArray slots = rowObj["slots"] as JArray;
+            if (slots != null)
+            {
+                return slots.Count;
+            }
+
+            JArray values = rowObj["values"] as JArray;
+            return values == null ? 0 : values.Count;
+        }
+
+        private static string[] BuildApplyValues(ToolResult read, int row, string firstEmptyFill)
+        {
+            JObject rowObj = FindRowObject(read, row);
+            if (rowObj == null)
+            {
+                return new string[0];
+            }
+
+            JArray slots = rowObj["slots"] as JArray;
+            if (slots == null)
+            {
+                return RepeatSlots(RowSlotCount(rowObj), "<keep/>");
+            }
+
+            var values = new string[slots.Count];
+            bool filledFirst = false;
+            for (int i = 0; i < slots.Count; i++)
+            {
+                JObject slot = slots[i] as JObject;
+                bool empty = false;
+                try
+                {
+                    empty = slot != null && slot["empty"] != null && slot["empty"].Value<bool>();
+                }
+                catch
+                {
+                    empty = false;
+                }
+
+                if (!empty)
+                {
+                    values[i] = "<keep/>";
+                    continue;
+                }
+
+                if (!filledFirst && !string.IsNullOrEmpty(firstEmptyFill))
+                {
+                    values[i] = firstEmptyFill;
+                    filledFirst = true;
+                }
+                else
+                {
+                    values[i] = "";
+                }
             }
 
             return values;

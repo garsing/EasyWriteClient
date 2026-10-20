@@ -179,7 +179,7 @@ namespace WordAddIn1
                             warnings = applyResult.Warnings,
                             format_mode = formatMode,
                             message =
-                                "行值写入成功（仅空槽，已套显式字符格式）；已刷新文档映射；改已有内容请用 F_process_document_actions",
+                                "行值写入成功（可覆盖；<keep/> 跳过；已套显式字符格式）；已刷新文档映射",
                         },
                     };
                     }

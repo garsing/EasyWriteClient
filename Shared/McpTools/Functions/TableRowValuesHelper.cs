@@ -17,7 +17,7 @@ namespace WordAddIn1
         public int? AnchorIndex { get; set; }
         public List<string> Values { get; set; }
 
-        /// <summary>显式字符格式快照（与 process_actions detail.format 同源）；写入空槽后套用。</summary>
+        /// <summary>显式字符格式快照（与 process_actions detail.format 同源）；实际写入后套用。</summary>
         public Dictionary<string, object> FormatSnapshot { get; set; }
     }
 
@@ -129,10 +129,20 @@ namespace WordAddIn1
             return KeepResolvableSlots(slots, (r, c) => TryResolveCell(table, r, c) != null);
         }
 
-        /// <summary>解析失败且本次值为空 → 跳过，不当失败（需求 D6）。</summary>
+        public const string KeepSlotToken = "<keep/>";
+
+        public const string AnchorRemovedErrorCode = "anchor_removed";
+
+        /// <summary>apply values 字面量：trim 后全等才跳过该槽。不用 NormalizePlainText。</summary>
+        public static bool IsKeepSlotValue(string value)
+        {
+            return (value ?? "").Trim() == KeepSlotToken;
+        }
+
+        /// <summary>解析失败且本次为 keep 或空 → 跳过，不当失败。</summary>
         public static bool ShouldSkipUnresolvableWrite(bool cellMissing, string newValue)
         {
-            return cellMissing && IsSlotEmpty(newValue);
+            return cellMissing && (IsKeepSlotValue(newValue) || IsSlotEmpty(newValue));
         }
 
         public static string BuildUnresolvableCellError(int row, int col)
@@ -276,20 +286,20 @@ namespace WordAddIn1
                 List<string> slotTexts = table == null
                     ? CreateAllEmptySlotTexts(slots.Count)
                     : ReadRowSlotTexts(table, slots);
-                if (!PreflightEmptySlotValues(spec.Row, slotTexts, spec.Values, out string lengthError))
+                if (!PreflightSlotValues(spec.Row, slotTexts, spec.Values, out string lengthError))
                 {
                     error = lengthError;
                     EasyWriteDiagnostics.LogTableRowValues($"[TableRowValues] Preflight 失败: {error}");
                     EasyWriteDiagnostics.LogTableRowValues(
-                        $"[TableRowValues]   row={spec.Row} empty_count={GetEmptySlotIndices(slotTexts).Count} actual_values={spec.Values.Count}",
+                        $"[TableRowValues]   row={spec.Row} slots={slotTexts.Count} actual_values={spec.Values.Count}",
                         verboseOnly: true);
                     return false;
                 }
 
                 if (table != null
-                    && !ValidateEmptyOnlyWrites(table, spec, slots, out string emptyOnlyError))
+                    && !ValidateUnresolvableWrites(table, spec, slots, out string resolveError))
                 {
-                    error = emptyOnlyError;
+                    error = resolveError;
                     EasyWriteDiagnostics.LogTableRowValues($"[TableRowValues] Preflight 失败: {error}");
                     return false;
                 }
@@ -297,30 +307,6 @@ namespace WordAddIn1
 
             return true;
         }
-
-        /// <summary>
-        /// 判断写入是否会修改非空单元格（供 Preflight 与单测；相同内容视为 no-op 允许）。
-        /// </summary>
-        public static string GetEmptyOnlyWriteError(string currentPlainText, string newValue)
-        {
-            string normalizedCurrent = TableCellContentWriter.NormalizePlainText(currentPlainText ?? "");
-            if (string.IsNullOrEmpty(normalizedCurrent))
-            {
-                return null;
-            }
-
-            string normalizedNew = TableCellContentWriter.NormalizePlainText(newValue ?? "");
-            if (normalizedNew == normalizedCurrent)
-            {
-                return null;
-            }
-
-            return EmptyOnlyWriteErrorCode;
-        }
-
-        public const string EmptyOnlyWriteErrorCode = "cell_not_empty";
-
-        public const string AnchorRemovedErrorCode = "anchor_removed";
 
         public static bool IsSlotEmpty(string text)
         {
@@ -349,28 +335,28 @@ namespace WordAddIn1
         public static string BuildAnchorRemovedError(int row)
         {
             return $"{AnchorRemovedErrorCode}: 已不再使用 anchor/index。"
-                + $"请按该行 empty_count 传 values，例如 {{\"row\":{row},\"values\":[\"石蕊\",\"讲师\"]}}；"
-                + "不想填的空槽传 \"\"。";
+                + $"请按该行可写槽传 values，不想改传 \"{KeepSlotToken}\"，"
+                + $"例如 {{\"row\":{row},\"values\":[\"{KeepSlotToken}\",\"石蕊\",\"{KeepSlotToken}\",\"讲师\"]}}。";
         }
 
-        public static string BuildValuesLengthMismatchError(int row, int emptyCount, int actualCount)
+        public static string BuildValuesLengthMismatchError(int row, int slotCount, int actualCount)
         {
-            var sample = new List<string>(emptyCount);
-            for (int i = 0; i < emptyCount; i++)
+            var sample = new List<string>(slotCount);
+            for (int i = 0; i < slotCount; i++)
             {
-                sample.Add($"值{i + 1}");
+                sample.Add(KeepSlotToken);
             }
 
-            string sampleJson = emptyCount == 0
+            string sampleJson = slotCount == 0
                 ? "[]"
                 : "[\"" + string.Join("\",\"", sample.ToArray()) + "\"]";
 
-            return $"values_length_mismatch: row {row} 有 {emptyCount} 个空槽，请传 {emptyCount} 个值"
-                + $"（不想填的空槽传 \"\"），实际 {actualCount}。"
+            return $"values_length_mismatch: row {row} 有 {slotCount} 个可写槽，请传 {slotCount} 个值"
+                + $"（不想改的槽传 \"{KeepSlotToken}\"），实际 {actualCount}。"
                 + $"示例：{{\"row\":{row},\"values\":{sampleJson}}}";
         }
 
-        public static bool PreflightEmptySlotValues(
+        public static bool PreflightSlotValues(
             int row,
             IList<string> slotTexts,
             IList<string> values,
@@ -383,154 +369,41 @@ namespace WordAddIn1
                 return false;
             }
 
-            int emptyCount = GetEmptySlotIndices(slotTexts).Count;
-            if (values.Count != emptyCount)
+            int slotCount = slotTexts == null ? 0 : slotTexts.Count;
+            if (values.Count != slotCount)
             {
-                error = BuildValuesLengthMismatchError(row, emptyCount, values.Count);
+                error = BuildValuesLengthMismatchError(row, slotCount, values.Count);
                 return false;
             }
 
             return true;
         }
 
-        /// <summary>
-        /// 构造 cell_not_empty 可读错误（含 anchor/槽序提示，供 Preflight 与单测）。
-        /// </summary>
-        public static string BuildCellNotEmptyError(
-            int row,
-            int slotIndex,
-            int col,
-            string currentText,
-            string anchor = null,
-            int? anchorSlotIndex = null,
-            int? valuesIndex = null,
-            IList<string> rowSlotTexts = null)
-        {
-            string preview = FormatCellPreview(currentText);
-            var parts = new List<string>
-            {
-                $"{EmptyOnlyWriteErrorCode}: row {row}, slot {slotIndex}, col {col}（已有内容「{preview}」）",
-            };
-
-            if (valuesIndex.HasValue)
-            {
-                parts.Add($"values[{valuesIndex.Value}] 落在该非空槽");
-            }
-
-            if (rowSlotTexts != null && rowSlotTexts.Count > 0)
-            {
-                parts.Add("read 本行槽: " + FormatSlotTextsLine(rowSlotTexts));
-            }
-
-            parts.Add(
-                "hint: values 只填本行 empty=true 的槽，长度须等于 empty_count；不想填传 \"\"。"
-                + "勿使用 anchor，勿按 getContent 的 <table><td>/<th> HTML 或 colspan 凑个数");
-            parts.Add("改已有内容用 F_process_document_actions（§三），勿用 apply 覆盖");
-
-            return string.Join("；", parts);
-        }
-
-        private static string FormatSlotTextsLine(IList<string> texts)
-        {
-            var parts = new List<string>(texts.Count);
-            for (int i = 0; i < texts.Count; i++)
-            {
-                string text = texts[i] ?? "";
-                if (string.IsNullOrEmpty(TableCellContentWriter.NormalizePlainText(text)))
-                {
-                    parts.Add($"{i}:\"\"");
-                }
-                else
-                {
-                    parts.Add($"{i}:\"{FormatCellPreview(text)}\"");
-                }
-            }
-
-            return "[" + string.Join(", ", parts) + "]";
-        }
-
-        private static bool ValidateEmptyOnlyWrites(
+        private static bool ValidateUnresolvableWrites(
             Word.Table table,
             TableRowWriteSpec spec,
             List<TableRowSlot> slots,
             out string error)
         {
             error = null;
-            var rowSlotTexts = ReadRowSlotTexts(table, slots);
-            List<int> emptyIndices = GetEmptySlotIndices(rowSlotTexts);
-            int toWrite = Math.Min(spec.Values.Count, emptyIndices.Count);
-            for (int j = 0; j < toWrite; j++)
+            int toCheck = Math.Min(spec.Values.Count, slots.Count);
+            for (int i = 0; i < toCheck; i++)
             {
-                int targetSlotIndex = emptyIndices[j];
-                if (!TryGetEmptyOnlyWriteError(
-                        table,
-                        slots[targetSlotIndex],
-                        targetSlotIndex,
-                        spec.Values[j],
-                        rowSlotTexts,
-                        null,
-                        null,
-                        j,
-                        out error))
+                if (IsKeepSlotValue(spec.Values[i]))
                 {
+                    continue;
+                }
+
+                TableRowSlot slot = slots[i];
+                Word.Cell cell = TryResolveCell(table, slot.Row, slot.Col);
+                if (cell == null && !ShouldSkipUnresolvableWrite(true, spec.Values[i]))
+                {
+                    error = BuildUnresolvableCellError(slot.Row, slot.Col);
                     return false;
                 }
             }
 
             return true;
-        }
-
-        private static bool TryGetEmptyOnlyWriteError(
-            Word.Table table,
-            TableRowSlot slot,
-            int slotIndex,
-            string newValue,
-            IList<string> rowSlotTexts,
-            string anchor,
-            int? anchorSlotIndex,
-            int? valuesIndex,
-            out string error)
-        {
-            error = null;
-            Word.Cell cell = TryResolveCell(table, slot.Row, slot.Col);
-            if (cell == null)
-            {
-                if (ShouldSkipUnresolvableWrite(true, newValue))
-                {
-                    return true;
-                }
-
-                error = BuildUnresolvableCellError(slot.Row, slot.Col);
-                return false;
-            }
-
-            string current = TableCellContentWriter.GetCellPlainText(cell);
-            if (GetEmptyOnlyWriteError(current, newValue) == null)
-            {
-                return true;
-            }
-
-            error = BuildCellNotEmptyError(
-                slot.Row,
-                slotIndex,
-                slot.Col,
-                current,
-                anchor,
-                anchorSlotIndex,
-                valuesIndex,
-                rowSlotTexts);
-            return false;
-        }
-
-        private static string FormatCellPreview(string text)
-        {
-            string normalized = TableCellContentWriter.NormalizePlainText(text ?? "");
-            if (normalized.Length <= 12)
-            {
-                return normalized;
-            }
-
-            return normalized.Substring(0, 11) + "…";
         }
 
         public static TableRowValuesApplyResult ApplyWrites(
@@ -578,7 +451,7 @@ namespace WordAddIn1
                 foreach (TableRowWriteSpec spec in specs)
                 {
                     List<TableRowSlot> slots = EnumerateWritableRowSlots(table, spec.Row, colCount, merge);
-                    if (!ApplyEmptySlotWrite(table, spec, slots, result, writeCellSw, applyFormatSw))
+                    if (!ApplySlotWrites(table, spec, slots, result, writeCellSw, applyFormatSw))
                     {
                         return result;
                     }
@@ -708,7 +581,7 @@ namespace WordAddIn1
             return texts;
         }
 
-        private static bool ApplyEmptySlotWrite(
+        private static bool ApplySlotWrites(
             Word.Table table,
             TableRowWriteSpec spec,
             List<TableRowSlot> slots,
@@ -716,23 +589,13 @@ namespace WordAddIn1
             System.Diagnostics.Stopwatch writeCellSw,
             System.Diagnostics.Stopwatch applyFormatSw)
         {
-            var rowSlotTexts = ReadRowSlotTexts(table, slots);
-            List<int> emptyIndices = GetEmptySlotIndices(rowSlotTexts);
-            int toWrite = Math.Min(spec.Values.Count, emptyIndices.Count);
-
-            for (int j = 0; j < toWrite; j++)
+            int toWrite = Math.Min(spec.Values.Count, slots.Count);
+            for (int i = 0; i < toWrite; i++)
             {
-                int targetSlotIndex = emptyIndices[j];
-                TableRowSlot slot = slots[targetSlotIndex];
-                if (!TryWriteSlotEmptyOnly(
+                if (!TryWriteSlot(
                         table,
-                        slot,
-                        targetSlotIndex,
-                        spec.Values[j],
-                        rowSlotTexts,
-                        null,
-                        null,
-                        j,
+                        slots[i],
+                        spec.Values[i],
                         spec.FormatSnapshot,
                         writeCellSw,
                         applyFormatSw,
@@ -753,15 +616,10 @@ namespace WordAddIn1
             return true;
         }
 
-        private static bool TryWriteSlotEmptyOnly(
+        private static bool TryWriteSlot(
             Word.Table table,
             TableRowSlot slot,
-            int slotIndex,
             string value,
-            IList<string> rowSlotTexts,
-            string anchor,
-            int? anchorSlotIndex,
-            int? valuesIndex,
             Dictionary<string, object> formatSnapshot,
             System.Diagnostics.Stopwatch writeCellSw,
             System.Diagnostics.Stopwatch applyFormatSw,
@@ -770,6 +628,11 @@ namespace WordAddIn1
         {
             error = null;
             written = false;
+            if (IsKeepSlotValue(value))
+            {
+                return true;
+            }
+
             Word.Cell cell = TryResolveCell(table, slot.Row, slot.Col);
             if (cell == null)
             {
@@ -785,27 +648,7 @@ namespace WordAddIn1
             string current = TableCellContentWriter.GetCellPlainText(cell);
             string normalizedCurrent = TableCellContentWriter.NormalizePlainText(current);
             string normalizedNew = TableCellContentWriter.NormalizePlainText(value ?? "");
-
-            if (!string.IsNullOrEmpty(normalizedCurrent))
-            {
-                if (normalizedNew == normalizedCurrent)
-                {
-                    return true;
-                }
-
-                error = BuildCellNotEmptyError(
-                    slot.Row,
-                    slotIndex,
-                    slot.Col,
-                    current,
-                    anchor,
-                    anchorSlotIndex,
-                    valuesIndex,
-                    rowSlotTexts);
-                return false;
-            }
-
-            if (string.IsNullOrEmpty(normalizedNew))
+            if (normalizedNew == normalizedCurrent)
             {
                 return true;
             }
@@ -992,7 +835,7 @@ namespace WordAddIn1
 
                 int valueCount = spec.Values?.Count ?? 0;
                 EasyWriteDiagnostics.LogTableRowValues(
-                    $"[TableRowValues] writes[{i}] row={spec.Row} empty_slots values={valueCount}",
+                    $"[TableRowValues] writes[{i}] row={spec.Row} slot_values={valueCount}",
                     verboseOnly);
             }
         }
