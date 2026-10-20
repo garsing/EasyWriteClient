@@ -568,6 +568,7 @@ namespace EasyWriteClient.Desktop
             });
             _bridge.RegisterHandler("openContainingFolder", HandleOpenContainingFolderAsync);
             _bridge.RegisterHandler("createOpenFile", HandleCreateOpenFileAsync);
+            _bridge.RegisterHandler("openUrlInYiWriteBrowser", HandleOpenUrlInYiWriteBrowserAsync);
             // 侧栏底栏用户名：轻量查询，不走设置窗体的 getUserSettings（该 handler 只在 UserSettingsForm 注册）
             _bridge.RegisterHandler("getCurrentUser", _ =>
             {
@@ -773,6 +774,27 @@ namespace EasyWriteClient.Desktop
             catch (Exception ex)
             {
                 return Task.FromResult<object>(new { success = false, message = ex.Message });
+            }
+        }
+
+        private static async Task<object> HandleOpenUrlInYiWriteBrowserAsync(object data)
+        {
+            try
+            {
+                JObject jo = data as JObject ?? (data != null ? JObject.FromObject(data) : null);
+                string url = (jo?["url"] ?? jo?["href"])?.ToString()?.Trim();
+                BrowserNavigateResult nav = await YiWriteBrowserHost.OpenUserUrlAsync(url)
+                    .ConfigureAwait(true);
+                if (nav == null || !nav.Success)
+                {
+                    return new { success = false, message = nav != null ? nav.Error : "无法打开易写浏览器" };
+                }
+
+                return new { success = true };
+            }
+            catch (Exception ex)
+            {
+                return new { success = false, message = ex.Message };
             }
         }
 

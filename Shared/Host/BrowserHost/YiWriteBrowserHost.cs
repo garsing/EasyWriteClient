@@ -248,6 +248,55 @@ namespace WordAddIn1.BrowserHost
         }
 
         /// <summary>
+        /// 用户在聊天里点 http(s) 链接：打开自带易写浏览器。
+        /// 没有窗则新建并打开该地址；已有窗则再开一个标签（满则改打前台标签）。
+        /// </summary>
+        public static async Task<BrowserNavigateResult> OpenUserUrlAsync(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return BrowserNavigateResult.Fail("必须提供 url");
+            }
+
+            if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out Uri uri)
+                || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                return BrowserNavigateResult.Fail("仅支持 http/https 地址");
+            }
+
+            bool hadWindow;
+            lock (Gate)
+            {
+                hadWindow = _form != null && !_form.IsDisposed;
+            }
+
+            if (!hadWindow)
+            {
+                return await NavigateAsync(uri.AbsoluteUri, visible: true, existingTabUuid: null)
+                    .ConfigureAwait(true);
+            }
+
+            BrowserNavigateResult added = await AddBlankTabAsync().ConfigureAwait(true);
+            string tabUuid = null;
+            lock (Gate)
+            {
+                if (_form != null && !_form.IsDisposed)
+                {
+                    tabUuid = _form.FrontTabUuid;
+                }
+            }
+
+            if (added == null || !added.Success)
+            {
+                return await NavigateAsync(uri.AbsoluteUri, visible: true, existingTabUuid: null)
+                    .ConfigureAwait(true);
+            }
+
+            return await NavigateAsync(uri.AbsoluteUri, visible: true, existingTabUuid: tabUuid)
+                .ConfigureAwait(true);
+        }
+
+        /// <summary>
         /// 导航：无现窗则新建第一标签；有窗且无 uuid 则打前台标签；有 uuid 则切到该标签再跳转。
         /// </summary>
         public static async Task<BrowserNavigateResult> NavigateAsync(

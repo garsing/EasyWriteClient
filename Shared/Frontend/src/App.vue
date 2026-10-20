@@ -26,6 +26,7 @@
     />
     <div
       class="chat-container"
+      @click.capture="onChatLinkClick"
       @dragenter.prevent="onChatDragEnter"
       @dragleave.prevent="onChatDragLeave"
       @dragover.prevent="onChatDragOver"
@@ -449,6 +450,28 @@ function onChatDrop (e) {
   if (files.length) {
     onInputAreaFilesDrop(files)
   }
+}
+
+function onChatLinkClick (e) {
+  const target = e.target
+  if (!target || typeof target.closest !== 'function') return
+  const anchor = target.closest('a[href]')
+  if (!anchor || (e.currentTarget && !e.currentTarget.contains(anchor))) return
+  const raw = anchor.getAttribute('href') || anchor.href
+  if (!raw || raw.charAt(0) === '#' || raw.toLowerCase().indexOf('javascript:') === 0) return
+  let abs = ''
+  try {
+    abs = new URL(raw, window.location.href).href
+  } catch (_) {
+    return
+  }
+  if (!/^https?:\/\//i.test(abs)) return
+  if (/^https?:\/\/appassets\.local\b/i.test(abs)) return
+  e.preventDefault()
+  e.stopPropagation()
+  sendMessage('openUrlInYiWriteBrowser', { url: abs }).catch((err) => {
+    console.warn('[App] 打开易写浏览器失败', err?.message || err)
+  })
 }
 
 async function readClipboardFromHost () {

@@ -104,7 +104,17 @@ onUnmounted(() => {
   -ms-overflow-style: none;
 }
 
+.text-segment-inner :deep(a) {
+  color: #1677ff;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .text-segment--clamped :deep(*) {
+  color: inherit;
+}
+
+.text-segment--clamped :deep(a) {
   color: inherit;
 }
 

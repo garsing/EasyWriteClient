@@ -1,6 +1,8 @@
 using System;
+using System.Threading.Tasks;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
+using WordAddIn1.BrowserHost;
 
 namespace WordAddIn1
 {
@@ -37,6 +39,129 @@ namespace WordAddIn1
             };
 
             AttachImageContextMenuFilter(webView);
+            RedirectHttpNavigationsToYiWriteBrowser(webView);
+        }
+
+        /// <summary>
+        /// 聊天壳里点 http(s) 链接时，不要把当前 WebView 整页换成网站，改开易写浏览器。
+        /// </summary>
+        public static void RedirectHttpNavigationsToYiWriteBrowser(WebView2 webView)
+        {
+            if (webView?.CoreWebView2 == null)
+            {
+                throw new InvalidOperationException("CoreWebView2 尚未初始化。");
+            }
+
+            webView.CoreWebView2.NavigationStarting += (_, args) =>
+            {
+                try
+                {
+                    if (args == null || string.IsNullOrEmpty(args.Uri) || IsChatShellUri(args.Uri))
+                    {
+                        return;
+                    }
+
+                    if (!TryGetHttpUrl(args.Uri, out string url))
+                    {
+                        return;
+                    }
+
+                    args.Cancel = true;
+                    BeginOpenUserUrl(webView, url);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        "[WebView2VueHost] NavigationStarting: " + ex.Message);
+                }
+            };
+
+            webView.CoreWebView2.NewWindowRequested += (_, args) =>
+            {
+                try
+                {
+                    if (args == null || string.IsNullOrEmpty(args.Uri) || IsChatShellUri(args.Uri))
+                    {
+                        return;
+                    }
+
+                    if (!TryGetHttpUrl(args.Uri, out string url))
+                    {
+                        return;
+                    }
+
+                    args.Handled = true;
+                    BeginOpenUserUrl(webView, url);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        "[WebView2VueHost] NewWindowRequested: " + ex.Message);
+                }
+            };
+        }
+
+        private static bool IsChatShellUri(string uri)
+        {
+            if (!Uri.TryCreate(uri, UriKind.Absolute, out Uri parsed))
+            {
+                return false;
+            }
+
+            return string.Equals(parsed.Host, "appassets.local", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryGetHttpUrl(string uri, out string url)
+        {
+            url = null;
+            if (!Uri.TryCreate(uri, UriKind.Absolute, out Uri parsed))
+            {
+                return false;
+            }
+
+            if (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps)
+            {
+                return false;
+            }
+
+            url = parsed.AbsoluteUri;
+            return true;
+        }
+
+        private static void BeginOpenUserUrl(WebView2 webView, string url)
+        {
+            void Run()
+            {
+                _ = OpenUserUrlQuietAsync(url);
+            }
+
+            try
+            {
+                if (webView != null && webView.IsHandleCreated && webView.InvokeRequired)
+                {
+                    webView.BeginInvoke(new Action(Run));
+                    return;
+                }
+            }
+            catch
+            {
+                /* 控件已释放则直接跑 */
+            }
+
+            Run();
+        }
+
+        private static async Task OpenUserUrlQuietAsync(string url)
+        {
+            try
+            {
+                await YiWriteBrowserHost.OpenUserUrlAsync(url).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    "[WebView2VueHost] OpenUserUrl: " + ex.Message);
+            }
         }
 
         /// <summary>
