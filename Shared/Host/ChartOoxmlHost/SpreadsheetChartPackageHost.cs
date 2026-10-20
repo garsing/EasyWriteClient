@@ -80,6 +80,8 @@ namespace WordAddIn1.ChartOoxmlHost
                     return false;
                 }
 
+                PinLiveChartStyleExcel(ChartObjectAt(sheet, index), format);
+
                 if (!SameFullName(book, fullBefore))
                 {
                     error = "请先保存工作簿后再画图";
@@ -107,6 +109,8 @@ namespace WordAddIn1.ChartOoxmlHost
                         error = error ?? "二次贴回失败";
                         return false;
                     }
+
+                    PinLiveChartStyleExcel(ChartObjectAt(sheet, index), format);
 
                     if (!TryVerify(book, sheetName, index, snapshot, pinTemp, Path.GetFileName(fullBefore), out verifyError))
                     {
@@ -195,6 +199,124 @@ namespace WordAddIn1.ChartOoxmlHost
             catch (Exception)
             {
                 return false;
+            }
+        }
+
+        private static void PinLiveChartStyleExcel(Excel.ChartObject co, ChartInfo format)
+        {
+            if (co == null || format == null)
+            {
+                return;
+            }
+
+            Excel.Chart chart = co.Chart;
+            if (format.ChartStyle > 0)
+            {
+                try
+                {
+                    chart.ChartStyle = format.ChartStyle;
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(format.Gridlines))
+            {
+                try
+                {
+                    Excel.Axis axis = (Excel.Axis)chart.Axes(Excel.XlAxisType.xlValue, Excel.XlAxisGroup.xlPrimary);
+                    axis.HasMajorGridlines = string.Equals(format.Gridlines, "true", StringComparison.OrdinalIgnoreCase);
+                    axis.HasMinorGridlines = false;
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            if (format.HasOverlap)
+            {
+                try
+                {
+                    Excel.ChartGroup group = (Excel.ChartGroup)chart.ChartGroups(1);
+                    group.Overlap = format.Overlap;
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            try
+            {
+                    bool pinLabels = format.HasShowDataLabels
+                    || format.ShowValue.HasValue
+                    || format.ShowPercentage.HasValue;
+                if (!pinLabels && format.SeriesCollection != null)
+                {
+                    for (int i = 0; i < format.SeriesCollection.Count; i++)
+                    {
+                        SeriesInfo series = format.SeriesCollection[i];
+                        if (series != null
+                            && (series.ShowDataLabels.HasValue
+                                || series.ShowValue.HasValue
+                                || series.ShowPercentage.HasValue))
+                        {
+                            pinLabels = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!pinLabels)
+                {
+                    return;
+                }
+
+                Excel.SeriesCollection sc = (Excel.SeriesCollection)chart.SeriesCollection();
+                for (int i = 1; i <= sc.Count; i++)
+                {
+                    Excel.Series s = sc.Item(i);
+                    SeriesInfo series = null;
+                    if (format.SeriesCollection != null && i - 1 < format.SeriesCollection.Count)
+                    {
+                        series = format.SeriesCollection[i - 1];
+                    }
+
+                    bool on = format.ShowDataLabels || format.ShowValue == true || format.ShowPercentage == true;
+                    if (series != null
+                        && (series.ShowDataLabels.HasValue
+                            || series.ShowValue.HasValue
+                            || series.ShowPercentage.HasValue))
+                    {
+                        on = series.ShowDataLabels == true
+                            || series.ShowValue == true
+                            || series.ShowPercentage == true;
+                    }
+
+                    s.HasDataLabels = on;
+                    if (!on)
+                    {
+                        continue;
+                    }
+
+                    bool? showVal = series != null && series.ShowValue.HasValue
+                        ? series.ShowValue
+                        : format.ShowValue;
+                    bool? showPct = series != null && series.ShowPercentage.HasValue
+                        ? series.ShowPercentage
+                        : format.ShowPercentage;
+                    if (!showVal.HasValue && !showPct.HasValue)
+                    {
+                        continue;
+                    }
+
+                    Excel.DataLabels labels = (Excel.DataLabels)s.DataLabels();
+                    labels.ShowValue = showVal ?? false;
+                    labels.ShowPercentage = showPct ?? false;
+                }
+            }
+            catch (Exception)
+            {
             }
         }
 

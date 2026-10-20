@@ -943,6 +943,13 @@ namespace WordAddIn1.ChartOoxmlHost
                 return;
             }
 
+            bool inC14 = style >= 101 && style <= 148;
+            bool inClassic = style >= 1 && style <= 48;
+            if (!inC14 && !inClassic)
+            {
+                return;
+            }
+
             chartDoc.Root.Element(C + "style")?.Remove();
             foreach (XElement old in chartDoc.Root.Elements(Mc + "AlternateContent").ToList())
             {

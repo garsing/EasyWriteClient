@@ -270,20 +270,65 @@ namespace WordAddIn1.SpreadsheetHost
         {
             try
             {
-                if (info.ShowDataLabels || info.ShowValue.HasValue || info.ShowPercentage.HasValue)
+                bool pinLabels = info.HasShowDataLabels || info.ShowValue.HasValue || info.ShowPercentage.HasValue;
+                if (!pinLabels && info.SeriesCollection != null)
+                {
+                    for (int i = 0; i < info.SeriesCollection.Count; i++)
+                    {
+                        SeriesInfo series = info.SeriesCollection[i];
+                        if (series != null
+                            && (series.ShowDataLabels.HasValue
+                                || series.ShowValue.HasValue
+                                || series.ShowPercentage.HasValue))
+                        {
+                            pinLabels = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (pinLabels)
                 {
                     Excel.SeriesCollection sc = (Excel.SeriesCollection)chart.SeriesCollection();
                     for (int i = 1; i <= sc.Count; i++)
                     {
                         Excel.Series s = sc.Item(i);
-                        s.HasDataLabels = info.ShowDataLabels
+                        SeriesInfo series = null;
+                        if (info.SeriesCollection != null && i - 1 < info.SeriesCollection.Count)
+                        {
+                            series = info.SeriesCollection[i - 1];
+                        }
+
+                        bool on = info.ShowDataLabels
                             || info.ShowValue == true
                             || info.ShowPercentage == true;
-                        if (info.ShowValue.HasValue || info.ShowPercentage.HasValue)
+                        if (series != null
+                            && (series.ShowDataLabels.HasValue
+                                || series.ShowValue.HasValue
+                                || series.ShowPercentage.HasValue))
+                        {
+                            on = series.ShowDataLabels == true
+                                || series.ShowValue == true
+                                || series.ShowPercentage == true;
+                        }
+
+                        s.HasDataLabels = on;
+                        if (!on)
+                        {
+                            continue;
+                        }
+
+                        bool? showVal = series != null && series.ShowValue.HasValue
+                            ? series.ShowValue
+                            : info.ShowValue;
+                        bool? showPct = series != null && series.ShowPercentage.HasValue
+                            ? series.ShowPercentage
+                            : info.ShowPercentage;
+                        if (showVal.HasValue || showPct.HasValue)
                         {
                             Excel.DataLabels labels = (Excel.DataLabels)s.DataLabels();
-                            labels.ShowValue = info.ShowValue ?? false;
-                            labels.ShowPercentage = info.ShowPercentage ?? false;
+                            labels.ShowValue = showVal ?? false;
+                            labels.ShowPercentage = showPct ?? false;
                         }
                     }
                 }
@@ -337,7 +382,7 @@ namespace WordAddIn1.SpreadsheetHost
 
             try
             {
-                if (info.Explosion > 0)
+                if (info.HasExplosion)
                 {
                     Excel.Series s = (Excel.Series)chart.SeriesCollection(1);
                     s.Explosion = info.Explosion;
@@ -428,6 +473,63 @@ namespace WordAddIn1.SpreadsheetHost
                             info.LegendPosition = "bottom";
                             break;
                     }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                info.ChartStyle = Convert.ToInt32(chart.ChartStyle);
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                Excel.SeriesCollection sc = (Excel.SeriesCollection)chart.SeriesCollection();
+                for (int i = 1; i <= sc.Count; i++)
+                {
+                    Excel.Series s = sc.Item(i);
+                    SeriesInfo row = i - 1 < info.SeriesCollection.Count
+                        ? info.SeriesCollection[i - 1]
+                        : null;
+                    if (row == null)
+                    {
+                        row = new SeriesInfo();
+                        info.SeriesCollection.Add(row);
+                    }
+
+                    row.ShowDataLabels = s.HasDataLabels;
+                    if (s.HasDataLabels)
+                    {
+                        try
+                        {
+                            Excel.DataLabels labels = (Excel.DataLabels)s.DataLabels();
+                            row.ShowValue = labels.ShowValue;
+                            row.ShowPercentage = labels.ShowPercentage;
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                string type = info.Type ?? "";
+                if (type.IndexOf("column", StringComparison.OrdinalIgnoreCase) >= 0
+                    || type.IndexOf("bar", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    Excel.ChartGroup group = (Excel.ChartGroup)chart.ChartGroups(1);
+                    info.Overlap = group.Overlap;
+                    info.HasOverlap = true;
                 }
             }
             catch (Exception)
@@ -1091,6 +1193,8 @@ namespace WordAddIn1.SpreadsheetHost
             Excel.Chart chart = co.Chart;
             string scope = request.Scope;
 
+            KeepOmittedSeriesFillsExcel(book, sheet, co, request.Format);
+
             if (scope == "data" || scope == "all")
             {
                 int current = 0;
@@ -1253,6 +1357,78 @@ namespace WordAddIn1.SpreadsheetHost
             }
         }
 
+        private static void KeepOmittedSeriesFillsExcel(
+            Excel.Workbook book,
+            Excel.Worksheet sheet,
+            Excel.ChartObject co,
+            ChartInfo incoming)
+        {
+            if (incoming == null
+                || !SpreadsheetChartPackageHost.TryReadFormatExcel(book, sheet, co, out ChartInfo existing, out _))
+            {
+                return;
+            }
+
+            CopyOmittedSeriesFills(incoming, existing);
+            CopyOmittedExplosion(incoming, existing);
+        }
+
+        private static void KeepOmittedSeriesFillsEt(
+            object book,
+            object sheet,
+            object co,
+            ChartInfo incoming)
+        {
+            if (incoming == null
+                || !SpreadsheetChartPackageHost.TryReadFormatEt(book, sheet, co, out ChartInfo existing, out _))
+            {
+                return;
+            }
+
+            CopyOmittedSeriesFills(incoming, existing);
+            CopyOmittedExplosion(incoming, existing);
+        }
+
+        private static void CopyOmittedSeriesFills(ChartInfo incoming, ChartInfo existing)
+        {
+            if (incoming?.SeriesCollection == null || existing?.SeriesCollection == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < incoming.SeriesCollection.Count && i < existing.SeriesCollection.Count; i++)
+            {
+                SeriesInfo want = incoming.SeriesCollection[i];
+                SeriesInfo have = existing.SeriesCollection[i];
+                if (want == null || have == null)
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(want.Color) && !string.IsNullOrEmpty(have.Color))
+                {
+                    want.Color = have.Color;
+                }
+
+                if (string.IsNullOrEmpty(want.FillGradient) && !string.IsNullOrEmpty(have.FillGradient))
+                {
+                    want.FillGradient = have.FillGradient;
+                    want.FillAngle = have.FillAngle;
+                }
+            }
+        }
+
+        private static void CopyOmittedExplosion(ChartInfo incoming, ChartInfo existing)
+        {
+            if (incoming == null || existing == null || incoming.HasExplosion || !existing.HasExplosion)
+            {
+                return;
+            }
+
+            incoming.HasExplosion = true;
+            incoming.Explosion = existing.Explosion;
+        }
+
         private static void OverlayPackageFormat(ChartInfo dest, ChartInfo src)
         {
             if (dest == null || src == null)
@@ -1320,7 +1496,7 @@ namespace WordAddIn1.SpreadsheetHost
                 dest.TitleFontBold = true;
             }
 
-            if (src.ChartStyle > 0)
+            if (src.ChartStyle > 0 && dest.ChartStyle <= 0)
             {
                 dest.ChartStyle = src.ChartStyle;
             }
@@ -1370,6 +1546,32 @@ namespace WordAddIn1.SpreadsheetHost
 
             if (src.SeriesCollection != null && src.SeriesCollection.Count > 0)
             {
+                if (dest.SeriesCollection != null)
+                {
+                    for (int i = 0; i < src.SeriesCollection.Count && i < dest.SeriesCollection.Count; i++)
+                    {
+                        SeriesInfo want = src.SeriesCollection[i];
+                        SeriesInfo have = dest.SeriesCollection[i];
+                        if (want != null && have != null)
+                        {
+                            if (!want.ShowDataLabels.HasValue && have.ShowDataLabels.HasValue)
+                            {
+                                want.ShowDataLabels = have.ShowDataLabels;
+                            }
+
+                            if (!want.ShowValue.HasValue && have.ShowValue.HasValue)
+                            {
+                                want.ShowValue = have.ShowValue;
+                            }
+
+                            if (!want.ShowPercentage.HasValue && have.ShowPercentage.HasValue)
+                            {
+                                want.ShowPercentage = have.ShowPercentage;
+                            }
+                        }
+                    }
+                }
+
                 dest.SeriesCollection = src.SeriesCollection;
             }
         }
@@ -2353,6 +2555,8 @@ namespace WordAddIn1.SpreadsheetHost
 
             object chart = EtCom.GetProperty(co, "Chart");
             string scope = request.Scope;
+
+            KeepOmittedSeriesFillsEt(book, sheet, co, request.Format);
 
             if (scope == "data" || scope == "all")
             {

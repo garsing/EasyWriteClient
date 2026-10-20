@@ -133,6 +133,11 @@ namespace WordAddIn1.ChartOoxmlHost
                 info.Explosion = grid.Explosion.Value;
                 info.HasExplosion = true;
             }
+            else if (IsPieType(grid.Type))
+            {
+                info.Explosion = 0;
+                info.HasExplosion = true;
+            }
 
             if (grid.YMin.HasValue)
             {
@@ -336,6 +341,17 @@ namespace WordAddIn1.ChartOoxmlHost
             }
 
             return true;
+        }
+
+        private static bool IsPieType(string type)
+        {
+            if (string.IsNullOrEmpty(type))
+            {
+                return false;
+            }
+
+            return type.IndexOf("pie", StringComparison.OrdinalIgnoreCase) >= 0
+                || type.IndexOf("doughnut", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static string TitleText(XDocument doc)

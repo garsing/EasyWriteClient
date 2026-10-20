@@ -886,20 +886,57 @@ namespace WordAddIn1.ChartOoxmlHost
 
         private static int? ReadExplosion(XDocument chartDoc)
         {
-            string val = chartDoc?.Descendants(C + "explosion").FirstOrDefault()?.Attribute("val")?.Value;
-            int n;
-            return int.TryParse(val, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) ? (int?)n : null;
+            var nums = new List<int>();
+            if (chartDoc == null)
+            {
+                return null;
+            }
+
+            foreach (XElement el in chartDoc.Descendants(C + "explosion"))
+            {
+                int n;
+                string val = el.Attribute("val")?.Value;
+                if (int.TryParse(val, NumberStyles.Integer, CultureInfo.InvariantCulture, out n))
+                {
+                    nums.Add(n);
+                }
+            }
+
+            if (nums.Count == 0)
+            {
+                return null;
+            }
+
+            int first = nums[0];
+            for (int i = 1; i < nums.Count; i++)
+            {
+                if (nums[i] != first)
+                {
+                    return null;
+                }
+            }
+
+            return first;
         }
 
         private static void WriteExplosion(XDocument chartDoc, int explosion)
         {
-            XElement ser = chartDoc?.Descendants(C + "ser").FirstOrDefault();
-            if (ser == null)
+            if (chartDoc == null)
             {
                 return;
             }
 
-            SetVal(ser, "explosion", explosion.ToString(CultureInfo.InvariantCulture));
+            string text = explosion.ToString(CultureInfo.InvariantCulture);
+            foreach (XElement ser in chartDoc.Descendants(C + "ser"))
+            {
+                string parent = ser.Parent == null ? "" : ser.Parent.Name.LocalName;
+                if (parent != "pieChart" && parent != "pie3DChart" && parent != "doughnutChart")
+                {
+                    continue;
+                }
+
+                SetVal(ser, "explosion", text);
+            }
         }
 
         public static byte[] XmlPartBytes(XDocument doc)
