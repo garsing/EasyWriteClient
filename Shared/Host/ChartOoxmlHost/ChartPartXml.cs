@@ -59,6 +59,7 @@ namespace WordAddIn1.ChartOoxmlHost
             public string TitleFontColor { get; set; }
             public int TitleFontSize { get; set; }
             public bool TitleFontBold { get; set; }
+            public bool HasTitleFontBold { get; set; }
             public int? Explosion { get; set; }
             public double? YMin { get; set; }
             public double? YMax { get; set; }
@@ -92,6 +93,7 @@ namespace WordAddIn1.ChartOoxmlHost
                 TitleFontColor = ReadTitleFontColor(chartDoc),
                 TitleFontSize = ReadTitleFontSize(chartDoc),
                 TitleFontBold = ReadTitleFontBold(chartDoc),
+                HasTitleFontBold = ReadHasTitleFontBold(chartDoc),
                 Explosion = ReadExplosion(chartDoc),
                 Series = series,
                 Legend = ReadLegend(chartDoc),
@@ -229,15 +231,7 @@ namespace WordAddIn1.ChartOoxmlHost
 
             PlaceSecondarySeries(chartDoc, grid);
             WriteChartChrome(chartDoc, grid);
-
-            if (!string.IsNullOrEmpty(grid.Title))
-            {
-                UpsertTitle(chartDoc, grid);
-            }
-            else if (grid.ClearTitle)
-            {
-                RemoveTitle(chartDoc);
-            }
+            WriteTitleChrome(chartDoc, grid);
 
             if (grid.Explosion.HasValue)
             {
@@ -269,14 +263,7 @@ namespace WordAddIn1.ChartOoxmlHost
                 PlaceSecondarySeries(chartDoc, grid);
             }
 
-            if (!string.IsNullOrEmpty(grid.Title))
-            {
-                UpsertTitle(chartDoc, grid);
-            }
-            else if (grid.ClearTitle)
-            {
-                RemoveTitle(chartDoc);
-            }
+            WriteTitleChrome(chartDoc, grid);
 
             if (grid.Explosion.HasValue)
             {
@@ -618,21 +605,7 @@ namespace WordAddIn1.ChartOoxmlHost
                 new XAttribute("anchor", "ctr"),
                 new XAttribute("anchorCtr", "1"));
             var rPr = new XElement(A + "rPr", new XAttribute("lang", "zh-CN"));
-            if (grid.TitleFontSize > 0)
-            {
-                rPr.SetAttributeValue("sz", ((int)Math.Round(grid.TitleFontSize * 100.0)).ToString(CultureInfo.InvariantCulture));
-            }
-
-            if (grid.TitleFontBold)
-            {
-                rPr.SetAttributeValue("b", "1");
-            }
-
-            string titleColor = NormColor(grid.TitleFontColor);
-            if (!string.IsNullOrEmpty(titleColor))
-            {
-                rPr.Add(new XElement(A + "solidFill", new XElement(A + "srgbClr", new XAttribute("val", titleColor))));
-            }
+            FillTitleRunProps(rPr, grid);
 
             var titleEl = new XElement(
                 C + "title",
@@ -668,6 +641,83 @@ namespace WordAddIn1.ChartOoxmlHost
             {
                 auto.SetAttributeValue("val", "0");
             }
+        }
+
+        private static void WriteTitleChrome(XDocument chartDoc, SeriesGrid grid)
+        {
+            if (grid == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(grid.Title))
+            {
+                UpsertTitle(chartDoc, grid);
+                return;
+            }
+
+            if (grid.ClearTitle)
+            {
+                RemoveTitle(chartDoc);
+                return;
+            }
+
+            ApplyTitleFont(chartDoc, grid);
+        }
+
+        private static void FillTitleRunProps(XElement rPr, SeriesGrid grid)
+        {
+            if (rPr == null || grid == null)
+            {
+                return;
+            }
+
+            if (grid.TitleFontSize > 0)
+            {
+                rPr.SetAttributeValue("sz", ((int)Math.Round(grid.TitleFontSize * 100.0)).ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (grid.HasTitleFontBold || grid.TitleFontBold)
+            {
+                rPr.SetAttributeValue("b", grid.TitleFontBold ? "1" : "0");
+            }
+
+            string titleColor = NormColor(grid.TitleFontColor);
+            if (string.IsNullOrEmpty(titleColor))
+            {
+                return;
+            }
+
+            rPr.Element(A + "solidFill")?.Remove();
+            rPr.Add(new XElement(A + "solidFill", new XElement(A + "srgbClr", new XAttribute("val", titleColor))));
+        }
+
+        private static void ApplyTitleFont(XDocument chartDoc, SeriesGrid grid)
+        {
+            if (grid == null
+                || (grid.TitleFontSize <= 0
+                    && !grid.HasTitleFontBold
+                    && !grid.TitleFontBold
+                    && string.IsNullOrEmpty(NormColor(grid.TitleFontColor))))
+            {
+                return;
+            }
+
+            XElement rPr = TitleRunProps(chartDoc);
+            if (rPr == null)
+            {
+                XElement title = chartDoc?.Descendants(C + "title").FirstOrDefault();
+                XElement t = title?.Descendants(A + "t").FirstOrDefault();
+                if (t == null)
+                {
+                    return;
+                }
+
+                rPr = new XElement(A + "rPr", new XAttribute("lang", "zh-CN"));
+                t.AddBeforeSelf(rPr);
+            }
+
+            FillTitleRunProps(rPr, grid);
         }
 
         public static List<string> SnapshotSeriesColors(XDocument chartDoc)
@@ -827,6 +877,11 @@ namespace WordAddIn1.ChartOoxmlHost
         {
             string bold = TitleRunProps(chartDoc)?.Attribute("b")?.Value;
             return bold == "1" || string.Equals(bold, "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool ReadHasTitleFontBold(XDocument chartDoc)
+        {
+            return TitleRunProps(chartDoc)?.Attribute("b") != null;
         }
 
         private static int? ReadExplosion(XDocument chartDoc)

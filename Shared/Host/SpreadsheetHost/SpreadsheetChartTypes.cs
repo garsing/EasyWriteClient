@@ -461,7 +461,10 @@ namespace WordAddIn1.SpreadsheetHost
                 Height = ParseInt(El(chartEl, "Height")),
                 ShowDataLabels = ParseBool(El(chartEl, "ShowDataLabels")),
                 LegendPosition = El(chartEl, "LegendPosition") ?? "",
+                LegendFontColor = El(chartEl, "LegendFontColor") ?? "",
                 PlotColor = El(chartEl, "PlotColor") ?? "",
+                ChartAreaColor = El(chartEl, "ChartAreaColor") ?? "",
+                ChartStyle = ParseInt(El(chartEl, "ChartStyle")),
                 TitleFontSize = ParseInt(El(chartEl, "TitleFontSize")),
                 TitleFontBold = ParseBool(El(chartEl, "TitleFontBold")),
                 TitleFontColor = El(chartEl, "TitleFontColor") ?? "",
@@ -913,6 +916,21 @@ namespace WordAddIn1.SpreadsheetHost
                     else if (!string.IsNullOrEmpty(format.Title))
                     {
                         chart.Add(new XElement("Title", format.Title));
+                    }
+
+                    if (format.TitleFontSize > 0)
+                    {
+                        chart.Add(new XElement("TitleFontSize", format.TitleFontSize));
+                    }
+
+                    if (format.HasTitleFontBold || format.TitleFontBold)
+                    {
+                        chart.Add(new XElement("TitleFontBold", format.TitleFontBold ? "true" : "false"));
+                    }
+
+                    if (!string.IsNullOrEmpty(format.TitleFontColor))
+                    {
+                        chart.Add(new XElement("TitleFontColor", format.TitleFontColor));
                     }
 
                     if (!string.IsNullOrEmpty(format.PlotColor))

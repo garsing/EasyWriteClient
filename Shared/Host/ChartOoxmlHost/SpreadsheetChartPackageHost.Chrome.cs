@@ -19,6 +19,7 @@ namespace WordAddIn1.ChartOoxmlHost
             int index,
             ChartInfo format,
             string pinFormulasToFile,
+            IList<string> pinColors,
             out string snapshotXml,
             out string error)
         {
@@ -38,6 +39,11 @@ namespace WordAddIn1.ChartOoxmlHost
             if (!string.IsNullOrEmpty(pinFormulasToFile))
             {
                 PinFormulas(doc, pinFormulasToFile);
+            }
+
+            if (pinColors != null)
+            {
+                ChartPartXml.TryPinSeriesColors(doc, pinColors);
             }
 
             snapshotXml = doc.ToString(SaveOptions.DisableFormatting);
@@ -85,14 +91,22 @@ namespace WordAddIn1.ChartOoxmlHost
                 HasTitleText = hasTitle || deleted,
                 ChartStyle = grid.ChartStyle,
                 LegendPosition = grid.Legend,
-                LegendFontColor = grid.LegendFontColor,
+                LegendFontColor = string.IsNullOrEmpty(grid.LegendFontColor)
+                    ? grid.LegendFontColor
+                    : "#" + grid.LegendFontColor.TrimStart('#'),
                 Gridlines = grid.Gridlines,
-                ChartAreaColor = grid.ChartAreaColor,
-                PlotColor = grid.PlotColor,
-                TitleFontColor = grid.TitleFontColor,
+                ChartAreaColor = string.IsNullOrEmpty(grid.ChartAreaColor) || string.Equals(grid.ChartAreaColor, "none", StringComparison.OrdinalIgnoreCase)
+                    ? grid.ChartAreaColor
+                    : "#" + grid.ChartAreaColor.TrimStart('#'),
+                PlotColor = string.IsNullOrEmpty(grid.PlotColor) || string.Equals(grid.PlotColor, "none", StringComparison.OrdinalIgnoreCase)
+                    ? grid.PlotColor
+                    : "#" + grid.PlotColor.TrimStart('#'),
+                TitleFontColor = string.IsNullOrEmpty(grid.TitleFontColor)
+                    ? grid.TitleFontColor
+                    : "#" + grid.TitleFontColor.TrimStart('#'),
                 TitleFontSize = grid.TitleFontSize,
                 TitleFontBold = grid.TitleFontBold,
-                HasTitleFontBold = grid.TitleFontBold,
+                HasTitleFontBold = grid.HasTitleFontBold || grid.TitleFontBold,
                 AxisX = grid.AxisX,
                 AxisY = grid.AxisY,
                 AxisY2 = grid.AxisY2,
@@ -146,7 +160,9 @@ namespace WordAddIn1.ChartOoxmlHost
                 {
                     Name = col.Name,
                     AxisY = col.AxisY,
-                    Color = col.Color,
+                    Color = string.Equals(col.Color, "none", StringComparison.OrdinalIgnoreCase)
+                        ? "none"
+                        : (string.IsNullOrEmpty(col.Color) ? col.Color : "#" + col.Color.TrimStart('#')),
                     ChartType = col.ChartType,
                     Line = col.Line,
                     LineWeight = col.LineWeight,
@@ -307,6 +323,14 @@ namespace WordAddIn1.ChartOoxmlHost
                 if (!string.Equals(wantTitle, haveTitle, StringComparison.Ordinal))
                 {
                     error = "标题被冲掉";
+                    return false;
+                }
+
+                if (!ChartPartXml.ColorsMatch(
+                        ChartPartXml.SnapshotSeriesColors(want),
+                        ChartPartXml.SnapshotSeriesColors(live)))
+                {
+                    error = "系列色没有钉住";
                     return false;
                 }
             }

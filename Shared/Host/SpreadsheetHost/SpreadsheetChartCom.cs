@@ -1310,6 +1310,16 @@ namespace WordAddIn1.SpreadsheetHost
                 dest.TitleFontSize = src.TitleFontSize;
             }
 
+            if (src.HasTitleFontBold)
+            {
+                dest.HasTitleFontBold = true;
+                dest.TitleFontBold = src.TitleFontBold;
+            }
+            else if (src.TitleFontBold)
+            {
+                dest.TitleFontBold = true;
+            }
+
             if (src.ChartStyle > 0)
             {
                 dest.ChartStyle = src.ChartStyle;

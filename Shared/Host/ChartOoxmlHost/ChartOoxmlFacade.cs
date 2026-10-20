@@ -498,6 +498,7 @@ namespace WordAddIn1.ChartOoxmlHost
                 TitleFontColor = info != null ? info.TitleFontColor : null,
                 TitleFontSize = info != null ? info.TitleFontSize : 0,
                 TitleFontBold = info != null && info.TitleFontBold,
+                HasTitleFontBold = info != null && info.HasTitleFontBold,
                 Explosion = info != null && info.HasExplosion ? (int?)info.Explosion : null,
                 Series = new List<ChartPartXml.SeriesCol>()
             };

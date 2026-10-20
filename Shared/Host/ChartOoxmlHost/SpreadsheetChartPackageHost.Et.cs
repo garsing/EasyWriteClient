@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Xml.Linq;
 using WordAddIn1.OpenFiles;
 
 namespace WordAddIn1.ChartOoxmlHost
@@ -37,7 +39,7 @@ namespace WordAddIn1.ChartOoxmlHost
                     return false;
                 }
 
-                if (!TryRewriteChrome(temp, sheetName, index, format, null, out string snapshot, out error))
+                if (!TryRewriteChrome(temp, sheetName, index, format, null, null, out string snapshot, out error))
                 {
                     return false;
                 }
@@ -66,7 +68,8 @@ namespace WordAddIn1.ChartOoxmlHost
                         return false;
                     }
 
-                    if (!TryRewriteChrome(pinTemp, sheetName, index, format, Path.GetFileName(fullBefore), out snapshot, out error))
+                    List<string> pinColors = ChartPartXml.SnapshotSeriesColors(XDocument.Parse(snapshot));
+                    if (!TryRewriteChrome(pinTemp, sheetName, index, format, Path.GetFileName(fullBefore), pinColors, out snapshot, out error))
                     {
                         return false;
                     }

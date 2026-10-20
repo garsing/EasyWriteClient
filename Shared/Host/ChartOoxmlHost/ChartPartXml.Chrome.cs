@@ -397,13 +397,13 @@ namespace WordAddIn1.ChartOoxmlHost
             }
 
             string pos = LegendPos(legend);
-            if (string.IsNullOrEmpty(pos))
-            {
-                return;
-            }
-
             if (node == null)
             {
+                if (string.IsNullOrEmpty(pos) && string.IsNullOrEmpty(NormColor(fontColor)))
+                {
+                    return;
+                }
+
                 node = new XElement(C + "legend");
                 XElement plot = chart.Element(C + "plotArea");
                 if (plot != null)
@@ -416,8 +416,12 @@ namespace WordAddIn1.ChartOoxmlHost
                 }
             }
 
-            SetVal(node, "legendPos", pos);
-            SetVal(node, "overlay", "0");
+            if (!string.IsNullOrEmpty(pos))
+            {
+                SetVal(node, "legendPos", pos);
+                SetVal(node, "overlay", "0");
+            }
+
             WriteLegendFont(node, fontColor);
         }
 
@@ -433,11 +437,20 @@ namespace WordAddIn1.ChartOoxmlHost
             var def = new XElement(
                 A + "defRPr",
                 new XElement(A + "solidFill", new XElement(A + "srgbClr", new XAttribute("val", hex))));
-            legend.Add(new XElement(
+            var txPr = new XElement(
                 C + "txPr",
                 new XElement(A + "bodyPr"),
                 new XElement(A + "lstStyle"),
-                new XElement(A + "p", new XElement(A + "pPr", def), new XElement(A + "endParaRPr"))));
+                new XElement(A + "p", new XElement(A + "pPr", def), new XElement(A + "endParaRPr")));
+            XElement ext = legend.Element(C + "extLst");
+            if (ext != null)
+            {
+                ext.AddBeforeSelf(txPr);
+            }
+            else
+            {
+                legend.Add(txPr);
+            }
         }
 
         private static string ReadLegendFontColor(XDocument chartDoc)
@@ -1063,7 +1076,15 @@ namespace WordAddIn1.ChartOoxmlHost
             if (spPr == null)
             {
                 spPr = new XElement(C + "spPr");
-                ser.Add(spPr);
+                XElement ext = ser.Element(C + "extLst");
+                if (ext != null)
+                {
+                    ext.AddBeforeSelf(spPr);
+                }
+                else
+                {
+                    ser.Add(spPr);
+                }
             }
 
             spPr.Element(A + "solidFill")?.Remove();
