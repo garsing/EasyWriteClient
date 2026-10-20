@@ -1,0 +1,42 @@
+pt>
+                <c:pt idx="2">
+                  <c:v>0.30399999999999999</c:v>
+                </c:pt>
+                <c:pt idx="3">
+                  <c:v>0.315</c:v>
+                </c:pt>
+              </c:numCache>
+            </c:numRef>
+          </c:val>
+          <c:smooth val="0" />
+          <c:extLst>
+            <c:ext uri="{C3380CC4-5D6E-409C-BE32-E72D297353CC}" xmlns:c16="http://schemas.microsoft.com/office/drawing/2014/chart">
+              <c16:uniqueId val="{00000004-B281-4503-8B52-BF27C677C747}" />
+            </c:ext>
+          </c:extLst>
+          <c:spPr>
+            <a:ln w="25400">
+              <a:solidFill>
+                <a:srgbClr val="ED7D31" />
+              </a:solidFill>
+            </a:ln>
+          </c:spPr>
+          <c:dLbls>
+            <c:numFmt formatCode="0.0%" sourceLinked="0" />
+            <c:showVal val="1" />
+            <c:showCatName val="0" />
+            <c:showSerName val="0" />
+          </c:dLbls>
+        </c:ser>
+        <c:dLbls>
+          <c:showLegendKey val="0" />
+          <c:showVal val="0" />
+          <c:showCatName val="0" />
+          <c:showSerName val="0" />
+          <c:showPercent val="0" />
+          <c:showBubbleSize val="0" />
+        </c:dLbls>
+        <c:marker val="1" />
+        <c:smooth val="0" />
+        <c:axId val="1833562384" />
+        <c:axId val="18

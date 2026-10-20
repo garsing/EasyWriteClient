@@ -324,7 +324,52 @@ namespace WordAddIn1.ChartOoxmlHost
             }
 
             string secId = EnsureRightValueAxis(plot, catId);
-            XElement lineChart = plot.Elements(C + "lineChart").FirstOrDefault();
+            var valueAxisIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (XElement val in plot.Elements(C + "valAx"))
+            {
+                string id = val.Element(C + "axId")?.Attribute("val")?.Value;
+                if (!string.IsNullOrEmpty(id))
+                {
+                    valueAxisIds.Add(id);
+                }
+            }
+
+            List<XElement> sers = chartDoc.Descendants(C + "ser").ToList();
+            var secondary = new HashSet<XElement>();
+            for (int i = 0; i < grid.Series.Count && i < sers.Count; i++)
+            {
+                if (ChartConfigSyntax.IsSecondaryAxis(grid.Series[i].AxisY))
+                {
+                    secondary.Add(sers[i]);
+                }
+            }
+
+            XElement lineChart = null;
+            foreach (XElement line in plot.Elements(C + "lineChart"))
+            {
+                if (string.Equals(ChartValueAxisId(line, valueAxisIds), secId, StringComparison.Ordinal))
+                {
+                    lineChart = line;
+                    break;
+                }
+            }
+
+            if (lineChart == null)
+            {
+                foreach (XElement line in plot.Elements(C + "lineChart"))
+                {
+                    List<XElement> kids = line.Elements(C + "ser").ToList();
+                    if (kids.Count == 0 || !kids.All(secondary.Contains))
+                    {
+                        continue;
+                    }
+
+                    PointChartAtValueAxis(line, valueAxisIds, secId);
+                    lineChart = line;
+                    break;
+                }
+            }
+
             if (lineChart == null)
             {
                 lineChart = new XElement(
@@ -344,15 +389,8 @@ namespace WordAddIn1.ChartOoxmlHost
                 }
             }
 
-            List<XElement> sers = chartDoc.Descendants(C + "ser").ToList();
-            for (int i = 0; i < grid.Series.Count && i < sers.Count; i++)
+            foreach (XElement ser in secondary)
             {
-                if (!ChartConfigSyntax.IsSecondaryAxis(grid.Series[i].AxisY))
-                {
-                    continue;
-                }
-
-                XElement ser = sers[i];
                 if (ser.Parent == lineChart)
                 {
                     continue;
@@ -369,6 +407,48 @@ namespace WordAddIn1.ChartOoxmlHost
                     lineChart.Add(ser);
                 }
             }
+
+            foreach (XElement line in plot.Elements(C + "lineChart").ToList())
+            {
+                if (!line.Elements(C + "ser").Any())
+                {
+                    line.Remove();
+                }
+            }
+        }
+
+        private static string ChartValueAxisId(XElement chartEl, HashSet<string> valueAxisIds)
+        {
+            if (chartEl == null)
+            {
+                return null;
+            }
+
+            foreach (XElement ax in chartEl.Elements(C + "axId"))
+            {
+                string id = ax.Attribute("val")?.Value;
+                if (!string.IsNullOrEmpty(id) && valueAxisIds.Contains(id))
+                {
+                    return id;
+                }
+            }
+
+            return null;
+        }
+
+        private static void PointChartAtValueAxis(XElement chartEl, HashSet<string> valueAxisIds, string valueAxisId)
+        {
+            foreach (XElement ax in chartEl.Elements(C + "axId"))
+            {
+                string id = ax.Attribute("val")?.Value;
+                if (!string.IsNullOrEmpty(id) && valueAxisIds.Contains(id))
+                {
+                    ax.SetAttributeValue("val", valueAxisId);
+                    return;
+                }
+            }
+
+            chartEl.Add(new XElement(C + "axId", new XAttribute("val", valueAxisId)));
         }
 
         private static string EnsureRightValueAxis(XElement plot, string catId)
@@ -398,16 +478,43 @@ namespace WordAddIn1.ChartOoxmlHost
             }
 
             string secId = next.ToString(CultureInfo.InvariantCulture);
-            plot.Add(new XElement(
+            XElement primary = null;
+            foreach (XElement val in plot.Elements(C + "valAx"))
+            {
+                string pos = val.Element(C + "axPos")?.Attribute("val")?.Value;
+                if (!string.Equals(pos, "r", StringComparison.OrdinalIgnoreCase))
+                {
+                    primary = val;
+                    break;
+                }
+            }
+
+            var sec = new XElement(
                 C + "valAx",
                 new XElement(C + "axId", new XAttribute("val", secId)),
                 new XElement(
                     C + "scaling",
                     new XElement(C + "orientation", new XAttribute("val", "minMax"))),
-                new XElement(C + "axPos", new XAttribute("val", "r")),
-                new XElement(C + "crossAx", new XAttribute("val", catId)),
-                new XElement(C + "crosses", new XAttribute("val", "max"))));
+                new XElement(C + "delete", new XAttribute("val", "0")),
+                new XElement(C + "axPos", new XAttribute("val", "r")));
+            CopyAxisChild(primary, sec, "numFmt");
+            CopyAxisChild(primary, sec, "majorTickMark");
+            CopyAxisChild(primary, sec, "minorTickMark");
+            CopyAxisChild(primary, sec, "tickLblPos");
+            sec.Add(new XElement(C + "crossAx", new XAttribute("val", catId)));
+            sec.Add(new XElement(C + "crosses", new XAttribute("val", "max")));
+            CopyAxisChild(primary, sec, "crossBetween");
+            plot.Add(sec);
             return secId;
+        }
+
+        private static void CopyAxisChild(XElement from, XElement to, string localName)
+        {
+            XElement child = from?.Element(C + localName);
+            if (child != null)
+            {
+                to.Add(new XElement(child));
+            }
         }
 
         private static string AxisId(XElement plot, string axisName)

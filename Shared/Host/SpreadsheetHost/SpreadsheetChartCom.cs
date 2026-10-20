@@ -1332,6 +1332,17 @@ namespace WordAddIn1.SpreadsheetHost
                 dest.GapWidth = src.GapWidth;
             }
 
+            if (src.YAxisMin != 0 || src.YAxisMax != 0)
+            {
+                dest.YAxisMin = src.YAxisMin;
+                dest.YAxisMax = src.YAxisMax;
+            }
+
+            if (src.YAxisMajorUnit > 0)
+            {
+                dest.YAxisMajorUnit = src.YAxisMajorUnit;
+            }
+
             if (src.AxisX != null)
             {
                 dest.AxisX = src.AxisX;

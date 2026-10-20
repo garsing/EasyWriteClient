@@ -93,10 +93,27 @@ namespace WordAddIn1.ChartOoxmlHost
                 if (labels == null)
                 {
                     labels = new XElement(C + "dLbls");
-                    ser.Add(labels);
+                    XElement ext = ser.Element(C + "extLst");
+                    if (ext != null)
+                    {
+                        ext.AddBeforeSelf(labels);
+                    }
+                    else
+                    {
+                        ser.Add(labels);
+                    }
                 }
 
-                string pos = LabelPosToOoxml(col.LabelPosition);
+                string labelPos = col.LabelPosition;
+                string parentName = ser.Parent == null ? "" : ser.Parent.Name.LocalName;
+                if ((parentName == "barChart" || parentName == "bar3DChart")
+                    && (string.Equals(labelPos, "above", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(labelPos, "below", StringComparison.OrdinalIgnoreCase)))
+                {
+                    labelPos = "outside";
+                }
+
+                string pos = LabelPosToOoxml(labelPos);
                 if (!string.IsNullOrEmpty(pos))
                 {
                     SetVal(labels, "dLblPos", pos);
@@ -475,14 +492,22 @@ namespace WordAddIn1.ChartOoxmlHost
                 axis.AddFirst(scaling);
             }
 
+            if (max.HasValue)
+            {
+                SetVal(scaling, "max", max.Value.ToString(CultureInfo.InvariantCulture));
+            }
+
             if (min.HasValue)
             {
                 SetVal(scaling, "min", min.Value.ToString(CultureInfo.InvariantCulture));
             }
 
-            if (max.HasValue)
+            XElement maxEl = scaling.Element(C + "max");
+            XElement minEl = scaling.Element(C + "min");
+            if (maxEl != null && minEl != null && minEl.IsBefore(maxEl))
             {
-                SetVal(scaling, "max", max.Value.ToString(CultureInfo.InvariantCulture));
+                maxEl.Remove();
+                minEl.AddBeforeSelf(maxEl);
             }
 
             if (major.HasValue)
@@ -603,11 +628,20 @@ namespace WordAddIn1.ChartOoxmlHost
                 def.Add(new XElement(A + "ea", new XAttribute("typeface", style.TickFont)));
             }
 
-            axis.Add(new XElement(
+            var txPr = new XElement(
                 C + "txPr",
                 new XElement(A + "bodyPr"),
                 new XElement(A + "lstStyle"),
-                new XElement(A + "p", new XElement(A + "pPr", def), new XElement(A + "endParaRPr"))));
+                new XElement(A + "p", new XElement(A + "pPr", def), new XElement(A + "endParaRPr")));
+            XElement cross = axis.Element(C + "crossAx");
+            if (cross != null)
+            {
+                cross.AddBeforeSelf(txPr);
+            }
+            else
+            {
+                axis.Add(txPr);
+            }
         }
 
         private static void WriteLn(XElement owner, string hex, string weight)

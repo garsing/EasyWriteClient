@@ -945,6 +945,17 @@ namespace WordAddIn1.SpreadsheetHost
                         chart.Add(new XElement("ChartStyle", format.ChartStyle));
                     }
 
+                    if (format.YAxisMin != 0 || format.YAxisMax != 0)
+                    {
+                        chart.Add(new XElement("YAxisMin", format.YAxisMin));
+                        chart.Add(new XElement("YAxisMax", format.YAxisMax));
+                    }
+
+                    if (format.YAxisMajorUnit > 0)
+                    {
+                        chart.Add(new XElement("YAxisMajorUnit", format.YAxisMajorUnit));
+                    }
+
                     if (!string.IsNullOrEmpty(format.LegendFontColor))
                     {
                         chart.Add(new XElement("LegendFontColor", format.LegendFontColor));
