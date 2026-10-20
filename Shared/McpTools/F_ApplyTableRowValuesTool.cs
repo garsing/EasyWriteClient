@@ -163,8 +163,18 @@ namespace WordAddIn1
                         Word.Table tableAfter = TableConfigApplyHelper.ResolveTableById(document, tableId, out _);
                         if (app != null && tableAfter != null)
                         {
-                            PostModifyNavigateHelper.NavigateAfterEnd(
-                                app, tableAfter.Range, $"apply_table_row_values:{tableId}");
+                            Word.Cell lastCell = TryCell(
+                                tableAfter, applyResult.LastWrittenRow, applyResult.LastWrittenCol);
+                            if (lastCell != null)
+                            {
+                                PostModifyNavigateHelper.NavigateInsideCellTextEnd(
+                                    app, lastCell, $"apply_table_row_values:{tableId}");
+                            }
+                            else
+                            {
+                                PostModifyNavigateHelper.NavigateAfterEnd(
+                                    app, tableAfter.Range, $"apply_table_row_values:{tableId}");
+                            }
                         }
                     }
 
@@ -344,6 +354,23 @@ namespace WordAddIn1
             catch
             {
                 return false;
+            }
+        }
+
+        private static Word.Cell TryCell(Word.Table table, int row, int col)
+        {
+            if (table == null || row < 1 || col < 1)
+            {
+                return null;
+            }
+
+            try
+            {
+                return table.Cell(row, col);
+            }
+            catch
+            {
+                return null;
             }
         }
     }

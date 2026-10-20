@@ -35,6 +35,8 @@ namespace WordAddIn1
         public bool Success { get; set; }
         public string Error { get; set; }
         public int CellsWritten { get; set; }
+        public int LastWrittenRow { get; set; }
+        public int LastWrittenCol { get; set; }
         public List<string> Warnings { get; set; } = new List<string>();
     }
 
@@ -610,6 +612,8 @@ namespace WordAddIn1
                 if (written)
                 {
                     result.CellsWritten++;
+                    result.LastWrittenRow = slots[i].Row;
+                    result.LastWrittenCol = slots[i].Col;
                 }
             }
 

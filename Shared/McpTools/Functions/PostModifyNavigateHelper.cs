@@ -8,6 +8,41 @@ namespace WordAddIn1
     /// </summary>
     public static class PostModifyNavigateHelper
     {
+        /// <summary>格子内文末：光标落到 cell 内容之后（End-1，避开格结束符），再视配置滚视口。</summary>
+        public static bool NavigateInsideCellTextEnd(Word.Application app, Word.Cell cell, string debugTag = "")
+        {
+            if (app == null || cell == null)
+            {
+                LogFail(debugTag, "app 或 cell 为空");
+                return false;
+            }
+
+            try
+            {
+                Word.Range range = cell.Range;
+                int pos = range.End - 1;
+                if (pos < range.Start)
+                {
+                    pos = range.Start;
+                }
+
+                if (app.Selection == null)
+                {
+                    LogFail(debugTag, "Selection 不可用");
+                    return false;
+                }
+
+                app.Selection.SetRange(pos, pos);
+                LogOk(debugTag, $"SetRange cell text end={pos} (cell {range.Start}-{range.End})");
+                return MaybeScrollToSelection(app, debugTag);
+            }
+            catch (Exception ex)
+            {
+                LogFail(debugTag, ex.Message);
+                return false;
+            }
+        }
+
         /// <summary>通则：光标落到 targetRange.End，再视配置滚视口。</summary>
         public static bool NavigateAfterEnd(Word.Application app, Word.Range targetRange, string debugTag = "")
         {
