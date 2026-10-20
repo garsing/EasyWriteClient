@@ -209,6 +209,7 @@ watch(() => props.messages, (newMessages, oldMessages) => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-anchor: none;
   /* 顶 padding 会在吸顶条上方留出一条可透视缝，改由吸顶条自己垫 */
   padding: 0 16px 16px;
   display: block;

@@ -148,6 +148,7 @@ function onPick (text) {
   padding: 24px 16px 12px;
   min-height: 0;
   overflow-y: auto;
+  overflow-anchor: none;
   background-color: #f7f7f5;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* 旧 Edge */

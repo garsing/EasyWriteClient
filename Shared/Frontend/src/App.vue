@@ -1248,9 +1248,11 @@ const restoreInputValue = (value) => {
 <style scoped>
 .app-shell {
   display: flex;
-  height: 100vh;
+  height: 100%;
+  max-height: 100%;
   width: 100%;
   overflow: hidden;
+  overflow-anchor: none;
   background-color: #f7f7f5;
   box-sizing: border-box;
 }
@@ -1273,10 +1275,14 @@ const restoreInputValue = (value) => {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  max-height: 100%;
   width: 100%;
   min-width: 0;
+  min-height: 0;
   flex: 1;
+  overflow: hidden;
+  overflow-anchor: none;
   background-color: #f7f7f5;
 }
 
@@ -1380,8 +1386,11 @@ html,
 body,
 #app {
   height: 100%;
+  max-height: 100%;
   margin: 0;
   overflow: hidden;
+  overflow-anchor: none;
+  overscroll-behavior: none;
 }
 
 .app-shell.host-desktop,

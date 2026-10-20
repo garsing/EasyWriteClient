@@ -92,7 +92,7 @@
         @keydown.shift.enter.exact="handleShiftEnter"
       />
       <button
-        v-if="desktop || inputValue.trim().length > 0 || isProcessing"
+        v-if="showSendButton"
         type="button"
         :disabled="sendDisabled"
         :title="isProcessing ? '停止' : '发送'"
@@ -102,6 +102,7 @@
       >
         <img :src="currentIcon" :alt="isProcessing ? '停止' : '发送'" class="send-icon" />
       </button>
+      <div v-else class="send-button send-button--placeholder" aria-hidden="true" />
     </div>
     <p class="ai-content-label" role="note">内容由人工智能生成，请注意甄别</p>
   </div>
@@ -310,6 +311,19 @@ function onPasteCapture (e) {
 const inputValue = ref('')
 const placeholder = ref('输入消息')
 const textareaRef = ref(null)
+const nativeTextarea = ref(null)
+
+const showSendButton = computed(
+  () => props.desktop || inputValue.value.trim().length > 0 || props.isProcessing
+)
+
+function pinChatViewport () {
+  if (typeof window === 'undefined') return
+  if (window.scrollY || window.pageYOffset) window.scrollTo(0, 0)
+  const root = document.documentElement
+  if (root && root.scrollTop) root.scrollTop = 0
+  if (document.body && document.body.scrollTop) document.body.scrollTop = 0
+}
 
 function resolveNativeTextarea () {
   const comp = textareaRef.value
@@ -340,6 +354,7 @@ function insertTextAtCursor (text) {
 
 watch(inputValue, (v) => {
   syncLiveDraftInput(v)
+  pinChatViewport()
 }, { immediate: true })
 
 const showAttachmentStrip = computed(() => pendingAttachments.value.length > 0)
@@ -369,6 +384,27 @@ function truncateName (name) {
   return name.length > 36 ? name.slice(0, 33) + '…' : name
 }
 
+function bindNativeTextarea () {
+  const ta = resolveNativeTextarea()
+  if (!ta || ta === nativeTextarea.value) return
+  unbindNativeTextarea()
+  nativeTextarea.value = ta
+  ta.addEventListener('focus', pinChatViewport)
+  ta.addEventListener('input', pinChatViewport)
+  ta.addEventListener('compositionupdate', pinChatViewport)
+  ta.addEventListener('compositionend', pinChatViewport)
+}
+
+function unbindNativeTextarea () {
+  const ta = nativeTextarea.value
+  if (!ta) return
+  ta.removeEventListener('focus', pinChatViewport)
+  ta.removeEventListener('input', pinChatViewport)
+  ta.removeEventListener('compositionupdate', pinChatViewport)
+  ta.removeEventListener('compositionend', pinChatViewport)
+  nativeTextarea.value = null
+}
+
 onMounted(() => {
   window.addEventListener('restoreInput', (event) => {
     if (event.detail && typeof event.detail.value === 'string') {
@@ -385,6 +421,15 @@ onMounted(() => {
       insertTextAtCursor(event.detail.text)
     }
   })
+
+  nextTick(() => {
+    bindNativeTextarea()
+    pinChatViewport()
+  })
+})
+
+onUnmounted(() => {
+  unbindNativeTextarea()
 })
 
 
@@ -619,6 +664,7 @@ const handleShiftEnter = () => {}
   display: flex;
   gap: 4px;
   align-items: center;
+  min-height: 36px;
 }
 
 .input-textarea {
@@ -630,6 +676,10 @@ const handleShiftEnter = () => {}
 .input-textarea :deep(.ant-input) {
   background-color: #fff;
   border-color: #e0e0e0;
+  box-sizing: border-box;
+  font-size: 14px;
+  line-height: 22px;
+  overflow-y: hidden;
 }
 
 .send-button {
@@ -652,6 +702,14 @@ const handleShiftEnter = () => {}
   width: 24px;
   height: 24px;
   object-fit: contain;
+}
+
+.send-button--placeholder {
+  width: 36px;
+  height: 36px;
+  padding: 6px;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /* 桌面端：外层与面板同色，仅内框白色；外层 padding 收紧使内框更贴边 */
@@ -704,7 +762,8 @@ const handleShiftEnter = () => {}
   min-height: 60px;
   resize: none;
   font-size: 14px;
-  line-height: 1.55;
+  line-height: 22px;
+  overflow-y: hidden;
 }
 
 .chat-input-container--desktop .input-textarea :deep(.ant-input:hover),
