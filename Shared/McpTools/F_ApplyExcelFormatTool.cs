@@ -117,6 +117,30 @@ namespace WordAddIn1
             }
         }
 
+        public static bool TryGetContractParseFailure(Dictionary<string, object> args, out ToolResult failure)
+        {
+            failure = null;
+            if (string.IsNullOrWhiteSpace(GetStringArg(args, "sheet")))
+            {
+                failure = new ToolResult { Success = false, Error = "必须提供 sheet" };
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(GetStringArg(args, "range")))
+            {
+                failure = new ToolResult { Success = false, Error = "必须提供 range" };
+                return true;
+            }
+
+            if (args == null || !args.ContainsKey("format") || args["format"] == null)
+            {
+                failure = new ToolResult { Success = false, Error = "必须提供 format 对象" };
+                return true;
+            }
+
+            return false;
+        }
+
         private static string GetStringArg(Dictionary<string, object> args, string key)
         {
             if (args == null || !args.ContainsKey(key) || args[key] == null)

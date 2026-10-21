@@ -1,13 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using WordAddIn1.DocumentHost;
-using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 列出当前渠道文档的操作/检查点记录（只读）。经 <see cref="DocumentHostAdapter"/>。
+    /// 列出当前渠道文档的操作/检查点记录（只读）。
     /// </summary>
     public static class F_ListDocumentOperationsTool
     {
@@ -19,23 +17,26 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!DocumentHostAdapter.TryResolveInteropDocument(
-                            args,
-                            wordApplication,
-                            out InteropDocumentHandle docHandle,
-                            out ToolResult resolveError,
-                            activateDocument: false))
+                    if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string resolveError)
+                        || channel == null)
                     {
-                        return Task.FromResult(resolveError);
+                        return Task.FromResult(new ToolResult
+                        {
+                            Success = false,
+                            Error = resolveError ?? "无可用文档渠道"
+                        });
                     }
 
-                    Word.Document doc = docHandle.Document;
+                    if (!CheckpointKindAdapters.TryFromChannel(channel, out CheckpointLiveTarget live, out string kindError))
+                    {
+                        return Task.FromResult(new ToolResult { Success = false, Error = kindError });
+                    }
+
+                    string uuid = live.DocUuid;
                     System.Diagnostics.Debug.WriteLine(
-                        $"[F_list_document_operations] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
+                        $"[F_list_document_operations] channel_id={channel.ChannelId} uuid={uuid}");
 
-                    DocumentState.EnsureCurrDocUuid(doc);
-
-                    string text = DocumentCheckpointService.FormatListTextForCurrentDocument();
+                    string text = DocumentCheckpointService.FormatListTextForDocUuid(uuid);
                     return Task.FromResult(new ToolResult
                     {
                         Success = true,

@@ -74,6 +74,18 @@ namespace WordAddIn1
             };
         }
 
+        public static bool TryGetContractParseFailure(Dictionary<string, object> args, out ToolResult failure)
+        {
+            failure = null;
+            if (string.IsNullOrWhiteSpace(GetStringArg(args, "action")))
+            {
+                failure = new ToolResult { Success = false, Error = "须提供 action（add|rename|delete）" };
+                return true;
+            }
+
+            return false;
+        }
+
         private static string GetStringArg(Dictionary<string, object> args, string key)
         {
             if (args == null || !args.ContainsKey(key) || args[key] == null)

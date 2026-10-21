@@ -66,9 +66,24 @@ namespace WordAddIn1
             return Path.Combine(GetCheckpointRootDirectory(), docUuid ?? "");
         }
 
-        public static string GetCheckpointFilePath(string docUuid, string timestamp)
+        public static string GetCheckpointFilePath(string docUuid, string timestamp, string extension = "docx")
         {
-            return Path.Combine(GetDocCheckpointDirectory(docUuid), $"checkpoint_{timestamp}.docx");
+            string ext = string.IsNullOrEmpty(extension) ? "docx" : extension.TrimStart('.');
+            return Path.Combine(GetDocCheckpointDirectory(docUuid), $"checkpoint_{timestamp}.{ext}");
+        }
+
+        public static string FindCheckpointFile(string docUuid, string timestamp)
+        {
+            foreach (string ext in new[] { "docx", "xlsx", "pptx" })
+            {
+                string path = GetCheckpointFilePath(docUuid, timestamp, ext);
+                if (File.Exists(path))
+                {
+                    return path;
+                }
+            }
+
+            return GetCheckpointFilePath(docUuid, timestamp, "docx");
         }
 
         public static DocumentCheckpointSession GetSession(string docUuid)
@@ -102,71 +117,26 @@ namespace WordAddIn1
             string toolName,
             IReadOnlyDictionary<string, object> parameters)
         {
-            // 优先按 channel_id / 默认渠道解析（Desktop+WPS 无 Word.Application 注入）
-            Word.Document activeDoc = null;
-            string resolveHint = null;
             Dictionary<string, object> args = ToArgsDictionary(parameters);
             string explicitId = ChannelContext.TryGetChannelIdFromParameters(args);
             bool hasExplicitChannel = !string.IsNullOrEmpty(explicitId);
             HostProbe.Log("ckpt-enter", "tool=" + toolName + " " + HostProbe.ArgsBrief(args)
                 + " hasExplicit=" + hasExplicitChannel + " wordApp=" + (_wordApplication != null));
 
-            if (!TryResolveDocumentForCheckpoint(args, out activeDoc, out resolveHint)
-                && LooksLikeNoOpenDocument(resolveHint))
+            if (!TryResolveLiveTarget(args, hasExplicitChannel, out CheckpointLiveTarget live, out string resolveHint))
             {
-                HostProbe.Log("ckpt-retry-activate", "hint=" + resolveHint);
-                TryActivateChannelDocument(args);
-                TryResolveDocumentForCheckpoint(args, out activeDoc, out resolveHint);
+                return Fail(
+                    string.IsNullOrEmpty(resolveHint)
+                        ? "无可用文档渠道；请确认已打开文字稿、工作簿或演示文稿，或传入 channel_id"
+                        : resolveHint,
+                    "ckpt-no-doc");
             }
 
-            // 显式渠道已给出时不要回退 Word.ActiveDocument：
-            // Desktop 常同时挂着空的 Word 与 WPS，回退会吞掉 excel/ppt/wps 的真实错误。
-            if (activeDoc == null && !hasExplicitChannel && _wordApplication != null)
-            {
-                try
-                {
-                    activeDoc = _wordApplication.ActiveDocument;
-                }
-                catch (Exception ex)
-                {
-                    if (!string.IsNullOrEmpty(resolveHint))
-                    {
-                        return Fail(resolveHint, "ckpt-active-fallback-hint");
-                    }
-
-                    return Fail("无法读取活动文档: " + ex.Message, "ckpt-active-fallback");
-                }
-            }
-
-            if (activeDoc == null)
-            {
-                string detail = string.IsNullOrEmpty(resolveHint)
-                    ? "无可用文档渠道；请确认 WPS/Word 已打开文档，或传入 channel_id"
-                    : resolveHint;
-                return Fail(detail, "ckpt-no-doc");
-            }
-
-            string channelId = ChannelContext.TryGetChannelIdFromParameters(args);
-            string channelUuid = null;
-            if (ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out _)
-                && channel != null)
-            {
-                channelId = channel.ChannelId;
-                channelUuid = ChannelRegistry.TryGetChannelDocUuid(channel);
-            }
-
-            if (!string.IsNullOrEmpty(channelUuid))
-            {
-                DocumentIdentity.Register(activeDoc, channelUuid);
-            }
+            CheckpointCaret caret = live.Adapter.CaptureCaret(live);
 
             try
             {
-                HostProbe.Touch("ckpt-before-activate", activeDoc);
-                TryActivateInteropDocument(activeDoc);
-                HostProbe.Touch("ckpt-after-activate", activeDoc);
-                DocumentState.BindAndActivate(activeDoc);
-                HostProbe.Touch("ckpt-after-bind", activeDoc);
+                live.Adapter.PrepareForSave(live);
             }
             catch (Exception ex)
             {
@@ -174,54 +144,39 @@ namespace WordAddIn1
                 return Fail(ex.Message, "ckpt-bind-throw");
             }
 
-            if (!string.IsNullOrEmpty(channelUuid))
+            if (string.IsNullOrEmpty(live.DocUuid) && live.Live is Word.Document wordDoc)
             {
-                DocumentState.ActivateSessionByUuid(channelUuid);
+                live.DocUuid = DocumentState.EnsureCurrDocUuid(wordDoc);
             }
 
-            string docUuid = !string.IsNullOrEmpty(channelUuid)
-                ? channelUuid
-                : DocumentState.EnsureCurrDocUuid(activeDoc);
+            if (string.IsNullOrEmpty(live.DocUuid))
+            {
+                return Fail("当前文档尚未绑定 doc_uuid", "ckpt-no-uuid");
+            }
 
-            string dir = GetDocCheckpointDirectory(docUuid);
+            string dir = GetDocCheckpointDirectory(live.DocUuid);
             Directory.CreateDirectory(dir);
 
             string timestamp = GenerateUniqueTimestamp(dir);
-            string path = GetCheckpointFilePath(docUuid, timestamp);
+            string path = GetCheckpointFilePath(live.DocUuid, timestamp, live.Adapter.CopyExtension);
 
             try
             {
-                DocumentCheckpointSaveHelper.SaveDocumentCopy(activeDoc, path);
+                live.Adapter.SaveCopy(live, path);
             }
             catch (Exception ex)
             {
-                if (LooksLikeNoOpenDocument(ex.Message))
-                {
-                    TryActivateInteropDocument(activeDoc);
-                    try
-                    {
-                        DocumentCheckpointSaveHelper.SaveDocumentCopy(activeDoc, path);
-                        ex = null;
-                    }
-                    catch (Exception retryEx)
-                    {
-                        ex = retryEx;
-                    }
-                }
-
-                if (ex != null)
-                {
-                    HostProbe.Log("ckpt-save-fail", HostProbe.Ex(ex));
-                    return Fail($"创建文档副本失败: {ex.Message}", "ckpt-save");
-                }
+                HostProbe.Log("ckpt-save-fail", HostProbe.Ex(ex));
+                return Fail($"创建文档副本失败: {ex.Message}", "ckpt-save");
             }
 
-            DocumentCheckpointSession session = GetOrCreateSession(docUuid);
+            DocumentCheckpointSession session = GetOrCreateSession(live.DocUuid);
             AppendCheckpointEntry(session, timestamp);
+            session.CaretByTimestamp[timestamp] = caret;
 
             if (session.CheckpointTimestampsInOrder.Count > MaxCheckpointSlots)
             {
-                EvictOldestCheckpoint(session, docUuid);
+                EvictOldestCheckpoint(session, live.DocUuid);
             }
 
             HostProbe.Log("ckpt-ok", "path=" + path + " ts=" + timestamp);
@@ -232,9 +187,88 @@ namespace WordAddIn1
             {
                 Success = true,
                 Timestamp = timestamp,
-                DocUuid = docUuid,
-                ChannelId = channelId
+                DocUuid = live.DocUuid,
+                ChannelId = live.ChannelId
             };
+        }
+
+        private static bool TryResolveLiveTarget(
+            Dictionary<string, object> args,
+            bool hasExplicitChannel,
+            out CheckpointLiveTarget live,
+            out string resolveHint)
+        {
+            live = null;
+            resolveHint = null;
+
+            if (ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string channelError)
+                && channel != null)
+            {
+                if (CheckpointKindAdapters.TryFromChannel(channel, out live, out resolveHint))
+                {
+                    return true;
+                }
+
+                if (hasExplicitChannel)
+                {
+                    return false;
+                }
+            }
+            else if (!string.IsNullOrEmpty(channelError))
+            {
+                resolveHint = channelError;
+                if (hasExplicitChannel)
+                {
+                    return false;
+                }
+            }
+
+            if (!TryResolveDocumentForCheckpoint(args, out Word.Document activeDoc, out resolveHint)
+                && LooksLikeNoOpenDocument(resolveHint))
+            {
+                TryActivateChannelDocument(args);
+                TryResolveDocumentForCheckpoint(args, out activeDoc, out resolveHint);
+            }
+
+            if (activeDoc == null && !hasExplicitChannel && _wordApplication != null)
+            {
+                try
+                {
+                    activeDoc = _wordApplication.ActiveDocument;
+                }
+                catch (Exception ex)
+                {
+                    resolveHint = string.IsNullOrEmpty(resolveHint)
+                        ? "无法读取活动文档: " + ex.Message
+                        : resolveHint;
+                    return false;
+                }
+            }
+
+            if (activeDoc == null)
+            {
+                return false;
+            }
+
+            string uuid = null;
+            string channelId = ChannelContext.TryGetChannelIdFromParameters(args);
+            IOperationChannel wordChannel = null;
+            if (ChannelContext.TryResolveChannel(args, out wordChannel, out _)
+                && wordChannel != null)
+            {
+                channelId = wordChannel.ChannelId;
+                uuid = ChannelRegistry.TryGetChannelDocUuid(wordChannel);
+            }
+
+            live = new CheckpointLiveTarget
+            {
+                Adapter = CheckpointKindAdapters.Word,
+                Channel = wordChannel,
+                ChannelId = channelId,
+                DocUuid = uuid,
+                Live = activeDoc
+            };
+            return true;
         }
 
         private static bool TryResolveDocumentForCheckpoint(
@@ -478,34 +512,26 @@ namespace WordAddIn1
 
             try
             {
-                string path = GetCheckpointFilePath(docUuid, timestamp);
-                Word.Document target = TryResolveLiveDocumentForRollback(docUuid, channelId);
-                if (File.Exists(path) && target != null)
+                string path = FindCheckpointFile(docUuid, timestamp);
+                if (File.Exists(path)
+                    && TryResolveLiveTargetForRestore(docUuid, channelId, out CheckpointLiveTarget live))
                 {
-                    Word.Application app = TryApplicationForRestore(target, channelId);
-                    if (app != null)
-                    {
-                        HostProbe.Log(
-                            "rollback-restore",
-                            "uuid=" + docUuid + " ch=" + (channelId ?? "") + " path=" + path);
-                        DocumentRestoreHelper.RestoreActiveDocumentFromCheckpoint(path, app, target);
-                    }
-                    else
-                    {
-                        HostProbe.Log("rollback-skip-restore", "uuid=" + docUuid + " no Application on target");
-                    }
+                    HostProbe.Log(
+                        "rollback-restore",
+                        "uuid=" + docUuid + " ch=" + (channelId ?? "") + " path=" + path);
+                    live.Adapter.RestoreCopy(live, path);
+                    TryRestoreStoredCaret(docUuid, timestamp, live);
                 }
                 else
                 {
                     HostProbe.Log(
                         "rollback-skip-restore",
                         "uuid=" + docUuid + " ch=" + (channelId ?? "")
-                        + " file=" + File.Exists(path) + " target=" + (target != null));
+                        + " file=" + File.Exists(path));
                 }
             }
             catch (Exception ex)
             {
-                // 回滚不得盖掉工具已经返回的契约错误（Word+WPS 双开时 ActiveDocument 常 COM 失败）
                 HostProbe.Log("rollback-warn", HostProbe.Ex(ex));
                 System.Diagnostics.Debug.WriteLine($"[Checkpoint] rollback restore warning: {ex.Message}");
             }
@@ -522,6 +548,69 @@ namespace WordAddIn1
             }
 
             System.Diagnostics.Debug.WriteLine($"[Checkpoint] rollback failed invoke timestamp={timestamp}");
+        }
+
+        private static bool TryResolveLiveTargetForRestore(
+            string docUuid,
+            string channelId,
+            out CheckpointLiveTarget live)
+        {
+            live = null;
+            IOperationChannel channel = null;
+            if (!string.IsNullOrEmpty(channelId))
+            {
+                ChannelRegistry.TryGet(channelId, out channel);
+            }
+
+            if (channel == null)
+            {
+                ChannelRegistry.TryGetChannelByDocUuid(docUuid, out channel);
+            }
+
+            if (channel != null && CheckpointKindAdapters.TryFromChannel(channel, out live, out _))
+            {
+                if (string.IsNullOrEmpty(live.DocUuid))
+                {
+                    live.DocUuid = docUuid;
+                }
+
+                return true;
+            }
+
+            Word.Document wordDoc = TryResolveLiveDocumentForRollback(docUuid, channelId);
+            if (wordDoc == null)
+            {
+                return false;
+            }
+
+            live = new CheckpointLiveTarget
+            {
+                Adapter = CheckpointKindAdapters.Word,
+                ChannelId = channelId,
+                DocUuid = docUuid,
+                Live = wordDoc
+            };
+            return true;
+        }
+
+        private static void TryRestoreStoredCaret(string docUuid, string timestamp, CheckpointLiveTarget live)
+        {
+            DocumentCheckpointSession session = GetSession(docUuid);
+            if (session == null
+                || !session.CaretByTimestamp.TryGetValue(timestamp, out CheckpointCaret caret)
+                || caret == null)
+            {
+                return;
+            }
+
+            try
+            {
+                live.Adapter.RestoreCaret(live, caret);
+            }
+            catch (Exception ex)
+            {
+                HostProbe.Log("restore-caret-warn", HostProbe.Ex(ex));
+            }
         }
 
         private static Word.Document TryResolveLiveDocumentForRollback(string docUuid, string channelId)
@@ -619,52 +708,51 @@ namespace WordAddIn1
 
         public static ToolResult RestoreCheckpoint(string timestamp, Word.Document document = null)
         {
-            Word.Document activeDoc = document;
-            Word.Application app = null;
-
-            if (activeDoc != null)
+            CheckpointLiveTarget live = null;
+            if (document != null)
             {
+                live = new CheckpointLiveTarget
+                {
+                    Adapter = CheckpointKindAdapters.Word,
+                    Live = document
+                };
                 try
                 {
-                    app = activeDoc.Application;
+                    DocumentState.BindAndActivate(document);
+                    live.DocUuid = DocumentState.CurrDocUuid;
                 }
                 catch (Exception)
                 {
-                    app = null;
-                }
-
-            }
-
-            if (app == null)
-            {
-                app = _wordApplication;
-            }
-
-            if (activeDoc == null && app != null)
-            {
-                try
-                {
-                    activeDoc = app.ActiveDocument;
-                }
-                catch (Exception)
-                {
-                    activeDoc = null;
                 }
             }
 
-            if (activeDoc == null || app == null)
+            return RestoreCheckpoint(timestamp, live);
+        }
+
+        public static ToolResult RestoreCheckpoint(string timestamp, CheckpointLiveTarget live)
+        {
+            if (live == null || live.Live == null || live.Adapter == null)
             {
-                return new ToolResult { Success = false, Error = "没有活动的 Word 文档" };
+                return new ToolResult { Success = false, Error = "没有活动的文档窗口" };
             }
 
-            DocumentState.BindAndActivate(activeDoc);
-            string docUuid = DocumentState.CurrDocUuid;
-            if (string.IsNullOrEmpty(docUuid))
+            if (string.IsNullOrEmpty(live.DocUuid) && live.Channel != null)
+            {
+                live.DocUuid = ChannelRegistry.TryGetChannelDocUuid(live.Channel);
+            }
+
+            if (string.IsNullOrEmpty(live.DocUuid) && live.Live is Word.Document wordDoc)
+            {
+                DocumentState.BindAndActivate(wordDoc);
+                live.DocUuid = DocumentState.CurrDocUuid;
+            }
+
+            if (string.IsNullOrEmpty(live.DocUuid))
             {
                 return new ToolResult { Success = false, Error = "当前文档尚未绑定 doc_uuid" };
             }
 
-            DocumentCheckpointSession session = GetSession(docUuid);
+            DocumentCheckpointSession session = GetSession(live.DocUuid);
             if (session == null || !session.CheckpointTimestampsInOrder.Contains(timestamp))
             {
                 return new ToolResult
@@ -674,19 +762,20 @@ namespace WordAddIn1
                 };
             }
 
-            string path = GetCheckpointFilePath(docUuid, timestamp);
+            string path = FindCheckpointFile(live.DocUuid, timestamp);
             if (!File.Exists(path))
             {
                 return new ToolResult
                 {
                     Success = false,
-                    Error = $"副本文件不存在: checkpoint_{timestamp}.docx。请先调用 F_list_document_operations。"
+                    Error = $"副本文件不存在: checkpoint_{timestamp}。请先调用 F_list_document_operations。"
                 };
             }
 
             try
             {
-                DocumentRestoreHelper.RestoreActiveDocumentFromCheckpoint(path, app, activeDoc);
+                live.Adapter.RestoreCopy(live, path);
+                TryRestoreStoredCaret(live.DocUuid, timestamp, live);
             }
             catch (Exception ex)
             {
@@ -694,7 +783,7 @@ namespace WordAddIn1
             }
 
             DocumentState.ClearAfterCheckpointRestore();
-            int removed = TruncateLogAfterCheckpoint(docUuid, timestamp);
+            int removed = TruncateLogAfterCheckpoint(live.DocUuid, timestamp);
 
             System.Diagnostics.Debug.WriteLine(
                 $"[Checkpoint] restore timestamp={timestamp} truncate removed={removed}");
@@ -708,7 +797,11 @@ namespace WordAddIn1
 
         public static string FormatListTextForCurrentDocument()
         {
-            string docUuid = DocumentState.CurrDocUuid;
+            return FormatListTextForDocUuid(DocumentState.CurrDocUuid);
+        }
+
+        public static string FormatListTextForDocUuid(string docUuid)
+        {
             if (string.IsNullOrEmpty(docUuid))
             {
                 return "当前文档尚无操作记录。";
@@ -889,6 +982,7 @@ namespace WordAddIn1
             {
                 DeleteCheckpointFile(docUuid, ts);
                 session.CheckpointTimestampsInOrder.Remove(ts);
+                session.CaretByTimestamp.Remove(ts);
             }
 
             int removeFrom = checkpointIndex + 1;
@@ -956,20 +1050,26 @@ namespace WordAddIn1
 
         private static void DeleteCheckpointFile(string docUuid, string timestamp)
         {
-            string path = GetCheckpointFilePath(docUuid, timestamp);
-            if (!File.Exists(path))
+            foreach (string ext in new[] { "docx", "xlsx", "pptx" })
             {
-                return;
+                string path = GetCheckpointFilePath(docUuid, timestamp, ext);
+                if (!File.Exists(path))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    File.Delete(path);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Checkpoint] delete file failed: {ex.Message}");
+                }
             }
 
-            try
-            {
-                File.Delete(path);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[Checkpoint] delete file failed: {ex.Message}");
-            }
+            DocumentCheckpointSession session = GetSession(docUuid);
+            session?.CaretByTimestamp.Remove(timestamp);
         }
 
         private static string GenerateUniqueTimestamp(string dir)
@@ -977,13 +1077,26 @@ namespace WordAddIn1
             string baseTs = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
             string timestamp = baseTs;
             int suffix = 1;
-            while (File.Exists(Path.Combine(dir, $"checkpoint_{timestamp}.docx")))
+            while (CheckpointFileExists(dir, timestamp))
             {
                 timestamp = $"{baseTs}_{suffix}";
                 suffix++;
             }
 
             return timestamp;
+        }
+
+        private static bool CheckpointFileExists(string dir, string timestamp)
+        {
+            foreach (string ext in new[] { "docx", "xlsx", "pptx" })
+            {
+                if (File.Exists(Path.Combine(dir, $"checkpoint_{timestamp}.{ext}")))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool HasAnyFailedActionResult(object resultsObj)

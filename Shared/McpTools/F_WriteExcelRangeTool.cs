@@ -17,6 +17,11 @@ namespace WordAddIn1
                 try
                 {
                     AgentRunCancellation.ThrowIfCancelled();
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
+                    {
+                        return contractFail;
+                    }
+
                     if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string resolveError))
                     {
                         return new ToolResult { Success = false, Error = resolveError };
@@ -125,6 +130,40 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = "写入 Excel 区域失败: " + ex.Message };
                 }
             };
+        }
+
+        public static bool TryGetContractParseFailure(Dictionary<string, object> args, out ToolResult failure)
+        {
+            failure = null;
+            if (string.IsNullOrWhiteSpace(GetStringArg(args, "sheet")))
+            {
+                failure = new ToolResult { Success = false, Error = "必须提供 sheet" };
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(GetStringArg(args, "range")))
+            {
+                failure = new ToolResult { Success = false, Error = "必须提供 range" };
+                return true;
+            }
+
+            bool clear = args != null
+                && args.ContainsKey("clear")
+                && Convert.ToBoolean(args["clear"]);
+            string csvFilename = FilePathResolver.TryGetArg(args, "path", "csv_filename");
+            if (clear && !string.IsNullOrEmpty(csvFilename))
+            {
+                failure = new ToolResult { Success = false, Error = "须提供 path+range，或 clear+range（二者互斥）" };
+                return true;
+            }
+
+            if (!clear && string.IsNullOrEmpty(csvFilename))
+            {
+                failure = new ToolResult { Success = false, Error = "须提供 path+range，或 clear+range" };
+                return true;
+            }
+
+            return false;
         }
 
         private static string GetStringArg(Dictionary<string, object> args, string key)

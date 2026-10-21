@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace WordAddIn1
@@ -23,6 +24,8 @@ namespace WordAddIn1
         public string DocUuid { get; set; }
         public List<OperationLogEntry> Entries { get; } = new List<OperationLogEntry>();
         public List<string> CheckpointTimestampsInOrder { get; } = new List<string>();
+        public Dictionary<string, CheckpointCaret> CaretByTimestamp { get; } =
+            new Dictionary<string, CheckpointCaret>(StringComparer.Ordinal);
     }
 
     public sealed class CheckpointBeforeResult

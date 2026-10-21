@@ -31,6 +31,19 @@ namespace WordAddIn1
             "F_insert_page_break",
             "F_apply_data_provenance",
             "F_clear_data_provenance",
+            "F_apply_ppt_html",
+            "F_manage_ppt_shape",
+            "F_manage_ppt_slide",
+            "F_manage_ppt_lib",
+            "F_ppt_transition",
+            "F_ppt_animation",
+            "F_write_excel_range",
+            "F_apply_excel_format",
+            "F_apply_excel_conditional_format",
+            "F_apply_excel_structure",
+            "F_excel_pivot",
+            "F_excel_chart",
+            "F_manage_excel_sheet",
         };
 
         public static bool ShouldCheckpoint(string toolName, IReadOnlyDictionary<string, object> parameters)
@@ -116,6 +129,32 @@ namespace WordAddIn1
                     return F_ApplyDataProvenanceTool.TryGetContractParseFailure(args, out failure);
                 case "F_clear_data_provenance":
                     return false;
+                case "F_apply_ppt_html":
+                    return F_ApplyPptHtmlTool.TryGetContractParseFailure(args, out failure);
+                case "F_manage_ppt_shape":
+                    return F_ManagePptShapeTool.TryGetContractParseFailure(args, out failure);
+                case "F_manage_ppt_slide":
+                    return F_ManagePptSlideTool.TryGetContractParseFailure(args, out failure);
+                case "F_manage_ppt_lib":
+                    return F_ManagePptLibTool.TryGetContractParseFailure(args, out failure);
+                case "F_ppt_transition":
+                    return F_PptTransitionTool.TryGetContractParseFailure(args, out failure);
+                case "F_ppt_animation":
+                    return F_PptAnimationTool.TryGetContractParseFailure(args, out failure);
+                case "F_write_excel_range":
+                    return F_WriteExcelRangeTool.TryGetContractParseFailure(args, out failure);
+                case "F_apply_excel_format":
+                    return F_ApplyExcelFormatTool.TryGetContractParseFailure(args, out failure);
+                case "F_apply_excel_conditional_format":
+                    return F_ApplyExcelConditionalFormatTool.TryGetContractParseFailure(args, out failure);
+                case "F_apply_excel_structure":
+                    return F_ApplyExcelStructureTool.TryGetContractParseFailure(args, out failure);
+                case "F_excel_pivot":
+                    return F_ExcelPivotTool.TryGetContractParseFailure(args, out failure);
+                case "F_excel_chart":
+                    return F_ExcelChartTool.TryGetContractParseFailure(args, out failure);
+                case "F_manage_excel_sheet":
+                    return F_ManageExcelSheetTool.TryGetContractParseFailure(args, out failure);
                 default:
                     return false;
             }

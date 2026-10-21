@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using WordAddIn1.DocumentHost;
 
 namespace WordAddIn1
 {
     /// <summary>
-    /// 恢复文档检查点。经 <see cref="DocumentHostAdapter"/> 解析渠道后再回滚。
+    /// 恢复文档检查点。按当前渠道灌回文字稿 / 工作簿 / 演示文稿。
     /// </summary>
     public static class F_RestoreDocumentCheckpointTool
     {
@@ -29,22 +28,25 @@ namespace WordAddIn1
                         return Task.FromResult(new ToolResult { Success = false, Error = "timestamp 不能为空" });
                     }
 
-                    if (!DocumentHostAdapter.TryResolveInteropDocument(
-                            args,
-                            wordApplication,
-                            out InteropDocumentHandle docHandle,
-                            out ToolResult resolveError))
+                    if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string resolveError)
+                        || channel == null)
                     {
-                        System.Diagnostics.Debug.WriteLine(
-                            $"[F_restore_document_checkpoint] resolve failed: {resolveError?.Error}");
-                        return Task.FromResult(resolveError);
+                        return Task.FromResult(new ToolResult
+                        {
+                            Success = false,
+                            Error = resolveError ?? "无可用文档渠道"
+                        });
+                    }
+
+                    if (!CheckpointKindAdapters.TryFromChannel(channel, out CheckpointLiveTarget live, out string kindError))
+                    {
+                        return Task.FromResult(new ToolResult { Success = false, Error = kindError });
                     }
 
                     System.Diagnostics.Debug.WriteLine(
-                        $"[F_restore_document_checkpoint] host={docHandle.HostName}, channel_id={docHandle.ChannelId}, ts={timestamp}");
+                        $"[F_restore_document_checkpoint] channel_id={channel.ChannelId}, ts={timestamp}");
 
-                    return Task.FromResult(
-                        DocumentCheckpointService.RestoreCheckpoint(timestamp, docHandle.Document));
+                    return Task.FromResult(DocumentCheckpointService.RestoreCheckpoint(timestamp, live));
                 }
                 catch (Exception ex)
                 {

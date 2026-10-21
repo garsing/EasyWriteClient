@@ -255,6 +255,29 @@ namespace WordAddIn1
             return defaultValue;
         }
 
+        public static bool TryGetContractParseFailure(Dictionary<string, object> args, out ToolResult failure)
+        {
+            failure = null;
+            string op = GetStringArg(args, "op");
+            if (string.IsNullOrWhiteSpace(op))
+            {
+                op = GetStringArg(args, "action");
+            }
+
+            switch ((op ?? "").Trim())
+            {
+                case "listUser":
+                case "getThumbs":
+                case "writeUser":
+                case "extract":
+                case "deleteUser":
+                    return false;
+                default:
+                    failure = new ToolResult { Success = false, Error = "未知 op: " + (op ?? "") };
+                    return true;
+            }
+        }
+
         private static string GetStringArg(Dictionary<string, object> args, string key)
         {
             if (args == null || !args.ContainsKey(key) || args[key] == null)

@@ -21,23 +21,9 @@ namespace WordAddIn1
                 try
                 {
                     AgentRunCancellation.ThrowIfCancelled();
-                    if (args != null
-                        && (args.ContainsKey("index") || args.ContainsKey("slide") || args.ContainsKey("page")))
+                    if (TryGetContractParseFailure(args, out ToolResult contractFail))
                     {
-                        return new ToolResult
-                        {
-                            Success = false,
-                            Error = "请用 slide_id（SlideID），不要用第 N 页 / index / slide 页码"
-                        };
-                    }
-
-                    if (args != null && args.ContainsKey("html"))
-                    {
-                        return new ToolResult
-                        {
-                            Success = false,
-                            Error = "不支持入参 html 字符串（易有引号转义问题）；请把约定 HTML 写入工作区文件后传 html_filename"
-                        };
+                        return contractFail;
                     }
 
                     if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string resolveError))
@@ -49,15 +35,6 @@ namespace WordAddIn1
                     stepSw.Restart();
 
                     string slideId = GetStringArg(args, "slide_id")?.Trim() ?? "";
-                    if (string.IsNullOrWhiteSpace(slideId))
-                    {
-                        return new ToolResult
-                        {
-                            Success = false,
-                            Error = "必须提供 slide_id（应用到哪一页；先 F_get_presentation_content）"
-                        };
-                    }
-
                     if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath htmlResolved, out string htmlPathError, "path", "html_filename"))
                     {
                         return new ToolResult
@@ -355,6 +332,49 @@ namespace WordAddIn1
             }
 
             return defaultValue;
+        }
+
+        public static bool TryGetContractParseFailure(Dictionary<string, object> args, out ToolResult failure)
+        {
+            failure = null;
+            if (args != null
+                && (args.ContainsKey("index") || args.ContainsKey("slide") || args.ContainsKey("page")))
+            {
+                failure = new ToolResult
+                {
+                    Success = false,
+                    Error = "请用 slide_id（SlideID），不要用第 N 页 / index / slide 页码"
+                };
+                return true;
+            }
+
+            if (args != null && args.ContainsKey("html"))
+            {
+                failure = new ToolResult
+                {
+                    Success = false,
+                    Error = "不支持入参 html 字符串（易有引号转义问题）；请把约定 HTML 写入工作区文件后传 html_filename"
+                };
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(GetStringArg(args, "slide_id")))
+            {
+                failure = new ToolResult
+                {
+                    Success = false,
+                    Error = "必须提供 slide_id（应用到哪一页；先 F_get_presentation_content）"
+                };
+                return true;
+            }
+
+            if (!FilePathResolver.TryResolveFromArgs(args, out _, out string htmlPathError, "path", "html_filename"))
+            {
+                failure = new ToolResult { Success = false, Error = htmlPathError ?? "必须提供 path" };
+                return true;
+            }
+
+            return false;
         }
 
         private static string GetStringArg(Dictionary<string, object> args, string key)

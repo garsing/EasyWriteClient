@@ -88,5 +88,17 @@ namespace WordAddIn1
                 }
             };
         }
+
+        public static bool TryGetContractParseFailure(Dictionary<string, object> args, out ToolResult failure)
+        {
+            failure = null;
+            if (!SpreadsheetConditionalFormatParse.TryParseRequest(args, out _, out string parseError))
+            {
+                failure = new ToolResult { Success = false, Error = parseError };
+                return true;
+            }
+
+            return false;
+        }
     }
 }

@@ -9,14 +9,6 @@ namespace WordAddIn1
     /// </summary>
     public static class DocumentRestoreHelper
     {
-        private sealed class DocumentViewState
-        {
-            public int SelectionStart { get; set; }
-            public int SelectionEnd { get; set; }
-            public int DocumentEnd { get; set; }
-            public int VerticalPercentScrolled { get; set; }
-        }
-
         public static void RestoreActiveDocumentFromCheckpoint(
             string checkpointPath,
             Word.Application app,
@@ -50,9 +42,7 @@ namespace WordAddIn1
                 throw new InvalidOperationException("没有活动的 Word 文档");
             }
 
-            DocumentViewState viewState = CaptureViewState(app, target);
-
-            // 不读写 TrackRevisions（2026-08：取消审阅工具注册与默认关审阅）
+            // 光标由 WordCheckpointKindAdapter.RestoreCaret 按建副本时记录恢复（D2）。
             Word.Document source = null;
             try
             {
@@ -76,106 +66,6 @@ namespace WordAddIn1
                         // ignore close errors
                     }
                 }
-
-                RestoreViewStateNear(app, target, viewState);
-            }
-        }
-
-        /// <summary>
-        /// 恢复前记录光标与纵向滚动，供整篇替换后回到大致阅读位置。
-        /// </summary>
-        private static DocumentViewState CaptureViewState(Word.Application app, Word.Document doc)
-        {
-            var state = new DocumentViewState();
-            if (app == null || doc == null)
-            {
-                return state;
-            }
-
-            try
-            {
-                state.DocumentEnd = doc.Content?.End ?? 0;
-                if (app.Selection != null)
-                {
-                    state.SelectionStart = app.Selection.Start;
-                    state.SelectionEnd = app.Selection.End;
-                }
-
-                if (app.ActiveWindow != null)
-                {
-                    state.VerticalPercentScrolled = app.ActiveWindow.VerticalPercentScrolled;
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[Checkpoint] CaptureViewState warning: {ex.Message}");
-            }
-
-            return state;
-        }
-
-        /// <summary>
-        /// 按恢复前光标在文档中的相对位置映射到新正文，并滚入视口。
-        /// 光标在文首但已向下滚动时，回退使用 VerticalPercentScrolled。
-        /// </summary>
-        private static void RestoreViewStateNear(Word.Application app, Word.Document doc, DocumentViewState state)
-        {
-            if (app == null || doc == null || state == null)
-            {
-                return;
-            }
-
-            try
-            {
-                int docEnd = doc.Content?.End ?? 0;
-                if (docEnd <= 1)
-                {
-                    return;
-                }
-
-                int maxPos = Math.Max(0, docEnd - 1);
-                bool cursorAtDocStart = state.SelectionStart <= 1;
-                bool hadScroll = state.VerticalPercentScrolled > 0;
-
-                if (cursorAtDocStart && hadScroll && state.VerticalPercentScrolled >= 5)
-                {
-                    if (app.ActiveWindow != null)
-                    {
-                        app.ActiveWindow.VerticalPercentScrolled = state.VerticalPercentScrolled;
-                    }
-
-                    Debug.WriteLine(
-                        $"[Checkpoint] RestoreViewState scroll-only percent={state.VerticalPercentScrolled}");
-                    return;
-                }
-
-                int beforeSpan = Math.Max(1, state.DocumentEnd - 1);
-                double ratio = Math.Max(0, Math.Min(1, (double)state.SelectionStart / beforeSpan));
-                int targetStart = (int)Math.Round(ratio * maxPos);
-                targetStart = Math.Max(0, Math.Min(targetStart, maxPos));
-
-                int selectionLen = Math.Max(0, state.SelectionEnd - state.SelectionStart);
-                int targetEnd = Math.Min(targetStart + selectionLen, maxPos);
-                if (targetEnd < targetStart)
-                {
-                    targetEnd = targetStart;
-                }
-
-                if (app.Selection != null)
-                {
-                    app.Selection.SetRange(targetStart, targetEnd);
-                }
-
-                Word.Range scrollRange = doc.Range(targetStart, targetStart);
-                WordRangeFinder.ScrollRangeIntoView(app, scrollRange, "checkpoint-restore");
-
-                Debug.WriteLine(
-                    $"[Checkpoint] RestoreViewState ratio={ratio:F3} " +
-                    $"before={state.SelectionStart}/{state.DocumentEnd} after={targetStart}/{docEnd}");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[Checkpoint] RestoreViewStateNear warning: {ex.Message}");
             }
         }
 
