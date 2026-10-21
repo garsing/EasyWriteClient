@@ -88,7 +88,7 @@ namespace WordDocumentRoundtripTest
                 return;
             }
 
-            int baseline = Math.Max(1, s.SlideCount(id));
+            int baseline = s.SlideCount(id);
             ToolResult wrote = s.AddSlide(id);
             CkptCaseUtil.Ok(run, "pk-write-ok", wrote.Success, wrote.Error ?? "加页失败");
 
@@ -112,6 +112,7 @@ namespace WordDocumentRoundtripTest
                 wrote.Success && after == baseline + 1,
                 wrote.Success
                     ? "加后页数=" + after + " 期望 " + (baseline + 1)
+                      + " 开稿=" + baseline
                       + " 回包=" + CkptCaseUtil.Snip(CkptCaseUtil.DataText(wrote))
                     : (wrote.Error ?? ""));
 
@@ -151,7 +152,7 @@ namespace WordDocumentRoundtripTest
                 return;
             }
 
-            int baseline = Math.Max(1, s.SlideCount(id));
+            int baseline = s.SlideCount(id);
             ToolResult first = s.AddSlide(id);
             string ts1 = CkptCaseUtil.FirstCopyTs(CkptCaseUtil.DataText(s.ListOperations(id)));
             s.AddSlide(id);
@@ -176,9 +177,15 @@ namespace WordDocumentRoundtripTest
                 return;
             }
 
-            if (!s.ComAddSlide(path) || !s.ComGotoSlide(path, 2))
+            bool added = s.ComAddSlide(path);
+            bool at2 = added && s.ComGotoSlide(path, 2);
+            if (!added || !at2)
             {
-                CkptCaseUtil.FailMany(run, "COM 加第2页或落到第2页失败", ids);
+                CkptCaseUtil.FailMany(
+                    run,
+                    "COM 加第2页或落到第2页失败 added=" + added + " at2=" + at2
+                    + " err=" + s.LastComError,
+                    ids);
                 s.CloseByPath(path, id);
                 return;
             }
@@ -191,7 +198,7 @@ namespace WordDocumentRoundtripTest
                 return;
             }
 
-            int baseline = Math.Max(1, s.SlideCount(id));
+            int baseline = s.SlideCount(id);
             ToolResult wrote = s.AddSlide(id);
             if (!wrote.Success)
             {

@@ -56,6 +56,7 @@ namespace WordAddIn1.PresentationHost
                 {
                     presentation = app.Presentations.Add(Office.MsoTriState.msoTrue);
                     presentation.SaveAs(fullPath, (PowerPoint.PpSaveAsFileType)SaveFormatFor(fullPath));
+                    EnsureBlankHasDefaultSlide(presentation);
                     created = true;
                 }
                 else
@@ -1163,6 +1164,52 @@ namespace WordAddIn1.PresentationHost
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// 本机部分 PowerPoint 的 Presentations.Add 会给出 0 页稿。
+        /// 和用户点「新建」对齐，空稿补一页默认版式。
+        /// </summary>
+        private static void EnsureBlankHasDefaultSlide(PowerPoint.Presentation presentation)
+        {
+            if (presentation == null)
+            {
+                return;
+            }
+
+            int count;
+            try
+            {
+                count = presentation.Slides.Count;
+            }
+            catch (Exception)
+            {
+                return;
+            }
+
+            if (count >= 1)
+            {
+                return;
+            }
+
+            PowerPoint.CustomLayout layout;
+            try
+            {
+                layout = presentation.SlideMaster.CustomLayouts[1];
+            }
+            catch (Exception)
+            {
+                return;
+            }
+
+            presentation.Slides.AddSlide(1, layout);
+            try
+            {
+                presentation.Save();
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private static int SaveFormatFor(string fullPath)

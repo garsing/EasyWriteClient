@@ -16,6 +16,8 @@ namespace WordDocumentRoundtripTest
             ExpectedKind = Host;
         }
 
+        public string LastComError { get; private set; }
+
         public string Host { get; }
 
         public string App { get; }
@@ -106,6 +108,17 @@ namespace WordDocumentRoundtripTest
 
         public ToolResult Open(string path)
         {
+            if (File.Exists(path))
+            {
+                try
+                {
+                    File.Delete(path);
+                }
+                catch
+                {
+                }
+            }
+
             ToolResult created = DesktopToolPipe.Call("F_open_document", new Dictionary<string, object>
             {
                 ["path"] = path,
@@ -266,16 +279,20 @@ namespace WordDocumentRoundtripTest
 
         public bool ComGotoSlide(string path, int index)
         {
+            LastComError = "";
             for (int i = 0; i < 8; i++)
             {
-                if (GotoSlideLate(path, index, IsWpp))
+                string err;
+                if (GotoSlideLate(path, index, IsWpp, out err))
                 {
                     return true;
                 }
 
+                LastComError = err ?? "";
                 System.Threading.Thread.Sleep(200);
             }
 
+            Probe("com-goto fail path=" + path + " idx=" + index + " err=" + LastComError);
             return false;
         }
 
@@ -300,17 +317,86 @@ namespace WordDocumentRoundtripTest
 
         public bool ComAddSlide(string path)
         {
+            LastComError = "";
             for (int i = 0; i < 8; i++)
             {
-                if (IsWpp ? WppAddSlide(path) : PptAddSlide(path))
+                string err;
+                if (AddSlideLate(path, IsWpp, out err))
                 {
                     return true;
                 }
 
+                LastComError = err ?? "";
                 System.Threading.Thread.Sleep(200);
             }
 
+            Probe("com-add fail path=" + path + " err=" + LastComError + " " + DumpComPresentations());
             return false;
+        }
+
+        public int ComSlideCount(string path)
+        {
+            try
+            {
+                object pres = FindPresentation(path, IsWpp);
+                if (pres == null)
+                {
+                    return -1;
+                }
+
+                return Convert.ToInt32(Late.Get(Late.Get(pres, "Slides"), "Count"));
+            }
+            catch (Exception ex)
+            {
+                LastComError = ex.Message;
+                return -1;
+            }
+        }
+
+        public string DumpComPresentations()
+        {
+            try
+            {
+                object app;
+                string err;
+                bool ok = IsWpp
+                    ? WppApplicationResolver.TryResolve(out app, out err, false)
+                    : PowerPointApplicationResolver.TryResolve(out app, out err, false);
+                if (!ok)
+                {
+                    return "com-app=null " + (err ?? "");
+                }
+
+                object col = Late.Get(app, "Presentations");
+                int n = Convert.ToInt32(Late.Get(col, "Count"));
+                var sb = new System.Text.StringBuilder("com-apps=" + n);
+                for (int i = 1; i <= n; i++)
+                {
+                    object item = Late.Item(col, i);
+                    string full = Convert.ToString(Late.Get(item, "FullName") ?? "");
+                    int slides = -1;
+                    try
+                    {
+                        slides = Convert.ToInt32(Late.Get(Late.Get(item, "Slides"), "Count"));
+                    }
+                    catch
+                    {
+                    }
+
+                    sb.Append(" [").Append(i).Append("]").Append(Path.GetFileName(full)).Append("#").Append(slides);
+                }
+
+                return sb.ToString();
+            }
+            catch (Exception ex)
+            {
+                return "com-dump-ex=" + ex.Message;
+            }
+        }
+
+        public static void Probe(string line)
+        {
+            Console.WriteLine("[pk-probe] " + line);
         }
 
         private bool TrySeedBlankFile(string path)
@@ -574,12 +660,14 @@ namespace WordDocumentRoundtripTest
 
         private static bool PptAddSlide(string path)
         {
-            return AddSlideLate(path, false);
+            string err;
+            return AddSlideLate(path, false, out err);
         }
 
         private static bool WppAddSlide(string path)
         {
-            return AddSlideLate(path, true);
+            string err;
+            return AddSlideLate(path, true, out err);
         }
 
         private static bool AddSheetLate(string path, string name, bool et)
@@ -774,13 +862,15 @@ namespace WordDocumentRoundtripTest
             return FindLateBook(app, "Workbooks", path);
         }
 
-        private static bool GotoSlideLate(string path, int index, bool wpp)
+        private static bool GotoSlideLate(string path, int index, bool wpp, out string error)
         {
+            error = "";
             try
             {
                 object pres = FindPresentation(path, wpp);
                 if (pres == null)
                 {
+                    error = "找不到演示文稿 " + path;
                     return false;
                 }
 
@@ -790,8 +880,9 @@ namespace WordDocumentRoundtripTest
                     Late.Call(view, "GotoSlide", index);
                     return true;
                 }
-                catch
+                catch (Exception gotoEx)
                 {
+                    error = "GotoSlide: " + gotoEx.Message;
                 }
 
                 object slides = Late.Get(pres, "Slides");
@@ -799,8 +890,9 @@ namespace WordDocumentRoundtripTest
                 Late.Call(slide, "Select");
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                error = (string.IsNullOrEmpty(error) ? "" : error + " | ") + ex.Message;
                 return false;
             }
         }
@@ -843,8 +935,9 @@ namespace WordDocumentRoundtripTest
             return FindLateBook(app, "Presentations", path);
         }
 
-        private static bool AddSlideLate(string path, bool wpp)
+        private static bool AddSlideLate(string path, bool wpp, out string error)
         {
+            error = "";
             try
             {
                 object app;
@@ -854,13 +947,28 @@ namespace WordDocumentRoundtripTest
                     : PowerPointApplicationResolver.TryResolve(out app, out err, false);
                 if (!ok)
                 {
+                    error = "无 PowerPoint 进程: " + (err ?? "");
                     return false;
                 }
 
                 object pres = FindLateBook(app, "Presentations", path);
                 if (pres == null)
                 {
+                    error = "找不到演示文稿 " + Path.GetFileName(path);
                     return false;
+                }
+
+                try
+                {
+                    object windows = Late.Get(pres, "Windows");
+                    if (Convert.ToInt32(Late.Get(windows, "Count")) >= 1)
+                    {
+                        Late.Call(Late.Item(windows, 1), "Activate");
+                    }
+                }
+                catch (Exception winEx)
+                {
+                    error = "activate: " + winEx.Message;
                 }
 
                 object slides = Late.Get(pres, "Slides");
@@ -870,8 +978,9 @@ namespace WordDocumentRoundtripTest
                     Late.Call(slides, "Add", n + 1, 2);
                     return true;
                 }
-                catch
+                catch (Exception addEx)
                 {
+                    error = (string.IsNullOrEmpty(error) ? "" : error + " | ") + "Add(n=" + n + "): " + addEx.Message;
                 }
 
                 object layouts = Late.Get(Late.Get(pres, "SlideMaster"), "CustomLayouts");
@@ -879,8 +988,9 @@ namespace WordDocumentRoundtripTest
                 Late.Call(slides, "AddSlide", n + 1, layout);
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                error = (string.IsNullOrEmpty(error) ? "" : error + " | ") + ex.Message;
                 return false;
             }
         }

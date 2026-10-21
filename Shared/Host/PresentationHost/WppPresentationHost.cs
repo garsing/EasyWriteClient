@@ -57,6 +57,7 @@ namespace WordAddIn1.PresentationHost
                     }
 
                     TrySaveAs(presentation, fullPath);
+                    EnsureBlankHasDefaultSlide(presentation);
                     created = true;
                 }
                 else
@@ -1337,6 +1338,56 @@ namespace WordAddIn1.PresentationHost
             {
                 // 部分版本 SaveAs 第二参数为格式枚举；无格式再试一次仅路径
                 WppCom.Invoke(presentation, "SaveAs", fullPath, 1);
+            }
+        }
+
+        private static void EnsureBlankHasDefaultSlide(object presentation)
+        {
+            if (presentation == null)
+            {
+                return;
+            }
+
+            object slides = WppCom.GetProperty(presentation, "Slides");
+            if (slides == null)
+            {
+                return;
+            }
+
+            int count;
+            try
+            {
+                count = Convert.ToInt32(WppCom.GetProperty(slides, "Count"));
+            }
+            catch (Exception)
+            {
+                return;
+            }
+
+            if (count >= 1)
+            {
+                return;
+            }
+
+            object layouts = WppCom.GetProperty(WppCom.GetProperty(presentation, "SlideMaster"), "CustomLayouts");
+            if (layouts == null)
+            {
+                return;
+            }
+
+            object layout = WppCom.GetIndexed(layouts, 1);
+            if (layout == null)
+            {
+                return;
+            }
+
+            WppCom.Invoke(slides, "AddSlide", 1, layout);
+            try
+            {
+                WppCom.Invoke(presentation, "Save");
+            }
+            catch (Exception)
+            {
             }
         }
     }

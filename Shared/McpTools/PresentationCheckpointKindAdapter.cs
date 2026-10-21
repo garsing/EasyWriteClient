@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Reflection;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 using Office = Microsoft.Office.Core;
@@ -56,15 +57,124 @@ namespace WordAddIn1
         public void SaveCopy(CheckpointLiveTarget target, string destinationPath)
         {
             object pres = target?.Live ?? throw new InvalidOperationException("没有活动的演示文稿");
+            PowerPoint.Presentation typed = pres as PowerPoint.Presentation;
+            if (TrySaveViaFileCopy(typed, pres, destinationPath))
+            {
+                return;
+            }
+
+            string originalPath = typed != null
+                ? ReadFullName(typed)
+                : Convert.ToString(InvokeGet(pres, "FullName") ?? "");
+            if (typed != null)
+            {
+                SaveCopyTyped(typed, destinationPath);
+            }
+            else
+            {
+                SaveCopyLate(pres, destinationPath);
+            }
+
+            if (!File.Exists(destinationPath) || new FileInfo(destinationPath).Length == 0)
+            {
+                throw new InvalidOperationException("无法创建演示文稿副本。请先保存文档后重试。");
+            }
+
+            if (typed != null)
+            {
+                CloseOpenedCopy(typed.Application, destinationPath, typed);
+                RestoreLivePath(typed, originalPath);
+            }
+            else
+            {
+                CloseOpenedCopyLate(InvokeGet(pres, "Application"), destinationPath, pres);
+                RestoreLivePathLate(pres, originalPath);
+            }
+
+            RebindChannel(target);
+        }
+
+        /// <summary>
+        /// 已落盘就就地 Save 再拷文件，不走 SaveCopyAs。
+        /// PPT 的 SaveCopyAs 会改活稿路径或另开一份，随后加页打在空稿上（slide_id=256、页数仍是 1）。
+        /// </summary>
+        private static bool TrySaveViaFileCopy(
+            PowerPoint.Presentation typed,
+            object late,
+            string destinationPath)
+        {
+            string originalPath = typed != null ? ReadFullName(typed) : Convert.ToString(InvokeGet(late, "FullName") ?? "");
+            if (string.IsNullOrEmpty(originalPath)
+                || originalPath.StartsWith("Unsaved", StringComparison.OrdinalIgnoreCase)
+                || !File.Exists(originalPath))
+            {
+                return false;
+            }
+
             try
             {
-                Invoke(pres, "SaveCopyAs", destinationPath);
+                try
+                {
+                    if (typed != null)
+                    {
+                        typed.Save();
+                    }
+                    else
+                    {
+                        Invoke(late, "Save");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("[Checkpoint] PPT in-place Save before copy skipped: " + ex.Message);
+                }
+
+                CopyFileShared(originalPath, destinationPath);
+                if (!File.Exists(destinationPath) || new FileInfo(destinationPath).Length == 0)
+                {
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[Checkpoint] PPT File.Copy failed: " + ex.Message);
+                return false;
+            }
+        }
+
+        private static void CopyFileShared(string sourcePath, string destinationPath)
+        {
+            string dir = Path.GetDirectoryName(destinationPath);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            using (var src = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var dst = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                src.CopyTo(dst);
+            }
+        }
+
+        private static void SaveCopyTyped(PowerPoint.Presentation live, string destinationPath)
+        {
+            live.SaveCopyAs(destinationPath, PowerPoint.PpSaveAsFileType.ppSaveAsOpenXMLPresentation);
+        }
+
+        private static void SaveCopyLate(object live, string destinationPath)
+        {
+            try
+            {
+                Invoke(live, "SaveCopyAs", new object[] { destinationPath, 24 });
             }
             catch (Exception first)
             {
                 try
                 {
-                    Invoke(pres, "SaveCopyAs", new object[] { destinationPath, 24 });
+                    Invoke(live, "SaveCopyAs", destinationPath);
                 }
                 catch (Exception)
                 {
@@ -72,10 +182,163 @@ namespace WordAddIn1
                         "无法创建演示文稿副本。请先保存文档后重试。 " + first.Message);
                 }
             }
+        }
 
-            if (!System.IO.File.Exists(destinationPath) || new System.IO.FileInfo(destinationPath).Length == 0)
+        private static void CloseOpenedCopy(
+            PowerPoint.Application app,
+            string copyPath,
+            PowerPoint.Presentation keep)
+        {
+            if (app == null || string.IsNullOrEmpty(copyPath))
             {
-                throw new InvalidOperationException("无法创建演示文稿副本。请先保存文档后重试。");
+                return;
+            }
+
+            var toClose = new System.Collections.Generic.List<PowerPoint.Presentation>();
+            foreach (PowerPoint.Presentation one in app.Presentations)
+            {
+                if (ReferenceEquals(one, keep))
+                {
+                    continue;
+                }
+
+                if (SamePath(ReadFullName(one), copyPath))
+                {
+                    toClose.Add(one);
+                }
+            }
+
+            foreach (PowerPoint.Presentation one in toClose)
+            {
+                try
+                {
+                    one.Close();
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        private static void CloseOpenedCopyLate(object app, string copyPath, object keep)
+        {
+            if (app == null || string.IsNullOrEmpty(copyPath))
+            {
+                return;
+            }
+
+            object col = InvokeGet(app, "Presentations");
+            int n = Convert.ToInt32(InvokeGet(col, "Count"));
+            for (int i = n; i >= 1; i--)
+            {
+                object one = InvokeGet(col, "Item", i);
+                if (ReferenceEquals(one, keep))
+                {
+                    continue;
+                }
+
+                string full = Convert.ToString(InvokeGet(one, "FullName") ?? "");
+                if (SamePath(full, copyPath))
+                {
+                    try
+                    {
+                        Invoke(one, "Close");
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+        }
+
+        private static void RestoreLivePath(PowerPoint.Presentation live, string originalPath)
+        {
+            if (live == null || string.IsNullOrEmpty(originalPath))
+            {
+                return;
+            }
+
+            string now = ReadFullName(live);
+            if (string.Equals(now, originalPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            live.SaveAs(originalPath, PowerPoint.PpSaveAsFileType.ppSaveAsOpenXMLPresentation);
+        }
+
+        private static void RestoreLivePathLate(object live, string originalPath)
+        {
+            if (live == null || string.IsNullOrEmpty(originalPath))
+            {
+                return;
+            }
+
+            string now = Convert.ToString(InvokeGet(live, "FullName") ?? "");
+            if (string.Equals(now, originalPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            try
+            {
+                Invoke(live, "SaveAs", new object[] { originalPath, 24 });
+            }
+            catch (Exception)
+            {
+                Invoke(live, "SaveAs", originalPath);
+            }
+        }
+
+        private static void RebindChannel(CheckpointLiveTarget target)
+        {
+            if (target?.Channel is PptChannel ppt && target.Live is PowerPoint.Presentation live)
+            {
+                try
+                {
+                    var _ = live.Name;
+                    ppt.UpdatePresentation(live, ReadFullName(live));
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        private static string ReadFullName(PowerPoint.Presentation presentation)
+        {
+            if (presentation == null)
+            {
+                return "";
+            }
+
+            try
+            {
+                return presentation.FullName ?? "";
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+        }
+
+        private static bool SamePath(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b))
+            {
+                return false;
+            }
+
+            try
+            {
+                return string.Equals(
+                    System.IO.Path.GetFullPath(a).TrimEnd('\\', '/'),
+                    System.IO.Path.GetFullPath(b).TrimEnd('\\', '/'),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
             }
         }
 
