@@ -137,7 +137,7 @@ namespace WordAddIn1
                 int limit = userService.OrchestratorMaxRoundsLimit;
                 if (limit < 1)
                 {
-                    limit = 100;
+                    limit = 1000;
                 }
                 if (rounds < 1 || rounds > limit)
                 {

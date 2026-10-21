@@ -123,7 +123,6 @@
                     @blur="handleSaveMaxRounds"
                     @keydown.enter.prevent="handleSaveMaxRounds"
                   />
-                  <p class="remap-hint">单次提问里，模型和工具来回的最多轮数（1–{{ maxRoundsLimit }}）。</p>
                   <p v-if="remapHint" class="remap-hint">{{ remapHint }}</p>
                   <p v-if="saveError" class="save-error">{{ saveError }}</p>
                 </div>
@@ -248,9 +247,9 @@ const loading = ref(true)
 const isLoggedIn = ref(false)
 const username = ref('')
 const workspaceRoot = ref('')
-const maxRounds = ref(100)
-const maxRoundsLimit = ref(100)
-const savedMaxRounds = ref(100)
+const maxRounds = ref(1000)
+const maxRoundsLimit = ref(1000)
+const savedMaxRounds = ref(1000)
 const remapHint = ref('')
 const saving = ref(false)
 const saveError = ref('')
@@ -356,9 +355,9 @@ async function loadSettings () {
       isLoggedIn.value = true
       username.value = 'dev-user'
       workspaceRoot.value = 'D:/YiWrite/WorkSpace'
-      maxRounds.value = 100
-      maxRoundsLimit.value = 100
-      savedMaxRounds.value = 100
+      maxRounds.value = 1000
+      maxRoundsLimit.value = 1000
+      savedMaxRounds.value = 1000
       remapHint.value = ''
       showInteraction.value = true
       autoCompactEnabled.value = true
@@ -378,7 +377,7 @@ async function loadSettings () {
     username.value = res.username || ''
     workspaceRoot.value = res.workspaceRoot || res.defaultRoot || ''
     const limit = Number(res.maxRoundsLimit)
-    maxRoundsLimit.value = Number.isFinite(limit) && limit >= 1 ? limit : 100
+    maxRoundsLimit.value = Number.isFinite(limit) && limit >= 1 ? limit : 1000
     const rounds = Number(res.maxRounds)
     const effective = Number.isFinite(rounds) && rounds >= 1 ? rounds : maxRoundsLimit.value
     maxRounds.value = effective

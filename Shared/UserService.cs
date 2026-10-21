@@ -59,10 +59,10 @@ namespace WordAddIn1
         public string WorkspaceRootConfigured { get; private set; }
 
         /// <summary>单次对话轮数上限。未单独设置时等于服务端上限。</summary>
-        public int OrchestratorMaxRounds { get; private set; } = 100;
+        public int OrchestratorMaxRounds { get; private set; } = 1000;
 
         /// <summary>服务端允许的轮数上限。</summary>
-        public int OrchestratorMaxRoundsLimit { get; private set; } = 100;
+        public int OrchestratorMaxRoundsLimit { get; private set; } = 1000;
 
         /// <summary>D33 remap 后的本机有效路径（F_* 读写用）。</summary>
         public string WorkspaceRootEffective { get; private set; }
@@ -883,8 +883,8 @@ namespace WordAddIn1
             WorkspaceRootConfigured = null;
             WorkspaceRootEffective = null;
             WorkspaceDirectorySelectionRequired = false;
-            OrchestratorMaxRounds = 100;
-            OrchestratorMaxRoundsLimit = 100;
+            OrchestratorMaxRounds = 1000;
+            OrchestratorMaxRoundsLimit = 1000;
         }
 
         // 事件定义
