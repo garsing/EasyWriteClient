@@ -1460,12 +1460,21 @@ namespace EasyWriteClient.Desktop
         {
             try
             {
-                _isProcessing = false;
-                _bridge?.SendToJavaScript("requestStateChanged", new { isProcessing = false });
-                StartStopWatchdogIfNeeded();
                 await AgentStopHelper
                     .RequestStopAsync(_wsClient, _currentConversationId, _cts)
                     .ConfigureAwait(true);
+                if (AgentStopHelper.ShouldHoldUiForHighRollback())
+                {
+                    _isProcessing = true;
+                    StartStopWatchdogIfNeeded();
+                }
+                else
+                {
+                    _isProcessing = false;
+                    _bridge?.SendToJavaScript("requestStateChanged", new { isProcessing = false });
+                    StartStopWatchdogIfNeeded();
+                }
+
                 return new { success = true };
             }
             catch (Exception ex)
@@ -1478,11 +1487,18 @@ namespace EasyWriteClient.Desktop
         {
             void Send()
             {
+                bool active = ToolDrainState.Active;
+                string risk = ToolDrainState.RiskWireName();
                 _bridge?.SendToJavaScript("toolDrainChanged", new
                 {
-                    active = ToolDrainState.Active,
-                    risk = ToolDrainState.RiskWireName()
+                    active,
+                    risk
                 });
+                if (!active && risk == "high")
+                {
+                    _isProcessing = false;
+                    _bridge?.SendToJavaScript("requestStateChanged", new { isProcessing = false });
+                }
             }
 
             if (IsDisposed)
@@ -1532,13 +1548,17 @@ namespace EasyWriteClient.Desktop
 
         private void ForceStopCleanupAfterTimeout()
         {
+            if (ToolDrainState.IsHighRollbackActive)
+            {
+                return;
+            }
+
             if (_cts == null && !ToolDrainState.Active)
             {
                 return;
             }
 
             CleanupRequestState();
-            ToolDrainState.End();
         }
 
         private void CancelStopWatchdog()

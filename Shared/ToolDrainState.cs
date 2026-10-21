@@ -10,7 +10,7 @@ namespace WordAddIn1
         High = 2
     }
 
-    /// <summary>点停止后仍在收尾的前端工具。与 isProcessing 正交。</summary>
+    /// <summary>点停止后仍在收尾的前端工具。High 灌回期间与 isProcessing 一起挡住输入；Low 与 isProcessing 正交。</summary>
     public static class ToolDrainState
     {
         private static readonly object Gate = new object();
@@ -75,12 +75,29 @@ namespace WordAddIn1
                 }
 
                 _active = false;
-                _risk = ToolStopRiskKind.None;
                 done = _idle;
             }
 
             done.TrySetResult(true);
             Raise();
+            lock (Gate)
+            {
+                if (!_active)
+                {
+                    _risk = ToolStopRiskKind.None;
+                }
+            }
+        }
+
+        public static bool IsHighRollbackActive
+        {
+            get
+            {
+                lock (Gate)
+                {
+                    return _active && _risk == ToolStopRiskKind.High;
+                }
+            }
         }
 
         public static string RiskWireName()

@@ -39,5 +39,10 @@ namespace WordAddIn1
                 ToolDrainAbort.AbortNoneRisk();
             }
         }
+
+        public static bool ShouldHoldUiForHighRollback()
+        {
+            return ToolDrainState.IsHighRollbackActive;
+        }
     }
 }

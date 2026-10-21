@@ -581,10 +581,10 @@ function handleUserStop () {
     isProcessing.value = false
     return
   }
-  isProcessing.value = false
   stoppedLocally.value = true
   sendMessage('stopRequest', {}).catch((err) => {
     console.error('停止请求失败:', err)
+    isProcessing.value = false
   })
 }
 
@@ -592,7 +592,7 @@ function handleUserStop () {
 const handleSend = async (content) => {
   if (!content.trim() || isProcessing.value) return
 
-  const drainBlocks = drainActive.value && (drainRisk.value === 'low' || drainRisk.value === 'high')
+  const drainBlocks = drainActive.value && drainRisk.value === 'low'
 
   if (chatFile.hasBusy.value || chatFile.hasError.value) {
     console.warn('[App] 附件未就绪，跳过发送')
@@ -1142,6 +1142,9 @@ onMounted(() => {
       if (stoppedLocally.value && newState) {
         return
       }
+      if (drainActive.value && drainRisk.value === 'high' && !newState) {
+        return
+      }
       if (newState) {
         stoppedLocally.value = false
       }
@@ -1152,8 +1155,12 @@ onMounted(() => {
       console.log('[App] 状态已改变，当前isProcessing:', isProcessing.value)
     } else if (data.type === 'toolDrainChanged') {
       const payload = data.data || data
+      const endedHigh = !payload.active && (payload.risk === 'high' || drainRisk.value === 'high')
       drainActive.value = !!payload.active
       drainRisk.value = payload.risk || 'none'
+      if (endedHigh) {
+        isProcessing.value = false
+      }
       if (!payload.active && pendingSendPayload.value) {
         const queued = pendingSendPayload.value
         pendingSendPayload.value = null
