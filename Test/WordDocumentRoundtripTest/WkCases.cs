@@ -670,7 +670,13 @@ namespace WordDocumentRoundtripTest
             string imageId = WdSession.Str(ins, "image_id");
             if (!ins.Success || !imageId.StartsWith("I_", StringComparison.Ordinal))
             {
-                FailMany(run, ins.Error ?? "插图无 I_", imgIds);
+                FailMany(
+                    run,
+                    (ins.Error ?? "插图无 I_")
+                        + " success=" + ins.Success
+                        + " image_id=" + (imageId ?? "")
+                        + " data=" + Snip(DataText(ins)),
+                    imgIds);
                 s.CloseDocByPath(path);
                 return;
             }

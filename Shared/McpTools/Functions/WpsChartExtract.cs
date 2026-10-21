@@ -160,15 +160,18 @@ namespace WordAddIn1
                 }
 
                 int type = TryInt(WpsCom.GetProperty(shape, "Type"), -1);
-                bool typed = type == WdInlineShapeChart || type == MsoChart;
-                object chart = TryGetChart(shape);
+                // InlineShape：3=位图，12=图表。Shape：3=msoChart。不能混用。
+                bool typed = preferChartType
+                    ? type == WdInlineShapeChart
+                    : type == MsoChart;
+                if (preferChartType && !typed)
+                {
+                    continue;
+                }
+
+                object chart = typed ? shape : TryGetChart(shape);
                 if (!typed && chart == null)
                 {
-                    if (preferChartType && type != WdInlineShapeChart && type != MsoChart)
-                    {
-                        continue;
-                    }
-
                     Log("shape[" + i + "] type=" + type + " 无 Chart");
                     continue;
                 }
