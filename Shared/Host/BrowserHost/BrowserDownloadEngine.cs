@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Net.Http;
@@ -34,7 +35,7 @@ namespace WordAddIn1.BrowserHost
             using (var client = new HttpClient())
             {
                 client.Timeout = DefaultTimeout;
-                await TryAttachCookiesAsync(form, uri, client).ConfigureAwait(true);
+                await TryAttachPageContextAsync(form, uri, client).ConfigureAwait(true);
 
                 using (HttpResponseMessage resp = await client.GetAsync(
                     uri,
@@ -146,17 +147,36 @@ namespace WordAddIn1.BrowserHost
                     && Uri.TryCreate(captured.Uri.Trim(), UriKind.Absolute, out Uri iu)
                     && (iu.Scheme == Uri.UriSchemeHttp || iu.Scheme == Uri.UriSchemeHttps))
                 {
+                    string suggested = Path.GetFileName(
+                        (captured.RelativePath ?? "").Replace('\\', '/'));
+                    Exception inPageError = null;
+                    if (IsSameOrigin(form != null ? form.CurrentUrl : null, iu))
+                    {
+                        try
+                        {
+                            return await FetchInPageAsync(form, iu.AbsoluteUri, suggested)
+                                .ConfigureAwait(true);
+                        }
+                        catch (Exception ex)
+                        {
+                            inPageError = ex;
+                        }
+                    }
+
                     try
                     {
-                        string suggested = Path.GetFileName(
-                            (captured.RelativePath ?? "").Replace('\\', '/'));
-                        return await FetchInPageAsync(form, iu.AbsoluteUri, suggested)
-                            .ConfigureAwait(true);
+                        return await FetchUrlAsync(form, iu.AbsoluteUri).ConfigureAwait(true);
                     }
                     catch (Exception ex)
                     {
+                        string prefix = interrupt + "；";
+                        if (inPageError != null)
+                        {
+                            prefix += "页内重取失败: " + (inPageError.Message ?? "未知错误") + "；";
+                        }
+
                         throw new InvalidOperationException(
-                            interrupt + "；页内重取失败: " + (ex.Message ?? "未知错误"));
+                            prefix + "带页上下文重取失败: " + (ex.Message ?? "未知错误"));
                     }
                 }
 
@@ -167,7 +187,7 @@ namespace WordAddIn1.BrowserHost
         }
 
         /// <summary>
-        /// 下载事件中断后，在页面里带 Cookie/Referer 再取，不走进程 HttpClient。
+        /// 下载中断后的同源回退：页内 fetch（带 Cookie）。跨域不要走这条。
         /// </summary>
         public static async Task<BrowserDownloadFileResult> FetchInPageAsync(
             YiWriteBrowserForm form,
@@ -388,6 +408,75 @@ namespace WordAddIn1.BrowserHost
             return WorkspacePathResolver.ResolveWritePath(relativePath);
         }
 
+        /// <summary>
+        /// WebView2 下载器对中文/全角路径常 FileFailed；先落到纯英文临时文件。
+        /// </summary>
+        public static string AllocateAsciiTempDownloadPath(string suggestedFileName)
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "EasyWriteDl");
+            Directory.CreateDirectory(dir);
+            string ext = null;
+            try
+            {
+                ext = Path.GetExtension(suggestedFileName ?? "");
+            }
+            catch
+            {
+            }
+
+            if (string.IsNullOrEmpty(ext) || ext.Length > 8 || !IsAsciiToken(ext))
+            {
+                ext = ".bin";
+            }
+
+            return Path.Combine(dir, "ewdl_" + Guid.NewGuid().ToString("N") + ext);
+        }
+
+        /// <summary>
+        /// 把 WebView 临时文件搬进会话工作区。成功返回工作区绝对路径。
+        /// </summary>
+        public static string PromoteDownloadToWorkspace(
+            string tempPath,
+            string destPath,
+            string destRelative,
+            out string relativePath)
+        {
+            relativePath = destRelative;
+            if (TryCopyDownloadFile(tempPath, destPath))
+            {
+                return destPath;
+            }
+
+            string asciiRelative;
+            string asciiDest = AllocateLocalPathForSuggestedName(
+                "ewdl_" + Guid.NewGuid().ToString("N").Substring(0, 8) + AsciiExtension(destPath),
+                out asciiRelative);
+            if (TryCopyDownloadFile(tempPath, asciiDest))
+            {
+                relativePath = asciiRelative;
+                return asciiDest;
+            }
+
+            return null;
+        }
+
+        internal static bool IsSameOrigin(string pageUrl, Uri resource)
+        {
+            if (resource == null || string.IsNullOrWhiteSpace(pageUrl))
+            {
+                return false;
+            }
+
+            if (!Uri.TryCreate(pageUrl.Trim(), UriKind.Absolute, out Uri page))
+            {
+                return false;
+            }
+
+            return string.Equals(page.Scheme, resource.Scheme, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(page.Host, resource.Host, StringComparison.OrdinalIgnoreCase)
+                && page.Port == resource.Port;
+        }
+
         internal static void EnsureWorkspaceReadyPublic() => EnsureWorkspaceReady();
 
         internal static string BuildRelativePathPublic(string suggestedFileName) => BuildRelativePath(suggestedFileName);
@@ -425,46 +514,203 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
-        private static async Task TryAttachCookiesAsync(YiWriteBrowserForm form, Uri uri, HttpClient client)
+        private static async Task TryAttachPageContextAsync(
+            YiWriteBrowserForm form,
+            Uri uri,
+            HttpClient client)
         {
-            if (form == null || !form.IsCoreReady)
+            if (form == null || client == null || uri == null)
+            {
+                return;
+            }
+
+            Uri pageUri = null;
+            try
+            {
+                string pageUrl = form.CurrentUrl;
+                if (!string.IsNullOrWhiteSpace(pageUrl)
+                    && Uri.TryCreate(pageUrl.Trim(), UriKind.Absolute, out Uri parsed)
+                    && (parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps))
+                {
+                    pageUri = parsed;
+                    client.DefaultRequestHeaders.TryAddWithoutValidation("Referer", pageUri.AbsoluteUri);
+                    string origin = pageUri.GetLeftPart(UriPartial.Authority);
+                    if (!string.IsNullOrEmpty(origin))
+                    {
+                        client.DefaultRequestHeaders.TryAddWithoutValidation("Origin", origin);
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            if (!form.IsCoreReady)
+            {
+                return;
+            }
+
+            var bag = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            await CollectCookiesAsync(form, uri.AbsoluteUri, uri, bag).ConfigureAwait(true);
+            if (pageUri != null
+                && !string.Equals(pageUri.Host, uri.Host, StringComparison.OrdinalIgnoreCase))
+            {
+                await CollectCookiesAsync(form, pageUri.AbsoluteUri, uri, bag).ConfigureAwait(true);
+            }
+
+            if (bag.Count == 0)
+            {
+                return;
+            }
+
+            var sb = new StringBuilder();
+            foreach (KeyValuePair<string, string> kv in bag)
+            {
+                if (sb.Length > 0)
+                {
+                    sb.Append("; ");
+                }
+
+                sb.Append(kv.Key).Append('=').Append(kv.Value ?? "");
+            }
+
+            if (sb.Length > 0)
+            {
+                client.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", sb.ToString());
+            }
+        }
+
+        private static async Task CollectCookiesAsync(
+            YiWriteBrowserForm form,
+            string queryUri,
+            Uri requestUri,
+            Dictionary<string, string> bag)
+        {
+            if (form == null || bag == null || string.IsNullOrWhiteSpace(queryUri))
             {
                 return;
             }
 
             try
             {
-                CoreWebView2Cookie[] cookies = await form.GetCookiesAsync(uri.AbsoluteUri).ConfigureAwait(true);
+                CoreWebView2Cookie[] cookies = await form.GetCookiesAsync(queryUri).ConfigureAwait(true);
                 if (cookies == null || cookies.Length == 0)
                 {
                     return;
                 }
 
-                var sb = new StringBuilder();
                 foreach (CoreWebView2Cookie c in cookies)
                 {
-                    if (c == null || string.IsNullOrEmpty(c.Name))
+                    if (c == null || string.IsNullOrEmpty(c.Name) || bag.ContainsKey(c.Name))
                     {
                         continue;
                     }
 
-                    if (sb.Length > 0)
+                    if (!CookieAppliesTo(c, requestUri))
                     {
-                        sb.Append("; ");
+                        continue;
                     }
 
-                    sb.Append(c.Name).Append('=').Append(c.Value ?? "");
-                }
-
-                if (sb.Length > 0)
-                {
-                    client.DefaultRequestHeaders.TryAddWithoutValidation("Cookie", sb.ToString());
+                    bag[c.Name] = c.Value ?? "";
                 }
             }
             catch
             {
                 // cookie 可选
             }
+        }
+
+        private static bool CookieAppliesTo(CoreWebView2Cookie cookie, Uri request)
+        {
+            if (cookie == null || request == null)
+            {
+                return false;
+            }
+
+            string domain = (cookie.Domain ?? "").Trim();
+            if (domain.StartsWith(".", StringComparison.Ordinal))
+            {
+                domain = domain.Substring(1);
+            }
+
+            if (string.IsNullOrEmpty(domain))
+            {
+                return true;
+            }
+
+            string host = request.Host ?? "";
+            return host.Equals(domain, StringComparison.OrdinalIgnoreCase)
+                || host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryCopyDownloadFile(string sourcePath, string destPath)
+        {
+            if (string.IsNullOrEmpty(sourcePath) || string.IsNullOrEmpty(destPath)
+                || !File.Exists(sourcePath)
+                || new FileInfo(sourcePath).Length <= 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                string destDir = Path.GetDirectoryName(destPath);
+                if (!string.IsNullOrEmpty(destDir))
+                {
+                    Directory.CreateDirectory(destDir);
+                }
+
+                if (string.Equals(
+                    Path.GetFullPath(sourcePath),
+                    Path.GetFullPath(destPath),
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                File.Copy(sourcePath, destPath, overwrite: true);
+                TryDelete(sourcePath);
+                return File.Exists(destPath) && new FileInfo(destPath).Length > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsAsciiToken(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return false;
+            }
+
+            foreach (char ch in value)
+            {
+                if (ch > 127)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static string AsciiExtension(string path)
+        {
+            try
+            {
+                string ext = Path.GetExtension(path ?? "");
+                if (!string.IsNullOrEmpty(ext) && ext.Length <= 8 && IsAsciiToken(ext))
+                {
+                    return ext;
+                }
+            }
+            catch
+            {
+            }
+
+            return ".bin";
         }
 
         private static string BuildRelativePath(string suggestedFileName)

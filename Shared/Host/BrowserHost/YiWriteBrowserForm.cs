@@ -1073,10 +1073,11 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 string relative;
-                string localPath = BrowserDownloadEngine.AllocateLocalPathForSuggestedName(
+                string destPath = BrowserDownloadEngine.AllocateLocalPathForSuggestedName(
                     suggested,
                     out relative);
-                args.ResultFilePath = localPath;
+                string tempPath = BrowserDownloadEngine.AllocateAsciiTempDownloadPath(suggested);
+                args.ResultFilePath = tempPath;
                 args.Handled = true;
 
                 CoreWebView2DownloadOperation op = args.DownloadOperation;
@@ -1095,6 +1096,63 @@ namespace WordAddIn1.BrowserHost
                     return;
                 }
 
+                void FinishDownload(bool interrupted)
+                {
+                    string reason = null;
+                    if (interrupted)
+                    {
+                        try
+                        {
+                            reason = op.InterruptReason.ToString();
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    string finalRel;
+                    string finalPath = BrowserDownloadEngine.PromoteDownloadToWorkspace(
+                        tempPath,
+                        destPath,
+                        relative,
+                        out finalRel);
+                    if (!string.IsNullOrEmpty(finalPath))
+                    {
+                        CompleteExpectDownload(
+                            tcs,
+                            new BrowserCapturedDownload
+                            {
+                                LocalPath = finalPath,
+                                RelativePath = finalRel,
+                                Uri = dlUri,
+                                ContentType = null
+                            },
+                            null);
+                        return;
+                    }
+
+                    if (interrupted)
+                    {
+                        CompleteExpectDownload(
+                            tcs,
+                            new BrowserCapturedDownload
+                            {
+                                LocalPath = null,
+                                RelativePath = relative,
+                                Uri = dlUri,
+                                Interrupted = true,
+                                InterruptReason = reason
+                            },
+                            null);
+                        return;
+                    }
+
+                    CompleteExpectDownload(
+                        tcs,
+                        null,
+                        new InvalidOperationException("下载文件未落盘"));
+                }
+
                 void OnStateChanged(object s2, object e2)
                 {
                     try
@@ -1102,40 +1160,12 @@ namespace WordAddIn1.BrowserHost
                         if (op.State == CoreWebView2DownloadState.Completed)
                         {
                             op.StateChanged -= OnStateChanged;
-                            CompleteExpectDownload(
-                                tcs,
-                                new BrowserCapturedDownload
-                                {
-                                    LocalPath = localPath,
-                                    RelativePath = relative,
-                                    Uri = dlUri,
-                                    ContentType = null
-                                },
-                                null);
+                            FinishDownload(false);
                         }
                         else if (op.State == CoreWebView2DownloadState.Interrupted)
                         {
                             op.StateChanged -= OnStateChanged;
-                            string reason = null;
-                            try
-                            {
-                                reason = op.InterruptReason.ToString();
-                            }
-                            catch
-                            {
-                            }
-
-                            CompleteExpectDownload(
-                                tcs,
-                                new BrowserCapturedDownload
-                                {
-                                    LocalPath = null,
-                                    RelativePath = relative,
-                                    Uri = dlUri,
-                                    Interrupted = true,
-                                    InterruptReason = reason
-                                },
-                                null);
+                            FinishDownload(true);
                         }
                     }
                     catch (Exception ex)
