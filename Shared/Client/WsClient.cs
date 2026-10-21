@@ -32,6 +32,7 @@ namespace WordAddIn1
         private string _pendingBindConversationId;
         private TaskCompletionSource<bool> _unbindTcs;
         private string _activeInvokeRequestId;
+        private string _activeInvokeMethod;
         private volatile bool _localInvokeCancelled;
         private readonly object _invokeCancelLock = new object();
         private readonly SemaphoreSlim _connectLock = new SemaphoreSlim(1, 1);
@@ -41,6 +42,17 @@ namespace WordAddIn1
             _socket != null && _socket.State == WebSocketState.Open;
 
         public string BoundConversationId => _boundConversationId;
+
+        public string ActiveInvokeMethod
+        {
+            get
+            {
+                lock (_invokeCancelLock)
+                {
+                    return _activeInvokeMethod;
+                }
+            }
+        }
 
         public event Action<string> BindError;
 
@@ -282,11 +294,14 @@ namespace WordAddIn1
             }
         }
 
-        private void BeginInvokeTracking(string requestId)
+        private void BeginInvokeTracking(string requestId, string method)
         {
             lock (_invokeCancelLock)
             {
                 _activeInvokeRequestId = requestId;
+                _activeInvokeMethod = _registry != null
+                    ? _registry.ResolveToolName(method)
+                    : method;
                 _localInvokeCancelled = false;
             }
         }
@@ -298,9 +313,12 @@ namespace WordAddIn1
                 if (_activeInvokeRequestId == requestId)
                 {
                     _activeInvokeRequestId = null;
+                    _activeInvokeMethod = null;
                 }
                 _localInvokeCancelled = false;
             }
+
+            ToolDrainState.End();
         }
 
         private async Task EnsureConnectedAsync(string accessToken, string username)
@@ -537,7 +555,7 @@ namespace WordAddIn1
                 return;
             }
 
-            BeginInvokeTracking(requestId);
+            BeginInvokeTracking(requestId, method);
             var invokeSw = Stopwatch.StartNew();
             ConversationContext.CurrentToolCallId = toolCallId;
             SyncConversationContextFromBound();

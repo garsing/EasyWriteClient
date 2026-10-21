@@ -609,6 +609,7 @@ namespace WordAddIn1
             int toWrite = Math.Min(spec.Values.Count, slots.Count);
             for (int i = 0; i < toWrite; i++)
             {
+                AgentRunCancellation.ThrowIfCancelled();
                 if (!TryWriteSlot(
                         table,
                         slots[i],

@@ -41,6 +41,7 @@ namespace EasyWriteClient.Desktop
         private readonly object _hostDropUploadLock = new object();
         private string _lastHostDropUploadPath;
         private DateTime _lastHostDropUploadUtc;
+        private CancellationTokenSource _stopWatchdogCts;
 
         public DesktopChatSurface()
         {
@@ -494,6 +495,8 @@ namespace EasyWriteClient.Desktop
 
         private void RegisterHandlers()
         {
+            ToolDrainState.Changed -= ForwardToolDrain;
+            ToolDrainState.Changed += ForwardToolDrain;
             _bridge.RegisterHandler("sendMessage", HandleSendMessageAsync);
             _bridge.RegisterHandler("stopRequest", HandleStopRequestAsync);
             _bridge.RegisterHandler("openLoginWindow", async _ =>
@@ -1205,6 +1208,11 @@ namespace EasyWriteClient.Desktop
 
                 // 发消息：附着已有 Word 即可，不主动 new（Agent 调打开文档工具时再创建）
                 EnsureClients(createWordIfMissing: false);
+                if (ToolDrainState.Active)
+                {
+                    await ToolDrainState.WaitIdleAsync().ConfigureAwait(true);
+                }
+
                 Invoke((MethodInvoker)delegate
                 {
                     _cts = new System.Threading.CancellationTokenSource();
@@ -1452,25 +1460,99 @@ namespace EasyWriteClient.Desktop
         {
             try
             {
-                if (!string.IsNullOrEmpty(_currentConversationId)
-                    && _currentConversationId != "-1"
-                    && _wsClient != null)
-                {
-                    await _wsClient.SendRunCancelAsync(_currentConversationId).ConfigureAwait(false);
-                }
-
-                _wsClient?.CancelActiveInvokeLocal();
-                if (_cts != null && !_cts.IsCancellationRequested)
-                {
-                    _cts.Cancel();
-                }
-
+                _isProcessing = false;
+                _bridge?.SendToJavaScript("requestStateChanged", new { isProcessing = false });
+                StartStopWatchdogIfNeeded();
+                await AgentStopHelper
+                    .RequestStopAsync(_wsClient, _currentConversationId, _cts)
+                    .ConfigureAwait(true);
                 return new { success = true };
             }
             catch (Exception ex)
             {
                 return new { success = false, message = ex.Message };
             }
+        }
+
+        private void ForwardToolDrain()
+        {
+            void Send()
+            {
+                _bridge?.SendToJavaScript("toolDrainChanged", new
+                {
+                    active = ToolDrainState.Active,
+                    risk = ToolDrainState.RiskWireName()
+                });
+            }
+
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke((MethodInvoker)Send);
+            }
+            else
+            {
+                Send();
+            }
+        }
+
+        private void StartStopWatchdogIfNeeded()
+        {
+            CancelStopWatchdog();
+            _stopWatchdogCts = new CancellationTokenSource();
+            CancellationToken token = _stopWatchdogCts.Token;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(AgentStopHelper.WatchdogMs, token).ConfigureAwait(false);
+                    if (token.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    if (InvokeRequired)
+                    {
+                        BeginInvoke((MethodInvoker)ForceStopCleanupAfterTimeout);
+                    }
+                    else
+                    {
+                        ForceStopCleanupAfterTimeout();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+        }
+
+        private void ForceStopCleanupAfterTimeout()
+        {
+            if (_cts == null && !ToolDrainState.Active)
+            {
+                return;
+            }
+
+            CleanupRequestState();
+            ToolDrainState.End();
+        }
+
+        private void CancelStopWatchdog()
+        {
+            try
+            {
+                _stopWatchdogCts?.Cancel();
+            }
+            catch
+            {
+            }
+
+            _stopWatchdogCts?.Dispose();
+            _stopWatchdogCts = null;
         }
 
         private async Task<object> HandleAddConversationAsync(object data)
@@ -1659,6 +1741,7 @@ namespace EasyWriteClient.Desktop
 
         private void CleanupRequestState()
         {
+            CancelStopWatchdog();
             AgentRunCancellation.EndRun();
             _isProcessing = false;
             if (_cts != null)

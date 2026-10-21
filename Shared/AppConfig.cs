@@ -24,6 +24,8 @@ namespace WordAddIn1
         public OpenFilesSettings OpenFiles { get; set; }
         /// <summary>浏览器 click / hover 点法。模型不可见。</summary>
         public BrowserSettings Browser { get; set; }
+        /// <summary>停止分档。未列入 High/Low 的为无风险。</summary>
+        public ToolStopRiskSettings ToolStopRisk { get; set; }
 
         public AppConfig()
         {
@@ -138,6 +140,18 @@ namespace WordAddIn1
         {
             public string ClickMode { get; set; }
             public string AttachPointer { get; set; }
+        }
+
+        public class ToolStopRiskSettings
+        {
+            public List<string> High { get; set; }
+            public List<string> Low { get; set; }
+
+            public ToolStopRiskSettings()
+            {
+                High = new List<string>();
+                Low = new List<string>();
+            }
         }
 
         public class OpenFilesAppEntry
@@ -280,6 +294,23 @@ namespace WordAddIn1
                 config.Browser.ClickMode = NormalizeBrowserClickMode(config.Browser.ClickMode);
                 config.Browser.AttachPointer = NormalizeBrowserAttachPointer(config.Browser.AttachPointer);
             }
+
+            if (config.ToolStopRisk == null)
+            {
+                config.ToolStopRisk = CreateDefaultToolStopRiskSettings();
+            }
+            else
+            {
+                if (config.ToolStopRisk.High == null)
+                {
+                    config.ToolStopRisk.High = new List<string>();
+                }
+
+                if (config.ToolStopRisk.Low == null)
+                {
+                    config.ToolStopRisk.Low = new List<string>();
+                }
+            }
         }
 
         /// <summary>首次生成 / 随包推荐配置：预置 word + wps + excel + et（不是 Normalize 兜底）。</summary>
@@ -388,7 +419,74 @@ namespace WordAddIn1
                     Mode = "sessions"
                 },
                 OpenFiles = CreateDefaultOpenFilesSettings(),
-                Browser = CreateDefaultBrowserSettings()
+                Browser = CreateDefaultBrowserSettings(),
+                ToolStopRisk = CreateDefaultToolStopRiskSettings()
+            };
+        }
+
+        internal static AppConfig.ToolStopRiskSettings CreateDefaultToolStopRiskSettings()
+        {
+            return new AppConfig.ToolStopRiskSettings
+            {
+                High = new List<string>
+                {
+                    "F_process_document_actions",
+                    "F_insert_document_from_file",
+                    "F_replace_document_from_file",
+                    "F_apply_document_format",
+                    "F_apply_paragraph_format",
+                    "F_apply_source_format",
+                    "F_apply_source_paragraph_format",
+                    "F_apply_source_table_format",
+                    "F_format_transfer",
+                    "F_apply_page_setup",
+                    "F_create_table_from_xml",
+                    "F_apply_table_format_from_xml",
+                    "F_apply_table_data_from_xml",
+                    "F_apply_table_row_values",
+                    "F_optimize_table_display",
+                    "F_delete_table",
+                    "F_create_chart_from_xml",
+                    "F_apply_chart_from_xml",
+                    "F_delete_chart",
+                    "F_insert_svg_image",
+                    "F_insert_image",
+                    "F_delete_image",
+                    "F_insert_blank_page",
+                    "F_insert_page_break",
+                    "F_apply_data_provenance",
+                    "F_clear_data_provenance",
+                    "F_apply_ppt_html",
+                    "F_manage_ppt_shape",
+                    "F_manage_ppt_slide",
+                    "F_manage_ppt_lib",
+                    "F_ppt_transition",
+                    "F_ppt_animation",
+                    "F_apply_excel_format",
+                    "F_apply_excel_conditional_format",
+                    "F_apply_excel_structure",
+                    "F_excel_pivot",
+                    "F_excel_chart",
+                    "F_manage_excel_sheet",
+                    "F_write_excel_range",
+                    "F_restore_document_checkpoint",
+                    "F_set_track_revisions"
+                },
+                Low = new List<string>
+                {
+                    "F_write_file",
+                    "F_copy_workspace_file",
+                    "F_write_format_file",
+                    "F_modify_yaml_file",
+                    "B_write_python",
+                    "F_capture_document_page_image",
+                    "F_capture_ppt_shape",
+                    "B_capture_kb_document_page_image",
+                    "B_analyze_kb_document_page_image",
+                    "F_open_document",
+                    "F_open_word_document",
+                    "F_close_document"
+                }
             };
         }
 
@@ -416,6 +514,52 @@ namespace WordAddIn1
         }
 
         /// <summary>树 + 操作后端。engine = yiwrite / chrome / edge；pointer=AX/CDP，legacy=DOM。缺省 / 非法 = pointer。模型不可见。</summary>
+        public static ToolStopRiskKind ClassifyToolStopRisk(string toolName)
+        {
+            if (string.IsNullOrWhiteSpace(toolName))
+            {
+                return ToolStopRiskKind.None;
+            }
+
+            AppConfig.ToolStopRiskSettings row = Config?.ToolStopRisk;
+            if (row == null)
+            {
+                return ToolStopRiskKind.None;
+            }
+
+            string name = toolName.Trim();
+            if (ContainsToolName(row.High, name))
+            {
+                return ToolStopRiskKind.High;
+            }
+
+            if (ContainsToolName(row.Low, name))
+            {
+                return ToolStopRiskKind.Low;
+            }
+
+            return ToolStopRiskKind.None;
+        }
+
+        private static bool ContainsToolName(List<string> list, string name)
+        {
+            if (list == null || list.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (string item in list)
+            {
+                if (!string.IsNullOrWhiteSpace(item)
+                    && string.Equals(item.Trim(), name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public static string GetBrowserClickMode(string engine = null)
         {
             AppConfig.BrowserEngineSettings row = GetBrowserEngineSettings(engine);

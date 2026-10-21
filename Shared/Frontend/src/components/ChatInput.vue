@@ -113,13 +113,10 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import submitIcon from '../assets/images/submit.png'
 import stopIcon from '../assets/images/stop.png'
 import { resolveFileAppIconByName, resolveOpenFileAppIcon } from '../utils/openFileAppIcon.js'
-import { useWebViewBridge } from '../composables/useWebViewBridge'
 import { syncLiveDraftInput } from '../utils/draftChatInput.js'
 import { collectClipboardFiles } from '../utils/clipboardChatImages.js'
 import { isImageFileName, loadKbImageThumbUrl } from '../utils/kbImageThumb.js'
 import ImageLightbox from './ImageLightbox.vue'
-
-const { sendMessage } = useWebViewBridge()
 
 const props = defineProps({
   loading: {
@@ -442,13 +439,8 @@ const handleSend = () => {
   }
 }
 
-const handleStop = async () => {
+const handleStop = () => {
   emit('stop')
-  try {
-    await sendMessage('stopRequest', {})
-  } catch (error) {
-    console.error('停止请求失败:', error)
-  }
 }
 
 const handleButtonClick = () => {

@@ -85,6 +85,7 @@ namespace WordAddIn1
 
                     foreach (TableRowWriteSpec spec in specs)
                     {
+                        AgentRunCancellation.ThrowIfCancelled();
                         spec.FormatSnapshot = formatSnapshot;
                     }
 

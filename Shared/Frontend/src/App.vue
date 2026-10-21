@@ -541,6 +541,11 @@ function removeChatAttachment (id) {
 const messages = ref([])
 const toolCallAccumulators = new Map()
 const isProcessing = ref(false)
+const stoppedLocally = ref(false)
+const drainActive = ref(false)
+const drainRisk = ref('none')
+const pendingSendPayload = ref(null)
+const DRAIN_HINT = '仍有工具在运行…'
 const panelHint = ref('')
 const pendingInput = ref('') // 保存待发送的消息（用于登录失败时恢复）
 const receivedBackendMessages = ref(new Set()) // 保存已收到后端消息的用户消息ID（用于判断是否应该移除）
@@ -549,6 +554,16 @@ const receivedBackendMessages = ref(new Set()) // 保存已收到后端消息的
 const clearInput = () => {
   const event = new CustomEvent('clearInput')
   window.dispatchEvent(event)
+}
+
+function removeDrainHint () {
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i]
+    if (m && m.isHint && m.content === DRAIN_HINT) {
+      messages.value.splice(i, 1)
+      break
+    }
+  }
 }
 
 /** 用户点停止：当前助手轮没有自然收尾，下一问时整轮收进「奋力工作的记录」 */
@@ -560,11 +575,24 @@ function handleUserStop () {
       m.aborted = true
     }
   }
+  if (pendingSendPayload.value) {
+    removeDrainHint()
+    pendingSendPayload.value = null
+    isProcessing.value = false
+    return
+  }
+  isProcessing.value = false
+  stoppedLocally.value = true
+  sendMessage('stopRequest', {}).catch((err) => {
+    console.error('停止请求失败:', err)
+  })
 }
 
 // 处理发送消息
 const handleSend = async (content) => {
   if (!content.trim() || isProcessing.value) return
+
+  const drainBlocks = drainActive.value && (drainRisk.value === 'low' || drainRisk.value === 'high')
 
   if (chatFile.hasBusy.value || chatFile.hasError.value) {
     console.warn('[App] 附件未就绪，跳过发送')
@@ -579,6 +607,7 @@ const handleSend = async (content) => {
 
   // 立即设置处理状态，确保按钮显示停止图标
   isProcessing.value = true
+  stoppedLocally.value = false
   console.log('[App] 开始发送消息，设置 isProcessing = true')
 
   const attachmentsSnap = snapshotAttachments(chatAttachmentItems.value)
@@ -604,6 +633,19 @@ const handleSend = async (content) => {
   const sendPayload = { content: apiContent }
   // 附件已写入气泡与请求体，输入区立刻清空，不等模型回完
   chatFile.reset()
+
+  if (drainBlocks) {
+    messages.value.push({
+      id: Date.now() + 1,
+      role: 'system',
+      content: DRAIN_HINT,
+      isHint: true,
+      timestamp: new Date()
+    })
+    pendingSendPayload.value = sendPayload
+    pinToLatestToken.value++
+    return
+  }
 
   // 发送到 C# 后端
   try {
@@ -1097,8 +1139,32 @@ onMounted(() => {
         stateData,
         data
       })
+      if (stoppedLocally.value && newState) {
+        return
+      }
+      if (newState) {
+        stoppedLocally.value = false
+      }
+      if (pendingSendPayload.value && !newState) {
+        return
+      }
       isProcessing.value = newState
       console.log('[App] 状态已改变，当前isProcessing:', isProcessing.value)
+    } else if (data.type === 'toolDrainChanged') {
+      const payload = data.data || data
+      drainActive.value = !!payload.active
+      drainRisk.value = payload.risk || 'none'
+      if (!payload.active && pendingSendPayload.value) {
+        const queued = pendingSendPayload.value
+        pendingSendPayload.value = null
+        removeDrainHint()
+        isProcessing.value = true
+        stoppedLocally.value = false
+        sendMessage('sendMessage', queued).catch((err) => {
+          console.error('排队发送失败:', err)
+          isProcessing.value = false
+        })
+      }
     } else if (data.type === 'orchestratorMaxRoundsReached') {
       const payload = data.data || data
       const maxRounds = payload.maxRounds

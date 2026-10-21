@@ -28,6 +28,19 @@ namespace WordAddIn1
             _linked = null;
         }
 
+        public static bool IsCancelled => Token.IsCancellationRequested;
+
+        public static void RequestCancel()
+        {
+            try
+            {
+                _linked?.Cancel();
+            }
+            catch
+            {
+            }
+        }
+
         public static void ThrowIfCancelled()
         {
             Token.ThrowIfCancellationRequested();

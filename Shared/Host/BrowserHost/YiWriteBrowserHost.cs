@@ -13,6 +13,28 @@ namespace WordAddIn1.BrowserHost
         private static readonly object Gate = new object();
         private static YiWriteBrowserForm _form;
 
+        internal static void CancelActiveWaits()
+        {
+            YiWriteBrowserForm form;
+            lock (Gate)
+            {
+                form = _form;
+            }
+
+            if (form == null || form.IsDisposed)
+            {
+                return;
+            }
+
+            try
+            {
+                form.CancelExpectDownload();
+            }
+            catch
+            {
+            }
+        }
+
         internal static int TryGetVisibleFormHandle()
         {
             lock (Gate)

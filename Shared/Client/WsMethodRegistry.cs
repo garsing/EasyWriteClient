@@ -16,6 +16,23 @@ namespace WordAddIn1
         private readonly Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> _toolHandlers;
         private readonly JavaScriptSerializer _jsonSerializer = new JavaScriptSerializer();
 
+        public string ResolveToolName(string method)
+        {
+            if (string.IsNullOrWhiteSpace(method))
+            {
+                return method;
+            }
+
+            string key = method.Trim();
+            string mapped;
+            if (_methodToToolName.TryGetValue(key, out mapped) && !string.IsNullOrEmpty(mapped))
+            {
+                return mapped;
+            }
+
+            return key;
+        }
+
         public WsMethodRegistry(object wordApplication)
         {
             _wordApplication = wordApplication;
@@ -162,12 +179,26 @@ namespace WordAddIn1
 
             if (!_methodToToolName.TryGetValue(method, out var toolName))
             {
-                return new ToolResult { Success = false, Error = $"unknown method '{method}'" };
+                if (!_toolHandlers.ContainsKey(method))
+                {
+                    return new ToolResult { Success = false, Error = $"unknown method '{method}'" };
+                }
+
+                toolName = method;
             }
 
             if (!_toolHandlers.TryGetValue(toolName, out var handler))
             {
                 return new ToolResult { Success = false, Error = $"handler not registered for method '{method}'" };
+            }
+
+            if (ToolDrainState.IsMutatingActive)
+            {
+                ToolStopRiskKind incoming = ConfigManager.ClassifyToolStopRisk(toolName);
+                if (incoming == ToolStopRiskKind.Low || incoming == ToolStopRiskKind.High)
+                {
+                    await ToolDrainState.WaitIdleAsync().ConfigureAwait(false);
+                }
             }
 
             var args = parameters ?? new Dictionary<string, object>();
@@ -196,15 +227,25 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = "cancelled by user" };
                 }
 
+                ToolResult result;
                 if (WorkspaceReconcile.ShouldWrapFrontendWrite(toolName, args))
                 {
                     int ttl = WorkspaceReconcile.TtlSecForTool(toolName, args);
-                    return await WorkspaceReconcile
+                    result = await WorkspaceReconcile
                         .AroundFrontendWriteAsync(ttl, () => InvokeHandlerCoreAsync(toolName, handler, args))
                         .ConfigureAwait(false);
                 }
+                else
+                {
+                    result = await InvokeHandlerCoreAsync(toolName, handler, args).ConfigureAwait(false);
+                }
 
-                return await InvokeHandlerCoreAsync(toolName, handler, args).ConfigureAwait(false);
+                if (AgentRunCancellation.IsCancelled)
+                {
+                    return new ToolResult { Success = false, Error = "cancelled by user" };
+                }
+
+                return result;
             }
             finally
             {
