@@ -1277,6 +1277,8 @@ namespace EasyWriteClient.Desktop
                             isUpdate = !first
                         });
                     });
+                bool maxRoundsReached = false;
+                int maxRoundsLimit = 0;
 
                 object openChannels = null;
                 try
@@ -1305,6 +1307,16 @@ namespace EasyWriteClient.Desktop
                             {
                                 duration_ms = chunk.easywrite_meta.duration_ms
                             });
+                            return;
+                        }
+
+                        if (chunk?.easywrite_meta?.@event == "max_rounds_reached")
+                        {
+                            maxRoundsReached = true;
+                            if (chunk.easywrite_meta.max_rounds.HasValue)
+                            {
+                                maxRoundsLimit = chunk.easywrite_meta.max_rounds.Value;
+                            }
                             return;
                         }
 
@@ -1382,6 +1394,13 @@ namespace EasyWriteClient.Desktop
                         isStreaming = false,
                         isUpdate = true
                     });
+                    if (maxRoundsReached)
+                    {
+                        _bridge.SendToJavaScript("orchestratorMaxRoundsReached", new
+                        {
+                            maxRounds = maxRoundsLimit > 0 ? maxRoundsLimit : (int?)null
+                        });
+                    }
                     CleanupRequestState();
                 });
             }
