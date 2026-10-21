@@ -15,7 +15,8 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static class WkCases
     {
-        public const int Target = 44;
+        public const int Target = 46;
+        public const int CaretTarget = 2;
 
         private const string SentA = "易写检查点甲句。";
         private const string SentB = "易写检查点乙句。";
@@ -27,6 +28,7 @@ namespace WordDocumentRoundtripTest
         private const string TblCell = "易写巩固表甲";
         private const string TblSrc = "易写表来源";
         private const string ImgSrc = "易写图来源";
+        private const string Page2Anchor = "易写检查点第二页锚。";
 
         public static void Run(
             TestRun run,
@@ -34,14 +36,22 @@ namespace WordDocumentRoundtripTest
             int wordBefore,
             int wpsBefore,
             bool wordWinBefore,
-            bool wpsWinBefore)
+            bool wpsWinBefore,
+            string caseFilter = "")
         {
             var s = new WdSession(host);
             BurnFirstWpsOpen(s);
+            if (IsCaretOnly(caseFilter))
+            {
+                RunCkptCaret(run, s);
+                return;
+            }
+
             RunCkptNeg(run, s);
             RunCkptEmpty(run, s);
             RunCkptPos(run, s);
             RunCkptTwo(run, s);
+            RunCkptCaret(run, s);
             RunProvNeg(run, s);
             RunProvEmpty(run, s);
             RunProvSentence(run, s);
@@ -50,6 +60,12 @@ namespace WordDocumentRoundtripTest
             RunProvMix(run, s);
             RunProvCkpt(run, s);
             RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+        }
+
+        public static bool IsCaretOnly(string caseFilter)
+        {
+            return !string.IsNullOrEmpty(caseFilter)
+                && caseFilter.IndexOf("caret", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static void BurnFirstWpsOpen(WdSession s)
@@ -225,6 +241,94 @@ namespace WordDocumentRoundtripTest
                     && !Contains(back, SentB)
                     && !Contains(back, SentC),
                 rst.Success ? "两次改后 restore 第一次不对: " + Snip(back) : (rst.Error ?? first.Error ?? ""));
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunCkptCaret(TestRun run, WdSession s)
+        {
+            string[] ids = { "wk-rst-caret-page2", "wk-rst-caret-scroll" };
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, ids))
+            {
+                return;
+            }
+
+            if (!s.TypeLongCheckpointBody(path, SentA, Page2Anchor))
+            {
+                FailMany(run, "COM 写长文失败", ids);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            s.ActivateDoc(path);
+            if (!s.TryGoToPage(path, 2))
+            {
+                FailMany(run, "GoTo 第2页失败", ids);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            int pageBefore;
+            int startBefore;
+            int scrollBefore;
+            if (!s.TryReadCaret(path, out pageBefore, out startBefore, out scrollBefore) || pageBefore < 2)
+            {
+                FailMany(run, "建副本前光标不在第2页（page=" + pageBefore + "）", ids);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            string body = ReadBody(s, id);
+            string code = FirstCode(body, "S");
+            if (string.IsNullOrEmpty(code))
+            {
+                FailMany(run, "长文回读无甲句编码（body=" + Snip(body) + "）", ids);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            if (!s.TryGoToPage(path, 2))
+            {
+                FailMany(run, "改字前再次落到第2页失败", ids);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            ToolResult wrote = s.ProcessActions(id, Replace(code, SentB));
+            if (!wrote.Success)
+            {
+                FailMany(run, "改字失败: " + (wrote.Error ?? ""), ids);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            string ts = FirstCopyTs(DataText(s.ListOperations(id)));
+            if (string.IsNullOrEmpty(ts))
+            {
+                FailMany(run, "无 timestamp，不能 restore", ids);
+                s.CloseDocByPath(path);
+                return;
+            }
+
+            s.TryGoToPage(path, 1);
+            ToolResult rst = s.RestoreCheckpoint(id, ts);
+            int pageAfter;
+            int startAfter;
+            int scrollAfter;
+            bool read = s.TryReadCaret(path, out pageAfter, out startAfter, out scrollAfter);
+            string back = ReadBody(s, id);
+            Ok(run, "wk-rst-caret-page2",
+                rst.Success && read && pageAfter >= 2 && Contains(back, SentA) && !Contains(back, SentB),
+                rst.Success
+                    ? "回滚后页=" + pageAfter + " start=" + startAfter + "（建副本时页=" + pageBefore
+                      + " start=" + startBefore + "）正文=" + Snip(back)
+                    : (rst.Error ?? ""));
+            Ok(run, "wk-rst-caret-scroll",
+                rst.Success && read && pageAfter >= 2 && scrollAfter > 0,
+                rst.Success
+                    ? "回滚后滚动=" + scrollAfter + "%（建副本时 " + scrollBefore
+                      + "%）页=" + pageAfter
+                    : (rst.Error ?? ""));
             s.CloseDocByPath(path);
         }
 

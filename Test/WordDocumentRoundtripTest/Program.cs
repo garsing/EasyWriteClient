@@ -15,6 +15,11 @@ namespace WordDocumentRoundtripTest
             string host = GetHost(args);
             string caseFilter = GetArg(args, "--case=");
             string docPath = GetArg(args, "--doc=");
+            if (caseFilter.StartsWith("xlk-", StringComparison.OrdinalIgnoreCase)
+                || caseFilter.StartsWith("pk-", StringComparison.OrdinalIgnoreCase))
+            {
+                return RunOfficeCkpt(args, caseFilter);
+            }
             bool runFindStale = caseFilter.StartsWith("fs-", StringComparison.OrdinalIgnoreCase);
             bool runLayout = !runFindStale
                 && (caseFilter.StartsWith("lb-", StringComparison.OrdinalIgnoreCase)
@@ -306,7 +311,9 @@ namespace WordDocumentRoundtripTest
             }
             else if (runCkpt)
             {
-                Console.WriteLine("文字 检查点与溯源（wk-/wv-）");
+                Console.WriteLine(WkCases.IsCaretOnly(caseFilter)
+                    ? "文字 检查点光标/视口（wk-rst-caret）"
+                    : "文字 检查点与溯源（wk-/wv-）");
             }
             else
             {
@@ -344,7 +351,9 @@ namespace WordDocumentRoundtripTest
                                         ? WtCases.Target
                                         : (runChart
                                             ? WhCases.Target
-                                            : (runImage ? WiCases.Target : (runCkpt ? WkCases.Target : (runContent ? WcCases.Target : 30)))))))))
+                                            : (runImage ? WiCases.Target : (runCkpt
+                                                ? (WkCases.IsCaretOnly(caseFilter) ? WkCases.CaretTarget : WkCases.Target)
+                                                : (runContent ? WcCases.Target : 30)))))))))
             };
             var sw = Stopwatch.StartNew();
             try
@@ -394,7 +403,7 @@ namespace WordDocumentRoundtripTest
                 }
                 else if (runCkpt)
                 {
-                    WkCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+                    WkCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore, caseFilter);
                 }
                 else if (runContent)
                 {
@@ -426,12 +435,62 @@ namespace WordDocumentRoundtripTest
                                             ? WhPptSuite.Target
                                             : (runChart
                                             ? WhCases.Target
-                                            : (runImage ? WiCases.Target : (runCkpt ? WkCases.Target : (runContent ? WcCases.Target : 30))))))))));
+                                            : (runImage ? WiCases.Target : (runCkpt
+                                                ? (WkCases.IsCaretOnly(caseFilter) ? WkCases.CaretTarget : WkCases.Target)
+                                                : (runContent ? WcCases.Target : 30))))))))));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
                 + "  跳过 " + run.CasesSkipped
                 + "  （目标 " + target + "）");
+            Console.WriteLine("ELAPSED_SEC=" + sw.Elapsed.TotalSeconds.ToString("F1"));
+            return run.CasesFailed == 0 ? 0 : 1;
+        }
+
+        private static int RunOfficeCkpt(string[] args, string caseFilter)
+        {
+            bool runXlk = caseFilter.StartsWith("xlk-", StringComparison.OrdinalIgnoreCase);
+            string rawHost = GetArg(args, "--host=");
+            string host = runXlk
+                ? OfficeCkptSession.NormalizeExcelHost(rawHost)
+                : OfficeCkptSession.NormalizePptHost(rawHost);
+            Console.WriteLine(runXlk ? "表格 检查点（xlk-）" : "演示 检查点（pk-）");
+            Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+            if (runXlk)
+            {
+                Console.WriteLine(host == "et" ? "宿主 WPS 表格" : "宿主 Excel");
+            }
+            else
+            {
+                Console.WriteLine(host == "wpp" ? "宿主 WPS 演示" : "宿主 PowerPoint");
+            }
+
+            Console.WriteLine();
+            if (!DesktopLauncher.EnsureAvailable())
+            {
+                Console.WriteLine("连不上易写 Desktop（已尝试自动拉起）。请手动打开易写应用，再跑本套。");
+                return 1;
+            }
+
+            var s = new OfficeCkptSession(host);
+            bool winBefore = OfficeAlive.HasWindow(s.ProcName);
+            var run = new TestRun { TotalTarget = runXlk ? XlkCases.Target : PkCases.Target };
+            var sw = Stopwatch.StartNew();
+            if (runXlk)
+            {
+                XlkCases.Run(run, host, winBefore);
+            }
+            else
+            {
+                PkCases.Run(run, host, winBefore);
+            }
+
+            sw.Stop();
+            Console.WriteLine();
+            Console.WriteLine("正式用例 通过 " + run.CasesPassed
+                + "  失败 " + run.CasesFailed
+                + "  跳过 " + run.CasesSkipped
+                + "  （目标 " + run.TotalTarget + "）");
             Console.WriteLine("ELAPSED_SEC=" + sw.Elapsed.TotalSeconds.ToString("F1"));
             return run.CasesFailed == 0 ? 0 : 1;
         }

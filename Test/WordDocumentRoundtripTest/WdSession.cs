@@ -347,6 +347,87 @@ namespace WordDocumentRoundtripTest
             return DesktopToolPipe.Call("F_insert_page_break", args);
         }
 
+        public bool TypeLongCheckpointBody(string fullPath, string firstSentence, string page2Anchor)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append(firstSentence ?? "");
+            sb.Append('\r');
+            for (int i = 1; i <= 80; i++)
+            {
+                sb.Append("易写检查点长文第");
+                sb.Append(i);
+                sb.Append("段。本段只为撑开分页，让正文超过一页，回滚时能看出视口有没有跟着光标走。");
+                sb.Append('\r');
+            }
+
+            sb.Append(page2Anchor ?? "");
+            return TypePlain(fullPath, sb.ToString());
+        }
+
+        public bool TryGoToPage(string fullPath, int page)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    Invoke(doc, "Repaginate");
+                    object app = GetProp(doc, "Application");
+                    object sel = GetProp(app, "Selection");
+                    Invoke(sel, "GoTo", 1, 1, page);
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    doc.Repaginate();
+                    doc.Application.Selection.GoTo(
+                        Word.WdGoToItem.wdGoToPage,
+                        Word.WdGoToDirection.wdGoToAbsolute,
+                        page);
+                    return true;
+                });
+        }
+
+        public bool TryReadCaret(string fullPath, out int page, out int start, out int vscroll)
+        {
+            int p = 0;
+            int s = 0;
+            int v = 0;
+            bool ok = IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object app = GetProp(doc, "Application");
+                    object sel = GetProp(app, "Selection");
+                    s = Convert.ToInt32(GetProp(sel, "Start"));
+                    p = Convert.ToInt32(IndexedProp(sel, "Information", 3));
+                    object window = GetProp(doc, "ActiveWindow");
+                    if (window != null)
+                    {
+                        v = Convert.ToInt32(GetProp(window, "VerticalPercentScrolled"));
+                    }
+
+                    return p > 0;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    Word.Selection sel = doc.Application.Selection;
+                    s = sel.Start;
+                    p = Convert.ToInt32(sel.Information[Word.WdInformation.wdActiveEndPageNumber]);
+                    try
+                    {
+                        v = doc.ActiveWindow.VerticalPercentScrolled;
+                    }
+                    catch
+                    {
+                        v = 0;
+                    }
+
+                    return p > 0;
+                });
+            page = p;
+            start = s;
+            vscroll = v;
+            return ok;
+        }
+
         public bool MoveSelectionToEnd(string fullPath)
         {
             return IsWps
@@ -1961,6 +2042,16 @@ namespace WordDocumentRoundtripTest
             }
 
             SetProp(font, "Bold", bold ? 1 : 0);
+        }
+
+        private static object IndexedProp(object target, string name, object index)
+        {
+            return target.GetType().InvokeMember(
+                name,
+                System.Reflection.BindingFlags.GetProperty,
+                null,
+                target,
+                new object[] { index });
         }
 
         private static object GetProp(object target, string name)
