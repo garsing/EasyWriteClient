@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Reflection;
+using Excel = Microsoft.Office.Interop.Excel;
 
 namespace WordAddIn1
 {
@@ -59,6 +60,13 @@ namespace WordAddIn1
         public void RestoreCopy(CheckpointLiveTarget target, string checkpointPath)
         {
             object live = target?.Live ?? throw new InvalidOperationException("没有活动的工作簿");
+            Excel.Workbook typed = live as Excel.Workbook;
+            if (typed != null)
+            {
+                RestoreCopyTyped(typed, checkpointPath);
+                return;
+            }
+
             object app = InvokeGet(live, "Application");
             object alerts = null;
             try
@@ -66,7 +74,7 @@ namespace WordAddIn1
                 alerts = InvokeGet(app, "DisplayAlerts");
                 InvokeSet(app, "DisplayAlerts", false);
                 object books = InvokeGet(app, "Workbooks");
-                object source = Invoke(books, "Open", checkpointPath, Type.Missing, true);
+                object source = OpenCheckpoint(books, checkpointPath);
                 try
                 {
                     ReplaceSheets(source, live);
@@ -87,6 +95,53 @@ namespace WordAddIn1
                     catch (Exception)
                     {
                     }
+                }
+            }
+        }
+
+        private static void RestoreCopyTyped(Excel.Workbook live, string checkpointPath)
+        {
+            Excel.Application app = live.Application;
+            bool alerts = true;
+            try
+            {
+                alerts = app.DisplayAlerts;
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                app.DisplayAlerts = false;
+                Excel.Workbook source = app.Workbooks.Open(checkpointPath, UpdateLinks: 0, ReadOnly: true);
+                try
+                {
+                    int oldCount = live.Worksheets.Count;
+                    foreach (Excel.Worksheet srcSheet in source.Worksheets)
+                    {
+                        Excel.Worksheet after = (Excel.Worksheet)live.Worksheets[live.Worksheets.Count];
+                        srcSheet.Copy(After: after);
+                    }
+
+                    for (int i = 0; i < oldCount; i++)
+                    {
+                        ((Excel.Worksheet)live.Worksheets[1]).Delete();
+                    }
+                }
+                finally
+                {
+                    source.Close(false);
+                }
+            }
+            finally
+            {
+                try
+                {
+                    app.DisplayAlerts = alerts;
+                }
+                catch (Exception)
+                {
                 }
             }
         }
@@ -119,6 +174,18 @@ namespace WordAddIn1
             }
         }
 
+        private static object OpenCheckpoint(object books, string checkpointPath)
+        {
+            try
+            {
+                return Invoke(books, "Open", checkpointPath, 0, true);
+            }
+            catch (Exception)
+            {
+                return Invoke(books, "Open", checkpointPath);
+            }
+        }
+
         private static void ReplaceSheets(object source, object target)
         {
             object srcSheets = InvokeGet(source, "Worksheets");
@@ -129,7 +196,7 @@ namespace WordAddIn1
             {
                 object srcSheet = InvokeGet(srcSheets, "Item", i);
                 object after = InvokeGet(dstSheets, "Item", Convert.ToInt32(InvokeGet(dstSheets, "Count")));
-                Invoke(srcSheet, "Copy", Type.Missing, after);
+                CopySheetAfter(srcSheet, after);
             }
 
             for (int i = 0; i < oldCount; i++)
@@ -137,6 +204,12 @@ namespace WordAddIn1
                 object first = InvokeGet(dstSheets, "Item", 1);
                 Invoke(first, "Delete");
             }
+        }
+
+        private static void CopySheetAfter(object srcSheet, object after)
+        {
+            dynamic src = srcSheet;
+            src.Copy(Type.Missing, after);
         }
 
         private static object InvokeGet(object target, string name, params object[] args)
@@ -176,12 +249,27 @@ namespace WordAddIn1
 
         private static object Invoke(object target, string name, params object[] args)
         {
-            return target.GetType().InvokeMember(
-                name,
-                BindingFlags.InvokeMethod | BindingFlags.Public | BindingFlags.Instance,
-                null,
-                target,
-                args);
+            try
+            {
+                return target.GetType().InvokeMember(
+                    name,
+                    BindingFlags.InvokeMethod
+                        | BindingFlags.OptionalParamBinding
+                        | BindingFlags.Public
+                        | BindingFlags.Instance,
+                    null,
+                    target,
+                    args,
+                    null,
+                    null,
+                    null);
+            }
+            catch (TargetInvocationException ex)
+            {
+                throw new InvalidOperationException(
+                    ex.InnerException == null ? ex.Message : ex.InnerException.Message,
+                    ex);
+            }
         }
 
         private static object Invoke(object target, string collection, string method, params object[] args)

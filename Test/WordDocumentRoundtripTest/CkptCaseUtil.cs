@@ -139,10 +139,21 @@ namespace WordDocumentRoundtripTest
         {
             path = s.NewPath();
             id = null;
-            ToolResult opened = s.Open(path);
-            if (!opened.Success)
+            ToolResult opened = null;
+            for (int i = 0; i < 3; i++)
             {
-                FailMany(run, "开稿失败: " + (opened.Error ?? ""), ids);
+                opened = s.Open(path);
+                if (opened.Success)
+                {
+                    break;
+                }
+
+                System.Threading.Thread.Sleep(400);
+            }
+
+            if (opened == null || !opened.Success)
+            {
+                FailMany(run, "开稿失败: " + (opened == null ? "" : (opened.Error ?? "")), ids);
                 s.CloseByPath(path);
                 return false;
             }

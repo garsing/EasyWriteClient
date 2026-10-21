@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
 using System.Reflection;
+using PowerPoint = Microsoft.Office.Interop.PowerPoint;
+using Office = Microsoft.Office.Core;
 
 namespace WordAddIn1
 {
@@ -80,28 +82,83 @@ namespace WordAddIn1
         public void RestoreCopy(CheckpointLiveTarget target, string checkpointPath)
         {
             object live = target?.Live ?? throw new InvalidOperationException("没有活动的演示文稿");
+            PowerPoint.Presentation typed = live as PowerPoint.Presentation;
+            if (typed != null)
+            {
+                RestoreCopyTyped(typed, checkpointPath);
+                return;
+            }
+
+            RestoreCopyLate(live, checkpointPath);
+        }
+
+        private static void RestoreCopyTyped(PowerPoint.Presentation live, string checkpointPath)
+        {
+            PowerPoint.Application app = live.Application;
+            PowerPoint.Presentation source = app.Presentations.Open(
+                checkpointPath,
+                Office.MsoTriState.msoTrue,
+                Office.MsoTriState.msoFalse,
+                Office.MsoTriState.msoFalse);
+            try
+            {
+                int oldCount = live.Slides.Count;
+                int srcCount = source.Slides.Count;
+                if (srcCount > 0)
+                {
+                    var indexes = new object[srcCount];
+                    for (int i = 0; i < srcCount; i++)
+                    {
+                        indexes[i] = i + 1;
+                    }
+
+                    source.Slides.Range(indexes).Copy();
+                    live.Slides.Paste();
+                }
+
+                for (int i = 0; i < oldCount && live.Slides.Count > 1; i++)
+                {
+                    live.Slides[1].Delete();
+                }
+            }
+            finally
+            {
+                source.Close();
+            }
+        }
+
+        private static void RestoreCopyLate(object live, string checkpointPath)
+        {
             object app = InvokeGet(live, "Application");
             object source = Invoke(
                 InvokeGet(app, "Presentations"),
                 "Open",
                 checkpointPath,
-                true,
-                true,
-                false);
+                -1,
+                0,
+                0);
             try
             {
                 object liveSlides = InvokeGet(live, "Slides");
-                while (Convert.ToInt32(InvokeGet(liveSlides, "Count")) > 0)
-                {
-                    Invoke(InvokeGet(liveSlides, "Item", 1), "Delete");
-                }
-
                 object srcSlides = InvokeGet(source, "Slides");
+                int oldCount = Convert.ToInt32(InvokeGet(liveSlides, "Count"));
                 int srcCount = Convert.ToInt32(InvokeGet(srcSlides, "Count"));
                 if (srcCount > 0)
                 {
-                    Invoke(InvokeGet(srcSlides, "Range"), "Copy");
+                    var indexes = new object[srcCount];
+                    for (int i = 0; i < srcCount; i++)
+                    {
+                        indexes[i] = i + 1;
+                    }
+
+                    object range = InvokeGet(srcSlides, "Range", indexes);
+                    Invoke(range, "Copy");
                     Invoke(liveSlides, "Paste");
+                }
+
+                for (int i = 0; i < oldCount && Convert.ToInt32(InvokeGet(liveSlides, "Count")) > 1; i++)
+                {
+                    Invoke(InvokeGet(liveSlides, "Item", 1), "Delete");
                 }
             }
             finally

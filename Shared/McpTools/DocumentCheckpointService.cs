@@ -779,7 +779,17 @@ namespace WordAddIn1
             }
             catch (Exception ex)
             {
-                return new ToolResult { Success = false, Error = $"恢复副本失败: {ex.Message}" };
+                Exception inner = ex;
+                while (inner.InnerException != null)
+                {
+                    inner = inner.InnerException;
+                }
+
+                return new ToolResult
+                {
+                    Success = false,
+                    Error = "恢复副本失败: " + (string.IsNullOrEmpty(inner.Message) ? ex.Message : inner.Message)
+                };
             }
 
             DocumentState.ClearAfterCheckpointRestore();

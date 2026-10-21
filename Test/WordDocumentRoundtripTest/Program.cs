@@ -473,6 +473,7 @@ namespace WordDocumentRoundtripTest
             }
 
             var s = new OfficeCkptSession(host);
+            s.SweepLeftovers();
             bool winBefore = OfficeAlive.HasWindow(s.ProcName);
             var run = new TestRun { TotalTarget = runXlk ? XlkCases.Target : PkCases.Target };
             var sw = Stopwatch.StartNew();

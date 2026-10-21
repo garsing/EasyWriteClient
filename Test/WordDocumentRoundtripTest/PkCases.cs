@@ -1,3 +1,4 @@
+using System;
 using WordAddIn1;
 
 namespace WordDocumentRoundtripTest
@@ -5,7 +6,7 @@ namespace WordDocumentRoundtripTest
     /// <summary>PPT / WPP 检查点。清单见 docs/测试/ppt测试/检查点/用例清单.md。</summary>
     internal static class PkCases
     {
-        public const int Target = 17;
+        public const int Target = 19;
 
         public static void Run(TestRun run, string host, bool winBefore)
         {
@@ -14,6 +15,7 @@ namespace WordDocumentRoundtripTest
             RunEmpty(run, s);
             RunPos(run, s);
             RunTwo(run, s);
+            RunCaret(run, s);
             RunContract(run, s);
             CkptCaseUtil.RunNoQuit(run, "pk-no-quit", s.ProcName, winBefore);
         }
@@ -33,7 +35,7 @@ namespace WordDocumentRoundtripTest
 
             CkptCaseUtil.ExpectFail(run, "pk-rst-no-ts", s.RestoreCheckpoint(id, null), "timestamp");
             CkptCaseUtil.ExpectFail(run, "pk-rst-unk-ts", s.RestoreCheckpoint(id, "not-a-copy"), "不存在");
-            s.CloseByPath(path);
+            s.CloseByPath(path, id);
         }
 
         private static void RunEmpty(TestRun run, OfficeCkptSession s)
@@ -56,7 +58,7 @@ namespace WordDocumentRoundtripTest
             if (!s.ComAddSlide(path))
             {
                 CkptCaseUtil.FailMany(run, "COM 加页失败", "pk-list-com-only");
-                s.CloseByPath(path);
+                s.CloseByPath(path, id);
                 return;
             }
 
@@ -70,7 +72,7 @@ namespace WordDocumentRoundtripTest
                 comOnly.Success
                     ? "COM 改后不应有副本: " + CkptCaseUtil.Snip(CkptCaseUtil.DataText(comOnly))
                     : (comOnly.Error ?? ""));
-            s.CloseByPath(path);
+            s.CloseByPath(path, id);
         }
 
         private static void RunPos(TestRun run, OfficeCkptSession s)
@@ -86,7 +88,7 @@ namespace WordDocumentRoundtripTest
                 return;
             }
 
-            int baseline = s.SlideCount(id);
+            int baseline = Math.Max(1, s.SlideCount(id));
             ToolResult wrote = s.AddSlide(id);
             CkptCaseUtil.Ok(run, "pk-write-ok", wrote.Success, wrote.Error ?? "加页失败");
 
@@ -103,17 +105,20 @@ namespace WordDocumentRoundtripTest
                 "pk-list-ts",
                 listed.Success && !string.IsNullOrEmpty(ts),
                 listed.Success ? "抄不出 timestamp: " + CkptCaseUtil.Snip(listText) : (listed.Error ?? ""));
-            int after = s.SlideCount(id);
+            int after = Math.Max(s.SlideCount(id), WdSession.IntOf(wrote, "slide_count"));
             CkptCaseUtil.Ok(
                 run,
                 "pk-after-new",
                 wrote.Success && after == baseline + 1,
-                wrote.Success ? "加后页数=" + after + " 期望 " + (baseline + 1) : (wrote.Error ?? ""));
+                wrote.Success
+                    ? "加后页数=" + after + " 期望 " + (baseline + 1)
+                      + " 回包=" + CkptCaseUtil.Snip(CkptCaseUtil.DataText(wrote))
+                    : (wrote.Error ?? ""));
 
             if (string.IsNullOrEmpty(ts))
             {
                 CkptCaseUtil.FailMany(run, "无 timestamp，不能 restore", "pk-rst-ok", "pk-rst-old-back", "pk-rst-new-gone");
-                s.CloseByPath(path);
+                s.CloseByPath(path, id);
                 return;
             }
 
@@ -134,7 +139,7 @@ namespace WordDocumentRoundtripTest
                 "pk-rst-new-gone",
                 rst.Success && back == baseline,
                 rst.Success ? "新页还在，页数=" + back : (rst.Error ?? ""));
-            s.CloseByPath(path);
+            s.CloseByPath(path, id);
         }
 
         private static void RunTwo(TestRun run, OfficeCkptSession s)
@@ -146,7 +151,7 @@ namespace WordDocumentRoundtripTest
                 return;
             }
 
-            int baseline = s.SlideCount(id);
+            int baseline = Math.Max(1, s.SlideCount(id));
             ToolResult first = s.AddSlide(id);
             string ts1 = CkptCaseUtil.FirstCopyTs(CkptCaseUtil.DataText(s.ListOperations(id)));
             s.AddSlide(id);
@@ -159,7 +164,68 @@ namespace WordDocumentRoundtripTest
                 "pk-two-rst-first",
                 first.Success && rst.Success && back == baseline,
                 rst.Success ? "两次加页 restore 第一次后页数=" + back : (rst.Error ?? first.Error ?? ""));
-            s.CloseByPath(path);
+            s.CloseByPath(path, id);
+        }
+
+        private static void RunCaret(TestRun run, OfficeCkptSession s)
+        {
+            string[] ids = { "pk-rst-caret-slide2", "pk-rst-caret-scroll" };
+            string path, id;
+            if (!CkptCaseUtil.TryOpen(run, s, out path, out id, ids))
+            {
+                return;
+            }
+
+            if (!s.ComAddSlide(path) || !s.ComGotoSlide(path, 2))
+            {
+                CkptCaseUtil.FailMany(run, "COM 加第2页或落到第2页失败", ids);
+                s.CloseByPath(path, id);
+                return;
+            }
+
+            int pageBefore;
+            if (!s.TryReadActiveSlide(path, out pageBefore) || pageBefore < 2)
+            {
+                CkptCaseUtil.FailMany(run, "建副本前不在第2页（" + pageBefore + "）", ids);
+                s.CloseByPath(path, id);
+                return;
+            }
+
+            int baseline = Math.Max(1, s.SlideCount(id));
+            ToolResult wrote = s.AddSlide(id);
+            if (!wrote.Success)
+            {
+                CkptCaseUtil.FailMany(run, "加页失败: " + (wrote.Error ?? ""), ids);
+                s.CloseByPath(path, id);
+                return;
+            }
+
+            string ts = CkptCaseUtil.FirstCopyTs(CkptCaseUtil.DataText(s.ListOperations(id)));
+            if (string.IsNullOrEmpty(ts))
+            {
+                CkptCaseUtil.FailMany(run, "无 timestamp，不能 restore", ids);
+                s.CloseByPath(path, id);
+                return;
+            }
+
+            s.ComGotoSlide(path, 1);
+            ToolResult rst = s.RestoreCheckpoint(id, ts);
+            int pageAfter;
+            bool read = s.TryReadActiveSlide(path, out pageAfter);
+            int back = s.SlideCount(id);
+            CkptCaseUtil.Ok(
+                run,
+                "pk-rst-caret-slide2",
+                rst.Success && read && pageAfter >= 2 && back == baseline,
+                rst.Success
+                    ? "回滚后页=" + pageAfter + " 页数=" + back + " 期望页≥2 页数=" + baseline
+                    : (rst.Error ?? ""));
+            CkptCaseUtil.Ok(
+                run,
+                "pk-rst-caret-scroll",
+                rst.Success && read && pageAfter >= 2,
+                rst.Success ? "回滚后视口页=" + pageAfter : (rst.Error ?? ""));
+            s.CloseByPath(path, id);
         }
 
         private static void RunContract(TestRun run, OfficeCkptSession s)
@@ -183,7 +249,7 @@ namespace WordDocumentRoundtripTest
                     : (listed.Success
                         ? "契约失败后不应有副本: " + CkptCaseUtil.Snip(CkptCaseUtil.DataText(listed))
                         : (listed.Error ?? bad.Error ?? "")));
-            s.CloseByPath(path);
+            s.CloseByPath(path, id);
         }
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using WordAddIn1;
 
 namespace WordDocumentRoundtripTest
@@ -5,10 +6,11 @@ namespace WordDocumentRoundtripTest
     /// <summary>Excel / ET 检查点。清单见 docs/测试/excel测试/检查点/用例清单.md。</summary>
     internal static class XlkCases
     {
-        public const int Target = 17;
+        public const int Target = 19;
         private const string SheetA = "易写检查点甲表";
         private const string SheetB = "易写检查点乙表";
         private const string SheetC = "易写检查点丙表";
+        private const string FarCell = "A80";
 
         public static void Run(TestRun run, string host, bool winBefore)
         {
@@ -17,6 +19,7 @@ namespace WordDocumentRoundtripTest
             RunEmpty(run, s);
             RunPos(run, s);
             RunTwo(run, s);
+            RunCaret(run, s);
             RunContract(run, s);
             CkptCaseUtil.RunNoQuit(run, "xlk-no-quit", s.ProcName, winBefore);
         }
@@ -36,7 +39,7 @@ namespace WordDocumentRoundtripTest
 
             CkptCaseUtil.ExpectFail(run, "xlk-rst-no-ts", s.RestoreCheckpoint(id, null), "timestamp");
             CkptCaseUtil.ExpectFail(run, "xlk-rst-unk-ts", s.RestoreCheckpoint(id, "not-a-copy"), "不存在");
-            s.CloseByPath(path);
+            s.CloseByPath(path, id);
         }
 
         private static void RunEmpty(TestRun run, OfficeCkptSession s)
@@ -58,7 +61,7 @@ namespace WordDocumentRoundtripTest
             if (!s.ComAddSheet(path, SheetA))
             {
                 CkptCaseUtil.FailMany(run, "COM 加甲表失败", "xlk-list-com-only");
-                s.CloseByPath(path);
+                s.CloseByPath(path, id);
                 return;
             }
 
@@ -70,7 +73,7 @@ namespace WordDocumentRoundtripTest
                 comOnly.Success
                     ? "COM 改后不应有副本: " + CkptCaseUtil.Snip(CkptCaseUtil.DataText(comOnly))
                     : (comOnly.Error ?? ""));
-            s.CloseByPath(path);
+            s.CloseByPath(path, id);
         }
 
         private static void RunPos(TestRun run, OfficeCkptSession s)
@@ -111,7 +114,7 @@ namespace WordDocumentRoundtripTest
             if (string.IsNullOrEmpty(ts))
             {
                 CkptCaseUtil.FailMany(run, "无 timestamp，不能 restore", "xlk-rst-ok", "xlk-rst-old-back", "xlk-rst-new-gone");
-                s.CloseByPath(path);
+                s.CloseByPath(path, id);
                 return;
             }
 
@@ -131,7 +134,7 @@ namespace WordDocumentRoundtripTest
                 "xlk-rst-new-gone",
                 rst.Success && !s.OverviewHas(id, SheetB),
                 rst.Success ? "乙表没撤掉" : (rst.Error ?? ""));
-            s.CloseByPath(path);
+            s.CloseByPath(path, id);
         }
 
         private static void RunTwo(TestRun run, OfficeCkptSession s)
@@ -156,7 +159,72 @@ namespace WordDocumentRoundtripTest
                     && !s.OverviewHas(id, SheetB)
                     && !s.OverviewHas(id, SheetC),
                 rst.Success ? "两次加表 restore 第一次不对" : (rst.Error ?? first.Error ?? ""));
-            s.CloseByPath(path);
+            s.CloseByPath(path, id);
+        }
+
+        private static void RunCaret(TestRun run, OfficeCkptSession s)
+        {
+            string[] ids = { "xlk-rst-caret-cell", "xlk-rst-caret-scroll" };
+            string path, id;
+            if (!CkptCaseUtil.TryOpen(run, s, out path, out id, ids))
+            {
+                return;
+            }
+
+            if (!s.ComSelectCell(path, FarCell))
+            {
+                CkptCaseUtil.FailMany(run, "选中 " + FarCell + " 失败", ids);
+                s.CloseByPath(path, id);
+                return;
+            }
+
+            string before;
+            if (!s.TryReadActiveCell(path, out before)
+                || !string.Equals(
+                    OfficeCkptSession.NormalizeCell(before),
+                    FarCell,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                CkptCaseUtil.FailMany(run, "建副本前活动格不是 " + FarCell + "（" + before + "）", ids);
+                s.CloseByPath(path, id);
+                return;
+            }
+
+            ToolResult wrote = s.AddSheet(id, SheetB);
+            if (!wrote.Success)
+            {
+                CkptCaseUtil.FailMany(run, "加乙表失败: " + (wrote.Error ?? ""), ids);
+                s.CloseByPath(path, id);
+                return;
+            }
+
+            string ts = CkptCaseUtil.FirstCopyTs(CkptCaseUtil.DataText(s.ListOperations(id)));
+            if (string.IsNullOrEmpty(ts))
+            {
+                CkptCaseUtil.FailMany(run, "无 timestamp，不能 restore", ids);
+                s.CloseByPath(path, id);
+                return;
+            }
+
+            s.ComSelectCell(path, "A1");
+            ToolResult rst = s.RestoreCheckpoint(id, ts);
+            string after;
+            bool read = s.TryReadActiveCell(path, out after);
+            string cell = OfficeCkptSession.NormalizeCell(after);
+            CkptCaseUtil.Ok(
+                run,
+                "xlk-rst-caret-cell",
+                rst.Success && read && string.Equals(cell, FarCell, StringComparison.OrdinalIgnoreCase)
+                    && !s.OverviewHas(id, SheetB),
+                rst.Success
+                    ? "回滚后活动格=" + after + " 期望 " + FarCell
+                    : (rst.Error ?? ""));
+            CkptCaseUtil.Ok(
+                run,
+                "xlk-rst-caret-scroll",
+                rst.Success && read && string.Equals(cell, FarCell, StringComparison.OrdinalIgnoreCase),
+                rst.Success ? "回滚后没回到远格 " + FarCell + "（" + after + "）" : (rst.Error ?? ""));
+            s.CloseByPath(path, id);
         }
 
         private static void RunContract(TestRun run, OfficeCkptSession s)
@@ -180,7 +248,7 @@ namespace WordDocumentRoundtripTest
                     : (listed.Success
                         ? "契约失败后不应有副本: " + CkptCaseUtil.Snip(CkptCaseUtil.DataText(listed))
                         : (listed.Error ?? bad.Error ?? "")));
-            s.CloseByPath(path);
+            s.CloseByPath(path, id);
         }
     }
 }
