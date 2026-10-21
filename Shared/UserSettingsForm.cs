@@ -358,6 +358,11 @@ namespace WordAddIn1
                 return await UserSettingsBridgeHandlers.SaveWorkspaceRootAsync(data);
             });
 
+            bridge.RegisterHandler("saveOrchestratorMaxRounds", async (data) =>
+            {
+                return await UserSettingsBridgeHandlers.SaveOrchestratorMaxRoundsAsync(data);
+            });
+
             bridge.RegisterHandler("getInteractionSettings", async (data) =>
             {
                 return await Task.FromResult(UserSettingsBridgeHandlers.GetInteractionSettings());

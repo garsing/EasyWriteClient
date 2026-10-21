@@ -34,7 +34,9 @@ namespace WordAddIn1
                     username = userService.UserName ?? string.Empty,
                     workspaceRoot = userService.WorkspaceRootConfigured ?? WorkspacePathResolver.DefaultRoot,
                     remapHint = userService.GetWorkspaceRemapHintText() ?? string.Empty,
-                    defaultRoot = WorkspacePathResolver.DefaultRoot
+                    defaultRoot = WorkspacePathResolver.DefaultRoot,
+                    maxRounds = userService.OrchestratorMaxRounds,
+                    maxRoundsLimit = userService.OrchestratorMaxRoundsLimit
                 };
             }
             catch (Exception ex)
@@ -117,6 +119,47 @@ namespace WordAddIn1
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[UserSettingsBridgeHandlers] 保存工作目录失败: {ex.Message}");
+                return new { success = false, message = ex.Message };
+            }
+        }
+
+        public static async Task<object> SaveOrchestratorMaxRoundsAsync(object data)
+        {
+            try
+            {
+                var userService = UserService.Instance;
+                if (!userService.IsLoggedIn)
+                {
+                    return new { success = false, message = "请先登录" };
+                }
+
+                int rounds = ExtractIntField(data, "rounds", 0);
+                int limit = userService.OrchestratorMaxRoundsLimit;
+                if (limit < 1)
+                {
+                    limit = 100;
+                }
+                if (rounds < 1 || rounds > limit)
+                {
+                    return new { success = false, message = "轮数上限须为 1 到 " + limit + " 的整数" };
+                }
+
+                var ok = await userService.SaveOrchestratorMaxRoundsAsync(rounds).ConfigureAwait(false);
+                if (!ok)
+                {
+                    return new { success = false, message = "保存轮数上限失败，请检查网络后重试" };
+                }
+
+                return new
+                {
+                    success = true,
+                    maxRounds = userService.OrchestratorMaxRounds,
+                    maxRoundsLimit = userService.OrchestratorMaxRoundsLimit
+                };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[UserSettingsBridgeHandlers] 保存轮数上限失败: {ex.Message}");
                 return new { success = false, message = ex.Message };
             }
         }

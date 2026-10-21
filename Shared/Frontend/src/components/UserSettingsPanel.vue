@@ -98,7 +98,7 @@
                 </div>
               </template>
 
-              <!-- 通用：仅工作目录 -->
+              <!-- 通用：工作目录、单次对话轮数上限 -->
               <template v-else-if="activeSection === 'general'">
                 <div class="settings-body settings-body--top">
                   <label class="workspace-label" for="workspace-root-input">工作目录</label>
@@ -111,6 +111,19 @@
                     spellcheck="false"
                     @blur="handleSaveWorkspace"
                   />
+                  <label class="workspace-label" for="max-rounds-input">轮数上限</label>
+                  <input
+                    id="max-rounds-input"
+                    v-model.number="maxRounds"
+                    type="number"
+                    class="workspace-input rounds-input"
+                    :min="1"
+                    :max="maxRoundsLimit"
+                    :disabled="saving"
+                    @blur="handleSaveMaxRounds"
+                    @keydown.enter.prevent="handleSaveMaxRounds"
+                  />
+                  <p class="remap-hint">单次提问里，模型和工具来回的最多轮数（1–{{ maxRoundsLimit }}）。</p>
                   <p v-if="remapHint" class="remap-hint">{{ remapHint }}</p>
                   <p v-if="saveError" class="save-error">{{ saveError }}</p>
                 </div>
@@ -235,6 +248,9 @@ const loading = ref(true)
 const isLoggedIn = ref(false)
 const username = ref('')
 const workspaceRoot = ref('')
+const maxRounds = ref(100)
+const maxRoundsLimit = ref(100)
+const savedMaxRounds = ref(100)
 const remapHint = ref('')
 const saving = ref(false)
 const saveError = ref('')
@@ -340,6 +356,9 @@ async function loadSettings () {
       isLoggedIn.value = true
       username.value = 'dev-user'
       workspaceRoot.value = 'D:/YiWrite/WorkSpace'
+      maxRounds.value = 100
+      maxRoundsLimit.value = 100
+      savedMaxRounds.value = 100
       remapHint.value = ''
       showInteraction.value = true
       autoCompactEnabled.value = true
@@ -358,6 +377,12 @@ async function loadSettings () {
     isLoggedIn.value = !!res.isLoggedIn
     username.value = res.username || ''
     workspaceRoot.value = res.workspaceRoot || res.defaultRoot || ''
+    const limit = Number(res.maxRoundsLimit)
+    maxRoundsLimit.value = Number.isFinite(limit) && limit >= 1 ? limit : 100
+    const rounds = Number(res.maxRounds)
+    const effective = Number.isFinite(rounds) && rounds >= 1 ? rounds : maxRoundsLimit.value
+    maxRounds.value = effective
+    savedMaxRounds.value = effective
     remapHint.value = res.remapHint || ''
     if (isLoggedIn.value) {
       await loadLlmQuota()
@@ -494,6 +519,42 @@ async function handleSaveWorkspace () {
   } catch (err) {
     console.error('[UserSettingsPanel] 保存工作目录失败:', err)
     saveError.value = '保存工作目录失败'
+  } finally {
+    saving.value = false
+  }
+}
+
+async function handleSaveMaxRounds () {
+  if (!isLoggedIn.value || saving.value) return
+
+  const rounds = Number(maxRounds.value)
+  if (!Number.isInteger(rounds) || rounds < 1 || rounds > maxRoundsLimit.value) {
+    saveError.value = `轮数上限须为 1 到 ${maxRoundsLimit.value} 的整数`
+    maxRounds.value = savedMaxRounds.value
+    return
+  }
+  if (rounds === savedMaxRounds.value) return
+
+  saving.value = true
+  saveError.value = ''
+  try {
+    const res = await sendMessage('saveOrchestratorMaxRounds', { rounds })
+    if (!res || !res.success) {
+      saveError.value = res?.message || '保存轮数上限失败'
+      maxRounds.value = savedMaxRounds.value
+      return
+    }
+    const saved = Number(res.maxRounds)
+    const effective = Number.isFinite(saved) && saved >= 1 ? saved : rounds
+    maxRounds.value = effective
+    savedMaxRounds.value = effective
+    if (Number(res.maxRoundsLimit) >= 1) {
+      maxRoundsLimit.value = Number(res.maxRoundsLimit)
+    }
+  } catch (err) {
+    console.error('[UserSettingsPanel] 保存轮数上限失败:', err)
+    saveError.value = '保存轮数上限失败'
+    maxRounds.value = savedMaxRounds.value
   } finally {
     saving.value = false
   }
@@ -962,6 +1023,11 @@ onMounted(() => {
 
 .workspace-input:disabled {
   background: #f8f8f8;
+}
+
+.rounds-input {
+  width: 96px;
+  justify-self: start;
 }
 
 .remap-hint,

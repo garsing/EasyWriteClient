@@ -58,6 +58,12 @@ namespace WordAddIn1
         /// <summary>MySQL 原始配置值（设置页显示用）。</summary>
         public string WorkspaceRootConfigured { get; private set; }
 
+        /// <summary>单次对话轮数上限。未单独设置时等于服务端上限。</summary>
+        public int OrchestratorMaxRounds { get; private set; } = 100;
+
+        /// <summary>服务端允许的轮数上限。</summary>
+        public int OrchestratorMaxRoundsLimit { get; private set; } = 100;
+
         /// <summary>D33 remap 后的本机有效路径（F_* 读写用）。</summary>
         public string WorkspaceRootEffective { get; private set; }
 
@@ -124,6 +130,8 @@ namespace WordAddIn1
         private class UserSettingsData
         {
             public string workspace_root { get; set; }
+            public int? orchestrator_max_rounds { get; set; }
+            public int? orchestrator_max_rounds_limit { get; set; }
         }
 
         private class LlmQuotaData
@@ -593,6 +601,7 @@ namespace WordAddIn1
                 if (api?.data != null)
                 {
                     WorkspaceRootConfigured = NormalizeConfiguredRoot(api.data.workspace_root);
+                    ApplyOrchestratorMaxRounds(api.data);
                 }
 
                 return true;
@@ -717,6 +726,10 @@ namespace WordAddIn1
 
                 var api = JsonConvert.DeserializeObject<ApiResponse<UserSettingsData>>(result.Body);
                 WorkspaceRootConfigured = api?.data?.workspace_root ?? normalized;
+                if (api?.data != null)
+                {
+                    ApplyOrchestratorMaxRounds(api.data);
+                }
                 EnsureEffectiveRootInteractive(null);
                 return true;
             }
@@ -813,11 +826,65 @@ namespace WordAddIn1
             return value.Trim().Replace('\\', '/');
         }
 
+        public async Task<bool> SaveOrchestratorMaxRoundsAsync(int rounds)
+        {
+            if (!CheckLoginStatus())
+            {
+                return false;
+            }
+
+            try
+            {
+                var result = await BackendApiClient.PutUserSettingsAsync(null, rounds).ConfigureAwait(false);
+                if (!result.Success)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[USER] 保存轮数上限失败: {result.StatusCode} {result.Body}");
+                    return false;
+                }
+
+                var api = JsonConvert.DeserializeObject<ApiResponse<UserSettingsData>>(result.Body);
+                if (api?.data != null)
+                {
+                    ApplyOrchestratorMaxRounds(api.data);
+                }
+                else
+                {
+                    OrchestratorMaxRounds = rounds;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[USER] SaveOrchestratorMaxRoundsAsync 异常: {ex.Message}");
+                return false;
+            }
+        }
+
+        private void ApplyOrchestratorMaxRounds(UserSettingsData data)
+        {
+            if (data == null)
+            {
+                return;
+            }
+
+            if (data.orchestrator_max_rounds_limit.HasValue && data.orchestrator_max_rounds_limit.Value >= 1)
+            {
+                OrchestratorMaxRoundsLimit = data.orchestrator_max_rounds_limit.Value;
+            }
+
+            if (data.orchestrator_max_rounds.HasValue && data.orchestrator_max_rounds.Value >= 1)
+            {
+                OrchestratorMaxRounds = data.orchestrator_max_rounds.Value;
+            }
+        }
+
         private void ClearWorkspaceRootCache()
         {
             WorkspaceRootConfigured = null;
             WorkspaceRootEffective = null;
             WorkspaceDirectorySelectionRequired = false;
+            OrchestratorMaxRounds = 100;
+            OrchestratorMaxRoundsLimit = 100;
         }
 
         // 事件定义

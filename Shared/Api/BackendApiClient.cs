@@ -175,11 +175,20 @@ namespace WordAddIn1
             return GetAuthenticatedAsync(url);
         }
 
-        /// <summary>PUT /users/me/settings</summary>
-        public static Task<JsonResult> PutUserSettingsAsync(string workspaceRoot)
+        /// <summary>PUT /users/me/settings。空字段不写入请求体，避免清掉另一项。</summary>
+        public static Task<JsonResult> PutUserSettingsAsync(string workspaceRoot, int? orchestratorMaxRounds = null)
         {
             string url = $"{ConfigManager.Config.Api.BaseUrl}/users/me/settings";
-            string json = JsonConvert.SerializeObject(new { workspace_root = workspaceRoot });
+            var payload = new Dictionary<string, object>();
+            if (!string.IsNullOrWhiteSpace(workspaceRoot))
+            {
+                payload["workspace_root"] = workspaceRoot;
+            }
+            if (orchestratorMaxRounds.HasValue)
+            {
+                payload["orchestrator_max_rounds"] = orchestratorMaxRounds.Value;
+            }
+            string json = JsonConvert.SerializeObject(payload);
             return PutJsonAuthenticatedAsync(url, json);
         }
 
