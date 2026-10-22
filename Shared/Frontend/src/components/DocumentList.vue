@@ -485,11 +485,8 @@ function getProgressPercentage(progress) {
     return 0
   }
   // 如果已经是0-100的值，直接返回
-  if (progress > 1) {
-    return Math.min(100, Math.max(0, progress))
-  }
-  // 如果是0-1的值，转换为0-100
-  return Math.min(100, Math.max(0, progress * 100))
+  const raw = progress > 1 ? progress : progress * 100
+  return Math.min(100, Math.max(0, Math.round(raw)))
 }
 
 /**
