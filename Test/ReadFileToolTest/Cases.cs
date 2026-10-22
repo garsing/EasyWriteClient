@@ -22,7 +22,7 @@ namespace ReadFileToolTest
                     || filter.IndexOf(id, StringComparison.OrdinalIgnoreCase) >= 0;
             }
 
-            bool desktop = DesktopToolPipe.TryWaitUntilAvailable(1500);
+            bool desktop = DesktopToolPipe.TryWaitUntilAvailable(8000);
             if (desktop)
             {
                 Console.WriteLine("检测到易写 Desktop 管道，detailed 走本机已开进程");
