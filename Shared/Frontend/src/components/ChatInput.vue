@@ -6,6 +6,7 @@
     @drop.capture="onFileDropCapture"
     @paste.capture="onPasteCapture"
   >
+    <div class="chat-main-column">
     <div v-if="showAttachmentStrip" class="attachment-strip">
       <div
         v-for="item in pendingAttachments"
@@ -105,6 +106,7 @@
       <div v-else class="send-button send-button--placeholder" aria-hidden="true" />
     </div>
     <p class="ai-content-label" role="note">内容由人工智能生成，请注意甄别</p>
+    </div>
   </div>
 </template>
 
@@ -467,6 +469,13 @@ const handleShiftEnter = () => {}
   background-color: #f7f7f5;
   border-top: 1px solid transparent;
   flex-shrink: 0;
+}
+
+.chat-main-column {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .ai-content-label {

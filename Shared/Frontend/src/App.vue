@@ -1419,12 +1419,55 @@ const restoreInputValue = (value) => {
   background-color: #f7f7f5;
 }
 
+/* 完整版：消息 / 空态 / 输入框居中收窄，对齐元宝阅读栏 */
+.app-shell.host-desktop:not(.layout-compact) {
+  --chat-col-max: 800px;
+  --chat-col-gutter: 40px;
+}
+
+.app-shell.host-desktop:not(.layout-compact) :deep(.chat-messages) {
+  padding-left: var(--chat-col-gutter);
+  padding-right: var(--chat-col-gutter);
+}
+
+.app-shell.host-desktop:not(.layout-compact) :deep(.chat-turn-user) {
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.app-shell.host-desktop:not(.layout-compact) :deep(.chat-input-container--desktop) {
+  padding-left: var(--chat-col-gutter);
+  padding-right: var(--chat-col-gutter);
+}
+
+.app-shell.host-desktop:not(.layout-compact) :deep(.todo-progress-anchor) {
+  padding-left: var(--chat-col-gutter);
+  padding-right: var(--chat-col-gutter);
+}
+
+.app-shell.host-desktop:not(.layout-compact) .panel-hint {
+  padding-left: var(--chat-col-gutter);
+  padding-right: var(--chat-col-gutter);
+}
+
+.app-shell.host-desktop:not(.layout-compact) :deep(.chat-main-column),
+.app-shell.host-desktop:not(.layout-compact) :deep(.todo-progress-card) {
+  max-width: var(--chat-col-max);
+}
+
 /* 空状态与有消息时同灰底；仅推荐气泡为白（桌面端） */
 .app-shell.host-desktop :deep(.chat-empty-state) {
   background-color: #f7f7f5;
-  /* 与 .chat-input-container--desktop 左右 10px 对齐，推荐气泡与输入框同宽 */
+  /* 缩小版：与 .chat-input-container--desktop 左右 10px 对齐 */
   padding-left: 10px;
   padding-right: 10px;
+}
+
+.app-shell.host-desktop:not(.layout-compact) :deep(.chat-empty-state) {
+  padding-left: var(--chat-col-gutter);
+  padding-right: var(--chat-col-gutter);
 }
 
 .app-shell.host-desktop :deep(.chat-empty-state .recommendations) {

@@ -92,6 +92,10 @@ const summaryTitle = computed(() => summaryInfo.value?.title || '')
 }
 
 .todo-progress-card {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
   background: #f7f7f5;
   border: none;
   border-radius: 0;

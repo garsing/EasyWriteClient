@@ -1,5 +1,6 @@
 <template>
   <div class="chat-messages" ref="messagesContainer">
+    <div class="chat-main-column">
     <div v-for="turn in displayTurns" :key="turn.key" class="chat-turn">
       <div v-if="turn.user" class="chat-turn-user">
         <UserMessageBubble :message="turn.user" />
@@ -17,6 +18,7 @@
           :duration-ms="item.durationMs"
         />
       </div>
+    </div>
     </div>
   </div>
 </template>
@@ -216,6 +218,13 @@ watch(() => props.messages, (newMessages, oldMessages) => {
   background-color: #f7f7f5;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* 旧 Edge */
+}
+
+.chat-main-column {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .chat-turn {

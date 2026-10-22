@@ -1,5 +1,6 @@
 <template>
   <div ref="rootEl" class="chat-empty-state">
+    <div class="chat-main-column">
     <div class="empty-top">
       <h2 class="empty-title">Hi，今天从哪里开始？</h2>
 
@@ -49,6 +50,7 @@
       >
         <span class="rec-item-text">{{ item }}</span>
       </button>
+    </div>
     </div>
   </div>
 </template>
@@ -158,6 +160,17 @@ function onPick (text) {
   display: none; /* Chrome / WebView2 */
   width: 0;
   height: 0;
+}
+
+.chat-main-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .empty-title {
