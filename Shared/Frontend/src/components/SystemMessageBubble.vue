@@ -143,7 +143,7 @@ const showStreamingSpinner = computed(() => {
   font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   font-weight: 500;
-  line-height: 1.6;
+  line-height: 1.8;
 }
 
 .message-text :deep(p) {

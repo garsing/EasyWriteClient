@@ -285,7 +285,7 @@ function formatSub (att) {
   font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   font-weight: 500;
-  line-height: 1.5;
+  line-height: 1.7;
   white-space: pre-wrap;
   text-align: left;
 }
