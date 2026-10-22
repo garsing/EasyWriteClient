@@ -8,6 +8,7 @@ namespace WordAddIn1
     {
         Image,
         Text,
+        OfficeDocument,
         RejectedBinary
     }
 
@@ -23,9 +24,11 @@ namespace WordAddIn1
             "txt", "csv", "tsv", "json", "yaml", "yml", "xml", "py", "md",
             "html", "htm", "css", "js", "log", "ini", "conf", "svg", "sql");
 
+        private static readonly HashSet<string> OfficeExtensions = NewSet(
+            "docx", "doc", "xlsx", "xls", "xlsm", "xlsb", "pptx", "ppt", "pdf");
+
         private static readonly HashSet<string> RejectedBinaryExtensions = NewSet(
-            "docx", "doc", "xlsx", "xls", "xlsm", "xlsb", "pptx", "ppt",
-            "pdf", "exe", "dll", "msi", "zip", "7z", "rar", "gz",
+            "exe", "dll", "msi", "zip", "7z", "rar", "gz",
             "heic", "heif", "avif", "tiff", "tif");
 
         public static string ExtensionOf(string path)
@@ -50,6 +53,11 @@ namespace WordAddIn1
             if (ImageExtensions.Contains(ext))
             {
                 return FileReadKind.Image;
+            }
+
+            if (OfficeExtensions.Contains(ext))
+            {
+                return FileReadKind.OfficeDocument;
             }
 
             if (RejectedBinaryExtensions.Contains(ext))

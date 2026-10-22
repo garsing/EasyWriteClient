@@ -46,6 +46,7 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = read.Error };
                     }
 
+                    bool detailed = ReadDetailedFlag(args);
                     FileReadKind kind = FileReadClassifier.Classify(resolved.LocalPath, read.Bytes);
                     if (kind == FileReadKind.RejectedBinary)
                     {
@@ -59,7 +60,27 @@ namespace WordAddIn1
 
                     if (kind == FileReadKind.Image)
                     {
+                        if (detailed)
+                        {
+                            return new ToolResult { Success = false, Error = "读图片不要传 detailed" };
+                        }
+
                         return ReadImage(args, resolved, read.Bytes);
+                    }
+
+                    if (kind == FileReadKind.OfficeDocument)
+                    {
+                        if (detailed)
+                        {
+                            return await F_ReadFileKbIngest.RunAsync(resolved.LocalPath).ConfigureAwait(false);
+                        }
+
+                        return ReadOfficePlain(resolved, offset, maxLength);
+                    }
+
+                    if (detailed)
+                    {
+                        return new ToolResult { Success = false, Error = "文本文件不要传 detailed" };
                     }
 
                     return ReadText(resolved, encoding ?? "auto", offset, maxLength);
@@ -156,15 +177,76 @@ namespace WordAddIn1
             return false;
         }
 
+        private static bool ReadDetailedFlag(Dictionary<string, object> args)
+        {
+            if (args == null || !args.ContainsKey("detailed") || args["detailed"] == null)
+            {
+                return false;
+            }
+
+            object raw = args["detailed"];
+            if (raw is bool b)
+            {
+                return b;
+            }
+
+            string s = Convert.ToString(raw);
+            if (string.IsNullOrWhiteSpace(s))
+            {
+                return false;
+            }
+
+            return string.Equals(s, "true", StringComparison.OrdinalIgnoreCase)
+                || s == "1";
+        }
+
+        private static ToolResult ReadOfficePlain(ResolvedFilePath resolved, int offset, int maxLength)
+        {
+            string text;
+            try
+            {
+                text = OfficePlainTextReader.Extract(resolved.LocalPath) ?? "";
+            }
+            catch (Exception ex)
+            {
+                return new ToolResult { Success = false, Error = ex.Message };
+            }
+
+            if (string.IsNullOrEmpty(text))
+            {
+                string ext = FileReadClassifier.ExtensionOf(resolved.LocalPath);
+                string emptyMsg = string.Equals(ext, "pdf", StringComparison.OrdinalIgnoreCase)
+                    ? "没有可抽取的文字，扫描件请 detailed=true"
+                    : "没有可抽取的文字";
+                return new ToolResult
+                {
+                    Success = true,
+                    Data = new
+                    {
+                        filename = resolved.Display,
+                        file_path = resolved.LocalPath,
+                        total_characters = 0,
+                        read_characters = 0,
+                        offset = 0,
+                        range_start = 0,
+                        range_end = 0,
+                        has_more = false,
+                        content = "",
+                        message = emptyMsg
+                    }
+                };
+            }
+
+            return SliceTextWindow(resolved, text, offset, maxLength, officePlain: true);
+        }
+
         private static ToolResult ReadText(
             ResolvedFilePath resolved,
             string encoding,
             int offset,
             int maxLength)
         {
-            string filename = resolved.Display;
             string absolutePath = resolved.LocalPath;
-            FileInfo fileInfo = new FileInfo(absolutePath);
             string detectedEncoding = encoding;
             string content;
             if (encoding == "auto")
@@ -199,6 +281,21 @@ namespace WordAddIn1
                 detectedEncoding = encoding;
             }
 
+            return SliceTextWindow(resolved, content, offset, maxLength, officePlain: false, detectedEncoding);
+        }
+
+        private static ToolResult SliceTextWindow(
+            ResolvedFilePath resolved,
+            string content,
+            int offset,
+            int maxLength,
+            bool officePlain,
+            string detectedEncoding = null)
+        {
+            string filename = resolved.Display;
+            string absolutePath = resolved.LocalPath;
+            FileInfo fileInfo = new FileInfo(absolutePath);
+            content = content ?? "";
             int actualOffset = Math.Max(0, Math.Min(offset, content.Length));
             int window = maxLength <= 0 || maxLength > TextWindowChars
                 ? TextWindowChars
@@ -208,33 +305,45 @@ namespace WordAddIn1
             int rangeEnd = actualOffset + actualMaxLength;
             bool hasMore = rangeEnd < content.Length;
             bool isPartial = actualOffset > 0 || hasMore;
-
-            return new ToolResult
+            string message;
+            if (officePlain && hasMore)
             {
-                Success = true,
-                Data = new
-                {
-                    filename = filename,
-                    file_path = absolutePath,
-                    encoding = detectedEncoding,
-                    file_size = fileInfo.Length,
-                    total_characters = content.Length,
-                    read_characters = resultContent.Length,
-                    offset = actualOffset,
-                    range_start = actualOffset,
-                    range_end = rangeEnd,
-                    has_more = hasMore,
-                    max_length = window,
-                    is_partial = isPartial,
-                    content = resultContent,
-                    created = fileInfo.CreationTime.ToString("yyyy-MM-dd HH:mm:ss"),
-                    modified = fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"),
-                    message = isPartial
-                        ? $"成功读取 {filename} 第 {actualOffset}-{rangeEnd} 字，全文 {content.Length}；"
-                            + (hasMore ? $"还有后面请把 offset 接到 {rangeEnd}" : "本窗已到文末")
-                        : $"成功读取 {filename} 全部内容，共 {resultContent.Length} 个字符"
-                }
+                message = $"只读了 8000 字（第 {actualOffset}-{rangeEnd} 字，全文 {content.Length}）。想读后续请把 offset 接到 {rangeEnd}。";
+            }
+            else if (isPartial)
+            {
+                message = $"成功读取 {filename} 第 {actualOffset}-{rangeEnd} 字，全文 {content.Length}；"
+                    + (hasMore ? $"还有后面请把 offset 接到 {rangeEnd}" : "本窗已到文末");
+            }
+            else
+            {
+                message = $"成功读取 {filename} 全部内容，共 {resultContent.Length} 个字符";
+            }
+
+            var data = new Dictionary<string, object>
+            {
+                ["filename"] = filename,
+                ["file_path"] = absolutePath,
+                ["file_size"] = fileInfo.Length,
+                ["total_characters"] = content.Length,
+                ["read_characters"] = resultContent.Length,
+                ["offset"] = actualOffset,
+                ["range_start"] = actualOffset,
+                ["range_end"] = rangeEnd,
+                ["has_more"] = hasMore,
+                ["max_length"] = window,
+                ["is_partial"] = isPartial,
+                ["content"] = resultContent,
+                ["created"] = fileInfo.CreationTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                ["modified"] = fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                ["message"] = message
             };
+            if (!officePlain && detectedEncoding != null)
+            {
+                data["encoding"] = detectedEncoding;
+            }
+
+            return new ToolResult { Success = true, Data = data };
         }
     }
 }

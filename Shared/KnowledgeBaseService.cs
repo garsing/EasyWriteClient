@@ -162,6 +162,102 @@ namespace WordAddIn1
                 return result;
             }
         }
+
+        public static async Task<string> ProcessDocumentForReadAsync(string storageDocUuid, int timeoutSeconds)
+        {
+            if (string.IsNullOrWhiteSpace(storageDocUuid))
+            {
+                return "缺少 storage_doc_uuid";
+            }
+
+            if (!UserService.Instance.CheckLoginStatus())
+            {
+                return "请先登录";
+            }
+
+            string baseUrl = ConfigManager.Config.Api.BaseUrl?.TrimEnd('/') ?? "";
+            if (string.IsNullOrEmpty(baseUrl))
+            {
+                return "未配置 API 地址";
+            }
+
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    client.Timeout = TimeSpan.FromSeconds(Math.Max(timeoutSeconds, 60));
+                    foreach (var kv in CreateApiHeaders())
+                        client.DefaultRequestHeaders.TryAddWithoutValidation(kv.Key, kv.Value);
+
+                    var payload = new StringContent(
+                        JsonConvert.SerializeObject(new { storage_doc_uuid = storageDocUuid }),
+                        Encoding.UTF8,
+                        "application/json");
+                    HttpResponseMessage response = await client
+                        .PostAsync($"{baseUrl}/knowledge/document/process", payload)
+                        .ConfigureAwait(false);
+                    string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    JObject jo;
+                    try
+                    {
+                        jo = JObject.Parse(body);
+                    }
+                    catch (JsonReaderException)
+                    {
+                        return "处理响应不是有效 JSON";
+                    }
+
+                    bool ok = jo["success"]?.Value<bool>() ?? false;
+                    if (!response.IsSuccessStatusCode || !ok)
+                    {
+                        return jo["message"]?.ToString()
+                            ?? jo["detail"]?.ToString()
+                            ?? "处理文档失败";
+                    }
+
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                return "处理文档失败: " + ex.Message;
+            }
+        }
+
+        public static async Task<JObject> GetDocumentModelViewAsync(string storageDocUuid, int timeoutSeconds)
+        {
+            if (string.IsNullOrWhiteSpace(storageDocUuid) || !UserService.Instance.CheckLoginStatus())
+            {
+                return null;
+            }
+
+            string baseUrl = ConfigManager.Config.Api.BaseUrl?.TrimEnd('/') ?? "";
+            if (string.IsNullOrEmpty(baseUrl))
+            {
+                return null;
+            }
+
+            using (var client = new HttpClient())
+            {
+                client.Timeout = TimeSpan.FromSeconds(Math.Max(timeoutSeconds, 30));
+                foreach (var kv in CreateApiHeaders())
+                    client.DefaultRequestHeaders.TryAddWithoutValidation(kv.Key, kv.Value);
+
+                HttpResponseMessage response = await client
+                    .GetAsync($"{baseUrl}/knowledge/document/{Uri.EscapeDataString(storageDocUuid)}/model_view")
+                    .ConfigureAwait(false);
+                string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                JObject jo = JObject.Parse(body);
+                bool ok = jo["success"]?.Value<bool>() ?? false;
+                if (!response.IsSuccessStatusCode || !ok)
+                {
+                    throw new InvalidOperationException(
+                        jo["message"]?.ToString() ?? jo["detail"]?.ToString() ?? "获取文档视图失败");
+                }
+
+                return jo["data"] as JObject;
+            }
+        }
     }
 
     /// <summary>宿主侧对话文档上传结果（供 WebView2 拖放兜底）</summary>
