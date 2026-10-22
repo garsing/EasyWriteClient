@@ -141,6 +141,7 @@ const showStreamingSpinner = computed(() => {
 
 .message-text {
   font-size: 14px;
+  font-weight: 500;
   line-height: 1.6;
 }
 
@@ -169,6 +170,7 @@ const showStreamingSpinner = computed(() => {
   border-radius: 3px;
   font-family: 'Courier New', monospace;
   font-size: 13px;
+  font-weight: 400;
 }
 
 .message-text :deep(pre) {

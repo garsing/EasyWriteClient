@@ -283,6 +283,7 @@ function formatSub (att) {
 
 .message-text {
   font-size: 14px;
+  font-weight: 500;
   line-height: 1.5;
   white-space: pre-wrap;
   text-align: left;
