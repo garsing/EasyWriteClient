@@ -140,6 +140,7 @@ const showStreamingSpinner = computed(() => {
 }
 
 .message-text {
+  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   font-weight: 500;
   line-height: 1.6;
@@ -164,13 +165,16 @@ const showStreamingSpinner = computed(() => {
   margin-bottom: 0;
 }
 
+/* 行内 `code`：字形与正文一致，只靠浅灰底提示 */
 .message-text :deep(code) {
-  background-color: #f5f5f5;
-  padding: 2px 4px;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  color: inherit;
+  background-color: #ececec;
+  padding: 0 4px;
   border-radius: 3px;
-  font-family: 'Courier New', monospace;
-  font-size: 13px;
-  font-weight: 400;
 }
 
 .message-text :deep(pre) {
@@ -179,11 +183,17 @@ const showStreamingSpinner = computed(() => {
   border-radius: 4px;
   overflow-x: auto;
   margin: 8px 0;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  font-weight: 400;
 }
 
 .message-text :deep(pre code) {
   background-color: transparent;
   padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
 }
 
 .streaming-indicator {

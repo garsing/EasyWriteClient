@@ -282,6 +282,7 @@ function formatSub (att) {
 }
 
 .message-text {
+  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   font-weight: 500;
   line-height: 1.5;
