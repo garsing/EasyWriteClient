@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 
 namespace WordAddIn1
 {
@@ -102,30 +101,6 @@ namespace WordAddIn1
             }
 
             return new TimingScope(step.Trim());
-        }
-
-        /// <summary>
-        /// 读文耗时探针：始终写 Debug（<c>[PD-timing]</c>），不看 DebugCategories。
-        /// </summary>
-        public static void LogTimingAlways(string step, long elapsedMs, string detail = null)
-        {
-            string line = string.IsNullOrEmpty(detail)
-                ? $"[PD-timing] {step} {elapsedMs}ms"
-                : $"[PD-timing] {step} {elapsedMs}ms {detail}";
-            Debug.WriteLine(line);
-            try
-            {
-                string dir = EasyWriteLog.LogDirectory;
-                Directory.CreateDirectory(dir);
-                File.AppendAllText(
-                    Path.Combine(dir, "pd-timing.log"),
-                    DateTime.Now.ToString("HH:mm:ss.fff") + " " + line + Environment.NewLine);
-            }
-            catch
-            {
-            }
-
-            LogTiming(step, elapsedMs, detail);
         }
 
         /// <summary>直接记录已测得的耗时（毫秒）。</summary>

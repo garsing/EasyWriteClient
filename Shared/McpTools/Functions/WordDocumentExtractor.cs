@@ -857,7 +857,7 @@ namespace WordAddIn1
             var swStep = System.Diagnostics.Stopwatch.StartNew();
             DocumentState.BindAndActivate(document);
             string docUuid = DocumentState.EnsureCurrDocUuid(document);
-            EasyWriteDiagnostics.LogTimingAlways(
+            EasyWriteDiagnostics.LogTiming(
                 "bind",
                 swStep.ElapsedMilliseconds,
                 "source=" + (snapshotSource ?? "(null)"));
@@ -874,7 +874,7 @@ namespace WordAddIn1
             {
                 bodyDetail = BodyXmlFingerprint.ComputeDetailed(document);
                 bodyCheckStopwatch.Stop();
-                EasyWriteDiagnostics.LogTimingAlways(
+                EasyWriteDiagnostics.LogTiming(
                     "fingerprint_WordOpenXML",
                     bodyCheckStopwatch.ElapsedMilliseconds,
                     "force_refresh");
@@ -888,7 +888,7 @@ namespace WordAddIn1
             {
                 bodyDetail = BodyXmlFingerprint.ComputeDetailed(document);
                 bodyCheckStopwatch.Stop();
-                EasyWriteDiagnostics.LogTimingAlways(
+                EasyWriteDiagnostics.LogTiming(
                     "fingerprint_WordOpenXML",
                     bodyCheckStopwatch.ElapsedMilliseconds);
                 if (ProcessDocumentCache.TryGetHit(
@@ -930,7 +930,7 @@ namespace WordAddIn1
             {
                 swStep.Restart();
                 TrySaveDocumentCopies(document, createSeparateCopy: true, verbose, out docCopyPath, out tempFilePath);
-                EasyWriteDiagnostics.LogTimingAlways("saveCopies", swStep.ElapsedMilliseconds);
+                EasyWriteDiagnostics.LogTiming("saveCopies", swStep.ElapsedMilliseconds);
             }
 
             // 第二步：文件读入
@@ -941,7 +941,7 @@ namespace WordAddIn1
 
             swStep.Restart();
             string readText = WordReader.ReadWord(document, docCopyPath, options.ExtractImages);
-            EasyWriteDiagnostics.LogTimingAlways(
+            EasyWriteDiagnostics.LogTiming(
                 "ReadWord",
                 swStep.ElapsedMilliseconds,
                 "chars=" + readText.Length);
@@ -1015,7 +1015,7 @@ namespace WordAddIn1
 
                 swStep.Restart();
                 result = ProcessDocumentWithApi(document, docUuid, docCopyPath, tempFilePath, snapshotSource);
-                EasyWriteDiagnostics.LogTimingAlways("ProcessDocumentWithApi", swStep.ElapsedMilliseconds);
+                EasyWriteDiagnostics.LogTiming("ProcessDocumentWithApi", swStep.ElapsedMilliseconds);
             }
             else
             {
@@ -1029,12 +1029,12 @@ namespace WordAddIn1
 
                 swStep.Restart();
                 result = ProcessDocumentLocally(readText, docCopyPath, tempFilePath, options);
-                EasyWriteDiagnostics.LogTimingAlways("ProcessDocumentLocally", swStep.ElapsedMilliseconds);
+                EasyWriteDiagnostics.LogTiming("ProcessDocumentLocally", swStep.ElapsedMilliseconds);
             }
 
             swStep.Restart();
             EmptyCellCode.StampProcessingResult(document, result);
-            EasyWriteDiagnostics.LogTimingAlways("emptyCellStamp", swStep.ElapsedMilliseconds);
+            EasyWriteDiagnostics.LogTiming("emptyCellStamp", swStep.ElapsedMilliseconds);
             
             // 第三步：格式抽取 — None 跳过；BodyOnly 轻量正文；Full 全量 subtype
             if (extractFormatMode == ExtractFormatMode.None)
@@ -1193,7 +1193,7 @@ namespace WordAddIn1
             }
             finally
             {
-                EasyWriteDiagnostics.LogTimingAlways(
+                EasyWriteDiagnostics.LogTiming(
                     "ProcessDocument_total",
                     pdTotal.ElapsedMilliseconds,
                     (cacheHit ? "cache=hit" : "cache=miss")
@@ -1303,7 +1303,7 @@ namespace WordAddIn1
             //readText中正文的内容已经转义，但是表格的内容是正常的标签。
             var swLocal = System.Diagnostics.Stopwatch.StartNew();
             var chunks = ChunkText(readText);
-            EasyWriteDiagnostics.LogTimingAlways("chunk", swLocal.ElapsedMilliseconds, "n=" + chunks.Count);
+            EasyWriteDiagnostics.LogTiming("chunk", swLocal.ElapsedMilliseconds, "n=" + chunks.Count);
             ExtractDetailLog(detailLog, $"✅ 文本分块完成，共 {chunks.Count} 个chunk");
 
             // 第六步：分句和映射（MapReadTextToCodes，S_ + P_ 同次）
@@ -1314,7 +1314,7 @@ namespace WordAddIn1
 
             swLocal.Restart();
             MapReadTextResult mapResult = MapReadTextToCodes.MapChunks(chunks);
-            EasyWriteDiagnostics.LogTimingAlways(
+            EasyWriteDiagnostics.LogTiming(
                 "MapReadTextToCodes",
                 swLocal.ElapsedMilliseconds,
                 "S_=" + (mapResult.SentenceMappings?.Count ?? 0)

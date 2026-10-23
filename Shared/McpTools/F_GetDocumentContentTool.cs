@@ -69,7 +69,7 @@ namespace WordAddIn1
                         { "host", hostResult.Context?.Kind.ToString().ToLowerInvariant() ?? "" }
                     };
 
-                    EasyWriteDiagnostics.LogTimingAlways(
+                    EasyWriteDiagnostics.LogTiming(
                         "F_get_document_content",
                         getSw.ElapsedMilliseconds,
                         "host=" + resultData["host"]

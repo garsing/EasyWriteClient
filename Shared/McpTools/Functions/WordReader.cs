@@ -128,7 +128,7 @@ namespace WordAddIn1
                 DocumentState.ClearImageIdMapping(); // 图片按实例唯一，每次读文重建
                 _readOccupiedTableIds = new HashSet<string>(StringComparer.Ordinal);
                 _readWordAssignedIds = TableTitleStampHelper.CollectIdsFromWord(document, _readOccupiedTableIds);
-                EasyWriteDiagnostics.LogTimingAlways(
+                EasyWriteDiagnostics.LogTiming(
                     "CollectIdsFromWord",
                     sw.ElapsedMilliseconds,
                     "tables=" + _readWordAssignedIds.Count);
@@ -139,7 +139,7 @@ namespace WordAddIn1
                 // 获取整个文档的 XML
                 sw.Restart();
                 string docXml = document.Content.WordOpenXML;
-                EasyWriteDiagnostics.LogTimingAlways(
+                EasyWriteDiagnostics.LogTiming(
                     "content_WordOpenXML",
                     sw.ElapsedMilliseconds,
                     "xmlChars=" + (docXml == null ? 0 : docXml.Length));
@@ -155,7 +155,7 @@ namespace WordAddIn1
 
                 // 查找文档主体（body）
                 var body = xmlDoc.Descendants(w + "body").FirstOrDefault();
-                EasyWriteDiagnostics.LogTimingAlways("parseXml", sw.ElapsedMilliseconds);
+                EasyWriteDiagnostics.LogTiming("parseXml", sw.ElapsedMilliseconds);
                 if (body == null)
                 {
                     throw new Exception("无法找到文档主体");
@@ -172,7 +172,7 @@ namespace WordAddIn1
                 _chartIdsForStamp = null;
                 sw.Restart();
                 _chartOrderedEntries = ExtractAllChartsOrdered(document, prevChartOrder);
-                EasyWriteDiagnostics.LogTimingAlways(
+                EasyWriteDiagnostics.LogTiming(
                     "ExtractAllChartsOrdered",
                     sw.ElapsedMilliseconds,
                     "charts=" + (_chartOrderedEntries == null ? 0 : _chartOrderedEntries.Count));
@@ -205,7 +205,7 @@ namespace WordAddIn1
                     sw.Restart();
                     // 递归处理 body 的所有子元素，一步到位提取所有内容
                     result = ProcessElementRecursive(body, w, document, pathForImages, imageSaveDir, fileHash);
-                    EasyWriteDiagnostics.LogTimingAlways(
+                    EasyWriteDiagnostics.LogTiming(
                         "walkBody",
                         sw.ElapsedMilliseconds,
                         "chars=" + (result == null ? 0 : result.Length));
@@ -218,7 +218,7 @@ namespace WordAddIn1
                 sw.Restart();
                 BuildTableIdOrderFromText(result);
                 result = ApplyTableStampsAfterRead(document, result);
-                EasyWriteDiagnostics.LogTimingAlways("tableStamps", sw.ElapsedMilliseconds);
+                EasyWriteDiagnostics.LogTiming("tableStamps", sw.ElapsedMilliseconds);
                 if (_chartStampOnWord)
                 {
                     int expected = _chartOrderedEntries == null ? 0 : _chartOrderedEntries.Count;
@@ -240,7 +240,7 @@ namespace WordAddIn1
                 BuildChartIdOrderFromText(result);
                 BuildImageIdOrderFromText(result);
 
-                EasyWriteDiagnostics.LogTimingAlways("ReadWord_total", readTotal.ElapsedMilliseconds);
+                EasyWriteDiagnostics.LogTiming("ReadWord_total", readTotal.ElapsedMilliseconds);
                 return result;
             }
             catch (Exception ex)
@@ -443,7 +443,7 @@ namespace WordAddIn1
 
             var swChart = System.Diagnostics.Stopwatch.StartNew();
             List<ChartResolveHelper.BodyChart> slots = ChartResolveHelper.GetBodyChartsInOrder(document);
-            EasyWriteDiagnostics.LogTimingAlways(
+            EasyWriteDiagnostics.LogTiming(
                 "GetBodyChartsInOrder",
                 swChart.ElapsedMilliseconds,
                 "shapes=" + slots.Count);
@@ -455,7 +455,7 @@ namespace WordAddIn1
             {
                 throw new Exception("读 chart 部件失败: " + partError);
             }
-            EasyWriteDiagnostics.LogTimingAlways(
+            EasyWriteDiagnostics.LogTiming(
                 "chartParts_WordOpenXML",
                 swChart.ElapsedMilliseconds,
                 "parts=" + (parts == null ? 0 : parts.Count));
