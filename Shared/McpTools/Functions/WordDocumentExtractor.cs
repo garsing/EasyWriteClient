@@ -849,9 +849,18 @@ namespace WordAddIn1
                     $"extractFormatMode={extractFormatMode} extractImages={options.ExtractImages} verbose=false");
             }
 
+            var pdTotal = System.Diagnostics.Stopwatch.StartNew();
+            bool cacheHit = false;
+            try
+            {
             // 第一步：绑定活动文档并确保 doc_uuid
+            var swStep = System.Diagnostics.Stopwatch.StartNew();
             DocumentState.BindAndActivate(document);
             string docUuid = DocumentState.EnsureCurrDocUuid(document);
+            EasyWriteDiagnostics.LogTimingAlways(
+                "bind",
+                swStep.ElapsedMilliseconds,
+                "source=" + (snapshotSource ?? "(null)"));
             if (verbose)
             {
                 System.Diagnostics.Debug.WriteLine($"[第一步] 当前文档UUID: {docUuid}");
@@ -865,6 +874,10 @@ namespace WordAddIn1
             {
                 bodyDetail = BodyXmlFingerprint.ComputeDetailed(document);
                 bodyCheckStopwatch.Stop();
+                EasyWriteDiagnostics.LogTimingAlways(
+                    "fingerprint_WordOpenXML",
+                    bodyCheckStopwatch.ElapsedMilliseconds,
+                    "force_refresh");
                 ProcessDocumentCache.LogMiss(
                     snapshotSource,
                     bodyDetail.Fingerprint,
@@ -875,6 +888,9 @@ namespace WordAddIn1
             {
                 bodyDetail = BodyXmlFingerprint.ComputeDetailed(document);
                 bodyCheckStopwatch.Stop();
+                EasyWriteDiagnostics.LogTimingAlways(
+                    "fingerprint_WordOpenXML",
+                    bodyCheckStopwatch.ElapsedMilliseconds);
                 if (ProcessDocumentCache.TryGetHit(
                     docUuid,
                     bodyDetail,
@@ -902,6 +918,7 @@ namespace WordAddIn1
                         }
                     }
 
+                    cacheHit = true;
                     return hitResult;
                 }
             }
@@ -911,7 +928,9 @@ namespace WordAddIn1
             string tempFilePath = null;
             if (options.ExtractImages)
             {
+                swStep.Restart();
                 TrySaveDocumentCopies(document, createSeparateCopy: true, verbose, out docCopyPath, out tempFilePath);
+                EasyWriteDiagnostics.LogTimingAlways("saveCopies", swStep.ElapsedMilliseconds);
             }
 
             // 第二步：文件读入
@@ -920,7 +939,12 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine("📄 第二步：文件读入...");
             }
 
+            swStep.Restart();
             string readText = WordReader.ReadWord(document, docCopyPath, options.ExtractImages);
+            EasyWriteDiagnostics.LogTimingAlways(
+                "ReadWord",
+                swStep.ElapsedMilliseconds,
+                "chars=" + readText.Length);
             ExtractDetailLog(detailLog, $"✅ 文件读入完成，文本长度: {readText.Length} 字符");
 
             // 第二步半：移除 </cell>、</row> 和 </table> 后面的换行符 \n
@@ -989,7 +1013,9 @@ namespace WordAddIn1
                     }
                 }
 
+                swStep.Restart();
                 result = ProcessDocumentWithApi(document, docUuid, docCopyPath, tempFilePath, snapshotSource);
+                EasyWriteDiagnostics.LogTimingAlways("ProcessDocumentWithApi", swStep.ElapsedMilliseconds);
             }
             else
             {
@@ -1001,10 +1027,14 @@ namespace WordAddIn1
                         $"📊 文档字数 ({readText.Length}) 未超过 {BackendProcessTextLengthThreshold}，使用本地处理");
                 }
 
+                swStep.Restart();
                 result = ProcessDocumentLocally(readText, docCopyPath, tempFilePath, options);
+                EasyWriteDiagnostics.LogTimingAlways("ProcessDocumentLocally", swStep.ElapsedMilliseconds);
             }
 
+            swStep.Restart();
             EmptyCellCode.StampProcessingResult(document, result);
+            EasyWriteDiagnostics.LogTimingAlways("emptyCellStamp", swStep.ElapsedMilliseconds);
             
             // 第三步：格式抽取 — None 跳过；BodyOnly 轻量正文；Full 全量 subtype
             if (extractFormatMode == ExtractFormatMode.None)
@@ -1160,6 +1190,15 @@ namespace WordAddIn1
 
             ProcessDocumentCache.SaveAfterFullRead(docUuid, bodyDetail, result, snapshotSource);
             return result;
+            }
+            finally
+            {
+                EasyWriteDiagnostics.LogTimingAlways(
+                    "ProcessDocument_total",
+                    pdTotal.ElapsedMilliseconds,
+                    (cacheHit ? "cache=hit" : "cache=miss")
+                    + " source=" + (snapshotSource ?? "(null)"));
+            }
         }
 
         /// <summary>
@@ -1262,7 +1301,9 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine("📦 第四步：文本分块...");
             }
             //readText中正文的内容已经转义，但是表格的内容是正常的标签。
+            var swLocal = System.Diagnostics.Stopwatch.StartNew();
             var chunks = ChunkText(readText);
+            EasyWriteDiagnostics.LogTimingAlways("chunk", swLocal.ElapsedMilliseconds, "n=" + chunks.Count);
             ExtractDetailLog(detailLog, $"✅ 文本分块完成，共 {chunks.Count} 个chunk");
 
             // 第六步：分句和映射（MapReadTextToCodes，S_ + P_ 同次）
@@ -1271,7 +1312,13 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine("📋 第六步：分句和映射（MapReadTextToCodes）...");
             }
 
+            swLocal.Restart();
             MapReadTextResult mapResult = MapReadTextToCodes.MapChunks(chunks);
+            EasyWriteDiagnostics.LogTimingAlways(
+                "MapReadTextToCodes",
+                swLocal.ElapsedMilliseconds,
+                "S_=" + (mapResult.SentenceMappings?.Count ?? 0)
+                + " P_=" + (mapResult.ParagraphMappings?.Count ?? 0));
             DocumentState.SetChunkParagraphDisplayContents(mapResult.ChunkParagraphDisplayContents);
 
             var nameToContentMap = mapResult.NameToSentenceContentMap ?? new Dictionary<string, string>();

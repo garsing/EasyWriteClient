@@ -122,9 +122,14 @@ namespace WordAddIn1
             return false;
         }
 
-        public static string Stamp(Word.Document doc, string display)
+        /// <summary>
+        /// 按 display HTML 网格盖戳。行 = 顶层 &lt;tr&gt; 序号（1-based），
+        /// 列 = 本行逻辑列（跳过 rowspan 占用，加上 colspan），与 WordReader 可见格 / TableRowSlot 同一套。
+        /// 不数「第几个 td」当列号，也不再 COM 读格。
+        /// </summary>
+        public static string Stamp(string display)
         {
-            if (doc == null || string.IsNullOrEmpty(display) || display.IndexOf("<table", StringComparison.OrdinalIgnoreCase) < 0)
+            if (string.IsNullOrEmpty(display) || display.IndexOf("<table", StringComparison.OrdinalIgnoreCase) < 0)
             {
                 return display;
             }
@@ -149,15 +154,20 @@ namespace WordAddIn1
                     continue;
                 }
 
-                result = StampOneTable(doc, result, tableId);
+                result = StampOneTable(result, tableId);
             }
 
             return result;
         }
 
+        public static string Stamp(Word.Document doc, string display)
+        {
+            return Stamp(display);
+        }
+
         public static void StampProcessingResult(Word.Document doc, WordDocumentExtractor.ProcessingResult result)
         {
-            if (doc == null || result == null)
+            if (result == null)
             {
                 return;
             }
@@ -171,10 +181,10 @@ namespace WordAddIn1
                         continue;
                     }
 
-                    chunk.DisplayContent = Stamp(doc, chunk.DisplayContent);
+                    chunk.DisplayContent = Stamp(chunk.DisplayContent);
                     if (!string.IsNullOrEmpty(chunk.ParagraphDisplayContent))
                     {
-                        chunk.ParagraphDisplayContent = Stamp(doc, chunk.ParagraphDisplayContent);
+                        chunk.ParagraphDisplayContent = Stamp(chunk.ParagraphDisplayContent);
                     }
                 }
             }
@@ -185,121 +195,26 @@ namespace WordAddIn1
                 var stamped = new List<string>(paras.Count);
                 for (int i = 0; i < paras.Count; i++)
                 {
-                    stamped.Add(Stamp(doc, paras[i]));
+                    stamped.Add(Stamp(paras[i]));
                 }
 
                 DocumentState.SetChunkParagraphDisplayContents(stamped);
             }
         }
 
-        private static string StampOneTable(Word.Document doc, string display, string tableId)
+        private static string StampOneTable(string display, string tableId)
         {
             if (!TryFindTableInner(display, tableId, out int innerStart, out int innerEnd))
             {
                 return display;
             }
 
-            Word.Table table = TableResolveHelper.TryResolveTableById(doc, tableId, out _);
-            if (table == null)
-            {
-                return display;
-            }
-
-            int rows;
-            int cols;
-            List<List<int>> merge;
-            try
-            {
-                TableFormatExtractCore.ExtractStructure(table, out rows, out cols, out merge);
-            }
-            catch
-            {
-                return display;
-            }
-
             string inner = display.Substring(innerStart, innerEnd - innerStart);
-            List<TdSpan> tds = CollectTopLevelTds(inner);
-            var emptySlots = new List<TableRowSlot>();
-            for (int row = 1; row <= rows; row++)
-            {
-                List<TableRowSlot> slots = TableRowValuesHelper.EnumerateWritableRowSlots(table, row, cols, merge);
-                foreach (TableRowSlot slot in slots)
-                {
-                    Word.Cell cell = TableRowValuesHelper.TryResolveWritableCell(table, slot.Row, slot.Col);
-                    if (cell == null)
-                    {
-                        continue;
-                    }
-
-                    string plain = TableCellContentWriter.GetCellPlainText(cell);
-                    if (!TableRowValuesHelper.IsSlotEmpty(plain))
-                    {
-                        continue;
-                    }
-
-                    emptySlots.Add(slot);
-                }
-            }
-
-            if (emptySlots.Count == 0 || tds.Count == 0)
-            {
-                return display;
-            }
-
-            if (tds.Count != CountWritableSlots(table, rows, cols, merge))
-            {
-                return StampByEmptyTdScan(display, innerStart, tableId, emptySlots, tds);
-            }
-
-            var inserts = new List<Tuple<int, string>>();
-            int tdIndex = 0;
-            for (int row = 1; row <= rows; row++)
-            {
-                List<TableRowSlot> slots = TableRowValuesHelper.EnumerateWritableRowSlots(table, row, cols, merge);
-                foreach (TableRowSlot slot in slots)
-                {
-                    if (tdIndex >= tds.Count)
-                    {
-                        break;
-                    }
-
-                    TdSpan td = tds[tdIndex++];
-                    if (!ContainsSlot(emptySlots, slot.Row, slot.Col))
-                    {
-                        continue;
-                    }
-
-                    string body = inner.Substring(td.ContentStart, td.ContentEnd - td.ContentStart);
-                    if (SentenceStartInCell.IsMatch(body) || MarkerPattern.IsMatch(body))
-                    {
-                        continue;
-                    }
-
-                    string code = Format(tableId, slot.Row, slot.Col);
-                    inserts.Add(Tuple.Create(innerStart + td.ContentStart, MarkerPair(code)));
-                }
-            }
-
-            return ApplyInsertsFromBack(display, inserts);
-        }
-
-        private static string StampByEmptyTdScan(
-            string display,
-            int innerStart,
-            string tableId,
-            List<TableRowSlot> emptySlots,
-            List<TdSpan> tds)
-        {
-            var remaining = new List<TableRowSlot>(emptySlots);
+            List<TdSpan> tds = CollectVisibleGridCells(inner);
             var inserts = new List<Tuple<int, string>>();
             foreach (TdSpan td in tds)
             {
-                if (remaining.Count == 0)
-                {
-                    break;
-                }
-
-                string body = display.Substring(innerStart + td.ContentStart, td.ContentEnd - td.ContentStart);
+                string body = inner.Substring(td.ContentStart, td.ContentEnd - td.ContentStart);
                 if (SentenceStartInCell.IsMatch(body) || MarkerPattern.IsMatch(body))
                 {
                     continue;
@@ -310,9 +225,7 @@ namespace WordAddIn1
                     continue;
                 }
 
-                TableRowSlot slot = remaining[0];
-                remaining.RemoveAt(0);
-                string code = Format(tableId, slot.Row, slot.Col);
+                string code = Format(tableId, td.Row, td.Col);
                 inserts.Add(Tuple.Create(innerStart + td.ContentStart, MarkerPair(code)));
             }
 
@@ -326,34 +239,15 @@ namespace WordAddIn1
                 return true;
             }
 
+            if (body.IndexOf("<table", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return false;
+            }
+
             string stripped = SentenceStartInCell.Replace(body, "");
             stripped = MarkerPattern.Replace(stripped, "");
             stripped = Regex.Replace(stripped, @"\s+", "");
             return stripped.Length == 0;
-        }
-
-        private static int CountWritableSlots(Word.Table table, int rows, int cols, List<List<int>> merge)
-        {
-            int n = 0;
-            for (int row = 1; row <= rows; row++)
-            {
-                n += TableRowValuesHelper.EnumerateWritableRowSlots(table, row, cols, merge).Count;
-            }
-
-            return n;
-        }
-
-        private static bool ContainsSlot(List<TableRowSlot> slots, int row, int col)
-        {
-            foreach (TableRowSlot slot in slots)
-            {
-                if (slot.Row == row && slot.Col == col)
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         private static string ApplyInsertsFromBack(string display, List<Tuple<int, string>> inserts)
@@ -452,14 +346,22 @@ namespace WordAddIn1
 
         private sealed class TdSpan
         {
+            public int Row;
+            public int Col;
             public int ContentStart;
             public int ContentEnd;
         }
 
-        private static List<TdSpan> CollectTopLevelTds(string inner)
+        /// <summary>
+        /// 顶层可见格：&lt;tr&gt; 计行，rowspan 占用列跳过，colspan 占宽。嵌套表不计入外表。
+        /// </summary>
+        private static List<TdSpan> CollectVisibleGridCells(string inner)
         {
             var list = new List<TdSpan>();
+            var remain = new List<int>();
             int depth = 0;
+            int row = 0;
+            int col = 1;
             int i = 0;
             while (i < inner.Length)
             {
@@ -481,10 +383,43 @@ namespace WordAddIn1
                     continue;
                 }
 
-                if (depth == 0 && (StartsWithIgnoreCase(inner, i, "<td") || StartsWithIgnoreCase(inner, i, "<th")))
+                if (depth != 0)
+                {
+                    i++;
+                    continue;
+                }
+
+                if (StartsWithIgnoreCase(inner, i, "<tr"))
+                {
+                    char afterTr = i + 3 < inner.Length ? inner[i + 3] : ' ';
+                    if (afterTr == '>' || char.IsWhiteSpace(afterTr) || afterTr == '/')
+                    {
+                        row++;
+                        col = 1;
+                    }
+
+                    i += 3;
+                    continue;
+                }
+
+                if (StartsWithIgnoreCase(inner, i, "</tr"))
+                {
+                    for (int c = 0; c < remain.Count; c++)
+                    {
+                        if (remain[c] > 0)
+                        {
+                            remain[c]--;
+                        }
+                    }
+
+                    i += 4;
+                    continue;
+                }
+
+                if (StartsWithIgnoreCase(inner, i, "<td") || StartsWithIgnoreCase(inner, i, "<th"))
                 {
                     char after = i + 3 < inner.Length ? inner[i + 3] : ' ';
-                    if (after != '>' && !char.IsWhiteSpace(after))
+                    if (after != '>' && !char.IsWhiteSpace(after) && after != '/')
                     {
                         i++;
                         continue;
@@ -496,13 +431,35 @@ namespace WordAddIn1
                         break;
                     }
 
+                    string openTag = inner.Substring(i, openEnd - i + 1);
+                    int colspan = ReadSpanAttr(openTag, "colspan");
+                    int rowspan = ReadSpanAttr(openTag, "rowspan");
+                    while (col <= remain.Count && remain[col - 1] > 0)
+                    {
+                        col++;
+                    }
+
                     int close = FindMatchingCellClose(inner, openEnd + 1);
                     if (close < 0)
                     {
                         break;
                     }
 
-                    list.Add(new TdSpan { ContentStart = openEnd + 1, ContentEnd = close });
+                    list.Add(new TdSpan
+                    {
+                        Row = row,
+                        Col = col,
+                        ContentStart = openEnd + 1,
+                        ContentEnd = close
+                    });
+
+                    EnsureRemainSize(remain, col + colspan - 1);
+                    for (int c = 0; c < colspan; c++)
+                    {
+                        remain[col - 1 + c] = rowspan;
+                    }
+
+                    col += colspan;
                     i = close;
                     continue;
                 }
@@ -511,6 +468,39 @@ namespace WordAddIn1
             }
 
             return list;
+        }
+
+        private static void EnsureRemainSize(List<int> remain, int col)
+        {
+            while (remain.Count < col)
+            {
+                remain.Add(0);
+            }
+        }
+
+        private static int ReadSpanAttr(string tag, string name)
+        {
+            if (string.IsNullOrEmpty(tag) || string.IsNullOrEmpty(name))
+            {
+                return 1;
+            }
+
+            Match m = Regex.Match(
+                tag,
+                name + @"\s*=\s*[""']?(\d+)[""']?",
+                RegexOptions.IgnoreCase);
+            if (!m.Success)
+            {
+                return 1;
+            }
+
+            int n;
+            if (!int.TryParse(m.Groups[1].Value, out n) || n < 1)
+            {
+                return 1;
+            }
+
+            return n;
         }
 
         private static int FindMatchingCellClose(string text, int from)

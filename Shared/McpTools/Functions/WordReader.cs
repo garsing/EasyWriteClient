@@ -118,6 +118,8 @@ namespace WordAddIn1
 
             try
             {
+                var readTotal = System.Diagnostics.Stopwatch.StartNew();
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 // 每次运行都清空表格/图表/图片顺序表，重新生成当前文档的顺序
                 List<string> prevChartOrder = DocumentState.CaptureChartOrderBeforeRead();
                 DocumentState.ClearTableIdOrder();
@@ -126,23 +128,34 @@ namespace WordAddIn1
                 DocumentState.ClearImageIdMapping(); // 图片按实例唯一，每次读文重建
                 _readOccupiedTableIds = new HashSet<string>(StringComparer.Ordinal);
                 _readWordAssignedIds = TableTitleStampHelper.CollectIdsFromWord(document, _readOccupiedTableIds);
+                EasyWriteDiagnostics.LogTimingAlways(
+                    "CollectIdsFromWord",
+                    sw.ElapsedMilliseconds,
+                    "tables=" + _readWordAssignedIds.Count);
                 _readTableEmitIndex = 0;
                 _placeholderImageCounter = 0;
                 
                 // 直接从文档的 XML 提取段落和表格，避免重复
                 // 获取整个文档的 XML
+                sw.Restart();
                 string docXml = document.Content.WordOpenXML;
+                EasyWriteDiagnostics.LogTimingAlways(
+                    "content_WordOpenXML",
+                    sw.ElapsedMilliseconds,
+                    "xmlChars=" + (docXml == null ? 0 : docXml.Length));
                 if (string.IsNullOrEmpty(docXml))
                 {
                     throw new Exception("无法获取文档的 XML 内容");
                 }
 
                 // 解析 XML
+                sw.Restart();
                 XDocument xmlDoc = XDocument.Parse(docXml);
                 XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
                 // 查找文档主体（body）
                 var body = xmlDoc.Descendants(w + "body").FirstOrDefault();
+                EasyWriteDiagnostics.LogTimingAlways("parseXml", sw.ElapsedMilliseconds);
                 if (body == null)
                 {
                     throw new Exception("无法找到文档主体");
@@ -157,7 +170,12 @@ namespace WordAddIn1
                 _chartStampOnWord = false;
                 _chartSlotsForStamp = null;
                 _chartIdsForStamp = null;
+                sw.Restart();
                 _chartOrderedEntries = ExtractAllChartsOrdered(document, prevChartOrder);
+                EasyWriteDiagnostics.LogTimingAlways(
+                    "ExtractAllChartsOrdered",
+                    sw.ElapsedMilliseconds,
+                    "charts=" + (_chartOrderedEntries == null ? 0 : _chartOrderedEntries.Count));
                 _chartConsumeIndex = 0;
 
                 if (extractImages)
@@ -184,16 +202,23 @@ namespace WordAddIn1
                 string result;
                 try
                 {
+                    sw.Restart();
                     // 递归处理 body 的所有子元素，一步到位提取所有内容
                     result = ProcessElementRecursive(body, w, document, pathForImages, imageSaveDir, fileHash);
+                    EasyWriteDiagnostics.LogTimingAlways(
+                        "walkBody",
+                        sw.ElapsedMilliseconds,
+                        "chars=" + (result == null ? 0 : result.Length));
                 }
                 finally
                 {
                     EndReadImageContext();
                 }
 
+                sw.Restart();
                 BuildTableIdOrderFromText(result);
                 result = ApplyTableStampsAfterRead(document, result);
+                EasyWriteDiagnostics.LogTimingAlways("tableStamps", sw.ElapsedMilliseconds);
                 if (_chartStampOnWord)
                 {
                     int expected = _chartOrderedEntries == null ? 0 : _chartOrderedEntries.Count;
@@ -214,7 +239,8 @@ namespace WordAddIn1
 
                 BuildChartIdOrderFromText(result);
                 BuildImageIdOrderFromText(result);
-                
+
+                EasyWriteDiagnostics.LogTimingAlways("ReadWord_total", readTotal.ElapsedMilliseconds);
                 return result;
             }
             catch (Exception ex)
@@ -415,7 +441,13 @@ namespace WordAddIn1
                 return wps;
             }
 
+            var swChart = System.Diagnostics.Stopwatch.StartNew();
             List<ChartResolveHelper.BodyChart> slots = ChartResolveHelper.GetBodyChartsInOrder(document);
+            EasyWriteDiagnostics.LogTimingAlways(
+                "GetBodyChartsInOrder",
+                swChart.ElapsedMilliseconds,
+                "shapes=" + slots.Count);
+            swChart.Restart();
             if (!WordAddIn1.ChartOoxmlHost.ChartOoxmlFacade.TryReadWordChartParts(
                     document,
                     out List<WordAddIn1.ChartOoxmlHost.ChartPartRef> parts,
@@ -423,6 +455,10 @@ namespace WordAddIn1
             {
                 throw new Exception("读 chart 部件失败: " + partError);
             }
+            EasyWriteDiagnostics.LogTimingAlways(
+                "chartParts_WordOpenXML",
+                swChart.ElapsedMilliseconds,
+                "parts=" + (parts == null ? 0 : parts.Count));
 
             if (parts == null || parts.Count != slots.Count)
             {

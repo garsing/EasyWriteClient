@@ -36,6 +36,7 @@ namespace WordAddIn1
 
                     AgentRunCancellation.ThrowIfCancelled();
 
+                    var getSw = System.Diagnostics.Stopwatch.StartNew();
                     if (!DocumentHostAdapter.TryGetDocumentContent(
                             args,
                             wordApplication,
@@ -68,6 +69,12 @@ namespace WordAddIn1
                         { "host", hostResult.Context?.Kind.ToString().ToLowerInvariant() ?? "" }
                     };
 
+                    EasyWriteDiagnostics.LogTimingAlways(
+                        "F_get_document_content",
+                        getSw.ElapsedMilliseconds,
+                        "host=" + resultData["host"]
+                        + " channel=" + resultData["channel_id"]
+                        + " displayLen=" + documentContent.Length);
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_get_document_content] host={resultData["host"]}, channel_id={resultData["channel_id"]}, " +
                         $"code_level={codeLevel}, {resultData["processing_method"]}, " +
