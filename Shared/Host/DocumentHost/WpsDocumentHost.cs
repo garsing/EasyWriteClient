@@ -76,35 +76,6 @@ namespace WordAddIn1.DocumentHost
                 return false;
             }
 
-            bool indexReady = false;
-            string indexError = null;
-            try
-            {
-                var context = new DocumentSessionContext("", ChannelKind.Wps, "", null, doc);
-                if (DocumentHostCompat.TryPrepareWpsInteropDocument(
-                        context,
-                        out Word.Document wordDoc,
-                        out _,
-                        activateDocument: false)
-                    && wordDoc != null)
-                {
-                    AgentRunCancellation.ThrowIfCancelled();
-                    var processing = WordDocumentExtractor.ProcessDocument(
-                        wordDoc,
-                        ProcessDocumentOptions.ForGetDocumentContent("open_document"));
-                    indexReady = processing != null;
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                error = "cancelled by user";
-                return false;
-            }
-            catch (Exception ex)
-            {
-                indexError = ex.Message;
-            }
-
             WpsChannel channel = ChannelRegistry.CreateOrGetWps(doc, fullPath);
             ChannelRegistry.SetDefault(channel.ChannelId);
             HostCallbacks.RaiseOpenFilesRefresh();
@@ -118,8 +89,7 @@ namespace WordAddIn1.DocumentHost
                 Name = WpsCom.TryReadName(doc) ?? Path.GetFileName(fullPath) ?? "",
                 Created = created,
                 Reused = reused,
-                IndexReady = indexReady,
-                IndexError = indexError
+                IndexReady = false
             };
             return true;
         }

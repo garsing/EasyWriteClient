@@ -94,26 +94,6 @@ namespace WordAddIn1.DocumentHost
 
             DocumentState.BindAndActivate(doc);
 
-            bool indexReady = false;
-            string indexError = null;
-            try
-            {
-                AgentRunCancellation.ThrowIfCancelled();
-                var processing = WordDocumentExtractor.ProcessDocument(
-                    doc,
-                    ProcessDocumentOptions.ForGetDocumentContent("open_document"));
-                indexReady = processing != null;
-            }
-            catch (OperationCanceledException)
-            {
-                error = "cancelled by user";
-                return false;
-            }
-            catch (Exception ex)
-            {
-                indexError = ex.Message;
-            }
-
             WordChannel channel = ChannelRegistry.CreateOrGetWord(doc, fullPath);
             ChannelRegistry.SetDefault(channel.ChannelId);
             HostCallbacks.RaiseOpenFilesRefresh();
@@ -137,8 +117,7 @@ namespace WordAddIn1.DocumentHost
                 Name = name ?? "",
                 Created = created,
                 Reused = reused,
-                IndexReady = indexReady,
-                IndexError = indexError
+                IndexReady = false
             };
             return true;
         }
