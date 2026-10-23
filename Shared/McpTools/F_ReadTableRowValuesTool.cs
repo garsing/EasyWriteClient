@@ -7,7 +7,7 @@ using Word = Microsoft.Office.Interop.Word;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 读取表格整表行值（只读）。经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
+    /// 已下线注册。读取表格整表行值（只读）。经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_ReadTableRowValuesTool
     {

@@ -245,6 +245,13 @@ namespace WordAddIn1
 
             foreach (string code in targetCodes)
             {
+                if (EmptyCellCode.IsEmptyCellCode(code))
+                {
+                    result.Success = false;
+                    result.Error = EmptyCellCode.NoFormatError;
+                    return result;
+                }
+
                 if (code.StartsWith("T_", StringComparison.Ordinal))
                 {
                     result.Success = false;

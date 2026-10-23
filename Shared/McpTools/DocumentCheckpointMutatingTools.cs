@@ -22,7 +22,6 @@ namespace WordAddIn1
             "F_create_table_from_xml",
             "F_apply_table_format_from_xml",
             "F_apply_table_data_from_xml",
-            "F_apply_table_row_values",
             "F_optimize_table_display",
             "F_delete_table",
             "F_create_chart_from_xml",
@@ -107,8 +106,6 @@ namespace WordAddIn1
                     return F_ApplyTableFormatFromXmlTool.TryGetContractParseFailure(args, out failure);
                 case "F_apply_table_data_from_xml":
                     return F_ApplyTableDataFromXmlTool.TryGetContractParseFailure(args, out failure);
-                case "F_apply_table_row_values":
-                    return F_ApplyTableRowValuesTool.TryGetContractParseFailure(args, out failure);
                 case "F_optimize_table_display":
                     return F_OptimizeTableDisplayTool.TryGetContractParseFailure(args, out failure);
                 case "F_delete_table":

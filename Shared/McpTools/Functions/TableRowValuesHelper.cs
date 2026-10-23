@@ -43,7 +43,7 @@ namespace WordAddIn1
     }
 
     /// <summary>
-    /// 表格按行槽位读写（与 F_read_table_row_values / F_apply_table_row_values 共用）。
+    /// 表格按行槽位读写（槽枚举给 display 空格码与定位用；行值 F_* 已下线注册）。
     /// </summary>
     public static class TableRowValuesHelper
     {

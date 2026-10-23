@@ -93,8 +93,6 @@ namespace WordAddIn1
                 { "document.restoreCheckpoint", "F_restore_document_checkpoint" },
                 { "table.createFromXml", "F_create_table_from_xml" },
                 { "table.applyFormatFromXml", "F_apply_table_format_from_xml" },
-                { "table.readRowValues", "F_read_table_row_values" },
-                { "table.applyRowValues", "F_apply_table_row_values" },
                 { "table.extractFormat", "F_extract_table_format" },
                 { "table.optimizeDisplay", "F_optimize_table_display" },
                 { "table.delete", "F_delete_table" },

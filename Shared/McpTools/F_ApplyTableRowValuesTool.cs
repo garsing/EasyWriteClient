@@ -8,7 +8,7 @@ using Word = Microsoft.Office.Interop.Word;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 按行槽位写入表格数据。经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
+    /// 已下线注册。按行槽位写入表格数据。经 <see cref="DocumentHostAdapter"/>（Word/WPS）。
     /// </summary>
     public static class F_ApplyTableRowValuesTool
     {

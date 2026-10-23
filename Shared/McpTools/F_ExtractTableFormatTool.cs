@@ -145,7 +145,7 @@ namespace WordAddIn1
                             format_content = xmlContent,
                             warnings = dto.FontStats?.Warnings ?? new List<string>(),
                             message = saved
-                                ? $"表格格式（General）提取并保存成功，文件名为：{filename}。单元格填空请使用 F_read_table_row_values。"
+                                ? $"表格格式（General）提取并保存成功，文件名为：{filename}。单元格填空请用 getContent 空格码 + process_actions。"
                                 : "表格格式保存失败"
                         }
                     };

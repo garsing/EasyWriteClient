@@ -1003,6 +1003,8 @@ namespace WordAddIn1
 
                 result = ProcessDocumentLocally(readText, docCopyPath, tempFilePath, options);
             }
+
+            EmptyCellCode.StampProcessingResult(document, result);
             
             // 第三步：格式抽取 — None 跳过；BodyOnly 轻量正文；Full 全量 subtype
             if (extractFormatMode == ExtractFormatMode.None)
@@ -1701,8 +1703,9 @@ namespace WordAddIn1
             // 使用正则表达式匹配 [S_00000-start] 和 [S_00000-end] 格式的标记（S_前缀 + 5位编码：数字、小写字母、大写字母）
             // 模式：\[S_[0-9a-zA-Z]{5}-start\]|\[S_[0-9a-zA-Z]{5}-end\] 匹配 [S_00000-start] 和 [S_00000-end] 这样的标记
             var markerPattern = new System.Text.RegularExpressions.Regex(@"\[S_[0-9a-zA-Z]{5}-start\]|\[S_[0-9a-zA-Z]{5}-end\]");
-            return WordAddIn1.DocumentMapping.InTableBoundaryMarker.Strip(
-                markerPattern.Replace(displayContent, ""));
+            string withoutSentence = markerPattern.Replace(displayContent, "");
+            withoutSentence = EmptyCellCode.StripMarkers(withoutSentence);
+            return WordAddIn1.DocumentMapping.InTableBoundaryMarker.Strip(withoutSentence);
         }
 
         /// <summary>

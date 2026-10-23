@@ -417,7 +417,8 @@ namespace WordAddIn1
             Table,
             Chart,
             Image,
-            DocumentStart
+            DocumentStart,
+            EmptyCell
         }
 
         private sealed class LocatorSpec
@@ -428,6 +429,8 @@ namespace WordAddIn1
             public string TableId { get; set; }
             public string ChartId { get; set; }
             public string ImageId { get; set; }
+            public int Row { get; set; }
+            public int Col { get; set; }
         }
 
         private sealed class LocatorParseResult
@@ -467,6 +470,9 @@ namespace WordAddIn1
                 case InsertTargetLocatorHelper.LocatorKind.DocumentStart:
                     kind = LocatorKind.DocumentStart;
                     break;
+                case InsertTargetLocatorHelper.LocatorKind.EmptyCell:
+                    kind = LocatorKind.EmptyCell;
+                    break;
                 case InsertTargetLocatorHelper.LocatorKind.Sentence:
                     kind = LocatorKind.Sentence;
                     break;
@@ -488,7 +494,9 @@ namespace WordAddIn1
                     InTableId = s.InTableId,
                     TableId = s.TableId,
                     ChartId = s.ChartId,
-                    ImageId = s.ImageId
+                    ImageId = s.ImageId,
+                    Row = s.Row,
+                    Col = s.Col
                 }
             };
         }
@@ -504,11 +512,13 @@ namespace WordAddIn1
             foreach (ParagraphAction action in actions)
             {
                 string type = action.Type?.ToLower();
-                if (type == "replace" && !string.IsNullOrEmpty(action.SentenceNames))
+                if (type == "replace" && !string.IsNullOrEmpty(action.SentenceNames)
+                    && !EmptyCellCode.IsEmptyCellCode(action.SentenceNames))
                 {
                     anchors.Add(ToAmbiguityAnchor(action.ActionIndex, "original", action.SentenceNames, action.OriginalScopeFields));
                 }
-                else if (type == "delete" && !string.IsNullOrEmpty(action.SentenceNames))
+                else if (type == "delete" && !string.IsNullOrEmpty(action.SentenceNames)
+                    && !EmptyCellCode.IsEmptyCellCode(action.SentenceNames))
                 {
                     anchors.Add(ToAmbiguityAnchor(action.ActionIndex, "deletion", action.SentenceNames, action.DeletionScopeFields));
                 }
@@ -586,6 +596,12 @@ namespace WordAddIn1
             foreach (ParagraphAction action in actions)
             {
                 string type = action.Type?.ToLower();
+                if ((type == "replace" || type == "delete")
+                    && EmptyCellCode.IsEmptyCellCode(action.SentenceNames))
+                {
+                    continue;
+                }
+
                 if (type == "replace" || type == "delete")
                 {
                     string error = ValidateSentenceSequenceContinuity(
@@ -600,6 +616,12 @@ namespace WordAddIn1
                     {
                         return error;
                     }
+                }
+                else if (type == "insert"
+                         && action.TargetLocator != null
+                         && action.TargetLocator.Kind == LocatorKind.EmptyCell)
+                {
+                    continue;
                 }
                 else if (type == "insert"
                          && action.TargetLocator != null
@@ -874,14 +896,33 @@ namespace WordAddIn1
 
             try
             {
-                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                    doc,
-                    new InsertTargetLocatorHelper.LocatorSpec
+                InsertTargetLocatorHelper.LocatorSpec spec;
+                EmptyCellCode.Parsed emptyParsed;
+                if (EmptyCellCode.TryParse(sentenceNames, out emptyParsed))
+                {
+                    spec = new InsertTargetLocatorHelper.LocatorSpec
+                    {
+                        Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell,
+                        Codes = emptyParsed.Code,
+                        TableId = emptyParsed.TableId,
+                        InTableId = tableId ?? emptyParsed.TableId,
+                        Row = emptyParsed.Row,
+                        Col = emptyParsed.Col
+                    };
+                }
+                else
+                {
+                    spec = new InsertTargetLocatorHelper.LocatorSpec
                     {
                         Kind = InsertTargetLocatorHelper.LocatorKind.Sentence,
                         Codes = sentenceNames,
                         InTableId = tableId
-                    },
+                    };
+                }
+
+                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                    doc,
+                    spec,
                     InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
                     disallowBackendApi);
                 if (locate.Success && locate.Range != null)
@@ -909,7 +950,9 @@ namespace WordAddIn1
                 InTableId = target.InTableId,
                 TableId = target.TableId,
                 ChartId = target.ChartId,
-                ImageId = target.ImageId
+                ImageId = target.ImageId,
+                Row = target.Row,
+                Col = target.Col
             };
             switch (target.Kind)
             {
@@ -925,12 +968,94 @@ namespace WordAddIn1
                 case LocatorKind.DocumentStart:
                     spec.Kind = InsertTargetLocatorHelper.LocatorKind.DocumentStart;
                     break;
+                case LocatorKind.EmptyCell:
+                    spec.Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell;
+                    break;
                 default:
                     spec.Kind = InsertTargetLocatorHelper.LocatorKind.Sentence;
                     break;
             }
 
             return spec;
+        }
+
+        private static ReplaceExecutionResult ExecuteEmptyCellReplace(
+            Word.Document doc,
+            EmptyCellCode.Parsed emptyCell,
+            string newContent,
+            Dictionary<string, object> formatSnapshot,
+            string formatMode,
+            bool disallowBackendApi)
+        {
+            var result = new ReplaceExecutionResult { Success = false, NewSentences = new List<string>() };
+            if (emptyCell == null)
+            {
+                result.ErrorMessage = "空格码无效";
+                return result;
+            }
+
+            result.OriginalCodes = new List<string> { emptyCell.Code };
+            if (formatSnapshot == null || formatSnapshot.Count == 0 || string.IsNullOrEmpty(formatMode))
+            {
+                result.ErrorMessage = ActionFormatHelper.MissingFormatError;
+                return result;
+            }
+
+            var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                doc,
+                new InsertTargetLocatorHelper.LocatorSpec
+                {
+                    Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell,
+                    Codes = emptyCell.Code,
+                    TableId = emptyCell.TableId,
+                    Row = emptyCell.Row,
+                    Col = emptyCell.Col
+                },
+                InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
+                disallowBackendApi);
+            if (!locate.Success)
+            {
+                result.ErrorMessage = locate.Error ?? "无法定位空格";
+                return result;
+            }
+
+            Word.Table table = TableResolveHelper.TryResolveTableById(doc, emptyCell.TableId, out string tableError);
+            if (table == null)
+            {
+                result.ErrorMessage = tableError ?? "找不到表格";
+                return result;
+            }
+
+            Word.Cell cell = TableRowValuesHelper.TryResolveWritableCell(table, emptyCell.Row, emptyCell.Col);
+            if (cell == null)
+            {
+                result.ErrorMessage = TableRowValuesHelper.BuildUnresolvableCellError(emptyCell.Row, emptyCell.Col);
+                return result;
+            }
+
+            CellWriteResult write = TableCellContentWriter.WriteCell(cell, newContent ?? "");
+            if (!write.Success)
+            {
+                result.ErrorMessage = write.Error ?? "写入单元格失败";
+                return result;
+            }
+
+            try
+            {
+                FormatInheritHelper.ApplySnapshot(cell.Range, formatSnapshot, charFormatOnly: true);
+                result.FormatMode = formatMode;
+            }
+            catch (Exception fmtEx)
+            {
+                result.FormatApplyError = fmtEx.Message;
+                result.ErrorMessage = $"文字已写入，但字符格式套用失败: {fmtEx.Message}";
+                return result;
+            }
+
+            MoveSelectionAfterReplace(doc, cell.Range);
+            result.NewSentences = SentenceSplitter.SplitForActionContent(newContent ?? "");
+            result.Success = true;
+            return result;
         }
 
         /// <summary>
@@ -992,6 +1117,12 @@ namespace WordAddIn1
                 {
                     result.ErrorMessage = "original.codes 为空";
                     return result;
+                }
+
+                if (names.Count == 1 && EmptyCellCode.TryParse(names[0], out EmptyCellCode.Parsed emptyCell))
+                {
+                    return ExecuteEmptyCellReplace(
+                        doc, emptyCell, newContent, formatSnapshot, formatMode, disallowBackendApi);
                 }
 
                 if (names.Any(n => n.StartsWith("T_", StringComparison.Ordinal)
@@ -1163,6 +1294,13 @@ namespace WordAddIn1
                     return result;
                 }
 
+                if (names.Count == 1 && EmptyCellCode.IsEmptyCellCode(names[0]))
+                {
+                    result.AffectedCodes = names;
+                    result.Success = true;
+                    return result;
+                }
+
                 if (names.Any(n => n.StartsWith("T_", StringComparison.Ordinal)
                     || n.StartsWith("C_", StringComparison.Ordinal)))
                 {
@@ -1257,6 +1395,25 @@ namespace WordAddIn1
                 if (string.IsNullOrEmpty(insertContent))
                 {
                     result.ErrorMessage = "缺少 insert 内容";
+                    return result;
+                }
+
+                if (target != null && target.Kind == LocatorKind.EmptyCell)
+                {
+                    EmptyCellCode.Parsed parsed = new EmptyCellCode.Parsed
+                    {
+                        TableId = target.TableId,
+                        Row = target.Row,
+                        Col = target.Col,
+                        Code = target.Codes
+                    };
+                    var written = ExecuteEmptyCellReplace(
+                        doc, parsed, insertContent, formatSnapshot, formatMode, disallowBackendApi);
+                    result.Success = written.Success;
+                    result.ErrorMessage = written.ErrorMessage;
+                    result.FormatMode = written.FormatMode;
+                    result.FormatApplyError = written.FormatApplyError;
+                    result.NewSentences = written.NewSentences ?? new List<string>();
                     return result;
                 }
 
@@ -1965,6 +2122,10 @@ namespace WordAddIn1
                 else if (target.Kind == LocatorKind.Image)
                 {
                     anchorCodes = target.ImageId;
+                }
+                else if (target.Kind == LocatorKind.EmptyCell)
+                {
+                    anchorCodes = target.Codes;
                 }
             }
 

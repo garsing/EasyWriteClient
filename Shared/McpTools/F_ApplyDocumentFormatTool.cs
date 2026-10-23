@@ -394,6 +394,12 @@ namespace WordAddIn1
                 return false;
             }
 
+            if (targetCodes.Any(EmptyCellCode.IsEmptyCellCode))
+            {
+                error = EmptyCellCode.NoFormatError;
+                return false;
+            }
+
             if (targetCodes.Any(c => c.StartsWith("T_", StringComparison.Ordinal)))
             {
                 error = "apply 仅支持 S_ / P_，不支持 T_";

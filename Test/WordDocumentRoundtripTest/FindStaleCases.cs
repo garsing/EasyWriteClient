@@ -951,9 +951,11 @@ namespace WordDocumentRoundtripTest
         }
 
         private static readonly Regex DisplayCodeStart = new Regex(
-            @"\[(?:P|S)_[^\]]+?(?:-start| start)\]", RegexOptions.Compiled);
+            @"\[(?:P|S)_[^\]]+?(?:-start| start)\]|\[T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+-start\]",
+            RegexOptions.Compiled);
         private static readonly Regex DisplayCodeEnd = new Regex(
-            @"\[(?:P|S)_[^\]]+?(?:-end| end)\]", RegexOptions.Compiled);
+            @"\[(?:P|S)_[^\]]+?(?:-end| end)\]|\[T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+-end\]",
+            RegexOptions.Compiled);
         private static readonly Regex DisplayInTable = new Regex(
             @"\[in_table=[^\]]+\]", RegexOptions.Compiled);
         private static readonly Regex DisplayImage = new Regex(
@@ -2179,6 +2181,7 @@ namespace WordDocumentRoundtripTest
             s = DisplayChart.Replace(s, "");
             s = DisplayImage.Replace(s, "");
             s = Regex.Replace(s, @"\[S_[^\]]+-(?:start|end)\]", "");
+            s = Regex.Replace(s, @"\[T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+-(?:start|end)\]", "");
             return s;
         }
 

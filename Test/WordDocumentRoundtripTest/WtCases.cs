@@ -86,6 +86,218 @@ namespace WordDocumentRoundtripTest
             "wt-create-after-filled"
         };
 
+        public static void RunEmptyCell(
+            TestRun run,
+            string host,
+            int wordBefore,
+            int wpsBefore,
+            bool wordWinBefore,
+            bool wpsWinBefore)
+        {
+            const string Title = "实验操作方法和步骤";
+            const string Fill = "1. 数据审核与注册：";
+            const string TitleInsert = "（续写）";
+            var ids = new[]
+            {
+                "wt-ec-display", "wt-ec-replace", "wt-ec-insert", "wt-ec-title-insert",
+                "wt-ec-format-fail", "wt-ec-mix-fail", "wt-ec-no-format", "wt-ec-after",
+                "wt-ec-table-id"
+            };
+            var s = new WdSession(host);
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, ids))
+            {
+                return;
+            }
+
+            try
+            {
+                s.ActivateDoc(path);
+                ToolResult created = s.CreateTableFromXml(CreateArgs(id, WriteXml(GridXml(Title, "", "备注", ""))));
+                string tableId = WdSession.Str(created, "table_id");
+                if (!created.Success || string.IsNullOrEmpty(tableId))
+                {
+                    FailMany(run, created.Error ?? "建表失败", ids);
+                    return;
+                }
+
+                string body = ReadBody(s, id);
+                Match emptyMatch = Regex.Match(body, @"T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+");
+                string emptyCode = emptyMatch.Success ? emptyMatch.Value : "";
+                Ok(run, "wt-ec-display",
+                    body.IndexOf("[S_", StringComparison.Ordinal) >= 0
+                        && emptyMatch.Success
+                        && body.IndexOf("[" + emptyCode + "-start][" + emptyCode + "-end]", StringComparison.Ordinal) >= 0,
+                    emptyMatch.Success ? emptyCode : "display 无空格码");
+
+                Match titleMatch = Regex.Match(body, @"\[(S_[0-9a-zA-Z]{5})-start\]" + Regex.Escape(Title));
+                string titleCode = titleMatch.Success ? titleMatch.Groups[1].Value : "";
+
+                ToolResult fmt = s.GetFormatContext(new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["target_codes"] = emptyCode
+                });
+                Ok(run, "wt-ec-format-fail",
+                    !fmt.Success && Contains(fmt.Error, "empty_cell_no_format"),
+                    fmt.Success ? "取格式不该成功" : (fmt.Error ?? ""));
+
+                if (!string.IsNullOrEmpty(titleCode) && !string.IsNullOrEmpty(emptyCode))
+                {
+                    ToolResult mix = s.ProcessActions(id, new List<Dictionary<string, object>>
+                    {
+                        new Dictionary<string, object>
+                        {
+                            ["type"] = "replace",
+                            ["detail"] = new Dictionary<string, object>
+                            {
+                                ["original"] = new Dictionary<string, object>
+                                {
+                                    ["codes"] = titleCode + "," + emptyCode
+                                },
+                                ["new"] = Fill,
+                                ["format"] = DefaultFormat()
+                            }
+                        }
+                    });
+                    Ok(run, "wt-ec-mix-fail",
+                        !mix.Success && StillHas(s, id, Title) && !StillHas(s, id, Fill),
+                        mix.Success ? "混码不该写入" : (mix.Error ?? ""));
+                }
+                else
+                {
+                    Ok(run, "wt-ec-mix-fail", false, "缺 title/empty 码");
+                }
+
+                ToolResult noFmt = s.ProcessActions(id, new List<Dictionary<string, object>>
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["type"] = "replace",
+                        ["detail"] = new Dictionary<string, object>
+                        {
+                            ["original"] = new Dictionary<string, object> { ["codes"] = emptyCode },
+                            ["new"] = Fill
+                        }
+                    }
+                });
+                Ok(run, "wt-ec-no-format",
+                    !noFmt.Success && !StillHas(s, id, Fill),
+                    noFmt.Success ? "缺 format 不该写入" : (noFmt.Error ?? ""));
+
+                ToolResult afterTbl = s.ProcessActions(id, new List<Dictionary<string, object>>
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["type"] = "insert",
+                        ["detail"] = new Dictionary<string, object>
+                        {
+                            ["target"] = new Dictionary<string, object> { ["table"] = tableId },
+                            ["insert"] = AfterSent,
+                            ["format"] = DefaultFormat()
+                        }
+                    }
+                });
+                Ok(run, "wt-ec-table-id",
+                    afterTbl.Success && StillHas(s, id, AfterSent),
+                    afterTbl.Success ? "表后插入" : (afterTbl.Error ?? ""));
+
+                if (!string.IsNullOrEmpty(titleCode))
+                {
+                    ToolResult titleIns = s.ProcessActions(id, new List<Dictionary<string, object>>
+                    {
+                        new Dictionary<string, object>
+                        {
+                            ["type"] = "insert",
+                            ["detail"] = new Dictionary<string, object>
+                            {
+                                ["target"] = new Dictionary<string, object> { ["codes"] = titleCode },
+                                ["insert"] = TitleInsert,
+                                ["format"] = DefaultFormat()
+                            }
+                        }
+                    });
+                    string afterTitle = ReadBody(s, id);
+                    Ok(run, "wt-ec-title-insert",
+                        titleIns.Success
+                            && afterTitle.IndexOf(Title + TitleInsert, StringComparison.Ordinal) >= 0
+                            && afterTitle.IndexOf(emptyCode, StringComparison.Ordinal) >= 0,
+                        titleIns.Success ? "题后应在左格且右格仍有空码" : (titleIns.Error ?? ""));
+                }
+                else
+                {
+                    Ok(run, "wt-ec-title-insert", false, "无题目 S_");
+                }
+
+                ToolResult ins = s.ProcessActions(id, new List<Dictionary<string, object>>
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["type"] = "insert",
+                        ["detail"] = new Dictionary<string, object>
+                        {
+                            ["target"] = new Dictionary<string, object> { ["codes"] = emptyCode },
+                            ["insert"] = Fill,
+                            ["format"] = DefaultFormat()
+                        }
+                    }
+                });
+                string afterIns = ReadBody(s, id);
+                Ok(run, "wt-ec-insert",
+                    ins.Success
+                        && afterIns.IndexOf(Fill, StringComparison.Ordinal) >= 0
+                        && afterIns.IndexOf(Title + Fill, StringComparison.Ordinal) < 0,
+                    ins.Success ? "insert 应填右格" : (ins.Error ?? ""));
+
+                string afterInsBody = ReadBody(s, id);
+                Ok(run, "wt-ec-after",
+                    afterInsBody.IndexOf("[" + emptyCode + "-start]", StringComparison.Ordinal) < 0
+                        && afterInsBody.IndexOf("[S_", StringComparison.Ordinal) >= 0
+                        && afterInsBody.IndexOf(Fill, StringComparison.Ordinal) >= 0,
+                    "填后空格码应消失并出现 S_");
+
+                string path2;
+                string id2;
+                if (TryOpen(run, s, out path2, out id2, "wt-ec-replace"))
+                {
+                    s.ActivateDoc(path2);
+                    s.CreateTableFromXml(CreateArgs(id2, WriteXml(GridXml(Title, "", "备注", ""))));
+                    string body2 = ReadBody(s, id2);
+                    Match empty2 = Regex.Match(body2, @"T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+");
+                    string code2 = empty2.Success ? empty2.Value : "";
+                    ToolResult rep = s.ProcessActions(id2, new List<Dictionary<string, object>>
+                    {
+                        new Dictionary<string, object>
+                        {
+                            ["type"] = "replace",
+                            ["detail"] = new Dictionary<string, object>
+                            {
+                                ["original"] = new Dictionary<string, object> { ["codes"] = code2 },
+                                ["new"] = Fill,
+                                ["format"] = DefaultFormat()
+                            }
+                        }
+                    });
+                    string afterRep = ReadBody(s, id2);
+                    Ok(run, "wt-ec-replace",
+                        rep.Success
+                            && afterRep.IndexOf(Fill, StringComparison.Ordinal) >= 0
+                            && afterRep.IndexOf(Title + Fill, StringComparison.Ordinal) < 0,
+                        rep.Success ? "replace 应填右格" : (rep.Error ?? ""));
+                    s.CloseDocByPath(path2);
+                }
+
+                string wordDetail, wpsDetail;
+                bool wordOk = OfficeAlive.NotQuit("WINWORD", wordBefore, wordWinBefore, out wordDetail);
+                bool wpsOk = OfficeAlive.NotQuit("wps", wpsBefore, wpsWinBefore, out wpsDetail);
+                Ok(run, "wt-ec-no-quit", wordOk && wpsOk, wordDetail + " " + wpsDetail);
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
         public static void RunCreateAfterOnly(
             TestRun run,
             string host,

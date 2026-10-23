@@ -121,6 +121,15 @@ namespace WordAddIn1
                     else
                     {
                         string targetCodes = args["target_codes"].ToString()?.Trim() ?? "";
+                        if (EmptyCellCode.CsvContainsAny(targetCodes))
+                        {
+                            return Task.FromResult(new ToolResult
+                            {
+                                Success = false,
+                                Error = EmptyCellCode.NoFormatError
+                            });
+                        }
+
                         var parsedTargets = FormatContextHelper.ParseSentenceCodes(targetCodes);
                         ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
                         var sentAnchors = new List<DocumentActionAmbiguityAnchor>

@@ -32,10 +32,10 @@ namespace WordAddIn1
             F_CopyWorkspaceFileTool.Register(toolRegistry, wordApplication);
             F_CreateTableFromXmlTool.Register(toolRegistry, wordApplication);
             F_ExtractTableFormatTool.Register(toolRegistry, wordApplication);
-            // F_ExtractTableDataTool / F_ApplyTableDataFromXmlTool 已下线：填空改走 F_read_table_row_values / F_apply_table_row_values
+            // F_ExtractTableDataTool / F_ApplyTableDataFromXmlTool / 行值 F_* 已下线：填空改走 display 空格码 + process_actions
             F_ApplyTableFormatFromXmlTool.Register(toolRegistry, wordApplication);
-            F_ReadTableRowValuesTool.Register(toolRegistry, wordApplication);
-            F_ApplyTableRowValuesTool.Register(toolRegistry, wordApplication);
+            // F_ReadTableRowValuesTool.Register(toolRegistry, wordApplication);
+            // F_ApplyTableRowValuesTool.Register(toolRegistry, wordApplication);
             F_OptimizeTableDisplayTool.Register(toolRegistry, wordApplication);
             F_DeleteTableTool.Register(toolRegistry, wordApplication);
             F_CreateChartFromXmlTool.Register(toolRegistry, wordApplication);

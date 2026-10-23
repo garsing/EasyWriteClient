@@ -443,7 +443,6 @@ namespace WordAddIn1
                     "F_create_table_from_xml",
                     "F_apply_table_format_from_xml",
                     "F_apply_table_data_from_xml",
-                    "F_apply_table_row_values",
                     "F_optimize_table_display",
                     "F_delete_table",
                     "F_create_chart_from_xml",

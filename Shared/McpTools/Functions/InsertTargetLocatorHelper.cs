@@ -18,13 +18,15 @@ namespace WordAddIn1
             Table,
             Chart,
             Image,
-            DocumentStart
+            DocumentStart,
+            EmptyCell
         }
 
         public enum LocateRangeKind
         {
             InsertAfter = 0,
-            ContentSpan = 1
+            ContentSpan = 1,
+            WriteCell = 2
         }
 
         public enum LocatePrecheckStream
@@ -48,6 +50,8 @@ namespace WordAddIn1
             public string TableId { get; set; }
             public string ChartId { get; set; }
             public string ImageId { get; set; }
+            public int Row { get; set; }
+            public int Col { get; set; }
         }
 
         public sealed class LocatorParseResult
@@ -157,6 +161,54 @@ namespace WordAddIn1
                     return new LocatorParseResult { Success = false, Error = $"{fieldLabel}.codes 为空" };
                 }
 
+                bool anyEmpty = false;
+                foreach (string part in parts)
+                {
+                    if (EmptyCellCode.IsEmptyCellCode(part))
+                    {
+                        anyEmpty = true;
+                        break;
+                    }
+                }
+
+                if (anyEmpty)
+                {
+                    EmptyCellCode.Parsed parsedCell;
+                    if (parts.Count != 1 || !EmptyCellCode.TryParse(parts[0], out parsedCell))
+                    {
+                        return new LocatorParseResult
+                        {
+                            Success = false,
+                            Error = $"{fieldLabel}.codes {EmptyCellCode.MixError}"
+                        };
+                    }
+
+                    string inTableEmpty = hasInTable ? dict["in_table"].ToString().Trim() : null;
+                    if (!string.IsNullOrEmpty(inTableEmpty)
+                        && !string.Equals(inTableEmpty, parsedCell.TableId, StringComparison.Ordinal))
+                    {
+                        return new LocatorParseResult
+                        {
+                            Success = false,
+                            Error = $"{fieldLabel}.in_table 须等于空格码内表号 {parsedCell.TableId}"
+                        };
+                    }
+
+                    return new LocatorParseResult
+                    {
+                        Success = true,
+                        Spec = new LocatorSpec
+                        {
+                            Kind = LocatorKind.EmptyCell,
+                            Codes = parsedCell.Code,
+                            TableId = parsedCell.TableId,
+                            InTableId = string.IsNullOrEmpty(inTableEmpty) ? parsedCell.TableId : inTableEmpty,
+                            Row = parsedCell.Row,
+                            Col = parsedCell.Col
+                        }
+                    };
+                }
+
                 foreach (string part in parts)
                 {
                     if (part.StartsWith("T_", StringComparison.Ordinal)
@@ -190,6 +242,15 @@ namespace WordAddIn1
                     };
                 }
 
+                if (!string.IsNullOrEmpty(inTable) && EmptyCellCode.IsEmptyCellCode(inTable))
+                {
+                    return new LocatorParseResult
+                    {
+                        Success = false,
+                        Error = $"{fieldLabel}.in_table 须为光杆表号，不能用空格码"
+                    };
+                }
+
                 return new LocatorParseResult
                 {
                     Success = true,
@@ -214,6 +275,15 @@ namespace WordAddIn1
             if (hasTable)
             {
                 string tableId = dict["table"].ToString().Trim();
+                if (EmptyCellCode.IsEmptyCellCode(tableId))
+                {
+                    return new LocatorParseResult
+                    {
+                        Success = false,
+                        Error = $"{fieldLabel}.{EmptyCellCode.TableIdNotCellError}"
+                    };
+                }
+
                 if (!tableId.StartsWith("T_", StringComparison.Ordinal))
                 {
                     return new LocatorParseResult
@@ -343,6 +413,11 @@ namespace WordAddIn1
                     {
                         return FailResolve("locate_failed: " + pdError);
                     }
+                }
+
+                if (target.Kind == LocatorKind.EmptyCell)
+                {
+                    return TryResolveEmptyCellRange(doc, target);
                 }
 
                 if (target.Kind == LocatorKind.Table)
@@ -841,7 +916,8 @@ namespace WordAddIn1
                 && (spec.Kind == LocatorKind.Sentence
                     || spec.Kind == LocatorKind.Table
                     || spec.Kind == LocatorKind.Chart
-                    || spec.Kind == LocatorKind.Image);
+                    || spec.Kind == LocatorKind.Image
+                    || spec.Kind == LocatorKind.EmptyCell);
         }
 
         private static bool AnchorsNeedProcessDocument(
@@ -920,6 +996,29 @@ namespace WordAddIn1
                     ?? $"locate_failed: 句子编码歧义（{DisplaySequenceLocator.ErrorAmbiguousSentenceCode}）",
                 Ambiguity = ambiguity
             };
+        }
+
+        private static ResolveRangeResult TryResolveEmptyCellRange(Word.Document doc, LocatorSpec target)
+        {
+            if (target == null || string.IsNullOrEmpty(target.TableId) || target.Row < 1 || target.Col < 1)
+            {
+                return FailResolve("locate_failed: 空格码缺少表号或行列");
+            }
+
+            Word.Table table = TableResolveHelper.TryResolveTableById(doc, target.TableId, out string tableError);
+            if (table == null)
+            {
+                return FailResolve("locate_failed: " + (tableError ?? $"找不到表格 '{target.TableId}'"));
+            }
+
+            Word.Cell cell = TableRowValuesHelper.TryResolveWritableCell(table, target.Row, target.Col);
+            if (cell == null)
+            {
+                return FailResolve(
+                    "locate_failed: " + TableRowValuesHelper.BuildUnresolvableCellError(target.Row, target.Col));
+            }
+
+            return OkRange(cell.Range, target, usedCursor: false);
         }
 
         private static ResolveRangeResult OkRange(Word.Range range, LocatorSpec spec, bool usedCursor)
