@@ -368,14 +368,15 @@ namespace WordAddIn1
                 return FailResolve($"locate_failed: {parsed.Error}");
             }
 
-            return TryResolveInsertRange(doc, parsed.Spec, rangeKind, disallowBackendApi);
+            return TryResolveInsertRange(doc, parsed.Spec, rangeKind, disallowBackendApi, refreshDocument: true);
         }
 
         public static ResolveRangeResult TryResolveInsertRange(
             Word.Document doc,
             LocatorSpec target,
             LocateRangeKind rangeKind = LocateRangeKind.InsertAfter,
-            bool disallowBackendApi = false)
+            bool disallowBackendApi = false,
+            bool refreshDocument = true)
         {
             if (doc == null)
             {
@@ -406,7 +407,7 @@ namespace WordAddIn1
                     return OkRange(startRange, target, usedCursor: false);
                 }
 
-                if (SpecNeedsProcessDocument(target))
+                if (refreshDocument && SpecNeedsProcessDocument(target))
                 {
                     string pdError = TryProcessDocumentForLocate(doc, disallowBackendApi);
                     if (pdError != null)

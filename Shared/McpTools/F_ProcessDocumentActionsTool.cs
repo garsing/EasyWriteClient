@@ -146,46 +146,10 @@ namespace WordAddIn1
                     FormatInheritHelper.DbgLogDocumentFontSample(document, "第三步 modify 后");
                     System.Diagnostics.Debug.WriteLine("[第三步完成]");
 
-                    // 第四步：刷新映射表，解析 new_codes
-                    System.Diagnostics.Debug.WriteLine("[第四步] 修改后刷新句子与名称映射表");
-                    try
-                    {
-                        string postMappingError;
-                        using (EasyWriteDiagnostics.Time("process_actions.step4_remap"))
-                        {
-                            postMappingError = await UpdateSentenceNameMapping(
-                                document,
-                                "process_actions_step4",
-                                docHandle.DisallowBackendApi);
-                        }
-                        if (!string.IsNullOrEmpty(postMappingError))
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[格式融合] 修改后刷新映射表 warning: {postMappingError}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[格式融合] 修改后刷新映射表异常: {ex.Message}");
-                    }
-
-                    ApplySnapshotDiffToResults(modifyResults);
-
                     var orderedResults = modifyResults.OrderBy(r => r.action_index).ToList();
-                    object resultsPayload;
+                    object resultsPayload = orderedResults.Select(r => r.ToResponseObject()).ToList();
                     string batchMessage = null;
-
-                    if (ShouldUseBulkSnapshotResults(orderedResults))
-                    {
-                        resultsPayload = BuildBulkSnapshotResultsObject(orderedResults);
-                        batchMessage =
-                            "本批操作已完成。由于含多项修改无法准确定位每项修改的影响，此处仅给出本批整体受影响的原句子编码与读回后的新句子。";
-                    }
-                    else
-                    {
-                        resultsPayload = orderedResults.Select(r => r.ToResponseObject()).ToList();
-                    }
-
-                    bool bulkMode = ShouldUseBulkSnapshotResults(orderedResults);
+                    bool bulkMode = false;
                     var navigateInputs = orderedResults
                         .Select(r => new NavigateActionInput
                         {
@@ -804,20 +768,14 @@ namespace WordAddIn1
                 IDisposable sortDr = EasyWriteDiagnostics.Time("process_actions.sort_delete_replace");
                 var deleteAndReplaceActions = sortedActions
                     .Where(x => x.Action.Type?.ToLower() == "delete" || x.Action.Type?.ToLower() == "replace")
-                    .OrderByDescending(x => GetSentencePositionInDocument(
-                        doc,
-                        x.Action.SentenceNames,
-                        x.Action.Type?.ToLower() == "replace"
-                            ? x.Action.OriginalScopeFields?.TableId
-                            : x.Action.DeletionScopeFields?.TableId,
-                        disallowBackendApi))
+                    .OrderByDescending(x => GetSnapshotSortPosition(x.Action.SentenceNames))
                     .ToList();
                 sortDr.Dispose();
 
                 IDisposable sortIns = EasyWriteDiagnostics.Time("process_actions.sort_insert");
                 var insertActions = sortedActions
                     .Where(x => x.Action.Type?.ToLower() == "insert")
-                    .OrderByDescending(x => GetInsertSortPosition(doc, x.Action, disallowBackendApi))
+                    .OrderByDescending(x => GetInsertSnapshotSortPosition(x.Action))
                     .ToList();
                 sortIns.Dispose();
 
@@ -868,6 +826,7 @@ namespace WordAddIn1
                         result.message = $"操作失败: {ex.Message}";
                     }
 
+                    await RemapAndAssignNewCodes(doc, result, disallowBackendApi);
                     results.Add(result);
                 }
 
@@ -900,13 +859,12 @@ namespace WordAddIn1
                         result.message = $"操作失败: {ex.Message}";
                     }
 
+                    await RemapAndAssignNewCodes(doc, result, disallowBackendApi);
                     results.Add(result);
                 }
 
                 // 按原始顺序排序
                 results = results.OrderBy(r => r.action_index).ToList();
-
-                await Task.CompletedTask;
             }
             catch (Exception ex)
             {
@@ -917,60 +875,74 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 根据句子名称序列获取在文档中的位置（用于排序）
+        /// 用预检快照里的码序排序，不再 COM Find / ProcessDocument。
         /// </summary>
-        private static int GetSentencePositionInDocument(
-            Word.Document doc,
-            string sentenceNames,
-            string tableId,
-            bool disallowBackendApi)
+        private static int GetSnapshotSortPosition(string codes)
         {
-            if (string.IsNullOrEmpty(sentenceNames))
+            if (string.IsNullOrEmpty(codes))
             {
                 return 0;
             }
 
-            try
+            EmptyCellCode.Parsed emptyParsed;
+            if (EmptyCellCode.TryParse(codes.Split(',')[0].Trim(), out emptyParsed))
             {
-                InsertTargetLocatorHelper.LocatorSpec spec;
-                EmptyCellCode.Parsed emptyParsed;
-                if (EmptyCellCode.TryParse(sentenceNames, out emptyParsed))
-                {
-                    spec = new InsertTargetLocatorHelper.LocatorSpec
-                    {
-                        Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell,
-                        Codes = emptyParsed.Code,
-                        TableId = emptyParsed.TableId,
-                        InTableId = tableId ?? emptyParsed.TableId,
-                        Row = emptyParsed.Row,
-                        Col = emptyParsed.Col
-                    };
-                }
-                else
-                {
-                    spec = new InsertTargetLocatorHelper.LocatorSpec
-                    {
-                        Kind = InsertTargetLocatorHelper.LocatorKind.Sentence,
-                        Codes = sentenceNames,
-                        InTableId = tableId
-                    };
-                }
-
-                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                    doc,
-                    spec,
-                    InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                    disallowBackendApi);
-                if (locate.Success && locate.Range != null)
-                {
-                    return locate.Range.Start;
-                }
-            }
-            catch
-            {
+                return emptyParsed.Row * 1000 + emptyParsed.Col;
             }
 
-            return 0;
+            List<string> ordered = DocumentState.GetOrderedSentenceCodesFromSnapshot(DocumentState.Snapshot);
+            List<string> needle = ParseCodeList(codes);
+            if (ordered == null || ordered.Count == 0 || needle.Count == 0)
+            {
+                return 0;
+            }
+
+            for (int i = 0; i <= ordered.Count - needle.Count; i++)
+            {
+                bool match = true;
+                for (int j = 0; j < needle.Count; j++)
+                {
+                    if (!string.Equals(ordered[i + j], needle[j], StringComparison.Ordinal))
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+
+                if (match)
+                {
+                    return i;
+                }
+            }
+
+            int one = ordered.IndexOf(needle[0]);
+            return one >= 0 ? one : 0;
+        }
+
+        private static int GetInsertSnapshotSortPosition(ParagraphAction action)
+        {
+            if (action?.TargetLocator == null)
+            {
+                return int.MaxValue;
+            }
+
+            LocatorSpec target = action.TargetLocator;
+            if (target.Kind == LocatorKind.DocumentStart)
+            {
+                return 0;
+            }
+
+            if (target.Kind == LocatorKind.EmptyCell)
+            {
+                return target.Row * 1000 + target.Col;
+            }
+
+            if (!string.IsNullOrEmpty(target.Codes))
+            {
+                return GetSnapshotSortPosition(target.Codes);
+            }
+
+            return int.MaxValue - 1;
         }
 
         private static InsertTargetLocatorHelper.LocatorSpec ToFacadeSpec(LocatorSpec target)
@@ -1134,7 +1106,8 @@ namespace WordAddIn1
                     InTableId = tableId
                 },
                 InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                disallowBackendApi);
+                disallowBackendApi,
+                refreshDocument: false);
             if (!locate.Success || locate.Range == null)
             {
                 result.ErrorMessage = locate.Error ?? "未找到任何句子 Range";
@@ -1208,7 +1181,8 @@ namespace WordAddIn1
                 doc,
                 ToFacadeSpec(target),
                 InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
-                disallowBackendApi);
+                disallowBackendApi,
+                refreshDocument: false);
             if (!locate.Success || locate.Range == null)
             {
                 result.ErrorMessage = locate.Error ?? "无法确定插入位置";
@@ -1249,7 +1223,8 @@ namespace WordAddIn1
                     Col = emptyCell.Col
                 },
                 InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
-                disallowBackendApi);
+                disallowBackendApi,
+                refreshDocument: false);
             if (!locate.Success)
             {
                 result.ErrorMessage = locate.Error ?? "无法定位空格";
@@ -1418,7 +1393,8 @@ namespace WordAddIn1
                     Col = emptyCell.Col
                 },
                 InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
-                disallowBackendApi);
+                disallowBackendApi,
+                refreshDocument: false);
             if (!locate.Success)
             {
                 result.ErrorMessage = locate.Error ?? "无法定位空格";
@@ -1550,7 +1526,8 @@ namespace WordAddIn1
                         InTableId = tableId
                     },
                     InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                    disallowBackendApi);
+                    disallowBackendApi,
+                    refreshDocument: false);
                 if (!locate.Success || locate.Range == null)
                 {
                     result.ErrorMessage = locate.Error ?? "未找到任何句子 Range";
@@ -1725,7 +1702,8 @@ namespace WordAddIn1
                         InTableId = tableId
                     },
                     InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                    disallowBackendApi);
+                    disallowBackendApi,
+                    refreshDocument: false);
                 if (!locate.Success || locate.Range == null)
                 {
                     result.ErrorMessage = locate.Error ?? "未找到任何句子 Range";
@@ -1750,37 +1728,6 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine($"[删除操作] 删除失败: {ex.Message}");
                 return result;
             }
-        }
-
-        private static int GetInsertSortPosition(Word.Document doc, ParagraphAction action, bool disallowBackendApi)
-        {
-            if (action?.TargetLocator == null)
-            {
-                return int.MaxValue;
-            }
-
-            if (action.TargetLocator.Kind == LocatorKind.DocumentStart)
-            {
-                return 0;
-            }
-
-            try
-            {
-                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                    doc,
-                    ToFacadeSpec(action.TargetLocator),
-                    InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
-                    disallowBackendApi);
-                if (locate.Success && locate.Range != null)
-                {
-                    return locate.Range.Start;
-                }
-            }
-            catch
-            {
-            }
-
-            return int.MaxValue - 1;
         }
 
         /// <summary>
@@ -1827,7 +1774,8 @@ namespace WordAddIn1
                     doc,
                     ToFacadeSpec(target),
                     InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
-                    disallowBackendApi);
+                    disallowBackendApi,
+                    refreshDocument: false);
                 if (!locate.Success || locate.Range == null)
                 {
                     WordAddIn1.DocumentHost.HostProbe.Log(
@@ -2257,6 +2205,41 @@ namespace WordAddIn1
             }
 
             return codes.Split(',').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
+        }
+
+        private static async Task RemapAndAssignNewCodes(
+            Word.Document doc,
+            ActionResult result,
+            bool disallowBackendApi)
+        {
+            if (result == null || !result.success)
+            {
+                return;
+            }
+
+            try
+            {
+                using (EasyWriteDiagnostics.Time(
+                    "process_actions.post_pd[" + result.action_index + "]"))
+                {
+                    string postError = await UpdateSentenceNameMapping(
+                        doc,
+                        "process_actions_step4",
+                        disallowBackendApi);
+                    if (!string.IsNullOrEmpty(postError))
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            "[process_actions] 写后 PD warning: " + postError);
+                    }
+                }
+
+                ApplySnapshotDiffToResults(new List<ActionResult> { result });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    "[process_actions] 写后 PD 异常: " + ex.Message);
+            }
         }
 
         private static void ApplySnapshotDiffToResults(List<ActionResult> modifyResults)
