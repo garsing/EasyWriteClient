@@ -210,6 +210,131 @@ namespace WordAddIn1
             }
         }
 
+        /// <summary>
+        /// 写后套字符格式：按写入串 `\r` 切前缀/中间/后缀。写路径请用此入口，不要默认 <see cref="ApplySnapshotToSentences"/>（未找全会整块回退）。
+        /// </summary>
+        public static void ApplyWrittenCharFormat(
+            Word.Document doc,
+            Word.Range written,
+            string payloadText,
+            Dictionary<string, object> snapshot,
+            bool prefixSafe,
+            Func<Word.Document, Word.Range, string, Word.Range> findSentenceInRange)
+        {
+            if (doc == null || written == null || snapshot == null || snapshot.Count == 0)
+            {
+                DbgLog("ApplyWrittenCharFormat 跳过参数为空");
+                return;
+            }
+
+            string payload = payloadText ?? "";
+            DbgLog($"ApplyWrittenCharFormat block={written.Start}-{written.End} prefixSafe={prefixSafe} len={payload.Length}");
+
+            if (WordBreakWriteHelper.ContainsLayoutBreaks(payload)
+                || payload.IndexOf('\r') < 0)
+            {
+                ApplySentencesInSlice(doc, written, payload, snapshot, findSentenceInRange);
+                return;
+            }
+
+            WrittenFormatGlueHelper.BreakSlices slices = WrittenFormatGlueHelper.SplitByOuterBreaks(payload);
+            string comText;
+            try
+            {
+                comText = written.Text ?? "";
+            }
+            catch (Exception ex)
+            {
+                DbgLog("ApplyWrittenCharFormat 读 written.Text 失败: " + ex.Message);
+                ApplySentencesInSlice(doc, written, payload, snapshot, findSentenceInRange);
+                return;
+            }
+
+            if (!WrittenFormatGlueHelper.CanMapPayloadToComText(payload, comText))
+            {
+                DbgLog("ApplyWrittenCharFormat 写入串与 Range.Text 对不齐，整片按句");
+                ApplySentencesInSlice(doc, written, payload, snapshot, findSentenceInRange);
+                return;
+            }
+
+            int origin = written.Start;
+            int first = slices.FirstCr;
+            int last = slices.LastCr;
+            Word.Range prefixRange = first >= 0 ? doc.Range(origin, origin + first + 1) : null;
+            Word.Range middleRange = (first >= 0 && last > first)
+                ? doc.Range(origin + first + 1, origin + last + 1)
+                : null;
+            Word.Range suffixRange = (last >= 0 && last < payload.Length - 1)
+                ? doc.Range(origin + last + 1, written.End)
+                : null;
+
+            if (prefixSafe)
+            {
+                Word.Range joined = doc.Range(origin, origin + last + 1);
+                ApplySnapshot(joined, snapshot, charFormatOnly: true);
+            }
+            else if (prefixRange != null && !string.IsNullOrEmpty(slices.Prefix))
+            {
+                ApplySentencesInSlice(doc, prefixRange, slices.Prefix, snapshot, findSentenceInRange);
+            }
+
+            if (!prefixSafe && middleRange != null && !string.IsNullOrEmpty(slices.Middle))
+            {
+                ApplySnapshot(middleRange, snapshot, charFormatOnly: true);
+            }
+
+            if (suffixRange != null && !string.IsNullOrEmpty(slices.Suffix))
+            {
+                ApplySentencesInSlice(doc, suffixRange, slices.Suffix, snapshot, findSentenceInRange);
+            }
+        }
+
+        /// <summary>在 slice 内按句套格式；找不到的句跳过，**禁止**整块回退。</summary>
+        public static void ApplySentencesInSlice(
+            Word.Document doc,
+            Word.Range sliceRange,
+            string sliceText,
+            Dictionary<string, object> snapshot,
+            Func<Word.Document, Word.Range, string, Word.Range> findSentenceInRange)
+        {
+            if (doc == null || sliceRange == null || snapshot == null || findSentenceInRange == null)
+            {
+                return;
+            }
+
+            List<string> sentences = SentenceSplitter.SplitForActionContent(sliceText ?? "");
+            if (sentences == null || sentences.Count == 0)
+            {
+                ApplySnapshot(sliceRange, snapshot, charFormatOnly: true);
+                return;
+            }
+
+            int currentPos = sliceRange.Start;
+            int blockEnd = sliceRange.End;
+            int idx = 0;
+            foreach (string sentence in sentences)
+            {
+                idx++;
+                if (string.IsNullOrEmpty(sentence) || currentPos >= blockEnd)
+                {
+                    break;
+                }
+
+                Word.Range searchRange = doc.Range(currentPos, blockEnd);
+                Word.Range sentenceRange = findSentenceInRange(doc, searchRange, sentence);
+                if (sentenceRange == null)
+                {
+                    DbgLog($"ApplySentencesInSlice 句{idx} 未找到 pos={currentPos} preview=\"{PreviewText(sentence)}\"");
+                    currentPos += sentence.Length;
+                    continue;
+                }
+
+                ApplySnapshot(sentenceRange, snapshot, charFormatOnly: true);
+                currentPos = sentenceRange.End;
+            }
+        }
+
+        /// <summary>Body 遗留。写后套格式请用 <see cref="ApplyWrittenCharFormat"/>，勿当默认（未找全会整块回退）。</summary>
         public static void ApplySnapshotToSentences(
             Word.Document doc,
             Word.Range blockRange,

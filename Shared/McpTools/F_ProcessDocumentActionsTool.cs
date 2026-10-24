@@ -1139,7 +1139,15 @@ namespace WordAddIn1
 
             result.OriginalCodes = names;
             string writeErr;
-            if (!TryWriteRuns(doc, targetRange, payload.Runs, tableScope, replaceFirst: true, out writeErr, out List<string> newSentences))
+            if (!TryWriteRuns(
+                doc,
+                targetRange,
+                payload.Runs,
+                tableScope,
+                replaceFirst: true,
+                WrittenFormatGlueHelper.IsPrefixSafe(sentenceNames, insertAfter: false),
+                out writeErr,
+                out List<string> newSentences))
             {
                 result.ErrorMessage = writeErr;
                 return result;
@@ -1190,7 +1198,14 @@ namespace WordAddIn1
             }
 
             if (!TryWriteRuns(
-                doc, locate.Range, payload.Runs, tableScope, replaceFirst: false, out string writeErr, out List<string> newSentences))
+                doc,
+                locate.Range,
+                payload.Runs,
+                tableScope,
+                replaceFirst: false,
+                PrefixSafeForInsertTarget(target),
+                out string writeErr,
+                out List<string> newSentences))
             {
                 result.ErrorMessage = writeErr;
                 return result;
@@ -1286,7 +1301,15 @@ namespace WordAddIn1
             var sentences = new List<string>(SentenceSplitter.SplitForActionContent(first.Text ?? ""));
             if (rest.Count > 0)
             {
-                if (!TryWriteRuns(doc, after, rest, tableScope, replaceFirst: false, out string writeErr, out List<string> more))
+                if (!TryWriteRuns(
+                    doc,
+                    after,
+                    rest,
+                    tableScope,
+                    replaceFirst: false,
+                    WrittenFormatGlueHelper.PreviousRunEndsWithBreak(first.Text),
+                    out string writeErr,
+                    out List<string> more))
                 {
                     result.ErrorMessage = writeErr;
                     return result;
@@ -1320,6 +1343,7 @@ namespace WordAddIn1
             List<ActionContentHelper.Run> runs,
             TableScopeIndex tableScope,
             bool replaceFirst,
+            bool firstPrefixSafe,
             out string error,
             out List<string> newSentences)
         {
@@ -1344,7 +1368,11 @@ namespace WordAddIn1
                     ?? writeAt;
                 try
                 {
-                    FormatInheritHelper.ApplySnapshot(written, snap, charFormatOnly: true);
+                    bool prefixSafe = i == 0
+                        ? firstPrefixSafe
+                        : WrittenFormatGlueHelper.PreviousRunEndsWithBreak(runs[i - 1].Text);
+                    FormatInheritHelper.ApplyWrittenCharFormat(
+                        doc, written, run.Text ?? "", snap, prefixSafe, FindSentenceInRange);
                 }
                 catch (Exception fmtEx)
                 {
@@ -1617,16 +1645,18 @@ namespace WordAddIn1
                 targetRange = writtenRange ?? targetRange;
                 FormatInheritHelper.DbgLogRangeFonts("ExecuteReplace targetRange AFTER Text=", targetRange);
 
-                List<string> sentencesForFormat = trailingLen > 0
-                    ? newSentences.ConvertAll(TextUtils.TrimTrailingParagraphMarks)
-                    : newSentences;
                 Word.Range newRange = doc.Range(targetRange.Start, targetRange.End);
 
                 try
                 {
                     FormatInheritHelper.DbgLog($"ExecuteReplace ApplySnapshot format_mode={formatMode}");
-                    FormatInheritHelper.ApplySnapshotToSentences(
-                        doc, newRange, sentencesForFormat, formatSnapshot, FindSentenceInRange);
+                    FormatInheritHelper.ApplyWrittenCharFormat(
+                        doc,
+                        newRange,
+                        replacementText,
+                        formatSnapshot,
+                        WrittenFormatGlueHelper.IsPrefixSafe(sentenceNames, insertAfter: false),
+                        FindSentenceInRange);
                     result.FormatMode = formatMode;
                     FormatInheritHelper.DbgLogRangeFonts("ExecuteReplace targetRange AFTER format", newRange);
                 }
@@ -1820,9 +1850,13 @@ namespace WordAddIn1
                 try
                 {
                     Word.Range insertedBlock = doc.Range(insertRange.Start, insertRange.End);
-                    List<string> sentencesForFormat = insertSentences.ConvertAll(TextUtils.TrimTrailingParagraphMarks);
-                    FormatInheritHelper.ApplySnapshotToSentences(
-                        doc, insertedBlock, sentencesForFormat, formatSnapshot, FindSentenceInRange);
+                    FormatInheritHelper.ApplyWrittenCharFormat(
+                        doc,
+                        insertedBlock,
+                        insertText,
+                        formatSnapshot,
+                        PrefixSafeForInsertTarget(target),
+                        FindSentenceInRange);
                     result.FormatMode = formatMode;
                     FormatInheritHelper.DbgLog(
                         $"action=insert format_mode={formatMode} sentences={insertSentences.Count}");
@@ -1845,6 +1879,23 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine($"[ProcessActions][insert] 插入失败: {ex.Message}");
                 return result;
             }
+        }
+
+        private static bool PrefixSafeForInsertTarget(LocatorSpec target)
+        {
+            if (target == null
+                || target.Kind == LocatorKind.DocumentStart
+                || target.Kind == LocatorKind.EmptyCell)
+            {
+                return true;
+            }
+
+            if (target.Kind != LocatorKind.Sentence || string.IsNullOrEmpty(target.Codes))
+            {
+                return true;
+            }
+
+            return WrittenFormatGlueHelper.IsPrefixSafe(target.Codes, insertAfter: true);
         }
 
         /// <summary>
