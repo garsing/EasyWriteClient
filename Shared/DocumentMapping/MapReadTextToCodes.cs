@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using WordAddIn1;
 
@@ -20,7 +21,10 @@ namespace WordAddIn1.DocumentMapping
         {
             store.BeginMappingPass();
             var mapped = new MapReadTextResult();
+            int chunkCount = chunks == null ? 0 : chunks.Count;
+            var totalSw = Stopwatch.StartNew();
 
+            var encodeSw = Stopwatch.StartNew();
             foreach (string chunkWithLabel in chunks)
             {
                 List<string> chunkParts = WordDocumentExtractor.SplitTextByCellsForMapping(
@@ -68,8 +72,24 @@ namespace WordAddIn1.DocumentMapping
             }
 
             mapped.NameToSentenceContentMap = ContentMapFromMappings(store.GetSentenceMappings());
+            encodeSw.Stop();
+            EasyWriteDiagnostics.LogTiming(
+                "MapChunks.find_or_create",
+                encodeSw.ElapsedMilliseconds,
+                "chunks=" + chunkCount
+                + " S_=" + mapped.NameToSentenceContentMap.Count);
+
+            var uniqSw = Stopwatch.StartNew();
             StoryUniqEncode.Apply(mapped, store);
+            uniqSw.Stop();
+
+            var displaySw = Stopwatch.StartNew();
             FinishSentenceDisplays(mapped);
+            displaySw.Stop();
+            EasyWriteDiagnostics.LogTiming(
+                "MapChunks.finish_display",
+                displaySw.ElapsedMilliseconds,
+                "chunks=" + mapped.ChunkDisplayContents.Count);
 
             mapped.SentenceMappings = CloneMappings(store.GetSentenceMappings());
             mapped.ParagraphMappings = CloneMappings(store.GetParagraphMappings());
@@ -79,6 +99,14 @@ namespace WordAddIn1.DocumentMapping
                 kv => kv.Key,
                 kv => new List<string>(kv.Value));
             mapped.NameToSentenceContentMap = ContentMapFromMappings(store.GetSentenceMappings());
+            totalSw.Stop();
+            EasyWriteDiagnostics.LogTiming(
+                "MapChunks.total",
+                totalSw.ElapsedMilliseconds,
+                "chunks=" + chunkCount
+                + " find_or_create_ms=" + encodeSw.ElapsedMilliseconds
+                + " uniq_ms=" + uniqSw.ElapsedMilliseconds
+                + " display_ms=" + displaySw.ElapsedMilliseconds);
             return mapped;
         }
 
@@ -89,6 +117,9 @@ namespace WordAddIn1.DocumentMapping
             var content = mapped.NameToSentenceContentMap;
             var inoperable = mapped.InoperableSentenceCodes
                 ?? new HashSet<string>(StringComparer.Ordinal);
+            var wrapSw = Stopwatch.StartNew();
+            long wrapMs = 0;
+            int wrapSets = 0;
 
             for (int c = 0; c < mapped.AllChunkNonSegs.Count; c++)
             {
@@ -113,7 +144,10 @@ namespace WordAddIn1.DocumentMapping
 
                 if (geoSets.Count > 0)
                 {
+                    wrapSets += geoSets.Count;
+                    wrapSw.Restart();
                     display = EmptyCellCode.WrapCellsMatchingCodeSets(display, geoSets);
+                    wrapMs += wrapSw.ElapsedMilliseconds;
                     if (c < mapped.AllChunkSegNeedsGeometry.Count)
                     {
                         List<bool> flags = mapped.AllChunkSegNeedsGeometry[c];
@@ -138,6 +172,14 @@ namespace WordAddIn1.DocumentMapping
                 }
 
                 mapped.AllChunkSentenceNames.Add(flat);
+            }
+
+            if (wrapSets > 0)
+            {
+                EasyWriteDiagnostics.LogTiming(
+                    "MapChunks.wrap_geometry",
+                    wrapMs,
+                    "sets=" + wrapSets);
             }
         }
 

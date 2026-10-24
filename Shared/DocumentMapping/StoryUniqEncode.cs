@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using WordAddIn1;
 
 namespace WordAddIn1.DocumentMapping
 {
@@ -51,9 +53,20 @@ namespace WordAddIn1.DocumentMapping
             {
                 content = ContentMapFromStore(store);
             }
-            string story = DisplayStoryConvert.ToStory(
-                string.Join("", mapped.ChunkParagraphDisplayContents ?? new List<string>()));
+            var toStorySw = Stopwatch.StartNew();
+            string joined = string.Join("", mapped.ChunkParagraphDisplayContents ?? new List<string>());
+            string story = DisplayStoryConvert.ToStory(joined);
+            toStorySw.Stop();
+            EasyWriteDiagnostics.LogTiming(
+                "StoryUniq.to_story",
+                toStorySw.ElapsedMilliseconds,
+                "display_len=" + joined.Length + " story_len=" + (story == null ? 0 : story.Length));
 
+            int segCount = 0;
+            int sentenceIn = 0;
+            int sentenceOut = 0;
+            int geoCount = 0;
+            var rewriteSw = Stopwatch.StartNew();
             for (int c = 0; c < mapped.AllChunkSegsSentenceNames.Count; c++)
             {
                 List<List<string>> segs = mapped.AllChunkSegsSentenceNames[c];
@@ -65,6 +78,7 @@ namespace WordAddIn1.DocumentMapping
                 {
                     int mark = s < marks.Count ? marks[s] : 0;
                     bool geometry;
+                    int before = segs[s] == null ? 0 : segs[s].Count;
                     segs[s] = RewriteSeg(
                         segs[s],
                         mark,
@@ -73,14 +87,31 @@ namespace WordAddIn1.DocumentMapping
                         store,
                         mapped.InoperableSentenceCodes,
                         out geometry);
+                    segCount++;
+                    sentenceIn += before;
+                    sentenceOut += segs[s] == null ? 0 : segs[s].Count;
+                    if (geometry)
+                    {
+                        geoCount++;
+                    }
+
                     geoFlags.Add(geometry);
                 }
 
                 mapped.AllChunkSegNeedsGeometry.Add(geoFlags);
             }
 
+            rewriteSw.Stop();
             mapped.NameToSentenceContentMap = ContentMapFromStore(store);
             DocumentState.SetInoperableSentenceCodes(mapped.InoperableSentenceCodes);
+            EasyWriteDiagnostics.LogTiming(
+                "StoryUniq.rewrite",
+                rewriteSw.ElapsedMilliseconds,
+                "segs=" + segCount
+                + " sent_in=" + sentenceIn
+                + " sent_out=" + sentenceOut
+                + " geo=" + geoCount
+                + " d22=" + mapped.InoperableSentenceCodes.Count);
         }
 
         public static string StartMarker(string sentenceName, bool inoperable)
