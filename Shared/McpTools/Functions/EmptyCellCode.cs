@@ -6,7 +6,7 @@ using Word = Microsoft.Office.Interop.Word;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 真空可写槽几何码：T_表号_r行_c列。解析、盖戳、剥标记集中在此。
+    /// 格几何码：T_表号_r行_c列。真空槽与序列歧义格盖戳、解析、剥标记集中在此。
     /// </summary>
     public static class EmptyCellCode
     {
@@ -24,6 +24,18 @@ namespace WordAddIn1
 
         private static readonly Regex SentenceStartInCell = new Regex(
             @"\[S_[0-9a-zA-Z]{5}-start\]",
+            RegexOptions.Compiled);
+
+        private static readonly Regex SentenceStartCapture = new Regex(
+            @"\[(S_[0-9a-zA-Z]{5})-start\]",
+            RegexOptions.Compiled);
+
+        private static readonly Regex SentenceEndInCell = new Regex(
+            @"\[S_[0-9a-zA-Z]{5}-end\]",
+            RegexOptions.Compiled);
+
+        private static readonly Regex ParagraphMarkerInCell = new Regex(
+            @"\[P_[0-9A-Za-z_]+(?: start| end)\]",
             RegexOptions.Compiled);
 
         private static readonly Regex TableOpenWithId = new Regex(
@@ -125,39 +137,27 @@ namespace WordAddIn1
         /// <summary>
         /// 按 display HTML 网格盖戳。行 = 顶层 &lt;tr&gt; 序号（1-based），
         /// 列 = 本行逻辑列（跳过 rowspan 占用，加上 colspan），与 WordReader 可见格 / TableRowSlot 同一套。
-        /// 不数「第几个 td」当列号，也不再 COM 读格。
+        /// 先真空插入，再按 SegSnapshot 把歧义格换成几何码。不 COM 读格。
         /// </summary>
         public static string Stamp(string display)
         {
-            if (string.IsNullOrEmpty(display) || display.IndexOf("<table", StringComparison.OrdinalIgnoreCase) < 0)
+            string segSnapshot = "";
+            try
             {
-                return display;
+                segSnapshot = DocumentState.SegSnapshot ?? "";
+            }
+            catch
+            {
+                segSnapshot = "";
             }
 
-            var opens = new List<Match>();
-            foreach (Match m in TableOpenWithId.Matches(display))
-            {
-                opens.Add(m);
-            }
+            return Stamp(display, segSnapshot);
+        }
 
-            if (opens.Count == 0)
-            {
-                return display;
-            }
-
-            string result = display;
-            for (int i = opens.Count - 1; i >= 0; i--)
-            {
-                string tableId = opens[i].Groups[1].Value;
-                if (string.IsNullOrEmpty(tableId) || IsEmptyCellCode(tableId))
-                {
-                    continue;
-                }
-
-                result = StampOneTable(result, tableId);
-            }
-
-            return result;
+        public static string Stamp(string display, string segSnapshot)
+        {
+            string vacuumed = StampVacuum(display);
+            return ReplaceAmbiguousCells(vacuumed, segSnapshot);
         }
 
         public static string Stamp(Word.Document doc, string display)
@@ -200,6 +200,205 @@ namespace WordAddIn1
 
                 DocumentState.SetChunkParagraphDisplayContents(stamped);
             }
+        }
+
+        private static string StampVacuum(string display)
+        {
+            if (string.IsNullOrEmpty(display) || display.IndexOf("<table", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return display;
+            }
+
+            var opens = new List<Match>();
+            foreach (Match m in TableOpenWithId.Matches(display))
+            {
+                opens.Add(m);
+            }
+
+            if (opens.Count == 0)
+            {
+                return display;
+            }
+
+            string result = display;
+            for (int i = opens.Count - 1; i >= 0; i--)
+            {
+                string tableId = opens[i].Groups[1].Value;
+                if (string.IsNullOrEmpty(tableId) || IsEmptyCellCode(tableId))
+                {
+                    continue;
+                }
+
+                result = StampOneTable(result, tableId);
+            }
+
+            return result;
+        }
+
+        private static string ReplaceAmbiguousCells(string display, string segSnapshot)
+        {
+            if (string.IsNullOrEmpty(display)
+                || string.IsNullOrEmpty(segSnapshot)
+                || display.IndexOf("<table", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return display;
+            }
+
+            var opens = new List<Match>();
+            foreach (Match m in TableOpenWithId.Matches(display))
+            {
+                opens.Add(m);
+            }
+
+            if (opens.Count == 0)
+            {
+                return display;
+            }
+
+            var jobs = new List<ReplaceJob>();
+            foreach (Match open in opens)
+            {
+                string tableId = open.Groups[1].Value;
+                if (string.IsNullOrEmpty(tableId) || IsEmptyCellCode(tableId))
+                {
+                    continue;
+                }
+
+                if (!TryFindTableInner(display, tableId, out int innerStart, out int innerEnd))
+                {
+                    continue;
+                }
+
+                string inner = display.Substring(innerStart, innerEnd - innerStart);
+                List<TdSpan> tds = CollectVisibleGridCells(inner);
+                foreach (TdSpan td in tds)
+                {
+                    string body = inner.Substring(td.ContentStart, td.ContentEnd - td.ContentStart);
+                    if (ContainsNestedTable(body))
+                    {
+                        continue;
+                    }
+
+                    List<string> codes = ExtractSentenceCodes(body);
+                    if (codes.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    string needle = string.Join(",", codes);
+                    if (CountNeedle(segSnapshot, needle) == 1)
+                    {
+                        continue;
+                    }
+
+                    string code = Format(tableId, td.Row, td.Col);
+                    jobs.Add(new ReplaceJob
+                    {
+                        Start = innerStart + td.ContentStart,
+                        End = innerStart + td.ContentEnd,
+                        Text = WrapAmbiguousCell(body, code)
+                    });
+                }
+            }
+
+            return ApplyReplacesFromBack(display, jobs);
+        }
+
+        private static int CountNeedle(string segSnapshot, string needle)
+        {
+            if (string.IsNullOrEmpty(segSnapshot) || string.IsNullOrEmpty(needle))
+            {
+                return 0;
+            }
+
+            int n = 0;
+            int from = 0;
+            while (from <= segSnapshot.Length - needle.Length)
+            {
+                int i = segSnapshot.IndexOf(needle, from, StringComparison.Ordinal);
+                if (i < 0)
+                {
+                    break;
+                }
+
+                if (IsCodeBoundary(segSnapshot, i, needle.Length))
+                {
+                    n++;
+                }
+
+                from = i + 1;
+            }
+
+            return n;
+        }
+
+        private static bool IsCodeBoundary(string s, int index, int length)
+        {
+            bool left = index == 0 || s[index - 1] == ',' || s[index - 1] == ';';
+            int rightAt = index + length;
+            bool right = rightAt == s.Length || s[rightAt] == ',' || s[rightAt] == ';';
+            return left && right;
+        }
+
+        private static List<string> ExtractSentenceCodes(string body)
+        {
+            var codes = new List<string>();
+            if (string.IsNullOrEmpty(body))
+            {
+                return codes;
+            }
+
+            foreach (Match m in SentenceStartCapture.Matches(body))
+            {
+                codes.Add(m.Groups[1].Value);
+            }
+
+            return codes;
+        }
+
+        private static bool ContainsNestedTable(string body)
+        {
+            return !string.IsNullOrEmpty(body)
+                && body.IndexOf("<table", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string WrapAmbiguousCell(string body, string code)
+        {
+            string text = body ?? "";
+            text = SentenceStartInCell.Replace(text, "");
+            text = SentenceEndInCell.Replace(text, "");
+            text = ParagraphMarkerInCell.Replace(text, "");
+            text = MarkerPattern.Replace(text, "");
+            if (string.IsNullOrEmpty(Regex.Replace(text, @"\s+", "")))
+            {
+                return MarkerPair(code);
+            }
+
+            return "[" + code + "-start]" + text + "[" + code + "-end]";
+        }
+
+        private static string ApplyReplacesFromBack(string display, List<ReplaceJob> jobs)
+        {
+            if (jobs == null || jobs.Count == 0)
+            {
+                return display;
+            }
+
+            jobs.Sort((a, b) => b.Start.CompareTo(a.Start));
+            string result = display;
+            foreach (ReplaceJob job in jobs)
+            {
+                result = result.Substring(0, job.Start) + job.Text + result.Substring(job.End);
+            }
+
+            return result;
+        }
+
+        private sealed class ReplaceJob
+        {
+            public int Start;
+            public int End;
+            public string Text;
         }
 
         private static string StampOneTable(string display, string tableId)
