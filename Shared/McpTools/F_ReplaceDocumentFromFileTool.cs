@@ -27,8 +27,9 @@ namespace WordAddIn1
                     FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out _, "path", "replace_file");
                     string originalCodes = args["original_codes"]?.ToString()?.Trim();
                     DocumentCheckpointMutatingTools.TryReadLocalText(resolved, out string fileText, out _);
+                    ActionContentHelper.Payload payload = ActionContentHelper.TryParseFileBody(fileText, args);
 
-                    var processArgs = BuildReplaceProcessArgs(fileText, originalCodes, args["format"]);
+                    var processArgs = BuildReplaceProcessArgs(payload, originalCodes);
                     if (args.ContainsKey("channel_id"))
                     {
                         processArgs["channel_id"] = args["channel_id"];
@@ -95,17 +96,17 @@ namespace WordAddIn1
                 return true;
             }
 
-            ActionFormatHelper.Spec formatSpec = ActionFormatHelper.ParseFormatObject(args, required: true);
-            if (!formatSpec.Ok)
+            if (!DocumentCheckpointMutatingTools.TryReadLocalText(resolved, out string fileText, out string readError))
             {
-                failure = DocumentCheckpointMutatingTools.Fail(
-                    formatSpec.Error ?? ActionFormatHelper.MissingFormatError);
+                failure = DocumentCheckpointMutatingTools.Fail(readError);
                 return true;
             }
 
-            if (!DocumentCheckpointMutatingTools.TryReadLocalText(resolved, out _, out string readError))
+            ActionContentHelper.Payload payload = ActionContentHelper.TryParseFileBody(fileText, args);
+            if (payload == null || !payload.Ok)
             {
-                failure = DocumentCheckpointMutatingTools.Fail(readError);
+                failure = DocumentCheckpointMutatingTools.Fail(
+                    payload?.Error ?? ActionFormatHelper.MissingFormatError);
                 return true;
             }
 
@@ -113,10 +114,22 @@ namespace WordAddIn1
         }
 
         private static Dictionary<string, object> BuildReplaceProcessArgs(
-            string newContent,
-            string originalCodes,
-            object format)
+            ActionContentHelper.Payload payload,
+            string originalCodes)
         {
+            var detail = new Dictionary<string, object>
+            {
+                ["original"] = new Dictionary<string, object> { ["codes"] = originalCodes },
+                ["new"] = ActionContentHelper.ToInsertOrNewRaw(payload)
+            };
+            if (payload != null && !payload.IsRuns && payload.FormatSpec != null && payload.FormatSpec.Ok)
+            {
+                detail["format"] = new Dictionary<string, object>
+                {
+                    ["char_format"] = payload.FormatSpec.CharFormat
+                };
+            }
+
             return new Dictionary<string, object>
             {
                 ["action"] = new List<object>
@@ -124,12 +137,7 @@ namespace WordAddIn1
                     new Dictionary<string, object>
                     {
                         ["type"] = "replace",
-                        ["detail"] = new Dictionary<string, object>
-                        {
-                            ["original"] = new Dictionary<string, object> { ["codes"] = originalCodes },
-                            ["new"] = newContent ?? "",
-                            ["format"] = format
-                        }
+                        ["detail"] = detail
                     }
                 }
             };

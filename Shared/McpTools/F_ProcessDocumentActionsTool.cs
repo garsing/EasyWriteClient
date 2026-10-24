@@ -350,16 +350,21 @@ namespace WordAddIn1
                                 action.SentenceNames = originalLoc.Spec.Codes;
                                 action.OriginalScopeFields = new CodeAnchorScopeFields { TableId = originalLoc.Spec.InTableId };
                                 
-                                if (detail.ContainsKey("new"))
+                                if (!detail.ContainsKey("new"))
                                 {
-                                    action.Content = RemoveSentenceIdentifiers(detail["new"]?.ToString());
+                                    return (false, "replace 缺少 new", null);
                                 }
 
-                                action.FormatSpec = ActionFormatHelper.ParseFormatObject(detail, required: true);
-                                if (!action.FormatSpec.Ok)
+                                action.ContentPayload = ActionContentHelper.TryParseInsertOrNew(detail["new"], detail);
+                                if (!action.ContentPayload.Ok)
                                 {
-                                    return (false, action.FormatSpec.Error ?? ActionFormatHelper.MissingFormatError, null);
+                                    return (false, action.ContentPayload.Error ?? "replace.new 无效", null);
                                 }
+
+                                action.Content = action.ContentPayload.JoinedText;
+                                action.FormatSpec = action.ContentPayload.IsRuns
+                                    ? null
+                                    : action.ContentPayload.FormatSpec;
 
                                 break;
 
@@ -382,10 +387,21 @@ namespace WordAddIn1
 
                             case "insert":
                                 action.Position = "after";
-                                if (detail.ContainsKey("insert"))
+                                if (!detail.ContainsKey("insert"))
                                 {
-                                    action.Content = RemoveSentenceIdentifiers(detail["insert"]?.ToString());
+                                    return (false, "insert 缺少 insert 文本", null);
                                 }
+
+                                action.ContentPayload = ActionContentHelper.TryParseInsertOrNew(detail["insert"], detail);
+                                if (!action.ContentPayload.Ok)
+                                {
+                                    return (false, action.ContentPayload.Error ?? "insert 文本无效", null);
+                                }
+
+                                action.Content = action.ContentPayload.JoinedText;
+                                action.FormatSpec = action.ContentPayload.IsRuns
+                                    ? null
+                                    : action.ContentPayload.FormatSpec;
 
                                 if (detail.ContainsKey("target") && detail["target"] != null)
                                 {
@@ -403,12 +419,6 @@ namespace WordAddIn1
                                     action.TargetLocator = targetLoc.Spec;
                                     System.Diagnostics.Debug.WriteLine(
                                         $"[ProcessActions][insert] 解析 target Kind={targetLoc.Spec.Kind}");
-                                }
-
-                                action.FormatSpec = ActionFormatHelper.ParseFormatObject(detail, required: true);
-                                if (!action.FormatSpec.Ok)
-                                {
-                                    return (false, action.FormatSpec.Error ?? ActionFormatHelper.MissingFormatError, null);
                                 }
 
                                 break;
@@ -833,20 +843,8 @@ namespace WordAddIn1
                         {
                             case "replace":
                             {
-                                if (!TryPrepareActionFormat(
-                                    doc, action, tableScope, result, out var formatSnapshot, out var formatMode))
-                                {
-                                    break;
-                                }
-
-                                var rep = ExecuteReplaceBySentenceNames(
-                                    doc,
-                                    action.SentenceNames,
-                                    action.Content,
-                                    action.OriginalScopeFields?.TableId,
-                                    formatSnapshot,
-                                    formatMode,
-                                    disallowBackendApi);
+                                var rep = ExecuteReplaceWithPayload(
+                                    doc, action, tableScope, disallowBackendApi);
                                 FillReplaceActionResult(result, rep);
                                 break;
                             }
@@ -891,20 +889,8 @@ namespace WordAddIn1
                         using (EasyWriteDiagnostics.Time(
                             "process_actions.action.insert[" + item.OriginalIndex + "]"))
                         {
-                        if (!TryPrepareActionFormat(
-                            doc, action, tableScope, result, out var formatSnapshot, out var formatMode))
-                        {
-                            results.Add(result);
-                            continue;
-                        }
-
-                        var ins = ExecuteInsert(
-                            doc,
-                            action.TargetLocator,
-                            action.Content,
-                            formatSnapshot,
-                            formatMode,
-                            disallowBackendApi);
+                        var ins = ExecuteInsertWithPayload(
+                            doc, action, tableScope, disallowBackendApi);
                         FillInsertActionResult(result, ins, action.TargetLocator);
                         }
                     }
@@ -1027,6 +1013,376 @@ namespace WordAddIn1
             }
 
             return spec;
+        }
+
+        private static ReplaceExecutionResult ExecuteReplaceWithPayload(
+            Word.Document doc,
+            ParagraphAction action,
+            TableScopeIndex tableScope,
+            bool disallowBackendApi)
+        {
+            ActionContentHelper.Payload payload = action?.ContentPayload;
+            if (payload == null || !payload.Ok)
+            {
+                return new ReplaceExecutionResult
+                {
+                    Success = false,
+                    ErrorMessage = payload?.Error ?? "replace.new 无效"
+                };
+            }
+
+            if (payload.IsRuns)
+            {
+                return ExecuteReplaceRuns(
+                    doc,
+                    action.SentenceNames,
+                    action.OriginalScopeFields?.TableId,
+                    payload,
+                    tableScope,
+                    disallowBackendApi);
+            }
+
+            if (!ActionFormatHelper.TryBuildSnapshot(
+                doc, payload.FormatSpec, tableScope, out var snapshot, out var formatMode, out string fmtErr))
+            {
+                return new ReplaceExecutionResult { Success = false, ErrorMessage = fmtErr };
+            }
+
+            return ExecuteReplaceBySentenceNames(
+                doc,
+                action.SentenceNames,
+                payload.Text,
+                action.OriginalScopeFields?.TableId,
+                snapshot,
+                formatMode,
+                disallowBackendApi);
+        }
+
+        private static InsertExecutionResult ExecuteInsertWithPayload(
+            Word.Document doc,
+            ParagraphAction action,
+            TableScopeIndex tableScope,
+            bool disallowBackendApi)
+        {
+            ActionContentHelper.Payload payload = action?.ContentPayload;
+            if (payload == null || !payload.Ok)
+            {
+                return new InsertExecutionResult
+                {
+                    Success = false,
+                    ErrorMessage = payload?.Error ?? "insert 文本无效",
+                    NewSentences = new List<string>()
+                };
+            }
+
+            if (payload.IsRuns)
+            {
+                return ExecuteInsertRuns(
+                    doc, action.TargetLocator, payload, tableScope, disallowBackendApi);
+            }
+
+            if (!ActionFormatHelper.TryBuildSnapshot(
+                doc, payload.FormatSpec, tableScope, out var snapshot, out var formatMode, out string fmtErr))
+            {
+                return new InsertExecutionResult
+                {
+                    Success = false,
+                    ErrorMessage = fmtErr,
+                    NewSentences = new List<string>()
+                };
+            }
+
+            return ExecuteInsert(
+                doc,
+                action.TargetLocator,
+                payload.Text,
+                snapshot,
+                formatMode,
+                disallowBackendApi);
+        }
+
+        private static ReplaceExecutionResult ExecuteReplaceRuns(
+            Word.Document doc,
+            string sentenceNames,
+            string tableId,
+            ActionContentHelper.Payload payload,
+            TableScopeIndex tableScope,
+            bool disallowBackendApi)
+        {
+            var result = new ReplaceExecutionResult { Success = false, NewSentences = new List<string>() };
+            var names = ParseCodeList(sentenceNames);
+            if (names.Count == 1 && EmptyCellCode.TryParse(names[0], out EmptyCellCode.Parsed emptyCell))
+            {
+                return ExecuteEmptyCellReplaceRuns(doc, emptyCell, payload, tableScope, disallowBackendApi);
+            }
+
+            Dictionary<string, object> firstSnap;
+            string firstMode;
+            if (!TrySnapshotForRun(doc, payload.Runs[0], tableScope, out firstSnap, out firstMode, out string err))
+            {
+                result.ErrorMessage = err;
+                return result;
+            }
+
+            string joined = payload.JoinedText;
+            var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                doc,
+                new InsertTargetLocatorHelper.LocatorSpec
+                {
+                    Kind = InsertTargetLocatorHelper.LocatorKind.Sentence,
+                    Codes = sentenceNames,
+                    InTableId = tableId
+                },
+                InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
+                disallowBackendApi);
+            if (!locate.Success || locate.Range == null)
+            {
+                result.ErrorMessage = locate.Error ?? "未找到任何句子 Range";
+                return result;
+            }
+
+            Word.Range targetRange = locate.Range;
+            string originalRangeText = targetRange.Text ?? "";
+            string aligned = TextUtils.EnsureReplaceContentTrailingParagraphMarks(joined, originalRangeText);
+            if (aligned != joined && payload.Runs.Count > 0)
+            {
+                ActionContentHelper.Run last = payload.Runs[payload.Runs.Count - 1];
+                last.Text += aligned.Substring(joined.Length);
+            }
+
+            string trailingSuffix = TextUtils.GetTrailingParagraphSuffix(originalRangeText);
+            int trailingLen = trailingSuffix.Length;
+            if (trailingLen > 0)
+            {
+                int rangeSpan = targetRange.End - targetRange.Start;
+                if (rangeSpan > trailingLen)
+                {
+                    targetRange = doc.Range(targetRange.Start, targetRange.End - trailingLen);
+                }
+
+                payload.Runs[payload.Runs.Count - 1].Text =
+                    TextUtils.TrimTrailingParagraphMarks(payload.Runs[payload.Runs.Count - 1].Text);
+            }
+
+            result.OriginalCodes = names;
+            string writeErr;
+            if (!TryWriteRuns(doc, targetRange, payload.Runs, tableScope, replaceFirst: true, out writeErr, out List<string> newSentences))
+            {
+                result.ErrorMessage = writeErr;
+                return result;
+            }
+
+            result.NewSentences = newSentences;
+            result.FormatMode = firstMode;
+            result.Success = true;
+            return result;
+        }
+
+        private static InsertExecutionResult ExecuteInsertRuns(
+            Word.Document doc,
+            LocatorSpec target,
+            ActionContentHelper.Payload payload,
+            TableScopeIndex tableScope,
+            bool disallowBackendApi)
+        {
+            var result = new InsertExecutionResult { Success = false, NewSentences = new List<string>() };
+            if (target != null && target.Kind == LocatorKind.EmptyCell)
+            {
+                EmptyCellCode.Parsed parsed = new EmptyCellCode.Parsed
+                {
+                    TableId = target.TableId,
+                    Row = target.Row,
+                    Col = target.Col,
+                    Code = target.Codes
+                };
+                var written = ExecuteEmptyCellReplaceRuns(doc, parsed, payload, tableScope, disallowBackendApi);
+                result.Success = written.Success;
+                result.ErrorMessage = written.ErrorMessage;
+                result.FormatMode = written.FormatMode;
+                result.FormatApplyError = written.FormatApplyError;
+                result.NewSentences = written.NewSentences ?? new List<string>();
+                return result;
+            }
+
+            var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                doc,
+                ToFacadeSpec(target),
+                InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
+                disallowBackendApi);
+            if (!locate.Success || locate.Range == null)
+            {
+                result.ErrorMessage = locate.Error ?? "无法确定插入位置";
+                return result;
+            }
+
+            if (!TryWriteRuns(
+                doc, locate.Range, payload.Runs, tableScope, replaceFirst: false, out string writeErr, out List<string> newSentences))
+            {
+                result.ErrorMessage = writeErr;
+                return result;
+            }
+
+            result.NewSentences = newSentences;
+            result.FormatMode = "explicit";
+            result.Success = true;
+            return result;
+        }
+
+        private static ReplaceExecutionResult ExecuteEmptyCellReplaceRuns(
+            Word.Document doc,
+            EmptyCellCode.Parsed emptyCell,
+            ActionContentHelper.Payload payload,
+            TableScopeIndex tableScope,
+            bool disallowBackendApi)
+        {
+            var result = new ReplaceExecutionResult { Success = false, NewSentences = new List<string>() };
+            result.OriginalCodes = new List<string> { emptyCell.Code };
+
+            var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                doc,
+                new InsertTargetLocatorHelper.LocatorSpec
+                {
+                    Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell,
+                    Codes = emptyCell.Code,
+                    TableId = emptyCell.TableId,
+                    Row = emptyCell.Row,
+                    Col = emptyCell.Col
+                },
+                InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
+                disallowBackendApi);
+            if (!locate.Success)
+            {
+                result.ErrorMessage = locate.Error ?? "无法定位空格";
+                return result;
+            }
+
+            Word.Table table = TableResolveHelper.TryResolveTableById(doc, emptyCell.TableId, out string tableError);
+            if (table == null)
+            {
+                result.ErrorMessage = tableError ?? "找不到表格";
+                return result;
+            }
+
+            Word.Cell cell = TableRowValuesHelper.TryResolveWritableCell(table, emptyCell.Row, emptyCell.Col);
+            if (cell == null)
+            {
+                result.ErrorMessage = TableRowValuesHelper.BuildUnresolvableCellError(emptyCell.Row, emptyCell.Col);
+                return result;
+            }
+
+            ActionContentHelper.Run first = payload.Runs[0];
+            if (!TrySnapshotForRun(doc, first, tableScope, out var firstSnap, out var firstMode, out string fmtErr))
+            {
+                result.ErrorMessage = fmtErr;
+                return result;
+            }
+
+            CellWriteResult write = TableCellContentWriter.WriteCell(cell, first.Text ?? "");
+            if (!write.Success)
+            {
+                result.ErrorMessage = write.Error ?? "写入单元格失败";
+                return result;
+            }
+
+            try
+            {
+                FormatInheritHelper.ApplySnapshot(cell.Range, firstSnap, charFormatOnly: true);
+            }
+            catch (Exception fmtEx)
+            {
+                result.FormatApplyError = fmtEx.Message;
+                result.ErrorMessage = $"文字已写入，但字符格式套用失败: {fmtEx.Message}";
+                return result;
+            }
+
+            var rest = new List<ActionContentHelper.Run>();
+            for (int i = 1; i < payload.Runs.Count; i++)
+            {
+                rest.Add(payload.Runs[i]);
+            }
+
+            Word.Range after = cell.Range;
+            after.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            if (after.Start > cell.Range.Start)
+            {
+                after = doc.Range(Math.Max(cell.Range.Start, after.Start - 1), Math.Max(cell.Range.Start, after.Start - 1));
+            }
+
+            var sentences = new List<string>(SentenceSplitter.SplitForActionContent(first.Text ?? ""));
+            if (rest.Count > 0)
+            {
+                if (!TryWriteRuns(doc, after, rest, tableScope, replaceFirst: false, out string writeErr, out List<string> more))
+                {
+                    result.ErrorMessage = writeErr;
+                    return result;
+                }
+
+                sentences.AddRange(more);
+            }
+
+            MoveSelectionAfterReplace(doc, cell.Range);
+            result.NewSentences = sentences;
+            result.FormatMode = firstMode;
+            result.Success = true;
+            return result;
+        }
+
+        private static bool TrySnapshotForRun(
+            Word.Document doc,
+            ActionContentHelper.Run run,
+            TableScopeIndex tableScope,
+            out Dictionary<string, object> snapshot,
+            out string formatMode,
+            out string error)
+        {
+            return ActionFormatHelper.TryBuildSnapshot(
+                doc, run.FormatSpec, tableScope, out snapshot, out formatMode, out error);
+        }
+
+        private static bool TryWriteRuns(
+            Word.Document doc,
+            Word.Range startRange,
+            List<ActionContentHelper.Run> runs,
+            TableScopeIndex tableScope,
+            bool replaceFirst,
+            out string error,
+            out List<string> newSentences)
+        {
+            error = null;
+            newSentences = new List<string>();
+            Word.Range cursor = startRange;
+            for (int i = 0; i < runs.Count; i++)
+            {
+                ActionContentHelper.Run run = runs[i];
+                if (!TrySnapshotForRun(doc, run, tableScope, out var snap, out _, out error))
+                {
+                    return false;
+                }
+
+                Word.Range writeAt = cursor;
+                if (i > 0 || !replaceFirst)
+                {
+                    writeAt = doc.Range(cursor.End, cursor.End);
+                }
+
+                Word.Range written = WordBreakWriteHelper.WriteTextWithBreaks(doc, writeAt, run.Text)
+                    ?? writeAt;
+                try
+                {
+                    FormatInheritHelper.ApplySnapshot(written, snap, charFormatOnly: true);
+                }
+                catch (Exception fmtEx)
+                {
+                    error = "文字已写入，但字符格式套用失败: " + fmtEx.Message;
+                    return false;
+                }
+
+                newSentences.AddRange(SentenceSplitter.SplitForActionContent(run.Text ?? ""));
+                cursor = written;
+            }
+
+            MoveSelectionAfterInsert(doc, cursor);
+            return true;
         }
 
         private static ReplaceExecutionResult ExecuteEmptyCellReplace(
@@ -1882,8 +2238,10 @@ namespace WordAddIn1
             public int? ResolvedSentenceDisplayStart { get; set; }
             public int? ResolvedTargetDisplayStart { get; set; }
 
-            /// <summary>replace/insert 的 detail.format；delete 为 null。</summary>
+            /// <summary>replace/insert 的 detail.format；delete 为 null。分片时为 null。</summary>
             public ActionFormatHelper.Spec FormatSpec { get; set; }
+
+            public ActionContentHelper.Payload ContentPayload { get; set; }
         }
 
         private class CodeAnchorScopeFields

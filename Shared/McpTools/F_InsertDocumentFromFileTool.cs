@@ -26,6 +26,7 @@ namespace WordAddIn1
 
                     FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out _, "path", "insert_file");
                     DocumentCheckpointMutatingTools.TryReadLocalText(resolved, out string fileText, out _);
+                    ActionContentHelper.Payload payload = ActionContentHelper.TryParseFileBody(fileText, args);
 
                     string targetCodes = args.ContainsKey("target_codes") ? args["target_codes"]?.ToString()?.Trim() : "";
                     string inTable = args.ContainsKey("in_table") ? args["in_table"]?.ToString()?.Trim() : "";
@@ -35,14 +36,13 @@ namespace WordAddIn1
                     string targetPosition = args.ContainsKey("target_position") ? args["target_position"]?.ToString()?.Trim() : "";
 
                     var build = BuildInsertProcessArgs(
-                        fileText,
+                        payload,
                         targetCodes,
                         inTable,
                         targetTable,
                         targetChart,
                         targetImage,
-                        targetPosition,
-                        args["format"]);
+                        targetPosition);
                     if (!string.IsNullOrEmpty(build.error))
                     {
                         return new ToolResult { Success = false, Error = build.error };
@@ -131,17 +131,17 @@ namespace WordAddIn1
                 return true;
             }
 
-            ActionFormatHelper.Spec formatSpec = ActionFormatHelper.ParseFormatObject(args, required: true);
-            if (!formatSpec.Ok)
-            {
-                failure = DocumentCheckpointMutatingTools.Fail(
-                    formatSpec.Error ?? ActionFormatHelper.MissingFormatError);
-                return true;
-            }
-
             if (!DocumentCheckpointMutatingTools.TryReadLocalText(resolved, out string fileText, out string readError))
             {
                 failure = DocumentCheckpointMutatingTools.Fail(readError);
+                return true;
+            }
+
+            ActionContentHelper.Payload payload = ActionContentHelper.TryParseFileBody(fileText, args);
+            if (payload == null || !payload.Ok)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(
+                    payload?.Error ?? ActionFormatHelper.MissingFormatError);
                 return true;
             }
 
@@ -152,14 +152,13 @@ namespace WordAddIn1
             string targetImage = args.ContainsKey("target_image") ? args["target_image"]?.ToString()?.Trim() : "";
             string targetPosition = args.ContainsKey("target_position") ? args["target_position"]?.ToString()?.Trim() : "";
             var build = BuildInsertProcessArgs(
-                fileText,
+                payload,
                 targetCodes,
                 inTable,
                 targetTable,
                 targetChart,
                 targetImage,
-                targetPosition,
-                args["format"]);
+                targetPosition);
             if (!string.IsNullOrEmpty(build.error))
             {
                 failure = DocumentCheckpointMutatingTools.Fail(build.error);
@@ -170,20 +169,25 @@ namespace WordAddIn1
         }
 
         private static (Dictionary<string, object> args, string error) BuildInsertProcessArgs(
-            string insertContent,
+            ActionContentHelper.Payload payload,
             string targetCodes,
             string inTable,
             string targetTable,
             string targetChart,
             string targetImage,
-            string targetPosition,
-            object format)
+            string targetPosition)
         {
             var detail = new Dictionary<string, object>
             {
-                ["insert"] = insertContent ?? "",
-                ["format"] = format
+                ["insert"] = ActionContentHelper.ToInsertOrNewRaw(payload)
             };
+            if (payload != null && !payload.IsRuns && payload.FormatSpec != null && payload.FormatSpec.Ok)
+            {
+                detail["format"] = new Dictionary<string, object>
+                {
+                    ["char_format"] = payload.FormatSpec.CharFormat
+                };
+            }
 
             bool hasCodes = !string.IsNullOrEmpty(targetCodes);
             bool hasTable = !string.IsNullOrEmpty(targetTable);
