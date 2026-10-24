@@ -2407,13 +2407,7 @@ namespace WordAddIn1
 
         private static Dictionary<string, object> BuildBulkSnapshotResultsObject(List<ActionResult> orderedResults)
         {
-            int postIndex = DocumentState.LatestSnapshotHistoryIndex;
-            SnapshotRecord postRecord = DocumentState.GetSnapshotAt(postIndex);
-            SnapshotRecord preRecord = FindLatestStep1Before(postIndex);
-
             var affectedUnion = new List<string>();
-            var bookmarkPairs = new List<SnapshotDiffHelper.BookmarkPair>();
-
             foreach (ActionResult mr in orderedResults)
             {
                 if (!mr.success || (mr.type != "replace" && mr.type != "insert"))
@@ -2428,79 +2422,12 @@ namespace WordAddIn1
                         affectedUnion.Add(code);
                     }
                 }
-
-                if (preRecord == null)
-                {
-                    continue;
-                }
-
-                if (mr.type == "replace"
-                    && SnapshotDiffHelper.TryDeriveReplaceBookmarks(
-                        preRecord,
-                        mr.affected_codes,
-                        out string left,
-                        out string right,
-                        out _))
-                {
-                    bookmarkPairs.Add(new SnapshotDiffHelper.BookmarkPair
-                    {
-                        LeftBookmark = left,
-                        RightBookmark = right
-                    });
-                }
-                else if (mr.type == "insert"
-                         && SnapshotDiffHelper.TryDeriveInsertBookmarks(
-                             preRecord,
-                             mr.InsertAnchorCodes,
-                             null,
-                             out string insertLeft,
-                             out string insertRight,
-                             out _))
-                {
-                    bookmarkPairs.Add(new SnapshotDiffHelper.BookmarkPair
-                    {
-                        LeftBookmark = insertLeft,
-                        RightBookmark = insertRight
-                    });
-                }
             }
 
-            if (bookmarkPairs.Count == 0)
+            return new Dictionary<string, object>
             {
-                return new Dictionary<string, object>
-                {
-                    ["affected_codes"] = affectedUnion,
-                    ["new_sentences"] = new List<Dictionary<string, object>>(),
-                    ["new_codes_source"] = SnapshotDiffHelper.SourceUnavailable,
-                    ["new_codes_warning"] = "ambiguous_interval"
-                };
-            }
-
-            SnapshotDiffResult bulk = SnapshotDiffHelper.BuildBulkEnvelope(preRecord, postRecord, bookmarkPairs);
-            var dict = new Dictionary<string, object>
-            {
-                ["affected_codes"] = affectedUnion,
-                ["new_sentences"] = bulk.Sentences
-                    .Select(s => new Dictionary<string, object>
-                    {
-                        ["code"] = s.Code,
-                        ["text"] = s.Text ?? string.Empty
-                    })
-                    .ToList(),
-                ["new_codes_source"] = bulk.Source
+                ["affected_codes"] = affectedUnion
             };
-
-            if (!string.IsNullOrEmpty(bulk.Warning))
-            {
-                dict["new_codes_warning"] = bulk.Warning;
-            }
-
-            if (bulk.IsVerified && bulk.Sentences.Count > 0)
-            {
-                dict["new_codes"] = bulk.Sentences.Select(s => s.Code).ToList();
-            }
-
-            return dict;
         }
 
         private static void FillReplaceActionResult(ActionResult ar, ReplaceExecutionResult rep)
@@ -2661,26 +2588,6 @@ namespace WordAddIn1
                 if (affected_codes != null && affected_codes.Count > 0)
                 {
                     dict["affected_codes"] = affected_codes;
-                }
-
-                if (type == "replace" || type == "insert")
-                {
-                    dict["new_sentences"] = new_sentences ?? new List<Dictionary<string, object>>();
-                }
-
-                if (new_codes != null && new_codes.Count > 0)
-                {
-                    dict["new_codes"] = new_codes;
-                }
-
-                if (!string.IsNullOrEmpty(new_codes_source))
-                {
-                    dict["new_codes_source"] = new_codes_source;
-                }
-
-                if (!string.IsNullOrEmpty(new_codes_warning))
-                {
-                    dict["new_codes_warning"] = new_codes_warning;
                 }
 
                 if (!string.IsNullOrEmpty(format_mode))
