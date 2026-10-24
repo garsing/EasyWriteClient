@@ -230,9 +230,16 @@ namespace WordAddIn1
             string payload = payloadText ?? "";
             DbgLog($"ApplyWrittenCharFormat block={written.Start}-{written.End} prefixSafe={prefixSafe} len={payload.Length}");
 
-            if (WordBreakWriteHelper.ContainsLayoutBreaks(payload)
-                || payload.IndexOf('\r') < 0)
+            if (WordBreakWriteHelper.ContainsLayoutBreaks(payload))
             {
+                RecordFormatPlan(prefixSafe, mapped: false, "skip", "skip", "sentences", "layout");
+                ApplySentencesInSlice(doc, written, payload, snapshot, findSentenceInRange);
+                return;
+            }
+
+            if (payload.IndexOf('\r') < 0)
+            {
+                RecordFormatPlan(prefixSafe, mapped: false, "skip", "skip", "sentences", "no-cr");
                 ApplySentencesInSlice(doc, written, payload, snapshot, findSentenceInRange);
                 return;
             }
@@ -246,6 +253,7 @@ namespace WordAddIn1
             catch (Exception ex)
             {
                 DbgLog("ApplyWrittenCharFormat 读 written.Text 失败: " + ex.Message);
+                RecordFormatPlan(prefixSafe, mapped: false, "skip", "skip", "sentences", "read-fail");
                 ApplySentencesInSlice(doc, written, payload, snapshot, findSentenceInRange);
                 return;
             }
@@ -253,6 +261,7 @@ namespace WordAddIn1
             if (!WrittenFormatGlueHelper.CanMapPayloadToComText(payload, comText))
             {
                 DbgLog("ApplyWrittenCharFormat 写入串与 Range.Text 对不齐，整片按句");
+                RecordFormatPlan(prefixSafe, mapped: false, "skip", "skip", "sentences", "unmap");
                 ApplySentencesInSlice(doc, written, payload, snapshot, findSentenceInRange);
                 return;
             }
@@ -267,6 +276,16 @@ namespace WordAddIn1
             Word.Range suffixRange = (last >= 0 && last < payload.Length - 1)
                 ? doc.Range(origin + last + 1, written.End)
                 : null;
+
+            string prefixMode = prefixSafe
+                ? "join"
+                : (prefixRange != null && !string.IsNullOrEmpty(slices.Prefix) ? "sentences" : "skip");
+            bool hasMid = middleRange != null && !string.IsNullOrEmpty(slices.Middle);
+            string midMode = hasMid ? "once" : "skip";
+            string suffixMode = (suffixRange != null && !string.IsNullOrEmpty(slices.Suffix))
+                ? "sentences"
+                : "skip";
+            RecordFormatPlan(prefixSafe, mapped: true, prefixMode, midMode, suffixMode, "map");
 
             if (prefixSafe)
             {
@@ -287,6 +306,24 @@ namespace WordAddIn1
             {
                 ApplySentencesInSlice(doc, suffixRange, slices.Suffix, snapshot, findSentenceInRange);
             }
+        }
+
+        private static void RecordFormatPlan(
+            bool prefixSafe,
+            bool mapped,
+            string prefixMode,
+            string midMode,
+            string suffixMode,
+            string reason)
+        {
+            WrittenFormatGlueHelper.RecordPlan(
+                WrittenFormatGlueHelper.LogTag
+                + " prefixSafe=" + (prefixSafe ? "true" : "false")
+                + " mapped=" + (mapped ? "true" : "false")
+                + " prefix=" + prefixMode
+                + " mid=" + midMode
+                + " suffix=" + suffixMode
+                + " reason=" + reason);
         }
 
         /// <summary>在 slice 内按句套格式；找不到的句跳过，**禁止**整块回退。</summary>

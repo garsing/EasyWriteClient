@@ -65,6 +65,7 @@ namespace WordAddIn1
                     {
 
                     string logPath = EasyWriteLog.BeginSession("process_document_actions");
+                    WrittenFormatGlueHelper.ClearPlans();
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 本次测试日志: {logPath}");
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_process_document_actions] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
@@ -203,7 +204,8 @@ namespace WordAddIn1
                             message = batchMessage,
                             results = resultsPayload,
                             navigates = navigates,
-                            navigate = navigateSummary
+                            navigate = navigateSummary,
+                            format_apply_log = WrittenFormatGlueHelper.SnapshotPlans()
                         }
                     };
 

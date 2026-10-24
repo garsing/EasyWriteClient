@@ -281,24 +281,31 @@ namespace WordDocumentRoundtripTest
                 && caseFilter.StartsWith("wa-", StringComparison.OrdinalIgnoreCase);
             bool runFromFile = !runFindStale && !runLayout && !runActions
                 && caseFilter.StartsWith("wf-", StringComparison.OrdinalIgnoreCase);
-            bool runFormat = !runFindStale && !runLayout && !runActions && !runFromFile
+            bool runWriteFmt = !runFindStale && !runLayout && !runActions && !runFromFile
+                && caseFilter.StartsWith("wl-", StringComparison.OrdinalIgnoreCase);
+            bool runFormat = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt
                 && caseFilter.StartsWith("wg-", StringComparison.OrdinalIgnoreCase);
-            bool runTable = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat
+            bool runTable = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt && !runFormat
                 && caseFilter.StartsWith("wt-", StringComparison.OrdinalIgnoreCase);
-            bool runPptChart = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
+            bool runPptChart = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt && !runFormat
+                && !runTable
                 && caseFilter.StartsWith("wh-ppt", StringComparison.OrdinalIgnoreCase);
-            bool runChart = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
+            bool runChart = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt && !runFormat
+                && !runTable
                 && !runPptChart
                 && caseFilter.StartsWith("wh-", StringComparison.OrdinalIgnoreCase);
-            bool runImage = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
+            bool runImage = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt && !runFormat
+                && !runTable
                 && !runChart
                 && (caseFilter.StartsWith("wi-", StringComparison.OrdinalIgnoreCase)
                     || caseFilter.StartsWith("wp-", StringComparison.OrdinalIgnoreCase));
-            bool runCkpt = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
+            bool runCkpt = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt && !runFormat
+                && !runTable
                 && !runChart && !runImage
                 && (caseFilter.StartsWith("wk-", StringComparison.OrdinalIgnoreCase)
                     || caseFilter.StartsWith("wv-", StringComparison.OrdinalIgnoreCase));
-            bool runContent = !runFindStale && !runLayout && !runActions && !runFromFile && !runFormat && !runTable
+            bool runContent = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt && !runFormat
+                && !runTable
                 && !runChart && !runImage && !runCkpt
                 && caseFilter.StartsWith("wc-", StringComparison.OrdinalIgnoreCase);
 
@@ -317,6 +324,10 @@ namespace WordDocumentRoundtripTest
             else if (runFromFile)
             {
                 Console.WriteLine("文字 从文件插换（wf-）");
+            }
+            else if (runWriteFmt)
+            {
+                Console.WriteLine("文字 写入套格式切块（wl-）：用 [写入套格式] 日志断言前/中/后缀");
             }
             else if (runFormat)
             {
@@ -362,23 +373,20 @@ namespace WordDocumentRoundtripTest
             WdSession.SweepBeforeRun(host);
             var run = new TestRun
             {
-                TotalTarget = runFindStale
-                    ? FindStaleCases.Target
-                    : (runLayout
-                        ? LbCases.Target
-                        : (runActions
-                            ? WaCases.Target
-                            : (runFromFile
-                                ? WfCases.Target
-                                : (runFormat
-                                    ? WgCases.Target
-                                    : (runTable
-                                        ? WtCases.Target
-                                        : (runChart
-                                            ? WhCases.Target
-                                            : (runImage ? WiCases.Target : (runCkpt
-                                                ? (WkCases.IsCaretOnly(caseFilter) ? WkCases.CaretTarget : WkCases.Target)
-                                                : (runContent ? WcCases.Target : 30)))))))))
+                TotalTarget = SuiteTarget(
+                    caseFilter,
+                    runFindStale,
+                    runLayout,
+                    runActions,
+                    runFromFile,
+                    runWriteFmt,
+                    runFormat,
+                    runTable,
+                    runPptChart,
+                    runChart,
+                    runImage,
+                    runCkpt,
+                    runContent)
             };
             var sw = Stopwatch.StartNew();
             try
@@ -398,6 +406,10 @@ namespace WordDocumentRoundtripTest
                 else if (runFromFile)
                 {
                     WfCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+                }
+                else if (runWriteFmt)
+                {
+                    WlCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
                 }
                 else if (runFormat)
                 {
@@ -444,25 +456,20 @@ namespace WordDocumentRoundtripTest
                 sw.Stop();
                 WdSession.SweepAfterRun(host);
             }
-            int target = runFindStale
-                ? FindStaleCases.Target
-                : (runLayout
-                    ? LbCases.Target
-                    : (runActions
-                        ? WaCases.Target
-                        : (runFromFile
-                            ? WfCases.Target
-                            : (runFormat
-                                ? WgCases.Target
-                                    : (runTable
-                                        ? WtCases.Target
-                                        : (runPptChart
-                                            ? WhPptSuite.Target
-                                            : (runChart
-                                            ? WhCases.Target
-                                            : (runImage ? WiCases.Target : (runCkpt
-                                                ? (WkCases.IsCaretOnly(caseFilter) ? WkCases.CaretTarget : WkCases.Target)
-                                                : (runContent ? WcCases.Target : 30))))))))));
+            int target = SuiteTarget(
+                caseFilter,
+                runFindStale,
+                runLayout,
+                runActions,
+                runFromFile,
+                runWriteFmt,
+                runFormat,
+                runTable,
+                runPptChart,
+                runChart,
+                runImage,
+                runCkpt,
+                runContent);
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
@@ -519,6 +526,84 @@ namespace WordDocumentRoundtripTest
                 + "  （目标 " + run.TotalTarget + "）");
             Console.WriteLine("ELAPSED_SEC=" + sw.Elapsed.TotalSeconds.ToString("F1"));
             return run.CasesFailed == 0 ? 0 : 1;
+        }
+
+        private static int SuiteTarget(
+            string caseFilter,
+            bool runFindStale,
+            bool runLayout,
+            bool runActions,
+            bool runFromFile,
+            bool runWriteFmt,
+            bool runFormat,
+            bool runTable,
+            bool runPptChart,
+            bool runChart,
+            bool runImage,
+            bool runCkpt,
+            bool runContent)
+        {
+            if (runFindStale)
+            {
+                return FindStaleCases.Target;
+            }
+
+            if (runLayout)
+            {
+                return LbCases.Target;
+            }
+
+            if (runActions)
+            {
+                return WaCases.Target;
+            }
+
+            if (runFromFile)
+            {
+                return WfCases.Target;
+            }
+
+            if (runWriteFmt)
+            {
+                return WlCases.Target;
+            }
+
+            if (runFormat)
+            {
+                return WgCases.Target;
+            }
+
+            if (runTable)
+            {
+                return WtCases.Target;
+            }
+
+            if (runPptChart)
+            {
+                return WhPptSuite.Target;
+            }
+
+            if (runChart)
+            {
+                return WhCases.Target;
+            }
+
+            if (runImage)
+            {
+                return WiCases.Target;
+            }
+
+            if (runCkpt)
+            {
+                return WkCases.IsCaretOnly(caseFilter) ? WkCases.CaretTarget : WkCases.Target;
+            }
+
+            if (runContent)
+            {
+                return WcCases.Target;
+            }
+
+            return 30;
         }
 
         private static string GetHost(string[] args)

@@ -8,6 +8,44 @@ namespace WordAddIn1
     /// </summary>
     public static class WrittenFormatGlueHelper
     {
+        public const string LogTag = "[写入套格式]";
+
+        private static readonly object PlanSync = new object();
+        private static readonly List<string> Plans = new List<string>();
+
+        public static void ClearPlans()
+        {
+            lock (PlanSync)
+            {
+                Plans.Clear();
+            }
+        }
+
+        public static List<string> SnapshotPlans()
+        {
+            lock (PlanSync)
+            {
+                return new List<string>(Plans);
+            }
+        }
+
+        public static void RecordPlan(string line)
+        {
+            if (string.IsNullOrEmpty(line))
+            {
+                return;
+            }
+
+            lock (PlanSync)
+            {
+                Plans.Add(line);
+            }
+
+            EasyWriteLog.WriteLine(line);
+            EasyWriteLog.Flush();
+            System.Diagnostics.Debug.WriteLine(line);
+        }
+
         public struct BreakSlices
         {
             public int FirstCr;
