@@ -2286,7 +2286,8 @@ namespace WordAddIn1
                     }
                 }
 
-                ApplySnapshotDiffToResults(new List<ActionResult> { result });
+                // 对外已不回 new_codes；写后 PD 只刷新映射。邻居夹码先停。
+                // ApplySnapshotDiffToResults(new List<ActionResult> { result });
             }
             catch (Exception ex)
             {
