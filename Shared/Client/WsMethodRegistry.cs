@@ -283,7 +283,11 @@ namespace WordAddIn1
                 return early;
             }
 
-            CheckpointBeforeResult before = DocumentCheckpointService.CreateBeforeMutation(toolName, args);
+            CheckpointBeforeResult before;
+            using (EasyWriteDiagnostics.Time("checkpoint.CreateBeforeMutation"))
+            {
+                before = DocumentCheckpointService.CreateBeforeMutation(toolName, args);
+            }
             if (!before.Success)
             {
                 WordAddIn1.DocumentHost.HostProbe.Log(

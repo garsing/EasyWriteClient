@@ -664,9 +664,13 @@ namespace WordAddIn1
         {
             try
             {
-                var options = ProcessDocumentOptions.ForProcessActions("locate");
-                options.DisallowBackendApi = disallowBackendApi;
-                WordDocumentExtractor.ProcessDocument(doc, options);
+                using (EasyWriteDiagnostics.Time("process_actions.ProcessDocument_locate"))
+                {
+                    var options = ProcessDocumentOptions.ForProcessActions("locate");
+                    options.DisallowBackendApi = disallowBackendApi;
+                    WordDocumentExtractor.ProcessDocument(doc, options);
+                }
+
                 return null;
             }
             catch (Exception ex)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -58,6 +59,11 @@ namespace WordAddIn1
                     Word.Document document = docHandle.Document;
                     WordAddIn1.DocumentHost.HostProbe.Touch("tool-doc", document);
 
+                    var swTotal = Stopwatch.StartNew();
+                    int timedActionCount = 0;
+                    try
+                    {
+
                     string logPath = EasyWriteLog.BeginSession("process_document_actions");
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 本次测试日志: {logPath}");
                     System.Diagnostics.Debug.WriteLine(
@@ -69,28 +75,35 @@ namespace WordAddIn1
                     FormatInheritHelper.DbgLogDocumentFontSample(document, "门面预检前");
 
                     System.Diagnostics.Debug.WriteLine("[DEBUG] 开始解析操作参数");
-                    var parseResult = ParseActions(args["action"], document);
-                    bool parseSuccess = parseResult.Item1;
-                    string parseError = parseResult.Item2;
-                    List<ParagraphAction> actions = parseResult.Item3;
-                    
-                    if (!parseSuccess)
+                    (bool success, string error, List<ParagraphAction> actions) parseResult;
+                    using (EasyWriteDiagnostics.Time("process_actions.parse"))
                     {
-                        System.Diagnostics.Debug.WriteLine($"[ERROR] 解析操作失败: {parseError}");
-                        return FailBeforeWrite(parseError);
+                        parseResult = ParseActions(args["action"], document);
                     }
-                    
+
+                    if (!parseResult.success)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[ERROR] 解析操作失败: {parseResult.error}");
+                        return FailBeforeWrite(parseResult.error);
+                    }
+
+                    List<ParagraphAction> actions = parseResult.actions;
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 解析操作成功，共 {actions.Count} 个操作");
+                    timedActionCount = actions.Count;
 
                     for (int i = 0; i < actions.Count; i++)
                     {
                         actions[i].ActionIndex = i;
                     }
 
-                    var precheck = InsertTargetLocatorHelper.TryPrecheckTargets(
-                        document,
-                        BuildAmbiguityAnchors(actions),
-                        docHandle.DisallowBackendApi);
+                    InsertTargetLocatorHelper.PrecheckResult precheck;
+                    using (EasyWriteDiagnostics.Time("process_actions.precheck"))
+                    {
+                        precheck = InsertTargetLocatorHelper.TryPrecheckTargets(
+                            document,
+                            BuildAmbiguityAnchors(actions),
+                            docHandle.DisallowBackendApi);
+                    }
                     if (!precheck.Success)
                     {
                         return InsertTargetLocatorHelper.ToPrecheckFailureResult(
@@ -103,7 +116,12 @@ namespace WordAddIn1
                         ?? TableSentenceScopeHelper.BuildIndexFromProcessCache(DocumentState.LastProcessCache);
                     ApplyResolvedDisplayPositions(actions, precheck.Ambiguity);
 
-                    string continuityError = ValidateAllActionsContinuity(actions, tableScope);
+                    string continuityError;
+                    using (EasyWriteDiagnostics.Time("process_actions.continuity"))
+                    {
+                        continuityError = ValidateAllActionsContinuity(actions, tableScope);
+                    }
+
                     if (!string.IsNullOrEmpty(continuityError))
                     {
                         return SentenceCodeAmbiguityHelper.BuildPreStep3FailureResult(
@@ -116,11 +134,15 @@ namespace WordAddIn1
                     // 第三步：直接修改文档（本工具不修改审阅开关）
                     System.Diagnostics.Debug.WriteLine("[第三步] 直接修改文档");
                     FormatInheritHelper.DbgLogDocumentFontSample(document, "第三步 modify 前");
-                    List<ActionResult> modifyResults = await ModifyDocumentDirectly(
-                        document,
-                        actions,
-                        tableScope,
-                        docHandle.DisallowBackendApi);
+                    List<ActionResult> modifyResults;
+                    using (EasyWriteDiagnostics.Time("process_actions.modify"))
+                    {
+                        modifyResults = await ModifyDocumentDirectly(
+                            document,
+                            actions,
+                            tableScope,
+                            docHandle.DisallowBackendApi);
+                    }
                     FormatInheritHelper.DbgLogDocumentFontSample(document, "第三步 modify 后");
                     System.Diagnostics.Debug.WriteLine("[第三步完成]");
 
@@ -128,10 +150,14 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine("[第四步] 修改后刷新句子与名称映射表");
                     try
                     {
-                        string postMappingError = await UpdateSentenceNameMapping(
-                            document,
-                            "process_actions_step4",
-                            docHandle.DisallowBackendApi);
+                        string postMappingError;
+                        using (EasyWriteDiagnostics.Time("process_actions.step4_remap"))
+                        {
+                            postMappingError = await UpdateSentenceNameMapping(
+                                document,
+                                "process_actions_step4",
+                                docHandle.DisallowBackendApi);
+                        }
                         if (!string.IsNullOrEmpty(postMappingError))
                         {
                             System.Diagnostics.Debug.WriteLine($"[格式融合] 修改后刷新映射表 warning: {postMappingError}");
@@ -187,15 +213,19 @@ namespace WordAddIn1
                     }
 
                     Word.Document activeDocument = document;
-                    var navigateOutcome = DocumentNavigateHelper.BuildAndApply(
-                        wordApplicationTyped,
-                        activeDocument,
-                        navigateInputs,
-                        bulkMode,
-                        navigateSettings.AutoNavigateAfterModify);
-                    List<Dictionary<string, object>> navigates = navigateOutcome.Navigates;
-                    Dictionary<string, object> navigateSummary = navigateOutcome.Summary;
-
+                    List<Dictionary<string, object>> navigates;
+                    Dictionary<string, object> navigateSummary;
+                    using (EasyWriteDiagnostics.Time("process_actions.navigate"))
+                    {
+                        var navigateOutcome = DocumentNavigateHelper.BuildAndApply(
+                            wordApplicationTyped,
+                            activeDocument,
+                            navigateInputs,
+                            bulkMode,
+                            navigateSettings.AutoNavigateAfterModify);
+                        navigates = navigateOutcome.Navigates;
+                        navigateSummary = navigateOutcome.Summary;
+                    }
                     bool allOk = orderedResults.All(r => r.success);
                     var result = new ToolResult
                     {
@@ -214,6 +244,14 @@ namespace WordAddIn1
                     };
 
                     return result;
+                    }
+                    finally
+                    {
+                        EasyWriteDiagnostics.LogTiming(
+                            "process_actions.total",
+                            swTotal.ElapsedMilliseconds,
+                            "actions=" + timedActionCount);
+                    }
                 }
                 catch (OperationCanceledException)
                 {
@@ -753,6 +791,7 @@ namespace WordAddIn1
                     .ToList();
 
                 // 先处理delete和replace（从后往前），再处理insert（从后往前）
+                IDisposable sortDr = EasyWriteDiagnostics.Time("process_actions.sort_delete_replace");
                 var deleteAndReplaceActions = sortedActions
                     .Where(x => x.Action.Type?.ToLower() == "delete" || x.Action.Type?.ToLower() == "replace")
                     .OrderByDescending(x => GetSentencePositionInDocument(
@@ -763,11 +802,14 @@ namespace WordAddIn1
                             : x.Action.DeletionScopeFields?.TableId,
                         disallowBackendApi))
                     .ToList();
+                sortDr.Dispose();
 
+                IDisposable sortIns = EasyWriteDiagnostics.Time("process_actions.sort_insert");
                 var insertActions = sortedActions
                     .Where(x => x.Action.Type?.ToLower() == "insert")
                     .OrderByDescending(x => GetInsertSortPosition(doc, x.Action, disallowBackendApi))
                     .ToList();
+                sortIns.Dispose();
 
                 // 先执行delete和replace操作
                 foreach (var item in deleteAndReplaceActions)
@@ -784,6 +826,9 @@ namespace WordAddIn1
 
                     try
                     {
+                        using (EasyWriteDiagnostics.Time(
+                            "process_actions.action." + (action.Type ?? "?") + "[" + item.OriginalIndex + "]"))
+                        {
                         switch (action.Type?.ToLower())
                         {
                             case "replace":
@@ -817,6 +862,7 @@ namespace WordAddIn1
                                 break;
                             }
                         }
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -842,6 +888,9 @@ namespace WordAddIn1
 
                     try
                     {
+                        using (EasyWriteDiagnostics.Time(
+                            "process_actions.action.insert[" + item.OriginalIndex + "]"))
+                        {
                         if (!TryPrepareActionFormat(
                             doc, action, tableScope, result, out var formatSnapshot, out var formatMode))
                         {
@@ -857,6 +906,7 @@ namespace WordAddIn1
                             formatMode,
                             disallowBackendApi);
                         FillInsertActionResult(result, ins, action.TargetLocator);
+                        }
                     }
                     catch (Exception ex)
                     {
