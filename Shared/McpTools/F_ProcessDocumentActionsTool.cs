@@ -2305,14 +2305,17 @@ namespace WordAddIn1
             }
         }
 
+        /// <summary>
+        /// 写前快照：step4 之前最近一条即可。
+        /// 现网 precheck 用 source=locate，缓存命中且快照未变时不入栈；
+        /// 栈上常见的是 get_document_content。只认 step1/locate 会得到 snapshot_history_missing。
+        /// </summary>
         private static SnapshotRecord FindLatestStep1Before(int postIndex)
         {
             for (int i = DocumentState.SnapshotHistory.Count - 1; i >= 0; i--)
             {
                 SnapshotRecord record = DocumentState.SnapshotHistory[i];
-                if (record.Index < postIndex
-                    && (string.Equals(record.Source, "process_actions_step1", StringComparison.Ordinal)
-                        || string.Equals(record.Source, "locate", StringComparison.Ordinal)))
+                if (record.Index < postIndex)
                 {
                     return record;
                 }
@@ -2335,13 +2338,7 @@ namespace WordAddIn1
                 : new List<string>();
             mr.new_codes_source = diff.Source;
             mr.new_codes_warning = diff.Warning;
-
-            if (!diff.IsVerified && mr.success)
-            {
-                string op = mr.type == "insert" ? "插入" : "替换";
-                mr.message =
-                    $"{op}成功，但未能可靠解析新句子编码，请调用 F_get_document_content。";
-            }
+            // 写入已成功时保持「替换/插入成功」，不要催读文，避免模型当成失败再改。
         }
 
         private static void LogPendingVsSnapshotDiff(ActionResult mr)
@@ -2439,8 +2436,7 @@ namespace WordAddIn1
                     ["affected_codes"] = affectedUnion,
                     ["new_sentences"] = new List<Dictionary<string, object>>(),
                     ["new_codes_source"] = SnapshotDiffHelper.SourceUnavailable,
-                    ["new_codes_warning"] = "ambiguous_interval",
-                    ["message"] = "本批操作已完成，但未能可靠解析新句子编码，请调用 F_get_document_content。"
+                    ["new_codes_warning"] = "ambiguous_interval"
                 };
             }
 
@@ -2466,12 +2462,6 @@ namespace WordAddIn1
             if (bulk.IsVerified && bulk.Sentences.Count > 0)
             {
                 dict["new_codes"] = bulk.Sentences.Select(s => s.Code).ToList();
-            }
-
-            if (!bulk.IsVerified)
-            {
-                dict["message"] =
-                    "本批操作已完成，但未能可靠解析新句子编码，请调用 F_get_document_content。";
             }
 
             return dict;
