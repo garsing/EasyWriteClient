@@ -52,6 +52,9 @@ namespace WordAddIn1
 
         public string SegSnapshot { get; set; } = "";
 
+        public HashSet<string> InoperableSentenceCodes { get; } =
+            new HashSet<string>(StringComparer.Ordinal);
+
         public List<SnapshotRecord> SnapshotHistory { get; } = new List<SnapshotRecord>();
 
         public int NextSnapshotHistoryIndex { get; set; }

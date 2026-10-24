@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using WordAddIn1.DocumentHost;
+using WordAddIn1.DocumentMapping;
 using WordAddIn1.DocumentMapping.CodeResolve;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -91,6 +92,12 @@ namespace WordAddIn1
                     List<ParagraphAction> actions = parseResult.actions;
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 解析操作成功，共 {actions.Count} 个操作");
                     timedActionCount = actions.Count;
+
+                    string unusable = FindInoperableActionError(actions);
+                    if (!string.IsNullOrEmpty(unusable))
+                    {
+                        return FailBeforeWrite(unusable);
+                    }
 
                     for (int i = 0; i < actions.Count; i++)
                     {
@@ -513,6 +520,26 @@ namespace WordAddIn1
                     Col = s.Col
                 }
             };
+        }
+
+        private static string FindInoperableActionError(List<ParagraphAction> actions)
+        {
+            if (actions == null)
+            {
+                return null;
+            }
+
+            foreach (ParagraphAction action in actions)
+            {
+                if (DocumentState.CsvContainsInoperable(action.SentenceNames)
+                    || (action.TargetLocator != null
+                        && DocumentState.CsvContainsInoperable(action.TargetLocator.Codes)))
+                {
+                    return StoryUniqEncode.UnusableError + ": " + StoryUniqEncode.UnusableHint;
+                }
+            }
+
+            return null;
         }
 
         private static List<DocumentActionAmbiguityAnchor> BuildAmbiguityAnchors(List<ParagraphAction> actions)
@@ -2213,7 +2240,7 @@ namespace WordAddIn1
             // 使用正则表达式删除句子编号标识
             // 格式：方括号内S_前缀加5位编码（数字、小写字母、大写字母）加-start或-end，如 [S_00000-start] 和 [S_00000-end]
             // 正则表达式：\[S_[0-9a-zA-Z]{5}-start\]|\[S_[0-9a-zA-Z]{5}-end\]
-            string pattern = @"\[S_[0-9a-zA-Z]{5}-start\]|\[S_[0-9a-zA-Z]{5}-end\]";
+            string pattern = @"\[S_[0-9a-zA-Z]{5}-start(?: [^\]]*)?\]|\[S_[0-9a-zA-Z]{5}-end\]";
             string result = Regex.Replace(text, pattern, "");
             return WordAddIn1.DocumentMapping.InTableBoundaryMarker.Strip(result);
         }

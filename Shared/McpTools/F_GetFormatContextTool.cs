@@ -121,12 +121,16 @@ namespace WordAddIn1
                     else
                     {
                         string targetCodes = args["target_codes"].ToString()?.Trim() ?? "";
-                        if (EmptyCellCode.CsvContainsAny(targetCodes))
+                        string formatPolicy = FormatContextHelper.LocateThenFormatPolicyError(
+                            doc,
+                            targetCodes,
+                            docHandle.DisallowBackendApi);
+                        if (!string.IsNullOrEmpty(formatPolicy))
                         {
                             return Task.FromResult(new ToolResult
                             {
                                 Success = false,
-                                Error = EmptyCellCode.NoFormatError
+                                Error = formatPolicy
                             });
                         }
 

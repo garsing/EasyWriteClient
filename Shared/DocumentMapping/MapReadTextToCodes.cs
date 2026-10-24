@@ -63,11 +63,13 @@ namespace WordAddIn1.DocumentMapping
                 mapped.AllChunkParagraphNames.Add(chunkAllParagraphNames);
                 mapped.AllChunkSegsSentenceNames.Add(chunkSegsSentenceNames);
                 mapped.AllChunkSegsParagraphNames.Add(chunkSegsParagraphNames);
-                mapped.ChunkDisplayContents.Add(
-                    BuildSentenceDisplayContent.Build(chunkNonSegs, chunkSegsSentenceNames, sentenceContentMap));
                 mapped.ChunkParagraphDisplayContents.Add(
                     BuildParagraphDisplayContent.Build(chunkNonSegs, chunkSegsParagraphNames, paragraphContentMap));
             }
+
+            mapped.NameToSentenceContentMap = ContentMapFromMappings(store.GetSentenceMappings());
+            StoryUniqEncode.Apply(mapped, store);
+            FinishSentenceDisplays(mapped);
 
             mapped.SentenceMappings = CloneMappings(store.GetSentenceMappings());
             mapped.ParagraphMappings = CloneMappings(store.GetParagraphMappings());
@@ -78,6 +80,65 @@ namespace WordAddIn1.DocumentMapping
                 kv => new List<string>(kv.Value));
             mapped.NameToSentenceContentMap = ContentMapFromMappings(store.GetSentenceMappings());
             return mapped;
+        }
+
+        private static void FinishSentenceDisplays(MapReadTextResult mapped)
+        {
+            mapped.ChunkDisplayContents.Clear();
+            mapped.AllChunkSentenceNames.Clear();
+            var content = mapped.NameToSentenceContentMap;
+            var inoperable = mapped.InoperableSentenceCodes
+                ?? new HashSet<string>(StringComparer.Ordinal);
+
+            for (int c = 0; c < mapped.AllChunkNonSegs.Count; c++)
+            {
+                List<string> nonSegs = mapped.AllChunkNonSegs[c];
+                List<List<string>> segs = c < mapped.AllChunkSegsSentenceNames.Count
+                    ? mapped.AllChunkSegsSentenceNames[c]
+                    : new List<List<string>>();
+                string display = BuildSentenceDisplayContent.Build(nonSegs, segs, content, inoperable);
+
+                List<List<string>> geoSets = new List<List<string>>();
+                if (c < mapped.AllChunkSegNeedsGeometry.Count)
+                {
+                    List<bool> flags = mapped.AllChunkSegNeedsGeometry[c];
+                    for (int s = 0; s < segs.Count; s++)
+                    {
+                        if (s < flags.Count && flags[s] && segs[s] != null && segs[s].Count > 0)
+                        {
+                            geoSets.Add(new List<string>(segs[s]));
+                        }
+                    }
+                }
+
+                if (geoSets.Count > 0)
+                {
+                    display = EmptyCellCode.WrapCellsMatchingCodeSets(display, geoSets);
+                    if (c < mapped.AllChunkSegNeedsGeometry.Count)
+                    {
+                        List<bool> flags = mapped.AllChunkSegNeedsGeometry[c];
+                        for (int s = 0; s < segs.Count; s++)
+                        {
+                            if (s < flags.Count && flags[s])
+                            {
+                                segs[s] = new List<string>();
+                            }
+                        }
+                    }
+                }
+
+                mapped.ChunkDisplayContents.Add(display);
+                var flat = new List<string>();
+                foreach (List<string> seg in segs)
+                {
+                    if (seg != null)
+                    {
+                        flat.AddRange(seg);
+                    }
+                }
+
+                mapped.AllChunkSentenceNames.Add(flat);
+            }
         }
 
         public static SegMapResult MapSegTextToCodes(string segText, int segMark, IMappingStore store)

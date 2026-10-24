@@ -12,7 +12,7 @@ namespace WordAddIn1.DocumentMapping
     public static class DisplayStoryConvert
     {
         private static readonly Regex CodeStart = new Regex(
-            @"\[(?:P|S)_[^\]]+?(?:-start| start)\]", RegexOptions.Compiled);
+            @"\[(?:P|S)_[^\]]+?(?:-start| start)[^\]]*\]", RegexOptions.Compiled);
         private static readonly Regex CodeEnd = new Regex(
             @"\[(?:P|S)_[^\]]+?(?:-end| end)\]", RegexOptions.Compiled);
         private static readonly Regex InTable = new Regex(

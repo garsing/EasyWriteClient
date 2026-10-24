@@ -23,11 +23,11 @@ namespace WordAddIn1
             RegexOptions.Compiled);
 
         private static readonly Regex SentenceStartInCell = new Regex(
-            @"\[S_[0-9a-zA-Z]{5}-start\]",
+            @"\[S_[0-9a-zA-Z]{5}-start(?: [^\]]*)?\]",
             RegexOptions.Compiled);
 
         private static readonly Regex SentenceStartCapture = new Regex(
-            @"\[(S_[0-9a-zA-Z]{5})-start\]",
+            @"\[(S_[0-9a-zA-Z]{5})-start(?: [^\]]*)?\]",
             RegexOptions.Compiled);
 
         private static readonly Regex SentenceEndInCell = new Regex(
@@ -156,8 +156,7 @@ namespace WordAddIn1
 
         public static string Stamp(string display, string segSnapshot)
         {
-            string vacuumed = StampVacuum(display);
-            return ReplaceAmbiguousCells(vacuumed, segSnapshot);
+            return StampVacuum(display);
         }
 
         public static string Stamp(Word.Document doc, string display)
@@ -235,10 +234,41 @@ namespace WordAddIn1
             return result;
         }
 
-        private static string ReplaceAmbiguousCells(string display, string segSnapshot)
+        /// <summary>
+        /// 可见格内 S_ 序列与某组原码一致则整格换成几何码（编码消歧 D8）。
+        /// </summary>
+        public static string WrapCellsMatchingCodeSets(
+            string display,
+            IReadOnlyList<IReadOnlyList<string>> codeSets)
         {
             if (string.IsNullOrEmpty(display)
-                || string.IsNullOrEmpty(segSnapshot)
+                || codeSets == null
+                || codeSets.Count == 0
+                || display.IndexOf("<table", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return display;
+            }
+
+            var needles = new List<List<string>>();
+            foreach (IReadOnlyList<string> set in codeSets)
+            {
+                if (set != null && set.Count > 0)
+                {
+                    needles.Add(new List<string>(set));
+                }
+            }
+
+            if (needles.Count == 0)
+            {
+                return display;
+            }
+
+            return ReplaceMatchingCells(display, needles);
+        }
+
+        private static string ReplaceMatchingCells(string display, List<List<string>> needles)
+        {
+            if (string.IsNullOrEmpty(display)
                 || display.IndexOf("<table", StringComparison.OrdinalIgnoreCase) < 0)
             {
                 return display;
@@ -280,13 +310,7 @@ namespace WordAddIn1
                     }
 
                     List<string> codes = ExtractSentenceCodes(body);
-                    if (codes.Count == 0)
-                    {
-                        continue;
-                    }
-
-                    string needle = string.Join(",", codes);
-                    if (CountNeedle(segSnapshot, needle) == 1)
+                    if (codes.Count == 0 || !CodeSetMatches(needles, codes))
                     {
                         continue;
                     }
@@ -304,40 +328,32 @@ namespace WordAddIn1
             return ApplyReplacesFromBack(display, jobs);
         }
 
-        private static int CountNeedle(string segSnapshot, string needle)
+        private static bool CodeSetMatches(List<List<string>> needles, List<string> codes)
         {
-            if (string.IsNullOrEmpty(segSnapshot) || string.IsNullOrEmpty(needle))
+            foreach (List<string> needle in needles)
             {
-                return 0;
-            }
-
-            int n = 0;
-            int from = 0;
-            while (from <= segSnapshot.Length - needle.Length)
-            {
-                int i = segSnapshot.IndexOf(needle, from, StringComparison.Ordinal);
-                if (i < 0)
+                if (needle.Count != codes.Count)
                 {
-                    break;
+                    continue;
                 }
 
-                if (IsCodeBoundary(segSnapshot, i, needle.Length))
+                bool same = true;
+                for (int i = 0; i < codes.Count; i++)
                 {
-                    n++;
+                    if (needle[i] != codes[i])
+                    {
+                        same = false;
+                        break;
+                    }
                 }
 
-                from = i + 1;
+                if (same)
+                {
+                    return true;
+                }
             }
 
-            return n;
-        }
-
-        private static bool IsCodeBoundary(string s, int index, int length)
-        {
-            bool left = index == 0 || s[index - 1] == ',' || s[index - 1] == ';';
-            int rightAt = index + length;
-            bool right = rightAt == s.Length || s[rightAt] == ',' || s[rightAt] == ';';
-            return left && right;
+            return false;
         }
 
         private static List<string> ExtractSentenceCodes(string body)

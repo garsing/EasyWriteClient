@@ -557,9 +557,8 @@ namespace WordAddIn1
                     if (!string.IsNullOrEmpty(segContent))
                     {
                         segs.Add(segContent);
-                        // 标记：只有当开始标志是 <cell>（type=2）且结束标志是 </cell>（endType=2）且 seg 长度少于 150 字时才标记为 1
-                        // 如果 <cell> 遇到其他结束标志（如 <table> 或 <image />），或长度 >= 150 字，标记为 0
-                        int mark = (currentStartFlagType == 2 && endFlagType == 2 && segContent.Length < 150) ? 1 : 0;
+                        // 标记：开始是格且结束是格闭 → 1（完整格，无 150 字限制）
+                        int mark = (currentStartFlagType == 2 && endFlagType == 2) ? 1 : 0;
                         if (segMarks != null)
                         {
                             segMarks.Add(mark);
@@ -567,14 +566,7 @@ namespace WordAddIn1
                         string markReason = "";
                         if (currentStartFlagType == 2 && endFlagType == 2)
                         {
-                            if (segContent.Length >= 150)
-                            {
-                                markReason = $"（长度 {segContent.Length} >= 150）";
-                            }
-                            else
-                            {
-                                markReason = "（cell类型且长度 < 150）";
-                            }
+                            markReason = "（完整格）";
                         }
                         else
                         {
@@ -1749,7 +1741,8 @@ namespace WordAddIn1
 
             // 使用正则表达式匹配 [S_00000-start] 和 [S_00000-end] 格式的标记（S_前缀 + 5位编码：数字、小写字母、大写字母）
             // 模式：\[S_[0-9a-zA-Z]{5}-start\]|\[S_[0-9a-zA-Z]{5}-end\] 匹配 [S_00000-start] 和 [S_00000-end] 这样的标记
-            var markerPattern = new System.Text.RegularExpressions.Regex(@"\[S_[0-9a-zA-Z]{5}-start\]|\[S_[0-9a-zA-Z]{5}-end\]");
+            var markerPattern = new System.Text.RegularExpressions.Regex(
+                @"\[S_[0-9a-zA-Z]{5}-start(?: [^\]]*)?\]|\[S_[0-9a-zA-Z]{5}-end\]");
             string withoutSentence = markerPattern.Replace(displayContent, "");
             withoutSentence = EmptyCellCode.StripMarkers(withoutSentence);
             return WordAddIn1.DocumentMapping.InTableBoundaryMarker.Strip(withoutSentence);
@@ -1941,7 +1934,7 @@ namespace WordAddIn1
                                 
                                 // 设置SentenceMappings
                                 // 四元组格式：[句子名称, 哈希码, 内容, 标记]
-                                // 标记：1表示来自cell类型的seg（cell类型且长度<150），0表示其他类型
+                                // 标记：1表示完整格 seg（cell 开闭），0表示其他类型
                                 if (data["SentenceMappings"] != null)
                                 {
                                     var sentenceMappings = new List<List<string>>();

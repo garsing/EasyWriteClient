@@ -72,6 +72,18 @@ namespace WordAddIn1
                         return Done(false, targetError);
                     }
 
+                    if (!paragraphMode)
+                    {
+                        string formatPolicy = FormatContextHelper.LocateThenFormatPolicyError(
+                            doc,
+                            string.Join(",", targetCodes),
+                            docHandle.DisallowBackendApi);
+                        if (!string.IsNullOrEmpty(formatPolicy))
+                        {
+                            return Done(false, formatPolicy);
+                        }
+                    }
+
                     ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
                     var formatAnchors = new List<DocumentActionAmbiguityAnchor>
                     {
@@ -394,13 +406,8 @@ namespace WordAddIn1
                 return false;
             }
 
-            if (targetCodes.Any(EmptyCellCode.IsEmptyCellCode))
-            {
-                error = EmptyCellCode.NoFormatError;
-                return false;
-            }
-
-            if (targetCodes.Any(c => c.StartsWith("T_", StringComparison.Ordinal)))
+            if (targetCodes.Any(c => c.StartsWith("T_", StringComparison.Ordinal)
+                && !EmptyCellCode.IsEmptyCellCode(c)))
             {
                 error = "apply 仅支持 S_ / P_，不支持 T_";
                 return false;

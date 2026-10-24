@@ -10,7 +10,8 @@ namespace WordAddIn1.DocumentMapping
         public static string Build(
             IReadOnlyList<string> nonSegs,
             IReadOnlyList<IReadOnlyList<string>> segsSentenceNames,
-            IReadOnlyDictionary<string, string> nameToContentMap)
+            IReadOnlyDictionary<string, string> nameToContentMap,
+            HashSet<string> inoperable = null)
         {
             var displayParts = new List<string>();
 
@@ -26,7 +27,11 @@ namespace WordAddIn1.DocumentMapping
                 {
                     nameToContentMap.TryGetValue(sentenceName, out string sentenceContent);
                     sentenceContent = sentenceContent ?? "";
-                    segDisplayParts.Add($"[{sentenceName}-start]{sentenceContent}[{sentenceName}-end]");
+                    bool unusable = inoperable != null && inoperable.Contains(sentenceName);
+                    segDisplayParts.Add(
+                        StoryUniqEncode.StartMarker(sentenceName, unusable)
+                        + sentenceContent
+                        + "[" + sentenceName + "-end]");
                 }
 
                 displayParts.Add(string.Join("", segDisplayParts));

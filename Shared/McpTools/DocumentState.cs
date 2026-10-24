@@ -362,6 +362,47 @@ namespace WordAddIn1
             return paragraphName;
         }
 
+        public static void SetInoperableSentenceCodes(IEnumerable<string> codes)
+        {
+            Session.InoperableSentenceCodes.Clear();
+            if (codes == null)
+            {
+                return;
+            }
+
+            foreach (string code in codes)
+            {
+                if (!string.IsNullOrEmpty(code))
+                {
+                    Session.InoperableSentenceCodes.Add(code);
+                }
+            }
+        }
+
+        public static bool IsInoperableSentenceCode(string code)
+        {
+            return !string.IsNullOrEmpty(code) && Session.InoperableSentenceCodes.Contains(code);
+        }
+
+        public static bool CsvContainsInoperable(string csv)
+        {
+            if (string.IsNullOrWhiteSpace(csv) || Session.InoperableSentenceCodes.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (string part in csv.Split(','))
+            {
+                string code = part.Trim();
+                if (IsInoperableSentenceCode(code))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public static void ClearSentenceParagraphIndex()
         {
             Session.SentenceToParagraph.Clear();

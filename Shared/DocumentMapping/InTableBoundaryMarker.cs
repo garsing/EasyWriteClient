@@ -21,7 +21,7 @@ namespace WordAddIn1.DocumentMapping
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static readonly Regex SentenceStartRegex = new Regex(
-            @"\[(S_[0-9a-zA-Z]{5})-start\]",
+            @"\[(S_[0-9a-zA-Z]{5})-start(?: [^\]]*)?\]",
             RegexOptions.Compiled);
 
         private static readonly Regex ParagraphStartRegex = new Regex(

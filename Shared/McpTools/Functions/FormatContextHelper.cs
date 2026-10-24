@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Word = Microsoft.Office.Interop.Word;
+using WordAddIn1.DocumentMapping;
 using WordAddIn1.DocumentMapping.CodeResolve;
 
 namespace WordAddIn1
@@ -14,6 +15,56 @@ namespace WordAddIn1
         public const string DbgPrefix = "[格式上下文][DBG]";
         public const int DefaultTextPreviewLength = 40;
         public const int DefaultContextWindow = 3;
+
+        /// <summary>
+        /// I19：先统一 Locator 出 Range，再判能否抽格式。null = 继续现网 S_ 抽格式。
+        /// </summary>
+        public static string LocateThenFormatPolicyError(
+            Word.Document doc,
+            string csv,
+            bool disallowBackendApi)
+        {
+            if (string.IsNullOrWhiteSpace(csv))
+            {
+                return "缺少或无效的 target_codes";
+            }
+
+            var dict = new Dictionary<string, object> { ["codes"] = csv.Trim() };
+            InsertTargetLocatorHelper.LocatorParseResult parsed =
+                InsertTargetLocatorHelper.ParseLocatorObject(dict, sentenceOnly: false, fieldLabel: "target_codes");
+            if (!parsed.Success)
+            {
+                return parsed.Error;
+            }
+
+            InsertTargetLocatorHelper.LocateRangeKind kind =
+                parsed.Spec != null && parsed.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.EmptyCell
+                    ? InsertTargetLocatorHelper.LocateRangeKind.WriteCell
+                    : InsertTargetLocatorHelper.LocateRangeKind.ContentSpan;
+            InsertTargetLocatorHelper.ResolveRangeResult located =
+                InsertTargetLocatorHelper.TryResolveInsertRange(
+                    doc,
+                    parsed.Spec,
+                    kind,
+                    disallowBackendApi,
+                    refreshDocument: false);
+            if (!located.Success)
+            {
+                return located.Error ?? "locate_failed";
+            }
+
+            if (parsed.Spec != null && parsed.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.EmptyCell)
+            {
+                return EmptyCellCode.NoFormatError;
+            }
+
+            if (DocumentState.CsvContainsInoperable(csv))
+            {
+                return StoryUniqEncode.UnusableError + ": " + StoryUniqEncode.UnusableHint;
+            }
+
+            return null;
+        }
 
         private static readonly string[] CharFormatKeys =
         {
@@ -245,14 +296,7 @@ namespace WordAddIn1
 
             foreach (string code in targetCodes)
             {
-                if (EmptyCellCode.IsEmptyCellCode(code))
-                {
-                    result.Success = false;
-                    result.Error = EmptyCellCode.NoFormatError;
-                    return result;
-                }
-
-                if (code.StartsWith("T_", StringComparison.Ordinal))
+                if (code.StartsWith("T_", StringComparison.Ordinal) && !EmptyCellCode.IsEmptyCellCode(code))
                 {
                     result.Success = false;
                     result.Error = "get_format_context 仅支持 S_ 句子编码，不支持 T_ 表格编码";
