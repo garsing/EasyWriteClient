@@ -214,7 +214,11 @@ namespace WordDocumentRoundtripTest
 
             if (string.Equals(caseFilter, "wu-locate-doc", StringComparison.OrdinalIgnoreCase))
             {
-                return WuLocateDoc.Run(host, docPath);
+                bool paragraph = string.Equals(
+                    GetArg(args, "--level="),
+                    "paragraph",
+                    StringComparison.OrdinalIgnoreCase);
+                return WuLocateDoc.Run(host, docPath, paragraph);
             }
 
             if (string.Equals(caseFilter, "wu-para-vacuum-op", StringComparison.OrdinalIgnoreCase))
