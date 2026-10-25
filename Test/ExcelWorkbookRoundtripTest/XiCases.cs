@@ -22,6 +22,7 @@ namespace ExcelWorkbookRoundtripTest
             var s = new XlSession(et);
             RunNeg(run, s);
             RunLife(run, s);
+            RunSolid(run, s);
         }
 
         private static void RunNeg(TestRun run, XlSession s)
@@ -339,11 +340,371 @@ namespace ExcelWorkbookRoundtripTest
             });
         }
 
+        private static void RunSolid(TestRun run, XlSession s)
+        {
+            if (DocumentCheckpointMutatingTools.ShouldCheckpoint(
+                    "F_excel_image",
+                    new Dictionary<string, object> { ["action"] = "update" })
+                && DocumentCheckpointMutatingTools.ShouldCheckpoint(
+                    "F_excel_image",
+                    new Dictionary<string, object> { ["action"] = "delete" })
+                && !DocumentCheckpointMutatingTools.ShouldCheckpoint(
+                    "F_excel_image",
+                    new Dictionary<string, object> { ["action"] = "LIST" }))
+            {
+                run.CaseOk("xi-g-ckpt-write");
+            }
+            else
+            {
+                run.CaseFail("xi-g-ckpt-write", "update/delete 应建点，LIST 不建");
+            }
+
+            WithBook(run, s, "xi-g-neg-no-sheet", (id, ch) =>
+            {
+                ToolResult r = s.Image(id, "insert", "不存在的表", "B2", WriteTinyPng());
+                return r.Success ? "缺表应失败" : (Has(r.Error, "不存在") || Has(r.Error, "未找到") ? null : r.Error);
+            });
+
+            WithBook(run, s, "xi-g-neg-list-sheet", (id, ch) =>
+            {
+                ToolResult r = s.Image(id, "list", sheet: "不存在的表");
+                return r.Success ? "list 缺表应失败" : (Has(r.Error, "不存在") || Has(r.Error, "未找到") ? null : r.Error);
+            });
+
+            WithBook(run, s, "xi-g-neg-width-neg", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult r = s.Image(id, "insert", name, "B2", WriteTinyPng(), widthCm: -1);
+                return r.Success ? "负宽应失败" : (Has(r.Error, "width") || Has(r.Error, "大于") ? null : r.Error);
+            });
+
+            WithBook(run, s, "xi-g-neg-bmp", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                string bmp = Path.Combine(Path.GetTempPath(), "ew-xi-" + Guid.NewGuid().ToString("N") + ".bmp");
+                File.WriteAllBytes(bmp, Convert.FromBase64String(TinyPngB64));
+                ToolResult r = s.Image(id, "insert", name, "B2", bmp);
+                return r.Success ? "bmp 应失败" : (Has(r.Error, "后缀") || Has(r.Error, "png") ? null : r.Error);
+            });
+
+            WithBook(run, s, "xi-g-neg-http", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult r = s.Image(id, "insert", name, "B2", "http://127.0.0.1/x.png");
+                return r.Success ? "http 应失败" : null;
+            });
+
+            WithBook(run, s, "xi-g-neg-update-noid", (id, ch) =>
+            {
+                ToolResult r = s.Call("F_excel_image", new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["action"] = "update",
+                    ["width_cm"] = 8
+                });
+                return r.Success ? "无 image_id 应失败" : (Has(r.Error, "image_id") || Has(r.Error, "I_") ? null : r.Error);
+            });
+
+            WithBook(run, s, "xi-g-neg-delete-noid", (id, ch) =>
+            {
+                ToolResult r = s.Call("F_excel_image", new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["action"] = "delete"
+                });
+                return r.Success ? "无 image_id 应失败" : (Has(r.Error, "image_id") || Has(r.Error, "I_") ? null : r.Error);
+            });
+
+            WithBook(run, s, "xi-g-neg-move-bang", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult ins = s.Image(id, "insert", name, "B2", WriteTinyPng());
+                if (!ins.Success)
+                {
+                    return ins.Error;
+                }
+
+                ToolResult r = s.Image(id, "update", imageId: Str(ins, "image_id"), anchor: name + "!D4");
+                return r.Success ? "挪格含!应失败" : (Has(r.Error, "!") || Has(r.Error, "A1") || Has(r.Error, "anchor") ? null : r.Error);
+            });
+
+            WithBook(run, s, "xi-g-zh-sheet", (id, ch) =>
+            {
+                ToolResult add = s.Manage(id, "add", name: "封面");
+                if (!add.Success)
+                {
+                    return add.Error ?? "加封面失败";
+                }
+
+                ToolResult ins = s.Image(id, "insert", "封面", "B2", WriteTinyPng());
+                return ins.Success && Has(Str(ins, "sheet"), "封面")
+                    ? null
+                    : (ins.Error ?? "sheet=" + Str(ins, "sheet"));
+            });
+
+            WithBook(run, s, "xi-g-insert-a1", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult ins = s.Image(id, "insert", name, "A1", WriteTinyPng());
+                return ins.Success && Has(Str(ins, "anchor"), "A1")
+                    ? null
+                    : (ins.Error ?? "anchor=" + Str(ins, "anchor"));
+            });
+
+            WithBook(run, s, "xi-g-insert-c10", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult ins = s.Image(id, "insert", name, "C10", WriteTinyPng());
+                return ins.Success && Has(Str(ins, "anchor"), "C10")
+                    ? null
+                    : (ins.Error ?? "anchor=" + Str(ins, "anchor"));
+            });
+
+            WithBook(run, s, "xi-g-two-ids", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult a = s.Image(id, "insert", name, "B2", WriteTinyPng());
+                ToolResult b = s.Image(id, "insert", name, "D4", WriteTinyPng());
+                string ia = Str(a, "image_id");
+                string ib = Str(b, "image_id");
+                if (!a.Success || !b.Success)
+                {
+                    return a.Error ?? b.Error;
+                }
+
+                if (!ImageIdRx.IsMatch(ia) || !ImageIdRx.IsMatch(ib) || string.Equals(ia, ib, StringComparison.Ordinal))
+                {
+                    return "码撞了 " + ia + "/" + ib;
+                }
+
+                ToolResult listed = s.Image(id, "list");
+                return listed.Success && Int(listed, "images_count") == 2
+                    ? null
+                    : (listed.Error ?? "count=" + Int(listed, "images_count"));
+            });
+
+            WithBook(run, s, "xi-g-del-one", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult a = s.Image(id, "insert", name, "B2", WriteTinyPng());
+                ToolResult b = s.Image(id, "insert", name, "D4", WriteTinyPng());
+                if (!a.Success || !b.Success)
+                {
+                    return a.Error ?? b.Error;
+                }
+
+                ToolResult del = s.Image(id, "delete", imageId: Str(a, "image_id"));
+                if (!del.Success)
+                {
+                    return del.Error;
+                }
+
+                ToolResult listed = s.Image(id, "list");
+                string left = listed.Success ? Str(FirstImage(listed), "image_id") : "";
+                return listed.Success && Int(listed, "images_count") == 1
+                    && string.Equals(left, Str(b, "image_id"), StringComparison.Ordinal)
+                    ? null
+                    : (listed.Error ?? "剩=" + left);
+            });
+
+            WithBook(run, s, "xi-g-keep-anchor", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult ins = s.Image(id, "insert", name, "B2", WriteTinyPng());
+                if (!ins.Success)
+                {
+                    return ins.Error;
+                }
+
+                ToolResult wide = s.Image(id, "update", imageId: Str(ins, "image_id"), widthCm: 9);
+                return wide.Success && Has(Str(wide, "anchor"), "B2")
+                    ? null
+                    : (wide.Error ?? "改宽挪格了 " + Str(wide, "anchor"));
+            });
+
+            WithBook(run, s, "xi-g-list-other-empty", (id, ch) =>
+            {
+                string first = s.FirstSheetName(ch);
+                ToolResult add = s.Manage(id, "add", name: "空表");
+                if (!add.Success)
+                {
+                    return add.Error ?? "加空表失败";
+                }
+
+                ToolResult ins = s.Image(id, "insert", first, "B2", WriteTinyPng());
+                if (!ins.Success)
+                {
+                    return ins.Error;
+                }
+
+                ToolResult listed = s.Image(id, "list", sheet: "空表");
+                return listed.Success && Int(listed, "images_count") == 0
+                    ? null
+                    : (listed.Error ?? "空表不应有图");
+            });
+
+            WithBook(run, s, "xi-g-not-chart", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                if (!s.SeedSales(ch, name))
+                {
+                    return "铺底失败";
+                }
+
+                ToolResult chart = s.Chart(
+                    id,
+                    "create",
+                    new Dictionary<string, object> { ["sheet"] = name, ["range"] = "E2:K18" },
+                    "<ChartConfig><Chart><Type>column</Type><Title>销量</Title><DataTable><Source sheet=\""
+                        + name + "\" range=\"A1:B4\" plotBy=\"columns\"/></DataTable></Chart></ChartConfig>");
+                if (!chart.Success)
+                {
+                    return chart.Error ?? "建活图失败";
+                }
+
+                ToolResult ins = s.Image(id, "insert", name, "B2", WriteTinyPng());
+                if (!ins.Success)
+                {
+                    return ins.Error;
+                }
+
+                ToolResult listed = s.Image(id, "list");
+                return listed.Success && Int(listed, "images_count") == 1
+                    && ImageIdRx.IsMatch(Str(FirstImage(listed), "image_id"))
+                    ? null
+                    : (listed.Error ?? "list 把活图算进来了");
+            });
+
+            WithBook(run, s, "xi-g-place-move", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult ins = s.Image(id, "insert", name, "B2", WriteTinyPng());
+                if (!ins.Success)
+                {
+                    return ins.Error;
+                }
+
+                int place = ReadPlacement(ch);
+                return place == 2 ? null : "Placement=" + place + " 应为 xlMove=2";
+            });
+
+            WithBook(run, s, "xi-g-list-twice", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult ins = s.Image(id, "insert", name, "B2", WriteTinyPng());
+                if (!ins.Success)
+                {
+                    return ins.Error;
+                }
+
+                ToolResult a = s.Image(id, "list");
+                ToolResult b = s.Image(id, "list");
+                string ia = Str(FirstImage(a), "image_id");
+                string ib = Str(FirstImage(b), "image_id");
+                return a.Success && b.Success && string.Equals(ia, ib, StringComparison.Ordinal)
+                    ? null
+                    : (a.Error ?? b.Error ?? "两次 list 码变了");
+            });
+
+            WithBook(run, s, "xi-g-jpg-ok", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                string jpg = Path.Combine(Path.GetTempPath(), "ew-xi-" + Guid.NewGuid().ToString("N") + ".jpg");
+                File.WriteAllBytes(
+                    jpg,
+                    Convert.FromBase64String(
+                        "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAGf/9k="));
+                ToolResult ins = s.Image(id, "insert", name, "B2", jpg);
+                return ins.Success && ImageIdRx.IsMatch(Str(ins, "image_id"))
+                    ? null
+                    : (ins.Error ?? "jpg 后缀应收");
+            });
+
+            WithBook(run, s, "xi-g-width-small", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult ins = s.Image(id, "insert", name, "B2", WriteTinyPng(), widthCm: 0.5);
+                return ins.Success
+                    && NearNumber(Data(ins) != null && Data(ins).ContainsKey("width_cm") ? Data(ins)["width_cm"] : null, 0.5)
+                    ? null
+                    : (ins.Error ?? "宽=" + Str(ins, "width_cm"));
+            });
+
+            WithBook(run, s, "xi-g-del-twice", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult ins = s.Image(id, "insert", name, "B2", WriteTinyPng());
+                if (!ins.Success)
+                {
+                    return ins.Error;
+                }
+
+                string imageId = Str(ins, "image_id");
+                ToolResult once = s.Image(id, "delete", imageId: imageId);
+                if (!once.Success)
+                {
+                    return once.Error;
+                }
+
+                ToolResult twice = s.Image(id, "delete", imageId: imageId);
+                return twice.Success ? "二次删除应失败" : (Has(twice.Error, "未找到") || Has(twice.Error, "image_id") ? null : twice.Error);
+            });
+        }
+
         private static string WriteTinyPng()
         {
             string path = Path.Combine(Path.GetTempPath(), "ew-xi-" + Guid.NewGuid().ToString("N") + ".png");
             File.WriteAllBytes(path, Convert.FromBase64String(TinyPngB64));
             return path;
+        }
+
+        private static int ReadPlacement(IOperationChannel ch)
+        {
+            try
+            {
+                if (ch is ExcelChannel excel && excel.TryGetLiveWorkbook(out Excel.Workbook book))
+                {
+                    foreach (Excel.Worksheet ws in book.Worksheets)
+                    {
+                        foreach (Excel.Shape sh in ws.Shapes)
+                        {
+                            int t = Convert.ToInt32(sh.Type);
+                            if (t == 13 || t == 11)
+                            {
+                                return Convert.ToInt32(sh.Placement);
+                            }
+                        }
+                    }
+                }
+
+                if (ch is EtChannel et && et.TryGetLiveWorkbook(out object etBook))
+                {
+                    foreach (object sheet in EtCom.EnumerateSheets(etBook))
+                    {
+                        object shapes = EtCom.GetProperty(sheet, "Shapes");
+                        if (shapes == null)
+                        {
+                            continue;
+                        }
+
+                        int count = Convert.ToInt32(EtCom.GetProperty(shapes, "Count"));
+                        for (int i = 1; i <= count; i++)
+                        {
+                            object shape = EtCom.GetIndexed(shapes, i);
+                            object raw = EtCom.GetProperty(shape, "Placement");
+                            if (raw != null)
+                            {
+                                return Convert.ToInt32(raw);
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return -1;
         }
 
         private static bool ClearPictureAlts(IOperationChannel ch)
