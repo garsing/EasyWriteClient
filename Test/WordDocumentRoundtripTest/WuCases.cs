@@ -365,30 +365,187 @@ namespace WordDocumentRoundtripTest
                 return s.TryWpsDoc(path, doc =>
                 {
                     object content = GetProp(doc, "Content");
-                    SetProp(content, "Text", Dup);
-                    int end = Convert.ToInt32(GetProp(content, "End"));
-                    int pos = end > 0 ? end - 1 : 0;
-                    object range = Invoke(doc, "Range", pos, pos);
+                    SetProp(content, "Text", Dup + "\r" + Dup);
+                    object paras = GetProp(doc, "Paragraphs");
+                    int n = Convert.ToInt32(GetProp(paras, "Count"));
+                    if (n < 2)
+                    {
+                        Invoke(content, "InsertAfter", Dup);
+                        paras = GetProp(doc, "Paragraphs");
+                    }
+
+                    object para2 = Invoke(paras, "Item", 2);
+                    object at = GetProp(para2, "Range");
+                    Invoke(at, "Collapse", 1);
                     object tables = GetProp(doc, "Tables");
-                    object table = Invoke(tables, "Add", range, 1, 1);
+                    object table = Invoke(tables, "Add", at, 1, 1);
                     object cell = Invoke(table, "Cell", 1, 1);
-                    object cr = GetProp(cell, "Range");
-                    SetProp(cr, "Text", Splitter);
-                    Invoke(content, "InsertAfter", Dup);
-                    return true;
+                    SetProp(GetProp(cell, "Range"), "Text", Splitter);
+                    return StampLateDupOutsideTable(doc);
                 });
             }
 
             return s.OnWordDoc(path, doc =>
             {
-                doc.Content.Text = Dup;
-                int end = doc.Content.End;
-                Word.Range range = doc.Range(end - 1, end - 1);
-                Word.Table table = doc.Tables.Add(range, 1, 1);
+                doc.Content.Text = Dup + "\r" + Dup;
+                if (doc.Paragraphs.Count < 2)
+                {
+                    doc.Content.InsertAfter(Dup);
+                }
+
+                Word.Range at = doc.Paragraphs[2].Range;
+                at.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+                Word.Table table = doc.Tables.Add(at, 1, 1);
                 table.Cell(1, 1).Range.Text = Splitter;
-                doc.Content.InsertAfter(Dup);
-                return true;
+                return StampWordDupOutsideTable(doc);
             });
+        }
+
+        private const int WdWithInTable = 12;
+
+        private static bool StampWordDupOutsideTable(Word.Document doc)
+        {
+            Word.Paragraph first = null;
+            Word.Paragraph last = null;
+            foreach (Word.Paragraph p in doc.Paragraphs)
+            {
+                if (ParaInTableWord(p))
+                {
+                    continue;
+                }
+
+                if (first == null)
+                {
+                    first = p;
+                }
+
+                last = p;
+            }
+
+            if (first == null)
+            {
+                return false;
+            }
+
+            if (last == first)
+            {
+                doc.Content.InsertAfter(Dup);
+                last = doc.Paragraphs[doc.Paragraphs.Count];
+                if (ParaInTableWord(last))
+                {
+                    return false;
+                }
+            }
+
+            SetParaTextWord(first, Dup);
+            SetParaTextWord(last, Dup);
+            return true;
+        }
+
+        private static bool StampLateDupOutsideTable(object doc)
+        {
+            object paras = GetProp(doc, "Paragraphs");
+            int n = Convert.ToInt32(GetProp(paras, "Count"));
+            object first = null;
+            object last = null;
+            for (int i = 1; i <= n; i++)
+            {
+                object p = Invoke(paras, "Item", i);
+                if (ParaInTableLate(p))
+                {
+                    continue;
+                }
+
+                if (first == null)
+                {
+                    first = p;
+                }
+
+                last = p;
+            }
+
+            if (first == null)
+            {
+                return false;
+            }
+
+            if (object.ReferenceEquals(first, last))
+            {
+                Invoke(GetProp(doc, "Content"), "InsertAfter", Dup);
+                paras = GetProp(doc, "Paragraphs");
+                n = Convert.ToInt32(GetProp(paras, "Count"));
+                last = Invoke(paras, "Item", n);
+                if (ParaInTableLate(last))
+                {
+                    return false;
+                }
+            }
+
+            SetParaTextLate(first, Dup);
+            SetParaTextLate(last, Dup);
+            return true;
+        }
+
+        private static bool ParaInTableWord(Word.Paragraph p)
+        {
+            try
+            {
+                return (bool)p.Range.Information[Word.WdInformation.wdWithInTable];
+            }
+            catch
+            {
+                return p.Range.Tables.Count > 0;
+            }
+        }
+
+        private static bool ParaInTableLate(object para)
+        {
+            object range = GetProp(para, "Range");
+            try
+            {
+                object info = range.GetType().InvokeMember(
+                    "Information",
+                    System.Reflection.BindingFlags.GetProperty,
+                    null,
+                    range,
+                    new object[] { WdWithInTable });
+                return Convert.ToBoolean(info);
+            }
+            catch
+            {
+                try
+                {
+                    return Convert.ToInt32(GetProp(GetProp(range, "Tables"), "Count")) > 0;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+        }
+
+        private static void SetParaTextWord(Word.Paragraph p, string text)
+        {
+            Word.Range r = p.Range.Duplicate;
+            if (r.End > r.Start)
+            {
+                r.End = r.End - 1;
+            }
+
+            r.Text = text;
+        }
+
+        private static void SetParaTextLate(object para, string text)
+        {
+            object r = GetProp(para, "Range");
+            int start = Convert.ToInt32(GetProp(r, "Start"));
+            int end = Convert.ToInt32(GetProp(r, "End"));
+            if (end > start)
+            {
+                Invoke(r, "SetRange", start, end - 1);
+            }
+
+            SetProp(r, "Text", text);
         }
 
         private static ToolResult Replace(WdSession s, string id, string code, string neu)
