@@ -14,7 +14,7 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static class WtCases
     {
-        public const int Target = 144;
+        public const int Target = 147;
 
         private const string LabelA = "易写表指标";
         private const string LabelB = "易写表WACC";
@@ -83,7 +83,8 @@ namespace WordDocumentRoundtripTest
             "wt-create-2x3", "wt-create-3x2", "wt-create-2x1", "wt-read-2x3-rows",
             "wt-fill-2x3", "wt-opt-2x3", "wt-del-2x3-gone",
             "wt-create-bad-merge", "wt-create-empty-tr", "wt-fill-second-short",
-            "wt-create-after-filled"
+            "wt-create-after-filled",
+            "wt-nested-create-id", "wt-nested-after-ins", "wt-nested-after-in-cell"
         };
 
         public static void RunEmptyCell(
@@ -861,6 +862,7 @@ namespace WordDocumentRoundtripTest
                 RunFormatDeleteOpt(run, s);
                 RunConsolidate(run, s);
                 RunConsolidateMore(run, s);
+                RunNestedTableAfter(run, s);
                 RunNegLate(run, s);
                 RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
             }
@@ -2185,6 +2187,130 @@ namespace WordDocumentRoundtripTest
                 delWide.Success && !StillHas(s, id, WideA) && StillHas(s, id, TallA) && StillHas(s, id, PairA),
                 delWide.Success ? "删 2x3 时其他表也没了或标签还在" : (delWide.Error ?? ""));
             s.CloseDocByPath(path);
+        }
+
+        public static void RunNestedAfterOnly(
+            TestRun run,
+            string host,
+            int wordBefore,
+            int wpsBefore,
+            bool wordWinBefore,
+            bool wpsWinBefore)
+        {
+            var s = new WdSession(host);
+            RunNestedTableAfter(run, s);
+            RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+        }
+
+        private static void RunNestedTableAfter(TestRun run, WdSession s)
+        {
+            const string OuterCell = "易写外表格。";
+            const string InnerA = "易写内表甲";
+            const string InnerB = "易写内表乙";
+            const string NestedAfter = "易写嵌套表后句。";
+            var ids = new[] { "wt-nested-create-id", "wt-nested-after-ins", "wt-nested-after-in-cell" };
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, ids))
+            {
+                return;
+            }
+
+            try
+            {
+                s.ActivateDoc(path);
+                ToolResult outer = s.CreateTableFromXml(CreateArgs(id, WriteXml(OneCellXml(OuterCell))));
+                string outerId = WdSession.Str(outer, "table_id");
+                if (!outer.Success || string.IsNullOrEmpty(outerId))
+                {
+                    FailMany(run, outer.Error ?? "外表建表失败", ids);
+                    return;
+                }
+
+                string sent = CodeContaining(ReadBody(s, id), OuterCell, "S");
+                if (string.IsNullOrEmpty(sent))
+                {
+                    FailMany(run, "外表格无 S_", ids);
+                    return;
+                }
+
+                var innerArgs = CreateArgs(id, WriteXml(GridXml(InnerA, InnerB, "备", "")));
+                innerArgs["target"] = new Dictionary<string, object> { ["codes"] = sent };
+                ToolResult inner = s.CreateTableFromXml(innerArgs);
+                string returnedId = WdSession.Str(inner, "table_id");
+                string body = ReadBody(s, id);
+                List<string> tableIds = CollectTableIds(body);
+                string displayInner = null;
+                for (int i = 0; i < tableIds.Count; i++)
+                {
+                    if (!string.Equals(tableIds[i], outerId, StringComparison.Ordinal))
+                    {
+                        displayInner = tableIds[i];
+                        break;
+                    }
+                }
+                Ok(run, "wt-nested-create-id",
+                    inner.Success
+                        && !string.IsNullOrEmpty(returnedId)
+                        && returnedId != outerId
+                        && returnedId == displayInner,
+                    inner.Success
+                        ? ("返回 " + returnedId + " 外表 " + outerId + " display=" + string.Join(",", tableIds))
+                        : (inner.Error ?? ""));
+                if (!inner.Success || string.IsNullOrEmpty(returnedId) || returnedId != displayInner)
+                {
+                    FailMany(run, inner.Error ?? "内表 table_id 与读文不一致",
+                        "wt-nested-after-ins", "wt-nested-after-in-cell");
+                    return;
+                }
+
+                ToolResult ins = s.ProcessActions(id, new List<Dictionary<string, object>>
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["type"] = "insert",
+                        ["detail"] = new Dictionary<string, object>
+                        {
+                            ["target"] = new Dictionary<string, object> { ["table"] = returnedId },
+                            ["insert"] = NestedAfter,
+                            ["format"] = DefaultFormat()
+                        }
+                    }
+                });
+                string afterBody = ReadBody(s, id);
+                Ok(run, "wt-nested-after-ins",
+                    ins.Success && afterBody.IndexOf(NestedAfter, StringComparison.Ordinal) >= 0,
+                    ins.Success ? "表后句未出现" : (ins.Error ?? ""));
+
+                int innerTag = afterBody.IndexOf("id=\"" + returnedId + "\"", StringComparison.Ordinal);
+                int innerClose = innerTag < 0 ? -1 : afterBody.IndexOf("</table>", innerTag, StringComparison.Ordinal);
+                int textAt = innerClose < 0 ? -1 : afterBody.IndexOf(NestedAfter, innerClose, StringComparison.Ordinal);
+                int outerClose = afterBody.LastIndexOf("</table>", StringComparison.Ordinal);
+                bool inParent = textAt > innerClose && textAt < outerClose;
+                Ok(run, "wt-nested-after-in-cell",
+                    ins.Success && inParent,
+                    ins.Success ? "表后句不在父格内（内表后、外表结束前）" : (ins.Error ?? ""));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static List<string> CollectTableIds(string body)
+        {
+            var ids = new List<string>();
+            if (string.IsNullOrEmpty(body))
+            {
+                return ids;
+            }
+
+            MatchCollection matches = Regex.Matches(body, "<table id=\"(T_[^\"]+)\"");
+            for (int i = 0; i < matches.Count; i++)
+            {
+                ids.Add(matches[i].Groups[1].Value);
+            }
+
+            return ids;
         }
 
         private static void RunNegLate(TestRun run, WdSession s)

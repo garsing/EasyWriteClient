@@ -341,6 +341,33 @@ namespace WordDocumentRoundtripTest
                 return ecRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (string.Equals(caseFilter, "wt-nested-after", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "wt-nested-create-id", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "wt-nested-after-ins", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "wt-nested-after-in-cell", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 嵌套表表后插入短套（wt-nested-after）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopToolPipe.TryWaitUntilAvailable(8000))
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                int wordBeforeN = OfficeAlive.Count("WINWORD");
+                int wpsBeforeN = OfficeAlive.Count("wps");
+                bool wordWinBeforeN = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforeN = OfficeAlive.HasWindow("wps");
+                var nestedRun = new TestRun();
+                WtCases.RunNestedAfterOnly(
+                    nestedRun, host, wordBeforeN, wpsBeforeN, wordWinBeforeN, wpsWinBeforeN);
+                Console.WriteLine("正式用例 通过 " + nestedRun.CasesPassed
+                    + "  失败 " + nestedRun.CasesFailed
+                    + "  跳过 " + nestedRun.CasesSkipped);
+                return nestedRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (string.Equals(caseFilter, "wt-create-after", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("文字 句后建表短套（wt-create-after）");

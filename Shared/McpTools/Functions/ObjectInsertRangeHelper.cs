@@ -12,6 +12,7 @@ namespace WordAddIn1
         /// <summary>
         /// 表后新段起点。先 Collapse(End) → InsertParagraphAfter（Word 表后已有段）。
         /// WPS 文末表 Collapse 常停在表内并 E_FAIL，再试不夹紧的 Range(表.End)。
+        /// 嵌套表：落在该表下方、父单元格内，不拆出父表。
         /// </summary>
         public static Word.Range FindRangeAfterTable(Word.Document doc, string tableId)
         {
@@ -43,15 +44,16 @@ namespace WordAddIn1
                 }
 
                 Word.Range wordPath = TryInsertParagraphAfterCollapsedEnd(tableRange, tableId);
-                if (wordPath != null && !RangeIsInCell(wordPath))
+                if (AcceptInsertAfterTable(wordPath, table))
                 {
                     WordAddIn1.DocumentHost.HostProbe.Log(
                         "tbl-after-ok",
-                        "id=" + tableId + " via=insert-para-after start=" + wordPath.Start);
+                        "id=" + tableId + " via=insert-para-after nested=" + TableIsNested(table)
+                        + " start=" + wordPath.Start);
                     return wordPath;
                 }
 
-                Word.Range rawPath = TryRawEndInsert(doc, objectEnd, tableId);
+                Word.Range rawPath = TryRawEndInsert(doc, objectEnd, tableId, table);
                 if (rawPath == null)
                 {
                     WordAddIn1.DocumentHost.HostProbe.Log("tbl-after-fallback-null", "id=" + tableId);
@@ -223,7 +225,69 @@ namespace WordAddIn1
         /// 不夹到 docEnd-1，直接试 Range(表.End) / Range(表.End+1)。
         /// WPS 表吃到文末时 Collapse 会停在表内，表.End 才是表后空锚点。
         /// </summary>
-        private static Word.Range TryRawEndInsert(Word.Document doc, int objectEnd, string tableId)
+        /// <summary>嵌套表：表 Range 在父格内，或 NestingLevel&gt;1。</summary>
+        public static bool TableIsNested(Word.Table table)
+        {
+            if (table == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (table.NestingLevel > 1)
+                {
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                return RangeIsInCell(table.Range);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 顶层表：表后须在格外。嵌套表：须在该表之后且仍在父单元格内，不拆出父表。
+        /// </summary>
+        private static bool AcceptInsertAfterTable(Word.Range probe, Word.Table table)
+        {
+            if (probe == null || table == null)
+            {
+                return false;
+            }
+
+            if (RangeIsInsideThisTable(probe, table))
+            {
+                return false;
+            }
+
+            bool inCell = RangeIsInCell(probe);
+            return TableIsNested(table) ? inCell : !inCell;
+        }
+
+        private static bool RangeIsInsideThisTable(Word.Range probe, Word.Table table)
+        {
+            try
+            {
+                int start = table.Range.Start;
+                int end = table.Range.End;
+                return probe.Start >= start && probe.Start < end;
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+        }
+
+        private static Word.Range TryRawEndInsert(Word.Document doc, int objectEnd, string tableId, Word.Table table)
         {
             int[] positions = { objectEnd, objectEnd + 1 };
             for (int i = 0; i < positions.Length; i++)
@@ -252,7 +316,7 @@ namespace WordAddIn1
                     continue;
                 }
 
-                Word.Range landed = TryWriteAfterRaw(raw, tableId, pos, "insert-para-after");
+                Word.Range landed = TryWriteAfterRaw(raw, tableId, pos, "insert-para-after", table);
                 if (landed != null)
                 {
                     return landed;
@@ -267,7 +331,7 @@ namespace WordAddIn1
                     continue;
                 }
 
-                landed = TryWriteAfterRawInsert(raw, tableId, pos);
+                landed = TryWriteAfterRawInsert(raw, tableId, pos, table);
                 if (landed != null)
                 {
                     return landed;
@@ -281,7 +345,8 @@ namespace WordAddIn1
             Word.Range raw,
             string tableId,
             int pos,
-            string via)
+            string via,
+            Word.Table table)
         {
             try
             {
@@ -295,11 +360,12 @@ namespace WordAddIn1
                         + " " + DescribeRange(raw));
                 }
                 raw.Collapse(Word.WdCollapseDirection.wdCollapseStart);
-                if (RangeIsInCell(raw))
+                if (!AcceptInsertAfterTable(raw, table))
                 {
                     WordAddIn1.DocumentHost.HostProbe.Log(
-                        "tbl-after-raw-in",
-                        "id=" + tableId + " pos=" + pos + " start=" + raw.Start);
+                        "tbl-after-raw-reject",
+                        "id=" + tableId + " pos=" + pos + " start=" + raw.Start
+                        + " nested=" + TableIsNested(table));
                     return null;
                 }
 
@@ -318,7 +384,7 @@ namespace WordAddIn1
             }
         }
 
-        private static Word.Range TryWriteAfterRawInsert(Word.Range raw, string tableId, int pos)
+        private static Word.Range TryWriteAfterRawInsert(Word.Range raw, string tableId, int pos, Word.Table table)
         {
             try
             {
@@ -332,11 +398,12 @@ namespace WordAddIn1
                         + " " + DescribeRange(raw));
                 }
                 raw.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
-                if (RangeIsInCell(raw))
+                if (!AcceptInsertAfterTable(raw, table))
                 {
                     WordAddIn1.DocumentHost.HostProbe.Log(
-                        "tbl-after-raw-ins-in",
-                        "id=" + tableId + " pos=" + pos + " start=" + raw.Start);
+                        "tbl-after-raw-ins-reject",
+                        "id=" + tableId + " pos=" + pos + " start=" + raw.Start
+                        + " nested=" + TableIsNested(table));
                     return null;
                 }
 

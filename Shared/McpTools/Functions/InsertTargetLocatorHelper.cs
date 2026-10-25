@@ -512,10 +512,18 @@ namespace WordAddIn1
                         return FailResolve("locate_failed: ContentSpan 仅支持句子/段落编码");
                     }
 
+                    Word.Table tableObj = SentenceCodeLocator.ResolveTableById(doc, target.TableId);
+                    if (tableObj == null)
+                    {
+                        return FailResolve($"locate_failed: 找不到表格 '{target.TableId}'");
+                    }
+
                     Word.Range afterTable = ObjectInsertRangeHelper.FindRangeAfterTable(doc, target.TableId);
                     if (afterTable == null)
                     {
-                        return FailResolve($"locate_failed: 找不到表格 '{target.TableId}'");
+                        return FailResolve(ObjectInsertRangeHelper.TableIsNested(tableObj)
+                            ? $"locate_failed: 无法在嵌套表 '{target.TableId}' 后插入（需落在父单元格内）"
+                            : $"locate_failed: 无法在表格 '{target.TableId}' 后插入");
                     }
 
                     return OkRange(afterTable, target, usedCursor: false);

@@ -123,12 +123,11 @@ namespace WordAddIn1
 
                     var occupied = new HashSet<string>(DocumentState.GetTableIdOrder() ?? new List<string>());
                     string stampedId = TableTitleStampHelper.NewRandomTableId(occupied);
-                    if (!string.IsNullOrEmpty(stampedId))
+                    bool stampWritten = !string.IsNullOrEmpty(stampedId)
+                        && TableTitleStampHelper.TryWriteStamp(createResult.Table, stampedId);
+                    if (!stampWritten)
                     {
-                        if (!TableTitleStampHelper.TryWriteStamp(createResult.Table, stampedId))
-                        {
-                            System.Diagnostics.Debug.WriteLine("[CreateTable] 立刻写 Title 失败，将由 ReadWord O7 兜底");
-                        }
+                        System.Diagnostics.Debug.WriteLine("[CreateTable] 立刻写 Title 失败，将由 ReadWord O7 兜底");
                     }
 
                     var warnings = new List<string>();
@@ -178,24 +177,31 @@ namespace WordAddIn1
 
                     LogPhase("工具即将返回 ToolResult");
 
-                    string resolvedTableId = null;
+                    string resolvedTableId = stampWritten ? stampedId : null;
                     try
                     {
-                        int tableStart = createResult.Table.Range.Start;
                         WordReader.ReadWord(document);
-
-                        List<Word.Table> allTables = TableResolveHelper.GetAllTablesInOrder(document);
-                        int tableIndex = allTables.FindIndex(t => t.Range.Start == tableStart);
-
-                        var idOrder = DocumentState.GetTableIdOrder();
-                        if (tableIndex >= 0 && tableIndex < idOrder.Count)
+                        if (stampWritten)
                         {
-                            resolvedTableId = idOrder[tableIndex];
-                            System.Diagnostics.Debug.WriteLine($"[DEBUG] 建表 table_id={resolvedTableId}（Range.Start={tableStart}, index={tableIndex}）");
+                            // 嵌套表 Range.Start 常与父表撞点，禁止再用表序下标对号。
+                            // ReadWord 若按序改写 Title，把刚打的戳写回这张 COM 表。
+                            TableTitleStampHelper.TryWriteStamp(createResult.Table, stampedId);
+                            resolvedTableId = stampedId;
                         }
                         else
                         {
-                            warnings.Add("未能解析 table_id（表格索引与编号映射不一致）");
+                            int tableStart = createResult.Table.Range.Start;
+                            List<Word.Table> allTables = TableResolveHelper.GetAllTablesInOrder(document);
+                            int tableIndex = allTables.FindIndex(t => t.Range.Start == tableStart);
+                            var idOrder = DocumentState.GetTableIdOrder();
+                            if (tableIndex >= 0 && idOrder != null && tableIndex < idOrder.Count)
+                            {
+                                resolvedTableId = idOrder[tableIndex];
+                            }
+                            else
+                            {
+                                warnings.Add("未能解析 table_id（表格索引与编号映射不一致）");
+                            }
                         }
                     }
                     catch (Exception ex)
