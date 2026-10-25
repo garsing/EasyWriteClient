@@ -183,7 +183,7 @@ namespace WordDocumentRoundtripTest
                 s.ReplaceFromFile(new Dictionary<string, object>
                 {
                     ["channel_id"] = emptyId,
-                    ["original_codes"] = "S_aaaaa",
+                    ["original"] = new Dictionary<string, object> { ["codes"] = "S_aaaaa" },
                     ["format"] = DefaultFormat()
                 }),
                 "path");
@@ -252,7 +252,7 @@ namespace WordDocumentRoundtripTest
                     ["path"] = newTxt,
                     ["format"] = DefaultFormat()
                 }),
-                "original_codes");
+                "original");
 
             ToolResult missing = s.InsertFromFile(InsertArgs(
                 emptyId,
@@ -270,18 +270,22 @@ namespace WordDocumentRoundtripTest
                 emptyFileR.Success ? "空文件仍成功" : (emptyFileR.Error ?? "文案无空"));
 
             var posEnd = InsertArgs(emptyId, insTxt);
-            posEnd["target_position"] = "end";
+            posEnd["target"] = new Dictionary<string, object> { ["position"] = "end" };
             ToolResult posEndR = s.InsertFromFile(posEnd);
             Ok(run, "wf-neg-pos-end",
                 !posEndR.Success && BlobHas(posEndR, "start"),
                 posEndR.Success ? "position=end 仍成功" : (posEndR.Error ?? ""));
 
             var mutex = InsertArgs(emptyId, insTxt, code);
-            mutex["target_position"] = "start";
+            mutex["target"] = new Dictionary<string, object>
+            {
+                ["codes"] = code,
+                ["position"] = "start"
+            };
             ToolResult mutexR = s.InsertFromFile(mutex);
             Ok(run, "wf-neg-locator-mutex",
-                !mutexR.Success && BlobHas(mutexR, "五选一"),
-                mutexR.Success ? "双定位仍成功" : (mutexR.Error ?? "文案无五选一"));
+                !mutexR.Success && BlobHas(mutexR, "六选一"),
+                mutexR.Success ? "双定位仍成功" : (mutexR.Error ?? "文案无六选一"));
 
             var inTableAlone = InsertArgs(emptyId, insTxt);
             inTableAlone["in_table"] = "T_zzzzz";
@@ -302,7 +306,7 @@ namespace WordDocumentRoundtripTest
 
             string startId = WdSession.Str(startOpen, "channel_id");
             var startArgs = InsertArgs(startId, WriteTxt(EmptyIns));
-            startArgs["target_position"] = "start";
+            startArgs["target"] = new Dictionary<string, object> { ["position"] = "start" };
             ToolResult start = s.InsertFromFile(startArgs);
             Ok(run, "wf-empty-start", start.Success, start.Error ?? "空稿 position=start 失败");
             Ok(run, "wf-empty-start-text",
@@ -348,7 +352,7 @@ namespace WordDocumentRoundtripTest
                 "Data 带了 snapshot 旁路");
 
             var frontArgs = InsertArgs(id, WriteTxt(SentFront));
-            frontArgs["target_position"] = "start";
+            frontArgs["target"] = new Dictionary<string, object> { ["position"] = "start" };
             ToolResult front = s.InsertFromFile(frontArgs);
             string after = front.Success ? ReadBody(s, id) : "";
             int frontAt = after.IndexOf(SentFront, StringComparison.Ordinal);
@@ -415,7 +419,7 @@ namespace WordDocumentRoundtripTest
             Ok(run, "wf-rep-gone", !StillHas(s, id, SentA), "旧句还在");
             Ok(run, "wf-rep-fields",
                 (WdSession.HasKey(wr, "path") || WdSession.HasKey(wr, "replace_file"))
-                && WdSession.HasKey(wr, "original_codes")
+                && WdSession.HasKey(wr, "original")
                 && WdSession.HasKey(wr, "characters_replaced")
                 && WdSession.HasKey(wr, "process_result"),
                 "缺 replace 回包字段");
@@ -504,7 +508,6 @@ namespace WordDocumentRoundtripTest
             string code = "S_" + marker.Groups[1].Value;
             string tableId = marker.Groups[2].Value;
             var ins = InsertArgs(id, WriteTxt(CellIns), code);
-            ins["in_table"] = tableId;
             ToolResult wr = s.InsertFromFile(ins);
             Ok(run, "wf-tbl-ins", wr.Success, wr.Error ?? "表内 insert 失败");
             Ok(run, "wf-tbl-cell",
@@ -528,7 +531,7 @@ namespace WordDocumentRoundtripTest
 
             string liveTableId = tableMark.Success ? tableMark.Groups[1].Value : tableId;
             var after = InsertArgs(id, WriteTxt(AfterTable));
-            after["target_table"] = liveTableId;
+            after["target"] = new Dictionary<string, object> { ["table"] = liveTableId };
             ToolResult afterR = s.InsertFromFile(after);
             string afterDump = afterR.Success
                 ? ""
@@ -705,7 +708,7 @@ namespace WordDocumentRoundtripTest
 
             if (!string.IsNullOrEmpty(targetCodes))
             {
-                args["target_codes"] = targetCodes;
+                args["target"] = new Dictionary<string, object> { ["codes"] = targetCodes };
             }
 
             return args;
@@ -716,7 +719,7 @@ namespace WordDocumentRoundtripTest
             var args = new Dictionary<string, object>
             {
                 ["path"] = path,
-                ["original_codes"] = originalCodes ?? "",
+                ["original"] = new Dictionary<string, object> { ["codes"] = originalCodes ?? "" },
                 ["format"] = DefaultFormat()
             };
             if (channelId != null)

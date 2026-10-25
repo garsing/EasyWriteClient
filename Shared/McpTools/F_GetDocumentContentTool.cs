@@ -238,13 +238,13 @@ namespace WordAddIn1
                 return "注意：[P_00000 start] 与 [P_00000 end] 是段落编号标记，不是正文。"
                     + "套段版式（F_apply_paragraph_format）须使用 P_ 编码；句子改字仍用 S_（code_level=sentence）。"
                     + "同文撞码写成 P_xxxxx_N，apply 须原样传入该公开码；禁止传已撞码的光杆 P_，禁止 index。"
-                    + " 表内末段在 [P_… start] 后带 [in_table=T_xxx]（不是编码）。要插在表后请用 target.table，不要锚该段；要接在该段后仍用 codes。";
+                    + " 表内末段在 [P_… start] 后带 [in_table=T_xxx]（旁标，不是编码、不是入参）。要插在表后请用 target.table，不要锚该段；要接在该段后仍用 paragraph_codes。";
             }
 
             return "注意：[S_00000-start] 与 [S_00000-end] 是句子编号标记，不是正文。"
                 + "F_process_document_actions 定位时 new 中不要包含这些标记。"
                 + " 若文档几乎为空（仅空 S_00000、无实质正文），insert 请省略 pre/post，在用户光标处插入，勿锚 S_00000。"
-                + " 表内末句在 [S_…-start] 后带 [in_table=T_xxx]（不是编码）。要插在表后请用 target.table，不要锚该句；要接在该句后仍用 codes + in_table。";
+                + " 表内末句在 [S_…-start] 后带 [in_table=T_xxx]（旁标，不是编码、不是入参）。要插在表后请用 target.table，不要锚该句；要接在该句后仍用 codes。";
         }
 
         private static string BuildDuplicateSentenceCodeNote()

@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 从文件替换文档内容（扁平入参：replace_file + original_codes + format）。
+    /// 从文件替换文档内容（定位对象 original 与 process_actions 同构）。
     /// 本工具不直触 Word/WPS：转发 <c>channel_id</c> 后委托
     /// <c>F_process_document_actions</c>（已经 DocumentHost），故 WPS 随改字路径可用。
     /// </summary>
@@ -25,11 +25,11 @@ namespace WordAddIn1
                     }
 
                     FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out _, "path", "replace_file");
-                    string originalCodes = args["original_codes"]?.ToString()?.Trim();
                     DocumentCheckpointMutatingTools.TryReadLocalText(resolved, out string fileText, out _);
                     ActionContentHelper.Payload payload = ActionContentHelper.TryParseFileBody(fileText, args);
+                    Dictionary<string, object> original = InsertTargetLocatorHelper.TryGetNamedLocatorDict(args, "original");
 
-                    var processArgs = BuildReplaceProcessArgs(payload, originalCodes);
+                    var processArgs = BuildReplaceProcessArgs(payload, original);
                     if (args.ContainsKey("channel_id"))
                     {
                         processArgs["channel_id"] = args["channel_id"];
@@ -58,10 +58,10 @@ namespace WordAddIn1
                         {
                             path = resolved.Display,
                             replace_file = resolved.Display,
-                            original_codes = originalCodes,
+                            original,
                             characters_replaced = fileText?.Length ?? 0,
                             process_result = processResult.Data,
-                            message = $"已从文件 {resolved.Display} 替换文档内容（编码: {originalCodes}）"
+                            message = $"已从文件 {resolved.Display} 替换文档内容"
                         }
                     };
                 }
@@ -86,13 +86,27 @@ namespace WordAddIn1
                 return true;
             }
 
-            string originalCodes = args != null && args.ContainsKey("original_codes")
-                ? args["original_codes"]?.ToString()?.Trim()
-                : "";
-            if (string.IsNullOrEmpty(originalCodes))
+            string retired = InsertTargetLocatorHelper.RetiredFlatLocatorError(
+                args, InsertTargetLocatorHelper.FromFileRetiredReplaceKeys);
+            if (retired != null)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(retired);
+                return true;
+            }
+
+            Dictionary<string, object> original = InsertTargetLocatorHelper.TryGetNamedLocatorDict(args, "original");
+            if (original == null)
             {
                 failure = DocumentCheckpointMutatingTools.Fail(
-                    "必须提供 original_codes 参数（要替换的连续编码序列）");
+                    "必须提供 original 定位对象（与 process_actions replace 同构）");
+                return true;
+            }
+
+            var parsed = InsertTargetLocatorHelper.ParseLocatorObject(
+                original, sentenceOnly: true, fieldLabel: "original");
+            if (!parsed.Success)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(parsed.Error);
                 return true;
             }
 
@@ -115,11 +129,11 @@ namespace WordAddIn1
 
         private static Dictionary<string, object> BuildReplaceProcessArgs(
             ActionContentHelper.Payload payload,
-            string originalCodes)
+            Dictionary<string, object> original)
         {
             var detail = new Dictionary<string, object>
             {
-                ["original"] = new Dictionary<string, object> { ["codes"] = originalCodes },
+                ["original"] = original,
                 ["new"] = ActionContentHelper.ToInsertOrNewRaw(payload)
             };
             if (payload != null && !payload.IsRuns && payload.FormatSpec != null && payload.FormatSpec.Ok)

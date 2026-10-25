@@ -1915,15 +1915,15 @@ namespace WordDocumentRoundtripTest
                 ["codes"] = "S_00001",
                 ["table"] = "T_00001"
             };
-            ExpectFail(run, "wt-create-two-modes", s.CreateTableFromXml(twoModes), "五选一");
+            ExpectFail(run, "wt-create-two-modes", s.CreateTableFromXml(twoModes), "六选一");
 
             var emptyCodes = CreateArgs(id, WriteXml(GridXml(ConsA, "", ConsB, "")));
             emptyCodes["target"] = new Dictionary<string, object> { ["codes"] = "   " };
-            ExpectFail(run, "wt-create-empty-codes", s.CreateTableFromXml(emptyCodes), "五选一");
+            ExpectFail(run, "wt-create-empty-codes", s.CreateTableFromXml(emptyCodes), "六选一");
 
             var emptyTable = CreateArgs(id, WriteXml(GridXml(ConsA, "", ConsB, "")));
             emptyTable["target"] = new Dictionary<string, object> { ["table"] = "" };
-            ExpectFail(run, "wt-create-empty-table", s.CreateTableFromXml(emptyTable), "五选一");
+            ExpectFail(run, "wt-create-empty-table", s.CreateTableFromXml(emptyTable), "六选一");
 
             ExpectFail(run, "wt-create-bad-merge",
                 s.CreateTableFromXml(CreateArgs(id, WriteXml(

@@ -280,7 +280,7 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 解析操作列表：replace/delete/insert；定位对象为 codes+in_table / table / chart / image 四选一。
+        /// 解析操作列表：replace/delete/insert；定位走统一定位门面（含 paragraph_codes）。
         /// </summary>
         private static (bool success, string error, List<ParagraphAction> actions) ParseActions(object actionsObj, Word.Document doc)
         {
@@ -309,7 +309,8 @@ namespace WordAddIn1
                         {
                             case "replace":
                                 object original = detail.ContainsKey("original") ? detail["original"] : null;
-                                if (!(original is Dictionary<string, object> originalDict))
+                                Dictionary<string, object> originalDict = ActionFormatHelper.CoerceDict(original);
+                                if (originalDict == null || originalDict.Count == 0)
                                 {
                                     return (false, "replace 缺少 original 定位对象", null);
                                 }
@@ -343,7 +344,8 @@ namespace WordAddIn1
 
                             case "delete":
                                 object deletion = detail.ContainsKey("deletion") ? detail["deletion"] : null;
-                                if (!(deletion is Dictionary<string, object> deletionDict))
+                                Dictionary<string, object> deletionDict = ActionFormatHelper.CoerceDict(deletion);
+                                if (deletionDict == null || deletionDict.Count == 0)
                                 {
                                     return (false, "delete 缺少 deletion 定位对象", null);
                                 }
@@ -378,7 +380,8 @@ namespace WordAddIn1
 
                                 if (detail.ContainsKey("target") && detail["target"] != null)
                                 {
-                                    if (!(detail["target"] is Dictionary<string, object> targetDict))
+                                    Dictionary<string, object> targetDict = ActionFormatHelper.CoerceDict(detail["target"]);
+                                    if (targetDict == null || targetDict.Count == 0)
                                     {
                                         return (false, "insert.target 须为对象", null);
                                     }
@@ -439,7 +442,8 @@ namespace WordAddIn1
             Chart,
             Image,
             DocumentStart,
-            EmptyCell
+            EmptyCell,
+            Paragraph
         }
 
         private sealed class LocatorSpec
@@ -493,6 +497,9 @@ namespace WordAddIn1
                     break;
                 case InsertTargetLocatorHelper.LocatorKind.EmptyCell:
                     kind = LocatorKind.EmptyCell;
+                    break;
+                case InsertTargetLocatorHelper.LocatorKind.Paragraph:
+                    kind = LocatorKind.Paragraph;
                     break;
                 case InsertTargetLocatorHelper.LocatorKind.Sentence:
                     kind = LocatorKind.Sentence;
@@ -565,7 +572,8 @@ namespace WordAddIn1
                 }
                 else if (type == "insert"
                          && action.TargetLocator != null
-                         && action.TargetLocator.Kind == LocatorKind.Sentence
+                         && (action.TargetLocator.Kind == LocatorKind.Sentence
+                             || action.TargetLocator.Kind == LocatorKind.Paragraph)
                          && !string.IsNullOrEmpty(action.TargetLocator.Codes))
                 {
                     anchors.Add(ToAmbiguityAnchor(
@@ -643,6 +651,12 @@ namespace WordAddIn1
                     continue;
                 }
 
+                if ((type == "replace" || type == "delete")
+                    && LooksLikeParagraphCodes(action.SentenceNames))
+                {
+                    continue;
+                }
+
                 if (type == "replace" || type == "delete")
                 {
                     string error = ValidateSentenceSequenceContinuity(
@@ -661,6 +675,12 @@ namespace WordAddIn1
                 else if (type == "insert"
                          && action.TargetLocator != null
                          && action.TargetLocator.Kind == LocatorKind.EmptyCell)
+                {
+                    continue;
+                }
+                else if (type == "insert"
+                         && action.TargetLocator != null
+                         && action.TargetLocator.Kind == LocatorKind.Paragraph)
                 {
                     continue;
                 }
@@ -1008,6 +1028,9 @@ namespace WordAddIn1
                 case LocatorKind.EmptyCell:
                     spec.Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell;
                     break;
+                case LocatorKind.Paragraph:
+                    spec.Kind = InsertTargetLocatorHelper.LocatorKind.Paragraph;
+                    break;
                 default:
                     spec.Kind = InsertTargetLocatorHelper.LocatorKind.Sentence;
                     break;
@@ -1130,7 +1153,7 @@ namespace WordAddIn1
                 doc,
                 new InsertTargetLocatorHelper.LocatorSpec
                 {
-                    Kind = InsertTargetLocatorHelper.LocatorKind.Sentence,
+                    Kind = SpanLocatorKind(sentenceNames),
                     Codes = sentenceNames,
                     InTableId = tableId
                 },
@@ -1564,7 +1587,8 @@ namespace WordAddIn1
                         doc, emptyCell, newContent, formatSnapshot, formatMode, disallowBackendApi);
                 }
 
-                if (names.Any(n => n.StartsWith("T_", StringComparison.Ordinal)
+                if (!LooksLikeParagraphCodes(sentenceNames)
+                    && names.Any(n => n.StartsWith("T_", StringComparison.Ordinal)
                     || n.StartsWith("C_", StringComparison.Ordinal)))
                 {
                     result.ErrorMessage = "replace 仅支持 S_ 编码；T_/C_ 仅用于 insert 锚点";
@@ -1578,7 +1602,7 @@ namespace WordAddIn1
                     doc,
                     new InsertTargetLocatorHelper.LocatorSpec
                     {
-                        Kind = InsertTargetLocatorHelper.LocatorKind.Sentence,
+                        Kind = SpanLocatorKind(sentenceNames),
                         Codes = sentenceNames,
                         InTableId = tableId
                     },
@@ -1743,7 +1767,8 @@ namespace WordAddIn1
                     return result;
                 }
 
-                if (names.Any(n => n.StartsWith("T_", StringComparison.Ordinal)
+                if (!LooksLikeParagraphCodes(sentenceNames)
+                    && names.Any(n => n.StartsWith("T_", StringComparison.Ordinal)
                     || n.StartsWith("C_", StringComparison.Ordinal)))
                 {
                     result.ErrorMessage = "delete 仅支持 S_ 编码；T_/C_ 仅用于 insert 锚点";
@@ -1756,7 +1781,7 @@ namespace WordAddIn1
                     doc,
                     new InsertTargetLocatorHelper.LocatorSpec
                     {
-                        Kind = InsertTargetLocatorHelper.LocatorKind.Sentence,
+                        Kind = SpanLocatorKind(sentenceNames),
                         Codes = sentenceNames,
                         InTableId = tableId
                     },
@@ -2287,6 +2312,19 @@ namespace WordAddIn1
             return codes.Split(',').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
         }
 
+        private static bool LooksLikeParagraphCodes(string codes)
+        {
+            List<string> names = ParseCodeList(codes);
+            return names.Count > 0 && FormatContextHelper.IsParagraphCode(names[0]);
+        }
+
+        private static InsertTargetLocatorHelper.LocatorKind SpanLocatorKind(string codes)
+        {
+            return LooksLikeParagraphCodes(codes)
+                ? InsertTargetLocatorHelper.LocatorKind.Paragraph
+                : InsertTargetLocatorHelper.LocatorKind.Sentence;
+        }
+
         private static async Task RemapAndAssignNewCodes(
             Word.Document doc,
             ActionResult result,
@@ -2496,7 +2534,7 @@ namespace WordAddIn1
             string anchorCodes = null;
             if (target != null)
             {
-                if (target.Kind == LocatorKind.Sentence)
+                if (target.Kind == LocatorKind.Sentence || target.Kind == LocatorKind.Paragraph)
                 {
                     anchorCodes = target.Codes;
                 }

@@ -28,21 +28,7 @@ namespace WordAddIn1
                     DocumentCheckpointMutatingTools.TryReadLocalText(resolved, out string fileText, out _);
                     ActionContentHelper.Payload payload = ActionContentHelper.TryParseFileBody(fileText, args);
 
-                    string targetCodes = args.ContainsKey("target_codes") ? args["target_codes"]?.ToString()?.Trim() : "";
-                    string inTable = args.ContainsKey("in_table") ? args["in_table"]?.ToString()?.Trim() : "";
-                    string targetTable = args.ContainsKey("target_table") ? args["target_table"]?.ToString()?.Trim() : "";
-                    string targetChart = args.ContainsKey("target_chart") ? args["target_chart"]?.ToString()?.Trim() : "";
-                    string targetImage = args.ContainsKey("target_image") ? args["target_image"]?.ToString()?.Trim() : "";
-                    string targetPosition = args.ContainsKey("target_position") ? args["target_position"]?.ToString()?.Trim() : "";
-
-                    var build = BuildInsertProcessArgs(
-                        payload,
-                        targetCodes,
-                        inTable,
-                        targetTable,
-                        targetChart,
-                        targetImage,
-                        targetPosition);
+                    var build = BuildInsertProcessArgs(payload, args);
                     if (!string.IsNullOrEmpty(build.error))
                     {
                         return new ToolResult { Success = false, Error = build.error };
@@ -73,6 +59,10 @@ namespace WordAddIn1
                         return processResult;
                     }
 
+                    Dictionary<string, object> targetEcho = InsertTargetLocatorHelper.TryGetTargetDict(args);
+                    bool start = targetEcho != null
+                        && targetEcho.ContainsKey("position")
+                        && InsertTargetLocatorHelper.IsStartPosition(targetEcho["position"]?.ToString());
                     return new ToolResult
                     {
                         Success = true,
@@ -80,15 +70,10 @@ namespace WordAddIn1
                         {
                             path = resolved.Display,
                             insert_file = resolved.Display,
-                            target_codes = string.IsNullOrEmpty(targetCodes) ? null : targetCodes,
-                            in_table = string.IsNullOrEmpty(inTable) ? null : inTable,
-                            target_table = string.IsNullOrEmpty(targetTable) ? null : targetTable,
-                            target_chart = string.IsNullOrEmpty(targetChart) ? null : targetChart,
-                            target_image = string.IsNullOrEmpty(targetImage) ? null : targetImage,
-                            target_position = string.IsNullOrEmpty(targetPosition) ? null : targetPosition,
+                            target = targetEcho,
                             characters_inserted = fileText?.Length ?? 0,
                             process_result = processResult.Data,
-                            message = InsertTargetLocatorHelper.IsStartPosition(targetPosition)
+                            message = start
                                 ? $"已从文件 {resolved.Display} 插在正文最前"
                                 : $"已从文件 {resolved.Display} 插入文档内容"
                         }
@@ -145,20 +130,7 @@ namespace WordAddIn1
                 return true;
             }
 
-            string targetCodes = args.ContainsKey("target_codes") ? args["target_codes"]?.ToString()?.Trim() : "";
-            string inTable = args.ContainsKey("in_table") ? args["in_table"]?.ToString()?.Trim() : "";
-            string targetTable = args.ContainsKey("target_table") ? args["target_table"]?.ToString()?.Trim() : "";
-            string targetChart = args.ContainsKey("target_chart") ? args["target_chart"]?.ToString()?.Trim() : "";
-            string targetImage = args.ContainsKey("target_image") ? args["target_image"]?.ToString()?.Trim() : "";
-            string targetPosition = args.ContainsKey("target_position") ? args["target_position"]?.ToString()?.Trim() : "";
-            var build = BuildInsertProcessArgs(
-                payload,
-                targetCodes,
-                inTable,
-                targetTable,
-                targetChart,
-                targetImage,
-                targetPosition);
+            var build = BuildInsertProcessArgs(payload, args);
             if (!string.IsNullOrEmpty(build.error))
             {
                 failure = DocumentCheckpointMutatingTools.Fail(build.error);
@@ -170,13 +142,15 @@ namespace WordAddIn1
 
         private static (Dictionary<string, object> args, string error) BuildInsertProcessArgs(
             ActionContentHelper.Payload payload,
-            string targetCodes,
-            string inTable,
-            string targetTable,
-            string targetChart,
-            string targetImage,
-            string targetPosition)
+            Dictionary<string, object> args)
         {
+            string retired = InsertTargetLocatorHelper.RetiredFlatLocatorError(
+                args, InsertTargetLocatorHelper.FromFileRetiredInsertKeys);
+            if (retired != null)
+            {
+                return (null, retired);
+            }
+
             var detail = new Dictionary<string, object>
             {
                 ["insert"] = ActionContentHelper.ToInsertOrNewRaw(payload)
@@ -189,56 +163,17 @@ namespace WordAddIn1
                 };
             }
 
-            bool hasCodes = !string.IsNullOrEmpty(targetCodes);
-            bool hasTable = !string.IsNullOrEmpty(targetTable);
-            bool hasChart = !string.IsNullOrEmpty(targetChart);
-            bool hasImage = !string.IsNullOrEmpty(targetImage);
-            bool hasPosition = !string.IsNullOrEmpty(targetPosition);
-            int modeCount = (hasCodes ? 1 : 0) + (hasTable ? 1 : 0) + (hasChart ? 1 : 0)
-                + (hasImage ? 1 : 0) + (hasPosition ? 1 : 0);
-            if (modeCount > 1)
+            Dictionary<string, object> targetDict = InsertTargetLocatorHelper.TryGetTargetDict(args);
+            if (targetDict != null)
             {
-                return (null, "target_codes / target_table / target_chart / target_image / target_position 五选一");
-            }
-
-            if (!string.IsNullOrEmpty(inTable) && !hasCodes)
-            {
-                return (null, "in_table 仅可与 target_codes 同用");
-            }
-
-            if (hasPosition)
-            {
-                if (!InsertTargetLocatorHelper.IsStartPosition(targetPosition))
+                var parsed = InsertTargetLocatorHelper.ParseLocatorObject(
+                    targetDict, sentenceOnly: false, fieldLabel: "target");
+                if (!parsed.Success)
                 {
-                    return (null, "target_position 仅支持 start");
+                    return (null, parsed.Error);
                 }
 
-                detail["target"] = new Dictionary<string, object>
-                {
-                    ["position"] = InsertTargetLocatorHelper.PositionStart
-                };
-            }
-            else if (hasCodes)
-            {
-                var target = new Dictionary<string, object> { ["codes"] = targetCodes };
-                if (!string.IsNullOrEmpty(inTable))
-                {
-                    target["in_table"] = inTable;
-                }
-
-                detail["target"] = target;
-            }
-            else if (hasTable)
-            {
-                detail["target"] = new Dictionary<string, object> { ["table"] = targetTable };
-            }
-            else if (hasChart)
-            {
-                detail["target"] = new Dictionary<string, object> { ["chart"] = targetChart };
-            }
-            else if (hasImage)
-            {
-                detail["target"] = new Dictionary<string, object> { ["image"] = targetImage };
+                detail["target"] = targetDict;
             }
 
             return (new Dictionary<string, object>
