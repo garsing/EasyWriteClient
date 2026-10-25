@@ -448,6 +448,169 @@ namespace WordDocumentRoundtripTest
                 });
         }
 
+        public ToolResult ProcessComments(string channelId, object comments)
+        {
+            var args = new Dictionary<string, object>();
+            if (channelId != null)
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (comments != null)
+            {
+                args["comments"] = comments;
+            }
+
+            return DesktopToolPipe.Call("F_process_comments", args);
+        }
+
+        public ToolResult ListComments(string channelId, Dictionary<string, object> target)
+        {
+            var args = new Dictionary<string, object>();
+            if (channelId != null)
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (target != null)
+            {
+                args["target"] = target;
+            }
+
+            return DesktopToolPipe.Call("F_list_comments", args);
+        }
+
+        /// <summary>把选区盖住正文里第一次出现的 needle。collapse 时把光标折在这段字中间。</summary>
+        public bool SelectPlain(string fullPath, string needle, bool collapse)
+        {
+            if (string.IsNullOrEmpty(needle))
+            {
+                return false;
+            }
+
+            return IsWps
+                ? WithWpsDoc(fullPath, doc => SelectPlainLate(doc, needle, collapse))
+                : WithWordDoc(fullPath, doc =>
+                {
+                    Word.Range content = doc.Content;
+                    string text = content.Text ?? "";
+                    int at = text.IndexOf(needle, StringComparison.Ordinal);
+                    if (at < 0)
+                    {
+                        return false;
+                    }
+
+                    int start = content.Start + at;
+                    int end = start + needle.Length;
+                    if (collapse)
+                    {
+                        int mid = start + Math.Max(1, needle.Length / 2);
+                        doc.Application.Selection.SetRange(mid, mid);
+                    }
+                    else
+                    {
+                        doc.Application.Selection.SetRange(start, end);
+                    }
+
+                    return true;
+                });
+        }
+
+        public string ReadUserName(string fullPath)
+        {
+            string name = "";
+            bool ok = IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object app = GetProp(doc, "Application");
+                    name = Convert.ToString(GetProp(app, "UserName")) ?? "";
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    name = doc.Application.UserName ?? "";
+                    return true;
+                });
+            return ok ? name : "";
+        }
+
+        /// <summary>用 COM 在 needle 上加一条批注，不走 F_process_comments，因此不建检查点。</summary>
+        public bool AddComComment(string fullPath, string needle, string commentText)
+        {
+            if (string.IsNullOrEmpty(needle))
+            {
+                return false;
+            }
+
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    if (!TryPlainSpanLate(doc, needle, out int start, out int end))
+                    {
+                        return false;
+                    }
+
+                    object range = Invoke(doc, "Range", start, end);
+                    object comments = GetProp(doc, "Comments");
+                    Invoke(comments, "Add", range, commentText ?? "");
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    Word.Range content = doc.Content;
+                    string text = content.Text ?? "";
+                    int at = text.IndexOf(needle, StringComparison.Ordinal);
+                    if (at < 0)
+                    {
+                        return false;
+                    }
+
+                    Word.Range range = doc.Range(content.Start + at, content.Start + at + needle.Length);
+                    object body = commentText ?? "";
+                    doc.Comments.Add(range, ref body);
+                    return true;
+                });
+        }
+
+        private static bool SelectPlainLate(object doc, string needle, bool collapse)
+        {
+            if (!TryPlainSpanLate(doc, needle, out int start, out int end))
+            {
+                return false;
+            }
+
+            object app = GetProp(doc, "Application");
+            object sel = GetProp(app, "Selection");
+            if (collapse)
+            {
+                int mid = start + Math.Max(1, needle.Length / 2);
+                Invoke(sel, "SetRange", mid, mid);
+            }
+            else
+            {
+                Invoke(sel, "SetRange", start, end);
+            }
+
+            return true;
+        }
+
+        private static bool TryPlainSpanLate(object doc, string needle, out int start, out int end)
+        {
+            start = 0;
+            end = 0;
+            object content = GetProp(doc, "Content");
+            string text = Convert.ToString(GetProp(content, "Text")) ?? "";
+            int at = text.IndexOf(needle, StringComparison.Ordinal);
+            if (at < 0)
+            {
+                return false;
+            }
+
+            start = Convert.ToInt32(GetProp(content, "Start")) + at;
+            end = start + needle.Length;
+            return true;
+        }
+
         public bool WriteSelectionFact(string fullPath)
         {
             return IsWps

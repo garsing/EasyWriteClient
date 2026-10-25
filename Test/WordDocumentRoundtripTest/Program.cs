@@ -403,9 +403,13 @@ namespace WordDocumentRoundtripTest
                 && !runChart && !runImage
                 && (caseFilter.StartsWith("wk-", StringComparison.OrdinalIgnoreCase)
                     || caseFilter.StartsWith("wv-", StringComparison.OrdinalIgnoreCase));
-            bool runContent = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt && !runFormat
+            bool runNotes = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt && !runFormat
                 && !runTable
                 && !runChart && !runImage && !runCkpt
+                && caseFilter.StartsWith("wn-", StringComparison.OrdinalIgnoreCase);
+            bool runContent = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt && !runFormat
+                && !runTable
+                && !runChart && !runImage && !runCkpt && !runNotes
                 && caseFilter.StartsWith("wc-", StringComparison.OrdinalIgnoreCase);
 
             if (runFindStale)
@@ -450,6 +454,10 @@ namespace WordDocumentRoundtripTest
                     ? "文字 检查点光标/视口（wk-rst-caret）"
                     : "文字 检查点与溯源（wk-/wv-）");
             }
+            else if (runNotes)
+            {
+                Console.WriteLine("文字 批注（wn-）");
+            }
             else
             {
                 Console.WriteLine(runContent ? "文字 读编码（wc-）" : "文字 打开 + 页数（wd-）");
@@ -485,6 +493,7 @@ namespace WordDocumentRoundtripTest
                     runChart,
                     runImage,
                     runCkpt,
+                    runNotes,
                     runContent)
             };
             var sw = Stopwatch.StartNew();
@@ -541,6 +550,10 @@ namespace WordDocumentRoundtripTest
                 {
                     WkCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore, caseFilter);
                 }
+                else if (runNotes)
+                {
+                    WnCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+                }
                 else if (runContent)
                 {
                     WcCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
@@ -568,6 +581,7 @@ namespace WordDocumentRoundtripTest
                 runChart,
                 runImage,
                 runCkpt,
+                runNotes,
                 runContent);
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
@@ -640,6 +654,7 @@ namespace WordDocumentRoundtripTest
             bool runChart,
             bool runImage,
             bool runCkpt,
+            bool runNotes,
             bool runContent)
         {
             if (runFindStale)
@@ -695,6 +710,11 @@ namespace WordDocumentRoundtripTest
             if (runCkpt)
             {
                 return WkCases.IsCaretOnly(caseFilter) ? WkCases.CaretTarget : WkCases.Target;
+            }
+
+            if (runNotes)
+            {
+                return WnCases.Target;
             }
 
             if (runContent)
