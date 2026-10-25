@@ -301,9 +301,44 @@ namespace WordDocumentRoundtripTest
 
         public ToolResult InsertSvgImage(Dictionary<string, object> args)
         {
-            return DesktopToolPipe.Call(
-                "F_insert_svg_image",
-                args ?? new Dictionary<string, object>());
+            args = args ?? new Dictionary<string, object>();
+            var renderArgs = new Dictionary<string, object>();
+            if (args.ContainsKey("svg"))
+            {
+                renderArgs["svg"] = args["svg"];
+            }
+
+            if (args.ContainsKey("path"))
+            {
+                renderArgs["path"] = args["path"];
+            }
+
+            ToolResult render = DesktopToolPipe.Call("F_render_svg", renderArgs);
+            if (!render.Success)
+            {
+                return render;
+            }
+
+            string filename = null;
+            var data = render.Data as Dictionary<string, object>;
+            if (data != null && data.ContainsKey("filename"))
+            {
+                filename = Convert.ToString(data["filename"]);
+            }
+
+            var insertArgs = new Dictionary<string, object>();
+            foreach (KeyValuePair<string, object> kv in args)
+            {
+                if (kv.Key == "svg" || kv.Key == "path")
+                {
+                    continue;
+                }
+
+                insertArgs[kv.Key] = kv.Value;
+            }
+
+            insertArgs["path"] = filename ?? "";
+            return DesktopToolPipe.Call("F_insert_image", insertArgs);
         }
 
         public ToolResult CapturePageImage(Dictionary<string, object> args)

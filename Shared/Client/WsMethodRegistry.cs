@@ -70,6 +70,8 @@ namespace WordAddIn1
                 { "workbook.applyStructure", "F_apply_excel_structure" },
                 { "workbook.pivot", "F_excel_pivot" },
                 { "workbook.chart", "F_excel_chart" },
+                { "workbook.image", "F_excel_image" },
+                { "workspace.renderSvg", "F_render_svg" },
                 { "channel.setDefault", "F_switch_default_channel" },
                 { "document.processActions", "F_process_document_actions" },
                 // document.setTrackRevisions / F_set_track_revisions 已下线（2026-08）
@@ -103,7 +105,6 @@ namespace WordAddIn1
                 { "chart.extractXml", "F_extract_chart_xml" },
                 { "chart.applyFromXml", "F_apply_chart_from_xml" },
                 { "chart.delete", "F_delete_chart" },
-                { "document.insertSvgImage", "F_insert_svg_image" },
                 { "document.insertImage", "F_insert_image" },
                 { "document.deleteImage", "F_delete_image" },
                 { "file.write", "F_write_file" },

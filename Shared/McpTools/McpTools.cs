@@ -42,7 +42,7 @@ namespace WordAddIn1
             F_ExtractChartXmlTool.Register(toolRegistry, wordApplication);
             F_ApplyChartFromXmlTool.Register(toolRegistry, wordApplication);
             F_DeleteChartTool.Register(toolRegistry, wordApplication);
-            F_InsertSvgImageTool.Register(toolRegistry, wordApplication);
+            F_RenderSvgTool.Register(toolRegistry, wordApplication);
             F_InsertWorkspaceImageTool.Register(toolRegistry, wordApplication); // 注册键 F_insert_image
             F_DeleteImageTool.Register(toolRegistry, wordApplication);
             F_ModifyYamlFileTool.Register(toolRegistry, wordApplication);
@@ -66,6 +66,7 @@ namespace WordAddIn1
             F_ApplyExcelStructureTool.Register(toolRegistry, wordApplication);
             F_ExcelPivotTool.Register(toolRegistry, wordApplication);
             F_ExcelChartTool.Register(toolRegistry, wordApplication);
+            F_ExcelImageTool.Register(toolRegistry, wordApplication);
             F_OpenDocumentTool.Register(toolRegistry, wordApplication);
             F_RunTerminalTool.Register(toolRegistry, wordApplication);
             F_CloseTerminalTool.Register(toolRegistry, wordApplication);

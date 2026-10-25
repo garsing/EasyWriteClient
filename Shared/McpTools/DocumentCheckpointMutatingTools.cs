@@ -27,7 +27,6 @@ namespace WordAddIn1
             "F_create_chart_from_xml",
             "F_apply_chart_from_xml",
             "F_delete_chart",
-            "F_insert_svg_image",
             "F_insert_image",
             "F_delete_image",
             "F_insert_blank_page",
@@ -48,6 +47,7 @@ namespace WordAddIn1
             "F_excel_pivot",
             "F_excel_chart",
             "F_manage_excel_sheet",
+            "F_excel_image",
         };
 
         public static bool ShouldCheckpoint(string toolName, IReadOnlyDictionary<string, object> parameters)
@@ -55,6 +55,23 @@ namespace WordAddIn1
             if (string.IsNullOrEmpty(toolName) || !MutatingToolNames.Contains(toolName))
             {
                 return false;
+            }
+
+            if (string.Equals(toolName, "F_excel_image", StringComparison.Ordinal))
+            {
+                string action = null;
+                if (parameters != null && parameters.TryGetValue("action", out object raw) && raw != null)
+                {
+                    action = Convert.ToString(raw);
+                }
+
+                if (string.IsNullOrWhiteSpace(action))
+                {
+                    return false;
+                }
+
+                action = action.Trim().ToLowerInvariant();
+                return action == "insert" || action == "update" || action == "delete";
             }
 
             return true;
@@ -117,8 +134,6 @@ namespace WordAddIn1
                     return F_ApplyChartFromXmlTool.TryGetContractParseFailure(args, out failure);
                 case "F_delete_chart":
                     return F_DeleteChartTool.TryGetContractParseFailure(args, out failure);
-                case "F_insert_svg_image":
-                    return F_InsertSvgImageTool.TryGetContractParseFailure(args, out failure);
                 case "F_insert_image":
                     return F_InsertWorkspaceImageTool.TryGetContractParseFailure(args, out failure);
                 case "F_delete_image":
@@ -157,6 +172,8 @@ namespace WordAddIn1
                     return F_ExcelPivotTool.TryGetContractParseFailure(args, out failure);
                 case "F_excel_chart":
                     return F_ExcelChartTool.TryGetContractParseFailure(args, out failure);
+                case "F_excel_image":
+                    return F_ExcelImageTool.TryGetContractParseFailure(args, out failure);
                 case "F_manage_excel_sheet":
                     return F_ManageExcelSheetTool.TryGetContractParseFailure(args, out failure);
                 default:

@@ -468,7 +468,7 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 解析定位对象：委托 <see cref="InsertTargetLocatorHelper"/>（与 F_insert_svg_image 共用规则）。
+        /// 解析定位对象：委托 <see cref="InsertTargetLocatorHelper"/>（与 F_insert_image 共用规则）。
         /// </summary>
         private static LocatorParseResult ParseLocatorObject(
             Dictionary<string, object> dict,

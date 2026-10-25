@@ -16,6 +16,7 @@ namespace ExcelWorkbookRoundtripTest
             string caseFilter = GetCaseFilter(args);
             bool run550 = caseFilter.StartsWith("xlg550", StringComparison.OrdinalIgnoreCase);
             bool runChart = !run550 && ShouldRun(caseFilter, "xlg-");
+            bool runImage = ShouldRun(caseFilter, "xi-");
             bool runPivot = ShouldRun(caseFilter, "xlp-");
             bool runCond = ShouldRun(caseFilter, "xlc-");
             bool runFmt = ShouldRun(caseFilter, "xlf-");
@@ -23,7 +24,8 @@ namespace ExcelWorkbookRoundtripTest
             bool runStruct = ShouldRun(caseFilter, "xls-");
             bool runWrite = ShouldRun(caseFilter, "xlw-");
             bool runRead = ShouldRun(caseFilter, "xl-")
-                && !runWrite && !runStruct && !runManage && !runFmt && !runCond && !runPivot && !runChart;
+                && !runWrite && !runStruct && !runManage && !runFmt && !runCond && !runPivot && !runChart
+                && !runImage;
             if (string.IsNullOrEmpty(caseFilter))
             {
                 runChart = true;
@@ -43,6 +45,10 @@ namespace ExcelWorkbookRoundtripTest
             else if (runChart)
             {
                 Console.WriteLine("Excel / ET 图（xlg-）");
+            }
+            else if (runImage)
+            {
+                Console.WriteLine("Excel / ET 贴图（xi-）");
             }
             else if (runPivot)
             {
@@ -122,10 +128,17 @@ namespace ExcelWorkbookRoundtripTest
                 XlgCases.Run(run, useEt);
             }
 
+            if (runImage)
+            {
+                XiCases.Run(run, useEt);
+            }
+
             sw.Stop();
 
             Console.WriteLine();
-            int target = run550 ? run.TotalTarget : ((runCond || runChart) ? 38 : 30);
+            int target = run550
+                ? run.TotalTarget
+                : (runImage ? 19 : ((runCond || runChart) ? 38 : 30));
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
                 + "  跳过 " + run.CasesSkipped

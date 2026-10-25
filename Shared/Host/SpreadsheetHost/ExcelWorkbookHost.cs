@@ -1947,6 +1947,41 @@ namespace WordAddIn1.SpreadsheetHost
             return true;
         }
 
+        public static bool TryImage(
+            ExcelChannel channel,
+            SpreadsheetImageRequest request,
+            out SpreadsheetImageResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLiveWorkbook(out Excel.Workbook book))
+            {
+                error = "渠道对应的工作簿已关闭";
+                return false;
+            }
+
+            if (request == null || string.IsNullOrWhiteSpace(request.Action))
+            {
+                error = "必须提供 action";
+                return false;
+            }
+
+            if (!SpreadsheetImageCom.TryExecuteOnExcelWorkbook(
+                    book,
+                    request,
+                    out SpreadsheetImageResult partial,
+                    out error))
+            {
+                return false;
+            }
+
+            result = partial;
+            result.ChannelId = channel.ChannelId;
+            result.Kind = "excel";
+            return true;
+        }
+
         public static bool TryApplyStructure(
             ExcelChannel channel,
             SpreadsheetStructureRequest request,

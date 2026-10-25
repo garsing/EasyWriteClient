@@ -32,6 +32,8 @@ namespace ExcelWorkbookRoundtripTest
             F_ApplyExcelConditionalFormatTool.Register(_tools, null);
             F_ExcelPivotTool.Register(_tools, null);
             F_ExcelChartTool.Register(_tools, null);
+            F_ExcelImageTool.Register(_tools, null);
+            F_RenderSvgTool.Register(_tools, null);
         }
 
         public bool Et { get; }
@@ -389,6 +391,54 @@ namespace ExcelWorkbookRoundtripTest
             }
 
             return Call("F_excel_chart", args);
+        }
+
+        public ToolResult Image(
+            string channelId,
+            string action,
+            string sheet = null,
+            string anchor = null,
+            string path = null,
+            string imageId = null,
+            double? widthCm = null)
+        {
+            var args = new Dictionary<string, object>();
+            if (!string.IsNullOrEmpty(channelId))
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (action != null)
+            {
+                args["action"] = action;
+            }
+
+            if (sheet != null)
+            {
+                args["sheet"] = sheet;
+            }
+
+            if (anchor != null)
+            {
+                args["anchor"] = anchor;
+            }
+
+            if (path != null)
+            {
+                args["path"] = path;
+            }
+
+            if (imageId != null)
+            {
+                args["image_id"] = imageId;
+            }
+
+            if (widthCm.HasValue)
+            {
+                args["width_cm"] = widthCm.Value;
+            }
+
+            return Call("F_excel_image", args);
         }
 
         public bool SeedSales(IOperationChannel ch, string sheetName)
