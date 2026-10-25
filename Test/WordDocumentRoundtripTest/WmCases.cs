@@ -12,7 +12,7 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static class WmCases
     {
-        public const int Target = 8;
+        public const int Target = 58;
 
         private const string Title = "实验操作方法和步骤";
         private const string Note = "备注";
@@ -38,6 +38,7 @@ namespace WordDocumentRoundtripTest
                 RunDelete(run, s);
                 RunOrder(run, s);
                 RunEcho(run, s);
+                WmConsolidate.Run(run, s);
                 RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
             }
             finally
@@ -406,7 +407,7 @@ namespace WordDocumentRoundtripTest
             return true;
         }
 
-        private static void ExpectPath(
+        internal static void ExpectPath(
             TestRun run,
             string id,
             ToolResult wr,
@@ -469,7 +470,7 @@ namespace WordDocumentRoundtripTest
             run.CaseOk(id);
         }
 
-        private static KeyValuePair<string, int> Count(string needle, int n)
+        internal static KeyValuePair<string, int> Count(string needle, int n)
         {
             return new KeyValuePair<string, int>(needle, n);
         }
@@ -496,7 +497,7 @@ namespace WordDocumentRoundtripTest
             }
         }
 
-        private static string Blob(ToolResult r)
+        internal static string Blob(ToolResult r)
         {
             if (r == null || r.Data == null)
             {
@@ -513,7 +514,7 @@ namespace WordDocumentRoundtripTest
             }
         }
 
-        private static string TrimBlob(string blob)
+        internal static string TrimBlob(string blob)
         {
             if (string.IsNullOrEmpty(blob))
             {
@@ -523,7 +524,7 @@ namespace WordDocumentRoundtripTest
             return blob.Length <= 500 ? blob : blob.Substring(0, 500);
         }
 
-        private static Dictionary<string, object> GeoReplace(string code, string text)
+        internal static Dictionary<string, object> GeoReplace(string code, string text)
         {
             return new Dictionary<string, object>
             {
@@ -537,7 +538,7 @@ namespace WordDocumentRoundtripTest
             };
         }
 
-        private static Dictionary<string, object> GeoInsert(string code, string text)
+        internal static Dictionary<string, object> GeoInsert(string code, string text)
         {
             return new Dictionary<string, object>
             {
@@ -551,7 +552,7 @@ namespace WordDocumentRoundtripTest
             };
         }
 
-        private static Dictionary<string, object> GeoDelete(string code)
+        internal static Dictionary<string, object> GeoDelete(string code)
         {
             return new Dictionary<string, object>
             {
@@ -563,7 +564,7 @@ namespace WordDocumentRoundtripTest
             };
         }
 
-        private static Dictionary<string, object> SentReplace(string code, string text)
+        internal static Dictionary<string, object> SentReplace(string code, string text)
         {
             return new Dictionary<string, object>
             {
@@ -577,7 +578,7 @@ namespace WordDocumentRoundtripTest
             };
         }
 
-        private static Dictionary<string, object> DefaultFormat()
+        internal static Dictionary<string, object> DefaultFormat()
         {
             return new Dictionary<string, object>
             {
@@ -590,7 +591,7 @@ namespace WordDocumentRoundtripTest
             };
         }
 
-        private static Dictionary<string, object> CreateArgs(string channelId, string path)
+        internal static Dictionary<string, object> CreateArgs(string channelId, string path)
         {
             var args = new Dictionary<string, object> { ["path"] = path ?? "" };
             if (channelId != null)
@@ -610,14 +611,14 @@ namespace WordDocumentRoundtripTest
                 + "</Data></Table></TableConfig>";
         }
 
-        private static string WriteXml(string xml)
+        internal static string WriteXml(string xml)
         {
             string path = Path.Combine(Path.GetTempPath(), "ew-wm-" + Guid.NewGuid().ToString("N") + ".xml");
             File.WriteAllText(path, xml ?? "");
             return path;
         }
 
-        private static void Ok(TestRun run, string id, bool cond, string reason)
+        internal static void Ok(TestRun run, string id, bool cond, string reason)
         {
             if (cond)
             {
@@ -629,7 +630,7 @@ namespace WordDocumentRoundtripTest
             }
         }
 
-        private static void FailMany(TestRun run, string reason, params string[] ids)
+        internal static void FailMany(TestRun run, string reason, params string[] ids)
         {
             foreach (string id in ids)
             {
