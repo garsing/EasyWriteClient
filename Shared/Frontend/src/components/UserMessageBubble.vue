@@ -39,19 +39,18 @@
       <div
         ref="shellRef"
         class="message-shell"
-        :class="{ 'message-shell--scrollable': scrollEnabled }"
-        @click="enableBubbleScroll"
+        :class="{ 'message-shell--scrollable': overflowing }"
       >
         <div
           ref="contentRef"
           class="message-content"
-          :class="{ 'message-content--scrollable': scrollEnabled }"
+          :class="{ 'message-content--scrollable': overflowing }"
           @scroll="syncThumb"
         >
           <div class="message-text">{{ displayContent }}</div>
         </div>
         <div
-          v-if="scrollEnabled"
+          v-if="overflowing"
           ref="trackRef"
           class="bubble-scroll-track"
           @pointerdown.stop="onTrackPointerDown"
@@ -99,25 +98,31 @@ const preview = ref(null)
 const contentRef = ref(null)
 const shellRef = ref(null)
 const trackRef = ref(null)
-const scrollEnabled = ref(false)
+const overflowing = ref(false)
 const thumb = ref({ height: 28, top: 0 })
 let blobUrls = []
 let dragState = null
+let overflowObserver = null
 
 const thumbStyle = computed(() => ({
   height: `${thumb.value.height}px`,
   transform: `translateY(${thumb.value.top}px)`
 }))
 
-function bubbleOverflows () {
+function refreshOverflow () {
   const el = contentRef.value
-  if (!el) return false
-  return el.scrollHeight - el.clientHeight > 1
-}
-
-function enableBubbleScroll () {
-  if (!bubbleOverflows()) return
-  scrollEnabled.value = true
+  if (!el) {
+    overflowing.value = false
+    return
+  }
+  const next = el.scrollHeight - el.clientHeight > 1
+  overflowing.value = next
+  nextTick(() => {
+    const node = contentRef.value
+    if (!node) return
+    overflowing.value = node.scrollHeight - node.clientHeight > 1
+    if (overflowing.value) syncThumb()
+  })
 }
 
 function trackSize () {
@@ -181,21 +186,16 @@ function onDragUp () {
   window.removeEventListener('pointerup', onDragUp)
 }
 
-function onDocumentPointerDown (e) {
-  const el = shellRef.value
-  if (!el || !scrollEnabled.value) return
-  if (el.contains(e.target)) return
-  scrollEnabled.value = false
-}
+watch(displayContent, () => nextTick(refreshOverflow))
 
-watch(scrollEnabled, (on) => {
+watch(overflowing, (on) => {
   if (on) nextTick(syncThumb)
 })
 
-/** 未点开时滚轮交给外层列表；点开后先滚气泡，到顶/底再交给列表 */
+/** 超高时先滚气泡，到顶/底再交给外层列表 */
 function onBubbleWheel (e) {
   const el = contentRef.value
-  if (!el || !scrollEnabled.value) return
+  if (!el) return
   const overflow = el.scrollHeight - el.clientHeight
   if (overflow <= 1) return
 
@@ -278,14 +278,23 @@ watch(
 
 onMounted(() => {
   const el = contentRef.value
-  if (el) el.addEventListener('wheel', onBubbleWheel, { passive: false })
-  document.addEventListener('pointerdown', onDocumentPointerDown, true)
+  if (el) {
+    el.addEventListener('wheel', onBubbleWheel, { passive: false })
+    if (typeof ResizeObserver !== 'undefined') {
+      overflowObserver = new ResizeObserver(() => refreshOverflow())
+      overflowObserver.observe(el)
+    }
+  }
+  nextTick(refreshOverflow)
 })
 
 onUnmounted(() => {
   const el = contentRef.value
   if (el) el.removeEventListener('wheel', onBubbleWheel)
-  document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+  if (overflowObserver) {
+    overflowObserver.disconnect()
+    overflowObserver = null
+  }
   onDragUp()
   revokeThumbs()
 })
