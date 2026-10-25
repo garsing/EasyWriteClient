@@ -21,8 +21,13 @@ namespace WordAddIn1
             if (string.IsNullOrEmpty(text))
                 return text;
 
+            const char fake12Placeholder = '\uE000';
+            string result = text.Replace(
+                WordAddIn1.DocumentMapping.FormFeedText.FakeTag,
+                fake12Placeholder.ToString());
+
             // 先处理 \r\n 组合（转换为 ^p）
-            string result = text.Replace("\r\n", "^p");
+            result = result.Replace("\r\n", "^p");
             
             // 再处理单独的 \r（段落标记）
             result = result.Replace("\r", "^p");
@@ -35,7 +40,8 @@ namespace WordAddIn1
 
             // 分页符（分节 ^b 已经是 Find 码，不要改）
             result = result.Replace("\f", "^m");
-            
+            result = result.Replace(fake12Placeholder.ToString(), "\f");
+
             return result;
         }
 

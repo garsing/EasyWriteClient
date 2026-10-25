@@ -1133,6 +1133,10 @@ namespace WordDocumentRoundtripTest
                 else if (text[i] == '\f')
                 {
                     ff++;
+                    if (i + 1 >= text.Length || text[i + 1] != '\r')
+                    {
+                        paraNo++;
+                    }
                 }
                 else if (text[i] == '^'
                     && i + 1 < text.Length
@@ -1154,7 +1158,7 @@ namespace WordDocumentRoundtripTest
             s = DisplayInTable.Replace(s, "");
             s = DisplayChart.Replace(s, "");
             s = DisplayImage.Replace(s, "");
-            return s;
+            return FormFeedText.UnescapeToChar12(s);
         }
 
         private static string ConvertTables(string text)
@@ -2192,6 +2196,7 @@ namespace WordDocumentRoundtripTest
                 return "";
             }
 
+            text = FormFeedText.UnescapeToChar12(text);
             int end = text.Length;
             while (end > 0)
             {

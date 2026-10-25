@@ -53,7 +53,7 @@ namespace WordAddIn1.DocumentMapping
             s = InTable.Replace(s, "");
             s = Chart.Replace(s, "");
             s = Image.Replace(s, "");
-            return s;
+            return FormFeedText.UnescapeToChar12(s);
         }
 
         public static string StripNeedle(string inner)
@@ -66,6 +66,7 @@ namespace WordAddIn1.DocumentMapping
             string s = InTable.Replace(inner, "");
             s = Chart.Replace(s, "");
             s = Image.Replace(s, "");
+            s = FormFeedText.UnescapeToChar12(s);
             return s.Replace("\n", "\x0B");
         }
 
@@ -91,6 +92,18 @@ namespace WordAddIn1.DocumentMapping
 
                     pieces.Add(sb.ToString());
                     sb.Length = 0;
+                    continue;
+                }
+
+                if (marks[i] == '\f')
+                {
+                    sb.Append('\f');
+                    if (i + 1 < marks.Length && marks[i + 1] != '\r')
+                    {
+                        pieces.Add(sb.ToString());
+                        sb.Length = 0;
+                    }
+
                     continue;
                 }
 

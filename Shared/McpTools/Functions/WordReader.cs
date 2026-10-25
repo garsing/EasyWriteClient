@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using WordAddIn1.DocumentMapping;
 using Word = Microsoft.Office.Interop.Word;
 using Excel = Microsoft.Office.Interop.Excel;
 
@@ -1395,6 +1396,18 @@ namespace WordAddIn1
             return paraElement.Descendants().Any(el => IsLayoutOnlyBreakElement(el, w));
         }
 
+        private static void FlushRunText(StringBuilder textBuffer, StringBuilder output)
+        {
+            if (textBuffer == null || textBuffer.Length == 0 || output == null)
+            {
+                return;
+            }
+
+            output.Append(FormFeedText.EscapeInXmlText(
+                System.Security.SecurityElement.Escape(textBuffer.ToString())));
+            textBuffer.Clear();
+        }
+
         private static void AppendParagraphToResult(
             ref string result,
             string paraContent,
@@ -1484,11 +1497,7 @@ namespace WordAddIn1
                 {
                     if (emittedDrawings.Add(el))
                     {
-                        if (textBuffer.Length > 0)
-                        {
-                            output.Append(System.Security.SecurityElement.Escape(textBuffer.ToString()));
-                            textBuffer.Clear();
-                        }
+                        FlushRunText(textBuffer, output);
 
                         output.Append(AppendDrawingContent(el, w));
                         orderLog.Add(IsChartDrawing(el) ? "chart-drawing" : "drawing");
@@ -1551,11 +1560,7 @@ namespace WordAddIn1
                 {
                     if (emittedDrawings.Add(child))
                     {
-                        if (textBuffer.Length > 0)
-                        {
-                            output.Append(System.Security.SecurityElement.Escape(textBuffer.ToString()));
-                            textBuffer.Clear();
-                        }
+                        FlushRunText(textBuffer, output);
 
                         output.Append(AppendDrawingContent(child, w));
                         orderLog.Add(IsChartDrawing(child) ? "p:chart-drawing" : "p:drawing");
@@ -1585,10 +1590,7 @@ namespace WordAddIn1
                 }
             }
 
-            if (textBuffer.Length > 0)
-            {
-                output.Append(System.Security.SecurityElement.Escape(textBuffer.ToString()));
-            }
+            FlushRunText(textBuffer, output);
 
             if (paraElement.Element(w + "pPr")?.Element(w + "sectPr") != null)
             {

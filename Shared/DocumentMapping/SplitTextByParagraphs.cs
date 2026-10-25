@@ -28,8 +28,8 @@ namespace WordAddIn1.DocumentMapping
                     continue;
                 }
 
-                blocks.Add(new ParagraphBlock(blockIndex, part, trailingCr));
-                blockIndex++;
+                FormFeedText.AppendSplitAfterMidFormFeed(
+                    blocks, ref blockIndex, part, trailingCr);
             }
 
             return blocks;
