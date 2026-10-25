@@ -1,18 +1,24 @@
 <template>
   <div class="assistant-turn">
     <template v-if="!archived">
-      <SystemMessageBubble
-        v-for="m in messages"
-        :key="`${m.role}-${m.id}`"
-        :message="m"
-      />
+      <div class="assistant-reply-wrap">
+        <SystemMessageBubble
+          v-for="m in messages"
+          :key="`${m.role}-${m.id}`"
+          :message="m"
+        />
+        <MessageCopyBar :text="copyText" align="left" />
+      </div>
     </template>
     <div v-else class="system-message">
       <div class="message-content">
         <WorkFold v-if="workMessage" :duration-ms="durationMs">
           <SystemMessageBubble :message="workMessage" compact force-process />
         </WorkFold>
-        <SystemMessageBubble v-if="finalMessage" :message="finalMessage" compact />
+        <div v-if="finalMessage" class="assistant-reply-wrap">
+          <SystemMessageBubble :message="finalMessage" compact />
+          <MessageCopyBar :text="finalCopyText" align="left" />
+        </div>
       </div>
     </div>
   </div>
@@ -22,6 +28,7 @@
 import { computed } from 'vue'
 import SystemMessageBubble from './SystemMessageBubble.vue'
 import WorkFold from './WorkFold.vue'
+import MessageCopyBar from './MessageCopyBar.vue'
 
 const props = defineProps({
   messages: {
@@ -104,9 +111,43 @@ const finalMessage = computed(() => {
     isStreaming: false
   }
 })
+
+function collectText (messages) {
+  const parts = []
+  for (const m of messages || []) {
+    if (m?.segments && m.segments.length > 0) {
+      for (const s of m.segments) {
+        if (s && s.type === 'text' && s.content && String(s.content).trim()) {
+          parts.push(String(s.content).trim())
+        }
+      }
+    } else if (m?.content && String(m.content).trim()) {
+      parts.push(String(m.content).trim())
+    }
+  }
+  return parts.join('\n\n')
+}
+
+const copyText = computed(() => collectText(props.messages))
+
+const finalCopyText = computed(() => {
+  const seg = split.value.final
+  if (seg?.content && String(seg.content).trim()) return String(seg.content).trim()
+  return copyText.value
+})
 </script>
 
 <style scoped>
+.assistant-turn > .assistant-reply-wrap :deep(.message-copy-bar) {
+  padding: 0 14px;
+}
+
+.assistant-reply-wrap:hover :deep(.message-copy-bar),
+.assistant-reply-wrap:focus-within :deep(.message-copy-bar) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .assistant-turn :deep(.system-message + .system-message .message-content) {
   padding-top: 0;
 }

@@ -35,11 +35,14 @@
         </div>
       </div>
     </div>
-    <div
-      ref="contentRef"
-      class="message-content"
-    >
-      <div class="message-text">{{ displayContent }}</div>
+    <div v-if="displayContent" class="user-text-wrap">
+      <div
+        ref="contentRef"
+        class="message-content"
+      >
+        <div class="message-text">{{ displayContent }}</div>
+      </div>
+      <MessageCopyBar :text="displayContent" align="right" />
     </div>
     <ImageLightbox
       v-if="preview"
@@ -57,6 +60,7 @@ import { stripSelectedOpenFilesAppendix } from '../utils/selectedOpenFiles.js'
 import { resolveFileAppIconByName } from '../utils/openFileAppIcon.js'
 import { isImageFileName, loadKbImageThumbUrl } from '../utils/kbImageThumb.js'
 import ImageLightbox from './ImageLightbox.vue'
+import MessageCopyBar from './MessageCopyBar.vue'
 
 const props = defineProps({
   message: {
@@ -248,6 +252,20 @@ function formatSub (att) {
   font-size: 12px;
   color: #888;
   margin-top: 2px;
+}
+
+.user-text-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.user-text-wrap:hover :deep(.message-copy-bar),
+.user-text-wrap:focus-within :deep(.message-copy-bar) {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .message-content {
