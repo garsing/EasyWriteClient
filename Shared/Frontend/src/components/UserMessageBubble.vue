@@ -37,10 +37,27 @@
     </div>
     <div v-if="displayContent" class="user-text-wrap">
       <div
-        ref="contentRef"
-        class="message-content"
+        ref="shellRef"
+        class="message-shell"
+        :class="{ 'message-shell--scrollable': scrollEnabled }"
+        @click="enableBubbleScroll"
       >
-        <div class="message-text">{{ displayContent }}</div>
+        <div
+          ref="contentRef"
+          class="message-content"
+          :class="{ 'message-content--scrollable': scrollEnabled }"
+          @scroll="syncThumb"
+        >
+          <div class="message-text">{{ displayContent }}</div>
+        </div>
+        <div
+          v-if="scrollEnabled"
+          ref="trackRef"
+          class="bubble-scroll-track"
+          @pointerdown.stop="onTrackPointerDown"
+        >
+          <div class="bubble-scroll-thumb" :style="thumbStyle" />
+        </div>
       </div>
       <MessageCopyBar :text="displayContent" align="right" />
     </div>
@@ -54,7 +71,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { stripChatAttachmentsAppendix, stripVisionPersistNotes } from '../utils/chatAttachments.js'
 import { stripSelectedOpenFilesAppendix } from '../utils/selectedOpenFiles.js'
 import { resolveFileAppIconByName } from '../utils/openFileAppIcon.js'
@@ -80,12 +97,105 @@ const displayContent = computed(() => {
 const thumbUrls = ref({})
 const preview = ref(null)
 const contentRef = ref(null)
+const shellRef = ref(null)
+const trackRef = ref(null)
+const scrollEnabled = ref(false)
+const thumb = ref({ height: 28, top: 0 })
 let blobUrls = []
+let dragState = null
 
-/** 超高时先滚气泡；到顶/底再交给外层消息列表（吸顶时原生链式滚动容易把整页先带走） */
-function onBubbleWheel (e) {
+const thumbStyle = computed(() => ({
+  height: `${thumb.value.height}px`,
+  transform: `translateY(${thumb.value.top}px)`
+}))
+
+function bubbleOverflows () {
+  const el = contentRef.value
+  if (!el) return false
+  return el.scrollHeight - el.clientHeight > 1
+}
+
+function enableBubbleScroll () {
+  if (!bubbleOverflows()) return
+  scrollEnabled.value = true
+}
+
+function trackSize () {
+  return trackRef.value?.clientHeight || contentRef.value?.clientHeight || 0
+}
+
+function syncThumb () {
   const el = contentRef.value
   if (!el) return
+  const view = el.clientHeight
+  const total = el.scrollHeight
+  const trackH = trackSize()
+  if (total <= view + 1 || trackH <= 0) {
+    thumb.value = { height: Math.max(28, trackH), top: 0 }
+    return
+  }
+  const height = Math.max(28, (view / total) * trackH)
+  const maxTop = Math.max(0, trackH - height)
+  const top = (el.scrollTop / (total - view)) * maxTop
+  thumb.value = { height, top }
+}
+
+function scrollFromThumbTop (top) {
+  const el = contentRef.value
+  if (!el) return
+  const view = el.clientHeight
+  const total = el.scrollHeight
+  const trackH = trackSize()
+  const maxTop = Math.max(1, trackH - thumb.value.height)
+  const ratio = Math.min(1, Math.max(0, top / maxTop))
+  el.scrollTop = ratio * (total - view)
+}
+
+function onTrackPointerDown (e) {
+  const track = e.currentTarget
+  const rect = track.getBoundingClientRect()
+  const y = e.clientY - rect.top
+  const { height, top } = thumb.value
+  if (y < top || y > top + height) {
+    scrollFromThumbTop(y - height / 2)
+    syncThumb()
+  }
+  dragState = {
+    pointerId: e.pointerId,
+    startY: e.clientY,
+    startTop: thumb.value.top
+  }
+  track.setPointerCapture(e.pointerId)
+  window.addEventListener('pointermove', onDragMove)
+  window.addEventListener('pointerup', onDragUp)
+}
+
+function onDragMove (e) {
+  if (!dragState) return
+  scrollFromThumbTop(dragState.startTop + (e.clientY - dragState.startY))
+}
+
+function onDragUp () {
+  dragState = null
+  window.removeEventListener('pointermove', onDragMove)
+  window.removeEventListener('pointerup', onDragUp)
+}
+
+function onDocumentPointerDown (e) {
+  const el = shellRef.value
+  if (!el || !scrollEnabled.value) return
+  if (el.contains(e.target)) return
+  scrollEnabled.value = false
+}
+
+watch(scrollEnabled, (on) => {
+  if (on) nextTick(syncThumb)
+})
+
+/** 未点开时滚轮交给外层列表；点开后先滚气泡，到顶/底再交给列表 */
+function onBubbleWheel (e) {
+  const el = contentRef.value
+  if (!el || !scrollEnabled.value) return
   const overflow = el.scrollHeight - el.clientHeight
   if (overflow <= 1) return
 
@@ -169,11 +279,14 @@ watch(
 onMounted(() => {
   const el = contentRef.value
   if (el) el.addEventListener('wheel', onBubbleWheel, { passive: false })
+  document.addEventListener('pointerdown', onDocumentPointerDown, true)
 })
 
 onUnmounted(() => {
   const el = contentRef.value
   if (el) el.removeEventListener('wheel', onBubbleWheel)
+  document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+  onDragUp()
   revokeThumbs()
 })
 
@@ -268,35 +381,64 @@ function formatSub (att) {
   pointer-events: auto;
 }
 
+.message-shell {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  max-width: 100%;
+  max-height: 160px;
+  min-width: 0;
+  background-color: #1890ff;
+  color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
 .message-content {
   box-sizing: border-box;
+  flex: 1;
   max-width: 100%;
   max-height: 160px;
   min-width: 0;
   min-height: 0;
   overflow-x: hidden;
-  overflow-y: auto;
-  background-color: #1890ff;
-  color: #fff;
-  padding: 10px 14px;
-  border-radius: 8px;
-  word-wrap: break-word;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.5) transparent;
-}
-
-.message-content::-webkit-scrollbar {
-  width: 6px;
-}
-
-.message-content::-webkit-scrollbar-track {
+  overflow-y: hidden;
   background: transparent;
+  padding: 10px 14px;
+  word-wrap: break-word;
+  scrollbar-width: none;
 }
 
-.message-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.5);
-  border-radius: 3px;
+.message-content--scrollable {
+  overflow-y: auto;
+}
+
+.message-content::-webkit-scrollbar,
+.message-content--scrollable::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.bubble-scroll-track {
+  flex: 0 0 12px;
+  width: 12px;
+  margin: 8px 6px 8px 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.22);
+  position: relative;
+  cursor: pointer;
+}
+
+.bubble-scroll-thumb {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 0;
+  border-radius: 7px;
+  background: rgba(80, 80, 80, 0.45);
+  pointer-events: none;
 }
 
 .message-text {
