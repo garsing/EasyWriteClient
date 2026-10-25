@@ -111,6 +111,32 @@ namespace ExcelWorkbookRoundtripTest
                 return r.Success ? "区域 anchor 应失败" : (Has(r.Error, "A1") || Has(r.Error, "anchor") ? null : r.Error);
             });
 
+            WithBook(run, s, "xi-neg-insert-bang", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult r = s.Image(id, "insert", name, name + "!B2", WriteTinyPng());
+                return r.Success ? "含!应失败" : (Has(r.Error, "!") || Has(r.Error, "A1") || Has(r.Error, "anchor") ? null : r.Error);
+            });
+
+            WithBook(run, s, "xi-neg-width-zero", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult r = s.Image(id, "insert", name, "B2", WriteTinyPng(), widthCm: 0);
+                return r.Success ? "宽0应失败" : (Has(r.Error, "width") || Has(r.Error, "大于") ? null : r.Error);
+            });
+
+            WithBook(run, s, "xi-neg-image-id-fmt", (id, ch) =>
+            {
+                ToolResult r = s.Image(id, "delete", imageId: "I_ab");
+                return r.Success ? "短码应失败" : (Has(r.Error, "image_id") || Has(r.Error, "I_") ? null : r.Error);
+            });
+
+            WithBook(run, s, "xi-neg-delete-missing", (id, ch) =>
+            {
+                ToolResult r = s.Image(id, "delete", imageId: "I_yyyyyyyy");
+                return r.Success ? "假删应失败" : (Has(r.Error, "未找到") || Has(r.Error, "image_id") ? null : r.Error);
+            });
+
             WithBook(run, s, "xi-neg-insert-missing", (id, ch) =>
             {
                 string name = s.FirstSheetName(ch);
@@ -137,6 +163,14 @@ namespace ExcelWorkbookRoundtripTest
 
         private static void RunLife(TestRun run, XlSession s)
         {
+            WithBook(run, s, "xi-list-empty", (id, ch) =>
+            {
+                ToolResult listed = s.Image(id, "list");
+                return listed.Success && Int(listed, "images_count") == 0
+                    ? null
+                    : (listed.Error ?? "空簿 list 应 0");
+            });
+
             WithBook(run, s, "xi-insert-list", (id, ch) =>
             {
                 string name = s.FirstSheetName(ch);
@@ -191,6 +225,46 @@ namespace ExcelWorkbookRoundtripTest
                 return again.Success && string.Equals(Str(FirstImage(again), "image_id"), stamped, StringComparison.Ordinal)
                     ? null
                     : (again.Error ?? "二次 list 码变了");
+            });
+
+            WithBook(run, s, "xi-insert-width", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                ToolResult ins = s.Image(id, "insert", name, "B2", WriteTinyPng(), widthCm: 12);
+                return ins.Success
+                    && ImageIdRx.IsMatch(Str(ins, "image_id"))
+                    && NearNumber(Data(ins) != null && Data(ins).ContainsKey("width_cm") ? Data(ins)["width_cm"] : null, 12)
+                    ? null
+                    : (ins.Error ?? "宽=" + Str(ins, "width_cm"));
+            });
+
+            WithBook(run, s, "xi-list-sheet", (id, ch) =>
+            {
+                string first = s.FirstSheetName(ch);
+                ToolResult add = s.Manage(id, "add", name: "分析");
+                if (!add.Success)
+                {
+                    return add.Error ?? "加表失败";
+                }
+
+                ToolResult a = s.Image(id, "insert", first, "B2", WriteTinyPng());
+                ToolResult b = s.Image(id, "insert", "分析", "D4", WriteTinyPng());
+                if (!a.Success || !b.Success)
+                {
+                    return a.Error ?? b.Error;
+                }
+
+                ToolResult one = s.Image(id, "list", sheet: "分析");
+                if (!one.Success || Int(one, "images_count") != 1
+                    || !Has(Str(FirstImage(one), "anchor"), "D4"))
+                {
+                    return one.Error ?? "sheet 过滤失败";
+                }
+
+                ToolResult all = s.Image(id, "list");
+                return all.Success && Int(all, "images_count") == 2
+                    ? null
+                    : (all.Error ?? "整簿 list 应 2");
             });
 
             WithBook(run, s, "xi-update-width-move", (id, ch) =>
@@ -261,28 +335,7 @@ namespace ExcelWorkbookRoundtripTest
 
             WithBook(run, s, "xi-render-svg", (id, ch) =>
             {
-                ToolResult render = s.Call("F_render_svg", new Dictionary<string, object>
-                {
-                    ["svg"] = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><rect width=\"10\" height=\"10\" fill=\"#09c\"/></svg>"
-                });
-                if (!render.Success)
-                {
-                    return Has(render.Error, "工作区") || Has(render.Error, "登录")
-                        ? "SKIP:" + render.Error
-                        : render.Error;
-                }
-
-                string filename = Str(render, "filename");
-                if (string.IsNullOrEmpty(filename) || !filename.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
-                {
-                    return "filename=" + filename;
-                }
-
-                string name = s.FirstSheetName(ch);
-                ToolResult ins = s.Image(id, "insert", name, "B2", filename);
-                return ins.Success && ImageIdRx.IsMatch(Str(ins, "image_id"))
-                    ? null
-                    : (ins.Error ?? "render 后 insert 失败");
+                return "SKIP:本套进程内 STA 无消息循环，F_render_svg/WebView2 会卡死；改走 Desktop 再测栅格";
             });
         }
 

@@ -138,7 +138,7 @@ namespace ExcelWorkbookRoundtripTest
             Console.WriteLine();
             int target = run550
                 ? run.TotalTarget
-                : (runImage ? 19 : ((runCond || runChart) ? 38 : 30));
+                : (runImage ? 26 : ((runCond || runChart) ? 38 : 30));
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
                 + "  跳过 " + run.CasesSkipped

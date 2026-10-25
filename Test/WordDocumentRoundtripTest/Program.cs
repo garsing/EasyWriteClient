@@ -15,6 +15,11 @@ namespace WordDocumentRoundtripTest
             string host = GetHost(args);
             string caseFilter = GetArg(args, "--case=");
             string docPath = GetArg(args, "--doc=");
+            if (caseFilter.StartsWith("xid-", StringComparison.OrdinalIgnoreCase))
+            {
+                return RunXiDesktop(args);
+            }
+
             if (caseFilter.StartsWith("xlk-", StringComparison.OrdinalIgnoreCase)
                 || caseFilter.StartsWith("pk-", StringComparison.OrdinalIgnoreCase))
             {
@@ -588,6 +593,34 @@ namespace WordDocumentRoundtripTest
                 + "  失败 " + run.CasesFailed
                 + "  跳过 " + run.CasesSkipped
                 + "  （目标 " + target + "）");
+            Console.WriteLine("ELAPSED_SEC=" + sw.Elapsed.TotalSeconds.ToString("F1"));
+            return run.CasesFailed == 0 ? 0 : 1;
+        }
+
+        private static int RunXiDesktop(string[] args)
+        {
+            string host = OfficeCkptSession.NormalizeExcelHost(GetArg(args, "--host="));
+            Console.WriteLine("表格 贴图 Desktop（xid-）");
+            Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+            Console.WriteLine(host == "et" ? "宿主 WPS 表格" : "宿主 Excel");
+            Console.WriteLine();
+            if (!DesktopLauncher.EnsureAvailable())
+            {
+                Console.WriteLine("连不上易写 Desktop（已尝试自动拉起）。请手动打开易写应用，再跑本套。");
+                return 1;
+            }
+
+            var s = new OfficeCkptSession(host);
+            s.SweepLeftovers();
+            var run = new TestRun { TotalTarget = XiDesktopCases.Target };
+            var sw = Stopwatch.StartNew();
+            XiDesktopCases.Run(run, host);
+            sw.Stop();
+            Console.WriteLine();
+            Console.WriteLine("正式用例 通过 " + run.CasesPassed
+                + "  失败 " + run.CasesFailed
+                + "  跳过 " + run.CasesSkipped
+                + "  （目标 " + run.TotalTarget + "）");
             Console.WriteLine("ELAPSED_SEC=" + sw.Elapsed.TotalSeconds.ToString("F1"));
             return run.CasesFailed == 0 ? 0 : 1;
         }

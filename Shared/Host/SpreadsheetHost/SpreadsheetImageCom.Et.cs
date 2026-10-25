@@ -114,7 +114,7 @@ namespace WordAddIn1.SpreadsheetHost
             object cell;
             try
             {
-                cell = EtCom.Invoke(sheet, "Range", request.Anchor);
+                cell = EtCom.InvokeFlex(sheet, "Range", request.Anchor);
             }
             catch
             {
@@ -244,7 +244,7 @@ namespace WordAddIn1.SpreadsheetHost
                 object cell;
                 try
                 {
-                    cell = EtCom.Invoke(destSheet, "Range", request.Anchor);
+                    cell = EtCom.InvokeFlex(destSheet, "Range", request.Anchor);
                 }
                 catch
                 {
@@ -449,6 +449,39 @@ namespace WordAddIn1.SpreadsheetHost
             }
         }
 
+        private static string ReadEtAnchor(object pic)
+        {
+            object tl = EtCom.GetProperty(pic, "TopLeftCell");
+            if (tl == null)
+            {
+                return "";
+            }
+
+            try
+            {
+                int row = Convert.ToInt32(EtCom.GetProperty(tl, "Row"));
+                int col = Convert.ToInt32(EtCom.GetProperty(tl, "Column"));
+                string a1 = A1Address.Cell(row, col);
+                if (!string.IsNullOrEmpty(a1))
+                {
+                    return a1;
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                object addr = EtCom.InvokeFlex(tl, "Address", false, false);
+                return (Convert.ToString(addr) ?? "").Replace("$", "");
+            }
+            catch
+            {
+                return (Convert.ToString(EtCom.GetProperty(tl, "Address")) ?? "").Replace("$", "");
+            }
+        }
+
         private static string ReadAltEt(object shape)
         {
             try
@@ -475,15 +508,10 @@ namespace WordAddIn1.SpreadsheetHost
 
             try
             {
-                object tl = EtCom.GetProperty(pic, "TopLeftCell");
-                if (tl != null)
+                anchor = ReadEtAnchor(pic);
+                if (string.IsNullOrEmpty(anchor))
                 {
-                    object addr = EtCom.Invoke(tl, "Address", false, false);
-                    anchor = Convert.ToString(addr) ?? "";
-                    if (string.IsNullOrEmpty(anchor))
-                    {
-                        anchor = Convert.ToString(EtCom.GetProperty(tl, "Address")) ?? "";
-                    }
+                    warnings?.Add("无法读取锚点格");
                 }
             }
             catch
@@ -523,9 +551,8 @@ namespace WordAddIn1.SpreadsheetHost
             result.Sheet = EtCom.TryReadName(parent) ?? request.Sheet;
             try
             {
-                object tl = EtCom.GetProperty(pic, "TopLeftCell");
-                object addr = tl != null ? EtCom.Invoke(tl, "Address", false, false) : null;
-                result.Anchor = Convert.ToString(addr) ?? (request.Anchor ?? "");
+                string a1 = ReadEtAnchor(pic);
+                result.Anchor = !string.IsNullOrEmpty(a1) ? a1 : (request.Anchor ?? "");
             }
             catch
             {
