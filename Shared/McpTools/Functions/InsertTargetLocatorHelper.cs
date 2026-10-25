@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using WordAddIn1.DocumentHost;
+using WordAddIn1.DocumentMapping;
 using WordAddIn1.DocumentMapping.CodeResolve;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -507,6 +508,14 @@ namespace WordAddIn1
                 }
             }
 
+            string inoperable = FailIfInoperable(anchors);
+            if (inoperable != null)
+            {
+                result.Success = false;
+                result.Error = inoperable;
+                return result;
+            }
+
             string cacheError;
             AmbiguityCheckResult ambiguity;
             TableScopeIndex tableScope;
@@ -646,6 +655,19 @@ namespace WordAddIn1
             string documentName,
             int totalActions)
         {
+            if (precheck?.Error == StoryUniqEncode.FailBeforeWriteMessage)
+            {
+                return new ToolResult
+                {
+                    Success = false,
+                    Error = precheck.Error,
+                    Data = new Dictionary<string, object>
+                    {
+                        ["checkpoint_cleanup_only"] = true
+                    }
+                };
+            }
+
             if (precheck?.Ambiguity != null && precheck.Ambiguity.HasBlockingError)
             {
                 return SentenceCodeAmbiguityHelper.BuildPreStep3FailureResult(
@@ -923,6 +945,24 @@ namespace WordAddIn1
                     || spec.Kind == LocatorKind.Chart
                     || spec.Kind == LocatorKind.Image
                     || spec.Kind == LocatorKind.EmptyCell);
+        }
+
+        private static string FailIfInoperable(IReadOnlyList<DocumentActionAmbiguityAnchor> anchors)
+        {
+            if (anchors == null)
+            {
+                return null;
+            }
+
+            foreach (DocumentActionAmbiguityAnchor anchor in anchors)
+            {
+                if (StoryUniqEncode.CsvIsInoperable(anchor?.Codes))
+                {
+                    return StoryUniqEncode.FailBeforeWriteMessage;
+                }
+            }
+
+            return null;
         }
 
         private static bool AnchorsNeedProcessDocument(

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using WordAddIn1.DocumentMapping;
 using WordAddIn1.DocumentMapping.CodeResolve;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -362,6 +363,11 @@ namespace WordAddIn1
             return paragraphName;
         }
 
+        public static List<string> GetInoperableSentenceCodesSnapshot()
+        {
+            return Session.InoperableSentenceCodes.ToList();
+        }
+
         public static void SetInoperableSentenceCodes(IEnumerable<string> codes)
         {
             Session.InoperableSentenceCodes.Clear();
@@ -384,9 +390,53 @@ namespace WordAddIn1
             return !string.IsNullOrEmpty(code) && Session.InoperableSentenceCodes.Contains(code);
         }
 
+        /// <summary>
+        /// 缓存命中不重跑 StoryUniq 时集合会空，但从 display 上的 D22 标记补回。
+        /// </summary>
+        public static void EnsureInoperableFromLastDisplay()
+        {
+            ProcessDocumentCacheEntry entry = Session.LastProcessCache;
+            if (entry == null)
+            {
+                return;
+            }
+
+            if (entry.InoperableSentenceCodes != null)
+            {
+                foreach (string code in entry.InoperableSentenceCodes)
+                {
+                    if (!string.IsNullOrEmpty(code))
+                    {
+                        Session.InoperableSentenceCodes.Add(code);
+                    }
+                }
+            }
+
+            if (entry.ChunkInfo == null)
+            {
+                return;
+            }
+
+            foreach (WordDocumentExtractor.ChunkInfo chunk in entry.ChunkInfo)
+            {
+                if (chunk != null)
+                {
+                    StoryUniqEncode.CollectInoperableFromDisplay(
+                        chunk.DisplayContent,
+                        Session.InoperableSentenceCodes);
+                }
+            }
+        }
+
         public static bool CsvContainsInoperable(string csv)
         {
-            if (string.IsNullOrWhiteSpace(csv) || Session.InoperableSentenceCodes.Count == 0)
+            if (string.IsNullOrWhiteSpace(csv))
+            {
+                return false;
+            }
+
+            EnsureInoperableFromLastDisplay();
+            if (Session.InoperableSentenceCodes.Count == 0)
             {
                 return false;
             }

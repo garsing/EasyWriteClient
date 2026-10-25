@@ -37,6 +37,20 @@ namespace WordAddIn1
                 return parsed.Error;
             }
 
+            if (parsed.Spec != null
+                && parsed.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.Sentence)
+            {
+                if (!StoryUniqEncode.CsvIsInoperable(parsed.Spec.Codes))
+                {
+                    InsertTargetLocatorHelper.TryProcessDocumentForLocate(doc, disallowBackendApi);
+                }
+
+                if (StoryUniqEncode.CsvIsInoperable(parsed.Spec.Codes))
+                {
+                    return StoryUniqEncode.FailBeforeWriteMessage;
+                }
+            }
+
             InsertTargetLocatorHelper.LocateRangeKind kind =
                 parsed.Spec != null && parsed.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.EmptyCell
                     ? InsertTargetLocatorHelper.LocateRangeKind.WriteCell
@@ -56,11 +70,6 @@ namespace WordAddIn1
             if (parsed.Spec != null && parsed.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.EmptyCell)
             {
                 return EmptyCellCode.NoFormatError;
-            }
-
-            if (DocumentState.CsvContainsInoperable(csv))
-            {
-                return StoryUniqEncode.UnusableError + ": " + StoryUniqEncode.UnusableHint;
             }
 
             return null;

@@ -531,11 +531,11 @@ namespace WordAddIn1
 
             foreach (ParagraphAction action in actions)
             {
-                if (DocumentState.CsvContainsInoperable(action.SentenceNames)
+                if (StoryUniqEncode.CsvIsInoperable(action.SentenceNames)
                     || (action.TargetLocator != null
-                        && DocumentState.CsvContainsInoperable(action.TargetLocator.Codes)))
+                        && StoryUniqEncode.CsvIsInoperable(action.TargetLocator.Codes)))
                 {
-                    return StoryUniqEncode.UnusableError + ": " + StoryUniqEncode.UnusableHint;
+                    return StoryUniqEncode.FailBeforeWriteMessage;
                 }
             }
 

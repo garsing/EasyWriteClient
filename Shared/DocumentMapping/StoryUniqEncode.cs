@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using WordAddIn1;
 
 namespace WordAddIn1.DocumentMapping
@@ -13,6 +14,11 @@ namespace WordAddIn1.DocumentMapping
         public const string UnusableError = "ambiguous_unusable_sentence";
         public const string UnusableHint = "歧义无法操作";
         public const string UnusableStartTail = " 歧义无法操作";
+        public const string FailBeforeWriteMessage = UnusableError + ": " + UnusableHint;
+
+        private static readonly Regex D22Start = new Regex(
+            @"\[(S_[0-9A-Za-z]+)-start 歧义无法操作\]",
+            RegexOptions.Compiled);
 
         public static int CountOccurrences(string story, string needle)
         {
@@ -126,7 +132,25 @@ namespace WordAddIn1.DocumentMapping
 
         public static bool CsvIsInoperable(string csv)
         {
+            DocumentState.EnsureInoperableFromLastDisplay();
             return DocumentState.CsvContainsInoperable(csv);
+        }
+
+        public static void CollectInoperableFromDisplay(string display, HashSet<string> into)
+        {
+            if (string.IsNullOrEmpty(display) || into == null)
+            {
+                return;
+            }
+
+            foreach (Match m in D22Start.Matches(display))
+            {
+                string code = m.Groups[1].Value;
+                if (!string.IsNullOrEmpty(code))
+                {
+                    into.Add(code);
+                }
+            }
         }
 
         private static List<string> RewriteSeg(

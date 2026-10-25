@@ -124,7 +124,10 @@ namespace WordDocumentRoundtripTest
                     ["channel_id"] = ch,
                     ["target_codes"] = d22Code
                 });
-                Ok(run, "wu-fmt-d22", !fmt.Success, fmt.Success ? "D22 取格式不该成功" : (fmt.Error ?? ""));
+                Ok(run, "wu-fmt-d22",
+                    !fmt.Success && (Contains(fmt.Error, "ambiguous_unusable_sentence")
+                        || Contains(fmt.Error, "歧义无法操作")),
+                    fmt.Success ? "D22 取格式不该成功" : (fmt.Error ?? ""));
             }
             finally
             {

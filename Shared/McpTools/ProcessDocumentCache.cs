@@ -34,6 +34,8 @@ namespace WordAddIn1
         public string ProcessingMethod { get; set; }
         public DateTime CachedAtUtc { get; set; }
         public string LastSource { get; set; }
+
+        public List<string> InoperableSentenceCodes { get; set; }
     }
 
     /// <summary>
@@ -383,6 +385,7 @@ namespace WordAddIn1
                 DocumentState.SetSnapshots(entry.Snapshot, entry.SegSnapshot, source);
             }
 
+            DocumentState.EnsureInoperableFromLastDisplay();
             LogHit(source, fingerprint, bodyCheckMs);
             return true;
         }
@@ -417,7 +420,8 @@ namespace WordAddIn1
                 ImageIdMappingSnapshot = DocumentState.GetImageIdMappingSnapshot(),
                 ProcessingMethod = result.ProcessingMethod ?? "Local",
                 CachedAtUtc = DateTime.UtcNow,
-                LastSource = source ?? ""
+                LastSource = source ?? "",
+                InoperableSentenceCodes = DocumentState.GetInoperableSentenceCodesSnapshot()
             };
 
             DocumentState.SetLastProcessCache(entry);
