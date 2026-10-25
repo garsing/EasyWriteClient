@@ -159,6 +159,11 @@ namespace WordAddIn1
 
         private static Dictionary<string, object> AsDict(object raw)
         {
+            if (raw == null)
+            {
+                return null;
+            }
+
             if (raw is Dictionary<string, object> dict)
             {
                 return dict;
