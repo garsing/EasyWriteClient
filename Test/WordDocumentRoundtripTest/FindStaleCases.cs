@@ -2301,6 +2301,34 @@ namespace WordDocumentRoundtripTest
                     continue;
                 }
 
+                if (text[i] == '\f')
+                {
+                    if (openCode != null)
+                    {
+                        inner.Append('\f');
+                    }
+
+                    if (i + 1 >= text.Length || text[i + 1] != '\r')
+                    {
+                        paraNo++;
+                        if (openCode != null)
+                        {
+                            assigned = true;
+                            assignedPara = paraNo;
+                        }
+
+                        for (int p = 0; p < pending.Count; p++)
+                        {
+                            hits[pending[p]].ParaNo = paraNo;
+                        }
+
+                        pending.Clear();
+                    }
+
+                    i++;
+                    continue;
+                }
+
                 if (text[i] == '^'
                     && i + 1 < text.Length
                     && text[i + 1] == 'b')

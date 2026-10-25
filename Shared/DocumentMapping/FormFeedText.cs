@@ -31,7 +31,7 @@ namespace WordAddIn1.DocumentMapping
         }
 
         /// <summary>
-        /// 片内 \f 不在末尾则在其后切开，\f 留前片。末片沿用原 trailingCr。
+        /// 片内 \f 或 ^b 不在末尾则在其后切开，断点留前片。末片沿用原 trailingCr。
         /// </summary>
         public static void AppendSplitAfterMidFormFeed(
             System.Collections.Generic.List<ParagraphBlock> blocks,
@@ -47,15 +47,29 @@ namespace WordAddIn1.DocumentMapping
             int from = 0;
             for (int i = 0; i < part.Length; i++)
             {
-                if (part[i] != '\f' || i + 1 >= part.Length)
+                int cutAfter = -1;
+                if (part[i] == '\f' && i + 1 < part.Length)
+                {
+                    cutAfter = i;
+                }
+                else if (part[i] == '^'
+                    && i + 1 < part.Length
+                    && part[i + 1] == 'b'
+                    && i + 2 < part.Length)
+                {
+                    cutAfter = i + 1;
+                }
+
+                if (cutAfter < 0)
                 {
                     continue;
                 }
 
-                string left = part.Substring(from, i - from + 1);
+                string left = part.Substring(from, cutAfter - from + 1);
                 blocks.Add(new ParagraphBlock(blockIndex, left, false));
                 blockIndex++;
-                from = i + 1;
+                from = cutAfter + 1;
+                i = cutAfter;
             }
 
             string rest = from == 0 ? part : part.Substring(from);

@@ -1403,8 +1403,7 @@ namespace WordAddIn1
                 return;
             }
 
-            output.Append(FormFeedText.EscapeInXmlText(
-                System.Security.SecurityElement.Escape(textBuffer.ToString())));
+            output.Append(textBuffer.ToString());
             textBuffer.Clear();
         }
 
@@ -1456,7 +1455,8 @@ namespace WordAddIn1
                     string val = el.Value ?? "";
                     if (val.Length > 0)
                     {
-                        textBuffer.Append(val);
+                        textBuffer.Append(FormFeedText.EscapeInXmlText(
+                            System.Security.SecurityElement.Escape(val)));
                         orderLog.Add($"t({val.Length})");
                     }
                 }

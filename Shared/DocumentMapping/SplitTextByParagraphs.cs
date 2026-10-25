@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace WordAddIn1.DocumentMapping
 {
     /// <summary>
-    /// L2：seg 内按 \r 切段落（与 Python split_text_by_paragraphs 对齐）。
+    /// L2：seg 内按 \r 切段落，片内再按段中 \f / ^b 切开（与 COM Paragraphs 对齐）。
     /// </summary>
     public static class SplitTextByParagraphs
     {
