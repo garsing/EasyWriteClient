@@ -7,44 +7,20 @@
       :aria-label="copied ? '已复制' : '复制'"
       @click.stop="copy"
     >
-      <svg
-        v-if="!copied"
+      <img
+        :src="copyIcon"
+        alt=""
         class="copy-icon"
-        viewBox="0 0 16 16"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
+        :class="{ 'copy-icon--copied': copied }"
         aria-hidden="true"
-      >
-        <rect x="5.25" y="2.25" width="8.5" height="8.5" rx="1.25" stroke="currentColor" stroke-width="1.25" />
-        <path
-          d="M10.75 10.75H3.75C3.06 10.75 2.5 10.19 2.5 9.5V3.75"
-          stroke="currentColor"
-          stroke-width="1.25"
-          stroke-linecap="round"
-        />
-      </svg>
-      <svg
-        v-else
-        class="copy-icon"
-        viewBox="0 0 16 16"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden="true"
-      >
-        <path
-          d="M3.5 8.25L6.5 11.25L12.5 4.75"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
+      />
     </button>
   </div>
 </template>
 
 <script setup>
 import { onUnmounted, ref } from 'vue'
+import copyIcon from '../assets/images/copy.png'
 
 const props = defineProps({
   text: {
@@ -138,5 +114,10 @@ onUnmounted(() => {
   width: 15px;
   height: 15px;
   display: block;
+  object-fit: contain;
+}
+
+.copy-icon--copied {
+  opacity: 0.55;
 }
 </style>
