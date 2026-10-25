@@ -260,6 +260,31 @@ namespace WordDocumentRoundtripTest
                 return wuRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (caseFilter.StartsWith("wt-plan-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "wt-plan", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 多格几何码规划短套（wt-plan）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                int wordBeforePlan = OfficeAlive.Count("WINWORD");
+                int wpsBeforePlan = OfficeAlive.Count("wps");
+                bool wordWinBeforePlan = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforePlan = OfficeAlive.HasWindow("wps");
+                var planRun = new TestRun();
+                WtCases.RunGeoPlan(
+                    planRun, host, wordBeforePlan, wpsBeforePlan, wordWinBeforePlan, wpsWinBeforePlan);
+                Console.WriteLine("正式用例 通过 " + planRun.CasesPassed
+                    + "  失败 " + planRun.CasesFailed
+                    + "  跳过 " + planRun.CasesSkipped);
+                return planRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("wt-ec-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wt-ec", StringComparison.OrdinalIgnoreCase))
             {

@@ -298,6 +298,185 @@ namespace WordDocumentRoundtripTest
             }
         }
 
+        public static void RunGeoPlan(
+            TestRun run,
+            string host,
+            int wordBefore,
+            int wpsBefore,
+            bool wordWinBefore,
+            bool wpsWinBefore)
+        {
+            const string Title = "实验操作方法和步骤";
+            const string CellA = "格甲内容。";
+            const string CellB = "格乙内容。";
+            const string TitleNew = "实验操作方法和步骤改。";
+            var ids = new[]
+            {
+                "wt-plan-two", "wt-plan-split", "wt-plan-delete", "wt-plan-no-quit"
+            };
+            var s = new WdSession(host);
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, ids))
+            {
+                return;
+            }
+
+            try
+            {
+                s.ActivateDoc(path);
+                ToolResult created = s.CreateTableFromXml(CreateArgs(id, WriteXml(GridXml(Title, "", "备注", ""))));
+                string tableId = WdSession.Str(created, "table_id");
+                if (!created.Success || string.IsNullOrEmpty(tableId))
+                {
+                    FailMany(run, created.Error ?? "建表失败", ids);
+                    return;
+                }
+
+                string body = ReadBody(s, id);
+                MatchCollection empties = Regex.Matches(body, @"T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+");
+                string codeA = empties.Count > 0 ? empties[0].Value : "";
+                string codeB = empties.Count > 1 ? empties[1].Value : "";
+                Match titleMatch = Regex.Match(body, @"\[(S_[0-9a-zA-Z]{5})-start\]" + Regex.Escape(Title));
+                string titleCode = titleMatch.Success ? titleMatch.Groups[1].Value : "";
+
+                if (string.IsNullOrEmpty(codeA) || string.IsNullOrEmpty(codeB))
+                {
+                    FailMany(run, "缺两个空格码", "wt-plan-two", "wt-plan-split");
+                }
+                else
+                {
+                    ToolResult two = s.ProcessActions(id, new List<Dictionary<string, object>>
+                    {
+                        GeoReplace(codeA, CellA),
+                        GeoReplace(codeB, CellB)
+                    });
+                    string afterTwo = ReadBody(s, id);
+                    Ok(run, "wt-plan-two",
+                        two.Success
+                            && afterTwo.IndexOf(CellA, StringComparison.Ordinal) >= 0
+                            && afterTwo.IndexOf(CellB, StringComparison.Ordinal) >= 0,
+                        two.Success ? "同表两格一次调用" : (two.Error ?? ""));
+                }
+
+                string pathSplit, idSplit;
+                if (!TryOpen(run, s, out pathSplit, out idSplit, "wt-plan-split"))
+                {
+                    return;
+                }
+
+                try
+                {
+                    s.ActivateDoc(pathSplit);
+                    s.CreateTableFromXml(CreateArgs(idSplit, WriteXml(GridXml(Title, "", "备注", ""))));
+                    string splitBody = ReadBody(s, idSplit);
+                    MatchCollection splitEmpties = Regex.Matches(splitBody, @"T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+");
+                    string splitA = splitEmpties.Count > 0 ? splitEmpties[0].Value : "";
+                    string splitB = splitEmpties.Count > 1 ? splitEmpties[1].Value : "";
+                    Match splitTitle = Regex.Match(splitBody, @"\[(S_[0-9a-zA-Z]{5})-start\]" + Regex.Escape(Title));
+                    string splitTitleCode = splitTitle.Success ? splitTitle.Groups[1].Value : "";
+                    if (string.IsNullOrEmpty(splitA) || string.IsNullOrEmpty(splitB) || string.IsNullOrEmpty(splitTitleCode))
+                    {
+                        Ok(run, "wt-plan-split", false, "缺码");
+                    }
+                    else
+                    {
+                        ToolResult split = s.ProcessActions(idSplit, new List<Dictionary<string, object>>
+                        {
+                            GeoReplace(splitA, CellA),
+                            new Dictionary<string, object>
+                            {
+                                ["type"] = "replace",
+                                ["detail"] = new Dictionary<string, object>
+                                {
+                                    ["original"] = new Dictionary<string, object> { ["codes"] = splitTitleCode },
+                                    ["new"] = TitleNew,
+                                    ["format"] = DefaultFormat()
+                                }
+                            },
+                            GeoReplace(splitB, CellB)
+                        });
+                        string afterSplit = ReadBody(s, idSplit);
+                        Ok(run, "wt-plan-split",
+                            split.Success
+                                && afterSplit.IndexOf(CellA, StringComparison.Ordinal) >= 0
+                                && afterSplit.IndexOf(CellB, StringComparison.Ordinal) >= 0
+                                && afterSplit.IndexOf(TitleNew, StringComparison.Ordinal) >= 0,
+                            split.Success ? "夹句仍两格+题都写上" : (split.Error ?? ""));
+                    }
+                }
+                finally
+                {
+                    s.CloseDocByPath(pathSplit);
+                }
+
+                string pathDel, idDel;
+                if (!TryOpen(run, s, out pathDel, out idDel, "wt-plan-delete"))
+                {
+                    return;
+                }
+
+                try
+                {
+                    s.ActivateDoc(pathDel);
+                    s.CreateTableFromXml(CreateArgs(idDel, WriteXml(GridXml("同", "同", "备", ""))));
+                    string delBody = ReadBody(s, idDel);
+                    Match delGeo = Regex.Match(delBody, @"T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+");
+                    string delCode = delGeo.Success ? delGeo.Value : "";
+                    if (string.IsNullOrEmpty(delCode))
+                    {
+                        Ok(run, "wt-plan-delete", false, "无几何码");
+                    }
+                    else
+                    {
+                        ToolResult del = s.ProcessActions(idDel, new List<Dictionary<string, object>>
+                        {
+                            new Dictionary<string, object>
+                            {
+                                ["type"] = "delete",
+                                ["detail"] = new Dictionary<string, object>
+                                {
+                                    ["deletion"] = new Dictionary<string, object> { ["codes"] = delCode }
+                                }
+                            }
+                        });
+                        string afterDel = ReadBody(s, idDel);
+                        bool cleared = afterDel.IndexOf("[" + delCode + "-start][" + delCode + "-end]", StringComparison.Ordinal) >= 0
+                            || (afterDel.Split(new[] { "同" }, StringSplitOptions.None).Length - 1) < (delBody.Split(new[] { "同" }, StringSplitOptions.None).Length - 1);
+                        Ok(run, "wt-plan-delete",
+                            del.Success && cleared,
+                            del.Success ? "delete 几何码应清格" : (del.Error ?? ""));
+                    }
+                }
+                finally
+                {
+                    s.CloseDocByPath(pathDel);
+                }
+
+                string wordDetail, wpsDetail;
+                bool wordOk = OfficeAlive.NotQuit("WINWORD", wordBefore, wordWinBefore, out wordDetail);
+                bool wpsOk = OfficeAlive.NotQuit("wps", wpsBefore, wpsWinBefore, out wpsDetail);
+                Ok(run, "wt-plan-no-quit", wordOk && wpsOk, wordDetail + " " + wpsDetail);
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static Dictionary<string, object> GeoReplace(string code, string text)
+        {
+            return new Dictionary<string, object>
+            {
+                ["type"] = "replace",
+                ["detail"] = new Dictionary<string, object>
+                {
+                    ["original"] = new Dictionary<string, object> { ["codes"] = code },
+                    ["new"] = text,
+                    ["format"] = DefaultFormat()
+                }
+            };
+        }
+
         public static void RunCreateAfterOnly(
             TestRun run,
             string host,

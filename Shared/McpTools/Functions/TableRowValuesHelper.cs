@@ -437,30 +437,16 @@ namespace WordAddIn1
                 return result;
             }
 
-            ResetCellResolutionCache();
-            using (EasyWriteDiagnostics.Time("table_row_values.apply.cell_map"))
-            {
-                EnsureLogicalCellMap(table);
-            }
+            PrepareLogicalCellMap(table);
 
             var writeCellSw = new System.Diagnostics.Stopwatch();
             var applyFormatSw = new System.Diagnostics.Stopwatch();
 
             Word.Application app = TryGetWordApplication(table);
-            bool prevScreenUpdating = true;
-            if (app != null)
+            bool prevScreenUpdating;
+            if (!TrySuppressScreenUpdating(app, out prevScreenUpdating))
             {
-                try
-                {
-                    prevScreenUpdating = app.ScreenUpdating;
-                    app.ScreenUpdating = false;
-                }
-                catch (Exception ex)
-                {
-                    EasyWriteDiagnostics.LogTableRowValues(
-                        $"[ApplyTableRowValues] ScreenUpdating 关闭失败: {ex.Message}");
-                    app = null;
-                }
+                app = null;
             }
 
             try
@@ -478,18 +464,7 @@ namespace WordAddIn1
             }
             finally
             {
-                if (app != null)
-                {
-                    try
-                    {
-                        app.ScreenUpdating = prevScreenUpdating;
-                    }
-                    catch (Exception ex)
-                    {
-                        EasyWriteDiagnostics.LogTableRowValues(
-                            $"[ApplyTableRowValues] ScreenUpdating 恢复失败: {ex.Message}");
-                    }
-                }
+                TryRestoreScreenUpdating(app, prevScreenUpdating);
             }
 
             EasyWriteDiagnostics.LogTiming(
@@ -516,8 +491,64 @@ namespace WordAddIn1
             }
         }
 
+        /// <summary>集合写格：重建该表逻辑格映射（会清缓存）。</summary>
+        public static void PrepareLogicalCellMap(Word.Table table)
+        {
+            ResetCellResolutionCache();
+            using (EasyWriteDiagnostics.Time("table_row_values.apply.cell_map"))
+            {
+                EnsureLogicalCellMap(table);
+            }
+        }
+
+        /// <summary>已 Prepare 后按行列取格；不会 Reset 缓存。</summary>
+        public static Word.Cell TryGetMappedCell(Word.Table table, int row, int col)
+        {
+            return TryResolveCell(table, row, col);
+        }
+
+        public static bool TrySuppressScreenUpdating(Word.Application app, out bool previous)
+        {
+            previous = true;
+            if (app == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                previous = app.ScreenUpdating;
+                app.ScreenUpdating = false;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                EasyWriteDiagnostics.LogTableRowValues(
+                    $"[ApplyTableRowValues] ScreenUpdating 关闭失败: {ex.Message}");
+                return false;
+            }
+        }
+
+        public static void TryRestoreScreenUpdating(Word.Application app, bool previous)
+        {
+            if (app == null)
+            {
+                return;
+            }
+
+            try
+            {
+                app.ScreenUpdating = previous;
+            }
+            catch (Exception ex)
+            {
+                EasyWriteDiagnostics.LogTableRowValues(
+                    $"[ApplyTableRowValues] ScreenUpdating 恢复失败: {ex.Message}");
+            }
+        }
+
         /// <summary>行末短暂打开 ScreenUpdating，让 Word 画出本行，再关掉继续下一行。</summary>
-        private static void TryFlashScreen(Word.Application app)
+        public static void TryFlashScreen(Word.Application app)
         {
             if (app == null)
             {

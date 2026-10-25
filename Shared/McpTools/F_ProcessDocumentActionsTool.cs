@@ -808,111 +808,62 @@ namespace WordAddIn1
 
             try
             {
-                // 按操作顺序处理（从后往前处理，避免位置偏移）
-                var sortedActions = actions
-                    .Select((action, originalIndex) => new { Action = action, OriginalIndex = originalIndex })
+                IDisposable sortAll = EasyWriteDiagnostics.Time("process_actions.sort_all");
+                var ordered = actions
+                    .Select((action, originalIndex) => new IndexedAction
+                    {
+                        Action = action,
+                        OriginalIndex = originalIndex
+                    })
+                    .OrderByDescending(x => GetActionSortKey(x.Action))
                     .ToList();
+                sortAll.Dispose();
 
-                // 先处理delete和replace（从后往前），再处理insert（从后往前）
-                IDisposable sortDr = EasyWriteDiagnostics.Time("process_actions.sort_delete_replace");
-                var deleteAndReplaceActions = sortedActions
-                    .Where(x => x.Action.Type?.ToLower() == "delete" || x.Action.Type?.ToLower() == "replace")
-                    .OrderByDescending(x => GetSnapshotSortPosition(x.Action.SentenceNames))
-                    .ToList();
-                sortDr.Dispose();
-
-                IDisposable sortIns = EasyWriteDiagnostics.Time("process_actions.sort_insert");
-                var insertActions = sortedActions
-                    .Where(x => x.Action.Type?.ToLower() == "insert")
-                    .OrderByDescending(x => GetInsertSnapshotSortPosition(x.Action))
-                    .ToList();
-                sortIns.Dispose();
-
-                // 先执行delete和replace操作
-                foreach (var item in deleteAndReplaceActions)
+                var byIndex = new Dictionary<int, ParagraphAction>();
+                foreach (IndexedAction item in ordered)
                 {
-                    AgentRunCancellation.ThrowIfCancelled();
-
-                    var action = item.Action;
-                    var result = new ActionResult
-                    {
-                        action_index = item.OriginalIndex,
-                        type = action.Type,
-                        target_index = 0
-                    };
-
-                    try
-                    {
-                        using (EasyWriteDiagnostics.Time(
-                            "process_actions.action." + (action.Type ?? "?") + "[" + item.OriginalIndex + "]"))
-                        {
-                        switch (action.Type?.ToLower())
-                        {
-                            case "replace":
-                            {
-                                var rep = ExecuteReplaceWithPayload(
-                                    doc, action, tableScope, disallowBackendApi);
-                                FillReplaceActionResult(result, rep);
-                                break;
-                            }
-
-                            case "delete":
-                            {
-                                var del = ExecuteDeleteBySentenceNames(
-                                    doc,
-                                    action.SentenceNames,
-                                    action.DeletionScopeFields?.TableId,
-                                    disallowBackendApi);
-                                FillDeleteActionResult(result, del);
-                                break;
-                            }
-                        }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        result.success = false;
-                        result.message = $"操作失败: {ex.Message}";
-                    }
-
-                    await RemapAndAssignNewCodes(doc, result, disallowBackendApi);
-                    results.Add(result);
+                    byIndex[item.OriginalIndex] = item.Action;
                 }
 
-                // 再执行insert操作
-                foreach (var item in insertActions)
+                List<DocumentActionPlan.Item> planItems = ordered
+                    .Select(x => ToPlanItem(x))
+                    .ToList();
+                List<DocumentActionPlan.Run> plan = DocumentActionPlan.BuildPlan(planItems);
+
+                foreach (DocumentActionPlan.Run step in plan)
                 {
                     AgentRunCancellation.ThrowIfCancelled();
-
-                    var action = item.Action;
-                    var result = new ActionResult
+                    if (step.IsGeoRun)
                     {
-                        action_index = item.OriginalIndex,
-                        type = action.Type,
-                        target_index = 0
-                    };
-
-                    try
-                    {
-                        using (EasyWriteDiagnostics.Time(
-                            "process_actions.action.insert[" + item.OriginalIndex + "]"))
+                        var members = new List<IndexedAction>();
+                        foreach (int idx in step.OriginalIndices)
                         {
-                        var ins = ExecuteInsertWithPayload(
-                            doc, action, tableScope, disallowBackendApi);
-                        FillInsertActionResult(result, ins, action.TargetLocator);
+                            members.Add(new IndexedAction
+                            {
+                                OriginalIndex = idx,
+                                Action = byIndex[idx]
+                            });
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        result.success = false;
-                        result.message = $"操作失败: {ex.Message}";
+
+                        List<ActionResult> geoResults = ExecuteGeoRun(
+                            doc, members, tableScope, disallowBackendApi);
+                        ActionResult anyOk = geoResults.Find(r => r.success);
+                        if (anyOk != null)
+                        {
+                            await RemapAndAssignNewCodes(doc, anyOk, disallowBackendApi);
+                        }
+
+                        results.AddRange(geoResults);
+                        continue;
                     }
 
-                    await RemapAndAssignNewCodes(doc, result, disallowBackendApi);
-                    results.Add(result);
+                    int oneIndex = step.OriginalIndices[0];
+                    ActionResult one = ExecuteOneAction(
+                        doc, byIndex[oneIndex], oneIndex, tableScope, disallowBackendApi);
+                    await RemapAndAssignNewCodes(doc, one, disallowBackendApi);
+                    results.Add(one);
                 }
 
-                // 按原始顺序排序
                 results = results.OrderBy(r => r.action_index).ToList();
             }
             catch (Exception ex)
@@ -921,6 +872,371 @@ namespace WordAddIn1
             }
 
             return results;
+        }
+
+        private sealed class IndexedAction
+        {
+            public ParagraphAction Action { get; set; }
+            public int OriginalIndex { get; set; }
+        }
+
+        private static int GetActionSortKey(ParagraphAction action)
+        {
+            if (string.Equals(action?.Type, "insert", StringComparison.OrdinalIgnoreCase))
+            {
+                return GetInsertSnapshotSortPosition(action);
+            }
+
+            return GetSnapshotSortPosition(action?.SentenceNames);
+        }
+
+        private static DocumentActionPlan.Item ToPlanItem(IndexedAction item)
+        {
+            bool geo = TryGetGeoCell(item.Action, out EmptyCellCode.Parsed parsed);
+            return new DocumentActionPlan.Item
+            {
+                OriginalIndex = item.OriginalIndex,
+                IsGeoCell = geo,
+                TableId = geo ? parsed.TableId : null
+            };
+        }
+
+        private static bool TryGetGeoCell(ParagraphAction action, out EmptyCellCode.Parsed parsed)
+        {
+            parsed = null;
+            string type = action?.Type?.ToLowerInvariant();
+            if (type != "insert" && type != "replace" && type != "delete")
+            {
+                return false;
+            }
+
+            if (type == "insert")
+            {
+                LocatorSpec target = action.TargetLocator;
+                if (target == null || target.Kind != LocatorKind.EmptyCell)
+                {
+                    return false;
+                }
+
+                parsed = new EmptyCellCode.Parsed
+                {
+                    TableId = target.TableId,
+                    Row = target.Row,
+                    Col = target.Col,
+                    Code = target.Codes
+                };
+                return !string.IsNullOrEmpty(parsed.TableId);
+            }
+
+            List<string> names = ParseCodeList(action.SentenceNames);
+            return names.Count == 1 && EmptyCellCode.TryParse(names[0], out parsed);
+        }
+
+        private static ActionResult ExecuteOneAction(
+            Word.Document doc,
+            ParagraphAction action,
+            int originalIndex,
+            TableScopeIndex tableScope,
+            bool disallowBackendApi)
+        {
+            var result = new ActionResult
+            {
+                action_index = originalIndex,
+                type = action.Type,
+                target_index = 0
+            };
+
+            try
+            {
+                using (EasyWriteDiagnostics.Time(
+                    "process_actions.action." + (action.Type ?? "?") + "[" + originalIndex + "]"))
+                {
+                    switch (action.Type?.ToLower())
+                    {
+                        case "replace":
+                        {
+                            var rep = ExecuteReplaceWithPayload(
+                                doc, action, tableScope, disallowBackendApi);
+                            FillReplaceActionResult(result, rep);
+                            break;
+                        }
+
+                        case "delete":
+                        {
+                            var del = ExecuteDeleteBySentenceNames(
+                                doc,
+                                action.SentenceNames,
+                                action.DeletionScopeFields?.TableId,
+                                disallowBackendApi);
+                            FillDeleteActionResult(result, del);
+                            break;
+                        }
+
+                        case "insert":
+                        {
+                            var ins = ExecuteInsertWithPayload(
+                                doc, action, tableScope, disallowBackendApi);
+                            FillInsertActionResult(result, ins, action.TargetLocator);
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                result.success = false;
+                result.message = $"操作失败: {ex.Message}";
+            }
+
+            return result;
+        }
+
+        private static List<ActionResult> ExecuteGeoRun(
+            Word.Document doc,
+            List<IndexedAction> members,
+            TableScopeIndex tableScope,
+            bool disallowBackendApi)
+        {
+            var results = new List<ActionResult>();
+            if (members == null || members.Count == 0)
+            {
+                return results;
+            }
+
+            EmptyCellCode.Parsed firstGeo;
+            if (!TryGetGeoCell(members[0].Action, out firstGeo))
+            {
+                foreach (IndexedAction member in members)
+                {
+                    results.Add(FailAction(member, "几何码集合无法解析第一条"));
+                }
+
+                return results;
+            }
+
+            var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                doc,
+                new InsertTargetLocatorHelper.LocatorSpec
+                {
+                    Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell,
+                    Codes = firstGeo.Code,
+                    TableId = firstGeo.TableId,
+                    Row = firstGeo.Row,
+                    Col = firstGeo.Col
+                },
+                InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
+                disallowBackendApi,
+                refreshDocument: false);
+            if (!locate.Success)
+            {
+                string err = locate.Error ?? "无法定位空格";
+                foreach (IndexedAction member in members)
+                {
+                    results.Add(FailAction(member, err));
+                }
+
+                return results;
+            }
+
+            Word.Table table = TableResolveHelper.TryResolveTableById(doc, firstGeo.TableId, out string tableError);
+            if (table == null)
+            {
+                string err = tableError ?? "找不到表格";
+                foreach (IndexedAction member in members)
+                {
+                    results.Add(FailAction(member, err));
+                }
+
+                return results;
+            }
+
+            TableRowValuesHelper.PrepareLogicalCellMap(table);
+
+            Word.Application app = null;
+            try
+            {
+                app = doc.Application;
+            }
+            catch
+            {
+                app = null;
+            }
+
+            bool prevScreen;
+            if (!TableRowValuesHelper.TrySuppressScreenUpdating(app, out prevScreen))
+            {
+                app = null;
+            }
+
+            try
+            {
+                bool stop = false;
+                string stopReason = null;
+                for (int i = 0; i < members.Count; i++)
+                {
+                    AgentRunCancellation.ThrowIfCancelled();
+                    IndexedAction member = members[i];
+                    if (stop)
+                    {
+                        results.Add(FailAction(member, stopReason ?? "集合内前一格失败，本格未写"));
+                        continue;
+                    }
+
+                    EmptyCellCode.Parsed geo;
+                    if (!TryGetGeoCell(member.Action, out geo))
+                    {
+                        ActionResult bad = FailAction(member, "几何码无效");
+                        results.Add(bad);
+                        stop = true;
+                        stopReason = bad.message;
+                        continue;
+                    }
+
+                    Word.Cell cell = TableRowValuesHelper.TryGetMappedCell(table, geo.Row, geo.Col);
+                    ActionResult written = WriteGeoMember(
+                        doc, cell, member, geo, tableScope, disallowBackendApi);
+                    results.Add(written);
+                    if (!written.success)
+                    {
+                        stop = true;
+                        stopReason = "集合内前一格失败，本格未写";
+                    }
+
+                    bool last = i == members.Count - 1;
+                    int nextRow = -1;
+                    if (!last && TryGetGeoCell(members[i + 1].Action, out EmptyCellCode.Parsed nextGeo))
+                    {
+                        nextRow = nextGeo.Row;
+                    }
+
+                    if (last || nextRow != geo.Row)
+                    {
+                        TableRowValuesHelper.TryFlashScreen(app);
+                    }
+                }
+            }
+            finally
+            {
+                TableRowValuesHelper.TryRestoreScreenUpdating(app, prevScreen);
+            }
+
+            return results;
+        }
+
+        private static ActionResult FailAction(IndexedAction member, string message)
+        {
+            return new ActionResult
+            {
+                action_index = member.OriginalIndex,
+                type = member.Action?.Type,
+                target_index = 0,
+                success = false,
+                message = message
+            };
+        }
+
+        private static ActionResult WriteGeoMember(
+            Word.Document doc,
+            Word.Cell cell,
+            IndexedAction member,
+            EmptyCellCode.Parsed geo,
+            TableScopeIndex tableScope,
+            bool disallowBackendApi)
+        {
+            var result = new ActionResult
+            {
+                action_index = member.OriginalIndex,
+                type = member.Action.Type,
+                target_index = 0
+            };
+
+            if (cell == null)
+            {
+                result.success = false;
+                result.message = TableRowValuesHelper.BuildUnresolvableCellError(geo.Row, geo.Col);
+                return result;
+            }
+
+            try
+            {
+                using (EasyWriteDiagnostics.Time(
+                    "process_actions.action.geo[" + member.OriginalIndex + "]"))
+                {
+                    string type = member.Action.Type?.ToLowerInvariant();
+                    if (type == "delete")
+                    {
+                        var del = ExecuteEmptyCellClear(doc, geo, disallowBackendApi, cell);
+                        FillDeleteActionResult(result, del);
+                        return result;
+                    }
+
+                    ActionContentHelper.Payload payload = member.Action.ContentPayload;
+                    if (payload == null || !payload.Ok)
+                    {
+                        result.success = false;
+                        result.message = payload?.Error ?? "内容无效";
+                        return result;
+                    }
+
+                    if (payload.IsRuns)
+                    {
+                        var written = ExecuteEmptyCellReplaceRuns(
+                            doc, geo, payload, tableScope, disallowBackendApi, cell);
+                        if (type == "insert")
+                        {
+                            var ins = new InsertExecutionResult
+                            {
+                                Success = written.Success,
+                                ErrorMessage = written.ErrorMessage,
+                                FormatMode = written.FormatMode,
+                                FormatApplyError = written.FormatApplyError,
+                                NewSentences = written.NewSentences ?? new List<string>()
+                            };
+                            FillInsertActionResult(result, ins, member.Action.TargetLocator);
+                        }
+                        else
+                        {
+                            FillReplaceActionResult(result, written);
+                        }
+
+                        return result;
+                    }
+
+                    if (!ActionFormatHelper.TryBuildSnapshot(
+                        doc, payload.FormatSpec, tableScope, out var snapshot, out var formatMode, out string fmtErr))
+                    {
+                        result.success = false;
+                        result.message = fmtErr;
+                        return result;
+                    }
+
+                    var textWritten = ExecuteEmptyCellReplace(
+                        doc, geo, payload.Text, snapshot, formatMode, disallowBackendApi, cell);
+                    if (type == "insert")
+                    {
+                        var ins = new InsertExecutionResult
+                        {
+                            Success = textWritten.Success,
+                            ErrorMessage = textWritten.ErrorMessage,
+                            FormatMode = textWritten.FormatMode,
+                            FormatApplyError = textWritten.FormatApplyError,
+                            NewSentences = textWritten.NewSentences ?? new List<string>()
+                        };
+                        FillInsertActionResult(result, ins, member.Action.TargetLocator);
+                    }
+                    else
+                    {
+                        FillReplaceActionResult(result, textWritten);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                result.success = false;
+                result.message = $"操作失败: {ex.Message}";
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -936,6 +1252,16 @@ namespace WordAddIn1
             EmptyCellCode.Parsed emptyParsed;
             if (EmptyCellCode.TryParse(codes.Split(',')[0].Trim(), out emptyParsed))
             {
+                List<string> geoOrdered = DocumentState.GetOrderedSentenceCodesFromSnapshot(DocumentState.Snapshot);
+                if (geoOrdered != null && geoOrdered.Count > 0)
+                {
+                    int geoIndex = geoOrdered.IndexOf(emptyParsed.Code);
+                    if (geoIndex >= 0)
+                    {
+                        return geoIndex;
+                    }
+                }
+
                 return emptyParsed.Row * 1000 + emptyParsed.Col;
             }
 
@@ -983,7 +1309,7 @@ namespace WordAddIn1
 
             if (target.Kind == LocatorKind.EmptyCell)
             {
-                return target.Row * 1000 + target.Col;
+                return GetSnapshotSortPosition(target.Codes);
             }
 
             if (!string.IsNullOrEmpty(target.Codes))
@@ -1274,42 +1600,47 @@ namespace WordAddIn1
             EmptyCellCode.Parsed emptyCell,
             ActionContentHelper.Payload payload,
             TableScopeIndex tableScope,
-            bool disallowBackendApi)
+            bool disallowBackendApi,
+            Word.Cell resolvedCell = null)
         {
             var result = new ReplaceExecutionResult { Success = false, NewSentences = new List<string>() };
             result.OriginalCodes = new List<string> { emptyCell.Code };
 
-            var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                doc,
-                new InsertTargetLocatorHelper.LocatorSpec
-                {
-                    Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell,
-                    Codes = emptyCell.Code,
-                    TableId = emptyCell.TableId,
-                    Row = emptyCell.Row,
-                    Col = emptyCell.Col
-                },
-                InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
-                disallowBackendApi,
-                refreshDocument: false);
-            if (!locate.Success)
-            {
-                result.ErrorMessage = locate.Error ?? "无法定位空格";
-                return result;
-            }
-
-            Word.Table table = TableResolveHelper.TryResolveTableById(doc, emptyCell.TableId, out string tableError);
-            if (table == null)
-            {
-                result.ErrorMessage = tableError ?? "找不到表格";
-                return result;
-            }
-
-            Word.Cell cell = TableRowValuesHelper.TryResolveWritableCell(table, emptyCell.Row, emptyCell.Col);
+            Word.Cell cell = resolvedCell;
             if (cell == null)
             {
-                result.ErrorMessage = TableRowValuesHelper.BuildUnresolvableCellError(emptyCell.Row, emptyCell.Col);
-                return result;
+                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                    doc,
+                    new InsertTargetLocatorHelper.LocatorSpec
+                    {
+                        Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell,
+                        Codes = emptyCell.Code,
+                        TableId = emptyCell.TableId,
+                        Row = emptyCell.Row,
+                        Col = emptyCell.Col
+                    },
+                    InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
+                    disallowBackendApi,
+                    refreshDocument: false);
+                if (!locate.Success)
+                {
+                    result.ErrorMessage = locate.Error ?? "无法定位空格";
+                    return result;
+                }
+
+                Word.Table table = TableResolveHelper.TryResolveTableById(doc, emptyCell.TableId, out string tableError);
+                if (table == null)
+                {
+                    result.ErrorMessage = tableError ?? "找不到表格";
+                    return result;
+                }
+
+                cell = TableRowValuesHelper.TryResolveWritableCell(table, emptyCell.Row, emptyCell.Col);
+                if (cell == null)
+                {
+                    result.ErrorMessage = TableRowValuesHelper.BuildUnresolvableCellError(emptyCell.Row, emptyCell.Col);
+                    return result;
+                }
             }
 
             ActionContentHelper.Run first = payload.Runs[0];
@@ -1446,7 +1777,8 @@ namespace WordAddIn1
             string newContent,
             Dictionary<string, object> formatSnapshot,
             string formatMode,
-            bool disallowBackendApi)
+            bool disallowBackendApi,
+            Word.Cell resolvedCell = null)
         {
             var result = new ReplaceExecutionResult { Success = false, NewSentences = new List<string>() };
             if (emptyCell == null)
@@ -1462,37 +1794,41 @@ namespace WordAddIn1
                 return result;
             }
 
-            var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                doc,
-                new InsertTargetLocatorHelper.LocatorSpec
-                {
-                    Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell,
-                    Codes = emptyCell.Code,
-                    TableId = emptyCell.TableId,
-                    Row = emptyCell.Row,
-                    Col = emptyCell.Col
-                },
-                InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
-                disallowBackendApi,
-                refreshDocument: false);
-            if (!locate.Success)
-            {
-                result.ErrorMessage = locate.Error ?? "无法定位空格";
-                return result;
-            }
-
-            Word.Table table = TableResolveHelper.TryResolveTableById(doc, emptyCell.TableId, out string tableError);
-            if (table == null)
-            {
-                result.ErrorMessage = tableError ?? "找不到表格";
-                return result;
-            }
-
-            Word.Cell cell = TableRowValuesHelper.TryResolveWritableCell(table, emptyCell.Row, emptyCell.Col);
+            Word.Cell cell = resolvedCell;
             if (cell == null)
             {
-                result.ErrorMessage = TableRowValuesHelper.BuildUnresolvableCellError(emptyCell.Row, emptyCell.Col);
-                return result;
+                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                    doc,
+                    new InsertTargetLocatorHelper.LocatorSpec
+                    {
+                        Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell,
+                        Codes = emptyCell.Code,
+                        TableId = emptyCell.TableId,
+                        Row = emptyCell.Row,
+                        Col = emptyCell.Col
+                    },
+                    InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
+                    disallowBackendApi,
+                    refreshDocument: false);
+                if (!locate.Success)
+                {
+                    result.ErrorMessage = locate.Error ?? "无法定位空格";
+                    return result;
+                }
+
+                Word.Table table = TableResolveHelper.TryResolveTableById(doc, emptyCell.TableId, out string tableError);
+                if (table == null)
+                {
+                    result.ErrorMessage = tableError ?? "找不到表格";
+                    return result;
+                }
+
+                cell = TableRowValuesHelper.TryResolveWritableCell(table, emptyCell.Row, emptyCell.Col);
+                if (cell == null)
+                {
+                    result.ErrorMessage = TableRowValuesHelper.BuildUnresolvableCellError(emptyCell.Row, emptyCell.Col);
+                    return result;
+                }
             }
 
             CellWriteResult write = TableCellContentWriter.WriteCell(cell, newContent ?? "");
@@ -1516,6 +1852,69 @@ namespace WordAddIn1
 
             MoveSelectionAfterReplace(doc, cell.Range);
             result.NewSentences = SentenceSplitter.SplitForActionContent(newContent ?? "");
+            result.Success = true;
+            return result;
+        }
+
+        private static DeleteExecutionResult ExecuteEmptyCellClear(
+            Word.Document doc,
+            EmptyCellCode.Parsed emptyCell,
+            bool disallowBackendApi,
+            Word.Cell resolvedCell = null)
+        {
+            var result = new DeleteExecutionResult { Success = false };
+            if (emptyCell == null)
+            {
+                result.ErrorMessage = "空格码无效";
+                return result;
+            }
+
+            result.AffectedCodes = new List<string> { emptyCell.Code };
+            Word.Cell cell = resolvedCell;
+            if (cell == null)
+            {
+                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+                    doc,
+                    new InsertTargetLocatorHelper.LocatorSpec
+                    {
+                        Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell,
+                        Codes = emptyCell.Code,
+                        TableId = emptyCell.TableId,
+                        Row = emptyCell.Row,
+                        Col = emptyCell.Col
+                    },
+                    InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
+                    disallowBackendApi,
+                    refreshDocument: false);
+                if (!locate.Success)
+                {
+                    result.ErrorMessage = locate.Error ?? "无法定位空格";
+                    return result;
+                }
+
+                Word.Table table = TableResolveHelper.TryResolveTableById(doc, emptyCell.TableId, out string tableError);
+                if (table == null)
+                {
+                    result.ErrorMessage = tableError ?? "找不到表格";
+                    return result;
+                }
+
+                cell = TableRowValuesHelper.TryResolveWritableCell(table, emptyCell.Row, emptyCell.Col);
+                if (cell == null)
+                {
+                    result.ErrorMessage = TableRowValuesHelper.BuildUnresolvableCellError(emptyCell.Row, emptyCell.Col);
+                    return result;
+                }
+            }
+
+            CellWriteResult write = TableCellContentWriter.WriteCell(cell, "");
+            if (!write.Success)
+            {
+                result.ErrorMessage = write.Error ?? "清空单元格失败";
+                return result;
+            }
+
+            MoveSelectionAfterReplace(doc, cell.Range);
             result.Success = true;
             return result;
         }
@@ -1760,18 +2159,16 @@ namespace WordAddIn1
                     return result;
                 }
 
-                if (names.Count == 1 && EmptyCellCode.IsEmptyCellCode(names[0]))
+                if (names.Count == 1 && EmptyCellCode.TryParse(names[0], out EmptyCellCode.Parsed emptyCell))
                 {
-                    result.AffectedCodes = names;
-                    result.Success = true;
-                    return result;
+                    return ExecuteEmptyCellClear(doc, emptyCell, disallowBackendApi);
                 }
 
                 if (!LooksLikeParagraphCodes(sentenceNames)
                     && names.Any(n => n.StartsWith("T_", StringComparison.Ordinal)
                     || n.StartsWith("C_", StringComparison.Ordinal)))
                 {
-                    result.ErrorMessage = "delete 仅支持 S_ 编码；T_/C_ 仅用于 insert 锚点";
+                    result.ErrorMessage = "delete 支持 S_ 或一条几何码 T_…_r_c；光杆 T_/C_ 请用专用工具";
                     return result;
                 }
 
