@@ -349,7 +349,7 @@ namespace WordDocumentRoundtripTest
                 Console.WriteLine("文字 嵌套表表后插入短套（wt-nested-after）");
                 Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
                 Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
-                if (!DesktopToolPipe.TryWaitUntilAvailable(8000))
+                if (!DesktopLauncher.EnsureAvailable())
                 {
                     Console.WriteLine("连不上易写 Desktop。");
                     return 1;

@@ -2238,23 +2238,15 @@ namespace WordDocumentRoundtripTest
                 ToolResult inner = s.CreateTableFromXml(innerArgs);
                 string returnedId = WdSession.Str(inner, "table_id");
                 string body = ReadBody(s, id);
-                List<string> tableIds = CollectTableIds(body);
-                string displayInner = null;
-                for (int i = 0; i < tableIds.Count; i++)
-                {
-                    if (!string.Equals(tableIds[i], outerId, StringComparison.Ordinal))
-                    {
-                        displayInner = tableIds[i];
-                        break;
-                    }
-                }
+                string displayInner = TableIdContaining(body, InnerA);
+                string displayOuter = TableIdContaining(body, OuterCell);
                 Ok(run, "wt-nested-create-id",
                     inner.Success
                         && !string.IsNullOrEmpty(returnedId)
-                        && returnedId != outerId
-                        && returnedId == displayInner,
+                        && returnedId == displayInner
+                        && returnedId != displayOuter,
                     inner.Success
-                        ? ("返回 " + returnedId + " 外表 " + outerId + " display=" + string.Join(",", tableIds))
+                        ? ("返回 " + returnedId + " 内表 " + displayInner + " 外表 " + displayOuter)
                         : (inner.Error ?? ""));
                 if (!inner.Success || string.IsNullOrEmpty(returnedId) || returnedId != displayInner)
                 {
@@ -2311,6 +2303,28 @@ namespace WordDocumentRoundtripTest
             }
 
             return ids;
+        }
+
+        private static string TableIdContaining(string body, string needle)
+        {
+            if (string.IsNullOrEmpty(body) || string.IsNullOrEmpty(needle))
+            {
+                return null;
+            }
+
+            int at = body.IndexOf(needle, StringComparison.Ordinal);
+            if (at < 0)
+            {
+                return null;
+            }
+
+            MatchCollection matches = Regex.Matches(body.Substring(0, at), "<table id=\"(T_[^\"]+)\"");
+            if (matches.Count == 0)
+            {
+                return null;
+            }
+
+            return matches[matches.Count - 1].Groups[1].Value;
         }
 
         private static void RunNegLate(TestRun run, WdSession s)
