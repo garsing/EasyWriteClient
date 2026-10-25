@@ -127,7 +127,7 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "wt-ec-display",
                     body.IndexOf("[S_", StringComparison.Ordinal) >= 0
                         && emptyMatch.Success
-                        && body.IndexOf("[" + emptyCode + "-start][" + emptyCode + "-end]", StringComparison.Ordinal) >= 0,
+                        && body.IndexOf("[" + emptyCode + "-start][EMPTY][" + emptyCode + "-end]", StringComparison.Ordinal) >= 0,
                     emptyMatch.Success ? emptyCode : "display 无空格码");
 
                 Match titleMatch = Regex.Match(body, @"\[(S_[0-9a-zA-Z]{5})-start\]" + Regex.Escape(Title));
@@ -440,7 +440,8 @@ namespace WordDocumentRoundtripTest
                             }
                         });
                         string afterDel = ReadBody(s, idDel);
-                        bool cleared = afterDel.IndexOf("[" + delCode + "-start][" + delCode + "-end]", StringComparison.Ordinal) >= 0
+                        bool cleared = afterDel.IndexOf("[" + delCode + "-start][EMPTY][" + delCode + "-end]", StringComparison.Ordinal) >= 0
+                            || afterDel.IndexOf("[" + delCode + "-start][" + delCode + "-end]", StringComparison.Ordinal) >= 0
                             || (afterDel.Split(new[] { "同" }, StringSplitOptions.None).Length - 1) < (delBody.Split(new[] { "同" }, StringSplitOptions.None).Length - 1);
                         Ok(run, "wt-plan-delete",
                             del.Success && cleared,

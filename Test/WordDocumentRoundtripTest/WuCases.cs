@@ -363,7 +363,7 @@ namespace WordDocumentRoundtripTest
                 string body = ReadBody(s, ch);
                 string geo = FirstGeo(body);
                 bool vacuum = !string.IsNullOrEmpty(geo)
-                    && body.IndexOf("[" + geo + "-start][" + geo + "-end]", StringComparison.Ordinal) >= 0;
+                    && body.IndexOf("[" + geo + "-start][EMPTY][" + geo + "-end]", StringComparison.Ordinal) >= 0;
                 Ok(run, "wu-vacuum", vacuum && body.IndexOf(Title, StringComparison.Ordinal) >= 0, Preview(body));
                 ToolResult fmt = s.GetFormatContext(new Dictionary<string, object>
                 {

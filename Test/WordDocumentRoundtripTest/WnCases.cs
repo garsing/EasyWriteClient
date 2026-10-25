@@ -1206,7 +1206,7 @@ namespace WordDocumentRoundtripTest
 
             Match m = Regex.Match(
                 body,
-                @"\[(T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+)-start\]\[T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+-end\]");
+                @"\[(T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+)-start\](?:\[EMPTY\])?\[T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+-end\]");
             return m.Success ? m.Groups[1].Value : "";
         }
 

@@ -1155,6 +1155,7 @@ namespace WordDocumentRoundtripTest
         {
             string s = DisplayCodeStart.Replace(display, "");
             s = DisplayCodeEnd.Replace(s, "");
+            s = s.Replace("[EMPTY]", "");
             s = DisplayInTable.Replace(s, "");
             s = DisplayChart.Replace(s, "");
             s = DisplayImage.Replace(s, "");

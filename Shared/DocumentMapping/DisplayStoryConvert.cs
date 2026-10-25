@@ -50,6 +50,7 @@ namespace WordAddIn1.DocumentMapping
 
             string s = CodeStart.Replace(display, "");
             s = CodeEnd.Replace(s, "");
+            s = WordAddIn1.EmptyCellCode.StripMarkers(s);
             s = InTable.Replace(s, "");
             s = Chart.Replace(s, "");
             s = Image.Replace(s, "");
@@ -63,7 +64,8 @@ namespace WordAddIn1.DocumentMapping
                 return "";
             }
 
-            string s = InTable.Replace(inner, "");
+            string s = WordAddIn1.EmptyCellCode.StripMarkers(inner);
+            s = InTable.Replace(s, "");
             s = Chart.Replace(s, "");
             s = Image.Replace(s, "");
             s = FormFeedText.UnescapeToChar12(s);

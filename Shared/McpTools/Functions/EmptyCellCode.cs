@@ -22,6 +22,8 @@ namespace WordAddIn1
             @"\[T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+-(?:start|end)\]",
             RegexOptions.Compiled);
 
+        public const string EmptyToken = "[EMPTY]";
+
         private static readonly Regex SentenceStartInCell = new Regex(
             @"\[S_[0-9a-zA-Z]{5}-start(?: [^\]]*)?\]",
             RegexOptions.Compiled);
@@ -103,7 +105,7 @@ namespace WordAddIn1
 
         public static string MarkerPair(string code)
         {
-            return "[" + code + "-start][" + code + "-end]";
+            return "[" + code + "-start]" + EmptyToken + "[" + code + "-end]";
         }
 
         public static string StripMarkers(string text)
@@ -113,7 +115,8 @@ namespace WordAddIn1
                 return text;
             }
 
-            return MarkerPattern.Replace(text, "");
+            string s = MarkerPattern.Replace(text, "");
+            return s.Replace(EmptyToken, "");
         }
 
         public static bool CsvContainsAny(string csv)
@@ -425,10 +428,22 @@ namespace WordAddIn1
             }
 
             string inner = display.Substring(innerStart, innerEnd - innerStart);
-            List<TdSpan> tds = CollectVisibleGridCells(inner);
-            var inserts = new List<Tuple<int, string>>();
-            foreach (TdSpan td in tds)
+            GridWalk grid = CollectGrid(inner);
+            var jobs = new List<ReplaceJob>();
+            foreach (TdSpan td in grid.Cells)
             {
+                string openTag = inner.Substring(td.TagStart, td.OpenEnd - td.TagStart + 1);
+                string withCoords = EnsureGridAttrs(openTag, td.Row, td.Col);
+                if (withCoords != openTag)
+                {
+                    jobs.Add(new ReplaceJob
+                    {
+                        Start = innerStart + td.TagStart,
+                        End = innerStart + td.OpenEnd + 1,
+                        Text = withCoords
+                    });
+                }
+
                 string body = inner.Substring(td.ContentStart, td.ContentEnd - td.ContentStart);
                 if (SentenceStartInCell.IsMatch(body) || MarkerPattern.IsMatch(body))
                 {
@@ -440,11 +455,32 @@ namespace WordAddIn1
                     continue;
                 }
 
-                string code = Format(tableId, td.Row, td.Col);
-                inserts.Add(Tuple.Create(innerStart + td.ContentStart, MarkerPair(code)));
+                jobs.Add(new ReplaceJob
+                {
+                    Start = innerStart + td.ContentStart,
+                    End = innerStart + td.ContentStart,
+                    Text = MarkerPair(Format(tableId, td.Row, td.Col))
+                });
             }
 
-            return ApplyInsertsFromBack(display, inserts);
+            foreach (TrSpan tr in grid.Rows)
+            {
+                string openTag = inner.Substring(tr.TagStart, tr.OpenEnd - tr.TagStart + 1);
+                string withRow = EnsureGridAttrs(openTag, tr.Row, null);
+                if (withRow == openTag)
+                {
+                    continue;
+                }
+
+                jobs.Add(new ReplaceJob
+                {
+                    Start = innerStart + tr.TagStart,
+                    End = innerStart + tr.OpenEnd + 1,
+                    Text = withRow
+                });
+            }
+
+            return ApplyReplacesFromBack(display, jobs);
         }
 
         private static bool IsVisuallyEmptyTd(string body)
@@ -461,6 +497,7 @@ namespace WordAddIn1
 
             string stripped = SentenceStartInCell.Replace(body, "");
             stripped = MarkerPattern.Replace(stripped, "");
+            stripped = stripped.Replace(EmptyToken, "");
             stripped = Regex.Replace(stripped, @"\s+", "");
             return stripped.Length == 0;
         }
@@ -559,12 +596,27 @@ namespace WordAddIn1
             return -1;
         }
 
+        private sealed class TrSpan
+        {
+            public int Row;
+            public int TagStart;
+            public int OpenEnd;
+        }
+
         private sealed class TdSpan
         {
             public int Row;
             public int Col;
+            public int TagStart;
+            public int OpenEnd;
             public int ContentStart;
             public int ContentEnd;
+        }
+
+        private sealed class GridWalk
+        {
+            public List<TrSpan> Rows = new List<TrSpan>();
+            public List<TdSpan> Cells = new List<TdSpan>();
         }
 
         /// <summary>
@@ -572,7 +624,12 @@ namespace WordAddIn1
         /// </summary>
         private static List<TdSpan> CollectVisibleGridCells(string inner)
         {
-            var list = new List<TdSpan>();
+            return CollectGrid(inner).Cells;
+        }
+
+        private static GridWalk CollectGrid(string inner)
+        {
+            var grid = new GridWalk();
             var remain = new List<int>();
             int depth = 0;
             int row = 0;
@@ -609,8 +666,22 @@ namespace WordAddIn1
                     char afterTr = i + 3 < inner.Length ? inner[i + 3] : ' ';
                     if (afterTr == '>' || char.IsWhiteSpace(afterTr) || afterTr == '/')
                     {
+                        int openEnd = inner.IndexOf('>', i);
+                        if (openEnd < 0)
+                        {
+                            break;
+                        }
+
                         row++;
                         col = 1;
+                        grid.Rows.Add(new TrSpan
+                        {
+                            Row = row,
+                            TagStart = i,
+                            OpenEnd = openEnd
+                        });
+                        i = openEnd + 1;
+                        continue;
                     }
 
                     i += 3;
@@ -660,10 +731,12 @@ namespace WordAddIn1
                         break;
                     }
 
-                    list.Add(new TdSpan
+                    grid.Cells.Add(new TdSpan
                     {
                         Row = row,
                         Col = col,
+                        TagStart = i,
+                        OpenEnd = openEnd,
                         ContentStart = openEnd + 1,
                         ContentEnd = close
                     });
@@ -682,7 +755,38 @@ namespace WordAddIn1
                 i++;
             }
 
-            return list;
+            return grid;
+        }
+
+        private static string EnsureGridAttrs(string openTag, int row, int? col)
+        {
+            if (string.IsNullOrEmpty(openTag))
+            {
+                return openTag;
+            }
+
+            string result = openTag;
+            if (!Regex.IsMatch(result, @"\br\s*="))
+            {
+                result = InsertBeforeTagClose(result, " r=\"" + row + "\"");
+            }
+
+            if (col.HasValue && !Regex.IsMatch(result, @"\bc\s*="))
+            {
+                result = InsertBeforeTagClose(result, " c=\"" + col.Value + "\"");
+            }
+
+            return result;
+        }
+
+        private static string InsertBeforeTagClose(string openTag, string attr)
+        {
+            if (string.IsNullOrEmpty(openTag) || openTag[openTag.Length - 1] != '>')
+            {
+                return openTag + attr;
+            }
+
+            return openTag.Substring(0, openTag.Length - 1) + attr + ">";
         }
 
         private static void EnsureRemainSize(List<int> remain, int col)
