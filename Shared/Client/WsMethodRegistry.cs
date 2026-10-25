@@ -89,6 +89,8 @@ namespace WordAddIn1
                 { "document.getPageInfo", "F_get_document_page_info" },
                 { "document.insertBlankPage", "F_insert_blank_page" },
                 { "document.insertPageBreak", "F_insert_page_break" },
+                { "document.processComments", "F_process_comments" },
+                { "document.listComments", "F_list_comments" },
                 { "document.listOperations", "F_list_document_operations" },
                 { "document.restoreCheckpoint", "F_restore_document_checkpoint" },
                 { "table.createFromXml", "F_create_table_from_xml" },

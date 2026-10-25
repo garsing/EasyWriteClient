@@ -41,6 +41,7 @@ namespace WordAddIn1
             "F_delete_image",
             "F_insert_blank_page",
             "F_insert_page_break",
+            "F_process_comments",
             "F_apply_data_provenance",
             "F_clear_data_provenance",
             "F_restore_document_checkpoint",

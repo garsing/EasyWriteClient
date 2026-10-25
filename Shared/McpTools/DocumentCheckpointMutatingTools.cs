@@ -32,6 +32,7 @@ namespace WordAddIn1
             "F_delete_image",
             "F_insert_blank_page",
             "F_insert_page_break",
+            "F_process_comments",
             "F_apply_data_provenance",
             "F_clear_data_provenance",
             "F_apply_ppt_html",
@@ -126,6 +127,8 @@ namespace WordAddIn1
                     return F_InsertBlankPageTool.TryGetContractParseFailure(args, out failure);
                 case "F_insert_page_break":
                     return F_InsertPageBreakTool.TryGetContractParseFailure(args, out failure);
+                case "F_process_comments":
+                    return F_ProcessCommentsTool.TryGetContractParseFailure(args, out failure);
                 case "F_apply_data_provenance":
                     return F_ApplyDataProvenanceTool.TryGetContractParseFailure(args, out failure);
                 case "F_clear_data_provenance":

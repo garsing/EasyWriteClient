@@ -415,6 +415,11 @@ namespace WordAddIn1
 
         public static bool IsInvokeMutationFailed(ToolResult result, string toolName)
         {
+            if (string.Equals(toolName, "F_process_comments", StringComparison.Ordinal))
+            {
+                return IsCheckpointCleanupOnly(result);
+            }
+
             if (result == null || !result.Success)
             {
                 return true;
