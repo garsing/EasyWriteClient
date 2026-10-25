@@ -67,6 +67,7 @@ namespace WordAddIn1
 
                     string logPath = EasyWriteLog.BeginSession("process_document_actions");
                     WrittenFormatGlueHelper.ClearPlans();
+                    DocumentActionPathLog.Clear();
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 本次测试日志: {logPath}");
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_process_document_actions] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
@@ -212,7 +213,8 @@ namespace WordAddIn1
                             results = resultsPayload,
                             navigates = navigates,
                             navigate = navigateSummary,
-                            format_apply_log = WrittenFormatGlueHelper.SnapshotPlans()
+                            format_apply_log = WrittenFormatGlueHelper.SnapshotPlans(),
+                            geo_plan_log = DocumentActionPathLog.Snapshot()
                         }
                     };
 
@@ -829,6 +831,22 @@ namespace WordAddIn1
                     .Select(x => ToPlanItem(x))
                     .ToList();
                 List<DocumentActionPlan.Run> plan = DocumentActionPlan.BuildPlan(planItems);
+                int geoRuns = 0;
+                int singles = 0;
+                foreach (DocumentActionPlan.Run step in plan)
+                {
+                    if (step.IsGeoRun)
+                    {
+                        geoRuns++;
+                    }
+                    else
+                    {
+                        singles++;
+                    }
+                }
+
+                DocumentActionPathLog.Record(
+                    DocumentActionPathLog.LogTag + " plan geo_runs=" + geoRuns + " singles=" + singles);
 
                 foreach (DocumentActionPlan.Run step in plan)
                 {
@@ -850,7 +868,7 @@ namespace WordAddIn1
                         ActionResult anyOk = geoResults.Find(r => r.success);
                         if (anyOk != null)
                         {
-                            await RemapAndAssignNewCodes(doc, anyOk, disallowBackendApi);
+                            await RemapAndAssignNewCodes(doc, anyOk, disallowBackendApi, "geo_run");
                         }
 
                         results.AddRange(geoResults);
@@ -858,9 +876,14 @@ namespace WordAddIn1
                     }
 
                     int oneIndex = step.OriginalIndices[0];
+                    ParagraphAction oneAction = byIndex[oneIndex];
+                    DocumentActionPathLog.Record(
+                        DocumentActionPathLog.LogTag
+                        + " step=single type=" + (oneAction.Type ?? "?")
+                        + " geo=" + (TryGetGeoCell(oneAction, out _) ? "true" : "false"));
                     ActionResult one = ExecuteOneAction(
-                        doc, byIndex[oneIndex], oneIndex, tableScope, disallowBackendApi);
-                    await RemapAndAssignNewCodes(doc, one, disallowBackendApi);
+                        doc, oneAction, oneIndex, tableScope, disallowBackendApi);
+                    await RemapAndAssignNewCodes(doc, one, disallowBackendApi, "single");
                     results.Add(one);
                 }
 
@@ -1014,6 +1037,11 @@ namespace WordAddIn1
                 return results;
             }
 
+            DocumentActionPathLog.Record(
+                DocumentActionPathLog.LogTag
+                + " step=geo_run cells=" + members.Count
+                + " table=" + firstGeo.TableId);
+
             var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
                 doc,
                 new InsertTargetLocatorHelper.LocatorSpec
@@ -1027,6 +1055,8 @@ namespace WordAddIn1
                 InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
                 disallowBackendApi,
                 refreshDocument: false);
+            DocumentActionPathLog.Record(
+                DocumentActionPathLog.LogTag + " locate via=geo_run n=1");
             if (!locate.Success)
             {
                 string err = locate.Error ?? "无法定位空格";
@@ -1051,6 +1081,7 @@ namespace WordAddIn1
             }
 
             TableRowValuesHelper.PrepareLogicalCellMap(table);
+            DocumentActionPathLog.Record(DocumentActionPathLog.LogTag + " map=once");
 
             Word.Application app = null;
             try
@@ -1112,6 +1143,8 @@ namespace WordAddIn1
                     if (last || nextRow != geo.Row)
                     {
                         TableRowValuesHelper.TryFlashScreen(app);
+                        DocumentActionPathLog.Record(
+                            DocumentActionPathLog.LogTag + " flash row=" + geo.Row);
                     }
                 }
             }
@@ -1150,6 +1183,8 @@ namespace WordAddIn1
                 target_index = 0
             };
 
+            try
+            {
             if (cell == null)
             {
                 result.success = false;
@@ -1237,6 +1272,80 @@ namespace WordAddIn1
             }
 
             return result;
+            }
+            finally
+            {
+                string type = member.Action?.Type?.ToLowerInvariant() ?? "?";
+                DocumentActionPathLog.Record(
+                    DocumentActionPathLog.LogTag
+                    + " write via=map type=" + type
+                    + " r=" + geo.Row
+                    + " c=" + geo.Col
+                    + " ok=" + (result.success ? "true" : "false"));
+            }
+        }
+
+        /// <summary>
+        /// display 上 S_ / P_ / 几何码 start 的出现序。混批从后往前时句段能夹在两格中间（D5）。
+        /// </summary>
+        private static List<string> GetDisplayAnchorOrder()
+        {
+            var ordered = new List<string>();
+            string display = GetSortDisplayText();
+            if (string.IsNullOrEmpty(display))
+            {
+                return ordered;
+            }
+
+            foreach (Match m in Regex.Matches(
+                display,
+                @"\[(S_[0-9a-zA-Z]{5}|P_[0-9a-zA-Z]+(?:_[0-9]+)?|T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+)-start"))
+            {
+                ordered.Add(m.Groups[1].Value);
+            }
+
+            return ordered;
+        }
+
+        private static string GetSortDisplayText()
+        {
+            ProcessDocumentCacheEntry cache = DocumentState.LastProcessCache;
+            if (cache != null && cache.ChunkInfo != null && cache.ChunkInfo.Count > 0)
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (WordDocumentExtractor.ChunkInfo chunk in cache.ChunkInfo)
+                {
+                    if (chunk != null && !string.IsNullOrEmpty(chunk.DisplayContent))
+                    {
+                        sb.Append(chunk.DisplayContent);
+                    }
+                }
+
+                if (sb.Length > 0)
+                {
+                    return sb.ToString();
+                }
+            }
+
+            IReadOnlyList<string> parts = DocumentState.ChunkParagraphDisplayContents;
+            if (parts == null || parts.Count == 0)
+            {
+                return "";
+            }
+
+            return string.Join("", parts);
+        }
+
+        private static int IndexInDisplayAnchors(string codes)
+        {
+            List<string> displayOrder = GetDisplayAnchorOrder();
+            List<string> needle = ParseCodeList(codes);
+            if (displayOrder.Count == 0 || needle.Count == 0)
+            {
+                return -1;
+            }
+
+            return displayOrder.IndexOf(needle[0]);
         }
 
         /// <summary>
@@ -1249,19 +1358,15 @@ namespace WordAddIn1
                 return 0;
             }
 
+            int displayIndex = IndexInDisplayAnchors(codes);
+            if (displayIndex >= 0)
+            {
+                return displayIndex;
+            }
+
             EmptyCellCode.Parsed emptyParsed;
             if (EmptyCellCode.TryParse(codes.Split(',')[0].Trim(), out emptyParsed))
             {
-                List<string> geoOrdered = DocumentState.GetOrderedSentenceCodesFromSnapshot(DocumentState.Snapshot);
-                if (geoOrdered != null && geoOrdered.Count > 0)
-                {
-                    int geoIndex = geoOrdered.IndexOf(emptyParsed.Code);
-                    if (geoIndex >= 0)
-                    {
-                        return geoIndex;
-                    }
-                }
-
                 return emptyParsed.Row * 1000 + emptyParsed.Col;
             }
 
@@ -1609,6 +1714,8 @@ namespace WordAddIn1
             Word.Cell cell = resolvedCell;
             if (cell == null)
             {
+                DocumentActionPathLog.Record(
+                    DocumentActionPathLog.LogTag + " locate via=single n=1");
                 var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
                     doc,
                     new InsertTargetLocatorHelper.LocatorSpec
@@ -1797,6 +1904,8 @@ namespace WordAddIn1
             Word.Cell cell = resolvedCell;
             if (cell == null)
             {
+                DocumentActionPathLog.Record(
+                    DocumentActionPathLog.LogTag + " locate via=single n=1");
                 var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
                     doc,
                     new InsertTargetLocatorHelper.LocatorSpec
@@ -1873,6 +1982,8 @@ namespace WordAddIn1
             Word.Cell cell = resolvedCell;
             if (cell == null)
             {
+                DocumentActionPathLog.Record(
+                    DocumentActionPathLog.LogTag + " locate via=single n=1");
                 var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
                     doc,
                     new InsertTargetLocatorHelper.LocatorSpec
@@ -2725,7 +2836,8 @@ namespace WordAddIn1
         private static async Task RemapAndAssignNewCodes(
             Word.Document doc,
             ActionResult result,
-            bool disallowBackendApi)
+            bool disallowBackendApi,
+            string pdMode = "single")
         {
             if (result == null || !result.success)
             {
@@ -2734,6 +2846,8 @@ namespace WordAddIn1
 
             try
             {
+                DocumentActionPathLog.Record(
+                    DocumentActionPathLog.LogTag + " post_pd mode=" + (pdMode ?? "single"));
                 using (EasyWriteDiagnostics.Time(
                     "process_actions.post_pd[" + result.action_index + "]"))
                 {

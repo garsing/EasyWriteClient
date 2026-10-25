@@ -260,6 +260,32 @@ namespace WordDocumentRoundtripTest
                 return wuRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (caseFilter.StartsWith("wm-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "wm", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 多格几何码路径（wm-）：用 [几何码路径] 日志断言集合/单步");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                int wordBeforeWm = OfficeAlive.Count("WINWORD");
+                int wpsBeforeWm = OfficeAlive.Count("wps");
+                bool wordWinBeforeWm = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforeWm = OfficeAlive.HasWindow("wps");
+                var wmRun = new TestRun { TotalTarget = WmCases.Target };
+                WmCases.Run(
+                    wmRun, host, wordBeforeWm, wpsBeforeWm, wordWinBeforeWm, wpsWinBeforeWm);
+                Console.WriteLine("正式用例 通过 " + wmRun.CasesPassed
+                    + "  失败 " + wmRun.CasesFailed
+                    + "  跳过 " + wmRun.CasesSkipped
+                    + "  （目标 " + WmCases.Target + "）");
+                return wmRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("wt-plan-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wt-plan", StringComparison.OrdinalIgnoreCase))
             {
