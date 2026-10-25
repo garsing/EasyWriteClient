@@ -212,6 +212,11 @@ namespace WordDocumentRoundtripTest
                 return twoRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (string.Equals(caseFilter, "wu-locate-doc", StringComparison.OrdinalIgnoreCase))
+            {
+                return WuLocateDoc.Run(host, docPath);
+            }
+
             if (caseFilter.StartsWith("wu-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wu", StringComparison.OrdinalIgnoreCase))
             {
