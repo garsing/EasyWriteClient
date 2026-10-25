@@ -60,6 +60,124 @@ namespace WordDocumentRoundtripTest
             Ok(run, "wu-no-quit", wordOk && wpsOk, wordDetail + " " + wpsDetail);
         }
 
+        /// <summary>
+        /// 造 2×2（有字/真空/有字/真空），看段 display 空格是否有 P_，再用 P_ 套段、用几何码填格。
+        /// </summary>
+        public static int RunParaVacuumOp(string host)
+        {
+            var run = new TestRun();
+            run.TotalTarget = 7;
+            var s = new WdSession(host);
+            string path;
+            string ch;
+            if (!TryOpen(run, s, out path, out ch, "wu-pvac-open"))
+            {
+                Console.WriteLine("正式用例 通过 " + run.CasesPassed
+                    + "  失败 " + run.CasesFailed);
+                return 1;
+            }
+
+            try
+            {
+                if (!s.InsertTable(path, 2, 2, new[] { Title, "", "备注", "\r\r" }))
+                {
+                    FailMany(run, "COM 真空表失败", "wu-pvac-geo", "wu-pvac-empty-p",
+                        "wu-pvac-fmt-ctx", "wu-pvac-apply", "wu-pvac-com-align",
+                        "wu-pvac-write-p", "wu-pvac-write-geo");
+                    return 1;
+                }
+
+                string sent = ReadBody(s, ch);
+                var geos = new List<string>();
+                foreach (Match m in Regex.Matches(sent, @"T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+"))
+                {
+                    if (!geos.Contains(m.Value))
+                    {
+                        geos.Add(m.Value);
+                    }
+                }
+
+                Console.WriteLine("句 display 几何码 " + geos.Count + ": " + string.Join(", ", geos));
+                Console.WriteLine("句预览 " + Preview(sent));
+                Ok(run, "wu-pvac-geo", geos.Count >= 2, "真空几何码=" + geos.Count);
+
+                ToolResult paraGot = s.GetContent(ch, "paragraph");
+                string para = paraGot.Success ? WdSession.Str(paraGot, "document_content") : "";
+                Console.WriteLine("段预览 " + Preview(para));
+                List<string> emptyPs = CollectEmptyCellParagraphCodes(para);
+                Console.WriteLine("空 td 内 P_ " + emptyPs.Count + ": " + string.Join(", ", emptyPs));
+                DumpTdBodies(para);
+                DumpParagraphBlocks(para);
+                Ok(run, "wu-pvac-empty-p", emptyPs.Count >= 1, "空 td 内 P_=" + emptyPs.Count);
+
+                string pCode = emptyPs.Count > 0 ? emptyPs[0] : "";
+                ToolResult fmt = s.GetFormatContext(new Dictionary<string, object>
+                {
+                    ["channel_id"] = ch,
+                    ["target_paragraph_codes"] = pCode
+                });
+                Console.WriteLine("get_format_context(P_) success=" + fmt.Success
+                    + " err=" + TrimBlob(Err(fmt)));
+                Ok(run, "wu-pvac-fmt-ctx",
+                    fmt.Success && !Contains(Err(fmt), "empty_cell_no_format"),
+                    fmt.Success ? "P_ 取段格式成功" : TrimBlob(Err(fmt)));
+
+                ToolResult apply = s.ApplyParagraphFormat(new Dictionary<string, object>
+                {
+                    ["channel_id"] = ch,
+                    ["target_paragraph_codes"] = pCode,
+                    ["para_format"] = new Dictionary<string, object> { ["alignment"] = "center" }
+                });
+                Console.WriteLine("apply_paragraph_format(P_) success=" + apply.Success
+                    + " err=" + TrimBlob(Err(apply)));
+                Ok(run, "wu-pvac-apply", apply.Success, apply.Success ? "套段成功" : TrimBlob(Err(apply)));
+
+                int align = -1;
+                s.OnWordDoc(path, doc =>
+                {
+                    Word.Range vacuum = doc.Tables[1].Cell(1, 2).Range;
+                    Word.Range crCell = doc.Tables[1].Cell(2, 2).Range;
+                    Console.WriteLine("COM 真空格(1,2) paras=" + vacuum.Paragraphs.Count
+                        + " Text=" + QuoteCr(vacuum.Text)
+                        + " align0=" + (int)vacuum.Paragraphs[1].Range.ParagraphFormat.Alignment);
+                    Console.WriteLine("COM 空段格(2,2) paras=" + crCell.Paragraphs.Count
+                        + " Text=" + QuoteCr(crCell.Text)
+                        + " align0=" + (int)crCell.Paragraphs[1].Range.ParagraphFormat.Alignment);
+                    align = (int)crCell.Paragraphs[1].Range.ParagraphFormat.Alignment;
+                    return true;
+                });
+                Ok(run, "wu-pvac-com-align",
+                    apply.Success && align == (int)Word.WdParagraphAlignment.wdAlignParagraphCenter,
+                    "align=" + align);
+
+                string geo = geos.Count > 0 ? geos[0] : "";
+                ToolResult writeG = Replace(s, ch, geo, FillGeo);
+                string after = ReadBody(s, ch);
+                Console.WriteLine("replace 几何码 success=" + writeG.Success
+                    + " 稿含填空=" + (after.IndexOf(FillGeo, StringComparison.Ordinal) >= 0)
+                    + " err=" + TrimBlob(Err(writeG)));
+                Ok(run, "wu-pvac-write-geo",
+                    writeG.Success && after.IndexOf(FillGeo, StringComparison.Ordinal) >= 0,
+                    writeG.Success ? "几何码写入真空格" : TrimBlob(Err(writeG)));
+
+                ToolResult writeP = Replace(s, ch, pCode, "不该用句码字段写P。");
+                Console.WriteLine("replace codes=P_ success=" + writeP.Success
+                    + " err=" + TrimBlob(Err(writeP)));
+                Ok(run, "wu-pvac-write-p",
+                    !writeP.Success,
+                    writeP.Success ? "不该用 codes 吃 P_" : TrimBlob(Err(writeP)));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+
+            Console.WriteLine("正式用例 通过 " + run.CasesPassed
+                + "  失败 " + run.CasesFailed
+                + "  跳过 " + run.CasesSkipped);
+            return run.CasesFailed == 0 ? 0 : 1;
+        }
+
         private static void RunTyped(TestRun run, WdSession s, string id, string text, Func<string, bool> ok)
         {
             string path, ch;
@@ -725,6 +843,86 @@ namespace WordDocumentRoundtripTest
             }
 
             return body.Length <= 220 ? body : body.Substring(0, 220);
+        }
+
+        private static string TrimBlob(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            return text.Length <= 280 ? text : text.Substring(0, 280);
+        }
+
+        private static string QuoteCr(string text)
+        {
+            if (text == null)
+            {
+                return "(null)";
+            }
+
+            return "\"" + text.Replace("\r", "\\r").Replace("\n", "\\n").Replace("\a", "\\a") + "\"";
+        }
+
+        private static void DumpTdBodies(string display)
+        {
+            int i = 0;
+            foreach (Match td in Regex.Matches(
+                display ?? "",
+                @"<t[dh][^>]*>(.*?)</t[dh]>",
+                RegexOptions.Singleline | RegexOptions.IgnoreCase))
+            {
+                i++;
+                Console.WriteLine("  td[" + i + "] " + QuoteCr(td.Groups[1].Value));
+            }
+        }
+
+        private static void DumpParagraphBlocks(string display)
+        {
+            foreach (Match m in Regex.Matches(
+                display ?? "",
+                @"\[(P_[0-9A-Za-z_]+) start\](.*?)\[\1 end\]",
+                RegexOptions.Singleline))
+            {
+                string inner = Regex.Replace(m.Groups[2].Value, @"\[in_table=[^\]]+\]", "");
+                Console.WriteLine("  P_ " + m.Groups[1].Value + " inner=" + QuoteCr(inner));
+            }
+        }
+
+        private static List<string> CollectEmptyCellParagraphCodes(string display)
+        {
+            var codes = new List<string>();
+            if (string.IsNullOrEmpty(display))
+            {
+                return codes;
+            }
+
+            foreach (Match td in Regex.Matches(
+                display,
+                @"<t[dh][^>]*>(.*?)</t[dh]>",
+                RegexOptions.Singleline | RegexOptions.IgnoreCase))
+            {
+                string body = td.Groups[1].Value ?? "";
+                string stripped = Regex.Replace(body, @"\[P_[0-9A-Za-z_]+ (?:start|end)\]", "");
+                stripped = Regex.Replace(stripped, @"\[in_table=[^\]]+\]", "");
+                stripped = Regex.Replace(stripped, @"\[T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+-(?:start|end)\]", "");
+                stripped = Regex.Replace(stripped, @"[\r\n\a\t ]+", "");
+                if (stripped.Length > 0)
+                {
+                    continue;
+                }
+
+                foreach (Match p in Regex.Matches(body, @"\[(P_[0-9A-Za-z_]+) start\]"))
+                {
+                    if (!codes.Contains(p.Groups[1].Value))
+                    {
+                        codes.Add(p.Groups[1].Value);
+                    }
+                }
+            }
+
+            return codes;
         }
 
         private static bool Contains(string text, string needle)

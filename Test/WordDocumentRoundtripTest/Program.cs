@@ -217,6 +217,20 @@ namespace WordDocumentRoundtripTest
                 return WuLocateDoc.Run(host, docPath);
             }
 
+            if (string.Equals(caseFilter, "wu-para-vacuum-op", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("真空格：段码 P_ 是否单独存在，P_ Range 能否操作");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                return WuCases.RunParaVacuumOp(host);
+            }
+
             if (caseFilter.StartsWith("wu-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wu", StringComparison.OrdinalIgnoreCase))
             {
