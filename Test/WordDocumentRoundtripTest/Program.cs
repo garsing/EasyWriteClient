@@ -212,6 +212,31 @@ namespace WordDocumentRoundtripTest
                 return twoRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (caseFilter.StartsWith("wu-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "wu", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 编码时原文消歧短套（wu）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                int wordBeforeWu = OfficeAlive.Count("WINWORD");
+                int wpsBeforeWu = OfficeAlive.Count("wps");
+                bool wordWinBeforeWu = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforeWu = OfficeAlive.HasWindow("wps");
+                var wuRun = new TestRun();
+                WuCases.Run(
+                    wuRun, host, wordBeforeWu, wpsBeforeWu, wordWinBeforeWu, wpsWinBeforeWu);
+                Console.WriteLine("正式用例 通过 " + wuRun.CasesPassed
+                    + "  失败 " + wuRun.CasesFailed
+                    + "  跳过 " + wuRun.CasesSkipped);
+                return wuRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("wt-ec-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wt-ec", StringComparison.OrdinalIgnoreCase))
             {
