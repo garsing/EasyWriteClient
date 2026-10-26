@@ -254,6 +254,7 @@
     var tag = (el.tagName || "").toLowerCase();
     function t(s) { return String(s || "").replace(/\s+/g, " ").trim(); }
     if (tag === "html" || tag === "body") return t(document.title).slice(0, 120);
+    if (isRowHoverControl(el)) return hoverIconLabel(el);
     var aria = el.getAttribute && el.getAttribute("aria-label");
     if (t(aria) && !isValidatorText(aria)) return t(aria).slice(0, 120);
     if (t(el.title) && !isValidatorText(el.title)) return t(el.title).slice(0, 120);
@@ -321,6 +322,78 @@
     };
   }
 
+  function classBlob(el) {
+    var c = el.className;
+    var name = c && typeof c === "object" && c.baseVal != null ? String(c.baseVal) : String(c || "");
+    return (name + " " + (el.id || "")).toLowerCase();
+  }
+
+  function isNamedIcon(el) {
+    return /delete|remove|trash|\bdel\b|shanchu|icon-del|\bedit\b|pencil|modify|bianji|icon-edit/.test(classBlob(el));
+  }
+
+  function isClickableIcon(el) {
+    var tag = (el.tagName || "").toLowerCase();
+    if (tag !== "i" && tag !== "span" && tag !== "em") return false;
+    var role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase();
+    if (role === "button" || role === "link" || role === "menuitem") return true;
+    if (el.getAttribute && el.getAttribute("onclick")) return true;
+    return isNamedIcon(el);
+  }
+
+  function insideHiddenTemplate(el) {
+    var p = el.parentElement;
+    while (p && p !== document.body && p !== document.documentElement) {
+      var st = null;
+      try { st = window.getComputedStyle(p); } catch (eH) { break; }
+      if (st && (st.display === "none" || st.visibility === "hidden")) return true;
+      p = p.parentElement;
+    }
+    return false;
+  }
+
+  function isRowHoverControl(el) {
+    if (!el || el.nodeType !== 1 || insideHiddenTemplate(el)) return false;
+    var tag = (el.tagName || "").toLowerCase();
+    var role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase();
+    var hoverRole = tag === "a" || tag === "button" || role === "button" || role === "link" || role === "menuitem" || role === "tab";
+    if (!hoverRole && !isClickableIcon(el)) return false;
+    var inner = String(el.textContent || "").replace(/\s+/g, " ").trim();
+    if (inner.length > 16) return false;
+    var st = null;
+    try { st = window.getComputedStyle(el); } catch (eS) {}
+    if (st && (st.display === "none" || st.visibility === "hidden")) return true;
+    if (st && parseFloat(st.opacity) === 0) return true;
+    try {
+      var r = el.getBoundingClientRect();
+      return !r || r.width <= 0 || r.height <= 0;
+    } catch (eB) { return true; }
+  }
+
+  function hoverIconLabel(el) {
+    var aria = el.getAttribute && (el.getAttribute("aria-label") || el.getAttribute("title"));
+    aria = String(aria || "").replace(/\s+/g, " ").trim();
+    if (aria) return aria.slice(0, 40);
+    var blob = classBlob(el);
+    if (/delete|remove|trash|\bdel\b|shanchu|icon-del/.test(blob)) return "删除";
+    if (/\bedit\b|pencil|modify|bianji|icon-edit/.test(blob)) return "编辑";
+    var own = String(el.textContent || "").replace(/\s+/g, " ").trim();
+    if (own && own.length <= 16 && !/[\uE000-\uF8FF]/.test(own)) return own;
+    return "图标";
+  }
+
+  function visibleHost(el) {
+    var p = el && el.parentElement;
+    for (var d = 0; p && p !== document.body && p !== document.documentElement && d < 6; d++) {
+      var st = null, box = null;
+      try { st = window.getComputedStyle(p); } catch (e1) {}
+      try { box = p.getBoundingClientRect(); } catch (e2) {}
+      if (st && st.display !== "none" && st.visibility !== "hidden" && box && box.width > 1 && box.height > 1) return p;
+      p = p.parentElement;
+    }
+    return null;
+  }
+
   function shouldSkip(el) {
     if (!el || el.nodeType !== 1) return true;
     var tag = (el.tagName || "").toLowerCase();
@@ -336,6 +409,7 @@
 
   function interesting(el) {
     var tag = (el.tagName || "").toLowerCase();
+    if (isRowHoverControl(el)) return true;
     if (tag === "a" || tag === "button" || tag === "input" || tag === "textarea" || tag === "select") return true;
     if (tag === "label" || tag === "iframe" || tag === "frame" || tag === "img") return true;
     if (el.isContentEditable) return true;
@@ -603,6 +677,7 @@
         var opts = optionsOf(node.el);
         if (opts) extra += " options=" + opts;
         if (tag === "input" && (node.el.getAttribute("type") || "") === "password") extra += " (password)";
+        if (isRowHoverControl(node.el)) extra += " (隐藏)";
         appendLine(depth, node.role, nameOf(node.el), ref, node.el, extra);
         if (tag === "iframe" || tag === "frame") return;
       }
@@ -732,6 +807,19 @@
     if (action === "click") {
       if ((el.tagName || "").toLowerCase() === "select") {
         throw new Error("这是原生下拉，请用 action=select，option 填选项原文或 value。");
+      }
+      var box0 = { width: 0, height: 0 };
+      try { box0 = el.getBoundingClientRect(); } catch (eBox) {}
+      if (!box0 || box0.width <= 0 || box0.height <= 0) {
+        var host = visibleHost(el);
+        if (host) {
+          var hb = host.getBoundingClientRect();
+          var hx = hb.left + hb.width / 2;
+          var hy = hb.top + hb.height / 2;
+          var hopts = { bubbles: true, cancelable: true, view: window, clientX: hx, clientY: hy };
+          try { host.dispatchEvent(new MouseEvent("mouseover", hopts)); } catch (eH1) {}
+          try { host.dispatchEvent(new MouseEvent("mousemove", hopts)); } catch (eH2) {}
+        }
       }
       try { el.click(); } catch (e13) {}
       return { ok: true, message: "clicked", url: document.location.href, title: document.title };

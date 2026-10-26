@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 41;
+  const CONTENT_VER = 42;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -452,6 +452,7 @@
       if (tag === "html" || tag === "body") {
         return t(document.title).slice(0, 120);
       }
+      if (isRowHoverControl(el)) return hoverIconLabel(el);
       if (isDataRow(el)) {
         const row = rowName(el);
         if (row) return row;
@@ -591,6 +592,87 @@
       const role = (el.getAttribute("role") || "").toLowerCase();
       return role === "button" || role === "link" || role === "menuitem"
         || role === "menuitemcheckbox" || role === "menuitemradio" || role === "tab";
+    }
+
+    function classBlob(el) {
+      const c = el.className;
+      const name = c && typeof c === "object" && c.baseVal != null ? String(c.baseVal) : String(c || "");
+      return (name + " " + (el.id || "")).toLowerCase();
+    }
+
+    function hasIconActionClass(el) {
+      return /delete|remove|trash|\bdel\b|shanchu|icon-del|\bedit\b|pencil|modify|bianji|icon-edit/.test(classBlob(el));
+    }
+
+    function isClickableIcon(el) {
+      const tag = (el.tagName || "").toLowerCase();
+      if (tag !== "i" && tag !== "span" && tag !== "em") return false;
+      const role = (el.getAttribute("role") || "").toLowerCase();
+      if (role === "button" || role === "link" || role === "menuitem") return true;
+      if (el.getAttribute("onclick")) return true;
+      return hasIconActionClass(el);
+    }
+
+    function insideHiddenTemplate(el) {
+      let p = el.parentElement;
+      while (p && p !== document.body && p !== document.documentElement) {
+        let st = null;
+        try { st = window.getComputedStyle(p); } catch (_) { break; }
+        if (st && (st.display === "none" || st.visibility === "hidden")) return true;
+        p = p.parentElement;
+      }
+      return false;
+    }
+
+    function boxMissing(el) {
+      try {
+        const r = el.getBoundingClientRect();
+        return !r || r.width <= 0 || r.height <= 0;
+      } catch (_) {
+        return true;
+      }
+    }
+
+    function isRowHoverControl(el) {
+      if (!el || el.nodeType !== 1 || insideHiddenTemplate(el)) return false;
+      const tag = (el.tagName || "").toLowerCase();
+      const role = (el.getAttribute("role") || "").toLowerCase();
+      const hoverRole = tag === "a" || tag === "button"
+        || role === "button" || role === "link" || role === "menuitem" || role === "tab";
+      if (!hoverRole && !isClickableIcon(el)) return false;
+      const inner = String(el.textContent || "").replace(/\s+/g, " ").trim();
+      if (inner.length > 16) return false;
+      let st = null;
+      try { st = window.getComputedStyle(el); } catch (_) {}
+      if (st && (st.display === "none" || st.visibility === "hidden")) return true;
+      if (st && parseFloat(st.opacity) === 0) return true;
+      return boxMissing(el);
+    }
+
+    function hoverIconLabel(el) {
+      const aria = (el.getAttribute("aria-label") || el.getAttribute("title") || "").replace(/\s+/g, " ").trim();
+      if (aria) return aria.slice(0, 40);
+      const blob = classBlob(el);
+      if (/delete|remove|trash|\bdel\b|shanchu|icon-del/.test(blob)) return "删除";
+      if (/\bedit\b|pencil|modify|bianji|icon-edit/.test(blob)) return "编辑";
+      const own = ownText(el);
+      if (own && own.length <= 16 && !/[\uE000-\uF8FF]/.test(own)) return own;
+      return "图标";
+    }
+
+    function visibleHost(el) {
+      let p = el && el.parentElement;
+      for (let d = 0; p && p !== document.body && p !== document.documentElement && d < 6; d++) {
+        let st = null;
+        let box = null;
+        try { st = window.getComputedStyle(p); } catch (_) {}
+        try { box = p.getBoundingClientRect(); } catch (_) {}
+        if (st && st.display !== "none" && st.visibility !== "hidden" && box && box.width > 1 && box.height > 1) {
+          return p;
+        }
+        p = p.parentElement;
+      }
+      return null;
     }
 
     function classNameOf(el) {
@@ -792,6 +874,7 @@
       if (st && st.display === "none") {
         if (hasDetailLabel(el) || isImgtextBtn(el) || isDetailRevealName(ownText(el))) return false;
         if (el.querySelector && el.querySelector(".imgtextbtn, iframe, frame")) return false;
+        if (isRowHoverControl(el)) return false;
         return true;
       }
       if (st && st.visibility === "hidden") {
@@ -801,6 +884,7 @@
         if (el.querySelector && el.querySelector("a, button, [role='button'], [role='link'], [role='menuitem'], iframe, frame")) {
           return false;
         }
+        if (isRowHoverControl(el)) return false;
         return true;
       }
       return false;
@@ -808,6 +892,7 @@
 
     function interesting(el) {
       const tag = (el.tagName || "").toLowerCase();
+      if (isRowHoverControl(el)) return true;
       if (isNativeInteractive(el)) return true;
       if (isOutermostCardGroup(el)) return true;
       if (inCardNotShell(el)) {
@@ -1125,8 +1210,9 @@
           const opts = optionsOf(node.el);
           if (opts) extra += " options=" + opts;
           if (tag === "input" && (node.el.getAttribute("type") || "") === "password") extra += " (password)";
-          if ((isHoverRevealControl(node.el) || hasDetailLabel(node.el) || isImgtextBtn(node.el))
-            && (isHoverHiddenStyle(node.el) || (window.getComputedStyle(node.el).display === "none"))) {
+          if (isRowHoverControl(node.el)
+            || ((isHoverRevealControl(node.el) || hasDetailLabel(node.el) || isImgtextBtn(node.el))
+              && (isHoverHiddenStyle(node.el) || (window.getComputedStyle(node.el).display === "none")))) {
             extra += " (隐藏)";
           }
         }
@@ -1561,9 +1647,52 @@
     return { ok: false, error: "点击被挡住：目标没有可点区域。" };
   }
 
+  async function finishRevealedClick(el, clickMode, host) {
+    const hb = host.getBoundingClientRect();
+    await requestCdpPointer("hover", hb.left + hb.width / 2, hb.top + hb.height / 2);
+    fireSyntheticHover(host, hb.left + hb.width / 2, hb.top + hb.height / 2);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const err = hitTestError(el);
+    if (err) return { ok: false, error: err };
+    if (clickMode === "legacy") {
+      if (typeof el.click === "function") el.click();
+      else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      return { ok: true };
+    }
+    const live = boxCenter(el);
+    if (live.w <= 0 || live.h <= 0) return emptyBoxFallback(el);
+    await requestCdpPointer("click", live.x, live.y);
+    try {
+      el.dispatchEvent(new MouseEvent("click", {
+        bubbles: true, cancelable: true, view: window,
+        clientX: live.x, clientY: live.y, buttons: 0
+      }));
+    } catch (_) {}
+    return { ok: true };
+  }
+
   async function clickWithPointer(el, clickMode, attachPointer, opts) {
     const skipHit = !!(opts && opts.skipHit);
+    const revealHost = !skipHit && isRowHoverControl(el) ? visibleHost(el) : null;
     if (!skipHit) {
+      const err = hitTestError(el);
+      if (err) {
+        if (!(err.indexOf("没有可点区域") >= 0 && revealHost)) return { ok: false, error: err };
+      }
+    }
+    if (revealHost && hitTestError(el) && attachPointer === "cdp") {
+      await requestCdpPointer("prepare", 0, 0);
+      try {
+        await waitForDebuggerViewport();
+        return await finishRevealedClick(el, clickMode, revealHost);
+      } finally {
+        try { await requestCdpPointer("detach", 0, 0); } catch (_) {}
+      }
+    }
+    if (revealHost && hitTestError(el)) {
+      const hb = revealHost.getBoundingClientRect();
+      fireSyntheticHover(revealHost, hb.left + hb.width / 2, hb.top + hb.height / 2);
+      await new Promise((resolve) => setTimeout(resolve, 150));
       const err = hitTestError(el);
       if (err) return { ok: false, error: err };
     }

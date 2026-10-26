@@ -39,6 +39,46 @@ namespace WordAddIn1.BrowserHost
     var role=((el.getAttribute&&el.getAttribute('role'))||'').toLowerCase();
     return role==='button'||role==='link'||role==='menuitem'||role==='tab';
   }
+  function classBlob(el){
+    return (classNameOf(el)+' '+(el.id||'')).toLowerCase();
+  }
+  function isNamedIcon(el){
+    return /delete|remove|trash|\bdel\b|shanchu|icon-del|\bedit\b|pencil|modify|bianji|icon-edit/.test(classBlob(el));
+  }
+  function isClickableIcon(el){
+    var tag=(el.tagName||'').toLowerCase();
+    if (tag!=='i' && tag!=='span' && tag!=='em') return false;
+    var role=((el.getAttribute&&el.getAttribute('role'))||'').toLowerCase();
+    if (role==='button'||role==='link'||role==='menuitem') return true;
+    if (el.getAttribute && el.getAttribute('onclick')) return true;
+    return isNamedIcon(el);
+  }
+  function insideHiddenTemplate(el){
+    var p=el.parentElement;
+    while (p && p!==document.body && p!==document.documentElement){
+      var pst;
+      try { pst=window.getComputedStyle(p); } catch (eH) { break; }
+      if (pst && (pst.display==='none' || pst.visibility==='hidden')) return true;
+      p=p.parentElement;
+    }
+    return false;
+  }
+  function boxMissing(el){
+    try {
+      var r=el.getBoundingClientRect();
+      return !r || r.width<=0 || r.height<=0;
+    } catch (eB) { return true; }
+  }
+  function iconLabel(el){
+    var aria=el.getAttribute&&(el.getAttribute('aria-label')||el.getAttribute('title'));
+    aria=String(aria||'').replace(/\s+/g,' ').trim();
+    if (aria) return aria.slice(0,40);
+    if (/delete|remove|trash|\bdel\b|shanchu|icon-del/.test(classBlob(el))) return '删除';
+    if (/\bedit\b|pencil|modify|bianji|icon-edit/.test(classBlob(el))) return '编辑';
+    var ownT=ownText(el);
+    if (ownT && ownT.length<=16 && !/[\uE000-\uF8FF]/.test(ownT)) return ownT;
+    return '图标';
+  }
   function classNameOf(el){
     var c=el.className;
     if (c && typeof c==='object' && c.baseVal!=null) return String(c.baseVal);
@@ -100,7 +140,9 @@ namespace WordAddIn1.BrowserHost
     try { st=window.getComputedStyle(el); } catch (e) { continue; }
     var own=ownText(el);
     var displayNone=!!(st && st.display==='none');
-    if (displayNone && !isDetailName(own) && !isImgtextBtn(el) && !isImgtextCard(el)) continue;
+    var innerNow=String(el.textContent||'').replace(/\s+/g,' ').trim();
+    var rowHover=(isHoverRole(el)||isClickableIcon(el)) && innerNow.length<=16 && !insideHiddenTemplate(el);
+    if (displayNone && !isDetailName(own) && !isImgtextBtn(el) && !isImgtextCard(el) && !rowHover) continue;
     var hidden=displayNone || (st && (st.visibility==='hidden' || parseFloat(st.opacity)===0));
     var inner=String(el.textContent||'').replace(/\s+/g,' ').trim();
     var shortInner=inner.slice(0,24);
@@ -111,10 +153,11 @@ namespace WordAddIn1.BrowserHost
       kind=hidden?'hidden_detail':'detail';
       name=own||shortInner||'查看详情';
       role='button';
-    } else if (hidden && isHoverRole(el)){
+    } else if ((hidden || boxMissing(el)) && (isHoverRole(el) || isClickableIcon(el)) && !insideHiddenTemplate(el)){
       kind='hidden_detail';
-      name=own||shortInner||'button';
-      role='button';
+      name=iconLabel(el);
+      role=(tag==='a')?'link':'button';
+      hidden=true;
     } else if ((isImgtextCard(el) || (!hidden && isPointerCard(el, st)))
         && !(el.querySelector && el.querySelector('a[href], [role=link]'))){
       kind='card';

@@ -212,6 +212,29 @@ namespace WordAddIn1.BrowserHost
                 }),
                 sessionId).ConfigureAwait(true);
             ThrowIfJsNotOk(resultJson, "点击被挡住");
+            if (ReadJsReveal(resultJson))
+            {
+                ReadJsHostPoint(resultJson, out double hostX, out double hostY);
+                await DispatchCdpMouseAsync(cdp, sessionId, "mouseMoved", hostX, hostY, false)
+                    .ConfigureAwait(true);
+                await Task.Delay(HoverSettleMs).ConfigureAwait(true);
+                resultJson = await CallFunctionOnAsync(
+                    cdp,
+                    objectId,
+                    PointerPrepareJs,
+                    BuildCallObject(new JObject
+                    {
+                        ["kind"] = "click",
+                        ["mode"] = mode
+                    }),
+                    sessionId).ConfigureAwait(true);
+                ThrowIfJsNotOk(resultJson, "点击被挡住");
+                if (ReadJsReveal(resultJson))
+                {
+                    throw new InvalidOperationException("点击被挡住：目标没有可点区域。");
+                }
+            }
+
             if (string.Equals(mode, "legacy", StringComparison.Ordinal)
                 || ReadJsFallback(resultJson))
             {
@@ -1179,6 +1202,30 @@ namespace WordAddIn1.BrowserHost
     }
     return { ok: true, x: x, y: y };
   }
+  function visibleHost(el) {
+    var p = el && el.parentElement;
+    for (var d = 0; p && p !== document.body && p !== document.documentElement && d < 6; d++) {
+      var stH = null, box = null;
+      try { stH = window.getComputedStyle(p); } catch (eHs) {}
+      try { box = p.getBoundingClientRect(); } catch (eHb) {}
+      if (stH && stH.display !== 'none' && stH.visibility !== 'hidden' && box && box.width > 1 && box.height > 1) {
+        return box;
+      }
+      p = p.parentElement;
+    }
+    return null;
+  }
+  if (!isHover && (r.width <= 0 || r.height <= 0)) {
+    var hostBox = visibleHost(t);
+    if (hostBox) {
+      return {
+        ok: true,
+        reveal: true,
+        hostX: hostBox.left + hostBox.width / 2,
+        hostY: hostBox.top + hostBox.height / 2
+      };
+    }
+  }
   if (r.width <= 0 || r.height <= 0) {
     return {
       ok: false,
@@ -1335,6 +1382,38 @@ namespace WordAddIn1.BrowserHost
         {
             var arr = new JArray { new JObject { ["value"] = value ?? new JObject() } };
             return arr.ToString(Newtonsoft.Json.Formatting.None);
+        }
+
+        private static bool ReadJsReveal(string resultJson)
+        {
+            try
+            {
+                var jo = JObject.Parse(resultJson ?? "{}");
+                var v = jo["result"]?["value"] as JObject;
+                return v != null
+                    && v["reveal"] != null
+                    && v["reveal"].Type == JTokenType.Boolean
+                    && (bool)v["reveal"];
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void ReadJsHostPoint(string resultJson, out double x, out double y)
+        {
+            x = 0;
+            y = 0;
+            var jo = JObject.Parse(resultJson ?? "{}");
+            var v = jo["result"]?["value"] as JObject;
+            if (v == null || v["hostX"] == null || v["hostY"] == null)
+            {
+                throw new InvalidOperationException("目标没有可点区域");
+            }
+
+            x = (double)v["hostX"];
+            y = (double)v["hostY"];
         }
 
         private static bool ReadJsFallback(string resultJson)
