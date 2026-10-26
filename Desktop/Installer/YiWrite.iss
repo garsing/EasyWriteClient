@@ -2,7 +2,7 @@
 ; 装到当前用户目录，因为程序会把 config.json 写在 exe 旁边。
 
 #define MyAppName "易写"
-#define MyAppVersion "1.0.6"
+#define MyAppVersion "1.0.7"
 #define MyAppExeName "EasyWriteClient.Desktop.exe"
 #define MyAppPublisher "易写"
 
@@ -12,7 +12,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-VersionInfoVersion=1.0.6.0
+VersionInfoVersion=1.0.7.0
 VersionInfoProductName={#MyAppName}
 DefaultDirName={localappdata}\{#MyAppName}
 DefaultGroupName={#MyAppName}
