@@ -9,7 +9,7 @@ namespace WordAddIn1.BrowserHost
     /// <summary>
     /// CDP Accessibility.getFullAXTree JSON → 缩进文本树 + ref 表（S6～S11）。
     /// </summary>
-    internal static class BrowserAxTreeBuilder
+    internal static partial class BrowserAxTreeBuilder
     {
         public const int MaxRefNodes = 300;
         public const int MaxTreeChars = 36000;
@@ -55,7 +55,12 @@ namespace WordAddIn1.BrowserHost
 
         public static BrowserAxBuildResult BuildOverview(string axTreeJson)
         {
-            return Build(axTreeJson, detailRootRef: null, priorEntry: null);
+            return Build(axTreeJson, detailRootRef: null, priorEntry: null, window: null);
+        }
+
+        public static BrowserAxBuildResult BuildOverview(string axTreeJson, RepeatWindowRequest window)
+        {
+            return Build(axTreeJson, detailRootRef: null, priorEntry: null, window: window);
         }
 
         public static BrowserAxBuildResult BuildDetail(
@@ -63,13 +68,14 @@ namespace WordAddIn1.BrowserHost
             string detailRef,
             BrowserRefEntry priorEntry)
         {
-            return Build(axTreeJson, detailRootRef: detailRef, priorEntry: priorEntry);
+            return Build(axTreeJson, detailRootRef: detailRef, priorEntry: priorEntry, window: null);
         }
 
         private static BrowserAxBuildResult Build(
             string axTreeJson,
             string detailRootRef,
-            BrowserRefEntry priorEntry)
+            BrowserRefEntry priorEntry,
+            RepeatWindowRequest window)
         {
             var result = new BrowserAxBuildResult();
             if (string.IsNullOrWhiteSpace(axTreeJson))
@@ -146,6 +152,219 @@ namespace WordAddIn1.BrowserHost
             bool truncated = false;
             string truncatedReason = null;
             var visited = new HashSet<string>(StringComparer.Ordinal);
+            RepeatAnalysis analysis = AnalyzeRepeats(byId);
+            int chromeLeft = analysis.ChromeSlots;
+            bool pageHasRuns = analysis.RunsByParent.Count > 0;
+            bool windowApplied = false;
+            bool windowInvalid = false;
+
+            string TakeRef(bool chrome)
+            {
+                if (chrome && chromeLeft > 0)
+                {
+                    chromeLeft--;
+                }
+
+                int limit = (!chrome && pageHasRuns)
+                    ? MaxRefNodes - Math.Max(0, chromeLeft)
+                    : MaxRefNodes;
+                if (refs.Count >= limit)
+                {
+                    return null;
+                }
+
+                string id = "e" + nextRef;
+                nextRef++;
+                return id;
+            }
+
+            bool EmitRepeat(AxNode parent, RepeatRun run, int depth)
+            {
+                int start = 1;
+                int end = Math.Min(RepeatWindowSize, run.Count);
+                bool matched = window != null
+                    && parent.BackendDomNodeId.HasValue
+                    && parent.BackendDomNodeId.Value == window.ParentBackendId
+                    && window.Ordinal == run.Ordinal
+                    && string.Equals(window.Signature, run.Signature, StringComparison.Ordinal);
+                if (matched)
+                {
+                    windowApplied = true;
+                    if (window.Start > run.Count)
+                    {
+                        windowInvalid = true;
+                        return false;
+                    }
+
+                    start = window.Start;
+                    end = Math.Min(window.End, run.Count);
+                    if (end - start + 1 > RepeatWindowSize)
+                    {
+                        end = start + RepeatWindowSize - 1;
+                    }
+                }
+
+                string planned = "共 " + run.Count + " 项，当前 " + start + "-" + end;
+                string headerRef = TakeRef(chrome: true);
+                if (headerRef != null)
+                {
+                    refs[headerRef] = new BrowserRefEntry
+                    {
+                        AxNodeId = parent.NodeId,
+                        Role = "repeat",
+                        Name = planned,
+                        IsRepeat = true,
+                        RepeatParentBackendId = parent.BackendDomNodeId,
+                        RepeatSignature = run.Signature,
+                        RepeatOrdinal = run.Ordinal,
+                        RepeatCount = run.Count
+                    };
+                    if (matched)
+                    {
+                        result.FocusRef = headerRef;
+                    }
+                }
+
+                AppendLine(sb, depth, "repeat", planned, headerRef, note: null);
+
+                bool prevTrunc = truncated;
+                string prevReason = truncatedReason;
+                Walk(run.MemberIds[start - 1], depth + 1, null, false);
+                bool childTrunc = truncated;
+                string childReason = childTrunc ? truncatedReason : null;
+                truncated = prevTrunc;
+                truncatedReason = prevReason;
+
+                int printedEnd = start;
+                bool missed = false;
+                if (!(childTrunc && sb.Length >= MaxTreeChars))
+                {
+                    for (int n = start + 1; n <= end; n++)
+                    {
+                        if (sb.Length >= MaxTreeChars)
+                        {
+                            childTrunc = true;
+                            childReason = "tree_chars>" + MaxTreeChars;
+                            break;
+                        }
+
+                        if (!byId.TryGetValue(run.MemberIds[n - 1], out AxNode item))
+                        {
+                            continue;
+                        }
+
+                        visited.Add(item.NodeId);
+                        string itemRole = string.IsNullOrWhiteSpace(item.Role) ? "generic" : item.Role;
+                        string itemName = SanitizeAccessibleName(item.Name ?? "").Trim();
+                        if (itemName.Length > RepeatNameChars)
+                        {
+                            itemName = itemName.Substring(0, RepeatNameChars) + "…";
+                        }
+
+                        string oneRef = null;
+                        if (item.BackendDomNodeId.HasValue)
+                        {
+                            oneRef = TakeRef(chrome: false);
+                            if (oneRef == null)
+                            {
+                                missed = true;
+                            }
+                            else
+                            {
+                                refs[oneRef] = new BrowserRefEntry
+                                {
+                                    AxNodeId = item.NodeId,
+                                    BackendDomNodeId = item.BackendDomNodeId,
+                                    Role = itemRole,
+                                    Name = itemName
+                                };
+                            }
+                        }
+
+                        AppendLine(sb, depth + 1, itemRole, itemName, oneRef, note: null);
+                        printedEnd = n;
+                    }
+                }
+
+                if (printedEnd < end)
+                {
+                    string actual = "共 " + run.Count + " 项，当前 " + start + "-" + printedEnd;
+                    sb.Replace(planned, actual);
+                    if (headerRef != null && refs.TryGetValue(headerRef, out BrowserRefEntry header))
+                    {
+                        header.Name = actual;
+                    }
+                }
+
+                if (childTrunc)
+                {
+                    truncated = true;
+                    truncatedReason = childReason ?? truncatedReason;
+                }
+
+                return missed || childTrunc;
+            }
+
+            void VisitChildren(AxNode parent, int childDepth, string childInherit, bool childInCard)
+            {
+                analysis.RunsByParent.TryGetValue(parent.NodeId, out List<RepeatRun> childRuns);
+                bool deferTrunc = false;
+                string deferReason = null;
+                for (int ci = 0; ci < parent.ChildIds.Count; ci++)
+                {
+                    if (truncated)
+                    {
+                        break;
+                    }
+
+                    RepeatRun runHere = null;
+                    if (childRuns != null)
+                    {
+                        for (int r = 0; r < childRuns.Count; r++)
+                        {
+                            if (childRuns[r].StartIndex == ci)
+                            {
+                                runHere = childRuns[r];
+                                break;
+                            }
+                        }
+                    }
+
+                    if (runHere != null)
+                    {
+                        bool prevTrunc = truncated;
+                        string prevReason = truncatedReason;
+                        bool missed = EmitRepeat(parent, runHere, childDepth);
+                        bool childTrunc = truncated;
+                        string childReason = childTrunc ? truncatedReason : null;
+                        truncated = prevTrunc;
+                        truncatedReason = prevReason;
+                        if (missed || childTrunc)
+                        {
+                            deferTrunc = true;
+                            deferReason = childReason;
+                        }
+
+                        ci += runHere.Count - 1;
+                        continue;
+                    }
+
+                    Walk(parent.ChildIds[ci], childDepth, childInherit, childInCard);
+                }
+
+                if (deferTrunc)
+                {
+                    truncated = true;
+                    if (!string.IsNullOrEmpty(deferReason))
+                    {
+                        truncatedReason = deferReason;
+                    }
+                    else if (string.IsNullOrEmpty(truncatedReason))
+                    {
+                        truncatedReason = "ref_nodes>" + MaxRefNodes;
+                    }
+                }
+            }
 
             void Walk(string nodeId, int depth, string inheritName, bool inCardGroup)
             {
@@ -180,20 +399,11 @@ namespace WordAddIn1.BrowserHost
                     if (LooksLikeCardGroup(ignName, node, byId))
                     {
                         AppendLine(sb, depth, peekRole, ignName, null, note: null);
-                        string next = ignName;
-                        foreach (string child in node.ChildIds)
-                        {
-                            Walk(child, depth + 1, next, true);
-                        }
-
+                        VisitChildren(node, depth + 1, ignName, true);
                         return;
                     }
 
-                    foreach (string child in node.ChildIds)
-                    {
-                        Walk(child, depth, inheritName, inCardGroup);
-                    }
-
+                    VisitChildren(node, depth, inheritName, inCardGroup);
                     return;
                 }
 
@@ -259,29 +469,33 @@ namespace WordAddIn1.BrowserHost
                     && name.Trim().Length <= 40
                     && (string.Equals(role, "StaticText", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(role, "text", StringComparison.OrdinalIgnoreCase));
-                bool wantRef = (ShouldAssignRef(node, refs.Count) || cardPic || cardText) && !namedGroup;
+                bool reserve = pageHasRuns && chromeLeft > 0;
+                bool wantRef = (ShouldAssignRef(node, reserve ? 0 : refs.Count) || cardPic || cardText) && !namedGroup;
                 string refId = null;
-                if (wantRef && refs.Count < MaxRefNodes && node.BackendDomNodeId.HasValue)
+                if (wantRef && node.BackendDomNodeId.HasValue)
                 {
-                    refId = "e" + nextRef;
-                    nextRef++;
-                    refs[refId] = new BrowserRefEntry
+                    bool chrome = IsChromeRole(role) && !analysis.IsUnderRun(node.NodeId);
+                    refId = TakeRef(chrome);
+                    if (refId != null)
                     {
-                        AxNodeId = node.NodeId,
-                        BackendDomNodeId = node.BackendDomNodeId,
-                        Role = role,
-                        Name = name
-                    };
+                        refs[refId] = new BrowserRefEntry
+                        {
+                            AxNodeId = node.NodeId,
+                            BackendDomNodeId = node.BackendDomNodeId,
+                            Role = role,
+                            Name = name
+                        };
+                    }
+                    else if (!reserve)
+                    {
+                        truncated = true;
+                        truncatedReason = truncatedReason ?? ("ref_nodes>" + MaxRefNodes);
+                    }
                 }
                 else if (wantRef && !node.BackendDomNodeId.HasValue)
                 {
                     // 无可操作 backend id：仍打印，不发 ref
                     wantRef = false;
-                }
-                else if (wantRef && refs.Count >= MaxRefNodes)
-                {
-                    truncated = true;
-                    truncatedReason = "ref_nodes>" + MaxRefNodes;
                 }
 
                 bool print = wantRef
@@ -310,18 +524,17 @@ namespace WordAddIn1.BrowserHost
                     ? name
                     : inheritName;
                 bool childInCard = inCardGroup || namedGroup;
-                foreach (string child in node.ChildIds)
-                {
-                    if (truncated)
-                    {
-                        break;
-                    }
-
-                    Walk(child, childDepth, childInherit, childInCard);
-                }
+                VisitChildren(node, childDepth, childInherit, childInCard);
             }
 
             Walk(startId, 0, null, false);
+
+            if (windowInvalid || (window != null && !windowApplied))
+            {
+                result.Error = "ref 无效或已过期，请重新 F_browser_snapshot";
+                result.Success = false;
+                return result;
+            }
 
             // 临时关闭：AX 树第二遍补全可输入控件（与 DOM 补查对照实验）
             // if (!truncated)
@@ -949,6 +1162,10 @@ namespace WordAddIn1.BrowserHost
         public bool Success { get; set; }
         public string Error { get; set; }
         public string TreeText { get; set; } = "";
+
+        /// <summary>带序号范围时，本次 repeat 行的新 ref。</summary>
+        public string FocusRef { get; set; }
+
         public bool Truncated { get; set; }
         public string TruncatedReason { get; set; }
         public Dictionary<string, BrowserRefEntry> Refs { get; set; }

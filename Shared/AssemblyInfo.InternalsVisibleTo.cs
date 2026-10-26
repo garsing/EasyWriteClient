@@ -6,3 +6,4 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("PptHtmlContentRoundtripTest")]
 [assembly: InternalsVisibleTo("ExcelWorkbookRoundtripTest")]
 [assembly: InternalsVisibleTo("WordDocumentRoundtripTest")]
+[assembly: InternalsVisibleTo("BrowserNavigateTest")]

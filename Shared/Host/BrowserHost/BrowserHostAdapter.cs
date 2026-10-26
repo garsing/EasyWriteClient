@@ -66,7 +66,9 @@ namespace WordAddIn1.BrowserHost
         public static Task<BrowserSnapshotResult> SnapshotAsync(
             BrowserChannel channel,
             string refId,
-            string domSupplement = null)
+            string domSupplement = null,
+            int? rangeStart = null,
+            int? rangeEnd = null)
         {
             if (string.IsNullOrWhiteSpace(refId))
             {
@@ -87,8 +89,14 @@ namespace WordAddIn1.BrowserHost
             if (mode.IsPointer)
             {
                 return mode.IsAttach
-                    ? AttachPointerHost.SnapshotAsync(channel, refId, domSupplement)
-                    : YiWriteBrowserHost.SnapshotAsync(channel, refId, domSupplement);
+                    ? AttachPointerHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd)
+                    : YiWriteBrowserHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd);
+            }
+
+            if (rangeStart.HasValue || rangeEnd.HasValue)
+            {
+                return Task.FromResult(
+                    BrowserSnapshotResult.Fail("当前浏览器轨不支持序号范围"));
             }
 
             return mode.IsAttach

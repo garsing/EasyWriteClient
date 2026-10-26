@@ -10,7 +10,9 @@ namespace WordAddIn1.BrowserHost
         public static async Task<BrowserSnapshotResult> SnapshotAsync(
             BrowserChannel channel,
             string refId,
-            string domSupplementSpec = null)
+            string domSupplementSpec = null,
+            int? rangeStart = null,
+            int? rangeEnd = null)
         {
             if (channel == null || !ExtensionHost.IsAttachTabLive(channel.TabUuid))
             {
@@ -32,8 +34,18 @@ namespace WordAddIn1.BrowserHost
                     }
                 }
 
+                string rangeError = BrowserAxTreeBuilder.ValidateRepeatRange(
+                    prior, rangeStart, rangeEnd, isDetail);
+                if (rangeError != null)
+                {
+                    return BrowserSnapshotResult.Fail(rangeError);
+                }
+
+                bool repeatWindow = isDetail && prior.IsRepeat;
+                bool overviewLike = !isDetail || repeatWindow;
+
                 string domApplied = "off";
-                if (!isDetail)
+                if (overviewLike)
                 {
                     if (!BrowserDomInputSupplement.TryResolveSelector(
                         domSupplementSpec,
@@ -95,9 +107,20 @@ namespace WordAddIn1.BrowserHost
                     json = await GetAxJsonAsync(cdp).ConfigureAwait(true);
                 }
 
-                BrowserAxBuildResult built = isDetail
-                    ? BrowserAxTreeBuilder.BuildDetail(json, refId.Trim(), prior)
-                    : BrowserAxTreeBuilder.BuildOverview(json);
+                BrowserAxBuildResult built = repeatWindow
+                    ? BrowserAxTreeBuilder.BuildOverview(
+                        json,
+                        new BrowserAxTreeBuilder.RepeatWindowRequest
+                        {
+                            ParentBackendId = prior.RepeatParentBackendId ?? -1,
+                            Signature = prior.RepeatSignature,
+                            Ordinal = prior.RepeatOrdinal,
+                            Start = rangeStart.Value,
+                            End = rangeEnd.Value
+                        })
+                    : isDetail
+                        ? BrowserAxTreeBuilder.BuildDetail(json, refId.Trim(), prior)
+                        : BrowserAxTreeBuilder.BuildOverview(json);
 
                 if (!built.Success)
                 {
@@ -106,7 +129,7 @@ namespace WordAddIn1.BrowserHost
 
                 BrowserFrameResolver.Stamp(built, stampFrame, frameMap, sessionId);
 
-                if (!isDetail
+                if (overviewLike
                     && !string.Equals(domApplied, "off", StringComparison.OrdinalIgnoreCase))
                 {
                     await BrowserDomInputSupplement
@@ -115,7 +138,7 @@ namespace WordAddIn1.BrowserHost
                     BrowserFrameResolver.Stamp(built, stampFrame, frameMap, sessionId);
                 }
 
-                if (!isDetail)
+                if (overviewLike)
                 {
                     await BrowserDomClickableSupplement
                         .MergeAsync(cdp, built, stampFrame, sessionId)
@@ -142,12 +165,12 @@ namespace WordAddIn1.BrowserHost
                     channel,
                     cdp.CurrentUrl,
                     cdp.CurrentTitle,
-                    isDetail ? "detail" : "overview",
-                    isDetail ? refId.Trim() : null,
+                    overviewLike ? "overview" : "detail",
+                    repeatWindow ? built.FocusRef : (isDetail ? refId.Trim() : null),
                     built.TreeText,
                     built.Truncated,
                     built.TruncatedReason,
-                    isDetail ? null : domApplied);
+                    overviewLike ? domApplied : null);
             }
             catch (Exception ex)
             {

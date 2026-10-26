@@ -21,6 +21,11 @@ namespace BrowserNavigateTest
             }
 
             string caseFilter = GetArg(args, "--case=");
+            if (caseFilter.StartsWith("repeat", StringComparison.OrdinalIgnoreCase))
+            {
+                return RepeatCollapseCases.Run(caseFilter);
+            }
+
             bool runShot = caseFilter.StartsWith("shot-", StringComparison.OrdinalIgnoreCase);
             bool runDl = caseFilter.StartsWith("dl-", StringComparison.OrdinalIgnoreCase);
             bool runTab = caseFilter.StartsWith("tab-", StringComparison.OrdinalIgnoreCase);

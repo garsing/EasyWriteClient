@@ -92,5 +92,16 @@ namespace WordAddIn1.BrowserHost
 
         /// <summary>OOPIF 子 session（不对 Agent 暴露）。</summary>
         public string CdpSessionId { get; set; }
+
+        /// <summary>重复段标题。没有单独的可点节点。</summary>
+        public bool IsRepeat { get; set; }
+
+        public int? RepeatParentBackendId { get; set; }
+
+        public string RepeatSignature { get; set; }
+
+        public int RepeatOrdinal { get; set; }
+
+        public int RepeatCount { get; set; }
     }
 }

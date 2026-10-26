@@ -23,6 +23,11 @@ namespace WordAddIn1
                     string channelId = TryGetString(args, "channel_id");
                     string refId = TryGetString(args, "ref");
                     string domSupplement = TryGetString(args, "dom_supplement");
+                    if (!TryGetOptionalInt(args, "range_start", out int? rangeStart, out string rangeErr)
+                        || !TryGetOptionalInt(args, "range_end", out int? rangeEnd, out rangeErr))
+                    {
+                        return Fail(rangeErr ?? "序号范围无效");
+                    }
 
                     BrowserChannel channel;
                     if (!string.IsNullOrWhiteSpace(channelId))
@@ -57,7 +62,7 @@ namespace WordAddIn1
                     }
 
                     BrowserSnapshotResult result = await BrowserHostAdapter
-                        .SnapshotAsync(channel, refId, domSupplement)
+                        .SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd)
                         .ConfigureAwait(true);
 
                     if (!result.Success)
@@ -103,6 +108,35 @@ namespace WordAddIn1
                     return Fail("F_browser_snapshot 失败: " + ex.Message);
                 }
             };
+        }
+
+        private static bool TryGetOptionalInt(
+            Dictionary<string, object> args,
+            string key,
+            out int? value,
+            out string error)
+        {
+            value = null;
+            error = null;
+            if (args == null || !args.ContainsKey(key) || args[key] == null)
+            {
+                return true;
+            }
+
+            string text = Convert.ToString(args[key])?.Trim();
+            if (string.IsNullOrEmpty(text))
+            {
+                return true;
+            }
+
+            if (!int.TryParse(text, out int parsed))
+            {
+                error = "序号范围无效";
+                return false;
+            }
+
+            value = parsed;
+            return true;
         }
 
         private static string TryGetString(Dictionary<string, object> args, string key)
