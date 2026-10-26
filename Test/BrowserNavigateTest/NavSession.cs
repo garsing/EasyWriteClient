@@ -51,7 +51,9 @@ namespace BrowserNavigateTest
         public ToolResult Snap(
             string channelId = null,
             string refId = null,
-            string domSupplement = null)
+            string domSupplement = null,
+            int? rangeStart = null,
+            int? rangeEnd = null)
         {
             var args = new Dictionary<string, object>();
             if (channelId != null)
@@ -67,6 +69,16 @@ namespace BrowserNavigateTest
             if (domSupplement != null)
             {
                 args["dom_supplement"] = domSupplement;
+            }
+
+            if (rangeStart.HasValue)
+            {
+                args["range_start"] = rangeStart.Value;
+            }
+
+            if (rangeEnd.HasValue)
+            {
+                args["range_end"] = rangeEnd.Value;
             }
 
             return DesktopToolPipe.Call("F_browser_snapshot", args);
