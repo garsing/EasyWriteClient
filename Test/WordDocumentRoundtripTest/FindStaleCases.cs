@@ -56,7 +56,13 @@ namespace WordDocumentRoundtripTest
                     && caseFilter.IndexOf("pnth", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool onlyPchars = !string.IsNullOrEmpty(caseFilter)
                     && caseFilter.IndexOf("pchars", StringComparison.OrdinalIgnoreCase) >= 0;
-                if (onlyPnth)
+                bool onlyNestedCell = !string.IsNullOrEmpty(caseFilter)
+                    && caseFilter.IndexOf("nested-cell", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (onlyNestedCell)
+                {
+                    RunNestedCellText(run, app);
+                }
+                else if (onlyPnth)
                 {
                     RunPublicCodeNth(run);
                 }
@@ -326,10 +332,18 @@ namespace WordDocumentRoundtripTest
                         + nest.Cell(1, 2).Range.End + "  " + QuoteSpecial(nest.Cell(1, 2).Range.Text));
                 }
 
+                DumpNestedVsCell("未合并右格", host, inner);
+                DumpInnerCellEnds(inner);
+
                 string cellText = outerCell.Text ?? "";
                 bool hasBoth = cellText.IndexOf("外前甲", StringComparison.Ordinal) >= 0
                     && cellText.IndexOf("内格乙", StringComparison.Ordinal) >= 0;
                 Ok(run, "fs-nested-cell-text", hasBoth, "外格 Text 未见「外前+内表」: " + QuoteSpecial(cellText));
+
+                DumpMergedNested(run, app);
+                ProbeNestedDeleteShrink(app, "合并格 甲乙空行", false, false);
+                ProbeNestedDeleteShrink(app, "合并格 甲乙备（同 GridXml）", true, false);
+                ProbeNestedDeleteShrink(app, "合并格 甲乙备+表后句", true, true);
             }
             catch (Exception ex)
             {
@@ -338,6 +352,316 @@ namespace WordDocumentRoundtripTest
             finally
             {
                 CloseDoc(doc);
+            }
+        }
+
+        private static void DumpMergedNested(TestRun run, Word.Application app)
+        {
+            Word.Document doc = null;
+            try
+            {
+                doc = app.Documents.Add();
+                Word.Table outer = doc.Tables.Add(doc.Range(0, 0), 1, 2);
+                outer.Cell(1, 1).Merge(outer.Cell(1, 2));
+                Word.Cell host = outer.Cell(1, 1);
+                host.Range.Text = "易写外表格。";
+                Word.Range nestAt = host.Range;
+                nestAt.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                nestAt.MoveEnd(Word.WdUnits.wdCharacter, -1);
+                nestAt.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                Word.Table inner = doc.Tables.Add(nestAt, 2, 2);
+                inner.Cell(1, 1).Range.Text = "易写内表甲";
+                inner.Cell(1, 2).Range.Text = "易写内表乙";
+                DumpNestedVsCell("合并格 colspan", host, inner);
+                DumpInnerCellEnds(inner);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("    合并格探测失败 " + ex.Message);
+            }
+            finally
+            {
+                CloseDoc(doc);
+            }
+        }
+
+        private static void DumpNestedVsCell(string title, Word.Cell host, Word.Table inner)
+        {
+            Console.WriteLine("  === " + title + " Range vs Characters ===");
+            DumpOneRange("父格.Range", host.Range);
+            DumpOneRange("内表.Range", inner.Range);
+            try
+            {
+                DumpOneRange("内表.Cell(1,1).Range", inner.Cell(1, 1).Range);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("    内表.Cell(1,1) " + ex.Message);
+            }
+
+            try
+            {
+                int nestLv = inner.NestingLevel;
+                Console.WriteLine("    NestingLevel=" + nestLv
+                    + "  内表.Start==父格.Start? " + (inner.Range.Start == host.Range.Start)
+                    + "  内表.End==父格.End? " + (inner.Range.End == host.Range.End)
+                    + "  内表.Start==内Cell11.Start? " + (inner.Range.Start == inner.Cell(1, 1).Range.Start));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("    对比失败 " + ex.Message);
+            }
+        }
+
+        private static void ProbeNestedDeleteShrink(
+            Word.Application app, string title, bool fillBei, bool afterSentence)
+        {
+            Console.WriteLine("  === 缩小内表删除 " + title + " ===");
+            Word.Document sample = null;
+            try
+            {
+                sample = BuildMergedNestedDeleteDoc(app, fillBei, afterSentence);
+                Word.Table inner = sample.Tables[1].Cell(1, 1).Tables[1];
+                DumpInnerCellEnds(inner);
+                Console.WriteLine("    父格 " + QuoteSpecial(sample.Tables[1].Cell(1, 1).Range.Text));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("    建样失败 " + ex.Message);
+                return;
+            }
+            finally
+            {
+                CloseDoc(sample);
+            }
+
+            int maxKeepCut = -1;
+            int maxKeepEnd = -1;
+            int seenStart = 0;
+            int seenFullEnd = 0;
+            for (int cut = 0; cut < 40; cut++)
+            {
+                Word.Document doc = null;
+                try
+                {
+                    doc = BuildMergedNestedDeleteDoc(app, fillBei, afterSentence);
+                    Word.Table inner = doc.Tables[1].Cell(1, 1).Tables[1];
+                    int start = inner.Cell(1, 1).Range.Start;
+                    int fullEnd = inner.Range.End;
+                    int end = fullEnd - cut;
+                    if (end <= start)
+                    {
+                        break;
+                    }
+
+                    seenStart = start;
+                    seenFullEnd = fullEnd;
+                    int tablesBefore = doc.Tables.Count;
+                    Word.Range wipe = doc.Range(start, end);
+                    string wipeText = wipe.Text ?? "";
+                    wipe.Text = "";
+                    int tablesAfter = 0;
+                    try
+                    {
+                        tablesAfter = doc.Tables.Count;
+                    }
+                    catch (Exception)
+                    {
+                        tablesAfter = -1;
+                    }
+
+                    string leftover = "";
+                    try
+                    {
+                        leftover = doc.Content.Text ?? "";
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    bool keepOuter = tablesAfter >= 1
+                        && leftover.IndexOf("易写外表格", StringComparison.Ordinal) >= 0;
+                    bool innerGone = leftover.IndexOf("易写内表甲", StringComparison.Ordinal) < 0;
+                    if (keepOuter && maxKeepCut < 0)
+                    {
+                        maxKeepCut = cut;
+                        maxKeepEnd = end;
+                    }
+
+                    Console.WriteLine(
+                        "    cut=" + cut
+                        + " " + start + "-" + end
+                        + " (fullEnd=" + fullEnd + ")"
+                        + " wipe=" + QuoteSpecial(wipeText)
+                        + " tables " + tablesBefore + "->" + tablesAfter
+                        + " keepOuter=" + keepOuter
+                        + " innerGone=" + innerGone
+                        + " leftover=" + QuoteSpecial(TrimForLog(leftover)));
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("    cut=" + cut + " 异常 " + ex.Message);
+                }
+                finally
+                {
+                    CloseDoc(doc);
+                }
+            }
+
+            Console.WriteLine(
+                maxKeepCut >= 0
+                    ? "    结论：从 table.Range.End 往回收 " + maxKeepCut
+                        + " 个单位开始能留外表（end=" + maxKeepEnd
+                        + " start=" + seenStart + " fullEnd=" + seenFullEnd + "）"
+                    : "    结论：收到 start+1 仍留不住外表");
+        }
+
+        private static Word.Document BuildMergedNestedDeleteDoc(
+            Word.Application app, bool fillBei, bool afterSentence)
+        {
+            Word.Document doc = app.Documents.Add();
+            Word.Table outer = doc.Tables.Add(doc.Range(0, 0), 1, 2);
+            outer.Cell(1, 1).Merge(outer.Cell(1, 2));
+            Word.Cell host = outer.Cell(1, 1);
+            host.Range.Text = "易写外表格。";
+            Word.Range nestAt = host.Range;
+            nestAt.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            nestAt.MoveEnd(Word.WdUnits.wdCharacter, -1);
+            nestAt.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            Word.Table inner = doc.Tables.Add(nestAt, 2, 2);
+            inner.Cell(1, 1).Range.Text = "易写内表甲";
+            inner.Cell(1, 2).Range.Text = "易写内表乙";
+            if (fillBei)
+            {
+                inner.Cell(2, 1).Range.Text = "备";
+            }
+
+            if (afterSentence)
+            {
+                Word.Range after = inner.Range;
+                after.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                after.InsertAfter("易写嵌套表后句。");
+            }
+
+            return doc;
+        }
+
+        private static string TrimForLog(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            if (text.Length <= 80)
+            {
+                return text;
+            }
+
+            return text.Substring(0, 80);
+        }
+
+        private static void DumpInnerCellEnds(Word.Table inner)
+        {
+            Console.WriteLine("    --- 内表逐格（删表范围用这个，不用 table.Range）---");
+            try
+            {
+                Console.WriteLine("    table.Range " + inner.Range.Start + "-" + inner.Range.End);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("    table.Range " + ex.Message);
+            }
+
+            int lastVisibleEnd = 0;
+            int firstStart = 0;
+            try
+            {
+                foreach (Word.Row row in inner.Rows)
+                {
+                    foreach (Word.Cell cell in row.Cells)
+                    {
+                        string raw = cell.Range.Text ?? "";
+                        string vis = raw.Replace("\r", "").Replace("\a", "").Replace("\n", "").Trim();
+                        Console.WriteLine("    格 " + cell.Range.Start + "-" + cell.Range.End
+                            + " vis=" + QuoteSpecial(vis) + " raw=" + QuoteSpecial(raw));
+                        if (firstStart == 0)
+                        {
+                            firstStart = cell.Range.Start;
+                        }
+
+                        if (vis.Length > 0)
+                        {
+                            lastVisibleEnd = cell.Range.End;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("    逐格失败 " + ex.Message);
+            }
+
+            Console.WriteLine("    删除范围(首格起~末可见格末) " + firstStart + "-" + lastVisibleEnd
+                + "  对比 table.Range.End 差 "
+                + (inner.Range.End - lastVisibleEnd));
+        }
+
+        private static void DumpOneRange(string name, Word.Range range)
+        {
+            if (range == null)
+            {
+                Console.WriteLine("    " + name + " null");
+                return;
+            }
+
+            string text = range.Text ?? "";
+            int chars = -1;
+            string head = "";
+            string tail = "";
+            try
+            {
+                chars = range.Characters.Count;
+                int n = Math.Min(12, chars);
+                var sb = new StringBuilder();
+                for (int i = 1; i <= n; i++)
+                {
+                    if (i > 1)
+                    {
+                        sb.Append(" | ");
+                    }
+
+                    sb.Append(i).Append("=").Append(QuoteSpecial(range.Characters[i].Text));
+                }
+
+                head = sb.ToString();
+                if (chars > 12)
+                {
+                    var tb = new StringBuilder();
+                    for (int i = Math.Max(1, chars - 5); i <= chars; i++)
+                    {
+                        if (tb.Length > 0)
+                        {
+                            tb.Append(" | ");
+                        }
+
+                        tb.Append(i).Append("=").Append(QuoteSpecial(range.Characters[i].Text));
+                    }
+
+                    tail = tb.ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                head = "Characters失败 " + ex.Message;
+            }
+
+            Console.WriteLine("    " + name + " " + range.Start + "-" + range.End
+                + " chars=" + chars + " text=" + QuoteSpecial(text));
+            Console.WriteLine("      head " + head);
+            if (!string.IsNullOrEmpty(tail))
+            {
+                Console.WriteLine("      tail " + tail);
             }
         }
 

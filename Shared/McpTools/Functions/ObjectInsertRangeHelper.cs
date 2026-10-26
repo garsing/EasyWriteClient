@@ -44,11 +44,11 @@ namespace WordAddIn1
                 }
 
                 Word.Range wordPath = TryInsertParagraphAfterCollapsedEnd(tableRange, tableId);
-                if (AcceptInsertAfterTable(wordPath, table))
+                if (AcceptInsertAfterTable(wordPath, table, doc))
                 {
                     WordAddIn1.DocumentHost.HostProbe.Log(
                         "tbl-after-ok",
-                        "id=" + tableId + " via=insert-para-after nested=" + TableIsNested(table)
+                        "id=" + tableId + " via=insert-para-after nested=" + TableIsNested(table, doc)
                         + " start=" + wordPath.Start);
                     return wordPath;
                 }
@@ -225,8 +225,11 @@ namespace WordAddIn1
         /// 不夹到 docEnd-1，直接试 Range(表.End) / Range(表.End+1)。
         /// WPS 表吃到文末时 Collapse 会停在表内，表.End 才是表后空锚点。
         /// </summary>
-        /// <summary>嵌套表：表 Range 在父格内，或 NestingLevel&gt;1。</summary>
-        public static bool TableIsNested(Word.Table table)
+        /// <summary>
+        /// 嵌套表：NestingLevel&gt;1。不要用 table.Range.Cells.Count——顶层表 Range 里也有格子。
+        /// NestingLevel 不可用时：不在 document.Tables（仅顶层）里则视为嵌套。
+        /// </summary>
+        public static bool TableIsNested(Word.Table table, Word.Document document = null)
         {
             if (table == null)
             {
@@ -235,29 +238,45 @@ namespace WordAddIn1
 
             try
             {
-                if (table.NestingLevel > 1)
+                return table.NestingLevel > 1;
+            }
+            catch (Exception)
+            {
+            }
+
+            if (document == null)
+            {
+                return false;
+            }
+
+            return !IsInDocumentTables(document, table);
+        }
+
+        private static bool IsInDocumentTables(Word.Document document, Word.Table table)
+        {
+            try
+            {
+                int start = table.Range.Start;
+                int end = table.Range.End;
+                foreach (Word.Table top in document.Tables)
                 {
-                    return true;
+                    if (top.Range.Start == start && top.Range.End == end)
+                    {
+                        return true;
+                    }
                 }
             }
             catch (Exception)
             {
             }
 
-            try
-            {
-                return RangeIsInCell(table.Range);
-            }
-            catch (Exception)
-            {
-                return false;
-            }
+            return false;
         }
 
         /// <summary>
         /// 顶层表：表后须在格外。嵌套表：须在该表之后且仍在父单元格内，不拆出父表。
         /// </summary>
-        private static bool AcceptInsertAfterTable(Word.Range probe, Word.Table table)
+        private static bool AcceptInsertAfterTable(Word.Range probe, Word.Table table, Word.Document document)
         {
             if (probe == null || table == null)
             {
@@ -270,7 +289,7 @@ namespace WordAddIn1
             }
 
             bool inCell = RangeIsInCell(probe);
-            return TableIsNested(table) ? inCell : !inCell;
+            return TableIsNested(table, document) ? inCell : !inCell;
         }
 
         private static bool RangeIsInsideThisTable(Word.Range probe, Word.Table table)
@@ -316,7 +335,7 @@ namespace WordAddIn1
                     continue;
                 }
 
-                Word.Range landed = TryWriteAfterRaw(raw, tableId, pos, "insert-para-after", table);
+                Word.Range landed = TryWriteAfterRaw(raw, tableId, pos, "insert-para-after", table, doc);
                 if (landed != null)
                 {
                     return landed;
@@ -331,7 +350,7 @@ namespace WordAddIn1
                     continue;
                 }
 
-                landed = TryWriteAfterRawInsert(raw, tableId, pos, table);
+                landed = TryWriteAfterRawInsert(raw, tableId, pos, table, doc);
                 if (landed != null)
                 {
                     return landed;
@@ -346,7 +365,8 @@ namespace WordAddIn1
             string tableId,
             int pos,
             string via,
-            Word.Table table)
+            Word.Table table,
+            Word.Document document)
         {
             try
             {
@@ -360,12 +380,12 @@ namespace WordAddIn1
                         + " " + DescribeRange(raw));
                 }
                 raw.Collapse(Word.WdCollapseDirection.wdCollapseStart);
-                if (!AcceptInsertAfterTable(raw, table))
+                if (!AcceptInsertAfterTable(raw, table, document))
                 {
                     WordAddIn1.DocumentHost.HostProbe.Log(
                         "tbl-after-raw-reject",
                         "id=" + tableId + " pos=" + pos + " start=" + raw.Start
-                        + " nested=" + TableIsNested(table));
+                        + " nested=" + TableIsNested(table, document));
                     return null;
                 }
 
@@ -384,7 +404,12 @@ namespace WordAddIn1
             }
         }
 
-        private static Word.Range TryWriteAfterRawInsert(Word.Range raw, string tableId, int pos, Word.Table table)
+        private static Word.Range TryWriteAfterRawInsert(
+            Word.Range raw,
+            string tableId,
+            int pos,
+            Word.Table table,
+            Word.Document document)
         {
             try
             {
@@ -398,12 +423,12 @@ namespace WordAddIn1
                         + " " + DescribeRange(raw));
                 }
                 raw.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
-                if (!AcceptInsertAfterTable(raw, table))
+                if (!AcceptInsertAfterTable(raw, table, document))
                 {
                     WordAddIn1.DocumentHost.HostProbe.Log(
                         "tbl-after-raw-ins-reject",
                         "id=" + tableId + " pos=" + pos + " start=" + raw.Start
-                        + " nested=" + TableIsNested(table));
+                        + " nested=" + TableIsNested(table, document));
                     return null;
                 }
 

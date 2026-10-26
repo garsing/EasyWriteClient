@@ -57,14 +57,30 @@ namespace WordAddIn1
 
                     int startPos = TryGetRangeStart(targetTable);
                     bool hadNestedTables = TableHasNestedTables(targetTable);
+                    bool deletingNested = ObjectInsertRangeHelper.TableIsNested(targetTable, document);
+                    int topBefore = document.Tables.Count;
 
                     System.Diagnostics.Debug.WriteLine(
                         $"[DeleteTable] 即将删除 table_id={tableId}, startPos={startPos}, " +
-                        $"had_nested_tables={hadNestedTables}");
+                        $"had_nested_tables={hadNestedTables}, nested={deletingNested}");
 
                     try
                     {
-                        targetTable.Delete();
+                        if (deletingNested)
+                        {
+                            if (!TryDeleteNestedTable(document, targetTable, out string nestedError))
+                            {
+                                return new ToolResult
+                                {
+                                    Success = false,
+                                    Error = nestedError ?? "删除嵌套表失败"
+                                };
+                            }
+                        }
+                        else
+                        {
+                            targetTable.Delete();
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -81,6 +97,15 @@ namespace WordAddIn1
                         mappingRefreshed = false;
                         System.Diagnostics.Debug.WriteLine(
                             $"[DeleteTable] 删后刷新映射失败（表已删，不回滚）: {ex.Message}");
+                    }
+
+                    if (deletingNested && TopLevelTableCountDropped(document, topBefore))
+                    {
+                        return new ToolResult
+                        {
+                            Success = false,
+                            Error = "删除嵌套表时外层表被一并删除"
+                        };
                     }
 
                     bool cursorMoved = TryNavigateToStart(
@@ -113,6 +138,110 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = $"执行失败: {ex.Message}" };
                 }
             };
+        }
+
+        /// <summary>
+        /// 父格 Characters：外表正文 + \r + 内表一整段 + 表后句 + 父格末 \r\a。
+        /// 内表 Range 就是中间那一段；格末 \r\a 在 Characters 里是一个单位。
+        /// 只清内表格子正文（停在该格 \r\a 前），再把空内表转成文本，不动父格末。
+        /// </summary>
+        private static bool TryDeleteNestedTable(
+            Word.Document document,
+            Word.Table table,
+            out string error)
+        {
+            error = null;
+            int topBefore;
+            try
+            {
+                topBefore = document.Tables.Count;
+            }
+            catch (Exception ex)
+            {
+                error = "删除嵌套表失败: " + ex.Message;
+                return false;
+            }
+
+            int parentEnd = TryGetParentCellEnd(document, table);
+            try
+            {
+                foreach (Word.Row row in table.Rows)
+                {
+                    foreach (Word.Cell cell in row.Cells)
+                    {
+                        int start = cell.Range.Start;
+                        int end = cell.Range.End - 1;
+                        if (parentEnd > 0 && end >= parentEnd)
+                        {
+                            end = parentEnd - 1;
+                        }
+
+                        if (end <= start)
+                        {
+                            continue;
+                        }
+
+                        document.Range(start, end).Text = "";
+                        if (TopLevelTableCountDropped(document, topBefore))
+                        {
+                            error = "删除嵌套表时外层表被一并删除";
+                            return false;
+                        }
+                    }
+                }
+
+                try
+                {
+                    table.ConvertToText(Word.WdTableFieldSeparator.wdSeparateByParagraphs);
+                }
+                catch (Exception)
+                {
+                }
+
+                if (TopLevelTableCountDropped(document, topBefore))
+                {
+                    error = "删除嵌套表时外层表被一并删除";
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "删除嵌套表失败: " + ex.Message;
+                return false;
+            }
+        }
+
+        private static int TryGetParentCellEnd(Word.Document document, Word.Table table)
+        {
+            try
+            {
+                int start = table.Range.Start;
+                if (start <= 0)
+                {
+                    return 0;
+                }
+
+                Word.Range before = document.Range(start - 1, start - 1);
+                return before.Cells[1].Range.End;
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+        }
+
+        private static bool TopLevelTableCountDropped(Word.Document document, int topBefore)
+        {
+            try
+            {
+                return document.Tables.Count < topBefore;
+            }
+            catch (Exception)
+            {
+                return true;
+            }
         }
 
         private static int TryGetRangeStart(Word.Table table)

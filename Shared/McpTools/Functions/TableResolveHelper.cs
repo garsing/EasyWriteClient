@@ -18,6 +18,13 @@ namespace WordAddIn1
                 return null;
             }
 
+            List<Word.Table> allTables = GetAllTablesInOrder(document);
+            Word.Table stamped = FindTableByTitleStamp(allTables, tableId);
+            if (stamped != null)
+            {
+                return stamped;
+            }
+
             int tableOrderIndex = DocumentState.GetTableIndex(tableId);
             if (tableOrderIndex < 0)
             {
@@ -25,7 +32,6 @@ namespace WordAddIn1
                 return null;
             }
 
-            List<Word.Table> allTables = GetAllTablesInOrder(document);
             if (tableOrderIndex >= allTables.Count)
             {
                 error =
@@ -61,27 +67,189 @@ namespace WordAddIn1
             return allTables;
         }
 
+        private static Word.Table FindTableByTitleStamp(List<Word.Table> tables, string tableId)
+        {
+            if (tables == null || string.IsNullOrEmpty(tableId))
+            {
+                return null;
+            }
+
+            for (int i = 0; i < tables.Count; i++)
+            {
+                if (!TableTitleStampHelper.TryReadTitle(tables[i], out string title)
+                    || !TableTitleStampHelper.TryParse(title, out string stampedId, out _))
+                {
+                    continue;
+                }
+
+                if (string.Equals(stampedId, tableId, StringComparison.Ordinal))
+                {
+                    return tables[i];
+                }
+            }
+
+            return null;
+        }
+
         private static void CollectTablesRecursive(Word.Table table, List<Word.Table> allTables)
         {
-            if (table == null)
+            if (table == null || ContainsSameTable(allTables, table))
+            {
+                return;
+            }
+
+            allTables.Add(table);
+
+            foreach (Word.Table nested in ListNestedTables(table))
+            {
+                CollectTablesRecursive(nested, allTables);
+            }
+        }
+
+        private static List<Word.Table> ListNestedTables(Word.Table table)
+        {
+            var nested = new List<Word.Table>();
+            CollectNestedFromRows(table, nested);
+            if (nested.Count == 0)
+            {
+                CollectNestedFromRangeCells(table, nested);
+            }
+
+            if (nested.Count == 0)
+            {
+                CollectNestedFromRangeTables(table, nested);
+            }
+
+            return nested;
+        }
+
+        private static void CollectNestedFromRows(Word.Table table, List<Word.Table> nested)
+        {
+            try
+            {
+                foreach (Word.Row row in table.Rows)
+                {
+                    foreach (Word.Cell cell in row.Cells)
+                    {
+                        AddCellTables(cell, nested);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TableResolve] Rows 收集嵌套失败: {ex.Message}");
+            }
+        }
+
+        private static void CollectNestedFromRangeCells(Word.Table table, List<Word.Table> nested)
+        {
+            try
+            {
+                foreach (Word.Cell cell in table.Range.Cells)
+                {
+                    AddCellTables(cell, nested);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TableResolve] Range.Cells 收集嵌套失败: {ex.Message}");
+            }
+        }
+
+        private static void CollectNestedFromRangeTables(Word.Table table, List<Word.Table> nested)
+        {
+            try
+            {
+                int parentLevel = 1;
+                try
+                {
+                    parentLevel = table.NestingLevel;
+                }
+                catch (Exception)
+                {
+                }
+
+                foreach (Word.Table inner in table.Range.Tables)
+                {
+                    if (ContainsSameTable(nested, inner) || IsSameTable(table, inner))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        if (inner.NestingLevel <= parentLevel)
+                        {
+                            continue;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    nested.Add(inner);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TableResolve] Range.Tables 收集嵌套失败: {ex.Message}");
+            }
+        }
+
+        private static void AddCellTables(Word.Cell cell, List<Word.Table> nested)
+        {
+            if (cell == null || cell.Tables == null)
             {
                 return;
             }
 
             try
             {
-                allTables.Add(table);
-                foreach (Word.Cell cell in table.Range.Cells)
+                foreach (Word.Table inner in cell.Tables)
                 {
-                    foreach (Word.Table nestedTable in cell.Tables)
+                    if (!ContainsSameTable(nested, inner))
                     {
-                        CollectTablesRecursive(nestedTable, allTables);
+                        nested.Add(inner);
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                System.Diagnostics.Debug.WriteLine($"[TableResolve] 递归收集表格失败: {ex.Message}");
+            }
+        }
+
+        private static bool ContainsSameTable(List<Word.Table> tables, Word.Table table)
+        {
+            if (tables == null || table == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < tables.Count; i++)
+            {
+                if (IsSameTable(tables[i], table))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsSameTable(Word.Table a, Word.Table b)
+        {
+            if (a == null || b == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return a.Range.Start == b.Range.Start && a.Range.End == b.Range.End;
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
     }

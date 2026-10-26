@@ -344,7 +344,9 @@ namespace WordDocumentRoundtripTest
             if (string.Equals(caseFilter, "wt-nested-after", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wt-nested-create-id", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wt-nested-after-ins", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(caseFilter, "wt-nested-after-in-cell", StringComparison.OrdinalIgnoreCase))
+                || string.Equals(caseFilter, "wt-nested-after-in-cell", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "wt-nested-del-inner", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "wt-nested-del-keep-outer", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("文字 嵌套表表后插入短套（wt-nested-after）");
                 Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");

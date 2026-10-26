@@ -521,7 +521,7 @@ namespace WordAddIn1
                     Word.Range afterTable = ObjectInsertRangeHelper.FindRangeAfterTable(doc, target.TableId);
                     if (afterTable == null)
                     {
-                        return FailResolve(ObjectInsertRangeHelper.TableIsNested(tableObj)
+                        return FailResolve(ObjectInsertRangeHelper.TableIsNested(tableObj, doc)
                             ? $"locate_failed: 无法在嵌套表 '{target.TableId}' 后插入（需落在父单元格内）"
                             : $"locate_failed: 无法在表格 '{target.TableId}' 后插入");
                     }

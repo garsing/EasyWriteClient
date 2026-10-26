@@ -14,7 +14,7 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static class WtCases
     {
-        public const int Target = 147;
+        public const int Target = 149;
 
         private const string LabelA = "易写表指标";
         private const string LabelB = "易写表WACC";
@@ -84,7 +84,8 @@ namespace WordDocumentRoundtripTest
             "wt-fill-2x3", "wt-opt-2x3", "wt-del-2x3-gone",
             "wt-create-bad-merge", "wt-create-empty-tr", "wt-fill-second-short",
             "wt-create-after-filled",
-            "wt-nested-create-id", "wt-nested-after-ins", "wt-nested-after-in-cell"
+            "wt-nested-create-id", "wt-nested-after-ins", "wt-nested-after-in-cell",
+            "wt-nested-del-inner", "wt-nested-del-keep-outer"
         };
 
         public static void RunEmptyCell(
@@ -2208,7 +2209,11 @@ namespace WordDocumentRoundtripTest
             const string InnerA = "易写内表甲";
             const string InnerB = "易写内表乙";
             const string NestedAfter = "易写嵌套表后句。";
-            var ids = new[] { "wt-nested-create-id", "wt-nested-after-ins", "wt-nested-after-in-cell" };
+            var ids = new[]
+            {
+                "wt-nested-create-id", "wt-nested-after-ins", "wt-nested-after-in-cell",
+                "wt-nested-del-inner", "wt-nested-del-keep-outer"
+            };
             string path, id;
             if (!TryOpen(run, s, out path, out id, ids))
             {
@@ -2218,7 +2223,7 @@ namespace WordDocumentRoundtripTest
             try
             {
                 s.ActivateDoc(path);
-                ToolResult outer = s.CreateTableFromXml(CreateArgs(id, WriteXml(OneCellXml(OuterCell))));
+                ToolResult outer = s.CreateTableFromXml(CreateArgs(id, WriteXml(NestedOuterMergeXml(OuterCell))));
                 string outerId = WdSession.Str(outer, "table_id");
                 if (!outer.Success || string.IsNullOrEmpty(outerId))
                 {
@@ -2251,7 +2256,8 @@ namespace WordDocumentRoundtripTest
                 if (!inner.Success || string.IsNullOrEmpty(returnedId) || returnedId != displayInner)
                 {
                     FailMany(run, inner.Error ?? "内表 table_id 与读文不一致",
-                        "wt-nested-after-ins", "wt-nested-after-in-cell");
+                        "wt-nested-after-ins", "wt-nested-after-in-cell",
+                        "wt-nested-del-inner", "wt-nested-del-keep-outer");
                     return;
                 }
 
@@ -2281,6 +2287,33 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "wt-nested-after-in-cell",
                     ins.Success && inParent,
                     ins.Success ? "表后句不在父格内（内表后、外表结束前）" : (ins.Error ?? ""));
+
+                string innerIdNow = TableIdContaining(ReadBody(s, id), InnerA);
+                if (string.IsNullOrEmpty(innerIdNow))
+                {
+                    FailMany(run, "删前读文没有内表",
+                        "wt-nested-del-inner", "wt-nested-del-keep-outer");
+                    return;
+                }
+
+                ToolResult delInner = s.DeleteTable(new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["table_id"] = innerIdNow
+                });
+                string delBody = ReadBody(s, id);
+                bool innerGone = delBody.IndexOf(InnerA, StringComparison.Ordinal) < 0
+                    && delBody.IndexOf(InnerB, StringComparison.Ordinal) < 0
+                    && delBody.IndexOf("备", StringComparison.Ordinal) < 0;
+                Ok(run, "wt-nested-del-inner",
+                    delInner.Success && innerGone,
+                    delInner.Success ? "内表还在" : (delInner.Error ?? ""));
+                Ok(run, "wt-nested-del-keep-outer",
+                    delInner.Success
+                        && delBody.IndexOf(OuterCell, StringComparison.Ordinal) >= 0
+                        && delBody.IndexOf(NestedAfter, StringComparison.Ordinal) >= 0
+                        && TableIdContaining(delBody, OuterCell) != null,
+                    delInner.Success ? "外表也被删了" : (delInner.Error ?? ""));
             }
             finally
             {
@@ -2579,6 +2612,14 @@ namespace WordDocumentRoundtripTest
             return
                 "<TableConfig><General><TableFontColor>000000</TableFontColor></General><Table><Properties><ColWidths><float>120</float></ColWidths></Properties><Data>"
                 + "<tr><td>" + text + "</td></tr>"
+                + "</Data></Table></TableConfig>";
+        }
+
+        private static string NestedOuterMergeXml(string text)
+        {
+            return
+                "<TableConfig><General><TableFontColor>000000</TableFontColor></General><Table><Properties><ColWidths><float>120</float><float>180</float></ColWidths></Properties><Data>"
+                + "<tr><td colspan=\"2\">" + text + "</td></tr>"
                 + "</Data></Table></TableConfig>";
         }
 

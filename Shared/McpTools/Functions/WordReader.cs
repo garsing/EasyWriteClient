@@ -1677,8 +1677,9 @@ namespace WordAddIn1
                         // 创建表格级别的合并信息跟踪
                         var mergeContext = new TableMergeContext();
 
+                        // 先占 COM 序第 N 号，再进格。嵌套 w:tbl 在格内，后发号会把外表号发给内表。
+                        string tableId = TakeWordSourcedTableId(null, child, w);
                         string tableContent = ProcessTableRecursive(child, w, document, mergeContext, docPath, imageSaveDir, fileHash);
-                        string tableId = TakeWordSourcedTableId(tableContent, child, w);
                         result += $"<table id=\"{tableId}\">";
                         result += tableContent;
                         result += "</table>\n";
