@@ -316,6 +316,31 @@ namespace WordDocumentRoundtripTest
                 return planRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (caseFilter.StartsWith("wt-id-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "wt-id", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 表格编号短套（wt-id）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                int wordBeforeId = OfficeAlive.Count("WINWORD");
+                int wpsBeforeId = OfficeAlive.Count("wps");
+                bool wordWinBeforeId = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforeId = OfficeAlive.HasWindow("wps");
+                var idRun = new TestRun();
+                WtIdCases.Run(
+                    idRun, host, wordBeforeId, wpsBeforeId, wordWinBeforeId, wpsWinBeforeId);
+                Console.WriteLine("正式用例 通过 " + idRun.CasesPassed
+                    + "  失败 " + idRun.CasesFailed
+                    + "  跳过 " + idRun.CasesSkipped);
+                return idRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("wt-ec-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wt-ec", StringComparison.OrdinalIgnoreCase))
             {
