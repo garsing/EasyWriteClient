@@ -345,14 +345,12 @@ namespace WordAddIn1
                                 break;
 
                             case "delete":
-                                object deletion = detail.ContainsKey("deletion") ? detail["deletion"] : null;
-                                Dictionary<string, object> deletionDict = ActionFormatHelper.CoerceDict(deletion);
-                                if (deletionDict == null || deletionDict.Count == 0)
+                                if (!TryPickDeleteLocator(detail, out Dictionary<string, object> deletionDict, out string deleteField, out string deletePickError))
                                 {
-                                    return (false, "delete 缺少 deletion 定位对象", null);
+                                    return (false, deletePickError, null);
                                 }
 
-                                var deletionLoc = ParseLocatorObject(deletionDict, sentenceOnly: true, fieldLabel: "deletion");
+                                var deletionLoc = ParseLocatorObject(deletionDict, sentenceOnly: true, fieldLabel: deleteField);
                                 if (!deletionLoc.Success)
                                 {
                                     return (false, deletionLoc.Error, null);
@@ -465,6 +463,57 @@ namespace WordAddIn1
             public bool Success { get; set; }
             public string Error { get; set; }
             public LocatorSpec Spec { get; set; }
+        }
+
+        /// <summary>
+        /// delete 正式字段是 deletion；也认 original（replace 同构）和 target，避免模型套错键名直接失败。
+        /// </summary>
+        private static bool TryPickDeleteLocator(
+            Dictionary<string, object> detail,
+            out Dictionary<string, object> locator,
+            out string fieldUsed,
+            out string error)
+        {
+            locator = null;
+            fieldUsed = null;
+            error = null;
+            string[] keys = { "deletion", "original", "target" };
+            for (int i = 0; i < keys.Length; i++)
+            {
+                string key = keys[i];
+                if (detail == null || !detail.ContainsKey(key) || detail[key] == null)
+                {
+                    continue;
+                }
+
+                Dictionary<string, object> dict = ActionFormatHelper.CoerceDict(detail[key]);
+                if (dict != null && dict.Count > 0)
+                {
+                    locator = dict;
+                    fieldUsed = key;
+                    return true;
+                }
+            }
+
+            error = BuildDeleteLocatorMissingError(detail);
+            return false;
+        }
+
+        private static string BuildDeleteLocatorMissingError(Dictionary<string, object> detail)
+        {
+            var names = new List<string>();
+            if (detail != null)
+            {
+                foreach (string key in detail.Keys)
+                {
+                    names.Add(key);
+                }
+            }
+
+            string have = names.Count == 0 ? "（无）" : string.Join(", ", names.ToArray());
+            return "delete 需要 detail.deletion（与 replace 的 original 同构：codes 或 paragraph_codes）。"
+                + "当前没有可用的定位对象。已有字段：" + have
+                + "。若按 replace 写了空的 original，请改成 deletion 并带上 codes。";
         }
 
         /// <summary>
