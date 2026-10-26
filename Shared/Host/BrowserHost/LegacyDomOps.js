@@ -375,60 +375,286 @@
     var lines = [];
     var truncated = false;
     var truncatedReason = null;
+    var chromeLeft = 0;
+    var pageHasRuns = false;
+    var charStop = false;
+    var refTrunc = false;
+    var focusRef = null;
+    var windowApplied = false;
 
-    function nextRef() {
+    function nextRef(chrome) {
+      if (chrome && chromeLeft > 0) chromeLeft -= 1;
+      var limit = (!chrome && pageHasRuns) ? MAX_NODES - Math.max(0, chromeLeft) : MAX_NODES;
+      if (counter >= limit) return null;
       counter += 1;
       return "e" + counter;
     }
 
-    function walk(el, depth) {
-      if (truncated || counter >= MAX_NODES) {
-        truncated = true;
-        truncatedReason = "node_limit";
-        return;
+    function isNoiseRole(role) {
+      var r = String(role || "").toLowerCase();
+      return r === "div" || r === "generic";
+    }
+
+    function isChromeRole(role) {
+      var r = String(role || "").toLowerCase();
+      return r === "button" || r === "link" || r === "textbox" || r === "checkbox"
+        || r === "radio" || r === "combobox" || r === "searchbox";
+    }
+
+    function buildNode(el) {
+      if (shouldSkip(el)) return null;
+      var children = [];
+      var raw = el.children ? Array.prototype.slice.call(el.children) : [];
+      for (var i = 0; i < raw.length; i++) {
+        var child = buildNode(raw[i]);
+        if (child) children.push(child);
       }
-      if (shouldSkip(el)) return;
-      var print = interesting(el) || depth === 0;
-      if (print) {
-        var role = roleOf(el);
-        var name = nameOf(el);
-        var tag = (el.tagName || "").toLowerCase();
-        var indent = "";
-        for (var d = 0; d < Math.min(depth, 12); d++) indent += "  ";
-        var line = indent + "- " + role;
-        if (name) line += ' "' + name.replace(/"/g, "'") + '"';
-        var ref = nextRef();
-        line += " [ref=" + ref + "]";
-        var val = valueOf(el);
-        if (val != null && val !== "") line += ' value="' + String(val).replace(/"/g, "'") + '"';
-        var opts = optionsOf(el);
-        if (opts) line += " options=" + opts;
-        if (tag === "input" && (el.getAttribute("type") || "") === "password") line += " (password)";
-        nodes[ref] = { role: role, name: name, cssPath: cssPath(el), probe: probeOf(el), tag: tag };
-        lines.push(line);
-        if (lines.join("\n").length > MAX_CHARS) {
-          truncated = true;
-          truncatedReason = "char_limit";
-          return;
+      return { el: el, role: roleOf(el), children: children, print: interesting(el) };
+    }
+
+    function sigOf(node, stack) {
+      if (node._sig) return node._sig;
+      if (stack.indexOf(node) >= 0) {
+        node._sig = { signature: (node.role || "generic") + "()", parts: [], desc: 1 };
+        return node._sig;
+      }
+      stack.push(node);
+      var desc = 1;
+      var rawParts = [];
+      for (var i = 0; i < node.children.length; i++) {
+        var child = node.children[i];
+        var cs = sigOf(child, stack);
+        desc += cs.desc;
+        if (isNoiseRole(child.role)) {
+          for (var p = 0; p < cs.parts.length; p++) rawParts.push(cs.parts[p]);
+        } else rawParts.push(cs.signature);
+      }
+      stack.pop();
+      var parts = collapseParts(rawParts);
+      node._sig = { signature: (node.role || "generic") + "(" + parts.join(",") + ")", parts: parts, desc: desc };
+      return node._sig;
+    }
+
+    function stripTimes(value) {
+      if (value && value.charAt(value.length - 1) === "×") return value.slice(0, -1);
+      return value || "";
+    }
+
+    function collapseParts(parts) {
+      var rle = [];
+      for (var i = 0; i < parts.length; i++) {
+        var part = parts[i];
+        if (!rle.length) { rle.push(part); continue; }
+        var last = rle[rle.length - 1];
+        if (stripTimes(last) === stripTimes(part)) rle[rle.length - 1] = stripTimes(part) + "×";
+        else rle.push(part);
+      }
+      return collapsePeriodic(rle);
+    }
+
+    function collapsePeriodic(seq) {
+      var result = [];
+      var i = 0;
+      while (i < seq.length) {
+        var bestP = 0, bestK = 0;
+        var maxP = Math.floor((seq.length - i) / 2);
+        for (var p = 1; p <= maxP; p++) {
+          var k = 1;
+          while (i + (k + 1) * p <= seq.length && blockEquals(seq, i, i + k * p, p)) k += 1;
+          if (k >= 2 && k * p > bestK * bestP) { bestP = p; bestK = k; }
         }
-        if (tag === "iframe" || tag === "frame") return;
+        if (bestK >= 2) {
+          var block = [];
+          for (var j = 0; j < bestP; j++) block.push(seq[i + j]);
+          result.push("(" + block.join(",") + ")×");
+          i += bestK * bestP;
+        } else { result.push(seq[i]); i += 1; }
       }
-      var children = el.children ? Array.prototype.slice.call(el.children) : [];
-      var childDepth = print ? depth + 1 : depth;
-      for (var i = 0; i < children.length; i++) {
-        walk(children[i], childDepth);
-        if (truncated) return;
+      return result;
+    }
+
+    function blockEquals(seq, a, b, len) {
+      for (var j = 0; j < len; j++) if (seq[a + j] !== seq[b + j]) return false;
+      return true;
+    }
+
+    function markUnder(node) {
+      node._under = true;
+      for (var i = 0; i < node.children.length; i++) markUnder(node.children[i]);
+    }
+
+    function analyze(node) {
+      sigOf(node, []);
+      var runs = [];
+      var ordinal = 0;
+      var i = 0;
+      var kids = node.children;
+      while (i < kids.length) {
+        var sig = kids[i]._sig;
+        if (!sig || sig.desc < 12) { i += 1; continue; }
+        var j = i + 1;
+        while (j < kids.length && kids[j]._sig && kids[j]._sig.desc >= 12 && kids[j]._sig.signature === sig.signature) j += 1;
+        if (j - i >= 3) {
+          var members = kids.slice(i, j);
+          for (var m = 0; m < members.length; m++) markUnder(members[m]);
+          runs.push({ start: i, count: j - i, ordinal: ordinal, signature: sig.signature, members: members });
+          ordinal += 1;
+          i = j;
+        } else i += 1;
+      }
+      node._runs = runs;
+      for (var c = 0; c < kids.length; c++) analyze(kids[c]);
+    }
+
+    function countChrome(node) {
+      var n = (isChromeRole(node.role) && node.print && !node._under) ? 1 : 0;
+      n += (node._runs || []).length;
+      for (var i = 0; i < node.children.length; i++) n += countChrome(node.children[i]);
+      return n;
+    }
+
+    function hasRuns(node) {
+      if (node._runs && node._runs.length) return true;
+      for (var i = 0; i < node.children.length; i++) if (hasRuns(node.children[i])) return true;
+      return false;
+    }
+
+    function quoteName(name) {
+      return name ? ' "' + String(name).replace(/"/g, "'") + '"' : "";
+    }
+
+    function appendLine(depth, role, name, ref, el, extra) {
+      var indent = "";
+      for (var d = 0; d < Math.min(depth, 12); d++) indent += "  ";
+      var line = indent + "- " + role + quoteName(name);
+      if (ref) line += " [ref=" + ref + "]";
+      if (extra) line += extra;
+      lines.push(line);
+      if (lines.join("\n").length > MAX_CHARS) charStop = true;
+      if (ref && el) {
+        nodes[ref] = { role: role, name: name, cssPath: cssPath(el), probe: probeOf(el), tag: (el.tagName || "").toLowerCase() };
       }
     }
 
-    var root = document.body || document.documentElement;
-    walk(root, 0);
+    function emitRepeat(parent, run, depth) {
+      var start = 1;
+      var end = Math.min(300, run.count);
+      var ranged = msg.repeat_parent_css && msg.range_start != null && msg.range_end != null;
+      var matched = ranged && cssPath(parent.el) === msg.repeat_parent_css
+        && Number(msg.repeat_ordinal) === run.ordinal && msg.repeat_signature === run.signature;
+      if (matched) {
+        windowApplied = true;
+        if (Number(msg.range_start) > run.count) { windowApplied = false; return; }
+        start = Number(msg.range_start);
+        end = Math.min(Number(msg.range_end), run.count);
+        if (end - start + 1 > 300) end = start + 300 - 1;
+      }
+      var label = "共 " + run.count + " 项，当前 " + start + "-" + end;
+      var headerRef = nextRef(true);
+      if (headerRef) {
+        nodes[headerRef] = {
+          role: "repeat", name: label, isRepeat: true,
+          repeatParentCss: cssPath(parent.el), repeatSignature: run.signature,
+          repeatOrdinal: run.ordinal, repeatCount: run.count
+        };
+        if (matched) focusRef = headerRef;
+      }
+      var indent = "";
+      for (var d = 0; d < Math.min(depth, 12); d++) indent += "  ";
+      lines.push(indent + "- repeat" + quoteName(label) + (headerRef ? " [ref=" + headerRef + "]" : ""));
+      var prevChar = charStop;
+      emit(run.members[start - 1], depth + 1);
+      var childChar = charStop;
+      charStop = prevChar;
+      var printedEnd = start;
+      if (!childChar) {
+        for (var n = start + 1; n <= end; n++) {
+          if (charStop || lines.join("\n").length > MAX_CHARS) { charStop = true; break; }
+          var item = run.members[n - 1];
+          var itemName = nameOf(item.el) || "";
+          if (itemName.length > 40) itemName = itemName.slice(0, 40) + "…";
+          var oneRef = nextRef(false);
+          if (!oneRef) refTrunc = true;
+          appendLine(depth + 1, item.role || "generic", itemName, oneRef, item.el, "");
+          printedEnd = n;
+          if (charStop) break;
+        }
+      }
+      if (printedEnd < end) {
+        var actual = "共 " + run.count + " 项，当前 " + start + "-" + printedEnd;
+        for (var li = 0; li < lines.length; li++) lines[li] = lines[li].split(label).join(actual);
+        if (headerRef && nodes[headerRef]) nodes[headerRef].name = actual;
+      }
+      if (childChar) charStop = true;
+    }
+
+    function emit(node, depth) {
+      if (!node) return;
+      var chrome = isChromeRole(node.role) && node.print && !node._under;
+      if (charStop && !chrome) { emitChildren(node, depth); return; }
+      var print = node.print || depth === 0;
+      if (print) {
+        var tag = (node.el.tagName || "").toLowerCase();
+        var ref = nextRef(chrome);
+        if (!ref) refTrunc = true;
+        var extra = "";
+        var val = valueOf(node.el);
+        if (val != null && val !== "") extra += ' value="' + String(val).replace(/"/g, "'") + '"';
+        var opts = optionsOf(node.el);
+        if (opts) extra += " options=" + opts;
+        if (tag === "input" && (node.el.getAttribute("type") || "") === "password") extra += " (password)";
+        appendLine(depth, node.role, nameOf(node.el), ref, node.el, extra);
+        if (tag === "iframe" || tag === "frame") return;
+      }
+      emitChildren(node, print ? depth + 1 : depth);
+    }
+
+    function emitChildren(node, depth) {
+      var runs = node._runs || [];
+      var kids = node.children;
+      for (var i = 0; i < kids.length; i++) {
+        var run = null;
+        for (var r = 0; r < runs.length; r++) if (runs[r].start === i) run = runs[r];
+        if (run) {
+          var prev = charStop;
+          emitRepeat(node, run, depth);
+          charStop = prev;
+          i += run.count - 1;
+          continue;
+        }
+        emit(kids[i], depth);
+      }
+    }
+
+    var rootEl = document.body || document.documentElement;
+    if (String(msg.mode || "") === "detail" && msg.css_path) {
+      rootEl = document.querySelector(msg.css_path);
+      if (!rootEl) return { ok: false, error: "ref 无效或已过期，请重新 F_browser_snapshot" };
+    }
+    var built = buildNode(rootEl);
+    if (built) {
+      analyze(built);
+      pageHasRuns = hasRuns(built);
+      chromeLeft = countChrome(built);
+      emit(built, 0);
+    }
+    if (msg.range_start != null && msg.range_end != null && !windowApplied) {
+      return { ok: false, error: "ref 无效或已过期，请重新 F_browser_snapshot" };
+    }
+    if (charStop) {
+      truncated = true;
+      truncatedReason = truncatedReason || "char_limit";
+    } else if (refTrunc) {
+      truncated = true;
+      truncatedReason = truncatedReason || "node_limit";
+    }
     return {
       ok: true,
       snapshot: lines.join("\n"),
       nodes: nodes,
       truncated: truncated,
       truncated_reason: truncatedReason,
+      focus_ref: focusRef,
       url: document.location.href,
       title: document.title
     };

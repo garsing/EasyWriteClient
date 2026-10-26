@@ -686,7 +686,7 @@ namespace WordAddIn1.BrowserHost
         {
             if (layer != null && layer.AttachFrameId.HasValue)
             {
-                return SnapshotAsync(channel, null, null, layer.AttachFrameId);
+                return SnapshotAsync(channel, null, null, layer.AttachFrameId, null, null);
             }
 
             return SnapshotAsync(channel, null, null);
@@ -695,16 +695,20 @@ namespace WordAddIn1.BrowserHost
         public static Task<BrowserSnapshotResult> SnapshotAsync(
             BrowserChannel channel,
             string refId,
-            string domSupplement)
+            string domSupplement,
+            int? rangeStart = null,
+            int? rangeEnd = null)
         {
-            return SnapshotAsync(channel, refId, domSupplement, null);
+            return SnapshotAsync(channel, refId, domSupplement, null, rangeStart, rangeEnd);
         }
 
         private static async Task<BrowserSnapshotResult> SnapshotAsync(
             BrowserChannel channel,
             string refId,
             string domSupplement,
-            int? forceFrameId)
+            int? forceFrameId,
+            int? rangeStart,
+            int? rangeEnd)
         {
             EnsureStarted();
             if (channel == null || !IsAttachTabLive(channel.TabUuid))
@@ -717,7 +721,8 @@ namespace WordAddIn1.BrowserHost
                 int? targetFrame = null;
                 bool expandingFrame = false;
                 BrowserRefEntry prior = null;
-                string mode = string.IsNullOrWhiteSpace(refId) ? "overview" : "detail";
+                bool hasRef = !string.IsNullOrWhiteSpace(refId);
+                string mode = hasRef ? "detail" : "overview";
                 if (forceFrameId.HasValue)
                 {
                     // 回拍同一文档层：只定向到该 frame。mode=frame 表示展开子 iframe，
@@ -749,14 +754,36 @@ namespace WordAddIn1.BrowserHost
                     }
                 }
 
+                string rangeError = BrowserAxTreeBuilder.ValidateRepeatRange(
+                    prior, rangeStart, rangeEnd, hasRef);
+                if (rangeError != null)
+                {
+                    return BrowserSnapshotResult.Fail(rangeError);
+                }
+
+                bool repeatWindow = prior != null && prior.IsRepeat;
+                if (repeatWindow)
+                {
+                    mode = "overview";
+                }
+
                 var req = new JObject
                 {
                     ["tab_uuid"] = channel.TabUuid,
                     ["mode"] = mode,
-                    ["ref"] = expandingFrame ? null : (string.IsNullOrWhiteSpace(refId) ? null : refId),
+                    ["ref"] = expandingFrame ? null : (hasRef ? refId.Trim() : null),
+                    ["css_path"] = (!repeatWindow && prior != null) ? prior.AttachCssPath : null,
                     ["frame_id"] = targetFrame,
                     ["dom_supplement"] = expandingFrame ? null : domSupplement
                 };
+                if (repeatWindow)
+                {
+                    req["repeat_parent_css"] = prior.RepeatParentCss;
+                    req["repeat_signature"] = prior.RepeatSignature;
+                    req["repeat_ordinal"] = prior.RepeatOrdinal;
+                    req["range_start"] = rangeStart;
+                    req["range_end"] = rangeEnd;
+                }
                 JObject result = await RpcAsync(channel.TabUuid, "rpc.snapshot", req).ConfigureAwait(true);
                 string snapshot = (string)result["snapshot"] ?? "";
                 string pageUrl = (string)result["url"] ?? channel.Url;
@@ -803,7 +830,12 @@ namespace WordAddIn1.BrowserHost
                         {
                             Role = (string)n["role"],
                             Name = (string)n["name"],
-                            AttachCssPath = (string)n["cssPath"]
+                            AttachCssPath = (string)n["cssPath"],
+                            IsRepeat = n["isRepeat"]?.Value<bool>() ?? false,
+                            RepeatParentCss = (string)n["repeatParentCss"],
+                            RepeatSignature = (string)n["repeatSignature"],
+                            RepeatOrdinal = n["repeatOrdinal"]?.Value<int>() ?? 0,
+                            RepeatCount = n["repeatCount"]?.Value<int>() ?? 0
                         };
                         int? childFrame = ReadOptionalInt(n["frameId"]);
                         int? docFrame = ReadOptionalInt(n["documentFrameId"]) ?? targetFrame;
@@ -832,12 +864,35 @@ namespace WordAddIn1.BrowserHost
                 BrowserRefStore.Replace(channel.ChannelId, map);
                 TryLogAttachSnapshotDiag(pageUrl, map);
 
+                string focusRef = (string)result["focus_ref"];
+                if (string.IsNullOrEmpty(focusRef) && repeatWindow && nodes != null && rangeStart.HasValue)
+                {
+                    string marker = "当前 " + rangeStart.Value.ToString(CultureInfo.InvariantCulture) + "-";
+                    foreach (KeyValuePair<string, JToken> kv in nodes)
+                    {
+                        JObject n = kv.Value as JObject;
+                        if (n == null || n["isRepeat"]?.Value<bool>() != true)
+                        {
+                            continue;
+                        }
+
+                        int ordinal = n["repeatOrdinal"]?.Value<int>() ?? 0;
+                        string name = (string)n["name"] ?? "";
+                        if (prior != null
+                            && ordinal == prior.RepeatOrdinal
+                            && name.IndexOf(marker, StringComparison.Ordinal) >= 0)
+                        {
+                            focusRef = kv.Key;
+                            break;
+                        }
+                    }
+                }
                 return BrowserSnapshotResult.Ok(
                     channel,
                     pageUrl,
                     title,
-                    string.IsNullOrWhiteSpace(refId) ? "overview" : "detail",
-                    string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
+                    repeatWindow || string.IsNullOrWhiteSpace(refId) ? "overview" : "detail",
+                    repeatWindow ? focusRef : (string.IsNullOrWhiteSpace(refId) ? null : refId.Trim()),
                     snapshot,
                     truncated,
                     truncatedReason,
@@ -888,6 +943,11 @@ namespace WordAddIn1.BrowserHost
                 if (!BrowserRefStore.TryGet(channel.ChannelId, refId, out entry) || entry == null)
                 {
                     return BrowserInteractResult.Fail("ref 无效或已过期，请重新 F_browser_snapshot");
+                }
+
+                if (entry.IsRepeat)
+                {
+                    return BrowserInteractResult.Fail("该 ref 缺少可操作节点定位，请重新 F_browser_snapshot");
                 }
 
                 probe = entry.AttachProbe;

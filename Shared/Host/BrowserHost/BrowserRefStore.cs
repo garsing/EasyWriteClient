@@ -98,6 +98,9 @@ namespace WordAddIn1.BrowserHost
 
         public int? RepeatParentBackendId { get; set; }
 
+        /// <summary>DOM 轨重复段的父元素 CSS 路径。</summary>
+        public string RepeatParentCss { get; set; }
+
         public string RepeatSignature { get; set; }
 
         public int RepeatOrdinal { get; set; }

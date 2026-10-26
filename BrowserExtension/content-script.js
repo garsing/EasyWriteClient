@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 40;
+  const CONTENT_VER = 41;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -370,8 +370,17 @@
     const lines = [];
     let truncated = false;
     let truncatedReason = null;
+    let chromeLeft = 0;
+    let pageHasRuns = false;
+    let charStop = false;
+    let refTrunc = false;
+    let focusRef = null;
+    let windowApplied = false;
 
-    function nextRef() {
+    function nextRef(chrome) {
+      if (chrome && chromeLeft > 0) chromeLeft -= 1;
+      const limit = (!chrome && pageHasRuns) ? MAX_NODES - Math.max(0, chromeLeft) : MAX_NODES;
+      if (counter >= limit) return null;
       counter += 1;
       return "e" + counter;
     }
@@ -829,80 +838,333 @@
       return false;
     }
 
-    function walk(el, depth) {
-      if (truncated || counter >= MAX_NODES) {
-        truncated = true;
-        truncatedReason = "node_limit";
+    function isNoiseRole(role) {
+      const r = String(role || "").toLowerCase();
+      return r === "div" || r === "generic";
+    }
+
+    function isChromeRole(role) {
+      const r = String(role || "").toLowerCase();
+      return r === "button" || r === "link" || r === "textbox" || r === "checkbox"
+        || r === "radio" || r === "combobox" || r === "searchbox";
+    }
+
+    function buildNode(el) {
+      if (shouldSkip(el)) return null;
+      const children = [];
+      const raw = el.children ? Array.from(el.children) : [];
+      for (let i = 0; i < raw.length; i++) {
+        const child = buildNode(raw[i]);
+        if (child) children.push(child);
+      }
+      return {
+        el,
+        role: roleOf(el),
+        children,
+        print: interesting(el)
+      };
+    }
+
+    function sigOf(node, stack) {
+      if (node._sig) return node._sig;
+      if (stack.indexOf(node) >= 0) {
+        node._sig = { signature: (node.role || "generic") + "()", parts: [], desc: 1 };
+        return node._sig;
+      }
+      stack.push(node);
+      let desc = 1;
+      const rawParts = [];
+      for (let i = 0; i < node.children.length; i++) {
+        const child = node.children[i];
+        const cs = sigOf(child, stack);
+        desc += cs.desc;
+        if (isNoiseRole(child.role)) {
+          for (let p = 0; p < cs.parts.length; p++) rawParts.push(cs.parts[p]);
+        } else {
+          rawParts.push(cs.signature);
+        }
+      }
+      stack.pop();
+      const parts = collapseParts(rawParts);
+      node._sig = {
+        signature: (node.role || "generic") + "(" + parts.join(",") + ")",
+        parts,
+        desc
+      };
+      return node._sig;
+    }
+
+    function stripTimes(value) {
+      if (value && value.charAt(value.length - 1) === "×") return value.slice(0, -1);
+      return value || "";
+    }
+
+    function collapseParts(parts) {
+      const rle = [];
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (!rle.length) {
+          rle.push(part);
+          continue;
+        }
+        const last = rle[rle.length - 1];
+        if (stripTimes(last) === stripTimes(part)) rle[rle.length - 1] = stripTimes(part) + "×";
+        else rle.push(part);
+      }
+      return collapsePeriodic(rle);
+    }
+
+    function collapsePeriodic(seq) {
+      const result = [];
+      let i = 0;
+      while (i < seq.length) {
+        let bestP = 0;
+        let bestK = 0;
+        const maxP = Math.floor((seq.length - i) / 2);
+        for (let p = 1; p <= maxP; p++) {
+          let k = 1;
+          while (i + (k + 1) * p <= seq.length && blockEquals(seq, i, i + k * p, p)) k += 1;
+          if (k >= 2 && k * p > bestK * bestP) {
+            bestP = p;
+            bestK = k;
+          }
+        }
+        if (bestK >= 2) {
+          const block = [];
+          for (let j = 0; j < bestP; j++) block.push(seq[i + j]);
+          result.push("(" + block.join(",") + ")×");
+          i += bestK * bestP;
+        } else {
+          result.push(seq[i]);
+          i += 1;
+        }
+      }
+      return result;
+    }
+
+    function blockEquals(seq, a, b, len) {
+      for (let j = 0; j < len; j++) {
+        if (seq[a + j] !== seq[b + j]) return false;
+      }
+      return true;
+    }
+
+    function markUnder(node) {
+      node._under = true;
+      for (let i = 0; i < node.children.length; i++) markUnder(node.children[i]);
+    }
+
+    function analyze(node) {
+      sigOf(node, []);
+      const runs = [];
+      let ordinal = 0;
+      let i = 0;
+      const kids = node.children;
+      while (i < kids.length) {
+        const sig = kids[i]._sig;
+        if (!sig || sig.desc < 12) {
+          i += 1;
+          continue;
+        }
+        let j = i + 1;
+        while (j < kids.length && kids[j]._sig && kids[j]._sig.desc >= 12
+          && kids[j]._sig.signature === sig.signature) {
+          j += 1;
+        }
+        const count = j - i;
+        if (count >= 3) {
+          const members = kids.slice(i, j);
+          for (let m = 0; m < members.length; m++) markUnder(members[m]);
+          runs.push({
+            start: i,
+            count,
+            ordinal,
+            signature: sig.signature,
+            members
+          });
+          ordinal += 1;
+          i = j;
+        } else {
+          i += 1;
+        }
+      }
+      node._runs = runs;
+      for (let c = 0; c < kids.length; c++) analyze(kids[c]);
+    }
+
+    function countChrome(node, runs) {
+      let n = 0;
+      if (isChromeRole(node.role) && node.print && !node._under) n += 1;
+      const list = node._runs || [];
+      n += list.length;
+      for (let i = 0; i < node.children.length; i++) n += countChrome(node.children[i]);
+      return n;
+    }
+
+    function quoteName(name) {
+      return name ? ' "' + String(name).replace(/"/g, "'") + '"' : "";
+    }
+
+    function appendLine(depth, role, name, ref, el, extra) {
+      const indent = "  ".repeat(Math.min(depth, 12));
+      let line = indent + "- " + role + quoteName(name);
+      if (ref) line += " [ref=" + ref + "]";
+      if (extra) line += extra;
+      lines.push(line);
+      if (lines.join("\n").length > MAX_CHARS) charStop = true;
+      if (ref && el) {
+        const tag = (el.tagName || "").toLowerCase();
+        const rec = {
+          role,
+          name,
+          cssPath: cssPath(el),
+          probe: probeOf(el),
+          tag
+        };
+        if (tag === "iframe" || tag === "frame") {
+          rec.src = el.getAttribute("src") || el.src || "";
+          rec.iframeIndex = iframeIndexOf(el);
+        }
+        nodes[ref] = rec;
+      }
+    }
+
+    function emitRepeat(parent, run, depth) {
+      let start = 1;
+      let end = Math.min(300, run.count);
+      const ranged = msg.repeat_parent_css && msg.range_start != null && msg.range_end != null;
+      const matched = ranged
+        && cssPath(parent.el) === msg.repeat_parent_css
+        && Number(msg.repeat_ordinal) === run.ordinal
+        && msg.repeat_signature === run.signature;
+      if (matched) {
+        windowApplied = true;
+        if (Number(msg.range_start) > run.count) {
+          windowApplied = false;
+          return;
+        }
+        start = Number(msg.range_start);
+        end = Math.min(Number(msg.range_end), run.count);
+        if (end - start + 1 > 300) end = start + 300 - 1;
+      }
+      let label = "共 " + run.count + " 项，当前 " + start + "-" + end;
+      const headerRef = nextRef(true);
+      if (headerRef) {
+        nodes[headerRef] = {
+          role: "repeat",
+          name: label,
+          isRepeat: true,
+          repeatParentCss: cssPath(parent.el),
+          repeatSignature: run.signature,
+          repeatOrdinal: run.ordinal,
+          repeatCount: run.count
+        };
+        if (matched) focusRef = headerRef;
+      }
+      const indent = "  ".repeat(Math.min(depth, 12));
+      lines.push(indent + "- repeat" + quoteName(label) + (headerRef ? " [ref=" + headerRef + "]" : ""));
+      const prevChar = charStop;
+      emit(run.members[start - 1], depth + 1);
+      const childChar = charStop;
+      charStop = prevChar;
+      let printedEnd = start;
+      if (!childChar) {
+        for (let n = start + 1; n <= end; n++) {
+          if (charStop || lines.join("\n").length > MAX_CHARS) {
+            charStop = true;
+            break;
+          }
+          const item = run.members[n - 1];
+          let itemName = nameOf(item.el) || "";
+          if (itemName.length > 40) itemName = itemName.slice(0, 40) + "…";
+          const oneRef = nextRef(false);
+          if (!oneRef) refTrunc = true;
+          appendLine(depth + 1, item.role || "generic", itemName, oneRef, item.el, "");
+          printedEnd = n;
+          if (charStop) break;
+        }
+      }
+      if (printedEnd < end) {
+        const actual = "共 " + run.count + " 项，当前 " + start + "-" + printedEnd;
+        for (let li = 0; li < lines.length; li++) lines[li] = lines[li].split(label).join(actual);
+        if (headerRef && nodes[headerRef]) nodes[headerRef].name = actual;
+      }
+      if (childChar) charStop = true;
+    }
+
+    function emit(node, depth) {
+      if (!node) return;
+      const chrome = isChromeRole(node.role) && node.print && !node._under;
+      if (charStop && !chrome) {
+        emitChildren(node, depth);
         return;
       }
-      if (shouldSkip(el)) return;
-
-      const groupOnly = isOutermostCardGroup(el);
-      const print = interesting(el) || depth === 0;
+      const groupOnly = isOutermostCardGroup(node.el);
+      const print = node.print || depth === 0;
       if (print) {
-        const role = roleOf(el);
-        let name = nameOf(el);
-        const tag = (el.tagName || "").toLowerCase();
-        if (!name && tag === "a" && el.querySelector && el.querySelector("img")) {
-          const g = closestCardGroup(el);
+        let name = nameOf(node.el);
+        let extra = "";
+        const tag = (node.el.tagName || "").toLowerCase();
+        if (!name && tag === "a" && node.el.querySelector && node.el.querySelector("img")) {
+          const g = closestCardGroup(node.el);
           if (g) name = nameOf(g);
         }
-        if (!name && isVisibleImage(el)) {
-          name = (el.getAttribute("alt") || "").trim();
+        if (!name && isVisibleImage(node.el)) {
+          name = (node.el.getAttribute("alt") || "").trim();
           if (!name) {
-            const g = closestCardGroup(el);
+            const g = closestCardGroup(node.el);
             if (g) name = nameOf(g);
           }
         }
-        const indent = "  ".repeat(Math.min(depth, 12));
-        let line = indent + "- " + role;
-        if (name) line += ' "' + name.replace(/"/g, "'") + '"';
+        let ref = null;
         if (!groupOnly) {
-          const ref = nextRef();
-          line += " [ref=" + ref + "]";
-          const val = valueOf(el);
-          if (val != null) line += ' value="' + String(val).replace(/"/g, "'") + '"';
-          const opts = optionsOf(el);
-          if (opts) line += " options=" + opts;
-          if (tag === "input" && (el.getAttribute("type") || "") === "password") {
-            line += " (password)";
+          ref = nextRef(chrome);
+          if (!ref) refTrunc = true;
+          const val = valueOf(node.el);
+          if (val != null) extra += ' value="' + String(val).replace(/"/g, "'") + '"';
+          const opts = optionsOf(node.el);
+          if (opts) extra += " options=" + opts;
+          if (tag === "input" && (node.el.getAttribute("type") || "") === "password") extra += " (password)";
+          if ((isHoverRevealControl(node.el) || hasDetailLabel(node.el) || isImgtextBtn(node.el))
+            && (isHoverHiddenStyle(node.el) || (window.getComputedStyle(node.el).display === "none"))) {
+            extra += " (隐藏)";
           }
-          if ((isHoverRevealControl(el) || hasDetailLabel(el) || isImgtextBtn(el))
-            && (isHoverHiddenStyle(el) || (window.getComputedStyle(el).display === "none"))) {
-            line += " (隐藏)";
-          }
-          const rec = {
-            role,
-            name,
-            cssPath: cssPath(el),
-            probe: probeOf(el),
-            tag
-          };
-          if (tag === "iframe" || tag === "frame") {
-            rec.src = el.getAttribute("src") || el.src || "";
-            rec.iframeIndex = iframeIndexOf(el);
-          }
-          nodes[ref] = rec;
         }
-        lines.push(line);
-
-        if (lines.join("\n").length > MAX_CHARS) {
-          truncated = true;
-          truncatedReason = "char_limit";
+        appendLine(depth, node.role, name, ref, groupOnly ? null : node.el, extra);
+        if (charStop) {
+          emitChildren(node, depth + 1);
           return;
         }
+        if (tag === "iframe" || tag === "frame") return;
+      }
+      emitChildren(node, print ? depth + 1 : depth);
+    }
 
-        if (tag === "iframe" || tag === "frame") {
-          return;
+    function emitChildren(node, depth) {
+      const runs = node._runs || [];
+      const kids = node.children;
+      for (let i = 0; i < kids.length; i++) {
+        let run = null;
+        for (let r = 0; r < runs.length; r++) {
+          if (runs[r].start === i) run = runs[r];
         }
+        if (run) {
+          const prev = charStop;
+          emitRepeat(node, run, depth);
+          charStop = prev;
+          i += run.count - 1;
+          continue;
+        }
+        emit(kids[i], depth);
       }
+    }
 
-      const children = el.children ? Array.from(el.children) : [];
-      const childDepth = print ? depth + 1 : depth;
-      for (let i = 0; i < children.length; i++) {
-        walk(children[i], childDepth);
-        if (truncated) return;
+    function hasRuns(node) {
+      if (node._runs && node._runs.length) return true;
+      for (let i = 0; i < node.children.length; i++) {
+        if (hasRuns(node.children[i])) return true;
       }
+      return false;
     }
 
     function iframeIndexOf(el) {
@@ -923,7 +1185,12 @@
         }
         const path = cssPath(el);
         if (seen.has(path)) return;
-        const ref = nextRef();
+        const ref = nextRef(false);
+        if (!ref) {
+          truncated = true;
+          truncatedReason = truncatedReason || "node_limit";
+          return;
+        }
         const role = roleOf(el);
         const name = nameOf(el);
         lines.push("- " + role + (name ? ' "' + name.replace(/"/g, "'") + '"' : "") + " [ref=" + ref + "]");
@@ -940,8 +1207,30 @@
       });
     }
 
-    const root = document.body || document.documentElement;
-    walk(root, 0);
+    let rootEl = document.body || document.documentElement;
+    if (String(msg.mode || "") === "detail" && msg.css_path) {
+      rootEl = document.querySelector(msg.css_path);
+      if (!rootEl) {
+        return { ok: false, error: "ref 无效或已过期，请重新 F_browser_snapshot" };
+      }
+    }
+    const built = buildNode(rootEl);
+    if (built) {
+      analyze(built);
+      pageHasRuns = hasRuns(built);
+      chromeLeft = countChrome(built);
+      emit(built, 0);
+    }
+    if (msg.range_start != null && msg.range_end != null && !windowApplied) {
+      return { ok: false, error: "ref 无效或已过期，请重新 F_browser_snapshot" };
+    }
+    if (charStop) {
+      truncated = true;
+      truncatedReason = truncatedReason || "char_limit";
+    } else if (refTrunc) {
+      truncated = true;
+      truncatedReason = truncatedReason || "node_limit";
+    }
     collectMissedIframes();
 
     // DOM supplement
@@ -958,7 +1247,8 @@
         else if (k === "contenteditable") list = Array.from(document.querySelectorAll("[contenteditable='true'], [contenteditable='']"));
         list.forEach((el) => {
           if (shouldSkip(el)) return;
-          const ref = nextRef();
+          const ref = nextRef(false);
+          if (!ref) return;
           const role = roleOf(el);
           const name = nameOf(el);
           const ph = el.placeholder ? " placeholder=" + el.placeholder : "";
@@ -979,7 +1269,8 @@
       nodes,
       truncated,
       truncated_reason: truncatedReason,
-      dom_supplement: domSupplement
+      dom_supplement: domSupplement,
+      focus_ref: focusRef
     };
   }
 

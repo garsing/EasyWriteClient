@@ -13,7 +13,9 @@ namespace WordAddIn1.BrowserHost
         public static async Task<BrowserSnapshotResult> SnapshotAsync(
             BrowserChannel channel,
             string refId,
-            string domSupplement = null)
+            string domSupplement = null,
+            int? rangeStart = null,
+            int? rangeEnd = null)
         {
             if (channel == null)
             {
@@ -64,12 +66,39 @@ namespace WordAddIn1.BrowserHost
                         null);
                 }
 
+                bool hasRef = !string.IsNullOrWhiteSpace(refId);
+                BrowserRefEntry detailPrior = null;
+                if (hasRef)
+                {
+                    if (!BrowserRefStore.TryGet(channel.ChannelId, refId.Trim(), out detailPrior) || detailPrior == null)
+                    {
+                        return BrowserSnapshotResult.Fail("ref 无效或已过期，请重新 F_browser_snapshot");
+                    }
+                }
+
+                string rangeError = BrowserAxTreeBuilder.ValidateRepeatRange(
+                    detailPrior, rangeStart, rangeEnd, hasRef);
+                if (rangeError != null)
+                {
+                    return BrowserSnapshotResult.Fail(rangeError);
+                }
+
+                bool repeatWindow = detailPrior != null && detailPrior.IsRepeat;
                 var args = new JObject
                 {
-                    ["mode"] = string.IsNullOrWhiteSpace(refId) ? "overview" : "detail",
-                    ["ref"] = string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
+                    ["mode"] = repeatWindow || !hasRef ? "overview" : "detail",
+                    ["ref"] = hasRef ? refId.Trim() : null,
+                    ["css_path"] = (!repeatWindow && detailPrior != null) ? detailPrior.AttachCssPath : null,
                     ["dom_supplement"] = domSupplement
                 };
+                if (repeatWindow)
+                {
+                    args["repeat_parent_css"] = detailPrior.RepeatParentCss;
+                    args["repeat_signature"] = detailPrior.RepeatSignature;
+                    args["repeat_ordinal"] = detailPrior.RepeatOrdinal;
+                    args["range_start"] = rangeStart;
+                    args["range_end"] = rangeEnd;
+                }
                 JObject result = await EvaluateAsync(form, "snapshot", args, null).ConfigureAwait(true);
                 if (result == null || result["ok"]?.Value<bool>() != true)
                 {
@@ -84,8 +113,8 @@ namespace WordAddIn1.BrowserHost
                     channel,
                     pageUrl,
                     title,
-                    string.IsNullOrWhiteSpace(refId) ? "overview" : "detail",
-                    string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
+                    repeatWindow || !hasRef ? "overview" : "detail",
+                    repeatWindow ? (string)result["focus_ref"] : (hasRef ? refId.Trim() : null),
                     (string)result["snapshot"] ?? "",
                     result["truncated"]?.Value<bool>() ?? false,
                     (string)result["truncated_reason"],
@@ -158,6 +187,11 @@ namespace WordAddIn1.BrowserHost
                         || entry == null)
                     {
                         return BrowserInteractResult.Fail("ref 无效或已过期，请重新 F_browser_snapshot");
+                    }
+
+                    if (entry.IsRepeat)
+                    {
+                        return BrowserInteractResult.Fail("该 ref 缺少可操作节点定位，请重新 F_browser_snapshot");
                     }
 
                     if (BrowserRiskGuard.IsFrameRole(entry))
@@ -415,7 +449,12 @@ namespace WordAddIn1.BrowserHost
                         Name = (string)n["name"],
                         AttachCssPath = (string)n["cssPath"],
                         FrameId = frameId,
-                        AttachFrameId = attachFrameId
+                        AttachFrameId = attachFrameId,
+                        IsRepeat = n["isRepeat"]?.Value<bool>() ?? false,
+                        RepeatParentCss = (string)n["repeatParentCss"],
+                        RepeatSignature = (string)n["repeatSignature"],
+                        RepeatOrdinal = n["repeatOrdinal"]?.Value<int>() ?? 0,
+                        RepeatCount = n["repeatCount"]?.Value<int>() ?? 0
                     };
                     JObject probe = n["probe"] as JObject;
                     if (probe != null)

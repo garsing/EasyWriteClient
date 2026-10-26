@@ -93,15 +93,9 @@ namespace WordAddIn1.BrowserHost
                     : YiWriteBrowserHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd);
             }
 
-            if (rangeStart.HasValue || rangeEnd.HasValue)
-            {
-                return Task.FromResult(
-                    BrowserSnapshotResult.Fail("当前浏览器轨不支持序号范围"));
-            }
-
             return mode.IsAttach
-                ? ExtensionHost.SnapshotAsync(channel, refId, domSupplement)
-                : AgentLegacyHost.SnapshotAsync(channel, refId, domSupplement);
+                ? ExtensionHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd)
+                : AgentLegacyHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd);
         }
 
         public static Task<BrowserInteractResult> InteractAsync(

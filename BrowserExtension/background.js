@@ -473,7 +473,7 @@ function frameMessageOptions(frameId) {
   return { frameId };
 }
 
-const CONTENT_VER = 40;
+const CONTENT_VER = 41;
 
 async function ensureContentScript(tabId, frameId) {
   const opts = frameMessageOptions(frameId);
@@ -637,7 +637,13 @@ async function snapshotTab(msg) {
     type: "snapshot",
     mode: msg.mode || "overview",
     ref: msg.ref || null,
-    dom_supplement: msg.dom_supplement || null
+    css_path: msg.css_path || null,
+    dom_supplement: msg.dom_supplement || null,
+    repeat_parent_css: msg.repeat_parent_css || null,
+    repeat_signature: msg.repeat_signature || null,
+    repeat_ordinal: msg.repeat_ordinal,
+    range_start: msg.range_start,
+    range_end: msg.range_end
   }, frameId != null && Number.isFinite(frameId) ? frameId : undefined);
   if (!resp || !resp.ok) {
     throw new Error((resp && resp.error) || "snapshot 失败");
@@ -653,7 +659,8 @@ async function snapshotTab(msg) {
     nodes,
     truncated: !!resp.truncated,
     truncated_reason: resp.truncated_reason || null,
-    dom_supplement: resp.dom_supplement || null
+    dom_supplement: resp.dom_supplement || null,
+    focus_ref: resp.focus_ref || null
   };
 }
 
