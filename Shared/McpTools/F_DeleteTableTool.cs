@@ -141,9 +141,8 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 父格 Characters：外表正文 + \r + 内表一整段 + 表后句 + 父格末 \r\a。
-        /// 内表 Range 就是中间那一段；格末 \r\a 在 Characters 里是一个单位。
-        /// 只清内表格子正文（停在该格 \r\a 前），再把空内表转成文本，不动父格末。
+        /// 编号对上之后，嵌套表就是 NestingLevel&gt;1 的那张 COM 表，直接 Delete。
+        /// 外层表数量掉了则失败，交给 checkpoint 还原。
         /// </summary>
         private static bool TryDeleteNestedTable(
             Word.Document document,
@@ -162,42 +161,9 @@ namespace WordAddIn1
                 return false;
             }
 
-            int parentEnd = TryGetParentCellEnd(document, table);
             try
             {
-                foreach (Word.Row row in table.Rows)
-                {
-                    foreach (Word.Cell cell in row.Cells)
-                    {
-                        int start = cell.Range.Start;
-                        int end = cell.Range.End - 1;
-                        if (parentEnd > 0 && end >= parentEnd)
-                        {
-                            end = parentEnd - 1;
-                        }
-
-                        if (end <= start)
-                        {
-                            continue;
-                        }
-
-                        document.Range(start, end).Text = "";
-                        if (TopLevelTableCountDropped(document, topBefore))
-                        {
-                            error = "删除嵌套表时外层表被一并删除";
-                            return false;
-                        }
-                    }
-                }
-
-                try
-                {
-                    table.ConvertToText(Word.WdTableFieldSeparator.wdSeparateByParagraphs);
-                }
-                catch (Exception)
-                {
-                }
-
+                table.Delete();
                 if (TopLevelTableCountDropped(document, topBefore))
                 {
                     error = "删除嵌套表时外层表被一并删除";
@@ -210,25 +176,6 @@ namespace WordAddIn1
             {
                 error = "删除嵌套表失败: " + ex.Message;
                 return false;
-            }
-        }
-
-        private static int TryGetParentCellEnd(Word.Document document, Word.Table table)
-        {
-            try
-            {
-                int start = table.Range.Start;
-                if (start <= 0)
-                {
-                    return 0;
-                }
-
-                Word.Range before = document.Range(start - 1, start - 1);
-                return before.Cells[1].Range.End;
-            }
-            catch (Exception)
-            {
-                return 0;
             }
         }
 
