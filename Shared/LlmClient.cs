@@ -410,6 +410,12 @@ namespace WordAddIn1
                                                 string errorMsg = errorResponse.error.message ?? "流式响应错误";
                                                 // EasyWriteDiagnostics.Log(DebugCategory.Llm, $"[STREAM_DEBUG] 流式响应错误: {errorMsg}");
 
+                                                if (IsContextOverflowMessage(errorMsg))
+                                                {
+                                                    EasyWriteDiagnostics.Log(DebugCategory.Llm, "[LLM_CLIENT] 上下文超长: " + errorMsg);
+                                                    throw new LlmException("上下文超了");
+                                                }
+
                                                 // 根据错误类型处理
                                                 if (errorMsg.Contains("token") || errorMsg.Contains("认证") || errorMsg.Contains("unauthorized"))
                                                 {
@@ -466,6 +472,10 @@ namespace WordAddIn1
                 // 超额由上层以灰字提示，勿包成 LlmException
                 throw;
             }
+            catch (LlmException ex) when (ex.Message == "上下文超了")
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 // EasyWriteDiagnostics.Log(DebugCategory.Llm, $"[STREAM_DEBUG] Exception: {ex.Message}");
@@ -516,6 +526,16 @@ namespace WordAddIn1
             // 注意：这里我们忽略fullContent，只返回对话ID
             // 调用者应该通过onChunk回调获取内容
             return result;
+        }
+
+        private static bool IsContextOverflowMessage(string errorMsg)
+        {
+            if (string.IsNullOrEmpty(errorMsg))
+                return false;
+            if (errorMsg.IndexOf("上下文超了", StringComparison.Ordinal) >= 0)
+                return true;
+            return errorMsg.IndexOf("maximum context length", StringComparison.OrdinalIgnoreCase) >= 0
+                || errorMsg.IndexOf("context_length_exceeded", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
     }
