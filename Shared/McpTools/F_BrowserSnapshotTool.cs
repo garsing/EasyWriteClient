@@ -23,6 +23,17 @@ namespace WordAddIn1
                     string channelId = TryGetString(args, "channel_id");
                     string refId = TryGetString(args, "ref");
                     string domSupplement = TryGetString(args, "dom_supplement");
+                    if (TryGetBool(args, "hidden_children", out bool hiddenChildren))
+                    {
+                        if (hiddenChildren && string.IsNullOrWhiteSpace(refId))
+                        {
+                            return Fail("hidden_children 需要和 ref 一起传");
+                        }
+                    }
+                    else
+                    {
+                        return Fail("hidden_children 无效");
+                    }
                     if (!TryGetOptionalInt(args, "range_start", out int? rangeStart, out string rangeErr)
                         || !TryGetOptionalInt(args, "range_end", out int? rangeEnd, out rangeErr))
                     {
@@ -62,7 +73,7 @@ namespace WordAddIn1
                     }
 
                     BrowserSnapshotResult result = await BrowserHostAdapter
-                        .SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd)
+                        .SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren)
                         .ConfigureAwait(true);
 
                     if (!result.Success)
@@ -137,6 +148,42 @@ namespace WordAddIn1
 
             value = parsed;
             return true;
+        }
+
+        private static bool TryGetBool(Dictionary<string, object> args, string key, out bool value)
+        {
+            value = false;
+            if (args == null || !args.ContainsKey(key) || args[key] == null)
+            {
+                return true;
+            }
+
+            if (args[key] is bool bit)
+            {
+                value = bit;
+                return true;
+            }
+
+            string text = Convert.ToString(args[key])?.Trim();
+            if (string.IsNullOrEmpty(text))
+            {
+                return true;
+            }
+
+            if (text == "1" || text.Equals("true", StringComparison.OrdinalIgnoreCase)
+                || text.Equals("on", StringComparison.OrdinalIgnoreCase))
+            {
+                value = true;
+                return true;
+            }
+
+            if (text == "0" || text.Equals("false", StringComparison.OrdinalIgnoreCase)
+                || text.Equals("off", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private static string TryGetString(Dictionary<string, object> args, string key)

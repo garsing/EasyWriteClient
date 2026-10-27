@@ -473,7 +473,7 @@ function frameMessageOptions(frameId) {
   return { frameId };
 }
 
-const CONTENT_VER = 44;
+const CONTENT_VER = 45;
 
 async function ensureContentScript(tabId, frameId) {
   const opts = frameMessageOptions(frameId);
@@ -639,6 +639,7 @@ async function snapshotTab(msg) {
     ref: msg.ref || null,
     css_path: msg.css_path || null,
     dom_supplement: msg.dom_supplement || null,
+    hidden_children: msg.hidden_children === true || msg.hidden_children === "true" || msg.hidden_children === 1 || msg.hidden_children === "1",
     repeat_parent_css: msg.repeat_parent_css || null,
     repeat_signature: msg.repeat_signature || null,
     repeat_ordinal: msg.repeat_ordinal,

@@ -68,7 +68,8 @@ namespace WordAddIn1.BrowserHost
             string refId,
             string domSupplement = null,
             int? rangeStart = null,
-            int? rangeEnd = null)
+            int? rangeEnd = null,
+            bool hiddenChildren = false)
         {
             if (string.IsNullOrWhiteSpace(refId))
             {
@@ -89,13 +90,13 @@ namespace WordAddIn1.BrowserHost
             if (mode.IsPointer)
             {
                 return mode.IsAttach
-                    ? AttachPointerHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd)
-                    : YiWriteBrowserHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd);
+                    ? AttachPointerHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren)
+                    : YiWriteBrowserHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren);
             }
 
             return mode.IsAttach
-                ? ExtensionHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd)
-                : AgentLegacyHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd);
+                ? ExtensionHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren)
+                : AgentLegacyHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren);
         }
 
         public static Task<BrowserInteractResult> InteractAsync(

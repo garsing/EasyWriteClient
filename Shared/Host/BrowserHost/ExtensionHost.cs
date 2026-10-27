@@ -686,7 +686,7 @@ namespace WordAddIn1.BrowserHost
         {
             if (layer != null && layer.AttachFrameId.HasValue)
             {
-                return SnapshotAsync(channel, null, null, layer.AttachFrameId, null, null);
+                return SnapshotAsync(channel, null, null, layer.AttachFrameId, null, null, false);
             }
 
             return SnapshotAsync(channel, null, null);
@@ -697,9 +697,10 @@ namespace WordAddIn1.BrowserHost
             string refId,
             string domSupplement,
             int? rangeStart = null,
-            int? rangeEnd = null)
+            int? rangeEnd = null,
+            bool hiddenChildren = false)
         {
-            return SnapshotAsync(channel, refId, domSupplement, null, rangeStart, rangeEnd);
+            return SnapshotAsync(channel, refId, domSupplement, null, rangeStart, rangeEnd, hiddenChildren);
         }
 
         private static async Task<BrowserSnapshotResult> SnapshotAsync(
@@ -708,7 +709,8 @@ namespace WordAddIn1.BrowserHost
             string domSupplement,
             int? forceFrameId,
             int? rangeStart,
-            int? rangeEnd)
+            int? rangeEnd,
+            bool hiddenChildren)
         {
             EnsureStarted();
             if (channel == null || !IsAttachTabLive(channel.TabUuid))
@@ -774,7 +776,8 @@ namespace WordAddIn1.BrowserHost
                     ["ref"] = expandingFrame ? null : (hasRef ? refId.Trim() : null),
                     ["css_path"] = (!repeatWindow && prior != null) ? prior.AttachCssPath : null,
                     ["frame_id"] = targetFrame,
-                    ["dom_supplement"] = expandingFrame ? null : domSupplement
+                    ["dom_supplement"] = expandingFrame ? null : domSupplement,
+                    ["hidden_children"] = hiddenChildren && hasRef && !repeatWindow && !expandingFrame
                 };
                 if (repeatWindow)
                 {

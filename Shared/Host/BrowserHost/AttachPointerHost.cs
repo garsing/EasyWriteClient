@@ -12,7 +12,8 @@ namespace WordAddIn1.BrowserHost
             string refId,
             string domSupplementSpec = null,
             int? rangeStart = null,
-            int? rangeEnd = null)
+            int? rangeEnd = null,
+            bool hiddenChildren = false)
         {
             if (channel == null || !ExtensionHost.IsAttachTabLive(channel.TabUuid))
             {
@@ -157,6 +158,22 @@ namespace WordAddIn1.BrowserHost
                 await BrowserAccessibleNameFill
                     .FillTemporalValuesAsync(cdp, built, sessionId)
                     .ConfigureAwait(true);
+
+                if (hiddenChildren
+                    && isDetail
+                    && !repeatWindow
+                    && prior != null
+                    && prior.BackendDomNodeId.HasValue)
+                {
+                    await BrowserDomClickableSupplement
+                        .MergeHiddenChildrenAsync(
+                            cdp,
+                            built,
+                            prior.BackendDomNodeId.Value,
+                            stampFrame,
+                            sessionId)
+                        .ConfigureAwait(true);
+                }
 
                 BrowserRefStore.Replace(channel.ChannelId, built.Refs);
                 channel.UpdatePage(cdp.CurrentUrl, cdp.CurrentTitle, true);

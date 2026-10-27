@@ -701,5 +701,175 @@ namespace WordAddIn1.BrowserHost
         {
             return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", " ").Replace("\n", " ");
         }
+
+        private const string HiddenChildrenJs =
+            @"function() {
+  var root = this;
+  if (!root || !root.querySelectorAll) return [];
+  function hid(el) {
+    var n = el;
+    while (n && n !== root) {
+      var st = null;
+      try { st = window.getComputedStyle(n); } catch (e) { break; }
+      if (st && (st.display === 'none' || st.visibility === 'hidden')) return true;
+      n = n.parentElement;
+    }
+    return false;
+  }
+  function blob(el) {
+    var c = el.className;
+    var name = c && typeof c === 'object' && c.baseVal != null ? String(c.baseVal) : String(c || '');
+    return String(name || '').replace(/\s+/g, ' ').trim();
+  }
+  var items = [];
+  var all = root.querySelectorAll('*');
+  for (var i = 0; i < all.length && items.length < 40; i++) {
+    var el = all[i];
+    var tag = (el.tagName || '').toLowerCase();
+    if (tag === 'script' || tag === 'style' || tag === 'path' || tag === 'noscript') continue;
+    if (!hid(el)) continue;
+    var cls = blob(el);
+    var onclick = '';
+    try { onclick = el.getAttribute('onclick') || ''; } catch (e2) {}
+    var keep = !!cls || !!onclick || tag === 'a' || tag === 'button' || tag === 'input' || tag === 'i' || tag === 'span' || tag === 'em' || tag === 'p';
+    if (!keep) continue;
+    var mark = 'ywH' + items.length;
+    try { el.setAttribute('data-yw-clk', mark); } catch (e3) { continue; }
+    var bits = cls.split(' ').filter(function(x) { return x; }).slice(0, 3).join('.');
+    var name = tag + (bits ? '.' + bits : '');
+    var fn = String(onclick).match(/([A-Za-z_][A-Za-z0-9_]{2,40})\s*\(/);
+    if (fn) name += ' ' + fn[1];
+    items.push({ mark: mark, name: name.slice(0, 80), role: tag === 'a' ? 'link' : 'button' });
+  }
+  return items;
+}";
+
+        /// <summary>
+        /// 对某个 ref 列出它下面 display:none / visibility:hidden 的子节点，各自给 ref。
+        /// </summary>
+        public static async Task MergeHiddenChildrenAsync(
+            IBrowserCdp cdp,
+            BrowserAxBuildResult built,
+            int backendNodeId,
+            string frameId,
+            string sessionId)
+        {
+            if (cdp == null || built == null || !built.Success || built.Refs == null)
+            {
+                return;
+            }
+
+            try
+            {
+                string objectId = await BrowserInteractEngine
+                    .ResolveObjectIdAsync(cdp, backendNodeId, sessionId)
+                    .ConfigureAwait(true);
+                string resultJson = await BrowserInteractEngine
+                    .CallFunctionOnAsync(cdp, objectId, HiddenChildrenJs, null, sessionId)
+                    .ConfigureAwait(true);
+                JObject jo = JObject.Parse(resultJson ?? "{}");
+                JArray items = jo["result"]?["value"] as JArray;
+                var sb = new StringBuilder(built.TreeText ?? "");
+                if (sb.Length > 0 && !sb.ToString().EndsWith("\n"))
+                {
+                    sb.AppendLine();
+                }
+
+                sb.AppendLine("- (隐藏子节点)");
+                if (items == null || items.Count == 0)
+                {
+                    sb.AppendLine("  - 无");
+                    built.TreeText = sb.ToString().TrimEnd();
+                    return;
+                }
+
+                var already = new HashSet<int>();
+                int maxRef = 0;
+                foreach (var kv in built.Refs)
+                {
+                    if (kv.Value != null && kv.Value.BackendDomNodeId.HasValue)
+                    {
+                        already.Add(kv.Value.BackendDomNodeId.Value);
+                    }
+
+                    if (kv.Key != null
+                        && kv.Key.Length > 1
+                        && kv.Key[0] == 'e'
+                        && int.TryParse(kv.Key.Substring(1), out int n)
+                        && n > maxRef)
+                    {
+                        maxRef = n;
+                    }
+                }
+
+                int? contextId = await TryCreateFrameWorldAsync(cdp, frameId, sessionId).ConfigureAwait(true);
+                int nextRef = maxRef + 1;
+                int added = 0;
+                foreach (JToken tok in items)
+                {
+                    if (added >= 40 || built.Refs.Count >= BrowserAxTreeBuilder.MaxRefNodes)
+                    {
+                        break;
+                    }
+
+                    JObject item = tok as JObject;
+                    string mark = (string)item?["mark"];
+                    if (string.IsNullOrWhiteSpace(mark))
+                    {
+                        continue;
+                    }
+
+                    int? backend = await ResolveMarkedBackendAsync(cdp, mark, contextId, sessionId)
+                        .ConfigureAwait(true);
+                    if (!backend.HasValue || already.Contains(backend.Value))
+                    {
+                        continue;
+                    }
+
+                    string refId = "e" + nextRef.ToString(CultureInfo.InvariantCulture);
+                    nextRef++;
+                    string name = (string)item["name"] ?? "";
+                    string role = (string)item["role"] ?? "button";
+                    built.Refs[refId] = new BrowserRefEntry
+                    {
+                        BackendDomNodeId = backend.Value,
+                        Role = role,
+                        Name = name,
+                        FrameId = frameId,
+                        CdpSessionId = sessionId
+                    };
+                    already.Add(backend.Value);
+                    added++;
+                    sb.Append("  - ").Append(role).Append(" ref=").Append(refId);
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        sb.Append(" \"").Append(Escape(name.Trim())).Append('"');
+                    }
+
+                    sb.AppendLine(" (隐藏)");
+                }
+
+                if (added == 0)
+                {
+                    sb.AppendLine("  - 无");
+                }
+
+                built.TreeText = sb.ToString().TrimEnd();
+            }
+            catch
+            {
+            }
+            finally
+            {
+                try
+                {
+                    int? contextId = await TryCreateFrameWorldAsync(cdp, frameId, sessionId).ConfigureAwait(true);
+                    await EvaluateAsync(cdp, CleanupJs, contextId, sessionId).ConfigureAwait(true);
+                }
+                catch
+                {
+                }
+            }
+        }
     }
 }

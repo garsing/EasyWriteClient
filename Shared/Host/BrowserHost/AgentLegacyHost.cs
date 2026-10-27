@@ -15,7 +15,8 @@ namespace WordAddIn1.BrowserHost
             string refId,
             string domSupplement = null,
             int? rangeStart = null,
-            int? rangeEnd = null)
+            int? rangeEnd = null,
+            bool hiddenChildren = false)
         {
             if (channel == null)
             {
@@ -89,7 +90,8 @@ namespace WordAddIn1.BrowserHost
                     ["mode"] = repeatWindow || !hasRef ? "overview" : "detail",
                     ["ref"] = hasRef ? refId.Trim() : null,
                     ["css_path"] = (!repeatWindow && detailPrior != null) ? detailPrior.AttachCssPath : null,
-                    ["dom_supplement"] = domSupplement
+                    ["dom_supplement"] = domSupplement,
+                    ["hidden_children"] = hiddenChildren && hasRef && !repeatWindow
                 };
                 if (repeatWindow)
                 {

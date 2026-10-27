@@ -493,7 +493,8 @@ namespace WordAddIn1.BrowserHost
             string refId,
             string domSupplementSpec = null,
             int? rangeStart = null,
-            int? rangeEnd = null)
+            int? rangeEnd = null,
+            bool hiddenChildren = false)
         {
             if (channel == null)
             {
@@ -659,6 +660,22 @@ namespace WordAddIn1.BrowserHost
                 await BrowserAccessibleNameFill
                     .FillTemporalValuesAsync(form, built, sessionId)
                     .ConfigureAwait(true);
+
+                if (hiddenChildren
+                    && isDetail
+                    && !repeatWindow
+                    && prior != null
+                    && prior.BackendDomNodeId.HasValue)
+                {
+                    await BrowserDomClickableSupplement
+                        .MergeHiddenChildrenAsync(
+                            form,
+                            built,
+                            prior.BackendDomNodeId.Value,
+                            stampFrame,
+                            sessionId)
+                        .ConfigureAwait(true);
+                }
 
                 BrowserRefStore.Replace(channel.ChannelId, built.Refs);
                 channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, channel.Visible);

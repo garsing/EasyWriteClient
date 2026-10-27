@@ -744,6 +744,45 @@
       }
     }
 
+    function appendHiddenChildren(root) {
+      function hid(el) {
+        var n = el;
+        while (n && n !== root) {
+          var st = null;
+          try { st = window.getComputedStyle(n); } catch (eH) { break; }
+          if (st && (st.display === "none" || st.visibility === "hidden")) return true;
+          n = n.parentElement;
+        }
+        return false;
+      }
+      var all = root && root.querySelectorAll ? root.querySelectorAll("*") : [];
+      var found = 0;
+      lines.push("");
+      lines.push("- (隐藏子节点)");
+      for (var i = 0; i < all.length && found < 40; i++) {
+        var el = all[i];
+        var tag = (el.tagName || "").toLowerCase();
+        if (tag === "script" || tag === "style" || tag === "path" || tag === "noscript") continue;
+        if (!hid(el)) continue;
+        var cls = classBlob(el).trim();
+        var onclick = "";
+        try { onclick = el.getAttribute("onclick") || ""; } catch (eO) {}
+        var keep = !!cls || !!onclick || tag === "a" || tag === "button" || tag === "input" || tag === "i" || tag === "span" || tag === "em" || tag === "p";
+        if (!keep) continue;
+        var bits = cls.split(/\s+/).filter(function (x) { return x; }).slice(0, 3).join(".");
+        var name = tag + (bits ? "." + bits : "");
+        var fn = String(onclick).match(/([A-Za-z_][A-Za-z0-9_]{2,40})\s*\(/);
+        if (fn) name += " " + fn[1];
+        name = name.slice(0, 80);
+        var ref = nextRef(false);
+        if (!ref) break;
+        nodes[ref] = { role: "button", name: name, cssPath: cssPath(el), probe: probeOf(el), tag: tag };
+        lines.push('  - button ref=' + ref + ' "' + name.replace(/"/g, "'") + '" (隐藏)');
+        found++;
+      }
+      if (!found) lines.push("  - 无");
+    }
+
     var rootEl = document.body || document.documentElement;
     if (String(msg.mode || "") === "detail" && msg.css_path) {
       rootEl = document.querySelector(msg.css_path);
@@ -766,6 +805,8 @@
       truncated = true;
       truncatedReason = truncatedReason || "node_limit";
     }
+    var wantHidden = msg.hidden_children === true || msg.hidden_children === "true" || msg.hidden_children === 1 || msg.hidden_children === "1";
+    if (String(msg.mode || "") === "detail" && wantHidden) appendHiddenChildren(rootEl);
     return {
       ok: true,
       snapshot: lines.join("\n"),

@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 44;
+  const CONTENT_VER = 45;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -1336,6 +1336,43 @@
       });
     }
 
+    function appendHiddenChildren(root) {
+      function hid(el) {
+        let n = el;
+        while (n && n !== root) {
+          let st = null;
+          try { st = window.getComputedStyle(n); } catch (_) { break; }
+          if (st && (st.display === "none" || st.visibility === "hidden")) return true;
+          n = n.parentElement;
+        }
+        return false;
+      }
+      const all = root && root.querySelectorAll ? root.querySelectorAll("*") : [];
+      const found = [];
+      for (let i = 0; i < all.length && found.length < 40; i++) {
+        const el = all[i];
+        const tag = (el.tagName || "").toLowerCase();
+        if (tag === "script" || tag === "style" || tag === "path" || tag === "noscript") continue;
+        if (!hid(el)) continue;
+        const cls = classBlob(el).trim();
+        const onclick = el.getAttribute("onclick") || "";
+        const keep = !!cls || !!onclick || tag === "a" || tag === "button" || tag === "input" || tag === "i" || tag === "span" || tag === "em" || tag === "p";
+        if (!keep) continue;
+        const ref = nextRef(false);
+        if (!ref) break;
+        const bits = cls.split(/\s+/).filter(Boolean).slice(0, 3).join(".");
+        let name = tag + (bits ? "." + bits : "");
+        const fn = String(onclick).match(/([A-Za-z_][A-Za-z0-9_]{2,40})\s*\(/);
+        if (fn) name += " " + fn[1];
+        name = name.slice(0, 80);
+        nodes[ref] = { role: "button", name, cssPath: cssPath(el), probe: probeOf(el) };
+        found.push('- button ref=' + ref + ' "' + name.replace(/"/g, "'") + '" (隐藏)');
+      }
+      lines.push("", "- (隐藏子节点)");
+      if (!found.length) lines.push("  - 无");
+      else found.forEach((line) => lines.push("  " + line.replace(/^- /, "- ")));
+    }
+
     let rootEl = document.body || document.documentElement;
     if (String(msg.mode || "") === "detail" && msg.css_path) {
       rootEl = document.querySelector(msg.css_path);
@@ -1361,6 +1398,10 @@
       truncatedReason = truncatedReason || "node_limit";
     }
     collectMissedIframes();
+
+    if (String(msg.mode || "") === "detail" && (msg.hidden_children === true || msg.hidden_children === "true" || msg.hidden_children === 1 || msg.hidden_children === "1")) {
+      appendHiddenChildren(rootEl);
+    }
 
     // DOM supplement
     let domSupplement = null;
