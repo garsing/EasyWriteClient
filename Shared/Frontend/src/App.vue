@@ -540,37 +540,52 @@ function removeChatAttachment (id) {
 
 const messages = ref([])
 const toolCallAccumulators = new Map()
-/** 每轮发问的用户消息 id，按先后等 turnTiming。下一句先入列时，用时仍写回上一轮。 */
-const pendingTimingUserIds = []
+/** 后端 turnTiming 的毫秒数。不写当前这句，等下一句发出后填进上一轮。 */
+let heldTurnDurationMs = null
 
-function rememberTurnUser (id) {
-  if (id == null) return
-  pendingTimingUserIds.push(id)
+function userMessageIndexes () {
+  const indexes = []
+  for (let i = 0; i < messages.value.length; i++) {
+    if (messages.value[i].role === 'user') indexes.push(i)
+  }
+  return indexes
 }
 
-function forgetTurnUser (id) {
-  const index = pendingTimingUserIds.indexOf(id)
-  if (index >= 0) pendingTimingUserIds.splice(index, 1)
+function hasAssistantAfter (userIndex) {
+  for (let i = userIndex + 1; i < messages.value.length; i++) {
+    const message = messages.value[i]
+    if (message.role === 'user') return false
+    if (!message.isHint) return true
+  }
+  return false
 }
 
-function clearTurnUsers () {
-  pendingTimingUserIds.length = 0
+function clearHeldTurnDuration () {
+  heldTurnDurationMs = null
+}
+
+/** 用时只填已经收进历史的那条提问，不填正在进行的最后一句。 */
+function fillHistoryTurnDuration (durationMs) {
+  const indexes = userMessageIndexes()
+  if (indexes.length < 2) return false
+  const last = indexes[indexes.length - 1]
+  if (hasAssistantAfter(last)) return false
+  messages.value[indexes[indexes.length - 2]].duration_ms = durationMs
+  return true
 }
 
 function applyTurnTiming (durationMs) {
-  while (pendingTimingUserIds.length) {
-    const id = pendingTimingUserIds.shift()
-    const msg = messages.value.find((m) => m.role === 'user' && m.id === id)
-    if (msg) {
-      msg.duration_ms = durationMs
-      return
-    }
+  if (fillHistoryTurnDuration(durationMs)) {
+    heldTurnDurationMs = null
+    return
   }
-  for (let i = messages.value.length - 1; i >= 0; i--) {
-    if (messages.value[i].role === 'user') {
-      messages.value[i].duration_ms = durationMs
-      break
-    }
+  heldTurnDurationMs = durationMs
+}
+
+function flushHeldTurnDuration () {
+  if (heldTurnDurationMs == null) return
+  if (fillHistoryTurnDuration(heldTurnDurationMs)) {
+    heldTurnDurationMs = null
   }
 }
 const isProcessing = ref(false)
@@ -655,7 +670,7 @@ const handleSend = async (content) => {
   }
   console.log('[App] 添加用户消息:', { id: userMessage.id, content: userMessage.content.substring(0, 20), messageCount: messages.value.length })
   messages.value.push(userMessage)
-  rememberTurnUser(userMessage.id)
+  flushHeldTurnDuration()
   pinToLatestToken.value++
   receivedBackendMessages.value.add(userMessage.id)
   console.log('[App] 用户消息已添加，当前消息数量:', messages.value.length)
@@ -714,7 +729,6 @@ const handleSend = async (content) => {
     const index = messages.value.findIndex(m => m.id === userMessage.id)
     if (index >= 0) {
       messages.value.splice(index, 1)
-      forgetTurnUser(userMessage.id)
     }
     isProcessing.value = false
     pendingInput.value = ''
@@ -728,7 +742,6 @@ const handleLoginRequired = async (userInput) => {
   // 1. 移除最后一条用户消息
   const lastMessage = messages.value[messages.value.length - 1]
   if (lastMessage && lastMessage.role === 'user') {
-    forgetTurnUser(lastMessage.id)
     messages.value.pop()
   }
   
@@ -1216,7 +1229,7 @@ onMounted(() => {
       console.log('[App] 清空消息列表')
       messages.value = []
       toolCallAccumulators.clear()
-      clearTurnUsers()
+      clearHeldTurnDuration()
       panelHint.value = ''
       // 待发送附件与打开文件芯片一样：切会话 / 新建不清除，只在发送后 reset
       resetTodoProgressBar()
@@ -1242,7 +1255,7 @@ onMounted(() => {
       const payload = data.data || data
       const raw = payload.messages || []
       toolCallAccumulators.clear()
-      clearTurnUsers()
+      clearHeldTurnDuration()
       panelHint.value = ''
       resetTodoProgressBar()
       messages.value = raw.map((m) => normalizeHistoryMessage(m))

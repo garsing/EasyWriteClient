@@ -14,6 +14,11 @@ namespace WordAddIn1
     /// </summary>
     public static class F_CaptureDocumentPageImageTool
     {
+        /// <summary>暂时关闭。恢复时改为 true，CaptureWordAsync 仍保留。</summary>
+        private static readonly bool WordPageCaptureEnabled = false;
+
+        internal const string WordPageCaptureDisabledMessage = "Word/WPS 页截图暂时不支持";
+
         public static void Register(
             Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
             object wordApplication)
@@ -55,6 +60,11 @@ namespace WordAddIn1
 
                     if (channel.Kind == ChannelKind.Word || channel.Kind == ChannelKind.Wps)
                     {
+                        if (!WordPageCaptureEnabled)
+                        {
+                            return Fail(WordPageCaptureDisabledMessage);
+                        }
+
                         captured = await CaptureWordAsync(args, wordApplication, pageReq.PageNumber).ConfigureAwait(false);
                     }
                     else if (channel.Kind == ChannelKind.Excel || channel.Kind == ChannelKind.Et)
