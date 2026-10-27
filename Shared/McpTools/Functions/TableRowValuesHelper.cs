@@ -755,7 +755,7 @@ namespace WordAddIn1
                     applyFormatSw.Start();
                 }
 
-                FormatInheritHelper.ApplySnapshot(cell.Range, formatSnapshot, charFormatOnly: true);
+                FormatInheritHelper.ApplyWrittenSnapshot(cell.Range, formatSnapshot, charFormatOnly: true);
                 if (applyFormatSw != null)
                 {
                     applyFormatSw.Stop();

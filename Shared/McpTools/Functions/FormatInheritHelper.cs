@@ -66,6 +66,68 @@ namespace WordAddIn1
             return format;
         }
 
+        /// <summary>
+        /// 写路径：缺 <c>background_color</c> 或值为 automatic 时填入 InsertBackground 的 RGB。
+        /// 具体色不动。套格式工具不要调用。
+        /// </summary>
+        public static void EnsureWrittenBackground(Dictionary<string, object> snapshot)
+        {
+            if (snapshot == null)
+            {
+                return;
+            }
+
+            if (snapshot.TryGetValue("background_color", out object raw))
+            {
+                if (raw == null)
+                {
+                    return;
+                }
+
+                string value = raw.ToString() ?? "";
+                if (string.IsNullOrEmpty(value))
+                {
+                    return;
+                }
+
+                if (!string.Equals(value, "automatic", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+
+            snapshot["background_color"] = ConvertWdColorToRgb(
+                ConfigManager.DocumentColorHelper.InsertBackground);
+        }
+
+        /// <summary>写格后套字符格式：先补浅黄再 <see cref="ApplySnapshot"/>。</summary>
+        public static void ApplyWrittenSnapshot(
+            Word.Range range,
+            Dictionary<string, object> snapshot,
+            bool charFormatOnly = true)
+        {
+            EnsureWrittenBackground(snapshot);
+            ApplySnapshot(range, snapshot, charFormatOnly);
+        }
+
+        /// <summary>建表等无 char_format 的新字：只打 InsertBackground 字符底纹，不改单元格底纹。</summary>
+        public static void ApplyInsertBackground(Word.Range range)
+        {
+            if (range == null)
+            {
+                return;
+            }
+
+            try
+            {
+                range.Shading.BackgroundPatternColor = ConfigManager.DocumentColorHelper.InsertBackground;
+            }
+            catch (Exception ex)
+            {
+                DbgLog("ApplyInsertBackground 失败: " + ex.Message);
+            }
+        }
+
         /// <param name="charFormatOnly">为 true 时只写字体等字符格式，不 set_Style / 段落对齐（避免 partial range 触发整段样式重置为等线）</param>
         public static void ApplySnapshot(Word.Range range, Dictionary<string, object> snapshot, bool charFormatOnly = false)
         {
@@ -226,6 +288,8 @@ namespace WordAddIn1
                 DbgLog("ApplyWrittenCharFormat 跳过参数为空");
                 return;
             }
+
+            EnsureWrittenBackground(snapshot);
 
             string payload = payloadText ?? "";
             DbgLog($"ApplyWrittenCharFormat block={written.Start}-{written.End} prefixSafe={prefixSafe} len={payload.Length}");

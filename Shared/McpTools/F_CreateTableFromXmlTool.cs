@@ -883,6 +883,7 @@ namespace WordAddIn1
                         System.Diagnostics.Debug.WriteLine($"[FillTableData] 📍 处理单元格({r + 1},{c + 1}): '{cellData}'");
 
                         // 优先级：HTML样式 > Table默认样式
+                        bool wrote = false;
                         if (cellData.Contains("<"))
                         {
                             System.Diagnostics.Debug.WriteLine($"[FillTableData] 🔍 检测到HTML内容，准备调用InjectHtml");
@@ -892,9 +893,13 @@ namespace WordAddIn1
                             {
                                 errors.Add($"单元格({r + 1},{c + 1})HTML注入失败: {htmlResult.Error}");
                             }
-                            else if (!string.IsNullOrEmpty(htmlResult.Warning))
+                            else
                             {
-                                errors.Add($"单元格({r + 1},{c + 1})HTML注入警告: {htmlResult.Warning}");
+                                wrote = true;
+                                if (!string.IsNullOrEmpty(htmlResult.Warning))
+                                {
+                                    errors.Add($"单元格({r + 1},{c + 1})HTML注入警告: {htmlResult.Warning}");
+                                }
                             }
                             System.Diagnostics.Debug.WriteLine($"[FillTableData] ✅ HTML内容处理完成: {cellData}, 结果={htmlResult.Success}");
                         }
@@ -902,6 +907,7 @@ namespace WordAddIn1
                         {
                             // 纯文本内容：设置文本，然后应用Table默认字体颜色
                             cell.Range.Text = cellData;
+                            wrote = true;
 
                             if (!string.IsNullOrEmpty(defaultFontColor))
                             {
@@ -917,6 +923,11 @@ namespace WordAddIn1
                                     System.Diagnostics.Debug.WriteLine($"[DEBUG] {errorMsg}");
                                 }
                             }
+                        }
+
+                        if (wrote)
+                        {
+                            FormatInheritHelper.ApplyInsertBackground(cell.Range);
                         }
                     }
                     catch (Exception ex)

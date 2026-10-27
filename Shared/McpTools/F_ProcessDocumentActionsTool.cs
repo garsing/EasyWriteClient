@@ -1815,7 +1815,7 @@ namespace WordAddIn1
 
             try
             {
-                FormatInheritHelper.ApplySnapshot(cell.Range, firstSnap, charFormatOnly: true);
+                FormatInheritHelper.ApplyWrittenSnapshot(cell.Range, firstSnap, charFormatOnly: true);
             }
             catch (Exception fmtEx)
             {
@@ -1998,7 +1998,7 @@ namespace WordAddIn1
 
             try
             {
-                FormatInheritHelper.ApplySnapshot(cell.Range, formatSnapshot, charFormatOnly: true);
+                FormatInheritHelper.ApplyWrittenSnapshot(cell.Range, formatSnapshot, charFormatOnly: true);
                 result.FormatMode = formatMode;
             }
             catch (Exception fmtEx)
