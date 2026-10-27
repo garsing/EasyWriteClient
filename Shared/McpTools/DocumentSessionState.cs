@@ -52,6 +52,10 @@ namespace WordAddIn1
 
         public string SegSnapshot { get; set; } = "";
 
+        public string ParagraphSnapshot { get; set; } = "";
+
+        public string ParagraphSegSnapshot { get; set; } = "";
+
         public HashSet<string> InoperableSentenceCodes { get; } =
             new HashSet<string>(StringComparer.Ordinal);
 
@@ -107,6 +111,8 @@ namespace WordAddIn1
             NextSnapshotHistoryIndex = 0;
             Snapshot = "";
             SegSnapshot = "";
+            ParagraphSnapshot = "";
+            ParagraphSegSnapshot = "";
             SnapshotIdx = -1;
             ChunkParagraphDisplayContents.Clear();
             BodyFormat = null;

@@ -18,6 +18,12 @@ namespace WordAddIn1
         /// <summary>按 seg 分组的句子码，分号分隔 seg，seg 内逗号分隔。</summary>
         public string SegSnapshot { get; set; }
 
+        /// <summary>扁平段落公开码，逗号分隔。</summary>
+        public string ParagraphSnapshot { get; set; }
+
+        /// <summary>按 seg 分组的段落公开码，分号分隔 seg，seg 内逗号分隔。</summary>
+        public string ParagraphSegSnapshot { get; set; }
+
         /// <summary>触发来源，如 process_actions_step1、get_document_content。</summary>
         public string Source { get; set; }
 

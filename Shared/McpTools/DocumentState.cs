@@ -24,7 +24,7 @@ namespace WordAddIn1
         private static string _activeDocUuid = "";
 
         /// <summary>递增后清空 ProcessDocument 会话缓存（指纹算法或缓存条目结构变更时）。</summary>
-        public const int FingerprintVersion = 10;
+        public const int FingerprintVersion = 11;
 
         /// <summary>当前活动文档分片；无绑定时为临时空分片（不写回 SessionsByUuid）。</summary>
         private static DocumentSessionState Session
@@ -1263,6 +1263,10 @@ namespace WordAddIn1
 
         public static string SegSnapshot => Session.SegSnapshot;
 
+        public static string ParagraphSnapshot => Session.ParagraphSnapshot ?? "";
+
+        public static string ParagraphSegSnapshot => Session.ParagraphSegSnapshot ?? "";
+
         public static IReadOnlyList<SnapshotRecord> SnapshotHistory => Session.SnapshotHistory;
 
         public static int LatestSnapshotHistoryIndex =>
@@ -1329,10 +1333,30 @@ namespace WordAddIn1
             SetSnapshots(snapshot, segSnapshot, source: null);
         }
 
+        /// <summary>
+        /// 只改句子快照，沿用当前段落快照。生产读文必须走四串重载。
+        /// </summary>
         public static void SetSnapshots(string snapshot, string segSnapshot, string source)
+        {
+            SetSnapshots(
+                snapshot,
+                segSnapshot,
+                Session.ParagraphSnapshot,
+                Session.ParagraphSegSnapshot,
+                source);
+        }
+
+        public static void SetSnapshots(
+            string snapshot,
+            string segSnapshot,
+            string paragraphSnapshot,
+            string paragraphSegSnapshot,
+            string source)
         {
             string snap = snapshot ?? "";
             string segSnap = segSnapshot ?? "";
+            string paraSnap = paragraphSnapshot ?? "";
+            string paraSegSnap = paragraphSegSnapshot ?? "";
             string docUuid = CurrDocUuid ?? "";
 
             var record = new SnapshotRecord
@@ -1341,6 +1365,8 @@ namespace WordAddIn1
                 CreatedAtUtc = DateTime.UtcNow,
                 Snapshot = snap,
                 SegSnapshot = segSnap,
+                ParagraphSnapshot = paraSnap,
+                ParagraphSegSnapshot = paraSegSnap,
                 Source = source ?? "",
                 DocUuid = docUuid
             };
@@ -1348,12 +1374,15 @@ namespace WordAddIn1
 
             Session.Snapshot = snap;
             Session.SegSnapshot = segSnap;
+            Session.ParagraphSnapshot = paraSnap;
+            Session.ParagraphSegSnapshot = paraSegSnap;
             PrunePreReplaceCache(GetOrderedSentenceCodesFromSnapshot(Session.Snapshot));
 
             EasyWriteDiagnostics.LogDocumentExtractVerbose(
                 $"[SnapshotHistory] append index={record.Index} source={record.Source} " +
                 $"doc={docUuid} historyCount={Session.SnapshotHistory.Count} " +
-                $"snapshotLen={snap.Length} segSnapshotLen={segSnap.Length}");
+                $"snapshotLen={snap.Length} segSnapshotLen={segSnap.Length} " +
+                $"paragraphSnapshotLen={paraSnap.Length} paragraphSegSnapshotLen={paraSegSnap.Length}");
         }
 
         public static string CurrDocUuid => _activeDocUuid ?? "";

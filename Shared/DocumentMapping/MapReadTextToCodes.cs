@@ -99,6 +99,7 @@ namespace WordAddIn1.DocumentMapping
                 kv => kv.Key,
                 kv => new List<string>(kv.Value));
             mapped.NameToSentenceContentMap = ContentMapFromMappings(store.GetSentenceMappings());
+            FillParagraphSnapshots(mapped);
             totalSw.Stop();
             EasyWriteDiagnostics.LogTiming(
                 "MapChunks.total",
@@ -108,6 +109,27 @@ namespace WordAddIn1.DocumentMapping
                 + " uniq_ms=" + uniqSw.ElapsedMilliseconds
                 + " display_ms=" + displaySw.ElapsedMilliseconds);
             return mapped;
+        }
+
+        private static void FillParagraphSnapshots(MapReadTextResult mapped)
+        {
+            var flat = new List<string>();
+            var segParts = new List<string>();
+            if (mapped.AllChunkSegsParagraphNames != null)
+            {
+                foreach (List<List<string>> chunkSegs in mapped.AllChunkSegsParagraphNames)
+                {
+                    List<List<string>> publicSegs = BuildParagraphDisplayContent.BuildPublicSegs(chunkSegs);
+                    foreach (List<string> seg in publicSegs)
+                    {
+                        flat.AddRange(seg);
+                        segParts.Add(string.Join(",", seg));
+                    }
+                }
+            }
+
+            mapped.ParagraphSnapshot = string.Join(",", flat);
+            mapped.ParagraphSegSnapshot = string.Join(";", segParts);
         }
 
         private static void FinishSentenceDisplays(MapReadTextResult mapped)

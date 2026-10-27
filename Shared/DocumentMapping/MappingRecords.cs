@@ -42,6 +42,8 @@ namespace WordAddIn1.DocumentMapping
         public List<List<List<string>>> AllChunkSegsParagraphNames { get; set; } = new List<List<List<string>>>();
         public List<List<int>> AllChunkSegMarks { get; set; } = new List<List<int>>();
         public Dictionary<string, string> NameToSentenceContentMap { get; set; } = new Dictionary<string, string>();
+        public string ParagraphSnapshot { get; set; } = "";
+        public string ParagraphSegSnapshot { get; set; } = "";
         public HashSet<string> InoperableSentenceCodes { get; set; } =
             new HashSet<string>(System.StringComparer.Ordinal);
         public List<List<bool>> AllChunkSegNeedsGeometry { get; set; } = new List<List<bool>>();

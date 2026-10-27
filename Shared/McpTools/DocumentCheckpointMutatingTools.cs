@@ -114,6 +114,8 @@ namespace WordAddIn1
                     return F_ReplaceDocumentFromFileTool.TryGetContractParseFailure(args, out failure);
                 case "F_apply_document_format":
                     return F_ApplyDocumentFormatTool.TryGetContractParseFailure(args, out failure);
+                case "F_apply_paragraph_format":
+                    return ParagraphFormatApplyHelper.TryGetContractParseFailure(args, out failure);
                 case "F_apply_source_table_format":
                     return F_ApplySourceTableFormatTool.TryGetContractParseFailure(args, out failure);
                 case "F_apply_page_setup":

@@ -281,6 +281,33 @@ namespace WordAddIn1
             return data;
         }
 
+        public static bool TryGetContractParseFailure(
+            Dictionary<string, object> args,
+            out ToolResult failure)
+        {
+            failure = null;
+            if (FormatApplyBatchCompiler.HasItems(args))
+            {
+                string itemError = FormatApplyBatchCompiler.ValidateParagraphItems(args);
+                if (itemError != null)
+                {
+                    failure = DocumentCheckpointMutatingTools.Fail(itemError);
+                    return true;
+                }
+
+                return false;
+            }
+
+            string validationError = ValidateArgs(args, out _, out _, out _, out _);
+            if (validationError != null)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(validationError);
+                return true;
+            }
+
+            return false;
+        }
+
         private static string ValidateArgs(
             Dictionary<string, object> args,
             out string mode,

@@ -56,6 +56,99 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_apply_document_format] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
+                    return RunDocumentFormatBatch(args, doc, docHandle, wordApplication);
+                }
+                catch (Exception ex)
+                {
+                    FormatContextHelper.DbgLog($"F_apply_document_format 异常: {ex.Message}");
+                    return Done(false, $"apply_document_format 失败: {ex.Message}");
+                }
+            };
+        }
+
+        private static Task<ToolResult> RunDocumentFormatBatch(
+            Dictionary<string, object> args,
+            Word.Document doc,
+            InteropDocumentHandle docHandle,
+            object wordApplication)
+        {
+            FormatApplyBatchCompiler.CompileResult compiled = FormatApplyBatchCompiler.CompileDocument(args);
+            if (!string.IsNullOrEmpty(compiled.ContractError))
+            {
+                return Done(false, compiled.ContractError);
+            }
+
+            bool passthrough = !FormatApplyBatchCompiler.HasItems(args)
+                && compiled.Ops.Count == 1
+                && compiled.Warnings.Count == 0;
+            if (passthrough)
+            {
+                return ApplyOne(args, doc, docHandle, wordApplication);
+            }
+
+            var applied = new List<object>();
+            var warnings = new List<object>();
+            foreach (Dictionary<string, object> warning in compiled.Warnings)
+            {
+                warnings.Add(warning);
+            }
+
+            foreach (FormatApplyBatchCompiler.CompiledOp op in compiled.Ops)
+            {
+                Dictionary<string, object> oneArgs = FormatApplyBatchCompiler.CopyArgsForOp(args, op, "char_format");
+                ToolResult one = ApplyOne(oneArgs, doc, docHandle, wordApplication).GetAwaiter().GetResult();
+                string codes = string.Join(",", op.Codes ?? new List<string>());
+                if (one != null && one.Success)
+                {
+                    applied.Add(new Dictionary<string, object>
+                    {
+                        ["item_index"] = op.ItemIndex,
+                        ["codes"] = codes,
+                        ["data"] = one.Data
+                    });
+                }
+                else
+                {
+                    warnings.Add(FormatApplyBatchCompiler.Warning(
+                        op.ItemIndex,
+                        codes,
+                        one?.Error ?? "无法定位"));
+                }
+            }
+
+            var data = new Dictionary<string, object>
+            {
+                ["applied"] = applied,
+                ["warnings"] = warnings
+            };
+            if (applied.Count == 0)
+            {
+                data["checkpoint_cleanup_only"] = true;
+                string error = "未能套用任何格式";
+                if (warnings.Count > 0 && warnings[0] is Dictionary<string, object> first)
+                {
+                    error = first.ContainsKey("message") ? first["message"]?.ToString() ?? error : error;
+                }
+
+                return Task.FromResult(new ToolResult
+                {
+                    Success = false,
+                    Error = error,
+                    Data = data
+                });
+            }
+
+            return Task.FromResult(new ToolResult { Success = true, Data = data });
+        }
+
+        private static Task<ToolResult> ApplyOne(
+            Dictionary<string, object> args,
+            Word.Document doc,
+            InteropDocumentHandle docHandle,
+            object wordApplication)
+        {
+                try
+                {
                     string validationError = ValidateModeArgs(args, out string mode,
                         out Dictionary<string, object> charFormat, out Dictionary<string, object> paraFormat);
                     if (validationError != null)
@@ -273,13 +366,12 @@ namespace WordAddIn1
                     }
 
                     return Task.FromResult(new ToolResult { Success = true, Data = data });
-                }
-                catch (Exception ex)
-                {
-                    FormatContextHelper.DbgLog($"F_apply_document_format 异常: {ex.Message}");
-                    return Done(false, $"apply_document_format 失败: {ex.Message}");
-                }
-            };
+            }
+            catch (Exception ex)
+            {
+                FormatContextHelper.DbgLog($"F_apply_document_format 异常: {ex.Message}");
+                return Done(false, $"apply_document_format 失败: {ex.Message}");
+            }
         }
 
         public static bool TryGetContractParseFailure(
@@ -287,6 +379,18 @@ namespace WordAddIn1
             out ToolResult failure)
         {
             failure = null;
+            if (FormatApplyBatchCompiler.HasItems(args))
+            {
+                string itemError = FormatApplyBatchCompiler.ValidateDocumentItems(args);
+                if (itemError != null)
+                {
+                    failure = DocumentCheckpointMutatingTools.Fail(itemError);
+                    return true;
+                }
+
+                return false;
+            }
+
             string validationError = ValidateModeArgs(args, out _, out _, out _);
             if (validationError != null)
             {

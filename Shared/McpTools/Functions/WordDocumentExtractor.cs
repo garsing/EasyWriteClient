@@ -1419,9 +1419,17 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine("==========================================");
             }
 
-            // 同步快照到 DocumentState
+            string paragraphSnapshot = mapResult.ParagraphSnapshot ?? "";
+            string paragraphSegSnapshot = mapResult.ParagraphSegSnapshot ?? "";
+
+            // 同步快照到 DocumentState（句子与段落同一代）
             string historySource = string.IsNullOrEmpty(snapshotSource) ? "process_document_local" : snapshotSource;
-            DocumentState.SetSnapshots(snapshot, segSnapshot, historySource);
+            DocumentState.SetSnapshots(
+                snapshot,
+                segSnapshot,
+                paragraphSnapshot,
+                paragraphSegSnapshot,
+                historySource);
             ExtractDetailLog(detailLog, "[同步] 快照已同步到 DocumentState");
 
             // 构建 ChunkInfo 列表
@@ -1486,6 +1494,8 @@ namespace WordAddIn1
                 NameToContentMap = nameToContentMap,
                 Snapshot = snapshot,
                 SegSnapshot = segSnapshot,
+                ParagraphSnapshot = paragraphSnapshot,
+                ParagraphSegSnapshot = paragraphSegSnapshot,
                 TableIndexToIdMap = tableIndexToIdMap,
                 ImageIndexToIdMap = imageIndexToIdMap,
                 ProcessingMethod = "Local"
@@ -2008,11 +2018,30 @@ namespace WordAddIn1
                                     DocumentState.SetChunkParagraphDisplayContents(paraDisplays);
                                 }
                                 
-                                // 设置Snapshot和SegSnapshot
+                                // 设置句子与段落快照。缺字段则段落快照置空，不沿用上一份内存。
                                 string snapshot = data["Snapshot"]?.Value<string>() ?? "";
                                 string segSnapshot = data["SegSnapshot"]?.Value<string>() ?? "";
+                                bool hasParagraphSnapshot = data["ParagraphSnapshot"] != null;
+                                bool hasParagraphSegSnapshot = data["ParagraphSegSnapshot"] != null;
+                                string paragraphSnapshot = hasParagraphSnapshot
+                                    ? data["ParagraphSnapshot"]?.Value<string>() ?? ""
+                                    : "";
+                                string paragraphSegSnapshot = hasParagraphSegSnapshot
+                                    ? data["ParagraphSegSnapshot"]?.Value<string>() ?? ""
+                                    : "";
+                                if (!hasParagraphSnapshot || !hasParagraphSegSnapshot)
+                                {
+                                    System.Diagnostics.Debug.WriteLine(
+                                        "[API] 响应缺少 ParagraphSnapshot 或 ParagraphSegSnapshot，段落快照置空");
+                                }
+
                                 string historySource = string.IsNullOrEmpty(snapshotSource) ? "process_document_api" : snapshotSource;
-                                DocumentState.SetSnapshots(snapshot, segSnapshot, historySource);
+                                DocumentState.SetSnapshots(
+                                    snapshot,
+                                    segSnapshot,
+                                    paragraphSnapshot,
+                                    paragraphSegSnapshot,
+                                    historySource);
                                 System.Diagnostics.Debug.WriteLine($"[API] 已设置快照: Snapshot={snapshot}, SegSnapshot={segSnapshot}");
 
                                 // 设置SnapshotIdx（如果API返回了该字段）
@@ -2082,6 +2111,8 @@ namespace WordAddIn1
                                     ReadText = data["ReadText"]?.Value<string>() ?? "",
                                     Snapshot = snapshot,
                                     SegSnapshot = segSnapshot,
+                                    ParagraphSnapshot = paragraphSnapshot,
+                                    ParagraphSegSnapshot = paragraphSegSnapshot,
                                     NameToContentMap = data["NameToContentMap"]?.ToObject<Dictionary<string, string>>() ?? new Dictionary<string, string>(),
                                     ChunkInfo = new List<ChunkInfo>(),
                                     TableIndexToIdMap = tableIndexToIdMap,
@@ -2295,6 +2326,8 @@ namespace WordAddIn1
             public Dictionary<string, string> NameToContentMap { get; set; }
             public string Snapshot { get; set; }
             public string SegSnapshot { get; set; }
+            public string ParagraphSnapshot { get; set; }
+            public string ParagraphSegSnapshot { get; set; }
             public Dictionary<int, string> TableIndexToIdMap { get; set; }
             public Dictionary<int, string> ImageIndexToIdMap { get; set; }
             /// <summary>

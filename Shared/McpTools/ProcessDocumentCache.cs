@@ -21,6 +21,8 @@ namespace WordAddIn1
         public string ReadText { get; set; }
         public string Snapshot { get; set; }
         public string SegSnapshot { get; set; }
+        public string ParagraphSnapshot { get; set; }
+        public string ParagraphSegSnapshot { get; set; }
         public Dictionary<string, string> NameToContentMap { get; set; }
         public List<WordDocumentExtractor.ChunkInfo> ChunkInfo { get; set; }
         public Dictionary<int, string> TableIndexToIdMap { get; set; }
@@ -379,10 +381,19 @@ namespace WordAddIn1
 
             RestoreIdOrdersFromCache(entry);
 
+            string cachedParagraphSnapshot = entry.ParagraphSnapshot ?? "";
+            string cachedParagraphSegSnapshot = entry.ParagraphSegSnapshot ?? "";
             if (!string.Equals(entry.Snapshot, DocumentState.Snapshot, StringComparison.Ordinal)
-                || !string.Equals(entry.SegSnapshot, DocumentState.SegSnapshot, StringComparison.Ordinal))
+                || !string.Equals(entry.SegSnapshot, DocumentState.SegSnapshot, StringComparison.Ordinal)
+                || !string.Equals(cachedParagraphSnapshot, DocumentState.ParagraphSnapshot, StringComparison.Ordinal)
+                || !string.Equals(cachedParagraphSegSnapshot, DocumentState.ParagraphSegSnapshot, StringComparison.Ordinal))
             {
-                DocumentState.SetSnapshots(entry.Snapshot, entry.SegSnapshot, source);
+                DocumentState.SetSnapshots(
+                    entry.Snapshot,
+                    entry.SegSnapshot,
+                    cachedParagraphSnapshot,
+                    cachedParagraphSegSnapshot,
+                    source);
             }
 
             DocumentState.EnsureInoperableFromLastDisplay();
@@ -408,6 +419,8 @@ namespace WordAddIn1
                 ReadText = result.ReadText,
                 Snapshot = result.Snapshot,
                 SegSnapshot = result.SegSnapshot,
+                ParagraphSnapshot = result.ParagraphSnapshot ?? "",
+                ParagraphSegSnapshot = result.ParagraphSegSnapshot ?? "",
                 NameToContentMap = CloneNameToContentMap(result.NameToContentMap),
                 ChunkInfo = CloneChunkInfo(result.ChunkInfo),
                 TableIndexToIdMap = CloneTableIndexMap(result.TableIndexToIdMap),
@@ -442,6 +455,8 @@ namespace WordAddIn1
                 ReadText = entry.ReadText,
                 Snapshot = entry.Snapshot,
                 SegSnapshot = entry.SegSnapshot,
+                ParagraphSnapshot = entry.ParagraphSnapshot ?? "",
+                ParagraphSegSnapshot = entry.ParagraphSegSnapshot ?? "",
                 NameToContentMap = CloneNameToContentMap(entry.NameToContentMap),
                 ChunkInfo = CloneChunkInfo(entry.ChunkInfo),
                 TableIndexToIdMap = CloneTableIndexMap(entry.TableIndexToIdMap),
