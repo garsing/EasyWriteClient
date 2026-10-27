@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 
 namespace WordAddIn1
 {
@@ -61,6 +62,52 @@ namespace WordAddIn1
             unescaped = unescaped.Replace("\\n", "\n");
 
             return unescaped;
+        }
+
+        /// <summary>
+        /// 纯文本文件正文按直接写入的 JSON 字符串规则还原换行。
+        /// \\ 保留为一个反斜杠，\r、\n 变为真正的回车和换行；其余 \ 前缀原样留下。
+        /// </summary>
+        public static string UnescapeWrittenNewlines(string content)
+        {
+            if (string.IsNullOrEmpty(content))
+            {
+                return content ?? "";
+            }
+
+            var sb = new StringBuilder(content.Length);
+            for (int i = 0; i < content.Length; i++)
+            {
+                char c = content[i];
+                if (c != '\\' || i + 1 >= content.Length)
+                {
+                    sb.Append(c);
+                    continue;
+                }
+
+                char next = content[i + 1];
+                if (next == '\\')
+                {
+                    sb.Append('\\');
+                    i++;
+                }
+                else if (next == 'r')
+                {
+                    sb.Append('\r');
+                    i++;
+                }
+                else if (next == 'n')
+                {
+                    sb.Append('\n');
+                    i++;
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
+
+            return sb.ToString();
         }
 
         /// <summary>

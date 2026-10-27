@@ -119,7 +119,8 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// from_file 文件正文。能解析为文本片数组则当分片；否则整文件当字符串（调用级 format 必填）。
+        /// from_file 文件正文。能解析为文本片数组则当分片（JSON 字符串里的 \r、\n 已由反序列化还原）；
+        /// 否则整文件当字符串，并把 \r、\n 按直接写入同样还原成换行（调用级 format 必填）。
         /// </summary>
         public static Payload TryParseFileBody(string fileText, Dictionary<string, object> callArgs)
         {
@@ -133,7 +134,7 @@ namespace WordAddIn1
                 return ParseRuns(list);
             }
 
-            string text = fileText ?? "";
+            string text = TextUtils.UnescapeWrittenNewlines(fileText ?? "");
             ActionFormatHelper.Spec spec = ActionFormatHelper.ParseFormatObject(callArgs, required: true);
             if (!spec.Ok)
             {
