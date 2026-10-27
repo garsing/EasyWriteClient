@@ -225,7 +225,8 @@ namespace WordAddIn1.BrowserHost
                     BuildCallObject(new JObject
                     {
                         ["kind"] = "click",
-                        ["mode"] = mode
+                        ["mode"] = mode,
+                        ["afterReveal"] = true
                     }),
                     sessionId).ConfigureAwait(true);
                 ThrowIfJsNotOk(resultJson, "点击被挡住");
@@ -1127,10 +1128,10 @@ namespace WordAddIn1.BrowserHost
     if (!el || !el.getBoundingClientRect) return;
     try {
       var box = el.getBoundingClientRect();
+      if (!box || box.width <= 1 || box.height <= 1) return;
       var vw = window.innerWidth || document.documentElement.clientWidth || 0;
       var vh = window.innerHeight || document.documentElement.clientHeight || 0;
-      var visible = box.width > 1 && box.height > 1
-        && box.bottom > 0 && box.right > 0 && box.top < vh && box.left < vw;
+      var visible = box.bottom > 0 && box.right > 0 && box.top < vh && box.left < vw;
       if (!visible) el.scrollIntoView({block:'nearest', inline:'nearest'});
     } catch (eSc) {}
   }
@@ -1204,26 +1205,53 @@ namespace WordAddIn1.BrowserHost
   }
   function visibleHost(el) {
     var p = el && el.parentElement;
-    for (var d = 0; p && p !== document.body && p !== document.documentElement && d < 6; d++) {
+    for (var d = 0; p && p !== document.body && p !== document.documentElement && d < 16; d++) {
       var stH = null, box = null;
       try { stH = window.getComputedStyle(p); } catch (eHs) {}
       try { box = p.getBoundingClientRect(); } catch (eHb) {}
       if (stH && stH.display !== 'none' && stH.visibility !== 'hidden' && box && box.width > 1 && box.height > 1) {
-        return box;
+        return p;
       }
       p = p.parentElement;
     }
     return null;
   }
+  function isRowHoverTarget(el) {
+    if (!el || el.nodeType !== 1) return false;
+    var tag = (el.tagName || '').toLowerCase();
+    var role = '';
+    try { role = ((el.getAttribute && el.getAttribute('role')) || '').toLowerCase(); } catch (eRole) {}
+    var hoverRole = tag === 'a' || tag === 'button' || role === 'button' || role === 'link' || role === 'menuitem' || role === 'tab';
+    var iconTag = tag === 'i' || tag === 'span' || tag === 'em';
+    if (!hoverRole && !iconTag) return false;
+    var inner = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (inner.length > 16) return false;
+    var p = el.parentElement;
+    while (p && p !== document.body && p !== document.documentElement) {
+      var pst = null;
+      try { pst = window.getComputedStyle(p); } catch (eP) { break; }
+      if (pst && (pst.display === 'none' || pst.visibility === 'hidden')) return false;
+      p = p.parentElement;
+    }
+    return true;
+  }
   if (!isHover && (r.width <= 0 || r.height <= 0)) {
-    var hostBox = visibleHost(t);
-    if (hostBox) {
-      return {
-        ok: true,
-        reveal: true,
-        hostX: hostBox.left + hostBox.width / 2,
-        hostY: hostBox.top + hostBox.height / 2
-      };
+    if (!opts.afterReveal) {
+      var host = visibleHost(t);
+      if (host) {
+        scrollIfNeeded(host);
+        var hostBox = host.getBoundingClientRect();
+        return {
+          ok: true,
+          reveal: true,
+          hostX: hostBox.left + hostBox.width / 2,
+          hostY: hostBox.top + hostBox.height / 2
+        };
+      }
+    }
+    if (isRowHoverTarget(t)) {
+      doClick(t);
+      return { ok: true, fallback: true };
     }
   }
   if (r.width <= 0 || r.height <= 0) {

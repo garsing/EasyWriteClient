@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 42;
+  const CONTENT_VER = 43;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -604,13 +604,22 @@
       return /delete|remove|trash|\bdel\b|shanchu|icon-del|\bedit\b|pencil|modify|bianji|icon-edit/.test(classBlob(el));
     }
 
+    function isGlyphIcon(el) {
+      const tag = (el.tagName || "").toLowerCase();
+      if (tag !== "i" && tag !== "span" && tag !== "em") return false;
+      const inner = String(el.textContent || "").replace(/\s+/g, " ").trim();
+      if (inner.length > 4) return false;
+      if (/[\uE000-\uF8FF]/.test(inner)) return true;
+      return tag === "i" && inner.length <= 1;
+    }
+
     function isClickableIcon(el) {
       const tag = (el.tagName || "").toLowerCase();
       if (tag !== "i" && tag !== "span" && tag !== "em") return false;
       const role = (el.getAttribute("role") || "").toLowerCase();
       if (role === "button" || role === "link" || role === "menuitem") return true;
       if (el.getAttribute("onclick")) return true;
-      return hasIconActionClass(el);
+      return hasIconActionClass(el) || isGlyphIcon(el);
     }
 
     function insideHiddenTemplate(el) {
@@ -653,11 +662,28 @@
       const aria = (el.getAttribute("aria-label") || el.getAttribute("title") || "").replace(/\s+/g, " ").trim();
       if (aria) return aria.slice(0, 40);
       const blob = classBlob(el);
-      if (/delete|remove|trash|\bdel\b|shanchu|icon-del/.test(blob)) return "删除";
+      if (/delete|remove|trash|\bdel\b|shanchu|icon-del|icon-close|\bclose\b|btn-del|del-btn/.test(blob)) return "删除";
       if (/\bedit\b|pencil|modify|bianji|icon-edit/.test(blob)) return "编辑";
       const own = ownText(el);
       if (own && own.length <= 16 && !/[\uE000-\uF8FF]/.test(own)) return own;
-      return "图标";
+      let name = "图标";
+      const parts = blob.match(/[a-z][a-z0-9-]{2,18}/g) || [];
+      const skip = { icon: 1, iconfont: 1, icons: 1, button: 1, btn: 1, fl: 1, fr: 1 };
+      let picked = "";
+      for (let i = 0; i < parts.length; i++) if (!skip[parts[i]]) picked = parts[i];
+      if (picked) name += " " + picked;
+      let p = el.parentElement;
+      for (let d = 0; p && d < 8; d++) {
+        const kids = p.children || [];
+        for (let i = 0; i < kids.length; i++) {
+          const k = kids[i];
+          if (k === el || (k.contains && k.contains(el))) continue;
+          const t = String(k.innerText || k.textContent || "").replace(/[\uE000-\uF8FF]/g, "").replace(/\s+/g, " ").trim();
+          if (t && t.length >= 2 && t.length <= 20 && name.indexOf(t) < 0) return (name + " " + t).slice(0, 40);
+        }
+        p = p.parentElement;
+      }
+      return name.slice(0, 40);
     }
 
     function visibleHost(el) {
@@ -1653,7 +1679,12 @@
     fireSyntheticHover(host, hb.left + hb.width / 2, hb.top + hb.height / 2);
     await new Promise((resolve) => setTimeout(resolve, 150));
     const err = hitTestError(el);
-    if (err) return { ok: false, error: err };
+    if (err) {
+      if (err.indexOf("没有可点区域") < 0) return { ok: false, error: err };
+      if (typeof el.click === "function") el.click();
+      else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      return { ok: true };
+    }
     if (clickMode === "legacy") {
       if (typeof el.click === "function") el.click();
       else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
@@ -1694,7 +1725,10 @@
       fireSyntheticHover(revealHost, hb.left + hb.width / 2, hb.top + hb.height / 2);
       await new Promise((resolve) => setTimeout(resolve, 150));
       const err = hitTestError(el);
-      if (err) return { ok: false, error: err };
+      if (err && err.indexOf("没有可点区域") < 0) return { ok: false, error: err };
+      if (typeof el.click === "function") el.click();
+      else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      return { ok: true };
     }
     try { el.focus && el.focus(); } catch (_) {}
     if (clickMode === "legacy") {

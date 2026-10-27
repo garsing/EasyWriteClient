@@ -45,13 +45,21 @@ namespace WordAddIn1.BrowserHost
   function isNamedIcon(el){
     return /delete|remove|trash|\bdel\b|shanchu|icon-del|\bedit\b|pencil|modify|bianji|icon-edit/.test(classBlob(el));
   }
+  function isGlyphIcon(el){
+    var tag=(el.tagName||'').toLowerCase();
+    if (tag!=='i' && tag!=='span' && tag!=='em') return false;
+    var inner=String(el.textContent||'').replace(/\s+/g,' ').trim();
+    if (inner.length>4) return false;
+    if (/[\uE000-\uF8FF]/.test(inner)) return true;
+    return tag==='i' && inner.length<=1;
+  }
   function isClickableIcon(el){
     var tag=(el.tagName||'').toLowerCase();
     if (tag!=='i' && tag!=='span' && tag!=='em') return false;
     var role=((el.getAttribute&&el.getAttribute('role'))||'').toLowerCase();
     if (role==='button'||role==='link'||role==='menuitem') return true;
     if (el.getAttribute && el.getAttribute('onclick')) return true;
-    return isNamedIcon(el);
+    return isNamedIcon(el) || isGlyphIcon(el);
   }
   function insideHiddenTemplate(el){
     var p=el.parentElement;
@@ -69,15 +77,44 @@ namespace WordAddIn1.BrowserHost
       return !r || r.width<=0 || r.height<=0;
     } catch (eB) { return true; }
   }
+  function classHint(el){
+    var blob=classBlob(el);
+    if (/delete|remove|trash|shanchu|icon-del|icon-close|\bclose\b|btn-del|del-btn/.test(blob)) return '删除';
+    if (/\bedit\b|pencil|modify|bianji|icon-edit/.test(blob)) return '编辑';
+    var parts=blob.match(/[a-z][a-z0-9-]{2,18}/g)||[];
+    var skip={icon:1,iconfont:1,icons:1,button:1,btn:1,fl:1,fr:1};
+    var picked='';
+    for (var i=0;i<parts.length;i++){ if (!skip[parts[i]]) picked=parts[i]; }
+    return picked;
+  }
+  function rowHint(el){
+    var p=el&&el.parentElement;
+    for (var d=0;p&&d<8;d++){
+      var kids=p.children||[];
+      for (var i=0;i<kids.length;i++){
+        var k=kids[i];
+        if (k===el) continue;
+        if (k.contains&&k.contains(el)) continue;
+        var t=String(k.innerText||k.textContent||'').replace(/[\uE000-\uF8FF]/g,'').replace(/\s+/g,' ').trim();
+        if (t&&t.length>=2&&t.length<=20) return t;
+      }
+      p=p.parentElement;
+    }
+    return '';
+  }
   function iconLabel(el){
     var aria=el.getAttribute&&(el.getAttribute('aria-label')||el.getAttribute('title'));
     aria=String(aria||'').replace(/\s+/g,' ').trim();
     if (aria) return aria.slice(0,40);
-    if (/delete|remove|trash|\bdel\b|shanchu|icon-del/.test(classBlob(el))) return '删除';
-    if (/\bedit\b|pencil|modify|bianji|icon-edit/.test(classBlob(el))) return '编辑';
+    var hinted=classHint(el);
+    if (hinted==='删除'||hinted==='编辑') return hinted;
     var ownT=ownText(el);
     if (ownT && ownT.length<=16 && !/[\uE000-\uF8FF]/.test(ownT)) return ownT;
-    return '图标';
+    var name='图标';
+    if (hinted) name=name+' '+hinted;
+    var rh=rowHint(el);
+    if (rh && name.indexOf(rh)<0) name=(name+' '+rh).slice(0,40);
+    return name;
   }
   function classNameOf(el){
     var c=el.className;

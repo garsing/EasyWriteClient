@@ -338,7 +338,16 @@
     var role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase();
     if (role === "button" || role === "link" || role === "menuitem") return true;
     if (el.getAttribute && el.getAttribute("onclick")) return true;
-    return isNamedIcon(el);
+    return isNamedIcon(el) || isGlyphIcon(el);
+  }
+
+  function isGlyphIcon(el) {
+    var tag = (el.tagName || "").toLowerCase();
+    if (tag !== "i" && tag !== "span" && tag !== "em") return false;
+    var inner = String(el.textContent || "").replace(/\s+/g, " ").trim();
+    if (inner.length > 4) return false;
+    if (/[\uE000-\uF8FF]/.test(inner)) return true;
+    return tag === "i" && inner.length <= 1;
   }
 
   function insideHiddenTemplate(el) {
@@ -375,11 +384,28 @@
     aria = String(aria || "").replace(/\s+/g, " ").trim();
     if (aria) return aria.slice(0, 40);
     var blob = classBlob(el);
-    if (/delete|remove|trash|\bdel\b|shanchu|icon-del/.test(blob)) return "删除";
+    if (/delete|remove|trash|\bdel\b|shanchu|icon-del|icon-close|\bclose\b|btn-del|del-btn/.test(blob)) return "删除";
     if (/\bedit\b|pencil|modify|bianji|icon-edit/.test(blob)) return "编辑";
     var own = String(el.textContent || "").replace(/\s+/g, " ").trim();
     if (own && own.length <= 16 && !/[\uE000-\uF8FF]/.test(own)) return own;
-    return "图标";
+    var name = "图标";
+    var parts = blob.match(/[a-z][a-z0-9-]{2,18}/g) || [];
+    var skip = { icon: 1, iconfont: 1, icons: 1, button: 1, btn: 1, fl: 1, fr: 1 };
+    var picked = "";
+    for (var i = 0; i < parts.length; i++) if (!skip[parts[i]]) picked = parts[i];
+    if (picked) name += " " + picked;
+    var p = el.parentElement;
+    for (var d = 0; p && d < 8; d++) {
+      var kids = p.children || [];
+      for (var k = 0; k < kids.length; k++) {
+        var node = kids[k];
+        if (node === el || (node.contains && node.contains(el))) continue;
+        var t = String(node.innerText || node.textContent || "").replace(/[\uE000-\uF8FF]/g, "").replace(/\s+/g, " ").trim();
+        if (t && t.length >= 2 && t.length <= 20 && name.indexOf(t) < 0) return (name + " " + t).slice(0, 40);
+      }
+      p = p.parentElement;
+    }
+    return name.slice(0, 40);
   }
 
   function visibleHost(el) {
