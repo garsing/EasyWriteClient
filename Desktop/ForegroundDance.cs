@@ -39,6 +39,16 @@ namespace EasyWriteClient.Desktop
 
         private void TryRun(ForegroundDanceRequest request)
         {
+            if (!WindowLayoutStore.GetStealForegroundEnabled())
+            {
+                if (WindowLayoutStore.GetAutoCompactEnabled())
+                {
+                    _form.CompactWithoutForeground();
+                }
+
+                return;
+            }
+
             if (!WindowLayoutStore.GetAutoCompactEnabled())
             {
                 return;

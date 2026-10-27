@@ -144,6 +144,30 @@
                       @change="onTogglePref('autoCompactEnabled', $event)"
                     />
                   </label>
+                  <div class="pref-row">
+                    <span class="pref-text">
+                      <span class="pref-title-row">
+                        <span class="pref-title">操作时抢占窗口焦点</span>
+                        <span
+                          class="loose-help"
+                          tabindex="0"
+                          role="img"
+                          aria-label="关闭后打开或改文档都不会把稿或易写拉到最前；开启后与现在相同"
+                          @click.stop.prevent
+                        >
+                          ?
+                          <span class="loose-help-tip" role="tooltip">关闭后打开或改文档都不会把稿或易写拉到最前；开启后与现在相同</span>
+                        </span>
+                      </span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      class="pref-switch"
+                      :checked="stealForegroundEnabled"
+                      :disabled="prefSaving"
+                      @change="onTogglePref('stealForegroundEnabled', $event)"
+                    />
+                  </div>
                   <label class="pref-row">
                     <span class="pref-text">
                       <span class="pref-title">保留圆形悬浮窗</span>
@@ -224,6 +248,7 @@ const idleSecondsChoices = [
 
 const showInteraction = ref(false)
 const autoCompactEnabled = ref(true)
+const stealForegroundEnabled = ref(false)
 const autoFloatEnabled = ref(true)
 const autoFloatIdleSeconds = ref(5)
 const prefSaving = ref(false)
@@ -361,6 +386,7 @@ async function loadSettings () {
       remapHint.value = ''
       showInteraction.value = true
       autoCompactEnabled.value = true
+      stealForegroundEnabled.value = false
       autoFloatEnabled.value = true
       autoFloatIdleSeconds.value = 5
       await loadLlmQuota()
@@ -439,6 +465,7 @@ async function loadInteractionSettings () {
     }
     showInteraction.value = true
     autoCompactEnabled.value = res.autoCompactEnabled !== false
+    stealForegroundEnabled.value = res.stealForegroundEnabled === true
     autoFloatEnabled.value = res.autoFloatEnabled !== false
     const sec = Number(res.autoFloatIdleSeconds)
     autoFloatIdleSeconds.value = Number.isFinite(sec) ? sec : 5
@@ -471,21 +498,24 @@ async function saveInteraction (key, value) {
 
 async function onTogglePref (key, event) {
   const next = !!event.target.checked
-  const prev = key === 'autoCompactEnabled' ? autoCompactEnabled.value : autoFloatEnabled.value
-  if (key === 'autoCompactEnabled') {
-    autoCompactEnabled.value = next
-  } else {
-    autoFloatEnabled.value = next
-  }
+  const slot = prefRef(key)
+  const prev = slot.value
+  slot.value = next
   const ok = await saveInteraction(key, next)
   if (!ok) {
-    if (key === 'autoCompactEnabled') {
-      autoCompactEnabled.value = prev
-    } else {
-      autoFloatEnabled.value = prev
-    }
+    slot.value = prev
     event.target.checked = prev
   }
+}
+
+function prefRef (key) {
+  if (key === 'autoCompactEnabled') {
+    return autoCompactEnabled
+  }
+  if (key === 'stealForegroundEnabled') {
+    return stealForegroundEnabled
+  }
+  return autoFloatEnabled
 }
 
 async function onIdleSecondsChange (event) {
@@ -926,6 +956,12 @@ onMounted(() => {
 .pref-title {
   font-size: 14px;
   color: #333;
+}
+
+.pref-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .pref-desc {

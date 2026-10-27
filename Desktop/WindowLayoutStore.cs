@@ -45,6 +45,10 @@ namespace EasyWriteClient.Desktop
             [JsonProperty("autoFloatIdleSeconds")]
             public int? AutoFloatIdleSeconds { get; set; }
 
+            /// <summary>工具打开/改稿时是否抢前台；缺省 false。</summary>
+            [JsonProperty("stealForegroundEnabled")]
+            public bool? StealForegroundEnabled { get; set; }
+
             [JsonProperty("ballX")]
             public int? BallX { get; set; }
 
@@ -119,6 +123,26 @@ namespace EasyWriteClient.Desktop
             }
 
             return dto.AutoCompactEnabled.Value;
+        }
+
+        /// <summary>只有 json 里显式 true 才抢；缺字段 = false。</summary>
+        public static bool GetStealForegroundEnabled()
+        {
+            return ReadDto()?.StealForegroundEnabled == true;
+        }
+
+        public static void SetStealForegroundEnabled(bool enabled)
+        {
+            try
+            {
+                LayoutDto dto = ReadDto() ?? new LayoutDto();
+                dto.StealForegroundEnabled = enabled;
+                WriteDto(dto);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[WindowLayoutStore] SetStealForegroundEnabled: " + ex.Message);
+            }
         }
 
         public static void SetAutoCompactEnabled(bool enabled)

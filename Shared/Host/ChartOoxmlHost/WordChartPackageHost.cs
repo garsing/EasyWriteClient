@@ -363,26 +363,45 @@ namespace WordAddIn1.ChartOoxmlHost
                 Word.Document word = destDoc as Word.Document;
                 if (word != null && !WpsChartExtract.IsWpsDocument(destDoc))
                 {
-                    word.Activate();
                     Word.Range hole = word.Range(start, start);
-                    hole.Select();
-                    word.Application.Selection.Paste();
+                    if (HostCallbacks.ShouldStealForeground())
+                    {
+                        word.Activate();
+                        hole.Select();
+                        word.Application.Selection.Paste();
+                    }
+                    else
+                    {
+                        hole.Paste();
+                    }
+
                     return true;
                 }
 
-                try
+                if (HostCallbacks.ShouldStealForeground())
                 {
-                    WpsCom.Invoke(destDoc, "Activate");
-                }
-                catch
-                {
+                    try
+                    {
+                        WpsCom.Invoke(destDoc, "Activate");
+                    }
+                    catch
+                    {
+                    }
                 }
 
                 object wpsHole = WpsCom.Invoke(destDoc, "Range", start, start);
-                WpsCom.Invoke(wpsHole, "Select");
-                object app = WpsCom.GetProperty(destDoc, "Application");
-                object selection = WpsCom.GetProperty(app, "Selection");
-                WpsCom.Invoke(selection, "Paste");
+                if (HostCallbacks.ShouldStealForeground())
+                {
+                    WpsCom.Invoke(wpsHole, "Select");
+                    object app = WpsCom.GetProperty(destDoc, "Application");
+                    object selection = WpsCom.GetProperty(app, "Selection");
+                    WpsCom.Invoke(selection, "Paste");
+                }
+                else
+                {
+                    WpsCom.Invoke(wpsHole, "Paste");
+                }
+
                 return true;
             }
             catch (Exception ex)

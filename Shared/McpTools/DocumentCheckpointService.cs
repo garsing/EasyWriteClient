@@ -307,6 +307,11 @@ namespace WordAddIn1
 
         private static void TryActivateChannelDocument(Dictionary<string, object> args)
         {
+            if (!HostCallbacks.ShouldStealForeground())
+            {
+                return;
+            }
+
             try
             {
                 if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out _)

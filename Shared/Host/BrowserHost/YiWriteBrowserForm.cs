@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
+using WordAddIn1.HostPlatform;
 
 namespace WordAddIn1.BrowserHost
 {
@@ -1297,6 +1298,21 @@ namespace WordAddIn1.BrowserHost
         {
             Opacity = 1;
             ShowInTaskbar = true;
+
+            if (!HostCallbacks.ShouldStealForeground())
+            {
+                if (WindowState == FormWindowState.Minimized)
+                {
+                    return;
+                }
+
+                if (!Visible)
+                {
+                    NativeWindowActivate.ShowWithoutForeground(Handle);
+                }
+
+                return;
+            }
 
             if (!Visible)
             {

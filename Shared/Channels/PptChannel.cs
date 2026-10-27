@@ -188,6 +188,11 @@ namespace WordAddIn1
 
         public bool TryActivate()
         {
+            if (!HostCallbacks.ShouldStealForeground())
+            {
+                return false;
+            }
+
             if (!TryGetLivePresentation(out PowerPoint.Presentation presentation))
             {
                 return false;

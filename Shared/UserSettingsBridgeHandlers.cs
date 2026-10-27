@@ -213,7 +213,7 @@ namespace WordAddIn1
 
                 var key = ExtractStringField(data, "key");
                 if (key != "autoCompactEnabled" && key != "autoFloatEnabled"
-                    && key != "autoFloatIdleSeconds")
+                    && key != "autoFloatIdleSeconds" && key != "stealForegroundEnabled")
                 {
                     return new { success = false, message = "未知设置项" };
                 }

@@ -5,6 +5,7 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using WordAddIn1;
+using WordAddIn1.HostPlatform;
 
 namespace EasyWriteClient.Desktop
 {
@@ -43,6 +44,7 @@ namespace EasyWriteClient.Desktop
         private Action _clearDesktopTopMostHandler;
         private Func<object> _getInteractionSettingsHandler;
         private Action<string, object> _setInteractionSettingHandler;
+        private Func<bool> _getStealForegroundEnabledHandler;
         private readonly System.Windows.Forms.Timer _idleTimer;
         private DateTime _lastActivityUtc = DateTime.UtcNow;
         private bool _isFloatBall;
@@ -146,9 +148,13 @@ namespace EasyWriteClient.Desktop
                 showInteraction = true,
                 autoCompactEnabled = WindowLayoutStore.GetAutoCompactEnabled(),
                 autoFloatEnabled = WindowLayoutStore.GetAutoFloatEnabled(),
-                autoFloatIdleSeconds = WindowLayoutStore.GetAutoFloatIdleSeconds()
+                autoFloatIdleSeconds = WindowLayoutStore.GetAutoFloatIdleSeconds(),
+                stealForegroundEnabled = WindowLayoutStore.GetStealForegroundEnabled()
             };
             HostCallbacks.GetDesktopInteractionSettings = _getInteractionSettingsHandler;
+
+            _getStealForegroundEnabledHandler = () => WindowLayoutStore.GetStealForegroundEnabled();
+            HostCallbacks.GetStealForegroundEnabled = _getStealForegroundEnabledHandler;
 
             _setInteractionSettingHandler = (key, value) =>
             {
@@ -245,6 +251,11 @@ namespace EasyWriteClient.Desktop
                 if (ReferenceEquals(HostCallbacks.SetDesktopInteractionSetting, _setInteractionSettingHandler))
                 {
                     HostCallbacks.SetDesktopInteractionSetting = null;
+                }
+
+                if (ReferenceEquals(HostCallbacks.GetStealForegroundEnabled, _getStealForegroundEnabledHandler))
+                {
+                    HostCallbacks.GetStealForegroundEnabled = null;
                 }
 
                 WordHost.Shutdown();
@@ -536,6 +547,12 @@ namespace EasyWriteClient.Desktop
             {
                 WindowLayoutStore.SetAutoFloatIdleSeconds(ToInt(value, WindowLayoutStore.IdleSecondsDefault));
                 NoteUserActivity();
+                return;
+            }
+
+            if (string.Equals(key, "stealForegroundEnabled", StringComparison.Ordinal))
+            {
+                WindowLayoutStore.SetStealForegroundEnabled(ToBool(value, false));
             }
         }
 
@@ -627,7 +644,7 @@ namespace EasyWriteClient.Desktop
             WindowState = FormWindowState.Minimized;
         }
 
-        internal void LeaveFloatBall()
+        internal void LeaveFloatBall(bool activate = true)
         {
             if (!_isFloatBall || IsDisposed)
             {
@@ -636,7 +653,7 @@ namespace EasyWriteClient.Desktop
 
             if (InvokeRequired)
             {
-                BeginInvoke(new Action(LeaveFloatBall));
+                BeginInvoke(new Action(() => LeaveFloatBall(activate)));
                 return;
             }
 
@@ -655,9 +672,16 @@ namespace EasyWriteClient.Desktop
             }
 
             ShowInTaskbar = true;
-            if (WindowState != FormWindowState.Normal)
+            if (activate)
             {
-                WindowState = FormWindowState.Normal;
+                if (WindowState != FormWindowState.Normal)
+                {
+                    WindowState = FormWindowState.Normal;
+                }
+            }
+            else
+            {
+                NativeWindowActivate.ShowWithoutForeground(Handle);
             }
 
             if (_boundsBeforeFloat.Width >= MinimumSize.Width && _boundsBeforeFloat.Height >= MinimumSize.Height)
@@ -665,13 +689,21 @@ namespace EasyWriteClient.Desktop
                 Bounds = _boundsBeforeFloat;
             }
 
-            if (!Visible)
+            if (activate)
             {
-                Show();
+                if (!Visible)
+                {
+                    Show();
+                }
+
+                Activate();
+                BringToFront();
+            }
+            else if (!Visible)
+            {
+                NativeWindowActivate.ShowWithoutForeground(Handle);
             }
 
-            Activate();
-            BringToFront();
             NoteUserActivity();
             StartIdleWatch();
             ApplyWindowRegion();
@@ -774,7 +806,30 @@ namespace EasyWriteClient.Desktop
             ApplyWindowRegion();
         }
 
-        internal void SetLayoutMode(WindowLayoutMode mode, bool persist = true, bool notifyWeb = true)
+        /// <summary>关抢焦点时自动缩小：改尺寸但不 Activate。</summary>
+        internal void CompactWithoutForeground()
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            if (IsFloatBall)
+            {
+                LeaveFloatBall(activate: false);
+            }
+
+            if (!IsCompactLayout)
+            {
+                SetLayoutMode(WindowLayoutMode.Compact, persist: true, notifyWeb: true, restoreMinimized: false);
+            }
+        }
+
+        internal void SetLayoutMode(
+            WindowLayoutMode mode,
+            bool persist = true,
+            bool notifyWeb = true,
+            bool restoreMinimized = true)
         {
             if (IsDisposed)
             {
@@ -786,9 +841,16 @@ namespace EasyWriteClient.Desktop
                 LeaveFloatBall();
             }
 
-            if (WindowState == FormWindowState.Minimized)
+            if (restoreMinimized)
             {
-                WindowState = FormWindowState.Normal;
+                if (WindowState == FormWindowState.Minimized)
+                {
+                    WindowState = FormWindowState.Normal;
+                }
+            }
+            else if (WindowState == FormWindowState.Minimized)
+            {
+                NativeWindowActivate.ShowWithoutForeground(Handle);
             }
 
             bool already = _layoutMode == mode;

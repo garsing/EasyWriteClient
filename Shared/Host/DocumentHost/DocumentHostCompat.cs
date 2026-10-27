@@ -85,7 +85,7 @@ namespace WordAddIn1.DocumentHost
         /// </summary>
         public static void TryActivateLateBound(object document)
         {
-            if (document == null)
+            if (document == null || !HostCallbacks.ShouldStealForeground())
             {
                 return;
             }

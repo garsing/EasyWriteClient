@@ -76,7 +76,7 @@ namespace WordAddIn1.DocumentHost
                 }
 
                 DocumentState.BindAndActivate(document);
-                if (activateDocument)
+                if (activateDocument && HostCallbacks.ShouldStealForeground())
                 {
                     try
                     {

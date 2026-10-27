@@ -34,15 +34,25 @@ namespace WordAddIn1
         public static Func<Task> NotifyUserLoggedInAllAsync { get; set; }
 
         /// <summary>
-        /// Desktop 注册：返回 { showInteraction, autoCompactEnabled, autoFloatEnabled, autoFloatIdleSeconds }。
+        /// Desktop 注册：返回 { showInteraction, autoCompactEnabled, autoFloatEnabled, autoFloatIdleSeconds, stealForegroundEnabled }。
         /// Plugin 不注册 → 设置页不展示「交互」。
         /// </summary>
         public static Func<object> GetDesktopInteractionSettings { get; set; }
 
         /// <summary>
-        /// Desktop 注册：key = autoCompactEnabled | autoFloatEnabled | autoFloatIdleSeconds。
+        /// Desktop 注册：key = autoCompactEnabled | autoFloatEnabled | autoFloatIdleSeconds | stealForegroundEnabled。
         /// </summary>
         public static Action<string, object> SetDesktopInteractionSetting { get; set; }
+
+        /// <summary>Desktop 注册读本机开关。Plugin 不注册 → <see cref="ShouldStealForeground"/> 为 false。</summary>
+        public static Func<bool> GetStealForegroundEnabled { get; set; }
+
+        /// <summary>工具路径是否允许抢系统前台。未注册或非 true 一律 false。</summary>
+        public static bool ShouldStealForeground()
+        {
+            Func<bool> getter = GetStealForegroundEnabled;
+            return getter != null && getter();
+        }
 
         /// <summary>Desktop：请求进入缩小版窗口形态；Plugin 不注册则为 no-op。编排第 1 步 / 手动缩小复用。</summary>
         public static Action RequestCompact { get; set; }

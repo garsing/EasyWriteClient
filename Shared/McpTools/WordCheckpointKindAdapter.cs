@@ -134,12 +134,15 @@ namespace WordAddIn1
                 int start = Math.Max(0, Math.Min(caret.SelectionStart, maxPos));
                 int end = Math.Max(start, Math.Min(caret.SelectionEnd, maxPos));
 
-                try
+                if (HostCallbacks.ShouldStealForeground())
                 {
-                    doc.Activate();
-                }
-                catch (Exception)
-                {
+                    try
+                    {
+                        doc.Activate();
+                    }
+                    catch (Exception)
+                    {
+                    }
                 }
 
                 Word.Application app = null;
@@ -205,7 +208,7 @@ namespace WordAddIn1
 
         private static void TryActivateInteropDocument(Word.Document document)
         {
-            if (document == null)
+            if (document == null || !HostCallbacks.ShouldStealForeground())
             {
                 return;
             }

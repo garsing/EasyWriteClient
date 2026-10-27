@@ -12,6 +12,7 @@ namespace WordAddIn1.HostPlatform
         private const int SwRestore = 9;
         private const int SwMaximize = 3;
         private const int SwShow = 5;
+        private const int SwShowNoActivate = 4;
         private const int MinWidthPx = 720;
         private const int MinHeightPx = 480;
         private const int SwpShowWindow = 0x0040;
@@ -57,6 +58,23 @@ namespace WordAddIn1.HostPlatform
             public int Top;
             public int Right;
             public int Bottom;
+        }
+
+        /// <summary>亮窗但不抢系统前台（关抢焦点时缩小/展球用）。</summary>
+        public static void ShowWithoutForeground(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero)
+            {
+                return;
+            }
+
+            try
+            {
+                ShowWindow(hwnd, SwShowNoActivate);
+            }
+            catch (Exception)
+            {
+            }
         }
 
         public static void BringToFront(int hwnd)
