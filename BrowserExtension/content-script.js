@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 43;
+  const CONTENT_VER = 44;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -452,7 +452,7 @@
       if (tag === "html" || tag === "body") {
         return t(document.title).slice(0, 120);
       }
-      if (isRowHoverControl(el)) return hoverIconLabel(el);
+      if (isRowHoverControl(el) || (hasIconActionClass(el) && !/settingcheck/.test(classBlob(el)))) return hoverIconLabel(el);
       if (isDataRow(el)) {
         const row = rowName(el);
         if (row) return row;
@@ -622,12 +622,26 @@
       return hasIconActionClass(el) || isGlyphIcon(el);
     }
 
+    function isHiddenBox(el) {
+      let st = null;
+      try { st = window.getComputedStyle(el); } catch (_) { return false; }
+      return !!(st && (st.display === "none" || st.visibility === "hidden"));
+    }
+
+    function isIconActionBar(el) {
+      const blob = classBlob(el);
+      if (/icon-delete|icon-drag|deleeidt|drag-ct|icon-edit|icon-del/.test(blob)) return true;
+      return !!(el.querySelector && el.querySelector(".icon-delete, .icon-drag, .deleEidt, .icon-edit"));
+    }
+
     function insideHiddenTemplate(el) {
       let p = el.parentElement;
       while (p && p !== document.body && p !== document.documentElement) {
-        let st = null;
-        try { st = window.getComputedStyle(p); } catch (_) { break; }
-        if (st && (st.display === "none" || st.visibility === "hidden")) return true;
+        if (isHiddenBox(p)) {
+          const inner = String(p.textContent || "").replace(/\s+/g, " ").trim();
+          const bar = inner.length <= 24 && isIconActionBar(p) && !!visibleHost(p);
+          if (!bar) return true;
+        }
         p = p.parentElement;
       }
       return false;
@@ -643,7 +657,7 @@
     }
 
     function isRowHoverControl(el) {
-      if (!el || el.nodeType !== 1 || insideHiddenTemplate(el)) return false;
+      if (!el || el.nodeType !== 1 || /settingcheck/.test(classBlob(el)) || insideHiddenTemplate(el)) return false;
       const tag = (el.tagName || "").toLowerCase();
       const role = (el.getAttribute("role") || "").toLowerCase();
       const hoverRole = tag === "a" || tag === "button"
@@ -662,16 +676,18 @@
       const aria = (el.getAttribute("aria-label") || el.getAttribute("title") || "").replace(/\s+/g, " ").trim();
       if (aria) return aria.slice(0, 40);
       const blob = classBlob(el);
-      if (/delete|remove|trash|\bdel\b|shanchu|icon-del|icon-close|\bclose\b|btn-del|del-btn/.test(blob)) return "删除";
-      if (/\bedit\b|pencil|modify|bianji|icon-edit/.test(blob)) return "编辑";
+      let name = "图标";
+      if (/delete|remove|trash|\bdel\b|shanchu|icon-del|icon-close|\bclose\b|btn-del|del-btn/.test(blob)) name = "删除";
+      else if (/\bedit\b|pencil|modify|bianji|icon-edit/.test(blob)) name = "编辑";
+      else {
       const own = ownText(el);
       if (own && own.length <= 16 && !/[\uE000-\uF8FF]/.test(own)) return own;
-      let name = "图标";
       const parts = blob.match(/[a-z][a-z0-9-]{2,18}/g) || [];
       const skip = { icon: 1, iconfont: 1, icons: 1, button: 1, btn: 1, fl: 1, fr: 1 };
       let picked = "";
       for (let i = 0; i < parts.length; i++) if (!skip[parts[i]]) picked = parts[i];
       if (picked) name += " " + picked;
+      }
       let p = el.parentElement;
       for (let d = 0; p && d < 8; d++) {
         const kids = p.children || [];
@@ -918,6 +934,7 @@
 
     function interesting(el) {
       const tag = (el.tagName || "").toLowerCase();
+      if (hasIconActionClass(el) && !/settingcheck/.test(classBlob(el)) && !insideHiddenTemplate(el)) return true;
       if (isRowHoverControl(el)) return true;
       if (isNativeInteractive(el)) return true;
       if (isOutermostCardGroup(el)) return true;

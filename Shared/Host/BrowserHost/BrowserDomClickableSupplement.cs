@@ -61,15 +61,43 @@ namespace WordAddIn1.BrowserHost
     if (el.getAttribute && el.getAttribute('onclick')) return true;
     return isNamedIcon(el) || isGlyphIcon(el);
   }
-  function insideHiddenTemplate(el){
-    var p=el.parentElement;
-    while (p && p!==document.body && p!==document.documentElement){
-      var pst;
-      try { pst=window.getComputedStyle(p); } catch (eH) { break; }
-      if (pst && (pst.display==='none' || pst.visibility==='hidden')) return true;
+  function isHiddenBox(el){
+    var pst;
+    try { pst=window.getComputedStyle(el); } catch (eH) { return false; }
+    return !!(pst && (pst.display==='none' || pst.visibility==='hidden'));
+  }
+  function isIconActionBar(el){
+    var blob=classBlob(el);
+    if (/icon-delete|icon-drag|deleeidt|drag-ct|icon-edit|icon-del/.test(blob)) return true;
+    return !!(el.querySelector && el.querySelector('.icon-delete, .icon-drag, .deleEidt, .icon-edit'));
+  }
+  function hasVisibleRow(el){
+    var p=el&&el.parentElement;
+    for (var d=0;p&&p!==document.body&&p!==document.documentElement&&d<8;d++){
+      if (!isHiddenBox(p)){
+        try {
+          var b=p.getBoundingClientRect();
+          if (b && b.width>1 && b.height>1) return true;
+        } catch (eB) {}
+      }
       p=p.parentElement;
     }
     return false;
+  }
+  function insideHiddenTemplate(el){
+    var p=el.parentElement;
+    while (p && p!==document.body && p!==document.documentElement){
+      if (isHiddenBox(p)){
+        var inner=String(p.textContent||'').replace(/\s+/g,' ').trim();
+        var bar=inner.length<=24 && isIconActionBar(p) && hasVisibleRow(p);
+        if (!bar) return true;
+      }
+      p=p.parentElement;
+    }
+    return false;
+  }
+  function isBatchSelect(el){
+    return /settingcheck/.test(classBlob(el));
   }
   function boxMissing(el){
     try {
@@ -107,7 +135,10 @@ namespace WordAddIn1.BrowserHost
     aria=String(aria||'').replace(/\s+/g,' ').trim();
     if (aria) return aria.slice(0,40);
     var hinted=classHint(el);
-    if (hinted==='删除'||hinted==='编辑') return hinted;
+    if (hinted==='删除'||hinted==='编辑'){
+      var rhNamed=rowHint(el);
+      return rhNamed ? (hinted+' '+rhNamed).slice(0,40) : hinted;
+    }
     var ownT=ownText(el);
     if (ownT && ownT.length<=16 && !/[\uE000-\uF8FF]/.test(ownT)) return ownT;
     var name='图标';
@@ -173,6 +204,7 @@ namespace WordAddIn1.BrowserHost
     var el=all[i];
     var tag=(el.tagName||'').toLowerCase();
     if (tag==='script'||tag==='style'||tag==='svg'||tag==='path'||tag==='noscript') continue;
+    if (isBatchSelect(el)) continue;
     var st;
     try { st=window.getComputedStyle(el); } catch (e) { continue; }
     var own=ownText(el);
@@ -190,11 +222,11 @@ namespace WordAddIn1.BrowserHost
       kind=hidden?'hidden_detail':'detail';
       name=own||shortInner||'查看详情';
       role='button';
-    } else if ((hidden || boxMissing(el)) && (isHoverRole(el) || isClickableIcon(el)) && !insideHiddenTemplate(el)){
+    } else if ((hidden || boxMissing(el) || /icon-delete|deleeidt|icon-edit|icon-del/.test(classBlob(el))) && (isHoverRole(el) || isClickableIcon(el)) && !insideHiddenTemplate(el)){
       kind='hidden_detail';
       name=iconLabel(el);
       role=(tag==='a')?'link':'button';
-      hidden=true;
+      if (hidden || boxMissing(el)) hidden=true;
     } else if ((isImgtextCard(el) || (!hidden && isPointerCard(el, st)))
         && !(el.querySelector && el.querySelector('a[href], [role=link]'))){
       kind='card';

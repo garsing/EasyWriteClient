@@ -1230,7 +1230,11 @@ namespace WordAddIn1.BrowserHost
     while (p && p !== document.body && p !== document.documentElement) {
       var pst = null;
       try { pst = window.getComputedStyle(p); } catch (eP) { break; }
-      if (pst && (pst.display === 'none' || pst.visibility === 'hidden')) return false;
+      if (pst && (pst.display === 'none' || pst.visibility === 'hidden')) {
+        var innerBar = String(p.textContent || '').replace(/\s+/g, ' ').trim();
+        var bar = innerBar.length <= 24 && /icon-delete|icon-drag|deleeidt|drag-ct|icon-edit|icon-del/.test(classNameOf(p));
+        if (!bar) return false;
+      }
       p = p.parentElement;
     }
     return true;

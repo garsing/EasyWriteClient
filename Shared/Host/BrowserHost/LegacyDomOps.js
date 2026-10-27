@@ -254,7 +254,7 @@
     var tag = (el.tagName || "").toLowerCase();
     function t(s) { return String(s || "").replace(/\s+/g, " ").trim(); }
     if (tag === "html" || tag === "body") return t(document.title).slice(0, 120);
-    if (isRowHoverControl(el)) return hoverIconLabel(el);
+    if (isRowHoverControl(el) || (isNamedIcon(el) && !/settingcheck/.test(classBlob(el)))) return hoverIconLabel(el);
     var aria = el.getAttribute && el.getAttribute("aria-label");
     if (t(aria) && !isValidatorText(aria)) return t(aria).slice(0, 120);
     if (t(el.title) && !isValidatorText(el.title)) return t(el.title).slice(0, 120);
@@ -350,19 +350,33 @@
     return tag === "i" && inner.length <= 1;
   }
 
+  function isHiddenBox(el) {
+    var st = null;
+    try { st = window.getComputedStyle(el); } catch (eH) { return false; }
+    return !!(st && (st.display === "none" || st.visibility === "hidden"));
+  }
+
+  function isIconActionBar(el) {
+    var blob = classBlob(el);
+    if (/icon-delete|icon-drag|deleeidt|drag-ct|icon-edit|icon-del/.test(blob)) return true;
+    return !!(el.querySelector && el.querySelector(".icon-delete, .icon-drag, .deleEidt, .icon-edit"));
+  }
+
   function insideHiddenTemplate(el) {
     var p = el.parentElement;
     while (p && p !== document.body && p !== document.documentElement) {
-      var st = null;
-      try { st = window.getComputedStyle(p); } catch (eH) { break; }
-      if (st && (st.display === "none" || st.visibility === "hidden")) return true;
+      if (isHiddenBox(p)) {
+        var inner = String(p.textContent || "").replace(/\s+/g, " ").trim();
+        var bar = inner.length <= 24 && isIconActionBar(p) && visibleHost(p);
+        if (!bar) return true;
+      }
       p = p.parentElement;
     }
     return false;
   }
 
   function isRowHoverControl(el) {
-    if (!el || el.nodeType !== 1 || insideHiddenTemplate(el)) return false;
+    if (!el || el.nodeType !== 1 || /settingcheck/.test(classBlob(el)) || insideHiddenTemplate(el)) return false;
     var tag = (el.tagName || "").toLowerCase();
     var role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase();
     var hoverRole = tag === "a" || tag === "button" || role === "button" || role === "link" || role === "menuitem" || role === "tab";
@@ -384,16 +398,18 @@
     aria = String(aria || "").replace(/\s+/g, " ").trim();
     if (aria) return aria.slice(0, 40);
     var blob = classBlob(el);
-    if (/delete|remove|trash|\bdel\b|shanchu|icon-del|icon-close|\bclose\b|btn-del|del-btn/.test(blob)) return "删除";
-    if (/\bedit\b|pencil|modify|bianji|icon-edit/.test(blob)) return "编辑";
+    var name = "图标";
+    if (/delete|remove|trash|\bdel\b|shanchu|icon-del|icon-close|\bclose\b|btn-del|del-btn/.test(blob)) name = "删除";
+    else if (/\bedit\b|pencil|modify|bianji|icon-edit/.test(blob)) name = "编辑";
+    else {
     var own = String(el.textContent || "").replace(/\s+/g, " ").trim();
     if (own && own.length <= 16 && !/[\uE000-\uF8FF]/.test(own)) return own;
-    var name = "图标";
     var parts = blob.match(/[a-z][a-z0-9-]{2,18}/g) || [];
     var skip = { icon: 1, iconfont: 1, icons: 1, button: 1, btn: 1, fl: 1, fr: 1 };
     var picked = "";
     for (var i = 0; i < parts.length; i++) if (!skip[parts[i]]) picked = parts[i];
     if (picked) name += " " + picked;
+    }
     var p = el.parentElement;
     for (var d = 0; p && d < 8; d++) {
       var kids = p.children || [];
@@ -435,6 +451,7 @@
 
   function interesting(el) {
     var tag = (el.tagName || "").toLowerCase();
+    if (isNamedIcon(el) && !/settingcheck/.test(classBlob(el)) && !insideHiddenTemplate(el)) return true;
     if (isRowHoverControl(el)) return true;
     if (tag === "a" || tag === "button" || tag === "input" || tag === "textarea" || tag === "select") return true;
     if (tag === "label" || tag === "iframe" || tag === "frame" || tag === "img") return true;
