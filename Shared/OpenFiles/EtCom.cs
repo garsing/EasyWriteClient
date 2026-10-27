@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using WordAddIn1.HostPlatform;
 
 namespace WordAddIn1.OpenFiles
 {
@@ -59,7 +60,11 @@ namespace WordAddIn1.OpenFiles
                         continue;
                     }
 
-                    EnsureVisible(application);
+                    using (NativeWindowActivate.MaybeQuietOfficeLaunch())
+                    {
+                        EnsureVisible(application);
+                    }
+
                     return true;
                 }
                 catch (Exception ex)

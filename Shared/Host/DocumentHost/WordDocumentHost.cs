@@ -19,6 +19,8 @@ namespace WordAddIn1.DocumentHost
         {
             result = null;
             error = null;
+            using (NativeWindowActivate.MaybeQuietOfficeLaunch())
+            {
             if (!WordApplicationResolver.TryResolve(
                     wordApplication,
                     out Word.Application app,
@@ -120,6 +122,7 @@ namespace WordAddIn1.DocumentHost
                 IndexReady = false
             };
             return true;
+            }
         }
 
         private static Word.Document FindOpenDocument(Word.Application app, string fullPath)

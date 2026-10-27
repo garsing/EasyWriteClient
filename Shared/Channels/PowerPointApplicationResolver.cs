@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using WordAddIn1.HostPlatform;
 using PowerPoint = Microsoft.Office.Interop.PowerPoint;
 
 namespace WordAddIn1
@@ -180,11 +181,14 @@ namespace WordAddIn1
 
             try
             {
-                application = new PowerPoint.Application();
-                Attach(application);
-                if (makeVisible)
+                using (NativeWindowActivate.MaybeQuietOfficeLaunch())
                 {
-                    EnsureVisibleCore(application);
+                    application = new PowerPoint.Application();
+                    Attach(application);
+                    if (makeVisible)
+                    {
+                        EnsureVisibleCore(application);
+                    }
                 }
 
                 return true;

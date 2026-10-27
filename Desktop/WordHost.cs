@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using Word = Microsoft.Office.Interop.Word;
 using WordAddIn1;
+using WordAddIn1.HostPlatform;
 
 namespace EasyWriteClient.Desktop
 {
@@ -53,7 +54,10 @@ namespace EasyWriteClient.Desktop
                 {
                     try
                     {
-                        _app = new Word.Application { Visible = true };
+                        using (NativeWindowActivate.MaybeQuietOfficeLaunch())
+                        {
+                            _app = new Word.Application { Visible = true };
+                        }
                     }
                     catch (Exception ex)
                     {

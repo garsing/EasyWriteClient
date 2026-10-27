@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using WordAddIn1.HostPlatform;
 using WordAddIn1.OpenFiles;
 
 namespace WordAddIn1
@@ -41,7 +42,11 @@ namespace WordAddIn1
                         continue;
                     }
 
-                    TrySetVisible(application);
+                    using (NativeWindowActivate.MaybeQuietOfficeLaunch())
+                    {
+                        TrySetVisible(application);
+                    }
+
                     error = null;
                     return true;
                 }

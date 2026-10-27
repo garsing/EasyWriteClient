@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using WordAddIn1.HostPlatform;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
@@ -62,7 +63,11 @@ namespace WordAddIn1
 
             try
             {
-                application = new Word.Application { Visible = true };
+                using (NativeWindowActivate.MaybeQuietOfficeLaunch())
+                {
+                    application = new Word.Application { Visible = true };
+                }
+
                 return true;
             }
             catch (Exception ex)

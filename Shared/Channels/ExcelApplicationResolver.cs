@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using WordAddIn1.HostPlatform;
 using Excel = Microsoft.Office.Interop.Excel;
 
 namespace WordAddIn1
@@ -149,11 +150,14 @@ namespace WordAddIn1
 
             try
             {
-                application = new Excel.Application();
-                Attach(application);
-                if (makeVisible)
+                using (NativeWindowActivate.MaybeQuietOfficeLaunch())
                 {
-                    EnsureVisibleCore(application);
+                    application = new Excel.Application();
+                    Attach(application);
+                    if (makeVisible)
+                    {
+                        EnsureVisibleCore(application);
+                    }
                 }
 
                 return true;

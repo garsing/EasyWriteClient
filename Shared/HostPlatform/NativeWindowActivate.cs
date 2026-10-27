@@ -25,6 +25,18 @@ namespace WordAddIn1.HostPlatform
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+        [DllImport("kernel32.dll")]
+        private static extern uint GetCurrentThreadId();
+
+        [DllImport("user32.dll")]
         private static extern bool IsIconic(IntPtr hWnd);
 
         [DllImport("user32.dll")]
@@ -58,6 +70,115 @@ namespace WordAddIn1.HostPlatform
             public int Top;
             public int Right;
             public int Bottom;
+        }
+
+        /// <summary>
+        /// 关抢焦点时包住「拉起/打开 Office」：先记下用户当前前台，COM 抢完再还回去。
+        /// 第一次 new Word.Application { Visible=true } 会抢系统焦点，第二次 Open 通常不会。
+        /// </summary>
+        public static IDisposable MaybeQuietOfficeLaunch()
+        {
+            if (HostCallbacks.ShouldStealForeground())
+            {
+                return QuietRestoreScope.None;
+            }
+
+            return new QuietRestoreScope(CaptureForeground());
+        }
+
+        public static IntPtr CaptureForeground()
+        {
+            try
+            {
+                return GetForegroundWindow();
+            }
+            catch (Exception)
+            {
+                return IntPtr.Zero;
+            }
+        }
+
+        public static void RestoreForeground(IntPtr previous)
+        {
+            if (previous == IntPtr.Zero)
+            {
+                return;
+            }
+
+            try
+            {
+                if (!IsWindow(previous))
+                {
+                    return;
+                }
+
+                IntPtr now = GetForegroundWindow();
+                if (now == previous)
+                {
+                    return;
+                }
+
+                if (now != IntPtr.Zero)
+                {
+                    ShowWithoutForeground(now);
+                }
+
+                if (SetForegroundWindow(previous))
+                {
+                    return;
+                }
+
+                uint thisThread = GetCurrentThreadId();
+                uint nowThread = now == IntPtr.Zero ? 0 : GetWindowThreadProcessId(now, out _);
+                uint prevThread = GetWindowThreadProcessId(previous, out _);
+                if (nowThread != 0)
+                {
+                    AttachThreadInput(thisThread, nowThread, true);
+                }
+
+                AttachThreadInput(thisThread, prevThread, true);
+                SetForegroundWindow(previous);
+                if (nowThread != 0)
+                {
+                    AttachThreadInput(thisThread, nowThread, false);
+                }
+
+                AttachThreadInput(thisThread, prevThread, false);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private sealed class QuietRestoreScope : IDisposable
+        {
+            public static readonly QuietRestoreScope None = new QuietRestoreScope(IntPtr.Zero, armed: false);
+
+            private readonly IntPtr _previous;
+            private readonly bool _armed;
+            private bool _disposed;
+
+            public QuietRestoreScope(IntPtr previous)
+                : this(previous, armed: true)
+            {
+            }
+
+            private QuietRestoreScope(IntPtr previous, bool armed)
+            {
+                _previous = previous;
+                _armed = armed;
+            }
+
+            public void Dispose()
+            {
+                if (_disposed || !_armed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+                RestoreForeground(_previous);
+            }
         }
 
         /// <summary>亮窗但不抢系统前台（关抢焦点时缩小/展球用）。</summary>

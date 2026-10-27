@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using WordAddIn1.HostPlatform;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
@@ -36,9 +37,14 @@ namespace WordAddIn1
                         return Fail(pathError);
                     }
 
+                    Word.Application app;
+                    Word.Document doc;
+                    bool created;
+                    using (NativeWindowActivate.MaybeQuietOfficeLaunch())
+                    {
                     if (!WordApplicationResolver.TryResolve(
                             wordApplication,
-                            out Word.Application app,
+                            out app,
                             out string resolveError,
                             createIfMissing: true))
                     {
@@ -81,8 +87,6 @@ namespace WordAddIn1
                         return Fail("文件不存在（create_blank=false）: " + fullPath);
                     }
 
-                    Word.Document doc;
-                    bool created;
                     try
                     {
                         if (createBlank)
@@ -100,6 +104,7 @@ namespace WordAddIn1
                     catch (Exception ex)
                     {
                         return Fail("打开/新建 Word 文档失败: " + ex.Message);
+                    }
                     }
 
                     DocumentState.BindAndActivate(doc);

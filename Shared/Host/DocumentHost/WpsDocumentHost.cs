@@ -20,6 +20,8 @@ namespace WordAddIn1.DocumentHost
         {
             result = null;
             error = null;
+            using (NativeWindowActivate.MaybeQuietOfficeLaunch())
+            {
             if (!WpsApplicationResolver.TryResolve(out object app, out error, createIfMissing: true))
             {
                 return false;
@@ -92,6 +94,7 @@ namespace WordAddIn1.DocumentHost
                 IndexReady = false
             };
             return true;
+            }
         }
 
         private static object FindOpenDocument(object app, string fullPath)
