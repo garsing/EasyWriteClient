@@ -281,18 +281,6 @@ namespace WordAddIn1
             }
         }
 
-        /// <summary>仅关闭自动适应，不设置首选宽度（用于宽度扫描过程中的中间状态）。</summary>
-        private static void SetAutoFitFixedOnly(Word.Table table)
-        {
-            if (table == null)
-                return;
-            try
-            {
-                table.AutoFitBehavior(Word.WdAutoFitBehavior.wdAutoFitFixed);
-            }
-            catch { /* ignore */ }
-        }
-
         /// <summary>
         /// 若总宽度超过上限则按比例缩放列宽。maxWidth 为 null 时使用页面实测可用宽度。
         /// </summary>
@@ -415,13 +403,15 @@ namespace WordAddIn1
                 _clock.Mark("1-设MaxFontSize", tFont);
 
                 // 不再调用 AutoFitContent：会按内容撑宽列（日志里常见 618pt），与 LimitTableWidth 已给好的列宽冲突。
-                LogStep("段1-预处理", "不调用 AutoFitContent", "MaxFontSize 下先 ApplyEmptyAndNonEmpty 顶满 W_max，再线性加宽至 W_max");
+                LogStep("段1-预处理", "不调用 AutoFitContent", "MaxFontSize 下按空列规则一次算列宽并写满 W_max，再线性加宽至 W_max");
 
                 long tEmpty = _clock.Now;
-                ApplyEmptyAndNonEmptyColumnWidths(table, data, config, wMax, ref budget);
+                var widthPlan = CreateColumnWidthPlan(table, data, config);
+                WriteColumnWidths(table, ComputeColumnWidthsForTotal(widthPlan, wMax));
+                LockTableFixedWidth(table, wMax);
                 _clock.Mark("段1-预处理-空列分配", tEmpty);
                 float widthAfterEmpty = GetTableColumnsWidthSum(table);
-                LogStep("段1-预处理", "ApplyEmptyAndNonEmpty 之后", $"列宽之和={widthAfterEmpty:F1}pt, 剩余预算={budget}");
+                LogStep("段1-预处理", "一次写列宽之后", $"列宽之和={widthAfterEmpty:F1}pt, 剩余预算={budget}");
                 if (budget <= 0)
                 {
                     result.HitMeasurementLimit = true;
@@ -438,7 +428,7 @@ namespace WordAddIn1
                 float heightAtWMax = 0f;
                 long tSeg1 = _clock.Now;
                 float wFinal = TryFindMinWidthByStableHeight(
-                    table, data, config, wMax, ref budget, out heightAtWMax);
+                    table, widthPlan, config, wMax, ref budget, out heightAtWMax);
                 _clock.Mark("段1-总宽线性扫描", tSeg1);
                 bestWidths = ReadColumnWidths(table);
                 float wFinalSum = GetTableColumnsWidthSum(table);
@@ -579,90 +569,146 @@ namespace WordAddIn1
             return result;
         }
 
-        private static void ApplyEmptyAndNonEmptyColumnWidths(
+        /// <summary>段 1 列宽分配：空列标志与非空列比例只算一次，之后按目标总宽闭式出数组。</summary>
+        private sealed class ColumnWidthPlan
+        {
+            public bool[] EmptyFlags;
+            public float[] BaseWidths;
+            public float MinColumnWidth;
+            public float EmptyColumnWidthPoints;
+            public int EmptyCount;
+        }
+
+        private static ColumnWidthPlan CreateColumnWidthPlan(
             Word.Table table,
             List<List<string>> data,
-            OptimizationConfig config,
-            float wMax,
-            ref int budget)
+            OptimizationConfig config)
         {
             int n = table.Columns.Count;
-            var emptyFlags = new bool[n];
-            for (int j = 0; j < n; j++)
-                emptyFlags[j] = IsColumnEmpty(data, table, j);
-
-            int emptyCount = emptyFlags.Count(f => f);
-            LogTune($"ApplyEmptyNonEmpty: 列数={n}, 空列数={emptyCount}, W_max={wMax:F1}pt, 空列预设宽={config.EmptyColumnWidthPoints}pt");
-
-            // 无空列时：只做按比例压到 W_max 并固定，避免「先按比例分配再 Min(30,w)」把中间和抬到 600+ pt。
-            if (emptyCount == 0)
+            var plan = new ColumnWidthPlan
             {
-                LogTune("ApplyEmptyNonEmpty: 路径=无空列 → ScaleColumnWidthsToTotal + LockTableFixedWidth(W_max)");
-                ScaleColumnWidthsToTotal(table, wMax);
-                LockTableFixedWidth(table, wMax);
-                return;
-            }
+                EmptyFlags = new bool[n],
+                BaseWidths = new float[n],
+                MinColumnWidth = config.MinColumnWidth,
+                EmptyColumnWidthPoints = config.EmptyColumnWidthPoints
+            };
 
-            float fixedEmpty = emptyCount * config.EmptyColumnWidthPoints;
-            float remaining = wMax - fixedEmpty;
-
-            if (remaining < config.MinColumnWidth)
-            {
-                LogTune($"ApplyEmptyNonEmpty: 路径=空列预留后剩余宽不足 MinColumnWidth({config.MinColumnWidth}pt) → 压缩空列宽再 Scale 到 W_max");
-                float scale = wMax / Math.Max(fixedEmpty, 1f);
-                for (int j = 0; j < n; j++)
-                {
-                    if (emptyFlags[j])
-                    {
-                        try
-                        {
-                            table.Columns[j + 1].Width = Math.Max(config.MinColumnWidth, config.EmptyColumnWidthPoints * scale);
-                        }
-                        catch { /* ignore */ }
-                    }
-                }
-                ScaleColumnWidthsToTotal(table, wMax);
-                LockTableFixedWidth(table, wMax);
-                return;
-            }
-
-            LogTune("ApplyEmptyNonEmpty: 路径=有空列 → 空列用 EmptyColumnWidthPoints，非空列按当前比例分 remaining，再顶满 W_max");
-            var current = new float[n];
-            float sumNonEmpty = 0;
             for (int j = 0; j < n; j++)
             {
+                plan.EmptyFlags[j] = IsColumnEmpty(data, table, j);
+                if (plan.EmptyFlags[j])
+                    plan.EmptyCount++;
                 try
                 {
-                    current[j] = (float)table.Columns[j + 1].Width;
+                    plan.BaseWidths[j] = (float)table.Columns[j + 1].Width;
                 }
                 catch
                 {
-                    current[j] = config.MinColumnWidth;
+                    plan.BaseWidths[j] = config.MinColumnWidth;
                 }
-                if (!emptyFlags[j])
-                    sumNonEmpty += Math.Max(current[j], config.MinColumnWidth);
+            }
+
+            LogTune($"ColumnWidthPlan: 列数={n}, 空列数={plan.EmptyCount}, 空列预设宽={plan.EmptyColumnWidthPoints}pt, 快照列宽和={plan.BaseWidths.Sum():F1}pt");
+            return plan;
+        }
+
+        /// <summary>按空列钉宽、非空列吃剩余的规则，把目标总宽分配成列宽数组（不写 Word）。</summary>
+        private static float[] ComputeColumnWidthsForTotal(ColumnWidthPlan plan, float targetTotal)
+        {
+            int n = plan == null || plan.BaseWidths == null ? 0 : plan.BaseWidths.Length;
+            if (n == 0 || targetTotal <= 0)
+                return Array.Empty<float>();
+
+            var widths = new float[n];
+            int emptyCount = plan.EmptyCount;
+            if (emptyCount <= 0)
+                return ScaleWidthsToTotal(plan.BaseWidths, targetTotal);
+
+            float minW = Math.Max(1f, plan.MinColumnWidth);
+            float emptyW = Math.Max(minW, plan.EmptyColumnWidthPoints);
+            float fixedEmpty = emptyCount * emptyW;
+            float remaining = targetTotal - fixedEmpty;
+
+            if (remaining < minW)
+            {
+                float emptyScale = targetTotal / Math.Max(fixedEmpty, 1f);
+                for (int j = 0; j < n; j++)
+                {
+                    if (plan.EmptyFlags[j])
+                        widths[j] = Math.Max(minW, emptyW * emptyScale);
+                    else
+                        widths[j] = Math.Max(minW, plan.BaseWidths[j]);
+                }
+
+                return ScaleWidthsToTotal(widths, targetTotal);
+            }
+
+            float sumNonEmpty = 0f;
+            int nonEmptyCount = n - emptyCount;
+            for (int j = 0; j < n; j++)
+            {
+                if (!plan.EmptyFlags[j])
+                    sumNonEmpty += Math.Max(plan.BaseWidths[j], minW);
             }
 
             for (int j = 0; j < n; j++)
             {
+                if (plan.EmptyFlags[j])
+                    widths[j] = emptyW;
+                else
+                {
+                    float baseW = Math.Max(plan.BaseWidths[j], minW);
+                    float share = sumNonEmpty > 0 ? baseW / sumNonEmpty : 1f / Math.Max(1, nonEmptyCount);
+                    widths[j] = Math.Max(minW, remaining * share);
+                }
+            }
+
+            return ScaleWidthsToTotal(widths, targetTotal);
+        }
+
+        private static float[] ScaleWidthsToTotal(float[] source, float targetTotal)
+        {
+            int n = source == null ? 0 : source.Length;
+            var widths = new float[n];
+            if (n == 0 || targetTotal <= 0)
+                return widths;
+
+            float sum = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                widths[i] = source[i];
+                sum += widths[i];
+            }
+
+            if (sum <= 0)
+            {
+                float eq = targetTotal / n;
+                for (int i = 0; i < n; i++)
+                    widths[i] = eq;
+                return widths;
+            }
+
+            float scale = targetTotal / sum;
+            for (int i = 0; i < n; i++)
+                widths[i] *= scale;
+            return widths;
+        }
+
+        private static void WriteColumnWidths(Word.Table table, float[] widths)
+        {
+            if (table == null || widths == null || widths.Length == 0)
+                return;
+            int n = Math.Min(widths.Length, table.Columns.Count);
+            for (int i = 0; i < n; i++)
+            {
+                if (widths[i] <= 0)
+                    continue;
                 try
                 {
-                    if (emptyFlags[j])
-                        table.Columns[j + 1].Width = config.EmptyColumnWidthPoints;
-                    else
-                    {
-                        float baseW = Math.Max(current[j], config.MinColumnWidth);
-                        float share = sumNonEmpty > 0 ? baseW / sumNonEmpty : 1f / Math.Max(1, n - emptyCount);
-                        float w = remaining * share;
-                        table.Columns[j + 1].Width = Math.Max(config.MinColumnWidth, w);
-                    }
+                    table.Columns[i + 1].Width = widths[i];
                 }
                 catch { /* ignore */ }
             }
-
-            ScaleColumnWidthsToTotal(table, wMax);
-            LockTableFixedWidth(table, wMax);
-            LogTune($"ApplyEmptyNonEmpty: 结束 列宽之和={GetTableColumnsWidthSum(table):F1}pt");
         }
 
         private static bool IsColumnEmpty(List<List<string>> data, Word.Table table, int colIndex)
@@ -703,51 +749,6 @@ namespace WordAddIn1
             return decoded.Length == 0;
         }
 
-        private static void ScaleColumnWidthsToTotal(Word.Table table, float targetTotal)
-        {
-            int n = table.Columns.Count;
-            if (n == 0 || targetTotal <= 0)
-                return;
-
-            var widths = new float[n];
-            float sum = 0;
-            for (int i = 0; i < n; i++)
-            {
-                try
-                {
-                    widths[i] = (float)table.Columns[i + 1].Width;
-                }
-                catch
-                {
-                    widths[i] = 0;
-                }
-                sum += widths[i];
-            }
-
-            if (sum <= 0)
-            {
-                float eq = targetTotal / n;
-                LogTune($"ScaleColumnWidthsToTotal: 当前列宽和为0 → 均分 {eq:F1}pt×{n}，目标总宽={targetTotal:F1}pt");
-                for (int i = 0; i < n; i++)
-                {
-                    try { table.Columns[i + 1].Width = eq; }
-                    catch { /* ignore */ }
-                }
-                return;
-            }
-
-            float scale = targetTotal / sum;
-            LogTune($"ScaleColumnWidthsToTotal: 缩放前列宽和={sum:F1}pt → 目标={targetTotal:F1}pt, scale={scale:F4}");
-            for (int i = 0; i < n; i++)
-            {
-                try
-                {
-                    table.Columns[i + 1].Width = widths[i] * scale;
-                }
-                catch { /* ignore */ }
-            }
-        }
-
         private static List<float> ReadColumnWidths(Word.Table table)
         {
             var list = new List<float>();
@@ -767,24 +768,22 @@ namespace WordAddIn1
 
         /// <summary>
         /// 段 1：字号固定 MaxFontSize，从最小总宽线性加宽至 <paramref name="wMax"/>（与段 2 同用 <see cref="GetTableTotalHeightPoints"/>）。
+        /// 每档只按 <paramref name="plan"/> 算一次列宽并写 Word，不再先按比例写再空列覆盖。
         /// </summary>
         private static float TryFindMinWidthByStableHeight(
             Word.Table table,
-            List<List<string>> data,
+            ColumnWidthPlan plan,
             OptimizationConfig config,
             float wMax,
             ref int budget,
             out float heightAtWMax)
         {
             heightAtWMax = 0f;
-            var snapshot = ReadColumnWidths(table);
-            float sumSnap = snapshot.Sum();
-            if (sumSnap <= 0 || wMax <= 0)
+            int colCount = plan != null && plan.BaseWidths != null ? plan.BaseWidths.Length : 0;
+            if (colCount == 0 || wMax <= 0)
                 return wMax;
 
-            float lo = 0f;
-            for (int i = 0; i < snapshot.Count; i++)
-                lo += config.MinColumnWidth;
+            float lo = colCount * config.MinColumnWidth;
             float hi = wMax;
             if (hi <= lo + 0.5f)
             {
@@ -792,7 +791,7 @@ namespace WordAddIn1
                 return hi;
             }
 
-            // 调用前已在步骤 3 顶满 W_max；直接测总高度作为参考
+            // 调用前已顶满 W_max；直接测总高度作为参考
             long tAuto = _clock != null ? _clock.Now : 0;
             ApplyRowAutoHeightForMeasurement(table);
             AccTune("段1-自动行高", tAuto);
@@ -807,8 +806,7 @@ namespace WordAddIn1
 
             if (heightAtWMax <= 0f || budget <= 0)
             {
-                ApplyProportionalWidthsFromSnapshot(table, snapshot, hi);
-                ApplyEmptyAndNonEmptyColumnWidths(table, data, config, hi, ref budget);
+                WriteColumnWidths(table, ComputeColumnWidthsForTotal(plan, hi));
                 LockTableFixedWidth(table, hi);
                 return hi;
             }
@@ -820,12 +818,8 @@ namespace WordAddIn1
                 float probeWidth = Math.Min(w, hi);
                 usedIter++;
                 long tIter = _clock != null ? _clock.Now : 0;
-                ApplyProportionalWidthsFromSnapshot(table, snapshot, probeWidth);
-                AccTune("段1-按比例写列宽", tIter);
-
-                tIter = _clock != null ? _clock.Now : 0;
-                ApplyEmptyAndNonEmptyColumnWidths(table, data, config, probeWidth, ref budget);
-                AccTune("段1-空列分配", tIter);
+                WriteColumnWidths(table, ComputeColumnWidthsForTotal(plan, probeWidth));
+                AccTune("段1-写列宽", tIter);
 
                 tIter = _clock != null ? _clock.Now : 0;
                 ApplyRowAutoHeightForMeasurement(table);
@@ -844,34 +838,11 @@ namespace WordAddIn1
                     break;
             }
 
-            ApplyProportionalWidthsFromSnapshot(table, snapshot, best);
-            ApplyEmptyAndNonEmptyColumnWidths(table, data, config, best, ref budget);
+            WriteColumnWidths(table, ComputeColumnWidthsForTotal(plan, best));
             LockTableFixedWidth(table, best);
             LogTune(
                 $"TryFindMinWidth(段1): 结束 W≈{best:F1}pt, 列宽之和={GetTableColumnsWidthSum(table):F1}pt, 采样={usedIter}, 剩余预算={budget}");
             return best;
-        }
-
-        /// <summary>按快照列宽比例缩放到目标总宽（保持列比例）。</summary>
-        private static void ApplyProportionalWidthsFromSnapshot(Word.Table table, List<float> snapshot, float targetTotal)
-        {
-            if (snapshot == null || snapshot.Count == 0 || targetTotal <= 0)
-                return;
-            float sum = snapshot.Sum();
-            if (sum <= 0)
-                return;
-            float scale = targetTotal / sum;
-            int n = Math.Min(snapshot.Count, table.Columns.Count);
-            for (int i = 0; i < n; i++)
-            {
-                try
-                {
-                    table.Columns[i + 1].Width = snapshot[i] * scale;
-                }
-                catch { /* ignore */ }
-            }
-
-            SetAutoFitFixedOnly(table);
         }
 
         /// <summary>单格被迫换行评估（与 <see cref="HasForcedWrapInCell"/> 同一套数）。</summary>
