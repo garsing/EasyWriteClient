@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
@@ -38,27 +39,41 @@ namespace WordAddIn1
                         $"[F_optimize_table_display] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
+                    var outer = Stopwatch.StartNew();
+                    var outerSteps = new Dictionary<string, long>();
                     try
                     {
+                        long tRead = outer.ElapsedMilliseconds;
                         WordReader.ReadWord(document);
+                        outerSteps["工具-ReadWord映射"] = outer.ElapsedMilliseconds - tRead;
+                        TableOptimizer.LogTune(
+                            $"+{outer.ElapsedMilliseconds}ms 【耗时】工具-ReadWord映射={outerSteps["工具-ReadWord映射"]}ms");
                     }
                     catch (Exception ex)
                     {
                         return new ToolResult { Success = false, Error = $"生成表格映射表失败：{ex.Message}" };
                     }
 
+                    long tResolve = outer.ElapsedMilliseconds;
                     Word.Table targetTable = ResolveTableById(document, tableId, out string resolveError);
+                    outerSteps["工具-定位表格"] = outer.ElapsedMilliseconds - tResolve;
                     if (targetTable == null)
                     {
                         return new ToolResult { Success = false, Error = resolveError };
                     }
 
+                    long tExtract = outer.ElapsedMilliseconds;
                     var data = ExtractTableCellData(targetTable);
+                    outerSteps["工具-抽格子文本"] = outer.ElapsedMilliseconds - tExtract;
+                    TableOptimizer.LogTune(
+                        $"+{outer.ElapsedMilliseconds}ms 【耗时】工具-抽格子文本={outerSteps["工具-抽格子文本"]}ms 行×列={targetTable.Rows.Count}×{targetTable.Columns.Count}");
 
                     TableOptimizer.LogTune(
                         $"F_OptimizeTableDisplay: 调用 OptimizeTable table_id={tableId}, 行×列={targetTable.Rows.Count}×{targetTable.Columns.Count}");
 
+                    long tOpt = outer.ElapsedMilliseconds;
                     var optimizeResult = TableOptimizer.OptimizeTable(targetTable, data);
+                    outerSteps["工具-OptimizeTable"] = outer.ElapsedMilliseconds - tOpt;
 
                     if (!optimizeResult.Success)
                     {
@@ -83,9 +98,27 @@ namespace WordAddIn1
                     Word.Application app = wordApplication as Word.Application;
                     if (app != null && targetTable != null)
                     {
+                        long tNav = outer.ElapsedMilliseconds;
                         PostModifyNavigateHelper.NavigateAfterEnd(
                             app, targetTable.Range, $"optimize_table:{tableId}");
+                        outerSteps["工具-NavigateAfterEnd"] = outer.ElapsedMilliseconds - tNav;
                     }
+
+                    var ranked = new Dictionary<string, long>();
+                    MergeTimingDict(ranked, optimizeResult.StepMs);
+                    foreach (var kv in outerSteps)
+                    {
+                        if (kv.Key == "工具-OptimizeTable")
+                            continue;
+                        ranked[kv.Key] = kv.Value;
+                    }
+
+                    string slowestStep;
+                    long slowestMs;
+                    PickSlowest(ranked, out slowestStep, out slowestMs);
+                    MergeTimingDict(outerSteps, optimizeResult.StepMs);
+                    TableOptimizer.LogTune(
+                        $"【最慢步骤】{slowestStep}={slowestMs}ms 总耗时={outer.ElapsedMilliseconds}ms (F_optimize_table_display)");
 
                     await Task.CompletedTask;
 
@@ -99,7 +132,13 @@ namespace WordAddIn1
                             requires_wrapping = optimizeResult.RequiresWrapping,
                             hit_measurement_limit = optimizeResult.HitMeasurementLimit,
                             column_width_sum = columnWidthSum,
-                            message = message
+                            message = message,
+                            total_ms = outer.ElapsedMilliseconds,
+                            slowest_step = slowestStep,
+                            slowest_ms = slowestMs,
+                            step_ms = outerSteps,
+                            acc_ms = optimizeResult.AccMs,
+                            acc_count = optimizeResult.AccCount
                         }
                     };
                 }
@@ -109,6 +148,37 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = $"执行失败: {ex.Message}" };
                 }
             };
+        }
+
+        private static void MergeTimingDict(
+            Dictionary<string, long> dest,
+            Dictionary<string, long> src)
+        {
+            if (dest == null || src == null)
+                return;
+            foreach (var kv in src)
+            {
+                dest[kv.Key] = kv.Value;
+            }
+        }
+
+        private static void PickSlowest(
+            Dictionary<string, long> steps,
+            out string name,
+            out long ms)
+        {
+            name = "";
+            ms = 0;
+            if (steps == null)
+                return;
+            foreach (var kv in steps)
+            {
+                if (kv.Value > ms)
+                {
+                    ms = kv.Value;
+                    name = kv.Key;
+                }
+            }
         }
 
         private static Word.Table ResolveTableById(Word.Document document, string tableId, out string error)

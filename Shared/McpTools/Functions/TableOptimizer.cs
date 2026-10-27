@@ -31,10 +31,113 @@ namespace WordAddIn1
         /// </summary>
         public const float DefaultOptimizationMaxFontSize = 12f;
 
+        [ThreadStatic]
+        private static TuneClock _clock;
+
+        private sealed class TuneClock
+        {
+            private readonly Stopwatch _sw = Stopwatch.StartNew();
+            public readonly Dictionary<string, long> Steps = new Dictionary<string, long>();
+            public readonly Dictionary<string, long> AccMs = new Dictionary<string, long>();
+            public readonly Dictionary<string, int> AccN = new Dictionary<string, int>();
+
+            public long ElapsedMs => _sw.ElapsedMilliseconds;
+
+            public long Now => _sw.ElapsedMilliseconds;
+
+            public long Mark(string name, long fromMs)
+            {
+                long d = Math.Max(0, _sw.ElapsedMilliseconds - fromMs);
+                Steps[name] = d;
+                LogTune($"+{_sw.ElapsedMilliseconds}ms 【耗时】{name}={d}ms");
+                return d;
+            }
+
+            public void AddAcc(string name, long fromMs)
+            {
+                long d = Math.Max(0, _sw.ElapsedMilliseconds - fromMs);
+                if (!AccMs.ContainsKey(name))
+                {
+                    AccMs[name] = 0;
+                    AccN[name] = 0;
+                }
+
+                AccMs[name] += d;
+                AccN[name]++;
+            }
+
+            public void FillSlowest(OptimizationResult result)
+            {
+                if (result == null)
+                    return;
+                string slowest = null;
+                long slowMs = -1;
+                foreach (var kv in Steps)
+                {
+                    if (kv.Value > slowMs)
+                    {
+                        slowMs = kv.Value;
+                        slowest = kv.Key;
+                    }
+                }
+
+                result.SlowestStep = slowest ?? "";
+                result.SlowestMs = Math.Max(0, slowMs);
+            }
+
+            public void LogSummary(string title)
+            {
+                foreach (var kv in AccMs)
+                {
+                    int n = AccN.ContainsKey(kv.Key) ? AccN[kv.Key] : 0;
+                    long avg = n > 0 ? kv.Value / n : 0;
+                    LogTune($"【累计】{kv.Key}={kv.Value}ms ×{n}次 均={avg}ms");
+                }
+
+                string slowest = null;
+                long slowMs = -1;
+                foreach (var kv in Steps)
+                {
+                    if (kv.Value > slowMs)
+                    {
+                        slowMs = kv.Value;
+                        slowest = kv.Key;
+                    }
+                }
+
+                LogTune($"【最慢步骤】{slowest}={slowMs}ms 总耗时={_sw.ElapsedMilliseconds}ms ({title})");
+            }
+        }
+
+        private static void AccTune(string name, long fromMs)
+        {
+            _clock?.AddAcc(name, fromMs);
+        }
+
+        private static void AttachClock(OptimizationResult result)
+        {
+            if (_clock == null || result == null)
+                return;
+            result.TotalMs = _clock.ElapsedMs;
+            result.StepMs = new Dictionary<string, long>(_clock.Steps);
+            result.AccMs = new Dictionary<string, long>(_clock.AccMs);
+            result.AccCount = new Dictionary<string, int>(_clock.AccN);
+            _clock.FillSlowest(result);
+            _clock.LogSummary("OptimizeTable");
+        }
+
         /// <summary>统一调试输出（流水线与其它类也可调用）。</summary>
         public static void LogTune(string message)
         {
-            System.Diagnostics.Debug.WriteLine(TuneLogPrefix + message);
+            string line = TuneLogPrefix + message;
+            System.Diagnostics.Debug.WriteLine(line);
+            if (!string.IsNullOrEmpty(message)
+                && (message.IndexOf("【耗时】", StringComparison.Ordinal) >= 0
+                    || message.IndexOf("【累计】", StringComparison.Ordinal) >= 0
+                    || message.IndexOf("【最慢步骤】", StringComparison.Ordinal) >= 0))
+            {
+                EasyWriteLog.WriteLine(line);
+            }
         }
 
         /// <summary>带相对耗时的调试输出（ms 为自某次 Stopwatch 起点起）。</summary>
@@ -260,6 +363,7 @@ namespace WordAddIn1
             config ??= new OptimizationConfig();
             var result = new OptimizationResult();
             int budget = config.MaxMeasurementOperations;
+            _clock = new TuneClock();
 
             try
             {
@@ -268,10 +372,12 @@ namespace WordAddIn1
                     result.Success = false;
                     result.Error = "table 为 null";
                     LogTune("OptimizeTable: table 为 null，退出");
+                    AttachClock(result);
                     return result;
                 }
 
                 data ??= new List<List<string>>();
+                long tOverview = _clock.Now;
                 float wMax = GetAvailablePageWidthPoints(table);
                 if (wMax <= 0)
                     wMax = 500f;
@@ -279,6 +385,7 @@ namespace WordAddIn1
                 int colCount = table.Columns.Count;
                 int rowCount = table.Rows.Count;
                 float widthBefore = GetTableColumnsWidthSum(table);
+                _clock.Mark("0-读页面与列宽", tOverview);
                 LogTune("OptimizeTable ========== 开始 ==========");
                 LogStep("0-概览", "表格与页面",
                     $"行×列={rowCount}×{colCount}, 调用前列宽之和={widthBefore:F1}pt, W_max={wMax:F1}pt, 测量预算={config.MaxMeasurementOperations}, 字号 {config.MinFontSize}–{config.MaxFontSize}pt 步长={config.FontStep}pt");
@@ -286,33 +393,42 @@ namespace WordAddIn1
                 if (colCount == 0)
                 {
                     LogStep("早退", "列数为 0", "仅 ApplyOptimization（垂直居中/行高），无列宽优化");
+                    long tEmptyCols = _clock.Now;
                     ApplyOptimization(table, new List<float>(), 0f, data, config, ref budget);
+                    _clock.Mark("早退-ApplyOptimization", tEmptyCols);
                     result.Success = true;
                     result.ColumnWidths = new List<float>();
                     result.HitMeasurementLimit = budget <= 0;
                     LogTune($"OptimizeTable ========== 结束(无列) ========== HitMeasurementLimit={result.HitMeasurementLimit}, 剩余预算={budget}");
+                    AttachClock(result);
                     return result;
                 }
 
                 // 初始：最大字号
                 LogStep("1-字号", "全表设为 MaxFontSize", $"{config.MaxFontSize}pt（用于后续总高度测量）");
+                long tFont = _clock.Now;
                 try
                 {
                     table.Range.Font.Size = config.MaxFontSize;
                 }
                 catch { /* ignore */ }
+                _clock.Mark("1-设MaxFontSize", tFont);
 
                 // 不再调用 AutoFitContent：会按内容撑宽列（日志里常见 618pt），与 LimitTableWidth 已给好的列宽冲突。
                 LogStep("段1-预处理", "不调用 AutoFitContent", "MaxFontSize 下先 ApplyEmptyAndNonEmpty 顶满 W_max，再线性加宽至 W_max");
 
+                long tEmpty = _clock.Now;
                 ApplyEmptyAndNonEmptyColumnWidths(table, data, config, wMax, ref budget);
+                _clock.Mark("段1-预处理-空列分配", tEmpty);
                 float widthAfterEmpty = GetTableColumnsWidthSum(table);
                 LogStep("段1-预处理", "ApplyEmptyAndNonEmpty 之后", $"列宽之和={widthAfterEmpty:F1}pt, 剩余预算={budget}");
                 if (budget <= 0)
                 {
                     result.HitMeasurementLimit = true;
                     LogTune("OptimizeTable 【分支=FinishPartial】原因=段1 预处理后测量预算耗尽");
-                    return FinishPartial(table, data, config, result, ref budget);
+                    var partialEmpty = FinishPartial(table, data, config, result, ref budget);
+                    AttachClock(partialEmpty);
+                    return partialEmpty;
                 }
 
                 float bestFont = config.MaxFontSize;
@@ -320,8 +436,10 @@ namespace WordAddIn1
 
                 // 段 1：MaxFontSize 下线性加宽至 W_max（TryFind 内已写回并 Lock）。
                 float heightAtWMax = 0f;
+                long tSeg1 = _clock.Now;
                 float wFinal = TryFindMinWidthByStableHeight(
                     table, data, config, wMax, ref budget, out heightAtWMax);
+                _clock.Mark("段1-总宽线性扫描", tSeg1);
                 bestWidths = ReadColumnWidths(table);
                 float wFinalSum = GetTableColumnsWidthSum(table);
 
@@ -329,7 +447,9 @@ namespace WordAddIn1
                 {
                     result.HitMeasurementLimit = true;
                     LogTune("OptimizeTable 【分支=FinishPartial】原因=段1 总高度线性扫描后测量预算耗尽");
-                    return FinishPartial(table, data, config, result, ref budget);
+                    var partialSeg1 = FinishPartial(table, data, config, result, ref budget);
+                    AttachClock(partialSeg1);
+                    return partialSeg1;
                 }
 
                 float heightEps = Math.Max(0.5f, config.HeightTieEpsilonPoints);
@@ -348,6 +468,7 @@ namespace WordAddIn1
                     : 1;
                 LogTune($"OptimizeTable 【段2-扫描】约{approxSteps}档: {config.MaxFontSize}pt → {config.MinFontSize}pt, 步长{config.FontStep}pt；每档=设字号+自动行高+测总高度");
 
+                long tSeg2 = _clock.Now;
                 for (float fs = config.MaxFontSize; fs >= config.MinFontSize - 0.001f; fs -= config.FontStep)
                 {
                     if (budget <= 0)
@@ -357,16 +478,24 @@ namespace WordAddIn1
                         break;
                     }
 
+                    long tFs = _clock != null ? _clock.Now : 0;
                     try
                     {
                         table.Range.Font.Size = fs;
                     }
                     catch { /* ignore */ }
+                    AccTune("段2-设字号", tFs);
 
+                    tFs = _clock != null ? _clock.Now : 0;
                     ApplyRowAutoHeightForMeasurement(table);
+                    AccTune("段2-自动行高", tFs);
+
+                    tFs = _clock != null ? _clock.Now : 0;
                     float totalH = GetTableTotalHeightPoints(table, ref budget);
+                    AccTune("段2-测总高", tFs);
                     fontSizeToTotalHeightSamples.Add((fs, totalH));
                 }
+                _clock.Mark("段2-字号扫描", tSeg2);
 
                 LogTune($"OptimizeTable 【段2-扫描-结束】已采样 {fontSizeToTotalHeightSamples.Count} 档, 剩余预算={budget}");
                 LogFontSizeToTotalHeightIndexTable(fontSizeToTotalHeightSamples, heightTieEpsilonPt);
@@ -403,7 +532,9 @@ namespace WordAddIn1
                     result.HitMeasurementLimit = true;
 
                 LogStep("终稿", "ApplyOptimization", $"W≈{GetTableColumnsWidthSum(table):F1}pt, 字号={bestFont:F1}pt");
+                long tApply = _clock.Now;
                 ApplyOptimization(table, bestWidths, bestFont, data, config, ref budget);
+                _clock.Mark("终稿-ApplyOptimization", tApply);
 
                 result.Success = true;
                 result.FinalFontSize = bestFont;
@@ -411,6 +542,7 @@ namespace WordAddIn1
                 result.RequiresWrapping = Math.Abs(bestFont - config.MinFontSize) <= 0.001f;
                 result.HitMeasurementLimit |= budget <= 0;
                 LogTune($"OptimizeTable ========== 结束(段1+段2) ========== FinalFontSize={bestFont}pt, RequiresWrapping={result.RequiresWrapping}, HitMeasurementLimit={result.HitMeasurementLimit}, 列宽之和={GetTableColumnsWidthSum(table):F1}pt");
+                AttachClock(result);
                 return result;
             }
             catch (Exception ex)
@@ -418,7 +550,12 @@ namespace WordAddIn1
                 result.Success = false;
                 result.Error = ex.Message;
                 LogTune($"OptimizeTable ========== 异常 ========== {ex.GetType().Name}: {ex.Message}");
+                AttachClock(result);
                 return result;
+            }
+            finally
+            {
+                _clock = null;
             }
         }
 
@@ -656,8 +793,12 @@ namespace WordAddIn1
             }
 
             // 调用前已在步骤 3 顶满 W_max；直接测总高度作为参考
+            long tAuto = _clock != null ? _clock.Now : 0;
             ApplyRowAutoHeightForMeasurement(table);
+            AccTune("段1-自动行高", tAuto);
+            long tH0 = _clock != null ? _clock.Now : 0;
             heightAtWMax = GetTableTotalHeightPoints(table, ref budget);
+            AccTune("段1-测总高", tH0);
 
             float widthStep = Math.Max(1f, config.WidthStep);
 
@@ -678,10 +819,21 @@ namespace WordAddIn1
             {
                 float probeWidth = Math.Min(w, hi);
                 usedIter++;
+                long tIter = _clock != null ? _clock.Now : 0;
                 ApplyProportionalWidthsFromSnapshot(table, snapshot, probeWidth);
+                AccTune("段1-按比例写列宽", tIter);
+
+                tIter = _clock != null ? _clock.Now : 0;
                 ApplyEmptyAndNonEmptyColumnWidths(table, data, config, probeWidth, ref budget);
+                AccTune("段1-空列分配", tIter);
+
+                tIter = _clock != null ? _clock.Now : 0;
                 ApplyRowAutoHeightForMeasurement(table);
+                AccTune("段1-自动行高", tIter);
+
+                tIter = _clock != null ? _clock.Now : 0;
                 float h = GetTableTotalHeightPoints(table, ref budget);
+                AccTune("段1-测总高", tIter);
                 if (budget <= 0)
                     break;
 
@@ -1642,27 +1794,46 @@ namespace WordAddIn1
                 return 0f;
             budget--;
 
+            long t = _clock != null ? _clock.Now : 0;
             TryForceWordTableLayout(table);
+            AccTune("测高-ScreenRefresh", t);
+
+            t = _clock != null ? _clock.Now : 0;
             TryScrollTableIntoView(table);
-            if (TryGetTableHeightPointsViaWindowGetPoint(table, out float byPoint))
+            AccTune("测高-ScrollIntoView", t);
+
+            t = _clock != null ? _clock.Now : 0;
+            bool gotPoint = TryGetTableHeightPointsViaWindowGetPoint(table, out float byPoint);
+            AccTune("测高-GetPoint", t);
+            if (gotPoint)
             {
                 LogTune($"§2.2 表格总高度：GetPoint 视口高度≈{byPoint:F1}pt（96dpi 换算）");
                 return byPoint;
             }
 
+            t = _clock != null ? _clock.Now : 0;
             TryForceWordTableLayout(table);
+            AccTune("测高-ScreenRefresh", t);
+            t = _clock != null ? _clock.Now : 0;
             if (TrySumFirstColumnCellHeightsPoints(table, out float sum))
             {
+                AccTune("测高-Cell.Height累加", t);
                 LogTune($"§2.2 表格总高度：GetPoint 无效，已用第1列 Cell.Height 累加≈{sum:F1}pt");
                 return sum;
             }
+            AccTune("测高-Cell.Height累加", t);
 
+            t = _clock != null ? _clock.Now : 0;
             TryForceWordTableLayout(table);
+            AccTune("测高-ScreenRefresh", t);
+            t = _clock != null ? _clock.Now : 0;
             if (TrySumFirstColumnCellHeightsPoints(table, out sum))
             {
+                AccTune("测高-Cell.Height累加", t);
                 LogTune($"§2.2 表格总高度：GetPoint 无效，已用第1列 Cell.Height 累加≈{sum:F1}pt");
                 return sum;
             }
+            AccTune("测高-Cell.Height累加", t);
 
             LogTune("§2.2 表格总高度：GetPoint 与 Cell.Height 均失败，回退为 0（本档字号高度采样失真）");
             return 0f;
@@ -1695,5 +1866,12 @@ namespace WordAddIn1
         public string Error { get; set; }
         /// <summary>单次优化内因测量次数耗尽而提前结束。</summary>
         public bool HitMeasurementLimit { get; set; }
+        /// <summary>OptimizeTable 墙钟毫秒。</summary>
+        public long TotalMs { get; set; }
+        public string SlowestStep { get; set; }
+        public long SlowestMs { get; set; }
+        public Dictionary<string, long> StepMs { get; set; }
+        public Dictionary<string, long> AccMs { get; set; }
+        public Dictionary<string, int> AccCount { get; set; }
     }
 }

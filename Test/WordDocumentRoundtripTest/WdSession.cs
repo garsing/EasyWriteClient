@@ -201,11 +201,12 @@ namespace WordDocumentRoundtripTest
                 args ?? new Dictionary<string, object>());
         }
 
-        public ToolResult OptimizeTableDisplay(Dictionary<string, object> args)
+        public ToolResult OptimizeTableDisplay(Dictionary<string, object> args, int timeoutMs = 180000)
         {
             return DesktopToolPipe.Call(
                 "F_optimize_table_display",
-                args ?? new Dictionary<string, object>());
+                args ?? new Dictionary<string, object>(),
+                timeoutMs);
         }
 
         public ToolResult CreateChartFromXml(Dictionary<string, object> args)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
@@ -578,6 +579,151 @@ namespace WordDocumentRoundtripTest
             DumpRead(s, id, tableId, "after-extra-tables");
 
             s.CloseDocByPath(path);
+        }
+
+        /// <summary>
+        /// 自造一张偏大的表，走 F_optimize_table_display，把分步耗时打到控制台。
+        /// </summary>
+        public static int RunOptimizePerfProbe(string host)
+        {
+            var s = new WdSession(host);
+            var run = new TestRun();
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, "wt-opt-perf"))
+            {
+                Console.WriteLine("open failed");
+                return 1;
+            }
+
+            try
+            {
+                s.ActivateDoc(path);
+                var swCreate = Stopwatch.StartNew();
+                ToolResult created = s.CreateTableFromXml(CreateArgs(id, WriteXml(PerfXml())));
+                Console.WriteLine("建表 " + swCreate.ElapsedMilliseconds + "ms ok=" + created.Success
+                    + " id=" + WdSession.Str(created, "table_id")
+                    + (created.Success ? "" : " err=" + (created.Error ?? "")));
+                string tableId = WdSession.Str(created, "table_id");
+                if (!created.Success || string.IsNullOrEmpty(tableId))
+                {
+                    FailMany(run, created.Error ?? "建表失败", "wt-opt-perf");
+                    return 1;
+                }
+
+                Ok(run, "wt-opt-perf-create",
+                    StillHas(s, id, "易写调优探针营收"),
+                    "自造表缺标签");
+
+                var swOpt = Stopwatch.StartNew();
+                ToolResult opt = s.OptimizeTableDisplay(new Dictionary<string, object>
+                {
+                    ["channel_id"] = id,
+                    ["table_id"] = tableId
+                });
+                long wallMs = swOpt.ElapsedMilliseconds;
+                Console.WriteLine("optimize 墙钟 " + wallMs + "ms ok=" + opt.Success
+                    + (opt.Success ? "" : " err=" + (opt.Error ?? "")));
+                Ok(run, "wt-opt-perf", opt.Success, opt.Error ?? "optimize 失败");
+
+                JObject data = DataObj(opt);
+                if (data == null || data["slowest_step"] == null)
+                {
+                    Console.WriteLine("回包没有 slowest_step。当前 Desktop 还是旧代码，重启易写后再跑 --case=wt-opt-perf。");
+                    Console.WriteLine("data=" + (opt.Data == null ? "null" : JsonConvert.SerializeObject(opt.Data)));
+                }
+                else
+                {
+                    Console.WriteLine("总耗时 total_ms=" + data["total_ms"]
+                        + " 最慢步骤=" + data["slowest_step"]
+                        + " slowest_ms=" + data["slowest_ms"]
+                        + " 字号=" + data["final_font_size"]);
+                    DumpTimingMap("step_ms（流水线各步）", data["step_ms"]);
+                    DumpTimingMap("acc_ms（累计 COM）", data["acc_ms"]);
+                    Console.WriteLine("acc_count=" + (data["acc_count"] == null
+                        ? "null"
+                        : data["acc_count"].ToString(Formatting.None)));
+                }
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+
+            Console.WriteLine("正式用例 通过 " + run.CasesPassed
+                + "  失败 " + run.CasesFailed
+                + "  跳过 " + run.CasesSkipped);
+            return run.CasesFailed == 0 ? 0 : 1;
+        }
+
+        private static void DumpTimingMap(string title, JToken token)
+        {
+            Console.WriteLine(title);
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                Console.WriteLine("  (空)");
+                return;
+            }
+
+            var rows = new List<KeyValuePair<string, long>>();
+            if (token is JObject obj)
+            {
+                foreach (var p in obj.Properties())
+                {
+                    long ms;
+                    if (!long.TryParse(Convert.ToString(p.Value), out ms))
+                        ms = 0;
+                    rows.Add(new KeyValuePair<string, long>(p.Name, ms));
+                }
+            }
+
+            rows.Sort((a, b) => b.Value.CompareTo(a.Value));
+            foreach (var row in rows)
+            {
+                Console.WriteLine("  " + row.Value.ToString().PadLeft(6) + "ms  " + row.Key);
+            }
+        }
+
+        private static string PerfXml()
+        {
+            string longA = "本指标按合并报表口径统计，含并表范围内子公司营业收入，口径说明故意写长以便优化时出现折行。";
+            string longB = "同比变动主要来自产品结构变化与部分项目结转，文字略长用于把列宽和字号扫描打满。";
+            var sb = new System.Text.StringBuilder();
+            sb.Append("<TableConfig><General><TableFontColor>000000</TableFontColor></General>");
+            sb.Append("<Table><Properties><ColWidths>");
+            sb.Append("<float>90</float><float>220</float><float>80</float><float>80</float><float>40</float><float>60</float>");
+            sb.Append("</ColWidths></Properties><Data>");
+            sb.Append("<tr><td>指标</td><td>口径说明</td><td>本年</td><td>上年</td><td></td><td>单位</td></tr>");
+            string[] names =
+            {
+                "易写调优探针营收", "营业成本", "毛利率", "销售费用", "管理费用",
+                "研发费用", "财务费用", "营业利润", "净利润", "经营现金流"
+            };
+            string[] vals =
+            {
+                "128.46", "91.20", "29.01%", "8.12", "6.40",
+                "5.88", "1.05", "15.33", "12.07", "18.90"
+            };
+            string[] prev =
+            {
+                "119.20", "86.11", "27.76%", "7.90", "6.05",
+                "5.10", "1.22", "13.80", "10.55", "16.40"
+            };
+            for (int i = 0; i < names.Length; i++)
+            {
+                string note = (i % 2 == 0) ? longA : longB;
+                sb.Append("<tr><td>")
+                    .Append(names[i])
+                    .Append("</td><td>")
+                    .Append(note)
+                    .Append("</td><td>")
+                    .Append(vals[i])
+                    .Append("</td><td>")
+                    .Append(prev[i])
+                    .Append("</td><td></td><td>亿元</td></tr>");
+            }
+
+            sb.Append("</Data></Table></TableConfig>");
+            return sb.ToString();
         }
 
         private static void DumpRead(WdSession s, string id, string tableId, string tag)

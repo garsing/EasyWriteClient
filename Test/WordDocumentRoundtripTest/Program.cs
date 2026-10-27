@@ -153,6 +153,20 @@ namespace WordDocumentRoundtripTest
                 return ContractSkipCkptProbe.Run();
             }
 
+            if (string.Equals(caseFilter, "wt-opt-perf", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 表格展示优化耗时探针（wt-opt-perf）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                return WtCases.RunOptimizePerfProbe(host);
+            }
+
             if (string.Equals(caseFilter, "wt-wps-empty-slots", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("WPS 巩固表空槽回包（wt-wps-empty-slots）");
