@@ -868,6 +868,37 @@ namespace WordDocumentRoundtripTest
                 });
         }
 
+        public bool TryNthParagraphUnderline(string fullPath, string needle, int nth, out bool underline)
+        {
+            bool value = false;
+            bool ok = IsWps
+                ? WithWpsDoc(fullPath, doc => NthParagraphUnderlineLate(doc, needle, nth, out value))
+                : WithWordDoc(fullPath, doc =>
+                {
+                    int seen = 0;
+                    for (int i = 1; i <= doc.Paragraphs.Count; i++)
+                    {
+                        string text = doc.Paragraphs[i].Range.Text ?? "";
+                        if (text.IndexOf(needle, StringComparison.Ordinal) < 0)
+                        {
+                            continue;
+                        }
+
+                        if (seen == nth)
+                        {
+                            value = doc.Paragraphs[i].Range.Font.Underline != Word.WdUnderline.wdUnderlineNone;
+                            return true;
+                        }
+
+                        seen++;
+                    }
+
+                    return false;
+                });
+            underline = value;
+            return ok;
+        }
+
         public bool TryReadLeftMargin(string fullPath, out double points)
         {
             double value = 0;
@@ -2196,6 +2227,43 @@ namespace WordDocumentRoundtripTest
                 Convert.FromBase64String(
                     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="));
             return path;
+        }
+
+        private static bool NthParagraphUnderlineLate(object doc, string needle, int nth, out bool underline)
+        {
+            underline = false;
+            try
+            {
+                object paras = GetProp(doc, "Paragraphs");
+                int n = Convert.ToInt32(GetProp(paras, "Count"));
+                int seen = 0;
+                for (int i = 1; i <= n; i++)
+                {
+                    object para = Invoke(paras, "Item", i);
+                    object range = GetProp(para, "Range");
+                    string text = Convert.ToString(GetProp(range, "Text")) ?? "";
+                    if (text.IndexOf(needle, StringComparison.Ordinal) < 0)
+                    {
+                        continue;
+                    }
+
+                    if (seen == nth)
+                    {
+                        object font = GetProp(range, "Font");
+                        int mark = Convert.ToInt32(GetProp(font, "Underline"));
+                        underline = mark != 0;
+                        return true;
+                    }
+
+                    seen++;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
+            return false;
         }
 
         private static object ParagraphRangeLate(object doc, int paraIndex)

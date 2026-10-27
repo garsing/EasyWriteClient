@@ -320,7 +320,7 @@ namespace WordAddIn1
 
             foreach (object entry in Enumerate(raw))
             {
-                items.Add(AsDictionary(entry));
+                items.Add(ActionFormatHelper.CoerceDict(entry));
             }
 
             if (items.Count == 0)
@@ -503,27 +503,6 @@ namespace WordAddIn1
             }
         }
 
-        private static Dictionary<string, object> AsDictionary(object raw)
-        {
-            if (raw is Dictionary<string, object> dict)
-            {
-                return dict;
-            }
-
-            if (raw is IDictionary generic)
-            {
-                var copy = new Dictionary<string, object>();
-                foreach (DictionaryEntry entry in generic)
-                {
-                    copy[entry.Key?.ToString() ?? ""] = entry.Value;
-                }
-
-                return copy;
-            }
-
-            return null;
-        }
-
         private static Dictionary<string, object> ReadObject(Dictionary<string, object> args, string key)
         {
             if (args == null || !args.TryGetValue(key, out object raw) || raw == null)
@@ -531,7 +510,7 @@ namespace WordAddIn1
                 return null;
             }
 
-            return AsDictionary(raw);
+            return ActionFormatHelper.CoerceDict(raw);
         }
 
         private static bool HasText(Dictionary<string, object> args, string key)
