@@ -348,6 +348,7 @@ namespace EasyWriteClient.Desktop
             _bridge = new WebView2Bridge(_webView);
             _toolOutput?.Dispose();
             _toolOutput = new ToolOutputBridge(_bridge);
+            ToolUiProgress.SendToJavaScript = (type, data) => _bridge.SendToJavaScript(type, data);
             RegisterHandlers();
             // OpenFilesMonitor 由 MainForm 在恢复窗口形态后再 Start，避免启动时建渠缩窗被「记忆完整版」覆盖
 

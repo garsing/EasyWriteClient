@@ -8,6 +8,7 @@
       />
       <img v-if="icon" :src="icon" class="tool-icon" alt="" />
       <span class="tool-name">{{ displayName }}</span>
+      <span v-if="progressLabel" class="tool-progress">{{ progressLabel }}</span>
     </div>
     <div v-if="isExpanded && allowExpand" class="tool-call-content">
       <pre :class="['code-content', `language-${language}`]"><code ref="codeElement" v-html="highlightedContent"></code></pre>
@@ -38,6 +39,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { getToolAlias } from '../utils/toolAlias'
+import { formatActionProgressLabel } from '../utils/toolActionProgress'
 import {
   escapeHtml,
   highlightByLanguage,
@@ -84,6 +86,14 @@ const props = defineProps({
   outputDone: {
     type: Boolean,
     default: false
+  },
+  progressCurrent: {
+    type: Number,
+    default: 0
+  },
+  progressTotal: {
+    type: Number,
+    default: 0
   }
 })
 
@@ -163,6 +173,12 @@ const toolAlias = ref('')
 const displayName = computed(() => {
   return toolAlias.value || props.toolName
 })
+
+const progressLabel = computed(() => formatActionProgressLabel({
+  toolName: props.toolName,
+  progressCurrent: props.progressCurrent,
+  progressTotal: props.progressTotal
+}))
 
 // 加载工具别名
 const loadToolAlias = async (name) => {
@@ -357,6 +373,15 @@ const toggleExpand = () => {
   font-size: 13px;
   font-weight: 500;
   color: #666;
+  min-width: 0;
+}
+
+.tool-progress {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #999;
+  font-variant-numeric: tabular-nums;
 }
 
 .tool-call-content {

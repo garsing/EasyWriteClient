@@ -943,13 +943,20 @@ function mergeToolOutputText (oldSegs, newSegs) {
   if (!newSegs || !newSegs.length) return newSegs
   const textMap = new Map()
   const doneSet = new Set()
+  const progressMap = new Map()
   for (const s of oldSegs || []) {
     if (s && s.type === 'toolCall' && s.toolCallId) {
       if (s.outputText) textMap.set(s.toolCallId, s.outputText)
       if (s.outputDone) doneSet.add(s.toolCallId)
+      if (s.progressTotal > 0) {
+        progressMap.set(s.toolCallId, {
+          progressCurrent: s.progressCurrent,
+          progressTotal: s.progressTotal
+        })
+      }
     }
   }
-  if (textMap.size === 0 && doneSet.size === 0) return newSegs
+  if (textMap.size === 0 && doneSet.size === 0 && progressMap.size === 0) return newSegs
   for (const s of newSegs) {
     if (s && s.type === 'toolCall' && s.toolCallId) {
       if (textMap.has(s.toolCallId) && !s.outputText) {
@@ -957,6 +964,11 @@ function mergeToolOutputText (oldSegs, newSegs) {
       }
       if (doneSet.has(s.toolCallId)) {
         s.outputDone = true
+      }
+      const progress = progressMap.get(s.toolCallId)
+      if (progress && !s.progressTotal) {
+        s.progressCurrent = progress.progressCurrent
+        s.progressTotal = progress.progressTotal
       }
     }
   }
@@ -1337,6 +1349,24 @@ onMounted(() => {
           )
           if (seg) {
             seg.outputDone = true
+            break
+          }
+        }
+      }
+    } else if (data.type === 'toolProgress') {
+      const payload = data.data || data
+      const toolCallId = payload.tool_call_id || payload.toolCallId
+      const current = Number(payload.current)
+      const total = Number(payload.total)
+      if (toolCallId && total > 1) {
+        for (const msg of messages.value) {
+          if (!msg.segments) continue
+          const seg = msg.segments.find(
+            (s) => s && s.type === 'toolCall' && s.toolCallId === toolCallId
+          )
+          if (seg) {
+            seg.progressCurrent = current
+            seg.progressTotal = total
             break
           }
         }

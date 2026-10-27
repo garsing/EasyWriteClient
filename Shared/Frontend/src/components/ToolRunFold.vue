@@ -28,6 +28,8 @@
           :result="segment.result"
           :output-text="segment.outputText"
           :output-done="segment.outputDone"
+          :progress-current="segment.progressCurrent"
+          :progress-total="segment.progressTotal"
         />
       </template>
     </div>

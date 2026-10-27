@@ -11,6 +11,8 @@
     :result="result"
     :output-text="outputText"
     :output-done="outputDone"
+    :progress-current="progressCurrent"
+    :progress-total="progressTotal"
   />
 </template>
 
@@ -45,6 +47,14 @@ const props = defineProps({
   outputDone: {
     type: Boolean,
     default: false
+  },
+  progressCurrent: {
+    type: Number,
+    default: 0
+  },
+  progressTotal: {
+    type: Number,
+    default: 0
   }
 })
 

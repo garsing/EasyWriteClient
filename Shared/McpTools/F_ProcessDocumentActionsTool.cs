@@ -93,6 +93,12 @@ namespace WordAddIn1
                     List<ParagraphAction> actions = parseResult.actions;
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 解析操作成功，共 {actions.Count} 个操作");
                     timedActionCount = actions.Count;
+                    string toolCallId = OpenDocumentPath.TryGetString(args, "__ew_tool_call_id");
+                    if (string.IsNullOrEmpty(toolCallId))
+                    {
+                        toolCallId = ConversationContext.CurrentToolCallId;
+                    }
+                    ToolUiProgress.Report(toolCallId, 1, actions.Count);
 
                     string unusable = FindInoperableActionError(actions);
                     if (!string.IsNullOrEmpty(unusable))
@@ -150,7 +156,8 @@ namespace WordAddIn1
                             document,
                             actions,
                             tableScope,
-                            docHandle.DisallowBackendApi);
+                            docHandle.DisallowBackendApi,
+                            toolCallId);
                     }
                     FormatInheritHelper.DbgLogDocumentFontSample(document, "第三步 modify 后");
                     System.Diagnostics.Debug.WriteLine("[第三步完成]");
@@ -853,7 +860,8 @@ namespace WordAddIn1
             Word.Document doc,
             List<ParagraphAction> actions,
             TableScopeIndex tableScope,
-            bool disallowBackendApi)
+            bool disallowBackendApi,
+            string toolCallId)
         {
             var results = new List<ActionResult>();
 
@@ -897,9 +905,12 @@ namespace WordAddIn1
                 DocumentActionPathLog.Record(
                     DocumentActionPathLog.LogTag + " plan geo_runs=" + geoRuns + " singles=" + singles);
 
+                int actionTotal = actions == null ? 0 : actions.Count;
+                int finishedCount = 0;
                 foreach (DocumentActionPlan.Run step in plan)
                 {
                     AgentRunCancellation.ThrowIfCancelled();
+                    ToolUiProgress.Report(toolCallId, finishedCount + 1, actionTotal);
                     if (step.IsGeoRun)
                     {
                         var members = new List<IndexedAction>();
@@ -921,6 +932,7 @@ namespace WordAddIn1
                         }
 
                         results.AddRange(geoResults);
+                        finishedCount += step.OriginalIndices == null ? 0 : step.OriginalIndices.Count;
                         continue;
                     }
 
@@ -934,8 +946,10 @@ namespace WordAddIn1
                         doc, oneAction, oneIndex, tableScope, disallowBackendApi);
                     await RemapAndAssignNewCodes(doc, one, disallowBackendApi, "single");
                     results.Add(one);
+                    finishedCount += 1;
                 }
 
+                ToolUiProgress.Report(toolCallId, actionTotal, actionTotal);
                 results = results.OrderBy(r => r.action_index).ToList();
             }
             catch (Exception ex)
