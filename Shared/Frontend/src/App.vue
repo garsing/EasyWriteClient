@@ -540,6 +540,39 @@ function removeChatAttachment (id) {
 
 const messages = ref([])
 const toolCallAccumulators = new Map()
+/** 每轮发问的用户消息 id，按先后等 turnTiming。下一句先入列时，用时仍写回上一轮。 */
+const pendingTimingUserIds = []
+
+function rememberTurnUser (id) {
+  if (id == null) return
+  pendingTimingUserIds.push(id)
+}
+
+function forgetTurnUser (id) {
+  const index = pendingTimingUserIds.indexOf(id)
+  if (index >= 0) pendingTimingUserIds.splice(index, 1)
+}
+
+function clearTurnUsers () {
+  pendingTimingUserIds.length = 0
+}
+
+function applyTurnTiming (durationMs) {
+  while (pendingTimingUserIds.length) {
+    const id = pendingTimingUserIds.shift()
+    const msg = messages.value.find((m) => m.role === 'user' && m.id === id)
+    if (msg) {
+      msg.duration_ms = durationMs
+      return
+    }
+  }
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    if (messages.value[i].role === 'user') {
+      messages.value[i].duration_ms = durationMs
+      break
+    }
+  }
+}
 const isProcessing = ref(false)
 const stoppedLocally = ref(false)
 const drainActive = ref(false)
@@ -622,6 +655,7 @@ const handleSend = async (content) => {
   }
   console.log('[App] 添加用户消息:', { id: userMessage.id, content: userMessage.content.substring(0, 20), messageCount: messages.value.length })
   messages.value.push(userMessage)
+  rememberTurnUser(userMessage.id)
   pinToLatestToken.value++
   receivedBackendMessages.value.add(userMessage.id)
   console.log('[App] 用户消息已添加，当前消息数量:', messages.value.length)
@@ -680,6 +714,7 @@ const handleSend = async (content) => {
     const index = messages.value.findIndex(m => m.id === userMessage.id)
     if (index >= 0) {
       messages.value.splice(index, 1)
+      forgetTurnUser(userMessage.id)
     }
     isProcessing.value = false
     pendingInput.value = ''
@@ -693,6 +728,7 @@ const handleLoginRequired = async (userInput) => {
   // 1. 移除最后一条用户消息
   const lastMessage = messages.value[messages.value.length - 1]
   if (lastMessage && lastMessage.role === 'user') {
+    forgetTurnUser(lastMessage.id)
     messages.value.pop()
   }
   
@@ -1123,12 +1159,7 @@ onMounted(() => {
       if (!Number.isFinite(durationMs) || durationMs < 0) {
         return
       }
-      for (let i = messages.value.length - 1; i >= 0; i--) {
-        if (messages.value[i].role === 'user') {
-          messages.value[i].duration_ms = durationMs
-          break
-        }
-      }
+      applyTurnTiming(durationMs)
     } else if (data.type === 'requestStateChanged') {
       // 请求状态变化（开始/停止处理）
       const stateData = data.data || data
@@ -1185,6 +1216,7 @@ onMounted(() => {
       console.log('[App] 清空消息列表')
       messages.value = []
       toolCallAccumulators.clear()
+      clearTurnUsers()
       panelHint.value = ''
       // 待发送附件与打开文件芯片一样：切会话 / 新建不清除，只在发送后 reset
       resetTodoProgressBar()
@@ -1210,6 +1242,7 @@ onMounted(() => {
       const payload = data.data || data
       const raw = payload.messages || []
       toolCallAccumulators.clear()
+      clearTurnUsers()
       panelHint.value = ''
       resetTodoProgressBar()
       messages.value = raw.map((m) => normalizeHistoryMessage(m))
