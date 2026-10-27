@@ -4,12 +4,8 @@
     <div v-else class="message-content">
       <div class="message-text">
         <template
-          v-for="(segment, index) in messageSegments"
-          :key="segment.type === 'toolCall'
-            ? `tool-${segment.startIndex}`
-            : segment.type === 'thinking'
-              ? `thinking-${segment.startIndex ?? index}`
-              : `text-${index}`"
+          v-for="(segment, index) in displaySegments"
+          :key="segmentKey(segment, index)"
         >
           <ThinkingBox
             v-if="segment.type === 'thinking'"
@@ -19,7 +15,7 @@
           <ClampedTextSegment
             v-else-if="segment.type === 'text'"
             :content="segment.content"
-            :clamped="isClampedText(index)"
+            :clamped="isClampedText(segment, index)"
           />
           <ToolCallBoxDisplayRule
             v-else-if="segment.type === 'toolCall'"
@@ -29,6 +25,10 @@
             :result="segment.result"
             :output-text="segment.outputText"
             :output-done="segment.outputDone"
+          />
+          <ToolRunFold
+            v-else-if="segment.type === 'toolRun'"
+            :segments="segment.segments"
           />
         </template>
       </div>
@@ -42,8 +42,10 @@
 <script setup>
 import { computed } from 'vue'
 import ToolCallBoxDisplayRule from './ToolCallBoxDisplayRule.vue'
+import ToolRunFold from './ToolRunFold.vue'
 import ThinkingBox from './ThinkingBox.vue'
 import ClampedTextSegment from './ClampedTextSegment.vue'
+import { groupToolRuns, toolRunKey } from '../utils/toolRunGroup'
 
 const props = defineProps({
   message: {
@@ -57,6 +59,11 @@ const props = defineProps({
   },
   /** 归档过程正文：全部按未确认收尾（限高 + 灰字） */
   forceProcess: {
+    type: Boolean,
+    default: false
+  },
+  /** 当前轮：连续工具收成探索/操作/思考折叠。归档进奋力工作后不要开 */
+  groupTools: {
     type: Boolean,
     default: false
   }
@@ -78,6 +85,11 @@ const messageSegments = computed(() => {
   return [{ type: 'text', content: props.message.content }]
 })
 
+const displaySegments = computed(() => {
+  if (!props.groupTools) return messageSegments.value
+  return groupToolRuns(messageSegments.value)
+})
+
 /** 最后一个工具卡下标；没有工具则为 -1。其前的正文都限高 */
 const lastToolIndex = computed(() => {
   const segs = messageSegments.value
@@ -87,23 +99,37 @@ const lastToolIndex = computed(() => {
   return -1
 })
 
-function isClampedText (index) {
+function isClampedText (segment, index) {
   if (props.forceProcess) return true
+  if (props.groupTools) return !!segment.clamped
   if (lastToolIndex.value > index) return true
   // 流式中还不能确认自然结束，尾段也先限高；整轮结束后再展开
   return !!props.message.isStreaming
 }
 
+function segmentKey (segment, index) {
+  if (segment.type === 'toolRun') return toolRunKey(segment, index)
+  if (segment.type === 'toolCall') return `tool-${segment.startIndex}`
+  if (segment.type === 'thinking') return `thinking-${segment.startIndex ?? index}`
+  return `text-${index}`
+}
+
+function endsWithCompletedTool (segs) {
+  const last = segs.length ? segs[segs.length - 1] : null
+  if (!last) return false
+  if (last.type === 'toolCall' && last.isComplete) return true
+  if (last.type === 'toolRun') {
+    const inner = last.segments || []
+    const tail = inner.length ? inner[inner.length - 1] : null
+    return !!(tail && tail.type === 'toolCall' && tail.isComplete)
+  }
+  return false
+}
+
 // 工具卡已出齐后不再在卡后挂加载点（整轮仍 isStreaming 时的误导）
 const showStreamingSpinner = computed(() => {
-  if (!props.message.isStreaming) {
-    return false
-  }
-  const segs = messageSegments.value
-  const last = segs.length ? segs[segs.length - 1] : null
-  if (last && last.type === 'toolCall' && last.isComplete) {
-    return false
-  }
+  if (!props.message.isStreaming) return false
+  if (endsWithCompletedTool(displaySegments.value)) return false
   return true
 })
 </script>

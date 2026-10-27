@@ -19,6 +19,7 @@ import { computed } from 'vue'
 import ToolCallBox from './ToolCallBox.vue'
 import manipulateToolIcon from '../assets/images/manipulate_tool.png'
 import readToolIcon from '../assets/images/read_tool.png'
+import { toolsHidden } from '../utils/toolVisibility'
 
 const props = defineProps({
   toolName: {
@@ -84,10 +85,7 @@ const toolIcon = computed(() => {
   return null // 没有图标的工具返回 null
 })
 
-// 完全不显示（连折叠框标题也不出）。优先于 toolsWithDetails。
-const toolsHidden = [
-  'B_todo'
-]
+// 完全不显示（连折叠框标题也不出）。优先于 toolsWithDetails。名单在 toolVisibility.js。
 
 // 需要显示详细内容、可展开的工具列表
 // F_write_file 不在此列：只有写 .py 才展开（对齐旧 B_write_python）

@@ -3,9 +3,10 @@
     <template v-if="!archived">
       <div class="assistant-reply-wrap">
         <SystemMessageBubble
-          v-for="m in messages"
-          :key="`${m.role}-${m.id}`"
-          :message="m"
+          v-if="liveMessage"
+          :key="`live-${messages[0]?.id}`"
+          :message="liveMessage"
+          group-tools
         />
         <MessageCopyBar :text="copyText" align="left" />
       </div>
@@ -127,6 +128,42 @@ function collectText (messages) {
   }
   return parts.join('\n\n')
 }
+
+function markClamp (message) {
+  let list = []
+  if (message.segments && message.segments.length > 0) {
+    list = message.segments.filter((s) => s && s.type !== 'todoList')
+  } else if (message.content) {
+    list = [{ type: 'text', content: message.content }]
+  }
+  const kept = []
+  for (const s of list) {
+    if (s.type === 'text' && isBlankText(s.content)) continue
+    kept.push({ ...s })
+  }
+  let lastTool = -1
+  kept.forEach((s, i) => {
+    if (s.type === 'toolCall') lastTool = i
+  })
+  const streaming = !!message.isStreaming
+  kept.forEach((s, i) => {
+    if (s.type === 'text') s.clamped = lastTool > i || streaming
+  })
+  return kept
+}
+
+const liveMessage = computed(() => {
+  if (!props.messages.length) return null
+  const segments = []
+  for (const m of props.messages) segments.push(...markClamp(m))
+  const last = props.messages[props.messages.length - 1]
+  return {
+    id: `live-${props.messages[0]?.id}`,
+    role: 'system',
+    segments,
+    isStreaming: !!last?.isStreaming
+  }
+})
 
 const copyText = computed(() => collectText(props.messages))
 
