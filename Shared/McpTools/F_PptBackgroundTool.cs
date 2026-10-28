@@ -8,6 +8,7 @@ using WordAddIn1.PresentationHost;
 
 namespace WordAddIn1
 {
+    /// <summary>封存：McpTools 不再 Register。测跑器可直接 Register。贴回未通前不要上线。</summary>
     public static class F_PptBackgroundTool
     {
         private static readonly string[] StretchKeys =

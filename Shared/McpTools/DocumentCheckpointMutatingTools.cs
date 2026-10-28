@@ -39,7 +39,6 @@ namespace WordAddIn1
             "F_manage_ppt_slide",
             "F_manage_ppt_lib",
             "F_ppt_transition",
-            "F_ppt_background",
             "F_ppt_animation",
             "F_write_excel_range",
             "F_apply_excel_format",
@@ -56,23 +55,6 @@ namespace WordAddIn1
             if (string.IsNullOrEmpty(toolName) || !MutatingToolNames.Contains(toolName))
             {
                 return false;
-            }
-
-            if (string.Equals(toolName, "F_ppt_background", StringComparison.Ordinal))
-            {
-                string action = null;
-                if (parameters != null && parameters.TryGetValue("action", out object rawBg) && rawBg != null)
-                {
-                    action = Convert.ToString(rawBg);
-                }
-
-                if (string.IsNullOrWhiteSpace(action))
-                {
-                    return false;
-                }
-
-                action = action.Trim().ToLowerInvariant();
-                return action == "set" || action == "clear";
             }
 
             if (string.Equals(toolName, "F_excel_image", StringComparison.Ordinal))
@@ -178,8 +160,6 @@ namespace WordAddIn1
                     return F_ManagePptLibTool.TryGetContractParseFailure(args, out failure);
                 case "F_ppt_transition":
                     return F_PptTransitionTool.TryGetContractParseFailure(args, out failure);
-                case "F_ppt_background":
-                    return F_PptBackgroundTool.TryGetContractParseFailure(args, out failure);
                 case "F_ppt_animation":
                     return F_PptAnimationTool.TryGetContractParseFailure(args, out failure);
                 case "F_write_excel_range":

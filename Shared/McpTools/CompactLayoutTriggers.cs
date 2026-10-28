@@ -48,7 +48,6 @@ namespace WordAddIn1
             "F_manage_ppt_shape",
             "F_ppt_animation",
             "F_ppt_transition",
-            "F_ppt_background",
             "F_browser_navigate",
         };
 
