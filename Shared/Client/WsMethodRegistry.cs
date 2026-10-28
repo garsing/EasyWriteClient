@@ -61,6 +61,7 @@ namespace WordAddIn1
                 { "presentation.manageLib", "F_manage_ppt_lib" },
                 { "presentation.animation", "F_ppt_animation" },
                 { "presentation.transition", "F_ppt_transition" },
+                { "presentation.background", "F_ppt_background" },
                 { "workbook.readRange", "F_read_excel_range" },
                 { "workbook.writeRange", "F_write_excel_range" },
                 { "workbook.manageSheet", "F_manage_excel_sheet" },

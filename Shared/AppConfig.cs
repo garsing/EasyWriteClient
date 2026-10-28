@@ -460,6 +460,7 @@ namespace WordAddIn1
                     "F_manage_ppt_slide",
                     "F_manage_ppt_lib",
                     "F_ppt_transition",
+                    "F_ppt_background",
                     "F_ppt_animation",
                     "F_apply_excel_format",
                     "F_apply_excel_conditional_format",

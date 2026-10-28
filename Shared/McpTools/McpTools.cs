@@ -57,6 +57,7 @@ namespace WordAddIn1
             F_ManagePptLibTool.Register(toolRegistry, wordApplication);
             F_PptAnimationTool.Register(toolRegistry, wordApplication);
             F_PptTransitionTool.Register(toolRegistry, wordApplication);
+            F_PptBackgroundTool.Register(toolRegistry, wordApplication);
             F_ReadExcelRangeTool.Register(toolRegistry, wordApplication);
             F_WriteExcelRangeTool.Register(toolRegistry, wordApplication);
             F_ManageExcelSheetTool.Register(toolRegistry, wordApplication);
