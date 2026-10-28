@@ -377,11 +377,21 @@ function formatSub (att) {
 }
 
 .user-text-wrap {
+  position: relative;
   display: inline-flex;
   flex-direction: column;
   align-items: stretch;
   max-width: 100%;
   min-width: 0;
+}
+
+/* 复制条默认透明，不能占高度，否则气泡和下面的折叠之间会空出一条 */
+.user-text-wrap :deep(.message-copy-bar) {
+  position: absolute;
+  right: 0;
+  top: calc(100% - 1px);
+  margin-top: 0;
+  z-index: 1;
 }
 
 .user-text-wrap:hover :deep(.message-copy-bar),

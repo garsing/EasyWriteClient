@@ -243,7 +243,7 @@ watch(() => props.messages, (newMessages, oldMessages) => {
   top: 0;
   z-index: 5;
   margin: 0 -16px;
-  padding: 8px 16px 10px;
+  padding: 8px 16px 0;
   background: #f7f7f5;
 }
 
@@ -267,7 +267,13 @@ watch(() => props.messages, (newMessages, oldMessages) => {
 }
 
 .chat-turn-user + .message-wrapper {
-  margin-top: 12px;
+  margin-top: 4px;
+}
+
+/* 折叠标题自己有内边距，紧跟用户气泡时不再叠一层顶 padding */
+.chat-turn-user + .message-wrapper :deep(.assistant-turn > .system-message > .message-content),
+.chat-turn-user + .message-wrapper :deep(.assistant-reply-wrap > .system-message > .message-content) {
+  padding-top: 0;
 }
 
 /* 用户气泡 / 提示与助手之间留缝；连续助手气泡（多轮工具拆成多条消息）贴在一起 */
