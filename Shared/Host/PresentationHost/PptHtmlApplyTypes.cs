@@ -233,13 +233,12 @@ namespace WordAddIn1.PresentationHost
             {
                 ordinal++;
                 string tag = child.Name.LocalName;
+                string place = "第" + ordinal.ToString(CultureInfo.InvariantCulture) + "个形状";
                 if (!AllowedTags.Contains(tag))
                 {
-                    error = "不支持的标签: " + tag;
+                    error = LocateNode(place, null, "不支持的标签 " + tag);
                     return false;
                 }
-
-                string place = "第" + ordinal.ToString(CultureInfo.InvariantCulture) + "个形状";
                 if (!TryParseNode(child, slideId, warnings, place, out PptHtmlApplyNode node, out string nodeError))
                 {
                     error = nodeError;
@@ -285,7 +284,7 @@ namespace WordAddIn1.PresentationHost
             string chartSource = GetAttr(el, "data-chart-source");
             if (!string.IsNullOrWhiteSpace(chartSource))
             {
-                error = "不支持绑定页内表格，请把数据写在 chart 节点的 <table> 里";
+                error = LocateNode(place, shapeType, "不支持绑定页内表格，请把数据写在 chart 节点的 <table> 里");
                 return false;
             }
 
@@ -295,15 +294,21 @@ namespace WordAddIn1.PresentationHost
                 shapeType = PptShapeTypeMap.NormalizeForCreate(shapeType, el.Name.LocalName);
                 if (string.IsNullOrEmpty(shapeType))
                 {
-                    error = "新建节点必须提供 data-shape-type（无 ShapeId 时视为新建）。"
-                        + "标题用 textbox（或 <h1>）；图表用 chart";
+                    error = LocateNode(
+                        place,
+                        null,
+                        "新建节点必须提供 data-shape-type（无 ShapeId 时视为新建）。"
+                        + "标题用 textbox（或 <h1>）；图表用 chart");
                     return false;
                 }
 
                 if (shapeType != "group" && !PptShapeTypeMap.IsCreatable(shapeType))
                 {
-                    error = "不允许新建 data-shape-type=" + shapeType
-                        + "。标题请用 textbox，不要用 placeholder_title";
+                    error = LocateNode(
+                        place,
+                        shapeType,
+                        "不允许新建 data-shape-type=" + shapeType
+                        + "。标题请用 textbox，不要用 placeholder_title");
                     return false;
                 }
             }
@@ -320,10 +325,25 @@ namespace WordAddIn1.PresentationHost
                 ChartType = GetAttr(el, "data-chart-type")
             };
 
-            string styleAttr = GetAttr(el, "style");
-            if (!TryAcceptPosition(styleAttr, forSection: false, out error))
+            string Explain(string detail)
             {
-                return false;
+                string type = !string.IsNullOrEmpty(item.ShapeType) ? item.ShapeType : shapeType;
+                string text = item.Text;
+                bool skipText = string.Equals(type, "group", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(type, "chart", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(type, "table", StringComparison.OrdinalIgnoreCase);
+                if (string.IsNullOrWhiteSpace(text) && !skipText)
+                {
+                    text = GetElementText(el);
+                }
+
+                return LocateNode(place, type, detail, text);
+            }
+
+            string styleAttr = GetAttr(el, "style");
+            if (!TryAcceptPosition(styleAttr, forSection: false, out string positionErr))
+            {
+                return Reject(Explain(positionErr), out error);
             }
 
             if (TryParseStyle(styleAttr, out double l, out double t, out double w, out double h))
@@ -344,8 +364,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlStyleIo.TryNormalizeFillOrColor(fillRaw, allowNone: true, out string fillNorm, out string fillErr))
                 {
-                    error = fillErr;
-                    return false;
+                    return Reject(Explain(fillErr), out error);
                 }
 
                 item.Fill = fillNorm;
@@ -362,8 +381,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlStyleIo.TryNormalizeFillOrColor(fontRaw, allowNone: false, out string fontNorm, out string fontErr))
                 {
-                    error = fontErr;
-                    return false;
+                    return Reject(Explain(fontErr), out error);
                 }
 
                 item.FontColor = fontNorm;
@@ -374,8 +392,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlStyleIo.TryParseFontSizePt(fontSizeRaw, out double fs, out string fsErr))
                 {
-                    error = fsErr;
-                    return false;
+                    return Reject(Explain(fsErr), out error);
                 }
 
                 item.FontSizePt = fs;
@@ -386,8 +403,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlStyleIo.TryParseFontBold(fontBoldRaw, out bool fb, out string fbErr))
                 {
-                    error = fbErr;
-                    return false;
+                    return Reject(Explain(fbErr), out error);
                 }
 
                 item.FontBold = fb;
@@ -398,8 +414,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlStyleIo.TryParseFontName(fontNameRaw, out string fn, out string fnErr))
                 {
-                    error = fnErr;
-                    return false;
+                    return Reject(Explain(fnErr), out error);
                 }
 
                 item.FontName = fn;
@@ -410,8 +425,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlStyleIo.TryParseZ(zRaw, out int z, out string zErr))
                 {
-                    error = zErr;
-                    return false;
+                    return Reject(Explain(zErr), out error);
                 }
 
                 item.Z = z;
@@ -422,8 +436,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlStyleIo.TryNormalizeFillOrColor(lineColorRaw, allowNone: true, out string lc, out string lcErr))
                 {
-                    error = lcErr;
-                    return false;
+                    return Reject(Explain(lcErr), out error);
                 }
 
                 item.LineColor = lc;
@@ -434,8 +447,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlStyleIo.TryParseLineWidthPt(lineWidthRaw, out double lw, out string lwErr))
                 {
-                    error = lwErr;
-                    return false;
+                    return Reject(Explain(lwErr), out error);
                 }
 
                 item.LineWidthPt = lw;
@@ -446,8 +458,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlParagraphIo.TryParseAlign(alignRaw, out string al, out string alErr))
                 {
-                    error = alErr;
-                    return false;
+                    return Reject(Explain(alErr), out error);
                 }
 
                 item.Align = al;
@@ -458,8 +469,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlValignIo.TryParse(valignRaw, out string va, out string vaErr))
                 {
-                    error = vaErr;
-                    return false;
+                    return Reject(Explain(vaErr), out error);
                 }
 
                 item.Valign = va;
@@ -470,8 +480,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptShapeId.TryParseShapeComId(widthFrom, out _))
                 {
-                    error = "非法 data-width-from ShapeId: " + widthFrom;
-                    return false;
+                    return Reject(Explain("非法 data-width-from ShapeId: " + widthFrom), out error);
                 }
 
                 item.WidthFromShapeId = widthFrom.Trim();
@@ -482,8 +491,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlParagraphIo.TryParseLineSpacing(lineSpRaw, out string ls, out string lsErr))
                 {
-                    error = lsErr;
-                    return false;
+                    return Reject(Explain(lsErr), out error);
                 }
 
                 item.LineSpacing = ls;
@@ -494,8 +502,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlParagraphIo.TryParseIndentOrSpacePt(spBeforeRaw, "data-space-before", out double sb, out string sbErr))
                 {
-                    error = sbErr;
-                    return false;
+                    return Reject(Explain(sbErr), out error);
                 }
 
                 item.SpaceBeforePt = sb;
@@ -506,8 +513,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlParagraphIo.TryParseIndentOrSpacePt(spAfterRaw, "data-space-after", out double sa, out string saErr))
                 {
-                    error = saErr;
-                    return false;
+                    return Reject(Explain(saErr), out error);
                 }
 
                 item.SpaceAfterPt = sa;
@@ -518,8 +524,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlParagraphIo.TryParseIndentOrSpacePt(indLeftRaw, "data-indent-left", out double il, out string ilErr))
                 {
-                    error = ilErr;
-                    return false;
+                    return Reject(Explain(ilErr), out error);
                 }
 
                 item.IndentLeftPt = il;
@@ -530,8 +535,7 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlParagraphIo.TryParseIndentOrSpacePt(indFirstRaw, "data-indent-first", out double ifr, out string ifrErr))
                 {
-                    error = ifrErr;
-                    return false;
+                    return Reject(Explain(ifrErr), out error);
                 }
 
                 item.IndentFirstPt = ifr;
@@ -542,42 +546,45 @@ namespace WordAddIn1.PresentationHost
             {
                 if (!PptHtmlParagraphIo.TryParseBullet(bulletRaw, out string bu, out string buErr))
                 {
-                    error = buErr;
-                    return false;
+                    return Reject(Explain(buErr), out error);
                 }
 
                 item.Bullet = bu;
             }
 
-            if (!TryParseMarginAttr(el, "data-margin-left", out double? mL, out error))
+            if (!TryParseMarginAttr(el, "data-margin-left", out double? mL, out string marginLeftErr))
             {
-                return false;
+                return Reject(Explain(marginLeftErr), out error);
             }
 
             item.MarginLeftPt = mL;
-            if (!TryParseMarginAttr(el, "data-margin-right", out double? mR, out error))
+            if (!TryParseMarginAttr(el, "data-margin-right", out double? mR, out string marginRightErr))
             {
-                return false;
+                return Reject(Explain(marginRightErr), out error);
             }
 
             item.MarginRightPt = mR;
-            if (!TryParseMarginAttr(el, "data-margin-top", out double? mT, out error))
+            if (!TryParseMarginAttr(el, "data-margin-top", out double? mT, out string marginTopErr))
             {
-                return false;
+                return Reject(Explain(marginTopErr), out error);
             }
 
             item.MarginTopPt = mT;
-            if (!TryParseMarginAttr(el, "data-margin-bottom", out double? mB, out error))
+            if (!TryParseMarginAttr(el, "data-margin-bottom", out double? mB, out string marginBottomErr))
             {
-                return false;
+                return Reject(Explain(marginBottomErr), out error);
             }
 
             item.MarginBottomPt = mB;
 
             string rot = GetAttr(el, "data-rotation");
-            if (!string.IsNullOrEmpty(rot)
-                && double.TryParse(rot, NumberStyles.Float, CultureInfo.InvariantCulture, out double rv))
+            if (!string.IsNullOrEmpty(rot))
             {
+                if (!double.TryParse(rot, NumberStyles.Float, CultureInfo.InvariantCulture, out double rv))
+                {
+                    return Reject(Explain("非法 data-rotation（须为角度数字）: " + rot), out error);
+                }
+
                 item.Rotation = rv;
             }
 
@@ -594,17 +601,16 @@ namespace WordAddIn1.PresentationHost
             {
                 if (string.Equals(el.Name.LocalName, "table", StringComparison.OrdinalIgnoreCase))
                 {
-                    error = "chart 须用 <div> 包内嵌 <table>，不能用根 table";
-                    return false;
+                    return Reject(Explain("chart 须用 <div> 包内嵌 <table>，不能用根 table"), out error);
                 }
 
                 item.ChartFormat = PptHtmlChartIo.ParseFormat(el);
                 string typeRaw = item.ChartFormat.ChartType ?? item.ChartType;
                 if (markedChart)
                 {
-                    if (!PptHtmlChartIo.TryParseType(typeRaw, out _, out string canon, out error))
+                    if (!PptHtmlChartIo.TryParseType(typeRaw, out _, out string canon, out string typeErr))
                     {
-                        return false;
+                        return Reject(Explain(typeErr), out error);
                     }
 
                     if (!string.IsNullOrWhiteSpace(typeRaw))
@@ -616,25 +622,22 @@ namespace WordAddIn1.PresentationHost
 
                 if (nestedTables.Count > 1)
                 {
-                    error = "chart 节点只能有一张内嵌 <table>";
-                    return false;
+                    return Reject(Explain("chart 节点只能有一张内嵌 <table>"), out error);
                 }
 
                 if (nestedTables.Count == 1)
                 {
-                    if (!PptHtmlTableParse.TryRejectChartTableEnhancements(nestedTables[0], out error))
+                    if (!PptHtmlTableParse.TryRejectChartTableEnhancements(nestedTables[0], out string chartTableErr))
                     {
-                        return false;
+                        return Reject(Explain(chartTableErr), out error);
                     }
 
-                    if (!PptHtmlChartIo.TryParseGrid(nestedTables[0], true, out PptHtmlChartGrid grid, out error))
+                    if (!PptHtmlChartIo.TryParseGrid(nestedTables[0], true, out PptHtmlChartGrid grid, out string gridErr))
                     {
                         if (markedChart)
                         {
-                            return false;
+                            return Reject(Explain(gridErr), out error);
                         }
-
-                        error = null;
                     }
                     else
                     {
@@ -656,8 +659,7 @@ namespace WordAddIn1.PresentationHost
 
                     if (isCreate)
                     {
-                        error = "新建 chart 必须在节点内嵌 <table> 灌数，不能建空图";
-                        return false;
+                        return Reject(Explain("新建 chart 必须在节点内嵌 <table> 灌数，不能建空图"), out error);
                     }
                 }
             }
@@ -669,10 +671,10 @@ namespace WordAddIn1.PresentationHost
                     el,
                     out PptHtmlTableGrid tableGrid,
                     out PptHtmlTableStyleSnap tableStyle,
-                    out error,
+                    out string tableErr,
                     tableWarnings))
                 {
-                    return false;
+                    return Reject(Explain(tableErr), out error);
                 }
 
                 item.TableGrid = tableGrid;
@@ -695,8 +697,7 @@ namespace WordAddIn1.PresentationHost
                 item.HasText = true;
                 if (text != null && text.Length > PptHtmlReadResult.MaxTextChars)
                 {
-                    error = "单形状文本超过 " + PptHtmlReadResult.MaxTextChars + " 字符";
-                    return false;
+                    return Reject(Explain("单形状文本超过 " + PptHtmlReadResult.MaxTextChars + " 字符"), out error);
                 }
             }
 
@@ -712,8 +713,7 @@ namespace WordAddIn1.PresentationHost
                 {
                     if (!AllowedTags.Contains(childEl.Name.LocalName))
                     {
-                        error = "不支持的标签: " + childEl.Name.LocalName;
-                        return false;
+                        return Reject(Explain("不支持的子标签 " + childEl.Name.LocalName), out error);
                     }
 
                     childOrdinal++;
@@ -732,14 +732,12 @@ namespace WordAddIn1.PresentationHost
 
                 if (isCreate && item.Children.Count == 0)
                 {
-                    error = "不能新建空 group，请手写可建子节点或 data-extends";
-                    return false;
+                    return Reject(Explain("不能新建空 group，请手写可建子节点或 data-extends"), out error);
                 }
 
                 if (isCreate && GroupTreeHasShapeId(item))
                 {
-                    error = "新建 group 的子节点不能带 ShapeId";
-                    return false;
+                    return Reject(Explain("新建 group 的子节点不能带 ShapeId"), out error);
                 }
             }
 
@@ -749,8 +747,7 @@ namespace WordAddIn1.PresentationHost
                 {
                     if (cell != null && cell.Text != null && cell.Text.Length > PptHtmlReadResult.MaxTextChars)
                     {
-                        error = "表格单元格文本超过 " + PptHtmlReadResult.MaxTextChars + " 字符";
-                        return false;
+                        return Reject(Explain("表格单元格文本超过 " + PptHtmlReadResult.MaxTextChars + " 字符"), out error);
                     }
                 }
             }
@@ -762,8 +759,7 @@ namespace WordAddIn1.PresentationHost
                     {
                         if (cell != null && cell.Length > PptHtmlReadResult.MaxTextChars)
                         {
-                            error = "表格单元格文本超过 " + PptHtmlReadResult.MaxTextChars + " 字符";
-                            return false;
+                            return Reject(Explain("表格单元格文本超过 " + PptHtmlReadResult.MaxTextChars + " 字符"), out error);
                         }
                     }
                 }
@@ -779,8 +775,7 @@ namespace WordAddIn1.PresentationHost
                 && (item.ShapeType == "picture" || item.ShapeType == "media")
                 && string.IsNullOrWhiteSpace(item.DataSrc))
             {
-                error = "新建 " + item.ShapeType + " 必须提供 data-src";
-                return false;
+                return Reject(Explain("新建 " + item.ShapeType + " 必须提供 data-src"), out error);
             }
 
             node = item;
@@ -927,6 +922,72 @@ namespace WordAddIn1.PresentationHost
             }
 
             return double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        }
+
+        private static bool Reject(string message, out string error)
+        {
+            error = message;
+            return false;
+        }
+
+        internal static string WithNode(int ordinal, PptHtmlApplyNode node, string detail)
+        {
+            if (string.IsNullOrEmpty(detail) || detail.StartsWith("第", StringComparison.Ordinal))
+            {
+                return detail;
+            }
+
+            string place = ordinal > 0
+                ? "第" + ordinal.ToString(CultureInfo.InvariantCulture) + "个形状"
+                : null;
+            string type = node == null ? "" : node.ShapeType;
+            string text = node == null ? "" : node.Text;
+            bool skipText = string.Equals(type, "group", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "chart", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "table", StringComparison.OrdinalIgnoreCase);
+            return LocateNode(place, type, detail, skipText ? null : text);
+        }
+
+        internal static void StampNode(List<string> messages, int before, int ordinal, PptHtmlApplyNode node)
+        {
+            if (messages == null)
+            {
+                return;
+            }
+
+            for (int i = Math.Max(0, before); i < messages.Count; i++)
+            {
+                messages[i] = WithNode(ordinal, node, messages[i]);
+            }
+        }
+
+        private static string LocateNode(string place, string shapeType, string detail, string text = null)
+        {
+            string who = string.IsNullOrEmpty(place) ? "该形状" : place;
+            string type = (shapeType ?? "").Trim();
+            string snippet = OneLineSnippet(text);
+            if (type.Length > 0 || snippet.Length > 0)
+            {
+                who += "（";
+                if (type.Length > 0)
+                {
+                    who += type;
+                }
+
+                if (snippet.Length > 0)
+                {
+                    if (type.Length > 0)
+                    {
+                        who += " ";
+                    }
+
+                    who += "「" + snippet + "」";
+                }
+
+                who += "）";
+            }
+
+            return who + "：" + (detail ?? "");
         }
 
         internal static string FormatCreateGeometryError(PptHtmlApplyNode node)

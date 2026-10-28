@@ -23,6 +23,8 @@ namespace PptHtmlContentRoundtripTest
             ParseRejectNegativeTop(run);
             ParseRejectMissingHeight(run);
             ParseRejectNoStyle(run);
+            ParseRejectBadFillOnLaterShape(run);
+            ParseRejectBadChartType(run);
         }
 
         private static void ParseTextbox(TestRun run)
@@ -321,6 +323,42 @@ namespace PptHtmlContentRoundtripTest
                     && error != null
                     && error.IndexOf("第1个形状", System.StringComparison.Ordinal) >= 0
                     && error.IndexOf("没有 style", System.StringComparison.Ordinal) >= 0,
+                ok ? "应失败" : ("error=" + error));
+        }
+
+        private static void ParseRejectBadFillOnLaterShape(TestRun run)
+        {
+            string html = ContentHtml.Section(
+                "  <div data-shape-type=\"rectangle\" style=\"" + ContentHtml.Geo(0, 0, 100, 100)
+                + "\" data-fill=\"#112233\"></div>\n"
+                + "  <div data-shape-type=\"textbox\" style=\"" + ContentHtml.Geo(8, 10, 40, 12)
+                + "\" data-fill=\"blue\">标题</div>");
+            bool ok = ContentHtml.TryParse(html, "260", out _, out string error);
+            run.Expect(
+                "parse-bad-fill 应失败",
+                !ok
+                    && error != null
+                    && error.IndexOf("第2个形状", System.StringComparison.Ordinal) >= 0
+                    && error.IndexOf("textbox", System.StringComparison.Ordinal) >= 0
+                    && error.IndexOf("标题", System.StringComparison.Ordinal) >= 0
+                    && error.IndexOf("blue", System.StringComparison.Ordinal) >= 0,
+                ok ? "应失败" : ("error=" + error));
+        }
+
+        private static void ParseRejectBadChartType(TestRun run)
+        {
+            string html = ContentHtml.Section(
+                "  <div data-shape-type=\"chart\" data-chart-type=\"scatter\" style=\""
+                + ContentHtml.Geo(8, 10, 40, 30) + "\">\n"
+                + "    <table><tr><th>类别</th><th>值</th></tr><tr><td>A</td><td>1</td></tr></table>\n"
+                + "  </div>");
+            bool ok = ContentHtml.TryParse(html, "260", out _, out string error);
+            run.Expect(
+                "parse-bad-chart-type 应失败",
+                !ok
+                    && error != null
+                    && error.IndexOf("第1个形状", System.StringComparison.Ordinal) >= 0
+                    && error.IndexOf("scatter", System.StringComparison.Ordinal) >= 0,
                 ok ? "应失败" : ("error=" + error));
         }
     }

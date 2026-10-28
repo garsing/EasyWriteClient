@@ -2500,7 +2500,8 @@ namespace WordAddIn1.PresentationHost
                     canonical = "pie3d";
                     return true;
                 default:
-                    error = "data-chart-type 仅支持 column/bar/line/pie2d/pie3d（pie 为 pie2d 别名）";
+                    error = "data-chart-type=" + raw.Trim()
+                        + " 不受支持，仅支持 column/bar/line/pie2d/pie3d（pie 为 pie2d 别名）";
                     return false;
             }
         }

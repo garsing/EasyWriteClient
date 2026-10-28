@@ -105,6 +105,7 @@ namespace WordAddIn1.PresentationHost
                     palette == null ? "miss" : "hit n=" + palette.Count);
                 phaseSw.Restart();
 
+                int nodeOrdinal = 0;
                 foreach (PptHtmlApplyNode node in plan.Nodes)
                 {
                     if (node == null)
@@ -112,6 +113,7 @@ namespace WordAddIn1.PresentationHost
                         continue;
                     }
 
+                    nodeOrdinal++;
                     var nodeSw = Stopwatch.StartNew();
                     string nodeOp = node.IsCreate ? "create" : "update";
                     try
@@ -133,6 +135,7 @@ namespace WordAddIn1.PresentationHost
                             ref unchanged,
                             out error))
                     {
+                        error = PptHtmlApplyParser.WithNode(nodeOrdinal, node, error);
                         return false;
                     }
                     }
@@ -637,9 +640,18 @@ namespace WordAddIn1.PresentationHost
             }
 
             var hard = new List<string>();
+            int ordinal = 0;
             foreach (PptHtmlApplyNode node in nodes)
             {
+                if (node == null)
+                {
+                    continue;
+                }
+
+                ordinal++;
+                int before = hard.Count;
                 PreflightWalk(shapes, plan, node, hard);
+                PptHtmlApplyParser.StampNode(hard, before, ordinal, node);
             }
 
             if (hard.Count == 0)
