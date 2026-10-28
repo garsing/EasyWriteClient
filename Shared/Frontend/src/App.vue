@@ -78,16 +78,10 @@
         :todos="todoBarTodos"
         @toggle="todoBarExpanded = !todoBarExpanded"
       />
-      <LoopConfirmBar
-        :visible="loopConfirm !== null"
-        :repeats="loopConfirm ? loopConfirm.repeats : 0"
-        :steps="loopConfirm ? loopConfirm.steps : []"
-        @stop="handleUserStop"
-        @ignore="handleLoopIgnore"
-      />
       <ChatInput
         @send="handleSend"
         @stop="handleUserStop"
+        @ignore="handleLoopIgnore"
         @remove-attachment="removeChatAttachment"
         @dropped-files="onInputAreaFilesDrop"
         @remove-selected-open-file="handleRemoveSelectedOpenFile"
@@ -97,6 +91,9 @@
         :show-open-file-chips="isDesktopHost"
         :attachments="chatAttachmentItems"
         :selected-open-files="selectedOpenFiles"
+        :loop-confirm-visible="loopConfirm !== null"
+        :loop-repeats="loopConfirm ? loopConfirm.repeats : 0"
+        :loop-steps="loopConfirm ? loopConfirm.steps : []"
       />
     </div>
   </div>
@@ -109,7 +106,6 @@ import ChatMessages from './components/ChatMessages.vue'
 import ChatEmptyState from './components/ChatEmptyState.vue'
 import ChatInput from './components/ChatInput.vue'
 import TodoProgressBar from './components/TodoProgressBar.vue'
-import LoopConfirmBar from './components/LoopConfirmBar.vue'
 import TaskSidebar from './components/TaskSidebar.vue'
 import ConversationHistoryPopover from './components/ConversationHistoryPopover.vue'
 import { useWebViewBridge } from './composables/useWebViewBridge'

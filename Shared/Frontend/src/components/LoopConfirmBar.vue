@@ -50,9 +50,9 @@ watch(() => props.visible, (showing) => {
 <style scoped>
 .loop-confirm {
   flex-shrink: 0;
-  padding: 0 8px 0 16px;
-  margin-bottom: 4px;
+  margin: 0;
   background: #f7f7f5;
+  border-bottom: 1px solid #e6e6e6;
 }
 
 .loop-confirm-steps {
@@ -85,7 +85,7 @@ watch(() => props.visible, (showing) => {
   flex: 1;
   min-width: 0;
   margin: 0;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: none;
   background: transparent;
   cursor: pointer;

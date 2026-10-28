@@ -81,6 +81,14 @@
       </div>
     </div>
 
+    <div class="composer" :class="{ 'composer--confirm': loopConfirmVisible }">
+    <LoopConfirmBar
+      :visible="loopConfirmVisible"
+      :repeats="loopRepeats"
+      :steps="loopSteps"
+      @stop="$emit('stop')"
+      @ignore="$emit('ignore')"
+    />
     <div class="input-wrapper">
       <a-textarea
         ref="textareaRef"
@@ -105,6 +113,7 @@
       </button>
       <div v-else class="send-button send-button--placeholder" aria-hidden="true" />
     </div>
+    </div>
     <p class="ai-content-label" role="note">内容由人工智能生成，请注意甄别</p>
     </div>
   </div>
@@ -119,6 +128,7 @@ import { syncLiveDraftInput } from '../utils/draftChatInput.js'
 import { collectClipboardFiles } from '../utils/clipboardChatImages.js'
 import { isImageFileName, loadKbImageThumbUrl } from '../utils/kbImageThumb.js'
 import ImageLightbox from './ImageLightbox.vue'
+import LoopConfirmBar from './LoopConfirmBar.vue'
 
 const props = defineProps({
   loading: {
@@ -148,6 +158,18 @@ const props = defineProps({
   showOpenFileChips: {
     type: Boolean,
     default: false
+  },
+  loopConfirmVisible: {
+    type: Boolean,
+    default: false
+  },
+  loopRepeats: {
+    type: Number,
+    default: 0
+  },
+  loopSteps: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -155,7 +177,7 @@ const autoSize = computed(() =>
   props.desktop ? { minRows: 3, maxRows: 8 } : { minRows: 1, maxRows: 4 }
 )
 
-const emit = defineEmits(['send', 'stop', 'remove-attachment', 'dropped-files', 'remove-selected-open-file'])
+const emit = defineEmits(['send', 'stop', 'ignore', 'remove-attachment', 'dropped-files', 'remove-selected-open-file'])
 
 const showSelectedOpenFiles = computed(
   () =>
@@ -661,6 +683,23 @@ const handleShiftEnter = () => {}
   color: #333;
 }
 
+.composer--confirm {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.composer--confirm .input-wrapper {
+  padding: 4px 4px 4px 8px;
+}
+
+.composer--confirm .input-textarea :deep(textarea.ant-input),
+.composer--confirm .input-textarea :deep(.ant-input) {
+  border-color: transparent;
+  box-shadow: none;
+}
+
 .input-wrapper {
   display: flex;
   gap: 4px;
@@ -724,6 +763,11 @@ const handleShiftEnter = () => {}
   padding: 0;
 }
 
+.chat-input-container--desktop .composer--confirm {
+  border-color: #e6e6e6;
+  border-radius: 16px;
+}
+
 .chat-input-container--desktop .input-wrapper {
   gap: 8px;
   /* 顶对齐，保证「输入消息」距上边与左边空隙一致 */
@@ -734,6 +778,11 @@ const handleShiftEnter = () => {}
   background: #ffffff;
   border: 1px solid #e6e6e6;
   border-radius: 16px;
+}
+
+.chat-input-container--desktop .composer--confirm .input-wrapper {
+  border: none;
+  border-radius: 0;
 }
 
 .chat-input-container--desktop .input-textarea {
