@@ -52,6 +52,10 @@ namespace PptHtmlContentRoundtripTest
                 {
                     PageImageRunner.Run(run, nameFilters, useWpp);
                 }
+                else if (BackgroundRunner.Wants(nameFilters))
+                {
+                    BackgroundRunner.Run(run, nameFilters, useWpp);
+                }
                 else if (AnimationRunner.Wants(nameFilters) || TransitionRunner.Wants(nameFilters))
                 {
                     if (AnimationRunner.Wants(nameFilters))

@@ -234,24 +234,22 @@ namespace WordAddIn1.PresentationHost
                 {
                     SetProp(fill, "TextureOffsetX", placement.TileOffsetX);
                     SetProp(fill, "TextureOffsetY", placement.TileOffsetY);
-                    SetProp(fill, "TextureHorizontalScale", placement.TileScaleX);
-                    SetProp(fill, "TextureVerticalScale", placement.TileScaleY);
+                    SetProp(fill, "TextureHorizontalScale", placement.TileScaleX / 100.0);
+                    SetProp(fill, "TextureVerticalScale", placement.TileScaleY / 100.0);
                     SetProp(fill, "TextureAlignment", AlignToCom(placement.TileAlign));
                 }
 
-                bool needXml = tile
-                    ? !string.Equals(placement.TileMirror, "none", StringComparison.Ordinal)
-                    : !AllStretchZero(placement);
-                if (!needXml && !LivePictureMatches(presentation, index, placement, out _))
-                {
-                    needXml = true;
-                }
-
-                if (needXml)
+                string readback = null;
+                if (!LivePictureMatches(presentation, index, placement, out readback))
                 {
                     if (!TryPatchLive(presentation, index, placement, out error))
                     {
                         TryRestore(presentation, index, backup);
+                        if (!string.IsNullOrEmpty(readback))
+                        {
+                            error = error + " 改包前读回: " + readback;
+                        }
+
                         return false;
                     }
                 }
@@ -482,7 +480,8 @@ namespace WordAddIn1.PresentationHost
             try
             {
                 int textureType = Convert.ToInt32(Prop(fill, "TextureType"));
-                return textureType == (int)Office.MsoTextureType.msoTextureUserDefined;
+                return textureType == (int)Office.MsoTextureType.msoTextureUserDefined
+                    || textureType == (int)Office.MsoTextureType.msoTextureTypeMixed;
             }
             catch (Exception)
             {
@@ -521,14 +520,6 @@ namespace WordAddIn1.PresentationHost
             info.StretchBottom = placement.StretchBottom;
         }
 
-        private static bool AllStretchZero(PptBackgroundPackage.PicturePlacement placement)
-        {
-            return Math.Abs(placement.StretchLeft) <= 0.1
-                && Math.Abs(placement.StretchRight) <= 0.1
-                && Math.Abs(placement.StretchTop) <= 0.1
-                && Math.Abs(placement.StretchBottom) <= 0.1;
-        }
-
         private static bool TryNormalizeSet(
             PresentationBackgroundRequest request,
             out string kind,
@@ -547,7 +538,8 @@ namespace WordAddIn1.PresentationHost
             }
 
             bool hasColor = !string.IsNullOrWhiteSpace(request.Color);
-            bool hasPath = !string.IsNullOrWhiteSpace(request.PictureAbsolutePath);
+            bool hasPath = !string.IsNullOrWhiteSpace(request.PictureAbsolutePath)
+                || !string.IsNullOrWhiteSpace(request.PathEcho);
             if (kind == "solid")
             {
                 if (!hasColor || hasPath || request.SawStretch || request.SawTile || !string.IsNullOrEmpty(request.Fit))

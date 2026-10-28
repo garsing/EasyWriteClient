@@ -170,14 +170,28 @@ namespace WordAddIn1.PresentationHost
                 if (!Near(actual.TileScaleX, expected.TileScaleX, 0.5)
                     || !Near(actual.TileScaleY, expected.TileScaleY, 0.5))
                 {
-                    detail = "平铺缩放读回不一致";
+                    detail = "平铺缩放读回 "
+                    + actual.TileScaleX.ToString("0.###", CultureInfo.InvariantCulture)
+                    + ","
+                    + actual.TileScaleY.ToString("0.###", CultureInfo.InvariantCulture)
+                    + " 期望 "
+                    + expected.TileScaleX.ToString("0.###", CultureInfo.InvariantCulture)
+                    + ","
+                    + expected.TileScaleY.ToString("0.###", CultureInfo.InvariantCulture);
                     return false;
                 }
 
                 if (!string.Equals(actual.TileAlign, expected.TileAlign, StringComparison.Ordinal)
                     || !string.Equals(actual.TileMirror, expected.TileMirror, StringComparison.Ordinal))
                 {
-                    detail = "平铺对齐或镜像读回不一致";
+                    detail = "平铺对齐或镜像读回 align="
+                    + (actual.TileAlign ?? "")
+                    + " mirror="
+                    + (actual.TileMirror ?? "")
+                    + " 期望 align="
+                    + (expected.TileAlign ?? "")
+                    + " mirror="
+                    + (expected.TileMirror ?? "");
                     return false;
                 }
 
