@@ -149,7 +149,7 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
-        private static void ClearEmptyPlaceholders(PowerPoint.Slide slide, List<ClearedPlaceholderInfo> cleared)
+        internal static void ClearEmptyPlaceholders(PowerPoint.Slide slide, List<ClearedPlaceholderInfo> cleared)
         {
             if (slide == null)
             {

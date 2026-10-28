@@ -57,6 +57,7 @@ namespace WordAddIn1.PresentationHost
                     presentation = app.Presentations.Add(Office.MsoTriState.msoTrue);
                     presentation.SaveAs(fullPath, (PowerPoint.PpSaveAsFileType)SaveFormatFor(fullPath));
                     EnsureBlankHasDefaultSlide(presentation);
+                    ClearBlankPlaceholders(presentation);
                     created = true;
                 }
                 else
@@ -1203,6 +1204,48 @@ namespace WordAddIn1.PresentationHost
             }
 
             presentation.Slides.AddSlide(1, layout);
+            try
+            {
+                presentation.Save();
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>
+        /// 新建稿与 F_manage_ppt_slide add 对齐：删掉仍为空的标题/正文/副标题占位符。
+        /// </summary>
+        private static void ClearBlankPlaceholders(PowerPoint.Presentation presentation)
+        {
+            if (presentation == null)
+            {
+                return;
+            }
+
+            int count;
+            try
+            {
+                count = presentation.Slides.Count;
+            }
+            catch (Exception)
+            {
+                return;
+            }
+
+            int clearedCount = 0;
+            for (int i = 1; i <= count; i++)
+            {
+                var cleared = new List<ClearedPlaceholderInfo>();
+                PptSlidePowerPointManager.ClearEmptyPlaceholders(presentation.Slides[i], cleared);
+                clearedCount += cleared.Count;
+            }
+
+            if (clearedCount == 0)
+            {
+                return;
+            }
+
             try
             {
                 presentation.Save();

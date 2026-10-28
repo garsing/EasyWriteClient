@@ -180,7 +180,7 @@ namespace WordAddIn1.PresentationHost
 
         private const int MsoPlaceholder = 14;
 
-        private static void ClearEmptyPlaceholders(object slide, List<ClearedPlaceholderInfo> cleared)
+        internal static void ClearEmptyPlaceholders(object slide, List<ClearedPlaceholderInfo> cleared)
         {
             if (slide == null)
             {
