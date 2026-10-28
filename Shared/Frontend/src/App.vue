@@ -78,6 +78,13 @@
         :todos="todoBarTodos"
         @toggle="todoBarExpanded = !todoBarExpanded"
       />
+      <LoopConfirmBar
+        :visible="loopConfirm !== null"
+        :repeats="loopConfirm ? loopConfirm.repeats : 0"
+        :steps="loopConfirm ? loopConfirm.steps : []"
+        @stop="handleUserStop"
+        @ignore="handleLoopIgnore"
+      />
       <ChatInput
         @send="handleSend"
         @stop="handleUserStop"
@@ -102,6 +109,7 @@ import ChatMessages from './components/ChatMessages.vue'
 import ChatEmptyState from './components/ChatEmptyState.vue'
 import ChatInput from './components/ChatInput.vue'
 import TodoProgressBar from './components/TodoProgressBar.vue'
+import LoopConfirmBar from './components/LoopConfirmBar.vue'
 import TaskSidebar from './components/TaskSidebar.vue'
 import ConversationHistoryPopover from './components/ConversationHistoryPopover.vue'
 import { useWebViewBridge } from './composables/useWebViewBridge'
@@ -589,6 +597,7 @@ function flushHeldTurnDuration () {
   }
 }
 const isProcessing = ref(false)
+const loopConfirm = ref(null)
 const stoppedLocally = ref(false)
 const drainActive = ref(false)
 const drainRisk = ref('none')
@@ -616,6 +625,7 @@ function removeDrainHint () {
 
 /** 用户点停止：当前助手轮没有自然收尾，下一问时整轮收进「奋力工作的记录」 */
 function handleUserStop () {
+  loopConfirm.value = null
   for (let i = messages.value.length - 1; i >= 0; i--) {
     const m = messages.value[i]
     if (m.role === 'user') break
@@ -634,6 +644,20 @@ function handleUserStop () {
     console.error('停止请求失败:', err)
     isProcessing.value = false
   })
+}
+
+async function handleLoopIgnore () {
+  const prev = loopConfirm.value
+  loopConfirm.value = null
+  try {
+    const res = await sendMessage('loopIgnore', {})
+    if (res && res.success === false) {
+      loopConfirm.value = prev
+    }
+  } catch (err) {
+    console.error('忽略循环确认失败:', err)
+    loopConfirm.value = prev
+  }
 }
 
 // 处理发送消息
@@ -1185,6 +1209,13 @@ onMounted(() => {
         return
       }
       applyTurnTiming(durationMs)
+    } else if (data.type === 'loopConfirm') {
+      const payload = data.data || data
+      const repeats = Number(payload.repeats)
+      loopConfirm.value = {
+        repeats: Number.isFinite(repeats) ? repeats : 0,
+        steps: Array.isArray(payload.steps) ? payload.steps : []
+      }
     } else if (data.type === 'requestStateChanged') {
       // 请求状态变化（开始/停止处理）
       const stateData = data.data || data
@@ -1208,6 +1239,9 @@ onMounted(() => {
         return
       }
       isProcessing.value = newState
+      if (!newState) {
+        loopConfirm.value = null
+      }
       console.log('[App] 状态已改变，当前isProcessing:', isProcessing.value)
     } else if (data.type === 'toolDrainChanged') {
       const payload = data.data || data
@@ -1216,6 +1250,7 @@ onMounted(() => {
       drainRisk.value = payload.risk || 'none'
       if (endedHigh) {
         isProcessing.value = false
+        loopConfirm.value = null
       }
       if (!payload.active && pendingSendPayload.value) {
         const queued = pendingSendPayload.value

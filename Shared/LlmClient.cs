@@ -613,6 +613,12 @@ namespace WordAddIn1
 
         [JsonProperty("duration_ms")]
         public long? duration_ms { get; set; }
+
+        public int? repeats { get; set; }
+
+        public int? period { get; set; }
+
+        public List<string> steps { get; set; }
     }
 
     /// <summary>

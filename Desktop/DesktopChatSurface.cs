@@ -500,6 +500,7 @@ namespace EasyWriteClient.Desktop
             ToolDrainState.Changed += ForwardToolDrain;
             _bridge.RegisterHandler("sendMessage", HandleSendMessageAsync);
             _bridge.RegisterHandler("stopRequest", HandleStopRequestAsync);
+            _bridge.RegisterHandler("loopIgnore", HandleLoopIgnoreAsync);
             _bridge.RegisterHandler("openLoginWindow", async _ =>
             {
                 await LoginForm.ShowDialogAsync(FindForm() ?? (IWin32Window)this, logoutFirst: true)
@@ -1321,6 +1322,16 @@ namespace EasyWriteClient.Desktop
                             return;
                         }
 
+                        if (chunk?.easywrite_meta?.@event == "loop_confirm")
+                        {
+                            _bridge.SendToJavaScript("loopConfirm", new
+                            {
+                                repeats = chunk.easywrite_meta.repeats,
+                                steps = chunk.easywrite_meta.steps
+                            });
+                            return;
+                        }
+
                         if (chunk?.choices == null || chunk.choices.Count == 0)
                         {
                             return;
@@ -1499,6 +1510,20 @@ namespace EasyWriteClient.Desktop
             }
             catch (Exception ex)
             {
+                return new { success = false, message = ex.Message };
+            }
+        }
+
+        private async Task<object> HandleLoopIgnoreAsync(object data)
+        {
+            try
+            {
+                bool ok = await _wsClient.SendLoopIgnoreAsync(_currentConversationId).ConfigureAwait(true);
+                return new { success = ok };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[DesktopChatSurface] loopIgnore: " + ex.Message);
                 return new { success = false, message = ex.Message };
             }
         }

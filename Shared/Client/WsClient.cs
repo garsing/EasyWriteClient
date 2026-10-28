@@ -274,6 +274,35 @@ namespace WordAddIn1
             }
         }
 
+        public async Task<bool> SendLoopIgnoreAsync(string conversationId)
+        {
+            if (string.IsNullOrWhiteSpace(conversationId) || conversationId == "-1" || conversationId == "0")
+            {
+                return false;
+            }
+
+            if (!IsConnected)
+            {
+                return false;
+            }
+
+            var payload = _json.Serialize(new Dictionary<string, object>
+            {
+                { "type", "loop_ignore" },
+                { "conversation_id", conversationId }
+            });
+            try
+            {
+                await SendTextAsync(payload);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                EasyWriteDiagnostics.Log(DebugCategory.Ws, $"[WsClient] SendLoopIgnoreAsync failed: {ex.Message}");
+                return false;
+            }
+        }
+
         public void CancelActiveInvokeLocal()
         {
             lock (_invokeCancelLock)
