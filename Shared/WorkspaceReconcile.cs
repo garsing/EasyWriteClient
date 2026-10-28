@@ -338,35 +338,7 @@ namespace WordAddIn1
                 AlignMtime(localPath, pair.Value.MtimeUtc);
             }
 
-            foreach (var pair in local)
-            {
-                if (!backend.ContainsKey(pair.Key) && File.Exists(pair.Value.LocalPath))
-                {
-                    if (IsHeldOpenOffice(pair.Value.LocalPath))
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        File.Delete(pair.Value.LocalPath);
-                    }
-                    catch (IOException)
-                    {
-                        if (IsHeldOpenOffice(pair.Value.LocalPath) || HasOfficeLockFile(pair.Value.LocalPath))
-                        {
-                            continue;
-                        }
-
-                        return (false, "删除本地多余文件失败: 文件被占用 (" + pair.Key + ")");
-                    }
-                    catch (Exception ex)
-                    {
-                        return (false, "删除本地多余文件失败: " + ex.Message);
-                    }
-                }
-            }
-
+            // 本地多出来的文件留着，不删。下次 Push 再上传。
             return (true, null);
         }
 
@@ -415,18 +387,7 @@ namespace WordAddIn1
                 }
             }
 
-            foreach (var pair in backend)
-            {
-                if (!local.ContainsKey(pair.Key))
-                {
-                    bool deleted = await BackendApiClient.DeleteWorkspaceFileAsync(pair.Key).ConfigureAwait(false);
-                    if (!deleted)
-                    {
-                        return (false, "删除云端文件失败: " + pair.Key);
-                    }
-                }
-            }
-
+            // 后端多出来的文件留着，不删。下次 Pull 再下载。
             return (true, null);
         }
 
@@ -452,7 +413,12 @@ namespace WordAddIn1
                     string key = file.RelativePath.Replace('\\', '/');
                     backendKeys.Add(key);
                     local.TryGetValue(key, out LocalEntry localEntry);
-                    if (localEntry != null && IsHeldOpenOffice(localEntry.LocalPath))
+                    if (localEntry == null)
+                    {
+                        continue;
+                    }
+
+                    if (IsHeldOpenOffice(localEntry.LocalPath))
                     {
                         continue;
                     }
@@ -484,7 +450,7 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 渠道里正打开的办公文件，或同目录存在 Office <c>~$</c> 锁文件。对账跳过（不传、不覆盖、不删）。
+        /// 渠道里正打开的办公文件，或同目录存在 Office <c>~$</c> 锁文件。对账跳过（不传、不覆盖）。
         /// </summary>
         public static bool IsHeldOpenOffice(string localPath)
         {
