@@ -96,6 +96,9 @@ namespace WordAddIn1.PresentationHost
 
         public bool HasGeometry { get; set; }
 
+        /// <summary>style 写了但四项几何没能按非负百分比解析时的原因；空表示没写或已解析成功。</summary>
+        internal string GeometryProblem { get; set; }
+
         public List<PptHtmlApplyNode> Children { get; set; }
 
         public List<List<string>> TableCells { get; set; }
@@ -225,8 +228,10 @@ namespace WordAddIn1.PresentationHost
             // section 上若仍带旧版 ShapeId=\"sid…\"，忽略，不参与定页
             var nodes = new List<PptHtmlApplyNode>();
             var warnings = new List<string>();
+            int ordinal = 0;
             foreach (XElement child in section.Elements())
             {
+                ordinal++;
                 string tag = child.Name.LocalName;
                 if (!AllowedTags.Contains(tag))
                 {
@@ -234,7 +239,8 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                if (!TryParseNode(child, slideId, warnings, out PptHtmlApplyNode node, out string nodeError))
+                string place = "第" + ordinal.ToString(CultureInfo.InvariantCulture) + "个形状";
+                if (!TryParseNode(child, slideId, warnings, place, out PptHtmlApplyNode node, out string nodeError))
                 {
                     error = nodeError;
                     return false;
@@ -259,6 +265,7 @@ namespace WordAddIn1.PresentationHost
             XElement el,
             string targetSlideId,
             List<string> warnings,
+            string place,
             out PptHtmlApplyNode node,
             out string error)
         {
@@ -326,6 +333,10 @@ namespace WordAddIn1.PresentationHost
                 item.TopPct = t;
                 item.WidthPct = w;
                 item.HeightPct = h;
+            }
+            else if (!string.IsNullOrWhiteSpace(styleAttr))
+            {
+                item.GeometryProblem = DiagnoseStyle(styleAttr);
             }
 
             string fillRaw = GetAttr(el, "data-fill");
@@ -696,6 +707,7 @@ namespace WordAddIn1.PresentationHost
                 item.Text = "";
                 item.HasText = false;
                 item.Children = new List<PptHtmlApplyNode>();
+                int childOrdinal = 0;
                 foreach (XElement childEl in el.Elements())
                 {
                     if (!AllowedTags.Contains(childEl.Name.LocalName))
@@ -704,7 +716,10 @@ namespace WordAddIn1.PresentationHost
                         return false;
                     }
 
-                    if (!TryParseNode(childEl, targetSlideId, warnings, out PptHtmlApplyNode childNode, out error))
+                    childOrdinal++;
+                    string childPlace = (string.IsNullOrEmpty(place) ? "组" : place)
+                        + "里的第" + childOrdinal.ToString(CultureInfo.InvariantCulture) + "个子节点";
+                    if (!TryParseNode(childEl, targetSlideId, warnings, childPlace, out PptHtmlApplyNode childNode, out error))
                     {
                         return false;
                     }
@@ -756,7 +771,7 @@ namespace WordAddIn1.PresentationHost
 
             if (isCreate && !item.HasGeometry)
             {
-                error = "新建节点必须提供 style 几何（left/top/width/height %）";
+                error = FormatCreateGeometryError(styleAttr, item.ShapeType, place, item.Text, item.GeometryProblem);
                 return false;
             }
 
@@ -912,6 +927,146 @@ namespace WordAddIn1.PresentationHost
             }
 
             return double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        }
+
+        internal static string FormatCreateGeometryError(PptHtmlApplyNode node)
+        {
+            return FormatCreateGeometryError(
+                null,
+                node == null ? "" : node.ShapeType,
+                null,
+                node == null ? "" : node.Text,
+                node == null ? null : node.GeometryProblem);
+        }
+
+        internal static string FormatCreateGeometryError(
+            string style,
+            string shapeType,
+            string place,
+            string text,
+            string geometryProblem)
+        {
+            string who = "新建" + (string.IsNullOrEmpty(place) ? "节点" : place);
+            string type = (shapeType ?? "").Trim();
+            string snippet = OneLineSnippet(text);
+            if (type.Length > 0 || snippet.Length > 0)
+            {
+                who += "（";
+                if (type.Length > 0)
+                {
+                    who += type;
+                }
+
+                if (snippet.Length > 0)
+                {
+                    if (type.Length > 0)
+                    {
+                        who += " ";
+                    }
+
+                    who += "「" + snippet + "」";
+                }
+
+                who += "）";
+            }
+
+            string detail = !string.IsNullOrEmpty(geometryProblem)
+                ? geometryProblem
+                : DiagnoseStyle(style);
+            return who + "的几何无效：" + detail;
+        }
+
+        private static string DiagnoseStyle(string style)
+        {
+            const string rule = "left、top、width、height 只接受大于等于 0 的百分比，例如 top:0%。不能为负，也不能省略 %。";
+            if (string.IsNullOrWhiteSpace(style))
+            {
+                return "没有 style。" + rule;
+            }
+
+            var bad = new List<string>();
+            var missing = new List<string>();
+            foreach (string name in new[] { "left", "top", "width", "height" })
+            {
+                if (!TryReadStyleToken(style, name, out string raw))
+                {
+                    missing.Add(name);
+                    continue;
+                }
+
+                if (!IsAcceptedPct(raw))
+                {
+                    bad.Add(name + ":" + raw);
+                }
+            }
+
+            string shown = style.Trim();
+            if (shown.Length > 180)
+            {
+                shown = shown.Substring(0, 180) + "…";
+            }
+
+            if (bad.Count > 0)
+            {
+                return string.Join("、", bad) + " 不是大于等于 0 的百分比。" + rule
+                    + "当前 style=\"" + shown + "\"";
+            }
+
+            if (missing.Count > 0)
+            {
+                return "style 里缺少 " + string.Join("、", missing) + "。" + rule
+                    + "当前 style=\"" + shown + "\"";
+            }
+
+            return "style 几何无法解析。" + rule + "当前 style=\"" + shown + "\"";
+        }
+
+        private static bool TryReadStyleToken(string style, string name, out string raw)
+        {
+            raw = null;
+            Match m = Regex.Match(
+                style,
+                @"(?:^|[;\s])" + name + @"\s*:\s*([^;]+)",
+                RegexOptions.IgnoreCase);
+            if (!m.Success)
+            {
+                return false;
+            }
+
+            raw = (m.Groups[1].Value ?? "").Trim();
+            return raw.Length > 0;
+        }
+
+        private static bool IsAcceptedPct(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            Match m = Regex.Match(raw, @"^([0-9.]+)\s*%$");
+            if (!m.Success)
+            {
+                return false;
+            }
+
+            return double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+        }
+
+        private static string OneLineSnippet(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return "";
+            }
+
+            string snippet = Regex.Replace(text.Trim(), @"\s+", " ");
+            if (snippet.Length > 16)
+            {
+                snippet = snippet.Substring(0, 16) + "…";
+            }
+
+            return snippet;
         }
 
         internal static bool GroupTreeHasShapeId(PptHtmlApplyNode node)

@@ -77,7 +77,7 @@ namespace WordAddIn1.PresentationHost
             if (!node.HasGeometry)
             {
                 error = "目标页找不到 ShapeId=" + (node.ShapeId ?? "")
-                    + "，新建还原须有 style 几何（left/top/width/height %）";
+                    + "。" + PptHtmlApplyParser.FormatCreateGeometryError(node);
                 return PptHtmlMissingShapeAction.Fail;
             }
 
@@ -168,7 +168,7 @@ namespace WordAddIn1.PresentationHost
 
                 if (!node.HasGeometry)
                 {
-                    error = "新建节点必须提供 style 几何";
+                    error = PptHtmlApplyParser.FormatCreateGeometryError(node);
                     return false;
                 }
 
@@ -183,7 +183,7 @@ namespace WordAddIn1.PresentationHost
 
             if (!node.HasGeometry)
             {
-                error = "新建节点必须提供 style 几何";
+                error = PptHtmlApplyParser.FormatCreateGeometryError(node);
                 return false;
             }
 

@@ -20,6 +20,9 @@ namespace PptHtmlContentRoundtripTest
             ParsePictureAbsolute(run);
             ParseRejectHttp(run);
             ParseLeanTextbox(run);
+            ParseRejectNegativeTop(run);
+            ParseRejectMissingHeight(run);
+            ParseRejectNoStyle(run);
         }
 
         private static void ParseTextbox(TestRun run)
@@ -272,6 +275,53 @@ namespace PptHtmlContentRoundtripTest
             run.ExpectEqual("parse-lean-tb ShapeId", "sid439-s12", n.ShapeId);
             run.Expect("parse-lean-tb 无几何", !n.HasGeometry, "瘦稿不应带几何");
             run.ExpectEqual("parse-lean-tb 正文", "瘦稿", n.Text);
+        }
+
+        private static void ParseRejectNegativeTop(TestRun run)
+        {
+            string html = ContentHtml.Section(
+                "  <div data-shape-type=\"rectangle\" style=\"position:absolute;left:0%;top:0%;width:100%;height:100%\"></div>\n"
+                + "  <div data-shape-type=\"oval\" style=\"position:absolute;left:62%;top:-12%;width:52%;height:92%\"></div>");
+            bool ok = ContentHtml.TryParse(html, "260", out _, out string error);
+            run.Expect(
+                "parse-neg-top 应失败",
+                !ok
+                    && error != null
+                    && error.IndexOf("第2个形状", System.StringComparison.Ordinal) >= 0
+                    && error.IndexOf("oval", System.StringComparison.Ordinal) >= 0
+                    && error.IndexOf("top:-12%", System.StringComparison.Ordinal) >= 0
+                    && error.IndexOf("大于等于 0", System.StringComparison.Ordinal) >= 0,
+                ok ? "应失败" : ("error=" + error));
+        }
+
+        private static void ParseRejectMissingHeight(TestRun run)
+        {
+            string html = ContentHtml.Section(
+                "  <div data-shape-type=\"textbox\" style=\"position:absolute;left:8%;top:10%;width:40%\">缺高度</div>");
+            bool ok = ContentHtml.TryParse(html, "260", out _, out string error);
+            run.Expect(
+                "parse-miss-h 应失败",
+                !ok
+                    && error != null
+                    && error.IndexOf("第1个形状", System.StringComparison.Ordinal) >= 0
+                    && error.IndexOf("textbox", System.StringComparison.Ordinal) >= 0
+                    && error.IndexOf("缺高度", System.StringComparison.Ordinal) >= 0
+                    && error.IndexOf("缺少 height", System.StringComparison.Ordinal) >= 0,
+                ok ? "应失败" : ("error=" + error));
+        }
+
+        private static void ParseRejectNoStyle(TestRun run)
+        {
+            string html = ContentHtml.Section(
+                "  <div data-shape-type=\"rectangle\"></div>");
+            bool ok = ContentHtml.TryParse(html, "260", out _, out string error);
+            run.Expect(
+                "parse-no-style 应失败",
+                !ok
+                    && error != null
+                    && error.IndexOf("第1个形状", System.StringComparison.Ordinal) >= 0
+                    && error.IndexOf("没有 style", System.StringComparison.Ordinal) >= 0,
+                ok ? "应失败" : ("error=" + error));
         }
     }
 }

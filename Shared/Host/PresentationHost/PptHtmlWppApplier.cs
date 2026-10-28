@@ -429,7 +429,7 @@ namespace WordAddIn1.PresentationHost
 
             if (!node.HasGeometry)
             {
-                error = "新建节点必须提供 style 几何（left/top/width/height %）";
+                error = PptHtmlApplyParser.FormatCreateGeometryError(node);
                 return false;
             }
 
