@@ -23,8 +23,9 @@ namespace ExcelWorkbookRoundtripTest
             bool runManage = ShouldRun(caseFilter, "xlm-");
             bool runStruct = ShouldRun(caseFilter, "xls-");
             bool runWrite = ShouldRun(caseFilter, "xlw-");
+            bool runBulk = ShouldRun(caseFilter, "xlb-");
             bool runRead = ShouldRun(caseFilter, "xl-")
-                && !runWrite && !runStruct && !runManage && !runFmt && !runCond && !runPivot && !runChart
+                && !runBulk && !runWrite && !runStruct && !runManage && !runFmt && !runCond && !runPivot && !runChart
                 && !runImage;
             if (string.IsNullOrEmpty(caseFilter))
             {
@@ -35,6 +36,7 @@ namespace ExcelWorkbookRoundtripTest
                 runManage = false;
                 runStruct = false;
                 runWrite = false;
+                runBulk = false;
                 runRead = false;
             }
 
@@ -74,6 +76,10 @@ namespace ExcelWorkbookRoundtripTest
             {
                 Console.WriteLine("Excel / ET 写区域（xlw-）");
             }
+            else if (runBulk)
+            {
+                Console.WriteLine("Excel / ET 工具区域上限（xlb-）");
+            }
             else
             {
                 Console.WriteLine("Excel / ET 打开 + 概览 + 读一块（xl-）");
@@ -91,6 +97,11 @@ namespace ExcelWorkbookRoundtripTest
             if (runWrite)
             {
                 XlwCases.Run(run, useEt);
+            }
+
+            if (runBulk)
+            {
+                XlbCases.Run(run, useEt);
             }
 
             if (runStruct)
@@ -138,7 +149,9 @@ namespace ExcelWorkbookRoundtripTest
             Console.WriteLine();
             int target = run550
                 ? run.TotalTarget
-                : (runImage ? 48 : ((runCond || runChart) ? 38 : 30));
+                : (runBulk
+                    ? XlbCases.Target
+                    : (runImage ? 48 : ((runCond || runChart) ? 38 : 30)));
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
                 + "  跳过 " + run.CasesSkipped
