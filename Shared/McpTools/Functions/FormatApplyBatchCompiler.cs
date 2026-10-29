@@ -6,7 +6,7 @@ using System.Linq;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 把一次套用里的多段格式，按当前 seg 快照拆成统一定位能接受的连续子操作。
+    /// 把一次套用或读格式里的多段定位，按当前 seg 快照拆成统一定位能接受的连续子操作。
     /// </summary>
     public static class FormatApplyBatchCompiler
     {
@@ -175,6 +175,104 @@ namespace WordAddIn1
             return Compile(items, "para_format", paragraphTool: true);
         }
 
+        public static string ValidateContextItems(Dictionary<string, object> args)
+        {
+            if (!TryReadItems(args, out List<Dictionary<string, object>> items, out string error))
+            {
+                return error;
+            }
+
+            for (int i = 0; i < items.Count; i++)
+            {
+                Dictionary<string, object> item = items[i];
+                if (item == null)
+                {
+                    return "items[" + i + "] 不是对象";
+                }
+
+                if (HasText(item, "target_codes") && HasText(item, "target_paragraph_codes"))
+                {
+                    return "items[" + i + "] 的 target_codes 与 target_paragraph_codes 互斥";
+                }
+
+                if (!TryReadCodes(item, out List<string> codes, out bool paragraph, out string codeError))
+                {
+                    return "items[" + i + "] " + codeError;
+                }
+
+                if (codes.Count == 0)
+                {
+                    return "items[" + i + "] 缺少编码";
+                }
+
+                if (codes.Any(IsTableCode))
+                {
+                    return "items[" + i + "] 仅支持 S_ / P_，不支持 T_";
+                }
+
+                bool anyP = codes.Any(IsParagraphCode);
+                bool anyS = codes.Any(IsSentenceCode);
+                if (anyP && anyS)
+                {
+                    continue;
+                }
+
+                if (!anyP && !anyS)
+                {
+                    return "items[" + i + "] 仅支持 S_ / P_";
+                }
+
+                if (paragraph && anyS)
+                {
+                    return "items[" + i + "] 的 target_paragraph_codes 只能是 P_";
+                }
+            }
+
+            return null;
+        }
+
+        public static CompileResult CompileContext(Dictionary<string, object> args)
+        {
+            if (HasItems(args))
+            {
+                string contract = ValidateContextItems(args);
+                if (contract != null)
+                {
+                    return new CompileResult { ContractError = contract };
+                }
+
+                if (!TryReadItems(args, out List<Dictionary<string, object>> items, out string error))
+                {
+                    return new CompileResult { ContractError = error };
+                }
+
+                return Compile(items, null, paragraphTool: false, mixedSkipMessage: "同一项混用 S_ 与 P_，未读取");
+            }
+
+            if (HasText(args, "target_codes") && HasText(args, "target_paragraph_codes"))
+            {
+                return new CompileResult
+                {
+                    ContractError = "target_codes 与 target_paragraph_codes 互斥，请二选一（mutually_exclusive_targets）"
+                };
+            }
+
+            if (!HasText(args, "target_codes") && !HasText(args, "target_paragraph_codes"))
+            {
+                return new CompileResult
+                {
+                    ContractError = "缺少 target_codes 或 target_paragraph_codes（missing_target）"
+                };
+            }
+
+            if (!TryReadContextWorkItems(args, out List<Dictionary<string, object>> flatItems, out string flatError))
+            {
+                return new CompileResult { ContractError = flatError };
+            }
+
+            return Compile(flatItems, null, paragraphTool: false, mixedSkipMessage: "同一项混用 S_ 与 P_，未读取");
+        }
+
         public static List<List<string>> SplitRuns(IList<string> codes, string segSnapshot)
         {
             var runs = new List<List<string>>();
@@ -217,13 +315,16 @@ namespace WordAddIn1
         private static CompileResult Compile(
             List<Dictionary<string, object>> items,
             string formatKey,
-            bool paragraphTool)
+            bool paragraphTool,
+            string mixedSkipMessage = "同一项混用 S_ 与 P_，未套用")
         {
             var result = new CompileResult();
             for (int i = 0; i < items.Count; i++)
             {
                 Dictionary<string, object> item = items[i];
-                Dictionary<string, object> format = ReadObject(item, formatKey);
+                Dictionary<string, object> format = string.IsNullOrEmpty(formatKey)
+                    ? null
+                    : ReadObject(item, formatKey);
                 if (!TryReadCodes(item, out List<string> codes, out bool paragraph, out _))
                 {
                     result.Warnings.Add(Warning(i, "", "缺少编码，未套用"));
@@ -234,7 +335,7 @@ namespace WordAddIn1
                 bool anyS = codes.Any(IsSentenceCode);
                 if (anyP && anyS)
                 {
-                    result.Warnings.Add(Warning(i, string.Join(",", codes), "同一项混用 S_ 与 P_，未套用"));
+                    result.Warnings.Add(Warning(i, string.Join(",", codes), mixedSkipMessage));
                     continue;
                 }
 
@@ -277,6 +378,20 @@ namespace WordAddIn1
             CopyIfPresent(args, flat, "target_codes");
             CopyIfPresent(args, flat, "target_paragraph_codes");
             CopyIfPresent(args, flat, "char_format");
+            items.Add(flat);
+            return true;
+        }
+
+        private static bool TryReadContextWorkItems(
+            Dictionary<string, object> args,
+            out List<Dictionary<string, object>> items,
+            out string error)
+        {
+            items = new List<Dictionary<string, object>>();
+            error = null;
+            var flat = new Dictionary<string, object>();
+            CopyIfPresent(args, flat, "target_codes");
+            CopyIfPresent(args, flat, "target_paragraph_codes");
             items.Add(flat);
             return true;
         }
@@ -387,7 +502,7 @@ namespace WordAddIn1
                     if (pair.Key == "items"
                         || pair.Key == "target_codes"
                         || pair.Key == "target_paragraph_codes"
-                        || pair.Key == formatKey)
+                        || (!string.IsNullOrEmpty(formatKey) && pair.Key == formatKey))
                     {
                         continue;
                     }
@@ -406,7 +521,7 @@ namespace WordAddIn1
                 one["target_codes"] = csv;
             }
 
-            if (op.Format != null)
+            if (op.Format != null && !string.IsNullOrEmpty(formatKey))
             {
                 one[formatKey] = op.Format;
             }
