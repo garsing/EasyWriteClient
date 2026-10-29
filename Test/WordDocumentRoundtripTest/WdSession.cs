@@ -841,6 +841,57 @@ namespace WordDocumentRoundtripTest
                 });
         }
 
+        public bool SetTextChar(string fullPath, string needle, string fontName, float size, bool bold, bool underline)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc => SetNeedleCharLate(doc, needle, fontName, size, bold, underline))
+                : WithWordDoc(fullPath, doc => SetNeedleCharWord(doc, needle, fontName, size, bold, underline));
+        }
+
+        public bool TryTextChar(string fullPath, string needle, out string fontName, out bool bold, out bool underline)
+        {
+            string name = "";
+            bool isBold = false;
+            bool isUnder = false;
+            bool ok = IsWps
+                ? WithWpsDoc(fullPath, doc => TryNeedleCharLate(doc, needle, out name, out isBold, out isUnder))
+                : WithWordDoc(fullPath, doc => TryNeedleCharWord(doc, needle, out name, out isBold, out isUnder));
+            fontName = name;
+            bold = isBold;
+            underline = isUnder;
+            return ok;
+        }
+
+        public bool SetNthParagraphUnderline(string fullPath, string needle, int nth, bool underline)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc => SetNthParagraphUnderlineLate(doc, needle, nth, underline))
+                : WithWordDoc(fullPath, doc =>
+                {
+                    int seen = 0;
+                    for (int i = 1; i <= doc.Paragraphs.Count; i++)
+                    {
+                        string text = doc.Paragraphs[i].Range.Text ?? "";
+                        if (text.IndexOf(needle, StringComparison.Ordinal) < 0)
+                        {
+                            continue;
+                        }
+
+                        if (seen == nth)
+                        {
+                            doc.Paragraphs[i].Range.Font.Underline = underline
+                                ? Word.WdUnderline.wdUnderlineSingle
+                                : Word.WdUnderline.wdUnderlineNone;
+                            return true;
+                        }
+
+                        seen++;
+                    }
+
+                    return false;
+                });
+        }
+
         public bool SetParagraphAlign(string fullPath, int paraIndex, int alignment)
         {
             return IsWps
@@ -867,6 +918,37 @@ namespace WordDocumentRoundtripTest
                         (Word.WdParagraphAlignment)alignment;
                     return true;
                 });
+        }
+
+        public bool TryNthParagraphAlign(string fullPath, string needle, int nth, out int alignment)
+        {
+            int value = 0;
+            bool ok = IsWps
+                ? WithWpsDoc(fullPath, doc => NthParagraphAlignLate(doc, needle, nth, out value))
+                : WithWordDoc(fullPath, doc =>
+                {
+                    int seen = 0;
+                    for (int i = 1; i <= doc.Paragraphs.Count; i++)
+                    {
+                        string text = doc.Paragraphs[i].Range.Text ?? "";
+                        if (text.IndexOf(needle, StringComparison.Ordinal) < 0)
+                        {
+                            continue;
+                        }
+
+                        if (seen == nth)
+                        {
+                            value = (int)doc.Paragraphs[i].Range.ParagraphFormat.Alignment;
+                            return true;
+                        }
+
+                        seen++;
+                    }
+
+                    return false;
+                });
+            alignment = value;
+            return ok;
         }
 
         public bool TryNthParagraphUnderline(string fullPath, string needle, int nth, out bool underline)
@@ -2230,6 +2312,42 @@ namespace WordDocumentRoundtripTest
             return path;
         }
 
+        private static bool NthParagraphAlignLate(object doc, string needle, int nth, out int alignment)
+        {
+            alignment = 0;
+            try
+            {
+                object paras = GetProp(doc, "Paragraphs");
+                int n = Convert.ToInt32(GetProp(paras, "Count"));
+                int seen = 0;
+                for (int i = 1; i <= n; i++)
+                {
+                    object para = Invoke(paras, "Item", i);
+                    object range = GetProp(para, "Range");
+                    string text = Convert.ToString(GetProp(range, "Text")) ?? "";
+                    if (text.IndexOf(needle, StringComparison.Ordinal) < 0)
+                    {
+                        continue;
+                    }
+
+                    if (seen == nth)
+                    {
+                        object pf = GetProp(range, "ParagraphFormat");
+                        alignment = Convert.ToInt32(GetProp(pf, "Alignment"));
+                        return true;
+                    }
+
+                    seen++;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
+            return false;
+        }
+
         private static bool NthParagraphUnderlineLate(object doc, string needle, int nth, out bool underline)
         {
             underline = false;
@@ -2285,6 +2403,220 @@ namespace WordDocumentRoundtripTest
             {
                 return null;
             }
+        }
+
+        private static bool SetNeedleCharWord(
+            Word.Document doc,
+            string needle,
+            string fontName,
+            float size,
+            bool bold,
+            bool underline)
+        {
+            Word.Range slice = FindNeedleRangeWord(doc, needle);
+            if (slice == null)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(fontName))
+            {
+                slice.Font.NameFarEast = fontName;
+                slice.Font.Name = fontName;
+            }
+
+            if (size > 0)
+            {
+                slice.Font.Size = size;
+            }
+
+            slice.Font.Bold = bold ? 1 : 0;
+            slice.Font.Underline = underline
+                ? Word.WdUnderline.wdUnderlineSingle
+                : Word.WdUnderline.wdUnderlineNone;
+            return true;
+        }
+
+        private static bool TryNeedleCharWord(
+            Word.Document doc,
+            string needle,
+            out string fontName,
+            out bool bold,
+            out bool underline)
+        {
+            fontName = "";
+            bold = false;
+            underline = false;
+            Word.Range slice = FindNeedleRangeWord(doc, needle);
+            if (slice == null)
+            {
+                return false;
+            }
+
+            fontName = slice.Font.NameFarEast;
+            if (string.IsNullOrEmpty(fontName))
+            {
+                fontName = slice.Font.Name;
+            }
+
+            bold = Convert.ToInt32(slice.Font.Bold) != 0;
+            underline = slice.Font.Underline != Word.WdUnderline.wdUnderlineNone;
+            return true;
+        }
+
+        private static Word.Range FindNeedleRangeWord(Word.Document doc, string needle)
+        {
+            if (string.IsNullOrEmpty(needle))
+            {
+                return null;
+            }
+
+            for (int i = 1; i <= doc.Paragraphs.Count; i++)
+            {
+                Word.Range para = doc.Paragraphs[i].Range;
+                string text = para.Text ?? "";
+                int idx = text.IndexOf(needle, StringComparison.Ordinal);
+                if (idx < 0)
+                {
+                    continue;
+                }
+
+                return doc.Range(para.Start + idx, para.Start + idx + needle.Length);
+            }
+
+            return null;
+        }
+
+        private static bool SetNeedleCharLate(
+            object doc,
+            string needle,
+            string fontName,
+            float size,
+            bool bold,
+            bool underline)
+        {
+            object slice = FindNeedleRangeLate(doc, needle);
+            if (slice == null)
+            {
+                return false;
+            }
+
+            ApplyFontLate(slice, fontName, size, bold);
+            try
+            {
+                SetProp(GetProp(slice, "Font"), "Underline", underline ? 1 : 0);
+            }
+            catch
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryNeedleCharLate(
+            object doc,
+            string needle,
+            out string fontName,
+            out bool bold,
+            out bool underline)
+        {
+            fontName = "";
+            bold = false;
+            underline = false;
+            object slice = FindNeedleRangeLate(doc, needle);
+            if (slice == null)
+            {
+                return false;
+            }
+
+            object font = GetProp(slice, "Font");
+            try
+            {
+                fontName = Convert.ToString(GetProp(font, "NameFarEast")) ?? "";
+            }
+            catch
+            {
+                fontName = "";
+            }
+
+            if (string.IsNullOrEmpty(fontName))
+            {
+                fontName = Convert.ToString(GetProp(font, "Name")) ?? "";
+            }
+
+            bold = Convert.ToInt32(GetProp(font, "Bold")) != 0;
+            underline = Convert.ToInt32(GetProp(font, "Underline")) != 0;
+            return true;
+        }
+
+        private static object FindNeedleRangeLate(object doc, string needle)
+        {
+            if (string.IsNullOrEmpty(needle))
+            {
+                return null;
+            }
+
+            try
+            {
+                object paras = GetProp(doc, "Paragraphs");
+                int n = Convert.ToInt32(GetProp(paras, "Count"));
+                for (int i = 1; i <= n; i++)
+                {
+                    object para = Invoke(paras, "Item", i);
+                    object range = GetProp(para, "Range");
+                    string text = Convert.ToString(GetProp(range, "Text")) ?? "";
+                    int idx = text.IndexOf(needle, StringComparison.Ordinal);
+                    if (idx < 0)
+                    {
+                        continue;
+                    }
+
+                    int start = Convert.ToInt32(GetProp(range, "Start")) + idx;
+                    int end = start + needle.Length;
+                    return Invoke(doc, "Range", start, end);
+                }
+            }
+            catch
+            {
+                return null;
+            }
+
+            return null;
+        }
+
+        private static bool SetNthParagraphUnderlineLate(object doc, string needle, int nth, bool underline)
+        {
+            try
+            {
+                object paras = GetProp(doc, "Paragraphs");
+                int n = Convert.ToInt32(GetProp(paras, "Count"));
+                int seen = 0;
+                for (int i = 1; i <= n; i++)
+                {
+                    object para = Invoke(paras, "Item", i);
+                    object range = GetProp(para, "Range");
+                    string text = Convert.ToString(GetProp(range, "Text")) ?? "";
+                    if (text.IndexOf(needle, StringComparison.Ordinal) < 0)
+                    {
+                        continue;
+                    }
+
+                    if (seen == nth)
+                    {
+                        SetProp(GetProp(range, "Font"), "Underline", underline ? 1 : 0);
+                        return true;
+                    }
+
+                    seen++;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
+            return false;
         }
 
         private static void ApplyFontLate(object range, string fontName, float size, bool bold)
