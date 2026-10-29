@@ -453,8 +453,8 @@ namespace ExcelWorkbookRoundtripTest
 
             WithBook(run, s, "xlc-neg-oversize", (id, ch) =>
             {
-                ToolResult r = s.CondFormat(id, s.FirstSheetName(ch), "A1:A501", "add", LessRule());
-                return r.Success ? "超限应失败" : (Has(r.Error, "过大") || Has(r.Error, "500") ? null : r.Error);
+                ToolResult r = s.CondFormat(id, s.FirstSheetName(ch), "A1:A50001", "add", LessRule());
+                return r.Success ? "超限应失败" : (Has(r.Error, "过大") ? null : r.Error);
             });
 
             WithBook(run, s, "xlc-neg-static-key", (id, ch) =>

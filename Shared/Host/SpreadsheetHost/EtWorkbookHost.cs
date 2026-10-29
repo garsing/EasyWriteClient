@@ -154,6 +154,25 @@ namespace WordAddIn1.SpreadsheetHost
             out SpreadsheetRangeResult result,
             out string error)
         {
+            return TryReadRange(
+                channel,
+                sheetName,
+                rangeA1OrEmpty,
+                contentMode,
+                false,
+                out result,
+                out error);
+        }
+
+        public static bool TryReadRange(
+            EtChannel channel,
+            string sheetName,
+            string rangeA1OrEmpty,
+            SpreadsheetContentMode contentMode,
+            bool exportFull,
+            out SpreadsheetRangeResult result,
+            out string error)
+        {
             result = null;
             error = null;
             if (channel == null || !channel.TryGetLiveWorkbook(out object book))
@@ -210,15 +229,36 @@ namespace WordAddIn1.SpreadsheetHost
                 return false;
             }
 
-            SpreadsheetRangeLimits.Apply(
-                firstRow,
-                firstCol,
-                lastRow,
-                lastCol,
-                out int actualLastRow,
-                out int actualLastCol,
-                out bool truncated,
-                out string truncatedReason);
+            int actualLastRow;
+            int actualLastCol;
+            bool truncated;
+            string truncatedReason;
+            if (exportFull)
+            {
+                int reqRows = lastRow - firstRow + 1;
+                int reqCols = lastCol - firstCol + 1;
+                if (!SpreadsheetBulkGridLimits.TryCheckExport(reqRows, reqCols, out error))
+                {
+                    return false;
+                }
+
+                actualLastRow = lastRow;
+                actualLastCol = lastCol;
+                truncated = false;
+                truncatedReason = "";
+            }
+            else
+            {
+                SpreadsheetRangeLimits.Apply(
+                    firstRow,
+                    firstCol,
+                    lastRow,
+                    lastCol,
+                    out actualLastRow,
+                    out actualLastCol,
+                    out truncated,
+                    out truncatedReason);
+            }
 
             if (actualLastRow < firstRow || actualLastCol < firstCol)
             {
@@ -1044,43 +1084,51 @@ namespace WordAddIn1.SpreadsheetHost
 
             try
             {
-                object target = GetSheetRange(sheet, actualRange);
-                object cells = EtCom.GetProperty(target, "Cells");
-                for (int r = 0; r < csvRows; r++)
+                int chunkRows = SpreadsheetBulkGridLimits.WriteChunkRows;
+                for (int start = 0; start < csvRows; start += chunkRows)
                 {
-                    for (int c = 0; c < csvCols; c++)
+                    int n = Math.Min(chunkRows, csvRows - start);
+                    int chunkFirst = firstRow + start;
+                    int chunkLast = chunkFirst + n - 1;
+                    string chunkRange = A1Address.Range(chunkFirst, firstCol, chunkLast, lastCol);
+                    object target = GetSheetRange(sheet, chunkRange);
+                    object cells = EtCom.GetProperty(target, "Cells");
+                    for (int r = 0; r < n; r++)
                     {
-                        object cell = EtCom.GetIndexed2(cells, r + 1, c + 1);
-                        if (cell == null)
+                        for (int c = 0; c < csvCols; c++)
                         {
-                            continue;
-                        }
+                            object cell = EtCom.GetIndexed2(cells, r + 1, c + 1);
+                            if (cell == null)
+                            {
+                                continue;
+                            }
 
-                        if (IsEtMergeContinuation(cell, firstRow + r, firstCol + c))
-                        {
-                            continue;
-                        }
+                            if (IsEtMergeContinuation(cell, chunkFirst + r, firstCol + c))
+                            {
+                                continue;
+                            }
 
-                        SpreadsheetWritePlanner.ClassifyCell(
-                            grid[r][c],
-                            out bool clearOnly,
-                            out bool isFormula,
-                            out object value);
-                        if (clearOnly)
-                        {
-                            EtCom.Invoke(cell, "ClearContents");
-                        }
-                        else if (isFormula)
-                        {
-                            EtCom.TrySetProperty(cell, "Formula", Convert.ToString(value));
-                        }
-                        else if (SpreadsheetWritePlanner.IsEqualsLiteralText(false, value))
-                        {
-                            EtCom.TrySetProperty(cell, "Formula", "'" + Convert.ToString(value));
-                        }
-                        else
-                        {
-                            EtCom.TrySetProperty(cell, "Value", value);
+                            SpreadsheetWritePlanner.ClassifyCell(
+                                grid[start + r][c],
+                                out bool clearOnly,
+                                out bool isFormula,
+                                out object value);
+                            if (clearOnly)
+                            {
+                                EtCom.Invoke(cell, "ClearContents");
+                            }
+                            else if (isFormula)
+                            {
+                                EtCom.TrySetProperty(cell, "Formula", Convert.ToString(value));
+                            }
+                            else if (SpreadsheetWritePlanner.IsEqualsLiteralText(false, value))
+                            {
+                                EtCom.TrySetProperty(cell, "Formula", "'" + Convert.ToString(value));
+                            }
+                            else
+                            {
+                                EtCom.TrySetProperty(cell, "Value", value);
+                            }
                         }
                     }
                 }

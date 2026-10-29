@@ -101,6 +101,25 @@ namespace WordAddIn1.SpreadsheetHost
             out SpreadsheetRangeResult result,
             out ToolResult errorResult)
         {
+            return TryReadRange(
+                channel,
+                sheetName,
+                rangeA1OrEmpty,
+                contentMode,
+                false,
+                out result,
+                out errorResult);
+        }
+
+        internal static bool TryReadRange(
+            IOperationChannel channel,
+            string sheetName,
+            string rangeA1OrEmpty,
+            SpreadsheetContentMode contentMode,
+            bool exportFull,
+            out SpreadsheetRangeResult result,
+            out ToolResult errorResult)
+        {
             result = null;
             errorResult = null;
             if (channel == null)
@@ -129,6 +148,7 @@ namespace WordAddIn1.SpreadsheetHost
                     sheetName,
                     rangeA1OrEmpty,
                     contentMode,
+                    exportFull,
                     out result,
                     out error);
             }
@@ -139,6 +159,7 @@ namespace WordAddIn1.SpreadsheetHost
                     sheetName,
                     rangeA1OrEmpty,
                     contentMode,
+                    exportFull,
                     out result,
                     out error);
             }

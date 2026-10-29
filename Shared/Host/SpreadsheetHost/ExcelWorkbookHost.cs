@@ -169,6 +169,25 @@ namespace WordAddIn1.SpreadsheetHost
             out SpreadsheetRangeResult result,
             out string error)
         {
+            return TryReadRange(
+                channel,
+                sheetName,
+                rangeA1OrEmpty,
+                contentMode,
+                false,
+                out result,
+                out error);
+        }
+
+        public static bool TryReadRange(
+            ExcelChannel channel,
+            string sheetName,
+            string rangeA1OrEmpty,
+            SpreadsheetContentMode contentMode,
+            bool exportFull,
+            out SpreadsheetRangeResult result,
+            out string error)
+        {
             result = null;
             error = null;
             if (channel == null || !channel.TryGetLiveWorkbook(out Excel.Workbook book))
@@ -225,15 +244,36 @@ namespace WordAddIn1.SpreadsheetHost
                 return false;
             }
 
-            SpreadsheetRangeLimits.Apply(
-                firstRow,
-                firstCol,
-                lastRow,
-                lastCol,
-                out int actualLastRow,
-                out int actualLastCol,
-                out bool truncated,
-                out string truncatedReason);
+            int actualLastRow;
+            int actualLastCol;
+            bool truncated;
+            string truncatedReason;
+            if (exportFull)
+            {
+                int reqRows = lastRow - firstRow + 1;
+                int reqCols = lastCol - firstCol + 1;
+                if (!SpreadsheetBulkGridLimits.TryCheckExport(reqRows, reqCols, out error))
+                {
+                    return false;
+                }
+
+                actualLastRow = lastRow;
+                actualLastCol = lastCol;
+                truncated = false;
+                truncatedReason = "";
+            }
+            else
+            {
+                SpreadsheetRangeLimits.Apply(
+                    firstRow,
+                    firstCol,
+                    lastRow,
+                    lastCol,
+                    out actualLastRow,
+                    out actualLastCol,
+                    out truncated,
+                    out truncatedReason);
+            }
 
             if (actualLastRow < firstRow || actualLastCol < firstCol)
             {
@@ -1067,57 +1107,65 @@ namespace WordAddIn1.SpreadsheetHost
 
             try
             {
-                Excel.Range target = sheet.Range[actualRange];
-                if (!anyFormula && !anyEqualsText)
+                int chunkRows = SpreadsheetBulkGridLimits.WriteChunkRows;
+                for (int start = 0; start < csvRows; start += chunkRows)
                 {
-                    var values = new object[csvRows, csvCols];
-                    for (int r = 0; r < csvRows; r++)
+                    int n = Math.Min(chunkRows, csvRows - start);
+                    int chunkFirst = firstRow + start;
+                    int chunkLast = chunkFirst + n - 1;
+                    string chunkRange = A1Address.Range(chunkFirst, firstCol, chunkLast, lastCol);
+                    Excel.Range block = sheet.Range[chunkRange];
+                    if (!anyFormula && !anyEqualsText)
                     {
-                        for (int c = 0; c < csvCols; c++)
+                        var values = new object[n, csvCols];
+                        for (int r = 0; r < n; r++)
                         {
-                            SpreadsheetWritePlanner.ClassifyCell(
-                                grid[r][c],
-                                out bool clearOnly,
-                                out _,
-                                out object value);
-                            values[r, c] = clearOnly ? null : value;
+                            for (int c = 0; c < csvCols; c++)
+                            {
+                                SpreadsheetWritePlanner.ClassifyCell(
+                                    grid[start + r][c],
+                                    out bool clearOnly,
+                                    out _,
+                                    out object value);
+                                values[r, c] = clearOnly ? null : value;
+                            }
                         }
+
+                        block.Value2 = values;
                     }
-
-                    target.Value2 = values;
-                }
-                else
-                {
-                    for (int r = 0; r < csvRows; r++)
+                    else
                     {
-                        for (int c = 0; c < csvCols; c++)
+                        for (int r = 0; r < n; r++)
                         {
-                            Excel.Range cell = target.Cells[r + 1, c + 1] as Excel.Range;
-                            if (cell == null)
+                            for (int c = 0; c < csvCols; c++)
                             {
-                                continue;
-                            }
+                                Excel.Range cell = block.Cells[r + 1, c + 1] as Excel.Range;
+                                if (cell == null)
+                                {
+                                    continue;
+                                }
 
-                            SpreadsheetWritePlanner.ClassifyCell(
-                                grid[r][c],
-                                out bool clearOnly,
-                                out bool isFormula,
-                                out object value);
-                            if (clearOnly)
-                            {
-                                cell.ClearContents();
-                            }
-                            else if (isFormula)
-                            {
-                                cell.Formula = Convert.ToString(value);
-                            }
-                            else if (SpreadsheetWritePlanner.IsEqualsLiteralText(false, value))
-                            {
-                                cell.Formula = "'" + Convert.ToString(value);
-                            }
-                            else
-                            {
-                                cell.Value2 = value;
+                                SpreadsheetWritePlanner.ClassifyCell(
+                                    grid[start + r][c],
+                                    out bool clearOnly,
+                                    out bool isFormula,
+                                    out object value);
+                                if (clearOnly)
+                                {
+                                    cell.ClearContents();
+                                }
+                                else if (isFormula)
+                                {
+                                    cell.Formula = Convert.ToString(value);
+                                }
+                                else if (SpreadsheetWritePlanner.IsEqualsLiteralText(false, value))
+                                {
+                                    cell.Formula = "'" + Convert.ToString(value);
+                                }
+                                else
+                                {
+                                    cell.Value2 = value;
+                                }
                             }
                         }
                     }

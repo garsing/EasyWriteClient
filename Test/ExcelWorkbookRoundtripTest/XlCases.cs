@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using WordAddIn1;
 using WordAddIn1.SpreadsheetHost;
 
@@ -632,6 +633,69 @@ namespace ExcelWorkbookRoundtripTest
                 }
 
                 return null;
+            });
+
+            WithBook(run, s, "xl-rd-path-ok", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                var lines = new string[120];
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    lines[i] = "r" + i + ",x";
+                }
+
+                ToolResult w = s.Write(id, name, "A1", s.WriteCsv(lines));
+                if (!w.Success)
+                {
+                    return w.Error;
+                }
+
+                string export = s.NewCsvPath();
+                ToolResult r = s.Read(id, name, "A1:B120", null, export);
+                if (!r.Success)
+                {
+                    return r.Error;
+                }
+
+                if (!string.IsNullOrEmpty(Str(r, "table")) || Has(Str(r, "display_contents"), "<table"))
+                {
+                    return "path 不应回 table";
+                }
+
+                if (!File.Exists(export))
+                {
+                    return "未落盘";
+                }
+
+                string[] got = File.ReadAllLines(export);
+                int data = 0;
+                foreach (string line in got)
+                {
+                    if (!string.IsNullOrWhiteSpace(line))
+                    {
+                        data++;
+                    }
+                }
+
+                return data == 120 ? null : "CSV 行数 " + data;
+            });
+
+            WithBook(run, s, "xl-rd-path-oversize", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                string export = s.NewCsvPath();
+                ToolResult r = s.Read(id, name, "A1:A50001", null, export);
+                if (r.Success)
+                {
+                    return "超限应失败";
+                }
+
+                if (!Has(r.Error, "过大") || !Has(r.Error, "拆成多次"))
+                {
+                    return r.Error;
+                }
+
+                return File.Exists(export) ? "不应留下半截 CSV" : null;
             });
 
             WithBook(run, s, "xl-rd-bad-a1", (id, ch) =>

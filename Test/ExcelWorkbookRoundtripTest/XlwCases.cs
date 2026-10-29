@@ -335,6 +335,44 @@ namespace ExcelWorkbookRoundtripTest
                     : (rd.Error ?? ("回读 " + Str(rd, "table")));
             });
 
+            WithBook(run, s, "xlw-csv-chunk", (id, ch) =>
+            {
+                string name = s.FirstSheetName(ch);
+                var lines = new string[2100];
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    lines[i] = "v" + i;
+                }
+
+                ToolResult w = s.Write(id, name, "A1", s.WriteCsv(lines));
+                if (!w.Success)
+                {
+                    return w.Error;
+                }
+
+                ToolResult first = s.Read(id, name, "A1");
+                ToolResult mid = s.Read(id, name, "A2000");
+                ToolResult last = s.Read(id, name, "A2100");
+                if (!first.Success || !mid.Success || !last.Success)
+                {
+                    return first.Error ?? mid.Error ?? last.Error;
+                }
+
+                if (!Has(Str(first, "table"), "v0"))
+                {
+                    return "首行 " + Str(first, "table");
+                }
+
+                if (!Has(Str(mid, "table"), "v1999"))
+                {
+                    return "第 2000 行 " + Str(mid, "table");
+                }
+
+                return Has(Str(last, "table"), "v2099")
+                    ? null
+                    : "末行 " + Str(last, "table");
+            });
+
             WithBook(run, s, "xlw-readback", (id, ch) =>
             {
                 string name = s.FirstSheetName(ch);
@@ -427,7 +465,7 @@ namespace ExcelWorkbookRoundtripTest
                     return "铺底失败";
                 }
 
-                var lines = new string[101];
+                var lines = new string[50001];
                 for (int i = 0; i < lines.Length; i++)
                 {
                     lines[i] = "v";

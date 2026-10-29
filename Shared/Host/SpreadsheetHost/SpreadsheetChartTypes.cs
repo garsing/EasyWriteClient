@@ -110,9 +110,9 @@ namespace WordAddIn1.SpreadsheetHost
         public const int DestMaxCols = 40;
         public const int DestMaxCells = 2000;
 
-        public const int SourceMaxRows = 5000;
-        public const int SourceMaxCols = 50;
-        public const int SourceMaxCells = 100000;
+        public const int SourceMaxRows = SpreadsheetBulkGridLimits.MaxRows;
+        public const int SourceMaxCols = SpreadsheetBulkGridLimits.MaxCols;
+        public const int SourceMaxCells = SpreadsheetBulkGridLimits.MaxCells;
 
         public static bool TryCheckDestLimits(int rowCount, int colCount, out string error)
         {
@@ -145,15 +145,8 @@ namespace WordAddIn1.SpreadsheetHost
 
         public static bool TryCheckSourceLimits(int rowCount, int colCount, out string error)
         {
-            error = null;
-            if (rowCount > SourceMaxRows
-                || colCount > SourceMaxCols
-                || (long)rowCount * colCount > SourceMaxCells)
+            if (!SpreadsheetBulkGridLimits.TryCheck(rowCount, colCount, "图表源", out error))
             {
-                error = "图表源区域过大（最多 "
-                    + SourceMaxRows + "×"
-                    + SourceMaxCols + " / "
-                    + SourceMaxCells + " 格）";
                 return false;
             }
 

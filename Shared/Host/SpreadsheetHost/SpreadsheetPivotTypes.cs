@@ -78,23 +78,16 @@ namespace WordAddIn1.SpreadsheetHost
 
     internal static class SpreadsheetPivotLimits
     {
-        public const int MaxRows = 5000;
+        public const int MaxRows = SpreadsheetBulkGridLimits.MaxRows;
 
-        public const int MaxCols = 50;
+        public const int MaxCols = SpreadsheetBulkGridLimits.MaxCols;
 
-        public const int MaxCells = 100000;
+        public const int MaxCells = SpreadsheetBulkGridLimits.MaxCells;
 
         public static bool TryCheckSourceLimits(int rowCount, int colCount, out string error)
         {
-            error = null;
-            if (rowCount > MaxRows
-                || colCount > MaxCols
-                || (long)rowCount * colCount > MaxCells)
+            if (!SpreadsheetBulkGridLimits.TryCheck(rowCount, colCount, "透视源", out error))
             {
-                error = "透视源区域过大（最多 "
-                    + MaxRows + "×"
-                    + MaxCols + " / "
-                    + MaxCells + " 格）";
                 return false;
             }
 

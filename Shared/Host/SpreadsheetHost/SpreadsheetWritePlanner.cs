@@ -119,16 +119,13 @@ namespace WordAddIn1.SpreadsheetHost
 
         public static bool TryCheckLimits(int rowCount, int colCount, string actionLabel, out string error)
         {
-            error = null;
-            if (rowCount > SpreadsheetRangeLimits.MaxRows
-                || colCount > SpreadsheetRangeLimits.MaxCols
-                || (long)rowCount * colCount > SpreadsheetRangeLimits.MaxCells)
+            if (!SpreadsheetBulkGridLimits.TryCheck(rowCount, colCount, actionLabel, out error))
             {
-                string label = string.IsNullOrEmpty(actionLabel) ? "操作" : actionLabel;
-                error = label + "区域过大（最多 "
-                    + SpreadsheetRangeLimits.MaxRows + "×"
-                    + SpreadsheetRangeLimits.MaxCols + " / "
-                    + SpreadsheetRangeLimits.MaxCells + " 格）";
+                if (string.Equals(actionLabel, "写入", System.StringComparison.Ordinal))
+                {
+                    error += "。单次可到该上限，请把 CSV 一次传入，不要按约 90 行切块。";
+                }
+
                 return false;
             }
 

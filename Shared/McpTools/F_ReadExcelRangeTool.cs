@@ -43,28 +43,18 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = exportError };
                     }
 
+                    bool exportFull = exportResolved != null;
                     if (!SpreadsheetHostAdapter.TryReadRange(
                             channel,
                             sheet.Trim(),
                             range,
                             contentMode,
+                            exportFull,
                             out SpreadsheetRangeResult hostResult,
                             out ToolResult errorResult))
                     {
                         return errorResult;
                     }
-
-                    string table = WorkbookPreviewMarkup.BuildTable(
-                        hostResult.Sheet,
-                        hostResult.ActualRange ?? "",
-                        hostResult.Truncated,
-                        hostResult.Rows);
-
-                    string display = "sheet=" + (hostResult.Sheet ?? "")
-                        + " actual_range=" + (hostResult.ActualRange ?? "")
-                        + " content=" + SpreadsheetContentModeUtil.ToWire(contentMode)
-                        + "\n"
-                        + table;
 
                     var data = new Dictionary<string, object>
                     {
@@ -73,12 +63,30 @@ namespace WordAddIn1
                         ["sheet"] = hostResult.Sheet ?? "",
                         ["requested_range"] = hostResult.RequestedRange ?? "",
                         ["actual_range"] = hostResult.ActualRange ?? "",
-                        ["truncated"] = hostResult.Truncated,
-                        ["truncated_reason"] = hostResult.TruncatedReason ?? "",
-                        ["display_contents"] = display,
-                        ["table"] = table,
                         ["content"] = SpreadsheetContentModeUtil.ToWire(contentMode)
                     };
+
+                    if (!exportFull)
+                    {
+                        string table = WorkbookPreviewMarkup.BuildTable(
+                            hostResult.Sheet,
+                            hostResult.ActualRange ?? "",
+                            hostResult.Truncated,
+                            hostResult.Rows);
+
+                        data["truncated"] = hostResult.Truncated;
+                        data["truncated_reason"] = hostResult.TruncatedReason ?? "";
+                        data["table"] = table;
+                        data["display_contents"] = "sheet=" + (hostResult.Sheet ?? "")
+                            + " actual_range=" + (hostResult.ActualRange ?? "")
+                            + " content=" + SpreadsheetContentModeUtil.ToWire(contentMode)
+                            + "\n"
+                            + table;
+                    }
+                    else
+                    {
+                        data["truncated"] = false;
+                    }
 
                     if (exportResolved != null)
                     {
@@ -110,6 +118,17 @@ namespace WordAddIn1
                         }
                         catch (Exception ex)
                         {
+                            try
+                            {
+                                if (File.Exists(localPath))
+                                {
+                                    File.Delete(localPath);
+                                }
+                            }
+                            catch (Exception)
+                            {
+                            }
+
                             return new ToolResult
                             {
                                 Success = false,

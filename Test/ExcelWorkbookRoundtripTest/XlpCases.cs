@@ -587,12 +587,12 @@ namespace ExcelWorkbookRoundtripTest
                 ToolResult r = s.Pivot(
                     id,
                     "create",
-                    Src(name, "A1:A5001"),
+                    Src(name, "A1:A50001"),
                     Dest(name, "H1"),
                     Rows(),
                     null,
                     SumVals());
-                return r.Success ? "超限应失败" : (Has(r.Error, "过大") || Has(r.Error, "5000") ? null : r.Error);
+                return r.Success ? "超限应失败" : (Has(r.Error, "过大") ? null : r.Error);
             });
 
             WithBook(run, s, "xlp-neg-chart", (id, ch) =>

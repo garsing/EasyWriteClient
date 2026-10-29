@@ -89,28 +89,15 @@ namespace WordAddIn1.SpreadsheetHost
     /// </summary>
     internal static class SpreadsheetFormatMutationLimits
     {
-        public const int MaxRows = 500;
+        public const int MaxRows = SpreadsheetBulkGridLimits.MaxRows;
 
-        public const int MaxCols = 50;
+        public const int MaxCols = SpreadsheetBulkGridLimits.MaxCols;
 
-        public const int MaxCells = 10000;
+        public const int MaxCells = SpreadsheetBulkGridLimits.MaxCells;
 
         public static bool TryCheckHardLimits(int rowCount, int colCount, string actionLabel, out string error)
         {
-            error = null;
-            if (rowCount > MaxRows
-                || colCount > MaxCols
-                || (long)rowCount * colCount > MaxCells)
-            {
-                string label = string.IsNullOrEmpty(actionLabel) ? "格式" : actionLabel;
-                error = label + "区域过大（最多 "
-                    + MaxRows + "×"
-                    + MaxCols + " / "
-                    + MaxCells + " 格）";
-                return false;
-            }
-
-            return true;
+            return SpreadsheetBulkGridLimits.TryCheck(rowCount, colCount, actionLabel, out error);
         }
     }
 

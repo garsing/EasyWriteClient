@@ -107,8 +107,8 @@ namespace ExcelWorkbookRoundtripTest
 
             WithBook(run, s, "xlf-neg-apply-oversize", (id, ch) =>
             {
-                ToolResult r = s.ApplyFormat(id, s.FirstSheetName(ch), "A1:A501", Bold());
-                return r.Success ? "超限应失败" : (Has(r.Error, "过大") || Has(r.Error, "500") ? null : r.Error);
+                ToolResult r = s.ApplyFormat(id, s.FirstSheetName(ch), "A1:A50001", Bold());
+                return r.Success ? "超限应失败" : (Has(r.Error, "过大") ? null : r.Error);
             });
         }
 

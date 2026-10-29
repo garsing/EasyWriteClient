@@ -445,8 +445,8 @@ namespace ExcelWorkbookRoundtripTest
             WithBook(run, s, "xlg-neg-source-oversize", (id, ch) =>
             {
                 string name = s.FirstSheetName(ch);
-                ToolResult r = s.Chart(id, "create", Dest(name, "E2:K18"), SourceXml(name, "A1:A5001"));
-                return r.Success ? "源超限应失败" : (Has(r.Error, "过大") || Has(r.Error, "5000") ? null : r.Error);
+                ToolResult r = s.Chart(id, "create", Dest(name, "E2:K18"), SourceXml(name, "A1:A50001"));
+                return r.Success ? "源超限应失败" : (Has(r.Error, "过大") ? null : r.Error);
             });
 
             WithBook(run, s, "xlg-neg-chart-sheet", (id, ch) =>
