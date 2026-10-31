@@ -52,12 +52,25 @@ namespace WordAddIn1
 
             try
             {
-                foreach (Word.Table table in document.Tables)
+                foreach (Word.Table top in document.Tables)
                 {
-                    CollectTablesRecursive(table, allTables);
+                    try
+                    {
+                        if (top == null || ContainsSameTable(allTables, top))
+                        {
+                            continue;
+                        }
+
+                        allTables.Add(top);
+                        ExpandRangeTables(top, allTables);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[TableResolve] 收集表格失败: {ex.Message}");
+                    }
                 }
 
-                allTables.Sort((t1, t2) => t1.Range.Start.CompareTo(t2.Range.Start));
+                allTables.Sort(CompareByStart);
             }
             catch (Exception ex)
             {
@@ -65,6 +78,66 @@ namespace WordAddIn1
             }
 
             return allTables;
+        }
+
+        /// <summary>
+        /// 从种子表的 Range.Tables 收内表和孙表。Range.Tables 含表自己，跳过。
+        /// 某宿主只给直接子表时，对刚收进的表再展开，直到没有新表。
+        /// </summary>
+        private static void ExpandRangeTables(Word.Table seed, List<Word.Table> allTables)
+        {
+            var pending = new Queue<Word.Table>();
+            pending.Enqueue(seed);
+            while (pending.Count > 0)
+            {
+                Word.Table current = pending.Dequeue();
+                Word.Tables inners;
+                try
+                {
+                    inners = current.Range.Tables;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[TableResolve] Range.Tables 收集失败: {ex.Message}");
+                    continue;
+                }
+
+                if (inners == null)
+                {
+                    continue;
+                }
+
+                foreach (Word.Table inner in inners)
+                {
+                    try
+                    {
+                        if (inner == null || IsSameTable(current, inner) || ContainsSameTable(allTables, inner))
+                        {
+                            continue;
+                        }
+
+                        allTables.Add(inner);
+                        pending.Enqueue(inner);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[TableResolve] Range.Tables 收集失败: {ex.Message}");
+                    }
+                }
+            }
+        }
+
+        private static int CompareByStart(Word.Table left, Word.Table right)
+        {
+            try
+            {
+                return left.Range.Start.CompareTo(right.Range.Start);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TableResolve] 排序失败: {ex.Message}");
+                return 0;
+            }
         }
 
         private static Word.Table FindTableByTitleStamp(List<Word.Table> tables, string tableId)
@@ -89,133 +162,6 @@ namespace WordAddIn1
             }
 
             return null;
-        }
-
-        private static void CollectTablesRecursive(Word.Table table, List<Word.Table> allTables)
-        {
-            if (table == null || ContainsSameTable(allTables, table))
-            {
-                return;
-            }
-
-            allTables.Add(table);
-
-            foreach (Word.Table nested in ListNestedTables(table))
-            {
-                CollectTablesRecursive(nested, allTables);
-            }
-        }
-
-        private static List<Word.Table> ListNestedTables(Word.Table table)
-        {
-            var nested = new List<Word.Table>();
-            CollectNestedFromRows(table, nested);
-            if (nested.Count == 0)
-            {
-                CollectNestedFromRangeCells(table, nested);
-            }
-
-            if (nested.Count == 0)
-            {
-                CollectNestedFromRangeTables(table, nested);
-            }
-
-            return nested;
-        }
-
-        private static void CollectNestedFromRows(Word.Table table, List<Word.Table> nested)
-        {
-            try
-            {
-                foreach (Word.Row row in table.Rows)
-                {
-                    foreach (Word.Cell cell in row.Cells)
-                    {
-                        AddCellTables(cell, nested);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[TableResolve] Rows 收集嵌套失败: {ex.Message}");
-            }
-        }
-
-        private static void CollectNestedFromRangeCells(Word.Table table, List<Word.Table> nested)
-        {
-            try
-            {
-                foreach (Word.Cell cell in table.Range.Cells)
-                {
-                    AddCellTables(cell, nested);
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[TableResolve] Range.Cells 收集嵌套失败: {ex.Message}");
-            }
-        }
-
-        private static void CollectNestedFromRangeTables(Word.Table table, List<Word.Table> nested)
-        {
-            try
-            {
-                int parentLevel = 1;
-                try
-                {
-                    parentLevel = table.NestingLevel;
-                }
-                catch (Exception)
-                {
-                }
-
-                foreach (Word.Table inner in table.Range.Tables)
-                {
-                    if (ContainsSameTable(nested, inner) || IsSameTable(table, inner))
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        if (inner.NestingLevel <= parentLevel)
-                        {
-                            continue;
-                        }
-                    }
-                    catch (Exception)
-                    {
-                    }
-
-                    nested.Add(inner);
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[TableResolve] Range.Tables 收集嵌套失败: {ex.Message}");
-            }
-        }
-
-        private static void AddCellTables(Word.Cell cell, List<Word.Table> nested)
-        {
-            if (cell == null || cell.Tables == null)
-            {
-                return;
-            }
-
-            try
-            {
-                foreach (Word.Table inner in cell.Tables)
-                {
-                    if (!ContainsSameTable(nested, inner))
-                    {
-                        nested.Add(inner);
-                    }
-                }
-            }
-            catch (Exception)
-            {
-            }
         }
 
         private static bool ContainsSameTable(List<Word.Table> tables, Word.Table table)
