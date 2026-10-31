@@ -1136,8 +1136,8 @@ namespace WordAddIn1
                 string fontColor = ConvertWdColorToRgb(range.Font?.Color ?? Word.WdColor.wdColorAutomatic);
                 format["font_color"] = fontColor;
                 
-                // 背景颜色（转换为RGB十六进制字符串）
-                string backgroundColor = ConvertWdColorToRgb(range.Shading?.BackgroundPatternColor ?? Word.WdColor.wdColorAutomatic);
+                // 字体背景（字符底纹）。段落底纹在 Range.Shading，字体组按钮清不掉。
+                string backgroundColor = ConvertWdColorToRgb(FormatInheritHelper.ReadCharBackground(range));
                 format["background_color"] = backgroundColor;
                 
                 // 是否加粗

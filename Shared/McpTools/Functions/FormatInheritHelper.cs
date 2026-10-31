@@ -36,8 +36,7 @@ namespace WordAddIn1
                 format["font_name"] = GetEffectiveFontName(range.Font);
                 format["font_size"] = range.Font?.Size ?? 0f;
                 format["font_color"] = ConvertWdColorToRgb(range.Font?.Color ?? Word.WdColor.wdColorAutomatic);
-                format["background_color"] = ConvertWdColorToRgb(
-                    range.Shading?.BackgroundPatternColor ?? Word.WdColor.wdColorAutomatic);
+                format["background_color"] = ConvertWdColorToRgb(ReadCharBackground(range));
                 format["is_bold"] = (range.Font?.Bold ?? 0) != 0;
                 format["has_underline"] = (range.Font?.Underline ?? Word.WdUnderline.wdUnderlineNone)
                     != Word.WdUnderline.wdUnderlineNone;
@@ -110,7 +109,7 @@ namespace WordAddIn1
             ApplySnapshot(range, snapshot, charFormatOnly);
         }
 
-        /// <summary>建表等无 char_format 的新字：只打 InsertBackground 字符底纹，不改单元格底纹。</summary>
+        /// <summary>建表等无 char_format 的新字：只打 InsertBackground 字体底纹，不改单元格底纹、不改段落底纹。</summary>
         public static void ApplyInsertBackground(Word.Range range)
         {
             if (range == null)
@@ -120,12 +119,45 @@ namespace WordAddIn1
 
             try
             {
-                range.Shading.BackgroundPatternColor = ConfigManager.DocumentColorHelper.InsertBackground;
+                WriteCharBackground(range, ConfigManager.DocumentColorHelper.InsertBackground);
             }
             catch (Exception ex)
             {
                 DbgLog("ApplyInsertBackground 失败: " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// 字体背景（字符底纹，<c>Font.Shading</c>）。字体组「字符底纹」清的是这一层。
+        /// <c>Range.Shading</c> 会落到段落底纹，只能用段落组「底纹」去掉。
+        /// </summary>
+        public static Word.WdColor ReadCharBackground(Word.Range range)
+        {
+            if (range == null)
+            {
+                return Word.WdColor.wdColorAutomatic;
+            }
+
+            try
+            {
+                return range.Font?.Shading?.BackgroundPatternColor ?? Word.WdColor.wdColorAutomatic;
+            }
+            catch (Exception ex)
+            {
+                DbgLog("ReadCharBackground 失败: " + ex.Message);
+                return Word.WdColor.wdColorAutomatic;
+            }
+        }
+
+        /// <summary>写入字体背景。不改 <c>Range.Shading</c> / 单元格底纹。</summary>
+        public static void WriteCharBackground(Word.Range range, Word.WdColor color)
+        {
+            if (range == null)
+            {
+                return;
+            }
+
+            range.Font.Shading.BackgroundPatternColor = color;
         }
 
         /// <param name="charFormatOnly">为 true 时只写字体等字符格式，不 set_Style / 段落对齐（避免 partial range 触发整段样式重置为等线）</param>
@@ -688,7 +720,7 @@ namespace WordAddIn1
 
                 if (format.ContainsKey("background_color"))
                 {
-                    range.Shading.BackgroundPatternColor = ConvertRgbToWdColor(format["background_color"]?.ToString() ?? "");
+                    WriteCharBackground(range, ConvertRgbToWdColor(format["background_color"]?.ToString() ?? ""));
                 }
 
                 if (format.ContainsKey("is_bold"))
