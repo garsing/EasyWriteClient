@@ -686,17 +686,24 @@ namespace WordAddIn1
                         paragraphAnchors,
                         ConfigManager.GetDocumentActionsAmbiguitySettings(),
                         TableParagraphScopeHelper.BuildIndexFromProcessCache(DocumentState.LastProcessCache));
+                ambiguity = MergeAmbiguity(sentenceAmbiguity, paragraphAmbiguity);
                 if (paragraphAmbiguity != null && paragraphAmbiguity.HasBlockingError)
                 {
-                    ambiguity = paragraphAmbiguity;
+                    ambiguity.HasBlockingError = true;
+                    ambiguity.ErrorCode = paragraphAmbiguity.ErrorCode;
+                    ambiguity.SummaryMessage = paragraphAmbiguity.SummaryMessage;
+                    ambiguity.Hint = paragraphAmbiguity.Hint;
+                    ambiguity.AmbiguousCodes = paragraphAmbiguity.AmbiguousCodes
+                        ?? new List<Dictionary<string, object>>();
                 }
                 else if (sentenceAmbiguity != null && sentenceAmbiguity.HasBlockingError)
                 {
-                    ambiguity = sentenceAmbiguity;
-                }
-                else
-                {
-                    ambiguity = MergeAmbiguity(sentenceAmbiguity, paragraphAmbiguity);
+                    ambiguity.HasBlockingError = true;
+                    ambiguity.ErrorCode = sentenceAmbiguity.ErrorCode;
+                    ambiguity.SummaryMessage = sentenceAmbiguity.SummaryMessage;
+                    ambiguity.Hint = sentenceAmbiguity.Hint;
+                    ambiguity.AmbiguousCodes = sentenceAmbiguity.AmbiguousCodes
+                        ?? new List<Dictionary<string, object>>();
                 }
             }
 
@@ -1171,6 +1178,18 @@ namespace WordAddIn1
             {
                 dest.ResolvedOccurrenceIndexesByField[pair.Key] = pair.Value;
             }
+
+            if (source.LocateFailures == null)
+            {
+                return;
+            }
+
+            if (dest.LocateFailures == null)
+            {
+                dest.LocateFailures = new List<AnchorLocateFailure>();
+            }
+
+            dest.LocateFailures.AddRange(source.LocateFailures);
         }
 
         private static bool AnchorsNeedProcessDocument(

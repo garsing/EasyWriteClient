@@ -111,6 +111,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                     result.ErrorCode = DisplaySequenceLocator.ErrorInvalidAnchorSequence;
                     result.SummaryMessage = BuildInvalidAnchorMessage(
                         anchor, codeList, DisplaySequenceLocator.ErrorInvalidAnchorSequence);
+                    result.NoteLocateFailure(anchor.ActionIndex, anchor.Field, anchor.Codes, result.SummaryMessage);
                     continue;
                 }
 
@@ -120,6 +121,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                     result.ErrorCode = ErrorAmbiguousParagraphCode;
                     result.SummaryMessage = BuildBareCollisionMessage(anchor, codeList);
                     result.Hint = "请使用 paragraph display 里的 P_xxxxx_N，不要传已撞码的光杆 P_。";
+                    result.NoteLocateFailure(anchor.ActionIndex, anchor.Field, anchor.Codes, result.SummaryMessage);
                     continue;
                 }
 
@@ -171,10 +173,13 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                             ambiguousByCode[code] = entry;
                         }
                     }
+
+                    result.NoteLocateFailure(anchor.ActionIndex, anchor.Field, anchor.Codes, result.SummaryMessage);
                 }
                 else
                 {
                     result.SummaryMessage = BuildInvalidAnchorMessage(anchor, codeList, locateResult.ErrorCode);
+                    result.NoteLocateFailure(anchor.ActionIndex, anchor.Field, anchor.Codes, result.SummaryMessage);
                 }
             }
 

@@ -425,25 +425,35 @@ namespace WordAddIn1
                 return IsCheckpointCleanupOnly(result);
             }
 
+            if (IsDocumentActionsOutcome(toolName))
+            {
+                if (IsCheckpointCleanupOnly(result))
+                {
+                    return true;
+                }
+
+                int? executed = GetIntProperty(result?.Data, "executed_actions");
+                if (executed.HasValue && executed.Value > 0)
+                {
+                    return false;
+                }
+
+                return result == null || !result.Success;
+            }
+
             if (result == null || !result.Success)
             {
                 return true;
             }
 
-            if (!string.Equals(toolName, "F_process_document_actions", StringComparison.Ordinal))
-            {
-                return false;
-            }
+            return false;
+        }
 
-            int? total = GetIntProperty(result.Data, "total_actions");
-            int? executed = GetIntProperty(result.Data, "executed_actions");
-            if (total.HasValue && executed.HasValue && executed.Value < total.Value)
-            {
-                return true;
-            }
-
-            object resultsObj = GetPropertyValue(result.Data, "results");
-            return resultsObj != null && HasAnyFailedActionResult(resultsObj);
+        private static bool IsDocumentActionsOutcome(string toolName)
+        {
+            return string.Equals(toolName, "F_process_document_actions", StringComparison.Ordinal)
+                || string.Equals(toolName, "F_insert_document_from_file", StringComparison.Ordinal)
+                || string.Equals(toolName, "F_replace_document_from_file", StringComparison.Ordinal);
         }
 
         public static bool IsCheckpointCleanupOnly(ToolResult result)

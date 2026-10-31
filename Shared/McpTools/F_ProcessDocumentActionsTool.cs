@@ -78,72 +78,82 @@ namespace WordAddIn1
                     FormatInheritHelper.DbgLogDocumentFontSample(document, "门面预检前");
 
                     System.Diagnostics.Debug.WriteLine("[DEBUG] 开始解析操作参数");
-                    (bool success, string error, List<ParagraphAction> actions) parseResult;
+                    ActionParseResult parseResult;
                     using (EasyWriteDiagnostics.Time("process_actions.parse"))
                     {
                         parseResult = ParseActions(args["action"], document);
                     }
 
-                    if (!parseResult.success)
+                    if (!parseResult.Ok)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[ERROR] 解析操作失败: {parseResult.error}");
-                        return FailBeforeWrite(parseResult.error);
+                        System.Diagnostics.Debug.WriteLine($"[ERROR] 解析操作失败: {parseResult.Error}");
+                        return FailBeforeWrite(parseResult.Error);
                     }
 
-                    List<ParagraphAction> actions = parseResult.actions;
-                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 解析操作成功，共 {actions.Count} 个操作");
-                    timedActionCount = actions.Count;
+                    List<ParagraphAction> actions = parseResult.Actions;
+                    List<ActionResult> itemFailed = parseResult.Failed;
+                    TakeInoperable(actions, itemFailed);
+                    System.Diagnostics.Debug.WriteLine($"[DEBUG] 解析操作成功，待写 {actions.Count} 个，已失败 {itemFailed.Count} 个");
+                    timedActionCount = actions.Count + itemFailed.Count;
                     string toolCallId = OpenDocumentPath.TryGetString(args, "__ew_tool_call_id");
                     if (string.IsNullOrEmpty(toolCallId))
                     {
                         toolCallId = ConversationContext.CurrentToolCallId;
                     }
-                    ToolUiProgress.Report(toolCallId, 1, actions.Count);
+                    ToolUiProgress.Report(toolCallId, 1, Math.Max(1, timedActionCount));
 
-                    string unusable = FindInoperableActionError(actions);
-                    if (!string.IsNullOrEmpty(unusable))
+                    InsertTargetLocatorHelper.PrecheckResult precheck = null;
+                    if (actions.Count > 0)
                     {
-                        return FailBeforeWrite(unusable);
+                        using (EasyWriteDiagnostics.Time("process_actions.precheck"))
+                        {
+                            precheck = InsertTargetLocatorHelper.TryPrecheckTargets(
+                                document,
+                                BuildAmbiguityAnchors(actions),
+                                docHandle.DisallowBackendApi);
+                        }
                     }
 
-                    for (int i = 0; i < actions.Count; i++)
+                    if (precheck != null && !precheck.Success)
                     {
-                        actions[i].ActionIndex = i;
+                        bool split = precheck.Ambiguity != null
+                            && precheck.Ambiguity.LocateFailures != null
+                            && precheck.Ambiguity.LocateFailures.Count > 0;
+                        if (!split)
+                        {
+                            string err = precheck.Error ?? "定位失败";
+                            foreach (ParagraphAction action in actions)
+                            {
+                                itemFailed.Add(FailedAction(action.ActionIndex, action.Type, err));
+                            }
+
+                            actions.Clear();
+                        }
+                        else
+                        {
+                            TakeLocateFailures(actions, itemFailed, precheck.Ambiguity.LocateFailures);
+                        }
                     }
 
-                    InsertTargetLocatorHelper.PrecheckResult precheck;
-                    using (EasyWriteDiagnostics.Time("process_actions.precheck"))
-                    {
-                        precheck = InsertTargetLocatorHelper.TryPrecheckTargets(
-                            document,
-                            BuildAmbiguityAnchors(actions),
-                            docHandle.DisallowBackendApi);
-                    }
-                    if (!precheck.Success)
-                    {
-                        return InsertTargetLocatorHelper.ToPrecheckFailureResult(
-                            precheck,
-                            document.Name ?? "未命名文档",
-                            actions.Count);
-                    }
+                    TableScopeIndex tableScope = precheck == null
+                        ? null
+                        : (precheck.TableScope
+                            ?? TableSentenceScopeHelper.BuildIndexFromProcessCache(DocumentState.LastProcessCache));
+                    ApplyResolvedDisplayPositions(actions, precheck?.Ambiguity);
 
-                    TableScopeIndex tableScope = precheck.TableScope
-                        ?? TableSentenceScopeHelper.BuildIndexFromProcessCache(DocumentState.LastProcessCache);
-                    ApplyResolvedDisplayPositions(actions, precheck.Ambiguity);
-
-                    string continuityError;
                     using (EasyWriteDiagnostics.Time("process_actions.continuity"))
                     {
-                        continuityError = ValidateAllActionsContinuity(actions, tableScope);
+                        TakeContinuityFailures(actions, itemFailed, tableScope);
                     }
 
-                    if (!string.IsNullOrEmpty(continuityError))
+                    if (actions.Count == 0)
                     {
-                        return SentenceCodeAmbiguityHelper.BuildPreStep3FailureResult(
+                        return BuildBatchToolResult(
                             document.Name ?? "未命名文档",
-                            actions.Count,
-                            "continuity_error",
-                            continuityError);
+                            ChannelRegistry.ToPublicId(docHandle.ChannelId) ?? "",
+                            itemFailed,
+                            new List<Dictionary<string, object>>(),
+                            null);
                     }
 
                     // 第三步：直接修改文档（本工具不修改审阅开关）
@@ -163,8 +173,6 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine("[第三步完成]");
 
                     var orderedResults = modifyResults.OrderBy(r => r.action_index).ToList();
-                    object resultsPayload = orderedResults.Select(r => r.ToResponseObject()).ToList();
-                    string batchMessage = null;
                     bool bulkMode = false;
                     var navigateInputs = orderedResults
                         .Select(r => new NavigateActionInput
@@ -206,26 +214,15 @@ namespace WordAddIn1
                         navigates = navigateOutcome.Navigates;
                         navigateSummary = navigateOutcome.Summary;
                     }
-                    bool allOk = orderedResults.All(r => r.success);
-                    var result = new ToolResult
-                    {
-                        Success = allOk,
-                        Data = new
-                        {
-                            document_name = document.Name ?? "未命名文档",
-                            total_actions = actions.Count,
-                            executed_actions = modifyResults.Count(r => r.success),
-                            failed_actions = modifyResults.Count(r => !r.success),
-                            message = batchMessage,
-                            results = resultsPayload,
-                            navigates = navigates,
-                            navigate = navigateSummary,
-                            format_apply_log = WrittenFormatGlueHelper.SnapshotPlans(),
-                            geo_plan_log = DocumentActionPathLog.Snapshot()
-                        }
-                    };
 
-                    return result;
+                    var combined = new List<ActionResult>(itemFailed);
+                    combined.AddRange(orderedResults);
+                    return BuildBatchToolResult(
+                        document.Name ?? "未命名文档",
+                        ChannelRegistry.ToPublicId(docHandle.ChannelId) ?? "",
+                        combined,
+                        navigates,
+                        navigateSummary);
                     }
                     finally
                     {
@@ -262,10 +259,10 @@ namespace WordAddIn1
                 return true;
             }
 
-            var parseResult = ParseActions(args["action"], null);
-            if (!parseResult.Item1)
+            ActionParseResult parseResult = ParseActions(args["action"], null);
+            if (!parseResult.Ok)
             {
-                failure = FailBeforeWrite(parseResult.Item2);
+                failure = FailBeforeWrite(parseResult.Error);
                 return true;
             }
 
@@ -288,31 +285,66 @@ namespace WordAddIn1
             };
         }
 
+        private sealed class ActionParseResult
+        {
+            public bool Ok { get; set; }
+            public string Error { get; set; }
+            public List<ParagraphAction> Actions { get; set; } = new List<ParagraphAction>();
+            public List<ActionResult> Failed { get; set; } = new List<ActionResult>();
+        }
+
+        private static ActionResult FailedAction(int index, string type, string message)
+        {
+            return new ActionResult
+            {
+                action_index = index,
+                type = type ?? "",
+                success = false,
+                message = message ?? ""
+            };
+        }
+
         /// <summary>
         /// 解析操作列表：replace/delete/insert；定位走统一定位门面（含 paragraph_codes）。
+        /// 单条契约失败记入 Failed，不让整单失败。action 不是列表时 Ok 为 false。
         /// </summary>
-        private static (bool success, string error, List<ParagraphAction> actions) ParseActions(object actionsObj, Word.Document doc)
+        private static ActionParseResult ParseActions(object actionsObj, Word.Document doc)
         {
-            var actions = new List<ParagraphAction>();
+            var parsed = new ActionParseResult { Ok = true };
+            if (actionsObj == null || actionsObj is string)
+            {
+                parsed.Ok = false;
+                parsed.Error = "action 须为操作列表";
+                return parsed;
+            }
 
             try
             {
                 if (actionsObj is System.Collections.IEnumerable actionsList)
                 {
+                    int index = 0;
                     foreach (var actionObj in actionsList)
                     {
+                        int actionIndex = index++;
                         var actionDict = ActionFormatHelper.CoerceDict(actionObj);
                         if (actionDict == null || !actionDict.ContainsKey("type"))
+                        {
+                            parsed.Failed.Add(FailedAction(actionIndex, "", "缺少 type"));
                             continue;
+                        }
 
                         var action = new ParagraphAction();
+                        action.ActionIndex = actionIndex;
                         action.Type = actionDict["type"]?.ToString();
 
                         var detail = actionDict.ContainsKey("detail")
                             ? ActionFormatHelper.CoerceDict(actionDict["detail"])
                             : null;
                         if (detail == null)
+                        {
+                            parsed.Failed.Add(FailedAction(actionIndex, action.Type, "缺少 detail"));
                             continue;
+                        }
 
                         switch (action.Type?.ToLower())
                         {
@@ -321,13 +353,15 @@ namespace WordAddIn1
                                 Dictionary<string, object> originalDict = ActionFormatHelper.CoerceDict(original);
                                 if (originalDict == null || originalDict.Count == 0)
                                 {
-                                    return (false, "replace 缺少 original 定位对象", null);
+                                    parsed.Failed.Add(FailedAction(actionIndex, action.Type, "replace 缺少 original 定位对象"));
+                                    continue;
                                 }
 
                                 var originalLoc = ParseLocatorObject(originalDict, sentenceOnly: true, fieldLabel: "original");
                                 if (!originalLoc.Success)
                                 {
-                                    return (false, originalLoc.Error, null);
+                                    parsed.Failed.Add(FailedAction(actionIndex, action.Type, originalLoc.Error));
+                                    continue;
                                 }
 
                                 action.SentenceNames = originalLoc.Spec.Codes;
@@ -335,13 +369,15 @@ namespace WordAddIn1
                                 
                                 if (!detail.ContainsKey("new"))
                                 {
-                                    return (false, "replace 缺少 new", null);
+                                    parsed.Failed.Add(FailedAction(actionIndex, action.Type, "replace 缺少 new"));
+                                    continue;
                                 }
 
                                 action.ContentPayload = ActionContentHelper.TryParseInsertOrNew(detail["new"], detail);
                                 if (!action.ContentPayload.Ok)
                                 {
-                                    return (false, action.ContentPayload.Error ?? "replace.new 无效", null);
+                                    parsed.Failed.Add(FailedAction(actionIndex, action.Type, action.ContentPayload.Error ?? "replace.new 无效"));
+                                    continue;
                                 }
 
                                 action.Content = action.ContentPayload.JoinedText;
@@ -354,13 +390,15 @@ namespace WordAddIn1
                             case "delete":
                                 if (!TryPickDeleteLocator(detail, out Dictionary<string, object> deletionDict, out string deleteField, out string deletePickError))
                                 {
-                                    return (false, deletePickError, null);
+                                    parsed.Failed.Add(FailedAction(actionIndex, action.Type, deletePickError));
+                                    continue;
                                 }
 
                                 var deletionLoc = ParseLocatorObject(deletionDict, sentenceOnly: true, fieldLabel: deleteField);
                                 if (!deletionLoc.Success)
                                 {
-                                    return (false, deletionLoc.Error, null);
+                                    parsed.Failed.Add(FailedAction(actionIndex, action.Type, deletionLoc.Error));
+                                    continue;
                                 }
 
                                 action.SentenceNames = deletionLoc.Spec.Codes;
@@ -371,13 +409,15 @@ namespace WordAddIn1
                                 action.Position = "after";
                                 if (!detail.ContainsKey("insert"))
                                 {
-                                    return (false, "insert 缺少 insert 文本", null);
+                                    parsed.Failed.Add(FailedAction(actionIndex, action.Type, "insert 缺少 insert 文本"));
+                                    continue;
                                 }
 
                                 action.ContentPayload = ActionContentHelper.TryParseInsertOrNew(detail["insert"], detail);
                                 if (!action.ContentPayload.Ok)
                                 {
-                                    return (false, action.ContentPayload.Error ?? "insert 文本无效", null);
+                                    parsed.Failed.Add(FailedAction(actionIndex, action.Type, action.ContentPayload.Error ?? "insert 文本无效"));
+                                    continue;
                                 }
 
                                 action.Content = action.ContentPayload.JoinedText;
@@ -390,13 +430,15 @@ namespace WordAddIn1
                                     Dictionary<string, object> targetDict = ActionFormatHelper.CoerceDict(detail["target"]);
                                     if (targetDict == null || targetDict.Count == 0)
                                     {
-                                        return (false, "insert.target 须为对象", null);
+                                        parsed.Failed.Add(FailedAction(actionIndex, action.Type, "insert.target 须为对象"));
+                                        continue;
                                     }
 
                                     var targetLoc = ParseLocatorObject(targetDict, sentenceOnly: false, fieldLabel: "target");
                                     if (!targetLoc.Success)
                                     {
-                                        return (false, targetLoc.Error, null);
+                                        parsed.Failed.Add(FailedAction(actionIndex, action.Type, targetLoc.Error));
+                                        continue;
                                     }
 
                                     action.TargetLocator = targetLoc.Spec;
@@ -423,23 +465,33 @@ namespace WordAddIn1
 
                         if (isValid)
                         {
-                            actions.Add(action);
+                            parsed.Actions.Add(action);
                         }
                         else
                         {
-                            System.Diagnostics.Debug.WriteLine(
-                                $"[DEBUG] 解析操作失败：缺少必要字段，操作类型={action.Type}, SentenceNames={action.SentenceNames}, Target={action.TargetLocator?.Kind}, Content={action.Content}");
+                            parsed.Failed.Add(FailedAction(
+                                actionIndex,
+                                action.Type,
+                                "缺少必要字段，操作类型=" + (action.Type ?? "")));
                         }
                     }
+                }
+                else
+                {
+                    parsed.Ok = false;
+                    parsed.Error = "action 须为操作列表";
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[DEBUG] 解析操作失败: {ex.Message}");
-                return (false, $"解析操作失败: {ex.Message}", null);
+                parsed.Ok = false;
+                parsed.Error = "解析操作失败: " + ex.Message;
+                parsed.Actions.Clear();
+                parsed.Failed.Clear();
             }
 
-            return (true, null, actions);
+            return parsed;
         }
 
         private enum LocatorKind
@@ -587,24 +639,267 @@ namespace WordAddIn1
             };
         }
 
-        private static string FindInoperableActionError(List<ParagraphAction> actions)
+        private static void TakeInoperable(List<ParagraphAction> actions, List<ActionResult> failed)
         {
             if (actions == null)
             {
-                return null;
+                return;
             }
 
-            foreach (ParagraphAction action in actions)
+            for (int i = actions.Count - 1; i >= 0; i--)
             {
+                ParagraphAction action = actions[i];
                 if (StoryUniqEncode.CsvIsInoperable(action.SentenceNames)
                     || (action.TargetLocator != null
                         && StoryUniqEncode.CsvIsInoperable(action.TargetLocator.Codes)))
                 {
-                    return StoryUniqEncode.FailBeforeWriteMessage;
+                    failed.Add(FailedAction(action.ActionIndex, action.Type, StoryUniqEncode.FailBeforeWriteMessage));
+                    actions.RemoveAt(i);
+                }
+            }
+        }
+
+        private static void TakeLocateFailures(
+            List<ParagraphAction> actions,
+            List<ActionResult> failed,
+            List<AnchorLocateFailure> failures)
+        {
+            if (actions == null || failures == null || failures.Count == 0)
+            {
+                return;
+            }
+
+            var messages = new Dictionary<int, List<string>>();
+            foreach (AnchorLocateFailure failure in failures)
+            {
+                if (failure == null)
+                {
+                    continue;
+                }
+
+                if (!messages.TryGetValue(failure.ActionIndex, out List<string> list))
+                {
+                    list = new List<string>();
+                    messages[failure.ActionIndex] = list;
+                }
+
+                if (!string.IsNullOrEmpty(failure.Message))
+                {
+                    list.Add(failure.Message);
                 }
             }
 
+            for (int i = actions.Count - 1; i >= 0; i--)
+            {
+                if (!messages.TryGetValue(actions[i].ActionIndex, out List<string> list))
+                {
+                    continue;
+                }
+
+                failed.Add(FailedAction(actions[i].ActionIndex, actions[i].Type, string.Join("；", list)));
+                actions.RemoveAt(i);
+            }
+        }
+
+        private static void TakeContinuityFailures(
+            List<ParagraphAction> actions,
+            List<ActionResult> failed,
+            TableScopeIndex tableScope)
+        {
+            if (actions == null)
+            {
+                return;
+            }
+
+            for (int i = actions.Count - 1; i >= 0; i--)
+            {
+                string error = ContinuityErrorFor(actions[i], tableScope);
+                if (string.IsNullOrEmpty(error))
+                {
+                    continue;
+                }
+
+                failed.Add(FailedAction(actions[i].ActionIndex, actions[i].Type, error));
+                actions.RemoveAt(i);
+            }
+        }
+
+        private static string ContinuityErrorFor(ParagraphAction action, TableScopeIndex tableScope)
+        {
+            if (action == null)
+            {
+                return null;
+            }
+
+            string type = action.Type?.ToLower();
+            if ((type == "replace" || type == "delete")
+                && EmptyCellCode.IsEmptyCellCode(action.SentenceNames))
+            {
+                return null;
+            }
+
+            if ((type == "replace" || type == "delete")
+                && LooksLikeParagraphCodes(action.SentenceNames))
+            {
+                return null;
+            }
+
+            if (type == "replace" || type == "delete")
+            {
+                return ValidateSentenceSequenceContinuity(
+                    action.SentenceNames,
+                    action.ResolvedSentenceDisplayStart,
+                    action.Type,
+                    type == "replace"
+                        ? action.OriginalScopeFields?.TableId
+                        : action.DeletionScopeFields?.TableId,
+                    tableScope);
+            }
+
+            if (type == "insert"
+                && action.TargetLocator != null
+                && action.TargetLocator.Kind == LocatorKind.Sentence)
+            {
+                return ValidateSentenceSequenceContinuity(
+                    action.TargetLocator.Codes,
+                    action.ResolvedTargetDisplayStart,
+                    action.Type + " (target)",
+                    action.TargetLocator.InTableId,
+                    tableScope);
+            }
+
             return null;
+        }
+
+        private static ToolResult BuildBatchToolResult(
+            string documentName,
+            string channelPublicId,
+            List<ActionResult> results,
+            List<Dictionary<string, object>> navigates,
+            Dictionary<string, object> navigateSummary)
+        {
+            var ordered = (results ?? new List<ActionResult>()).OrderBy(r => r.action_index).ToList();
+            int executed = ordered.Count(r => r.success);
+            int failedCount = ordered.Count - executed;
+            bool allOk = ordered.Count > 0 && failedCount == 0;
+            string outcome = allOk
+                ? "all_succeeded"
+                : (executed > 0 ? "partial_succeeded" : "all_failed");
+            string message = BuildBatchMessage(ordered);
+            var data = new Dictionary<string, object>
+            {
+                ["document_name"] = documentName ?? "未命名文档",
+                ["total_actions"] = ordered.Count,
+                ["executed_actions"] = executed,
+                ["failed_actions"] = failedCount,
+                ["batch_outcome"] = outcome,
+                ["message"] = message,
+                ["results"] = ordered.Select(r => r.ToResponseObject()).ToList(),
+                ["navigates"] = navigates ?? new List<Dictionary<string, object>>(),
+                ["navigate"] = navigateSummary,
+                ["format_apply_log"] = WrittenFormatGlueHelper.SnapshotPlans(),
+                ["geo_plan_log"] = DocumentActionPathLog.Snapshot()
+            };
+
+            if (executed > 0)
+            {
+                string display = F_GetDocumentContentTool.TryBuildSentenceDisplayFromLastCache(out string displayError);
+                if (!string.IsNullOrEmpty(display))
+                {
+                    data["document_content"] = display;
+                    data["code_level"] = "sentence";
+                    data["channel_id"] = channelPublicId ?? "";
+                }
+                else
+                {
+                    data["document_display_error"] = string.IsNullOrEmpty(displayError)
+                        ? "没带上 display"
+                        : displayError;
+                }
+            }
+            else
+            {
+                data["checkpoint_cleanup_only"] = true;
+            }
+
+            return new ToolResult
+            {
+                Success = allOk,
+                Error = allOk ? null : message,
+                Data = data
+            };
+        }
+
+        private static string BuildBatchMessage(List<ActionResult> ordered)
+        {
+            int executed = ordered.Count(r => r.success);
+            if (executed == ordered.Count && ordered.Count > 0)
+            {
+                return "全部成功。";
+            }
+
+            var sb = new System.Text.StringBuilder();
+            if (executed == 0)
+            {
+                sb.Append("全部失败。");
+            }
+            else
+            {
+                sb.Append("部分成功。已写上且不要重做：");
+                bool first = true;
+                foreach (ActionResult result in ordered)
+                {
+                    if (!result.success)
+                    {
+                        continue;
+                    }
+
+                    if (!first)
+                    {
+                        sb.Append("、");
+                    }
+
+                    first = false;
+                    sb.Append("action[").Append(result.action_index).Append("] ").Append(result.type);
+                }
+
+                sb.Append("。失败：");
+            }
+
+            bool anyFail = false;
+            foreach (ActionResult result in ordered)
+            {
+                if (result.success)
+                {
+                    continue;
+                }
+
+                if (anyFail)
+                {
+                    sb.Append("；");
+                }
+
+                anyFail = true;
+                sb.Append("action[").Append(result.action_index).Append("] ").Append(result.type);
+                if (!string.IsNullOrEmpty(result.message))
+                {
+                    sb.Append("，").Append(result.message);
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        private static string LocateMissMessage(string codes, string fallback)
+        {
+            List<string> list = ParseCodeList(codes);
+            if (list.Count == 1 && list[0].StartsWith("S_", StringComparison.Ordinal))
+            {
+                return "码 " + list[0]
+                    + " 当前定位列表里没有这颗码（上一批或本批前面的写入已重切，或该句已被替换文本吞掉）";
+            }
+
+            return fallback ?? "未找到任何句子 Range";
         }
 
         private static List<DocumentActionAmbiguityAnchor> BuildAmbiguityAnchors(List<ParagraphAction> actions)
@@ -691,75 +986,6 @@ namespace WordAddIn1
                     action.ResolvedTargetDisplayStart = targetStart;
                 }
             }
-        }
-
-        private static string ValidateAllActionsContinuity(List<ParagraphAction> actions, TableScopeIndex tableScope)
-        {
-            if (actions == null)
-            {
-                return null;
-            }
-
-            foreach (ParagraphAction action in actions)
-            {
-                string type = action.Type?.ToLower();
-                if ((type == "replace" || type == "delete")
-                    && EmptyCellCode.IsEmptyCellCode(action.SentenceNames))
-                {
-                    continue;
-                }
-
-                if ((type == "replace" || type == "delete")
-                    && LooksLikeParagraphCodes(action.SentenceNames))
-                {
-                    continue;
-                }
-
-                if (type == "replace" || type == "delete")
-                {
-                    string error = ValidateSentenceSequenceContinuity(
-                        action.SentenceNames,
-                        action.ResolvedSentenceDisplayStart,
-                        action.Type,
-                        type == "replace"
-                            ? action.OriginalScopeFields?.TableId
-                            : action.DeletionScopeFields?.TableId,
-                        tableScope);
-                    if (!string.IsNullOrEmpty(error))
-                    {
-                        return error;
-                    }
-                }
-                else if (type == "insert"
-                         && action.TargetLocator != null
-                         && action.TargetLocator.Kind == LocatorKind.EmptyCell)
-                {
-                    continue;
-                }
-                else if (type == "insert"
-                         && action.TargetLocator != null
-                         && action.TargetLocator.Kind == LocatorKind.Paragraph)
-                {
-                    continue;
-                }
-                else if (type == "insert"
-                         && action.TargetLocator != null
-                         && action.TargetLocator.Kind == LocatorKind.Sentence)
-                {
-                    string error = ValidateSentenceSequenceContinuity(
-                        action.TargetLocator.Codes,
-                        action.ResolvedTargetDisplayStart,
-                        action.Type + " (target)",
-                        action.TargetLocator.InTableId,
-                        tableScope);
-                    if (!string.IsNullOrEmpty(error))
-                    {
-                        return error;
-                    }
-                }
-            }
-
-            return null;
         }
 
         private static void MoveSelectionAfterInsert(Word.Document doc, Word.Range insertRange)
@@ -1656,7 +1882,7 @@ namespace WordAddIn1
                 refreshDocument: false);
             if (!locate.Success || locate.Range == null)
             {
-                result.ErrorMessage = locate.Error ?? "未找到任何句子 Range";
+                result.ErrorMessage = LocateMissMessage(sentenceNames, locate.Error ?? "未找到任何句子 Range");
                 return result;
             }
 
@@ -2235,7 +2461,7 @@ namespace WordAddIn1
                     refreshDocument: false);
                 if (!locate.Success || locate.Range == null)
                 {
-                    result.ErrorMessage = locate.Error ?? "未找到任何句子 Range";
+                    result.ErrorMessage = LocateMissMessage(sentenceNames, locate.Error ?? "未找到任何句子 Range");
                     System.Diagnostics.Debug.WriteLine($"[替换操作] {result.ErrorMessage}");
                     return result;
                 }
@@ -2431,7 +2657,7 @@ namespace WordAddIn1
                     refreshDocument: false);
                 if (!locate.Success || locate.Range == null)
                 {
-                    result.ErrorMessage = locate.Error ?? "未找到任何句子 Range";
+                    result.ErrorMessage = LocateMissMessage(sentenceNames, locate.Error ?? "未找到任何句子 Range");
                     System.Diagnostics.Debug.WriteLine($"[删除操作] {result.ErrorMessage}");
                     return result;
                 }

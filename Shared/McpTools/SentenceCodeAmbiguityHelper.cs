@@ -55,6 +55,33 @@ namespace WordAddIn1
         /// <summary>P_ 路径（批次 3 前仍用 index）— S_ 改字/套用请用 ResolvedDisplayStartPositionByField。</summary>
         public Dictionary<string, List<int>> ResolvedOccurrenceIndexesByField { get; set; } =
             new Dictionary<string, List<int>>(StringComparer.Ordinal);
+
+        public List<AnchorLocateFailure> LocateFailures { get; set; } = new List<AnchorLocateFailure>();
+
+        public void NoteLocateFailure(int actionIndex, string field, string codes, string message)
+        {
+            HasBlockingError = true;
+            if (LocateFailures == null)
+            {
+                LocateFailures = new List<AnchorLocateFailure>();
+            }
+
+            LocateFailures.Add(new AnchorLocateFailure
+            {
+                ActionIndex = actionIndex,
+                Field = field,
+                Codes = codes,
+                Message = message
+            });
+        }
+    }
+
+    public sealed class AnchorLocateFailure
+    {
+        public int ActionIndex { get; set; }
+        public string Field { get; set; }
+        public string Codes { get; set; }
+        public string Message { get; set; }
     }
 
     public static class SentenceCodeAmbiguityHelper
@@ -118,7 +145,6 @@ namespace WordAddIn1
                     continue;
                 }
 
-                result.HasBlockingError = true;
                 result.ErrorCode = locateResult.ErrorCode ?? ErrorInvalidAnchorSequence;
 
                 if (string.Equals(result.ErrorCode, ErrorAmbiguousSentenceCode, StringComparison.Ordinal))
@@ -142,6 +168,7 @@ namespace WordAddIn1
                         locateResult,
                         ambiguousEntries,
                         profile);
+                    result.NoteLocateFailure(anchor.ActionIndex, anchor.Field, anchor.Codes, result.SummaryMessage);
 
                     foreach (Dictionary<string, object> entry in ambiguousEntries)
                     {
@@ -154,7 +181,8 @@ namespace WordAddIn1
                 }
                 else
                 {
-                    result.SummaryMessage = BuildInvalidAnchorMessage(anchor, codeList, locateResult.ErrorCode);
+                    result.SummaryMessage = BuildInvalidAnchorMessage(anchor, codeList, locateResult);
+                    result.NoteLocateFailure(anchor.ActionIndex, anchor.Field, anchor.Codes, result.SummaryMessage);
                 }
             }
 
@@ -313,10 +341,11 @@ namespace WordAddIn1
         private static string BuildInvalidAnchorMessage(
             DocumentActionAmbiguityAnchor anchor,
             IReadOnlyList<string> codeList,
-            string errorCode)
+            DisplaySequenceLocateResult locateResult)
         {
             string label = $"action[{anchor?.ActionIndex ?? 0}].{anchor?.Field ?? "codes"}";
             string codes = string.Join(",", codeList ?? Array.Empty<string>());
+            string errorCode = locateResult?.ErrorCode;
 
             if (string.Equals(errorCode, ErrorUnknownTableId, StringComparison.Ordinal))
             {
@@ -328,7 +357,36 @@ namespace WordAddIn1
                 return $"编码不在表格 {anchor?.TableId} 内，无法定位 {label}（codes={codes}）";
             }
 
-            return $"锚点 codes 无效或不连续/跨 seg，无法定位 {label}（codes={codes}）";
+            int count = codeList == null ? 0 : codeList.Count;
+            if (count > 1 && AllCodesInDomain(codeList, locateResult))
+            {
+                return $"{label} 的码不连续或跨段（codes={codes}）";
+            }
+
+            string listed = count == 0 ? codes : string.Join(",", codeList);
+            return $"{label} 的 {listed} 当前定位列表里没有这颗码（上一批或本批前面的写入已重切，或该句已被替换文本吞掉）";
+        }
+
+        private static bool AllCodesInDomain(
+            IReadOnlyList<string> codeList,
+            DisplaySequenceLocateResult locateResult)
+        {
+            IReadOnlyList<string> domain = locateResult?.OrderedDomainCodes;
+            if (codeList == null || domain == null || domain.Count == 0)
+            {
+                return false;
+            }
+
+            var set = new HashSet<string>(domain, StringComparer.Ordinal);
+            foreach (string code in codeList)
+            {
+                if (!set.Contains(code))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static List<string> ParseCodeList(string codes)

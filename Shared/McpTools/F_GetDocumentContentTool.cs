@@ -150,6 +150,37 @@ namespace WordAddIn1
             }
         }
 
+        internal static string TryBuildSentenceDisplayFromLastCache(out string error)
+        {
+            error = null;
+            ProcessDocumentCacheEntry cache = DocumentState.LastProcessCache;
+            if (cache == null || cache.ChunkInfo == null || cache.ChunkInfo.Count == 0)
+            {
+                error = "没带上 display：写后没有句子 display";
+                return null;
+            }
+
+            if (string.Equals(cache.ProcessingMethod, "API", StringComparison.Ordinal))
+            {
+                error = "没带上 display：本次切句不是本地全文";
+                return null;
+            }
+
+            var processing = new WordDocumentExtractor.ProcessingResult
+            {
+                ProcessingMethod = string.IsNullOrEmpty(cache.ProcessingMethod) ? "Local" : cache.ProcessingMethod,
+                ChunkInfo = cache.ChunkInfo
+            };
+            string text = BuildDocumentContent(processing, false);
+            if (string.IsNullOrEmpty(text))
+            {
+                error = "没带上 display：句子 display 为空";
+                return null;
+            }
+
+            return text;
+        }
+
         private static string BuildDocumentContent(WordDocumentExtractor.ProcessingResult processingResult, bool isParagraph)
         {
             if (processingResult.ProcessingMethod == "Local")
