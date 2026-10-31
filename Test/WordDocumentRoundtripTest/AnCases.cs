@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using WordAddIn1;
+using WordAddIn1.DocumentMapping;
 
 namespace WordDocumentRoundtripTest
 {
@@ -1278,7 +1279,13 @@ namespace WordDocumentRoundtripTest
         private static bool HasDecimalPrefix(string inner)
         {
             inner = StripInTable(inner ?? "").TrimStart();
-            return Regex.IsMatch(inner, @"^\d+\.\s");
+            if (string.IsNullOrEmpty(inner))
+            {
+                return false;
+            }
+
+            // 与 AutonumConvert：1. / 1、 / 一、 都是十进制，不要求 Word 的点号。
+            return AutonumConvert.StripNewByOriginalTypes(new[] { "1." }, inner) != inner;
         }
 
         private static bool HasBulletPrefix(string inner)
