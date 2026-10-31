@@ -57,6 +57,7 @@ namespace WordAddIn1.BrowserHost
 
             BrowserSnapshotResult snap = await TryCaptureAsync(channel, layer).ConfigureAwait(true);
             if (string.Equals(act, "click", StringComparison.OrdinalIgnoreCase)
+                && !IsDialogSnapshot(snap)
                 && (!IsUsable(snap) || snap.Snapshot.Length < 200))
             {
                 await Task.Delay(400).ConfigureAwait(true);
@@ -214,6 +215,16 @@ namespace WordAddIn1.BrowserHost
         private static bool IsUsable(BrowserSnapshotResult snap)
         {
             return snap != null && snap.Success && !string.IsNullOrWhiteSpace(snap.Snapshot);
+        }
+
+        private static bool IsDialogSnapshot(BrowserSnapshotResult snap)
+        {
+            if (!IsUsable(snap))
+            {
+                return false;
+            }
+
+            return snap.Snapshot.TrimStart().StartsWith("- dialog ", StringComparison.Ordinal);
         }
 
         private static string SuccessMessage(string action)

@@ -201,7 +201,10 @@ namespace WordAddIn1.BrowserHost
 
             string mode = ConfigManager.NormalizeBrowserClickMode(clickMode);
             Task dialog = ArmScriptDialog(cdp);
+            ScriptDialogTrace.Write("click-enter node=" + backendNodeId + " mode=" + mode + " armed=" + (dialog != null));
+            ScriptDialogTrace.Write("click-resolve-begin");
             string objectId = await ResolveObjectIdAsync(cdp, backendNodeId, sessionId).ConfigureAwait(true);
+            ScriptDialogTrace.Write("click-prepare-begin");
             string resultJson = await CallUntilScriptDialogAsync(
                 dialog,
                 CallFunctionOnAsync(
@@ -216,18 +219,22 @@ namespace WordAddIn1.BrowserHost
                     sessionId)).ConfigureAwait(true);
             if (ScriptDialogOpened(dialog))
             {
+                ScriptDialogTrace.Write("click-return dialog-during-prepare");
                 return;
             }
 
+            ScriptDialogTrace.Write("click-prepare-end");
             ThrowIfJsNotOk(resultJson, "点击被挡住");
             if (ReadJsReveal(resultJson))
             {
                 ReadJsHostPoint(resultJson, out double hostX, out double hostY);
+                ScriptDialogTrace.Write("click-reveal-move-begin");
                 if (await UntilScriptDialogAsync(
                         dialog,
                         DispatchCdpMouseAsync(cdp, sessionId, "mouseMoved", hostX, hostY, false))
                     .ConfigureAwait(true))
                 {
+                    ScriptDialogTrace.Write("click-return dialog-during-reveal-move");
                     return;
                 }
 
@@ -252,6 +259,7 @@ namespace WordAddIn1.BrowserHost
                         sessionId)).ConfigureAwait(true);
                 if (ScriptDialogOpened(dialog))
                 {
+                    ScriptDialogTrace.Write("click-return dialog-during-reveal");
                     return;
                 }
 
@@ -265,11 +273,14 @@ namespace WordAddIn1.BrowserHost
             if (string.Equals(mode, "legacy", StringComparison.Ordinal)
                 || ReadJsFallback(resultJson))
             {
+                ScriptDialogTrace.Write("click-return legacy-or-fallback mode=" + mode);
                 return;
             }
 
             ReadJsPoint(resultJson, out double x, out double y);
+            ScriptDialogTrace.Write("click-dispatch x=" + x.ToString("0") + " y=" + y.ToString("0"));
             await DispatchCdpClickAsync(cdp, objectId, x, y, sessionId, dialog).ConfigureAwait(true);
+            ScriptDialogTrace.Write("click-return dispatch-done dialog=" + ScriptDialogOpened(dialog));
         }
 
         public static async Task HoverAsync(
@@ -1620,29 +1631,37 @@ namespace WordAddIn1.BrowserHost
             string sessionId,
             Task dialog = null)
         {
+            ScriptDialogTrace.Write("mouse-move-begin");
             if (await UntilScriptDialogAsync(
                     dialog,
                     DispatchCdpMouseAsync(cdp, sessionId, "mouseMoved", x, y, false))
                 .ConfigureAwait(true))
             {
+                ScriptDialogTrace.Write("mouse-return dialog-during-move");
                 return;
             }
 
+            ScriptDialogTrace.Write("mouse-down-begin");
             if (await UntilScriptDialogAsync(
                     dialog,
                     DispatchCdpMouseAsync(cdp, sessionId, "mousePressed", x, y, true))
                 .ConfigureAwait(true))
             {
+                ScriptDialogTrace.Write("mouse-return dialog-during-down");
                 return;
             }
 
+            ScriptDialogTrace.Write("mouse-up-begin");
             if (await UntilScriptDialogAsync(
                     dialog,
                     DispatchCdpMouseAsync(cdp, sessionId, "mouseReleased", x, y, false))
                 .ConfigureAwait(true))
             {
+                ScriptDialogTrace.Write("mouse-return dialog-during-up");
                 return;
             }
+
+            ScriptDialogTrace.Write("mouse-up-end");
             YiWriteBrowserForm yiForm = cdp as YiWriteBrowserForm;
             if (yiForm != null && yiForm.HasNewWindowDuringTool)
             {
@@ -1654,6 +1673,7 @@ namespace WordAddIn1.BrowserHost
                 return;
             }
 
+            ScriptDialogTrace.Write("synthetic-click-begin");
             try
             {
                 await CallUntilScriptDialogAsync(
@@ -1696,9 +1716,11 @@ namespace WordAddIn1.BrowserHost
 }",
                     BuildCallArgsPair(x, y),
                     sessionId)).ConfigureAwait(true);
+                ScriptDialogTrace.Write("synthetic-click-end dialog=" + ScriptDialogOpened(dialog));
             }
-            catch
+            catch (Exception ex)
             {
+                ScriptDialogTrace.Write("synthetic-click-error " + ex.GetType().Name);
             }
         }
 

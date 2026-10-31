@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using System.Threading;
+using System.Windows.Forms;
 
 namespace WordAddIn1.BrowserHost
 {
@@ -29,6 +31,9 @@ namespace WordAddIn1.BrowserHost
     {
         private readonly Action<string> _accept;
         private readonly Action _complete;
+        private Control _surface;
+        private Action<string> _applyText;
+        private Action<bool> _close;
         private int _done;
 
         private BrowserScriptDialogSession(
@@ -70,7 +75,25 @@ namespace WordAddIn1.BrowserHost
             return new BrowserScriptDialogSession(kind, message, text, accept, complete);
         }
 
+        public void BindSurface(Control surface, Action<string> applyText, Action<bool> close)
+        {
+            _surface = surface;
+            _applyText = applyText;
+            _close = close;
+        }
+
         public void SetText(string text)
+        {
+            if (!IsPending)
+            {
+                return;
+            }
+
+            Text = text ?? "";
+            PushText();
+        }
+
+        public void NoteTypedByUser(string text)
         {
             if (!IsPending)
             {
@@ -89,6 +112,7 @@ namespace WordAddIn1.BrowserHost
 
             ResultText = Text ?? "";
             Accepted = true;
+            RequestClose(true);
             try
             {
                 if (_accept != null)
@@ -109,7 +133,64 @@ namespace WordAddIn1.BrowserHost
                 return;
             }
 
+            RequestClose(false);
             SafeComplete();
+        }
+
+        private void PushText()
+        {
+            Action<string> apply = _applyText;
+            Control surface = _surface;
+            string text = Text ?? "";
+            if (apply == null || surface == null || surface.IsDisposed)
+            {
+                return;
+            }
+
+            if (surface.InvokeRequired)
+            {
+                surface.BeginInvoke(new Action(() =>
+                {
+                    if (!surface.IsDisposed)
+                    {
+                        apply(text);
+                    }
+                }));
+                return;
+            }
+
+            apply(text);
+        }
+
+        private void RequestClose(bool accept)
+        {
+            Action<bool> close = _close;
+            Control surface = _surface;
+            if (close == null || surface == null || surface.IsDisposed)
+            {
+                return;
+            }
+
+            if (surface.InvokeRequired)
+            {
+                try
+                {
+                    surface.Invoke(new Action(() =>
+                    {
+                        if (!surface.IsDisposed)
+                        {
+                            close(accept);
+                        }
+                    }));
+                }
+                catch
+                {
+                }
+
+                return;
+            }
+
+            close(accept);
         }
 
         private void SafeComplete()
@@ -295,6 +376,44 @@ namespace WordAddIn1.BrowserHost
                 .Replace("\"", "\\\"")
                 .Replace("\r", " ")
                 .Replace("\n", " ");
+        }
+    }
+
+    /// <summary>确认框点击卡点。每次追加一行并立刻落盘，最后一行就是停住的位置。</summary>
+    internal static class ScriptDialogTrace
+    {
+        private static readonly object Gate = new object();
+
+        public static string LogPath
+        {
+            get
+            {
+                return Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "EasyWrite",
+                    "script-dialog.log");
+            }
+        }
+
+        public static void Write(string step)
+        {
+            string line = DateTime.Now.ToString("HH:mm:ss.fff")
+                + " t" + Thread.CurrentThread.ManagedThreadId
+                + " " + (step ?? "");
+            lock (Gate)
+            {
+                try
+                {
+                    string path = LogPath;
+                    Directory.CreateDirectory(Path.GetDirectoryName(path));
+                    File.AppendAllText(path, line + Environment.NewLine);
+                }
+                catch
+                {
+                }
+            }
+
+            EasyWriteDiagnostics.Log(DebugCategory.Host, "script-dialog " + (step ?? ""));
         }
     }
 }

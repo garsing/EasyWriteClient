@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>脚本确认框</title>
+</head>
+<body>
+  <p id="out">ready</p>
+  <button id="revoke" type="button">撤回</button>
+  <button id="ask" type="button">提问</button>
+  <button id="note" type="button">提示</button>
+  <script>
+    document.getElementById("revoke").onclick = function () {
+      var ok = window.confirm("确定撤回该工时吗？");
+      document.getElementById("out").textContent = ok ? "accepted" : "dismissed";
+    };
+    document.getElementById("ask").onclick = function () {
+      var value = window.prompt("请输入原因", "甲");
+      document.getElementById("out").textContent = value == null ? "prompt:null" : "prompt:" + value;
+    };
+    document.getElementById("note").onclick = function () {
+      window.alert("已保存");
+      document.getElementById("out").textContent = "alerted";
+    };
+  </script>
+</body>
+</html>

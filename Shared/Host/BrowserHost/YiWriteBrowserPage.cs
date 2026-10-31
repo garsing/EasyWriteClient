@@ -474,8 +474,10 @@ namespace WordAddIn1.BrowserHost
             try
             {
                 deferral = e.GetDeferral();
+                ScriptDialogTrace.Write("event kind=" + e.Kind + " msg=" + Clip(e.Message));
                 if (_pendingScriptDialog != null && _pendingScriptDialog.IsPending)
                 {
+                    ScriptDialogTrace.Write("event-drop already-pending");
                     deferral.Complete();
                     deferral = null;
                     return;
@@ -499,14 +501,15 @@ namespace WordAddIn1.BrowserHost
                 deferral = null;
                 lock (_scriptDialogGate)
                 {
-                    if (_scriptDialogSignal != null)
-                    {
-                        _scriptDialogSignal.TrySetResult(true);
-                    }
+                    bool signaled = _scriptDialogSignal != null && _scriptDialogSignal.TrySetResult(true);
+                    ScriptDialogTrace.Write("event-stored signal=" + signaled);
                 }
+
+                ShowPendingScriptDialog(_pendingScriptDialog);
             }
-            catch
+            catch (Exception ex)
             {
+                ScriptDialogTrace.Write("event-error " + ex.GetType().Name);
                 try
                 {
                     if (deferral != null)
@@ -517,6 +520,80 @@ namespace WordAddIn1.BrowserHost
                 catch
                 {
                 }
+            }
+        }
+
+        private static string Clip(string text)
+        {
+            string value = (text ?? "").Replace("\r", " ").Replace("\n", " ");
+            if (value.Length <= 80)
+            {
+                return value;
+            }
+
+            return value.Substring(0, 80);
+        }
+
+        private void ShowPendingScriptDialog(BrowserScriptDialogSession session)
+        {
+            Control host = WebView;
+            if (host == null || host.IsDisposed || session == null)
+            {
+                return;
+            }
+
+            string title = DisplayTitle;
+            try
+            {
+                host.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        if (_disposed || !session.IsPending)
+                        {
+                            return;
+                        }
+
+                        ScriptDialogTrace.Write("dialog-show");
+                        bool accepted = BrowserScriptDialogForm.ShowModal(host, session, title);
+                        if (!session.IsPending)
+                        {
+                            ScriptDialogTrace.Write("dialog-closed-by-agent");
+                            return;
+                        }
+
+                        ScriptDialogTrace.Write(accepted ? "dialog-user-accept" : "dialog-user-dismiss");
+                        if (accepted)
+                        {
+                            session.Accept();
+                        }
+                        else
+                        {
+                            session.Dismiss();
+                        }
+
+                        ClearScriptDialogIf(session);
+                    }
+                    catch (Exception ex)
+                    {
+                        ScriptDialogTrace.Write("dialog-show-error " + ex.GetType().Name);
+                        try
+                        {
+                            if (session.IsPending)
+                            {
+                                session.Dismiss();
+                                ClearScriptDialogIf(session);
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }));
+            }
+            catch (Exception ex)
+            {
+                ScriptDialogTrace.Write("dialog-show-post " + ex.GetType().Name);
             }
         }
 

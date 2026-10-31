@@ -522,8 +522,11 @@ namespace WordAddIn1.BrowserHost
             BrowserScriptDialogSession pendingDialog = dialogPage != null ? dialogPage.PendingScriptDialog : null;
             if (pendingDialog != null && pendingDialog.IsPending)
             {
+                ScriptDialogTrace.Write("snapshot-dialog-only");
                 return PublishScriptDialogSnapshot(channel, form, pendingDialog);
             }
+
+            ScriptDialogTrace.Write("snapshot-page ref=" + (refId ?? ""));
 
             bool isDetail = !string.IsNullOrWhiteSpace(refId);
             BrowserRefEntry prior = null;
@@ -783,6 +786,15 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
+            YiWriteBrowserPage dialogPage = form.TryGetPage(channel.TabUuid);
+            BrowserScriptDialogSession pendingDialog = dialogPage != null ? dialogPage.PendingScriptDialog : null;
+            if (pendingDialog != null && pendingDialog.IsPending)
+            {
+                ScriptDialogTrace.Write("snapshot-layer-dialog-only");
+                return PublishScriptDialogSnapshot(channel, form, pendingDialog);
+            }
+
+            ScriptDialogTrace.Write("snapshot-layer-load-frames");
             BrowserFrameMap frameMap = await BrowserFrameResolver.LoadAsync(form).ConfigureAwait(true);
             if (!string.IsNullOrWhiteSpace(frameMap.RootFrameId)
                 && string.Equals(layer.FrameId, frameMap.RootFrameId, StringComparison.Ordinal))
@@ -922,6 +934,10 @@ namespace WordAddIn1.BrowserHost
             {
                 YiWriteBrowserPage dialogPage = form.TryGetPage(channel.TabUuid);
                 BrowserScriptDialogSession pendingDialog = dialogPage != null ? dialogPage.PendingScriptDialog : null;
+                ScriptDialogTrace.Write(
+                    "interact-enter action=" + act
+                    + " ref=" + (refId ?? "")
+                    + " pending=" + (pendingDialog != null && pendingDialog.IsPending));
                 if (pendingDialog != null && pendingDialog.IsPending)
                 {
                     return await InteractScriptDialogAsync(
@@ -1010,6 +1026,9 @@ namespace WordAddIn1.BrowserHost
                         return BrowserInteractResult.Fail(risk);
                     }
 
+                    ScriptDialogTrace.Write(
+                        "interact-click-begin name=" + (entry.Name ?? "")
+                        + " role=" + (entry.Role ?? ""));
                     await BrowserInteractEngine
                         .ClickAsync(
                             form,
@@ -1018,6 +1037,9 @@ namespace WordAddIn1.BrowserHost
                             ConfigManager.GetBrowserClickMode("yiwrite"),
                             entry.Role)
                         .ConfigureAwait(true);
+                    BrowserScriptDialogSession afterClick = dialogPage != null ? dialogPage.PendingScriptDialog : null;
+                    ScriptDialogTrace.Write(
+                        "interact-click-end pending=" + (afterClick != null && afterClick.IsPending));
                 }
                 else if (act == "hover")
                 {
@@ -1150,6 +1172,7 @@ namespace WordAddIn1.BrowserHost
                     }
                 }
 
+                ScriptDialogTrace.Write("interact-resnapshot-begin");
                 return await BrowserResnapshotAfterAction
                     .CompleteInteractAsync(
                         snapChannel,
@@ -1163,6 +1186,7 @@ namespace WordAddIn1.BrowserHost
             }
             catch (Exception ex)
             {
+                ScriptDialogTrace.Write("interact-error " + ex.GetType().Name + " " + ex.Message);
                 return BrowserInteractResult.Fail("F_browser_interact 失败: " + ex.Message);
             }
             finally

@@ -26,6 +26,11 @@ namespace BrowserNavigateTest
                 return RepeatCollapseCases.Run(caseFilter);
             }
 
+            if (string.Equals(caseFilter, "dlg-live", StringComparison.OrdinalIgnoreCase))
+            {
+                return ScriptDialogLive.Run();
+            }
+
             if (caseFilter.StartsWith("script-dialog", StringComparison.OrdinalIgnoreCase))
             {
                 return ScriptDialogCases.Run(caseFilter);
