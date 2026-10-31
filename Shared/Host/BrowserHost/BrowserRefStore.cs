@@ -106,5 +106,11 @@ namespace WordAddIn1.BrowserHost
         public int RepeatOrdinal { get; set; }
 
         public int RepeatCount { get; set; }
+
+        /// <summary>脚本对话框上的确定、取消或 prompt 输入框。没有 DOM 节点。</summary>
+        public bool IsScriptDialog { get; set; }
+
+        /// <summary>accept / dismiss / input。</summary>
+        public string ScriptDialogControl { get; set; }
     }
 }

@@ -16,6 +16,8 @@ namespace WordAddIn1.BrowserHost
     {
         private bool _disposed;
         private EventHandler<CoreWebView2DownloadStartingEventArgs> _downloadStartingHandler;
+        private EventHandler<CoreWebView2ScriptDialogOpeningEventArgs> _scriptDialogHandler;
+        private BrowserScriptDialogSession _pendingScriptDialog;
 
         public YiWriteBrowserPage(string tabUuid)
         {
@@ -125,6 +127,19 @@ namespace WordAddIn1.BrowserHost
 
         public event EventHandler<CoreWebView2DownloadStartingEventArgs> DownloadStarting;
 
+        internal BrowserScriptDialogSession PendingScriptDialog
+        {
+            get { return _pendingScriptDialog; }
+        }
+
+        internal void ClearScriptDialogIf(BrowserScriptDialogSession session)
+        {
+            if (ReferenceEquals(_pendingScriptDialog, session))
+            {
+                _pendingScriptDialog = null;
+            }
+        }
+
         public async Task EnsureCoreAsync(CoreWebView2Environment env)
         {
             if (_disposed)
@@ -151,7 +166,16 @@ namespace WordAddIn1.BrowserHost
 
             core.Settings.AreDefaultContextMenusEnabled = true;
             core.Settings.AreDevToolsEnabled = false;
+            core.Settings.AreDefaultScriptDialogsEnabled = false;
             ApplyChromeUserAgent(core);
+
+            if (_scriptDialogHandler == null)
+            {
+                _scriptDialogHandler = OnScriptDialogOpening;
+            }
+
+            core.ScriptDialogOpening -= _scriptDialogHandler;
+            core.ScriptDialogOpening += _scriptDialogHandler;
 
             core.SourceChanged += OnSourceChanged;
             core.DocumentTitleChanged += OnDocumentTitleChanged;
@@ -326,6 +350,7 @@ namespace WordAddIn1.BrowserHost
             }
 
             _disposed = true;
+            DismissPendingScriptDialog();
             try
             {
                 CoreWebView2 core = Core;
@@ -339,6 +364,11 @@ namespace WordAddIn1.BrowserHost
                     if (_downloadStartingHandler != null)
                     {
                         core.DownloadStarting -= _downloadStartingHandler;
+                    }
+
+                    if (_scriptDialogHandler != null)
+                    {
+                        core.ScriptDialogOpening -= _scriptDialogHandler;
                     }
                 }
             }
@@ -417,6 +447,106 @@ namespace WordAddIn1.BrowserHost
             if (handler != null)
             {
                 handler(this, EventArgs.Empty);
+            }
+        }
+
+        private void OnScriptDialogOpening(object sender, CoreWebView2ScriptDialogOpeningEventArgs e)
+        {
+            CoreWebView2Deferral deferral = null;
+            try
+            {
+                deferral = e.GetDeferral();
+                if (_pendingScriptDialog != null && _pendingScriptDialog.IsPending)
+                {
+                    deferral.Complete();
+                    deferral = null;
+                    return;
+                }
+
+                BrowserScriptDialogKind kind = MapScriptDialogKind(e.Kind);
+                string message = e.Message ?? "";
+                string initial = kind == BrowserScriptDialogKind.Prompt ? (e.DefaultText ?? "") : "";
+                CoreWebView2Deferral held = deferral;
+                CoreWebView2ScriptDialogOpeningEventArgs args = e;
+                _pendingScriptDialog = BrowserScriptDialogSession.Create(
+                    kind,
+                    message,
+                    initial,
+                    text =>
+                    {
+                        args.ResultText = text ?? "";
+                        args.Accept();
+                    },
+                    () => held.Complete());
+                deferral = null;
+            }
+            catch
+            {
+                try
+                {
+                    if (deferral != null)
+                    {
+                        deferral.Complete();
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private void DismissPendingScriptDialog()
+        {
+            BrowserScriptDialogSession pending = _pendingScriptDialog;
+            if (pending == null || !pending.IsPending)
+            {
+                return;
+            }
+
+            Action act = () =>
+            {
+                pending.Dismiss();
+                if (ReferenceEquals(_pendingScriptDialog, pending))
+                {
+                    _pendingScriptDialog = null;
+                }
+            };
+
+            try
+            {
+                if (WebView != null && !WebView.IsDisposed && WebView.InvokeRequired)
+                {
+                    WebView.Invoke(act);
+                }
+                else
+                {
+                    act();
+                }
+            }
+            catch
+            {
+                try
+                {
+                    pending.Dismiss();
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private static BrowserScriptDialogKind MapScriptDialogKind(CoreWebView2ScriptDialogKind kind)
+        {
+            switch (kind)
+            {
+                case CoreWebView2ScriptDialogKind.Alert:
+                    return BrowserScriptDialogKind.Alert;
+                case CoreWebView2ScriptDialogKind.Prompt:
+                    return BrowserScriptDialogKind.Prompt;
+                case CoreWebView2ScriptDialogKind.Beforeunload:
+                    return BrowserScriptDialogKind.Beforeunload;
+                default:
+                    return BrowserScriptDialogKind.Confirm;
             }
         }
 

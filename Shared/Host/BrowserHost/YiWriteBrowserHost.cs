@@ -518,6 +518,13 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
+            YiWriteBrowserPage dialogPage = form.TryGetPage(channel.TabUuid);
+            BrowserScriptDialogSession pendingDialog = dialogPage != null ? dialogPage.PendingScriptDialog : null;
+            if (pendingDialog != null && pendingDialog.IsPending)
+            {
+                return PublishScriptDialogSnapshot(channel, form, pendingDialog);
+            }
+
             bool isDetail = !string.IsNullOrWhiteSpace(refId);
             BrowserRefEntry prior = null;
             if (isDetail)
@@ -913,6 +920,21 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
+                YiWriteBrowserPage dialogPage = form.TryGetPage(channel.TabUuid);
+                BrowserScriptDialogSession pendingDialog = dialogPage != null ? dialogPage.PendingScriptDialog : null;
+                if (pendingDialog != null && pendingDialog.IsPending)
+                {
+                    return await InteractScriptDialogAsync(
+                            channel,
+                            form,
+                            dialogPage,
+                            pendingDialog,
+                            act,
+                            refId,
+                            text)
+                        .ConfigureAwait(true);
+                }
+
                 BrowserRefEntry entry = null;
                 bool needRef = act == "click" || act == "hover" || act == "type" || act == "select"
                     || (act == "scroll" && !string.IsNullOrWhiteSpace(refId))
@@ -1149,6 +1171,77 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
+        private static BrowserSnapshotResult PublishScriptDialogSnapshot(
+            BrowserChannel channel,
+            YiWriteBrowserForm form,
+            BrowserScriptDialogSession session)
+        {
+            BrowserScriptDialogView view = BrowserScriptDialog.Render(session);
+            BrowserRefStore.Replace(channel.ChannelId, view.Refs);
+            try
+            {
+                channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, channel.Visible);
+            }
+            catch
+            {
+            }
+
+            return BrowserSnapshotResult.Ok(
+                channel,
+                form.CurrentUrl,
+                form.CurrentTitle,
+                "overview",
+                null,
+                view.TreeText,
+                false,
+                null,
+                null);
+        }
+
+        private static async Task<BrowserInteractResult> InteractScriptDialogAsync(
+            BrowserChannel channel,
+            YiWriteBrowserForm form,
+            YiWriteBrowserPage page,
+            BrowserScriptDialogSession session,
+            string action,
+            string refId,
+            string text)
+        {
+            BrowserScriptDialogStep step = BrowserScriptDialog.Apply(
+                session,
+                channel.ChannelId,
+                action,
+                refId,
+                text,
+                out string error);
+            if (step == BrowserScriptDialogStep.Reject || step == BrowserScriptDialogStep.NotPending)
+            {
+                return BrowserInteractResult.Fail(error ?? BrowserScriptDialog.MustHandleFirst);
+            }
+
+            if (step == BrowserScriptDialogStep.Accept || step == BrowserScriptDialogStep.Dismiss)
+            {
+                await form.RunOnUiAsync(() =>
+                {
+                    BrowserScriptDialog.Commit(session, step);
+                    if (page != null)
+                    {
+                        page.ClearScriptDialogIf(session);
+                    }
+
+                    return Task.FromResult(0);
+                }).ConfigureAwait(true);
+            }
+
+            return await BrowserResnapshotAfterAction
+                .CompleteInteractAsync(
+                    channel,
+                    action,
+                    string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
+                    BrowserResnapshotLayer.Shell())
+                .ConfigureAwait(true);
+        }
+
         public static async Task<BrowserDownloadResult> DownloadAsync(
             BrowserChannel channel,
             string refId,
@@ -1202,6 +1295,13 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
+                YiWriteBrowserPage dialogPage = form.TryGetPage(channel.TabUuid);
+                BrowserScriptDialogSession pendingDialog = dialogPage != null ? dialogPage.PendingScriptDialog : null;
+                if (pendingDialog != null && pendingDialog.IsPending)
+                {
+                    return BrowserDownloadResult.Fail(BrowserScriptDialog.MustHandleFirst);
+                }
+
                 BrowserDownloadFileResult file;
                 BrowserResnapshotLayer layer = BrowserResnapshotLayer.Shell();
 

@@ -26,6 +26,11 @@ namespace BrowserNavigateTest
                 return RepeatCollapseCases.Run(caseFilter);
             }
 
+            if (caseFilter.StartsWith("script-dialog", StringComparison.OrdinalIgnoreCase))
+            {
+                return ScriptDialogCases.Run(caseFilter);
+            }
+
             bool runRpt = caseFilter.StartsWith("rpt-", StringComparison.OrdinalIgnoreCase);
             bool runShot = caseFilter.StartsWith("shot-", StringComparison.OrdinalIgnoreCase);
             bool runDl = caseFilter.StartsWith("dl-", StringComparison.OrdinalIgnoreCase);
