@@ -1641,6 +1641,194 @@ namespace WordDocumentRoundtripTest
             return ok;
         }
 
+        /// <summary>
+        /// 遍历宿主 ListGalleries 各模板/级别，收集 COM ListString（去重）。不 Quit。
+        /// </summary>
+        public List<string> ScanListGalleryMarks()
+        {
+            var seen = new SortedSet<string>(StringComparer.Ordinal);
+            string path = NewDocxPath();
+            ToolResult opened = Open(path, true, App);
+            if (opened == null || !opened.Success)
+            {
+                Console.WriteLine("ScanListGalleryMarks 开稿失败 " + (opened == null ? "" : opened.Error));
+                return new List<string>();
+            }
+
+            try
+            {
+                bool ok = IsWps
+                    ? WithWpsDoc(path, doc =>
+                    {
+                        object range = ParagraphRangeLate(doc, 1);
+                        if (range == null)
+                        {
+                            return false;
+                        }
+
+                        SetProp(range, "Text", "x\r");
+                        object app = GetProp(doc, "Application");
+                        object galleries = GetProp(app, "ListGalleries");
+                        for (int g = 1; g <= 3; g++)
+                        {
+                            object gal;
+                            try
+                            {
+                                gal = Invoke(galleries, "Item", g);
+                            }
+                            catch
+                            {
+                                continue;
+                            }
+
+                            object templates = GetProp(gal, "ListTemplates");
+                            int nt = 0;
+                            try
+                            {
+                                nt = Convert.ToInt32(GetProp(templates, "Count"));
+                            }
+                            catch
+                            {
+                                nt = 7;
+                            }
+
+                            for (int t = 1; t <= nt; t++)
+                            {
+                                try
+                                {
+                                    object lt = Invoke(templates, "Item", t);
+                                    object lf = GetProp(range, "ListFormat");
+                                    Invoke(lf, "ApplyListTemplate", lt);
+                                    CollectListString(lf, seen);
+                                    for (int lv = 1; lv <= 9; lv++)
+                                    {
+                                        try
+                                        {
+                                            SetProp(lf, "ListLevelNumber", lv);
+                                            CollectListString(lf, seen);
+                                        }
+                                        catch
+                                        {
+                                        }
+                                    }
+
+                                    try
+                                    {
+                                        Invoke(lf, "RemoveNumbers");
+                                    }
+                                    catch
+                                    {
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine("  gallery=" + g + " tmpl=" + t + " " + ex.Message);
+                                }
+                            }
+                        }
+
+                        return true;
+                    })
+                    : WithWordDoc(path, doc =>
+                    {
+                        Word.Range range = doc.Paragraphs[1].Range;
+                        range.Text = "x\r";
+                        Word.Application app = doc.Application;
+                        for (int g = 1; g <= 3; g++)
+                        {
+                            Word.ListGallery gal = app.ListGalleries[(Word.WdListGalleryType)g];
+                            int nt = gal.ListTemplates.Count;
+                            for (int t = 1; t <= nt; t++)
+                            {
+                                try
+                                {
+                                    Word.ListTemplate lt = gal.ListTemplates[t];
+                                    Word.ListFormat lf = range.ListFormat;
+                                    lf.ApplyListTemplate(lt);
+                                    CollectListString(lf, seen);
+                                    for (int lv = 1; lv <= 9; lv++)
+                                    {
+                                        try
+                                        {
+                                            lf.ListLevelNumber = lv;
+                                            CollectListString(lf, seen);
+                                        }
+                                        catch
+                                        {
+                                        }
+                                    }
+
+                                    try
+                                    {
+                                        lf.RemoveNumbers();
+                                    }
+                                    catch
+                                    {
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine("  gallery=" + g + " tmpl=" + t + " " + ex.Message);
+                                }
+                            }
+                        }
+
+                        return true;
+                    });
+                if (!ok)
+                {
+                    Console.WriteLine("ScanListGalleryMarks COM 失败");
+                }
+            }
+            finally
+            {
+                CloseDocByPath(path);
+            }
+
+            return new List<string>(seen);
+        }
+
+        private static void CollectListString(object listFormat, ISet<string> seen)
+        {
+            if (listFormat == null || seen == null)
+            {
+                return;
+            }
+
+            try
+            {
+                string ls = Convert.ToString(GetProp(listFormat, "ListString")) ?? "";
+                ls = ls.Trim();
+                if (ls.Length > 0)
+                {
+                    seen.Add(ls);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static void CollectListString(Word.ListFormat listFormat, ISet<string> seen)
+        {
+            if (listFormat == null || seen == null)
+            {
+                return;
+            }
+
+            try
+            {
+                string ls = (listFormat.ListString ?? "").Trim();
+                if (ls.Length > 0)
+                {
+                    seen.Add(ls);
+                }
+            }
+            catch
+            {
+            }
+        }
+
         public bool CloseDocByPath(string fullPath)
         {
             bool closed = IsWps ? CloseWpsByPath(fullPath) : CloseWordByPath(fullPath);

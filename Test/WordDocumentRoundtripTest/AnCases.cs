@@ -1412,6 +1412,42 @@ namespace WordDocumentRoundtripTest
             return string.Join(",", Codes(p.Body, prefix).ToArray());
         }
 
+        /// <summary>
+        /// display 对内以任意宿主 ListString 为前缀、后面跟 COM 存文即算编号句。
+        /// 不依赖 1. / 1、 / • 某一种写法；对不上也不把全文 S_ 交出去。
+        /// </summary>
+        private static bool NumberedDisplayMatchesWant(string inner, HashSet<string> want)
+        {
+            if (want == null || want.Count == 0)
+            {
+                return false;
+            }
+
+            string core = Strip(inner);
+            if (core.Length == 0)
+            {
+                return false;
+            }
+
+            if (want.Contains(core))
+            {
+                return true;
+            }
+
+            foreach (string w in want)
+            {
+                if (!string.IsNullOrEmpty(w)
+                    && core.Length > w.Length
+                    && core.EndsWith(w, StringComparison.Ordinal)
+                    && core.Substring(0, core.Length - w.Length).Trim().Length > 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static string JoinNumberedS(Plant p)
         {
             var want = new HashSet<string>(StringComparer.Ordinal);
@@ -1435,16 +1471,21 @@ namespace WordDocumentRoundtripTest
                 }
 
                 string inner = Strip(StripInTable(m.Groups[3].Value));
-                string storyish = Regex.Replace(inner, @"^\d+\.\s+", "");
-                storyish = Regex.Replace(storyish, @"^[•·●○▪◦\uF000-\uF0FF]\s*", "");
-                string core = Strip(storyish);
-                if (core.Length > 0 && want.Contains(core))
+                if (NumberedDisplayMatchesWant(inner, want))
                 {
                     codes.Add("S_" + m.Groups[2].Value);
                 }
             }
 
-            return codes.Count > 0 ? string.Join(",", codes.ToArray()) : JoinCodes(p, "S");
+            if (codes.Count == 0)
+            {
+                Console.WriteLine("[JoinNumberedS] unmatched want=["
+                    + string.Join("|", want)
+                    + "] 不退化成全文 S_");
+                return "";
+            }
+
+            return string.Join(",", codes.ToArray());
         }
 
         private static string TableId(string body)

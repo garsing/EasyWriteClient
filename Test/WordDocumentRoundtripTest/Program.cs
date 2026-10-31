@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using WordAddIn1;
 
@@ -252,6 +253,41 @@ namespace WordDocumentRoundtripTest
                 }
 
                 return WuCases.RunParaVacuumOp(host);
+            }
+
+            if (string.Equals(caseFilter, "an-scan-liststring", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("遍历宿主 ListGalleries，打印 COM ListString");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                var scan = new WdSession(host);
+                WdSession.SweepBeforeRun(host);
+                try
+                {
+                    List<string> marks = scan.ScanListGalleryMarks();
+                    Console.WriteLine("UNIQUE_COUNT=" + marks.Count);
+                    foreach (string m in marks)
+                    {
+                        string hex = "";
+                        foreach (char ch in m)
+                        {
+                            hex += ((int)ch).ToString("X4") + " ";
+                        }
+
+                        Console.WriteLine("MARK\t" + m + "\tU+" + hex.Trim());
+                    }
+                }
+                finally
+                {
+                    WdSession.SweepAfterRun(host);
+                }
+
+                return 0;
             }
 
             if (caseFilter.StartsWith("an-", StringComparison.OrdinalIgnoreCase)

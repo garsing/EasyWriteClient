@@ -18,13 +18,28 @@ namespace WordAddIn1.DocumentMapping
 
         private static readonly Regex DecimalDot = new Regex(@"^\d+\.\s?", RegexOptions.Compiled);
         private static readonly Regex DecimalDun = new Regex(@"^\d+\u3001\s?", RegexOptions.Compiled);
+        private static readonly Regex DecimalFwDot = new Regex(@"^\d+\uFF0E\s?", RegexOptions.Compiled);
         private static readonly Regex DecimalCn = new Regex(
             @"^[一二三四五六七八九十百千万零〇两]+\u3001\s?",
             RegexOptions.Compiled);
-        private static readonly Regex LetterDot = new Regex(@"^[A-Za-z]\.\s?", RegexOptions.Compiled);
-        private static readonly Regex LetterParen = new Regex(@"^[A-Za-z]\)\s?", RegexOptions.Compiled);
+        private static readonly Regex DecimalParen = new Regex(@"^\d+[\)\uFF09]\s?", RegexOptions.Compiled);
+        private static readonly Regex DecimalWrap = new Regex(
+            @"^[\(\uFF08]\d+[\)\uFF09]\s?",
+            RegexOptions.Compiled);
+        private static readonly Regex LetterDot = new Regex(@"^[A-Za-z][\.\uFF0E]\s?", RegexOptions.Compiled);
+        private static readonly Regex LetterParen = new Regex(@"^[A-Za-z][\)\uFF09]\s?", RegexOptions.Compiled);
+        private static readonly Regex LetterWrap = new Regex(
+            @"^[\(\uFF08][A-Za-z][\)\uFF09]\s?",
+            RegexOptions.Compiled);
+        private static readonly Regex CnWrap = new Regex(
+            @"^[\(\uFF08][一二三四五六七八九十百千万零〇两]+[\)\uFF09]\s?",
+            RegexOptions.Compiled);
+        private static readonly Regex Circled = new Regex(@"^[\u2460-\u2473\u2474-\u2487]\s?", RegexOptions.Compiled);
+        private static readonly Regex Article = new Regex(
+            @"^(?:第.{1,8}[条章节]|节\s+\d+(?:\.\d+)*)\s?",
+            RegexOptions.Compiled);
         private static readonly Regex Bullet = new Regex(
-            @"^[\u2022\u00B7\u25E6\u25AA\u25AB\u25CB\u25CF\uF0B7o]\s?",
+            @"^[\u2022\u00B7\u25E6\u25AA\u25AB\u25CB\u25CF\uF000-\uF0FFo]\s?",
             RegexOptions.Compiled);
 
         public static string MakeTag(string mark)
@@ -266,8 +281,14 @@ namespace WordAddIn1.DocumentMapping
         private enum Kind
         {
             DecimalDot,
+            DecimalParen,
+            DecimalWrap,
             LetterDot,
             LetterParen,
+            LetterWrap,
+            CnWrap,
+            Circled,
+            Article,
             Bullet,
             Exact
         }
@@ -291,21 +312,50 @@ namespace WordAddIn1.DocumentMapping
         private static Kind Classify(string mark)
         {
             string s = (mark ?? "").Trim();
-            if (Regex.IsMatch(s, @"^\d+\.$")
-                || Regex.IsMatch(s, @"^\d+\u3001$")
+            if (Regex.IsMatch(s, @"^\d+[\.\u3001\uFF0E]$")
                 || Regex.IsMatch(s, @"^[一二三四五六七八九十百千万零〇两]+\u3001$"))
             {
                 return Kind.DecimalDot;
             }
 
-            if (Regex.IsMatch(s, @"^[A-Za-z]\.$"))
+            if (Regex.IsMatch(s, @"^\d+[\)\uFF09]$"))
+            {
+                return Kind.DecimalParen;
+            }
+
+            if (Regex.IsMatch(s, @"^[\(\uFF08]\d+[\)\uFF09]$"))
+            {
+                return Kind.DecimalWrap;
+            }
+
+            if (Regex.IsMatch(s, @"^[\(\uFF08][A-Za-z][\)\uFF09]$"))
+            {
+                return Kind.LetterWrap;
+            }
+
+            if (Regex.IsMatch(s, @"^[A-Za-z][\.\uFF0E]$"))
             {
                 return Kind.LetterDot;
             }
 
-            if (Regex.IsMatch(s, @"^[A-Za-z]\)$"))
+            if (Regex.IsMatch(s, @"^[A-Za-z][\)\uFF09]$"))
             {
                 return Kind.LetterParen;
+            }
+
+            if (Regex.IsMatch(s, @"^[\(\uFF08][一二三四五六七八九十百千万零〇两]+[\)\uFF09]$"))
+            {
+                return Kind.CnWrap;
+            }
+
+            if (Regex.IsMatch(s, @"^[\u2460-\u2473\u2474-\u2487]$"))
+            {
+                return Kind.Circled;
+            }
+
+            if (Article.IsMatch(s))
+            {
+                return Kind.Article;
             }
 
             if (Bullet.IsMatch(s) || (s.Length == 1 && !char.IsLetterOrDigit(s[0])))
@@ -335,10 +385,25 @@ namespace WordAddIn1.DocumentMapping
                     return DecimalDun.Replace(seg, "", 1);
                 }
 
+                if (DecimalFwDot.IsMatch(seg))
+                {
+                    return DecimalFwDot.Replace(seg, "", 1);
+                }
+
                 if (DecimalCn.IsMatch(seg))
                 {
                     return DecimalCn.Replace(seg, "", 1);
                 }
+            }
+
+            if (kinds.Contains(Kind.DecimalParen) && DecimalParen.IsMatch(seg))
+            {
+                return DecimalParen.Replace(seg, "", 1);
+            }
+
+            if (kinds.Contains(Kind.DecimalWrap) && DecimalWrap.IsMatch(seg))
+            {
+                return DecimalWrap.Replace(seg, "", 1);
             }
 
             if (kinds.Contains(Kind.LetterDot) && LetterDot.IsMatch(seg))
@@ -349,6 +414,26 @@ namespace WordAddIn1.DocumentMapping
             if (kinds.Contains(Kind.LetterParen) && LetterParen.IsMatch(seg))
             {
                 return LetterParen.Replace(seg, "", 1);
+            }
+
+            if (kinds.Contains(Kind.LetterWrap) && LetterWrap.IsMatch(seg))
+            {
+                return LetterWrap.Replace(seg, "", 1);
+            }
+
+            if (kinds.Contains(Kind.CnWrap) && CnWrap.IsMatch(seg))
+            {
+                return CnWrap.Replace(seg, "", 1);
+            }
+
+            if (kinds.Contains(Kind.Circled) && Circled.IsMatch(seg))
+            {
+                return Circled.Replace(seg, "", 1);
+            }
+
+            if (kinds.Contains(Kind.Article) && Article.IsMatch(seg))
+            {
+                return Article.Replace(seg, "", 1);
             }
 
             if (kinds.Contains(Kind.Bullet) && Bullet.IsMatch(seg))

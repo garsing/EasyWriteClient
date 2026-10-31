@@ -99,7 +99,8 @@ namespace WordAddIn1
                 written = WordBreakWriteHelper.WriteTextWithBreaks(doc, target, story);
             }
 
-            Dbg("WriteReplace written " + RangeBrief(written));
+            Dbg("WriteReplace written " + RangeBrief(written)
+                + " lists=" + ListsBrief(written));
             return written;
         }
 
@@ -115,7 +116,8 @@ namespace WordAddIn1
                 + " story=" + Snip(story)
                 + " " + RangeBrief(insertAt));
             Word.Range written = WordBreakWriteHelper.WriteTextWithBreaks(doc, insertAt, story);
-            Dbg("WriteInsert written " + RangeBrief(written));
+            Dbg("WriteInsert written " + RangeBrief(written)
+                + " lists=" + ListsBrief(written));
             return written;
         }
 
@@ -180,9 +182,12 @@ namespace WordAddIn1
 
                     si++;
                 }
+
+                Dbg("ClearExtra done lists=" + ListsBrief(written));
             }
-            catch
+            catch (Exception ex)
             {
+                Dbg("ClearExtra err=" + ex.Message);
             }
         }
 
@@ -252,13 +257,48 @@ namespace WordAddIn1
 
                 Word.Range synth = doc.Range(start, end);
                 Dbg("TryFindReplace synth start=" + start + " end=" + end
-                    + " synthText=" + Snip(SafeText(synth)));
+                    + " synthText=" + Snip(SafeText(synth))
+                    + " lists=" + ListsBrief(synth));
                 return synth;
             }
             catch (Exception ex)
             {
                 Dbg("TryFindReplace err=" + ex.Message);
                 return null;
+            }
+        }
+
+        private static string ListsBrief(Word.Range range)
+        {
+            if (range == null)
+            {
+                return "(null)";
+            }
+
+            try
+            {
+                Word.Document doc = range.Document;
+                int start = range.Start;
+                int end = range.End;
+                var parts = new List<string>();
+                for (int i = 1; i <= doc.Paragraphs.Count; i++)
+                {
+                    Word.Paragraph p = doc.Paragraphs[i];
+                    Word.Range pr = p.Range;
+                    if (pr.End <= start || pr.Start >= end)
+                    {
+                        continue;
+                    }
+
+                    string ls = ListStringOf(p);
+                    parts.Add("p" + i + "[\"" + (ls ?? "") + "\"]" + Snip(SafeText(pr)));
+                }
+
+                return parts.Count == 0 ? "(none)" : string.Join(";", parts);
+            }
+            catch (Exception ex)
+            {
+                return "lists-err=" + ex.Message;
             }
         }
 
