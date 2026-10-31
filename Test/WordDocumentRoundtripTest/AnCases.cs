@@ -11,7 +11,7 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static class AnCases
     {
-        public const int Target = 77;
+        public const int Target = 127;
 
         public static string IdFilter;
 
@@ -39,6 +39,7 @@ namespace WordDocumentRoundtripTest
                 RunInsert(run, s);
                 RunD39(run, s);
                 RunReread(run, s);
+                RunMore(run, s);
                 RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
             }
             finally
@@ -823,6 +824,386 @@ namespace WordDocumentRoundtripTest
             }
         }
 
+        private static void RunMore(TestRun run, WdSession s)
+        {
+            ReadDecimal(run, s, "an-read-decimal-1", 1);
+            ReadDecimal(run, s, "an-read-decimal-4", 4);
+            ReadDecimal(run, s, "an-read-decimal-6", 6);
+            ReadBullet(run, s, "an-read-bullet-1", 1);
+            ReadBullet(run, s, "an-read-bullet-4", 4);
+
+            Plant p;
+            if (TryPlant(run, s, "plain\ronly\r", null, out p, "an-read-plain-only"))
+            {
+                Ok(run, "an-read-plain-only",
+                    NoTags(p.Body) && !AnyNumbered(p) && !HasDecimalPrefix(FirstInner(p.Body, "S")),
+                    Snip(p.Body));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "lead\rx\ry\r", (ss, path) => ss.ApplyNumberDefault(path, 2, 3),
+                out p, "an-read-lead-plain"))
+            {
+                Ok(run, "an-read-lead-plain",
+                    NoTags(p.Body)
+                    && !HasDecimalPrefix(InnerOfStory(p, "lead"))
+                    && HasDecimalPrefix(InnerOfStory(p, "x")),
+                    Snip(p.Body));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "第一条。\r第二条。\r", (ss, path) => ss.ApplyNumberDefault(path, 1, 2),
+                out p, "an-read-cn-body"))
+            {
+                Ok(run, "an-read-cn-body",
+                    NoTags(p.Body)
+                    && HasDecimalPrefix(InnerOfStory(p, "第一条"))
+                    && StoryHas(p, "第一条")
+                    && !HasDecimalPrefix(ParaOfStory(p, "第一条").Story ?? ""),
+                    Snip(p.Body));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "a\rb\rhello\r", (ss, path) => ss.ApplyNumberDefault(path, 1, 2),
+                out p, "an-read-two-num-plain"))
+            {
+                Ok(run, "an-read-two-num-plain",
+                    NoTags(p.Body)
+                    && HasDecimalPrefix(InnerOfStory(p, "a"))
+                    && !HasDecimalPrefix(InnerOfStory(p, "hello"))
+                    && !ParaOfStory(p, "hello").Numbered,
+                    Snip(p.Body));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, JoinN(2), (ss, path) => ss.ApplyBulletDefault(path, 1, 2),
+                out p, "an-read-para-bullet"))
+            {
+                ToolResult paraGot = s.GetContent(p.Id, "paragraph");
+                string paraBody = paraGot.Success ? WdSession.Str(paraGot, "document_content") : "";
+                Ok(run, "an-read-para-bullet",
+                    paraGot.Success && NoTags(paraBody)
+                    && Codes(paraBody, "P").Count >= 2
+                    && (HasBulletPrefix(FirstInner(paraBody, "P")) || HasAutoPrefix(FirstInner(paraBody, "P"))),
+                    Snip(paraBody));
+                s.CloseDocByPath(p.Path);
+            }
+
+            MergeSame(run, s, "an-merge-four", 4, true, true);
+
+            if (TryPlant(run, s, "同句。\r同句。\r", (ss, path) => ss.ApplyBulletDefault(path, 1, 2),
+                out p, "an-merge-bullet-two"))
+            {
+                string joined = string.Join("\n", Inners(p.Body, "S"));
+                Ok(run, "an-merge-bullet-two",
+                    NoTags(p.Body) && CountNumbered(p) >= 2
+                    && (HasBulletPrefix(joined) || HasAutoPrefix(joined)),
+                    Snip(p.Body));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "同句。\r同句。\r", null, out p, "an-merge-plain-two"))
+            {
+                Ok(run, "an-merge-plain-two",
+                    NoTags(p.Body) && !AnyNumbered(p)
+                    && p.Body.IndexOf("同句。", StringComparison.Ordinal) >= 0,
+                    Snip(p.Body));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "第一条。\r第一条。\r", (ss, path) => ss.ApplyNumberDefault(path, 1, 2),
+                out p, "an-merge-two-para"))
+            {
+                ToolResult paraGot = s.GetContent(p.Id, "paragraph");
+                string paraBody = paraGot.Success ? WdSession.Str(paraGot, "document_content") : "";
+                Ok(run, "an-merge-two-para",
+                    paraGot.Success && NoTags(paraBody)
+                    && Codes(paraBody, "P").Count >= 2
+                    && HasDecimalPrefix(string.Join("\n", Inners(paraBody, "P"))),
+                    Snip(paraBody));
+                s.CloseDocByPath(p.Path);
+            }
+
+            RepNum(run, s, "an-rep-copy-4", JoinN(4), 4, "1. w\r2. x\r3. y\r4. z",
+                WantNum(true, true, true, true), "w", "x", "y", "z");
+            RepNum(run, s, "an-rep-copy-5", JoinN(5), 5, "1. a\r2. b\r3. c\r4. d\r5. e",
+                WantNum(true, true, true, true, true), "a", "b", "c", "d", "e");
+            RepNth(run, s, "an-rep-first-only", 3, 0, "1. first", true, "first");
+            RepNum(run, s, "an-rep-copy-cn", "甲。\r乙。\r", 2, "1. 丙。\r2. 丁。",
+                WantNum(true, true), "丙", "丁");
+
+            if (TryPlant(run, s, "a\r", (ss, path) => ss.ApplyBulletDefault(path, 1, 1),
+                out p, "an-rep-bullet-one"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "• p"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-rep-bullet-one",
+                    wr.Success && after.Count >= 1 && after[0].Numbered && Strip(after[0].Story) == "p",
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "a\rb\rc\rhello\r", (ss, path) => ss.ApplyNumberDefault(path, 1, 3),
+                out p, "an-rep-trailing-cr-3"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "1. x\r2. y\r3. z\r"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-rep-trailing-cr-3",
+                    wr.Success && after[0].Numbered && after[1].Numbered && after[2].Numbered
+                    && PlainStay(after, "hello"),
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "a\rb\rkeep\r", (ss, path) => ss.ApplyNumberDefault(path, 1, 2),
+                out p, "an-rep-keep-tail"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "1. c\r2. d"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-rep-keep-tail",
+                    wr.Success && after[0].Numbered && after[1].Numbered
+                    && Strip(after[0].Story) == "c" && Strip(after[1].Story) == "d"
+                    && PlainStay(after, "keep"),
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "a\rb\rc\rkeep\r", (ss, path) => ss.ApplyNumberDefault(path, 1, 3),
+                out p, "an-rep-keep-tail-3to2"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "1. x\r2. y"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-rep-keep-tail-3to2",
+                    wr.Success && after[0].Numbered && after[1].Numbered
+                    && Strip(after[0].Story) == "x" && Strip(after[1].Story) == "y"
+                    && PlainStay(after, "keep"),
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            RepNum(run, s, "an-rep-2to5-allnum", JoinN(2), 2,
+                "1. a\r2. b\r3. c\r4. d\r5. e",
+                WantNum(true, true, true, true, true), "a", "b", "c", "d", "e");
+            RepNum(run, s, "an-rep-4to2-allnum", JoinN(4), 4, "1. p\r2. q",
+                WantNum(true, true), "p", "q");
+            RepNum(run, s, "an-rep-3to1", JoinN(3), 3, "1. only", WantNum(true), "only");
+            RepNum(run, s, "an-rep-1to2", "a\r", 1, "1. m\r2. n", WantNum(true, true), "m", "n");
+
+            if (TryPlant(run, s, JoinN(3), (ss, path) => ss.ApplyNumberDefault(path, 1, 3),
+                out p, "an-rep-3to4-last-plain"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "1. u\r2. v\r3. w\rplain"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-rep-3to4-last-plain",
+                    wr.Success && after.Count >= 4
+                    && after[0].Numbered && after[1].Numbered && after[2].Numbered
+                    && !after[3].Numbered && Strip(after[3].Story) == "plain"
+                    && Strip(after[0].Story) == "u",
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            RepNum(run, s, "an-rep-copy-6", JoinN(6), 6,
+                "1. a\r2. b\r3. c\r4. d\r5. e\r6. f",
+                WantNum(true, true, true, true, true, true), "a", "b", "c", "d", "e", "f");
+
+            RepNum(run, s, "an-rep-story-4", JoinN(4), 4, "w\rx\ry\rz",
+                WantNum(false, false, false, false), "w", "x", "y", "z");
+
+            if (TryPlant(run, s, JoinN(2), (ss, path) => ss.ApplyNumberDefault(path, 1, 2),
+                out p, "an-rep-other-wrap"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "(1) c\r2. d"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-rep-other-wrap",
+                    wr.Success && after.Count >= 2 && !after[0].Numbered && after[1].Numbered
+                    && Strip(after[0].Story).IndexOf("(1)", StringComparison.Ordinal) >= 0
+                    && Strip(after[1].Story) == "d",
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "a\r", null, out p, "an-rep-plain-orig-one"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinCodes(p, "S"), "1. c"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-rep-plain-orig-one",
+                    wr.Success && after.Count >= 1 && !after[0].Numbered
+                    && Strip(after[0].Story).IndexOf("1. c", StringComparison.Ordinal) >= 0,
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "a\r", (ss, path) => ss.ApplyBulletDefault(path, 1, 1),
+                out p, "an-rep-bullet-one-story"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "p"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-rep-bullet-one-story",
+                    wr.Success && after.Count >= 1 && !after[0].Numbered && Strip(after[0].Story) == "p",
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "1. aa\r2. bb\r", null, out p, "an-rep-hand-2-keep"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinCodes(p, "S"), "1. cc\r2. dd"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-rep-hand-2-keep",
+                    wr.Success && after.Count >= 2 && !after[0].Numbered && !after[1].Numbered
+                    && Strip(after[0].Story).IndexOf("1. cc", StringComparison.Ordinal) >= 0,
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, JoinN(2), (ss, path) => ss.ApplyNumberDefault(path, 1, 2),
+                out p, "an-rep-mixed-tail-num"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "c\rd\r3. e"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-rep-mixed-tail-num",
+                    wr.Success && after.Count >= 3
+                    && !after[0].Numbered && !after[1].Numbered && after[2].Numbered
+                    && Strip(after[2].Story) == "e",
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            InsAfter(run, s, "an-ins-copy-last", JoinN(2), 2, 1, "2. n", false, "2. n");
+            InsAfter(run, s, "an-ins-glue-x", JoinN(2), 2, 0, "x", true, "x");
+            InsAfter(run, s, "an-ins-two-plain", JoinN(2), 2, 0, "x\ry", null, "x", "y");
+            InsAfter(run, s, "an-ins-hello-cr", JoinN(2), 2, 0, "hello\r", false, "hello");
+            InsAfter(run, s, "an-ins-after-1-two-num", JoinN(2), 2, 0, "1. x\r2. y", null, "x", "y");
+            InsAfter(run, s, "an-ins-copy-between", JoinN(3), 3, 0, "1. n", true, "n");
+
+            if (TryPlant(run, s, JoinN(2), (ss, path) => ss.ApplyNumberDefault(path, 1, 2),
+                out p, "an-ins-start-num"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, InsertStart("1. head"));
+                ParaSnap head = FindStory(ContentParas(s, p.Path), "head");
+                Ok(run, "an-ins-start-num",
+                    wr.Success && head.Story != null && head.Numbered
+                    && Strip(head.Story).IndexOf("head", StringComparison.Ordinal) >= 0,
+                    wr.Success ? Dump(ContentParas(s, p.Path)) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "a\rb\rkeep\r", (ss, path) => ss.ApplyNumberDefault(path, 1, 2),
+                out p, "an-ins-keep-tail"))
+            {
+                List<string> codes = Codes(p.Body, "S");
+                ToolResult wr = s.ProcessActions(p.Id, InsertAfter(codes[0], "1. n"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-ins-keep-tail",
+                    wr.Success && FindStory(after, "n").Numbered && PlainStay(after, "keep"),
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "a\rb\rkeep\rtail\r", (ss, path) => ss.ApplyNumberDefault(path, 1, 2),
+                out p, "an-plain-stay-rep-3"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "1. x\r2. y\r3. z"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-plain-stay-rep-3",
+                    wr.Success && FindStory(after, "z").Numbered && PlainStay(after, "keep", "tail"),
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "a\rb\rkeep\r", (ss, path) => ss.ApplyBulletDefault(path, 1, 2),
+                out p, "an-plain-stay-bullet"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "• p\r• q"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-plain-stay-bullet",
+                    wr.Success && after[0].Numbered && after[1].Numbered && PlainStay(after, "keep"),
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "a\rkeep\rb\r", (ss, path) =>
+                ss.ApplyNumberDefault(path, 1, 1) && ss.ApplyNumberDefault(path, 3, 3),
+                out p, "an-plain-mid-rep"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(CodeOfInner(p.Body, "a"), "1. x"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-plain-mid-rep",
+                    wr.Success && FindStory(after, "x").Numbered
+                    && FindStory(after, "b").Numbered && PlainStay(after, "keep"),
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "a\rb\rkeep\r", (ss, path) => ss.ApplyNumberDefault(path, 1, 2),
+                out p, "an-plain-stay-2to3"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "1. x\r2. y\r3. z"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-plain-stay-2to3",
+                    wr.Success && FindStory(after, "z").Numbered && PlainStay(after, "keep"),
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "a\rb\rc\rd\r", (ss, path) => ss.ApplyNumberDefault(path, 1, 4),
+                out p, "an-shift-ok-rep-4"))
+            {
+                List<string> codes = Codes(p.Body, "S");
+                string firstTwo = codes.Count >= 2 ? codes[0] + "," + codes[1] : JoinNumberedS(p);
+                ToolResult wr = s.ProcessActions(p.Id, Replace(firstTwo, "1. x\r2. y\r3. z"));
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-shift-ok-rep-4",
+                    wr.Success && FindStory(after, "c").Numbered && FindStory(after, "d").Numbered
+                    && Strip(FindStory(after, "c").Story) == "c",
+                    wr.Success ? Dump(after) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, JoinN(3), (ss, path) => ss.ApplyNumberDefault(path, 1, 3),
+                out p, "an-reread-copy-3"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "1. x\r2. y\r3. z"));
+                ToolResult got = s.GetContent(p.Id);
+                string body = got.Success ? WdSession.Str(got, "document_content") : "";
+                Ok(run, "an-reread-copy-3",
+                    wr.Success && got.Success && NoTags(body)
+                    && HasDecimalPrefix(InnerContaining(body, "x"))
+                    && HasDecimalPrefix(InnerContaining(body, "z")),
+                    wr.Success ? Snip(body) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, "a\rb\rkeep\r", (ss, path) => ss.ApplyNumberDefault(path, 1, 2),
+                out p, "an-reread-keep-tail"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "1. c\r2. d"));
+                ToolResult got = s.GetContent(p.Id);
+                string body = got.Success ? WdSession.Str(got, "document_content") : "";
+                List<ParaSnap> after = ContentParas(s, p.Path);
+                Ok(run, "an-reread-keep-tail",
+                    wr.Success && got.Success && NoTags(body)
+                    && HasDecimalPrefix(InnerContaining(body, "c"))
+                    && !HasDecimalPrefix(InnerContaining(body, "keep"))
+                    && PlainStay(after, "keep"),
+                    wr.Success ? Snip(body) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+
+            if (TryPlant(run, s, JoinN(2), (ss, path) => ss.ApplyBulletDefault(path, 1, 2),
+                out p, "an-reread-bullet"))
+            {
+                ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "• p\r• q"));
+                ToolResult got = s.GetContent(p.Id);
+                string body = got.Success ? WdSession.Str(got, "document_content") : "";
+                Ok(run, "an-reread-bullet",
+                    wr.Success && got.Success && NoTags(body)
+                    && (HasBulletPrefix(InnerContaining(body, "p")) || HasAutoPrefix(InnerContaining(body, "p"))),
+                    wr.Success ? Snip(body) : (wr.Error ?? ""));
+                s.CloseDocByPath(p.Path);
+            }
+        }
+
         private static void RunNoQuit(
             TestRun run,
             int wordBefore,
@@ -1021,6 +1402,24 @@ namespace WordDocumentRoundtripTest
             else if (id == "an-ins-between-2-3")
             {
                 numOk = FindStory(after, "n").Numbered && FindStory(after, "c").Numbered;
+            }
+            else if (id == "an-ins-glue-x")
+            {
+                ParaSnap glued = FindStory(after, "x");
+                numOk = glued.Story != null
+                    && glued.Numbered
+                    && Strip(glued.Story) == "xb";
+            }
+            else if (id == "an-ins-two-plain")
+            {
+                ParaSnap y = FindStory(after, "y");
+                numOk = !FindStory(after, "x").Numbered
+                    && y.Story != null
+                    && Strip(y.Story) == "yb";
+            }
+            else if (id == "an-ins-after-1-two-num")
+            {
+                numOk = FindStory(after, "x").Numbered && FindStory(after, "y").Numbered;
             }
 
             Ok(run, id, wr.Success && storiesOk && numOk, wr.Success ? Dump(after) : (wr.Error ?? ""));
