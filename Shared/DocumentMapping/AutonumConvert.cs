@@ -17,6 +17,10 @@ namespace WordAddIn1.DocumentMapping
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static readonly Regex DecimalDot = new Regex(@"^\d+\.\s?", RegexOptions.Compiled);
+        private static readonly Regex DecimalDun = new Regex(@"^\d+\u3001\s?", RegexOptions.Compiled);
+        private static readonly Regex DecimalCn = new Regex(
+            @"^[一二三四五六七八九十百千万零〇两]+\u3001\s?",
+            RegexOptions.Compiled);
         private static readonly Regex LetterDot = new Regex(@"^[A-Za-z]\.\s?", RegexOptions.Compiled);
         private static readonly Regex LetterParen = new Regex(@"^[A-Za-z]\)\s?", RegexOptions.Compiled);
         private static readonly Regex Bullet = new Regex(
@@ -287,7 +291,9 @@ namespace WordAddIn1.DocumentMapping
         private static Kind Classify(string mark)
         {
             string s = (mark ?? "").Trim();
-            if (Regex.IsMatch(s, @"^\d+\.$"))
+            if (Regex.IsMatch(s, @"^\d+\.$")
+                || Regex.IsMatch(s, @"^\d+\u3001$")
+                || Regex.IsMatch(s, @"^[一二三四五六七八九十百千万零〇两]+\u3001$"))
             {
                 return Kind.DecimalDot;
             }
@@ -317,9 +323,22 @@ namespace WordAddIn1.DocumentMapping
                 return seg ?? "";
             }
 
-            if (kinds.Contains(Kind.DecimalDot) && DecimalDot.IsMatch(seg))
+            if (kinds.Contains(Kind.DecimalDot))
             {
-                return DecimalDot.Replace(seg, "", 1);
+                if (DecimalDot.IsMatch(seg))
+                {
+                    return DecimalDot.Replace(seg, "", 1);
+                }
+
+                if (DecimalDun.IsMatch(seg))
+                {
+                    return DecimalDun.Replace(seg, "", 1);
+                }
+
+                if (DecimalCn.IsMatch(seg))
+                {
+                    return DecimalCn.Replace(seg, "", 1);
+                }
             }
 
             if (kinds.Contains(Kind.LetterDot) && LetterDot.IsMatch(seg))
@@ -362,6 +381,22 @@ namespace WordAddIn1.DocumentMapping
             }
 
             return seg;
+        }
+
+        public static string DebugDescribeMarks(IList<string> marks)
+        {
+            if (marks == null || marks.Count == 0)
+            {
+                return "(none)";
+            }
+
+            var parts = new List<string>();
+            foreach (string m in marks)
+            {
+                parts.Add("\"" + (m ?? "") + "\"=" + Classify(m));
+            }
+
+            return string.Join(",", parts);
         }
     }
 }

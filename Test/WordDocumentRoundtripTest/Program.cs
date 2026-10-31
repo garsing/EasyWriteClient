@@ -254,6 +254,45 @@ namespace WordDocumentRoundtripTest
                 return WuCases.RunParaVacuumOp(host);
             }
 
+            if (caseFilter.StartsWith("an-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "an", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 读文列表编号进 display（an）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                int wordBeforeAn = OfficeAlive.Count("WINWORD");
+                int wpsBeforeAn = OfficeAlive.Count("wps");
+                bool wordWinBeforeAn = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforeAn = OfficeAlive.HasWindow("wps");
+                WdSession.SweepBeforeRun(host);
+                var anRun = new TestRun { TotalTarget = AnCases.Target };
+                var anSw = Stopwatch.StartNew();
+                try
+                {
+                    AnCases.IdFilter = caseFilter;
+                    AnCases.Run(
+                        anRun, host, wordBeforeAn, wpsBeforeAn, wordWinBeforeAn, wpsWinBeforeAn);
+                }
+                finally
+                {
+                    anSw.Stop();
+                    WdSession.SweepAfterRun(host);
+                }
+
+                Console.WriteLine("正式用例 通过 " + anRun.CasesPassed
+                    + "  失败 " + anRun.CasesFailed
+                    + "  跳过 " + anRun.CasesSkipped
+                    + "  （目标 " + AnCases.Target + "）");
+                Console.WriteLine("ELAPSED_SEC=" + anSw.Elapsed.TotalSeconds.ToString("F1"));
+                return anRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("wu-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wu", StringComparison.OrdinalIgnoreCase))
             {

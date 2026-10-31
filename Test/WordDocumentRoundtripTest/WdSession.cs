@@ -1026,6 +1026,285 @@ namespace WordDocumentRoundtripTest
                 });
         }
 
+        public bool ApplyNumberDefault(string fullPath, int fromPara, int toPara)
+        {
+            return ApplyList(fullPath, fromPara, toPara, false);
+        }
+
+        public bool ApplyBulletDefault(string fullPath, int fromPara, int toPara)
+        {
+            return ApplyList(fullPath, fromPara, toPara, true);
+        }
+
+        public bool NumberFirstTableCell(string fullPath)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object tables = GetProp(doc, "Tables");
+                    if (Convert.ToInt32(GetProp(tables, "Count")) < 1)
+                    {
+                        return false;
+                    }
+
+                    object table = Invoke(tables, "Item", 1);
+                    object cell = Invoke(table, "Cell", 1, 1);
+                    object range = GetProp(cell, "Range");
+                    object lf = GetProp(range, "ListFormat");
+                    Invoke(lf, "ApplyNumberDefault");
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    if (doc.Tables.Count < 1)
+                    {
+                        return false;
+                    }
+
+                    doc.Tables[1].Cell(1, 1).Range.ListFormat.ApplyNumberDefault();
+                    return true;
+                });
+        }
+
+        public bool ClearParaKeepList(string fullPath, int paraIndex)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object range = ParagraphRangeLate(doc, paraIndex);
+                    if (range == null)
+                    {
+                        return false;
+                    }
+
+                    int start = Convert.ToInt32(GetProp(range, "Start"));
+                    int end = Convert.ToInt32(GetProp(range, "End"));
+                    if (end > start + 1)
+                    {
+                        object inner = Invoke(doc, "Range", start, end - 1);
+                        SetProp(inner, "Text", "");
+                    }
+
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    if (paraIndex < 1 || paraIndex > doc.Paragraphs.Count)
+                    {
+                        return false;
+                    }
+
+                    Word.Range range = doc.Paragraphs[paraIndex].Range;
+                    if (range.End > range.Start + 1)
+                    {
+                        doc.Range(range.Start, range.End - 1).Text = "";
+                    }
+
+                    return true;
+                });
+        }
+
+        public bool AppendText(string fullPath, string text)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object content = GetProp(doc, "Content");
+                    Invoke(content, "InsertAfter", text ?? "");
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    doc.Content.InsertAfter(text ?? "");
+                    return true;
+                });
+        }
+
+        public bool TryApplyHeading1(string fullPath, int paraIndex)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object paras = GetProp(doc, "Paragraphs");
+                    object para = Invoke(paras, "Item", paraIndex);
+                    foreach (string name in new[] { "标题 1", "Heading 1" })
+                    {
+                        try
+                        {
+                            SetProp(para, "Style", name);
+                            return true;
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    return false;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    if (paraIndex < 1 || paraIndex > doc.Paragraphs.Count)
+                    {
+                        return false;
+                    }
+
+                    Word.Paragraph para = doc.Paragraphs[paraIndex];
+                    try
+                    {
+                        object style = Word.WdBuiltinStyle.wdStyleHeading1;
+                        para.set_Style(ref style);
+                        return true;
+                    }
+                    catch
+                    {
+                    }
+
+                    foreach (string name in new[] { "标题 1", "Heading 1" })
+                    {
+                        try
+                        {
+                            object style = name;
+                            para.set_Style(ref style);
+                            return true;
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    return false;
+                });
+        }
+
+        public List<string> ParaListStrings(string fullPath)
+        {
+            var list = new List<string>();
+            bool ok = IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object paras = GetProp(doc, "Paragraphs");
+                    int n = Convert.ToInt32(GetProp(paras, "Count"));
+                    for (int i = 1; i <= n; i++)
+                    {
+                        object range = ParagraphRangeLate(doc, i);
+                        string ls = "";
+                        if (range != null)
+                        {
+                            try
+                            {
+                                object lf = GetProp(range, "ListFormat");
+                                ls = Convert.ToString(GetProp(lf, "ListString")) ?? "";
+                            }
+                            catch
+                            {
+                                ls = "";
+                            }
+                        }
+
+                        list.Add(ls);
+                    }
+
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    for (int i = 1; i <= doc.Paragraphs.Count; i++)
+                    {
+                        string ls = "";
+                        try
+                        {
+                            ls = doc.Paragraphs[i].Range.ListFormat.ListString ?? "";
+                        }
+                        catch
+                        {
+                            ls = "";
+                        }
+
+                        list.Add(ls);
+                    }
+
+                    return true;
+                });
+            return ok ? list : new List<string>();
+        }
+
+        public List<string> ParaStories(string fullPath)
+        {
+            var list = new List<string>();
+            bool ok = IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object paras = GetProp(doc, "Paragraphs");
+                    int n = Convert.ToInt32(GetProp(paras, "Count"));
+                    for (int i = 1; i <= n; i++)
+                    {
+                        object range = ParagraphRangeLate(doc, i);
+                        string text = range == null ? "" : (Convert.ToString(GetProp(range, "Text")) ?? "");
+                        list.Add(text);
+                    }
+
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    for (int i = 1; i <= doc.Paragraphs.Count; i++)
+                    {
+                        list.Add(doc.Paragraphs[i].Range.Text ?? "");
+                    }
+
+                    return true;
+                });
+            return ok ? list : new List<string>();
+        }
+
+        private bool ApplyList(string fullPath, int fromPara, int toPara, bool bullet)
+        {
+            if (fromPara < 1 || toPara < fromPara)
+            {
+                return false;
+            }
+
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    for (int i = fromPara; i <= toPara; i++)
+                    {
+                        object range = ParagraphRangeLate(doc, i);
+                        if (range == null)
+                        {
+                            return false;
+                        }
+
+                        object lf = GetProp(range, "ListFormat");
+                        Invoke(lf, bullet ? "ApplyBulletDefault" : "ApplyNumberDefault");
+                    }
+
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    if (toPara > doc.Paragraphs.Count)
+                    {
+                        return false;
+                    }
+
+                    for (int i = fromPara; i <= toPara; i++)
+                    {
+                        Word.ListFormat lf = doc.Paragraphs[i].Range.ListFormat;
+                        if (bullet)
+                        {
+                            lf.ApplyBulletDefault();
+                        }
+                        else
+                        {
+                            lf.ApplyNumberDefault();
+                        }
+                    }
+
+                    return true;
+                });
+        }
+
         public bool InsertPicture(string fullPath)
         {
             string png = WriteOnePxPng();

@@ -1751,6 +1751,12 @@ namespace WordAddIn1
             }
 
             var autonumMarks = AutonumListWriteHelper.TypesFromRange(locate.Range);
+            EasyWriteDiagnostics.Log(
+                DebugCategory.Autonum,
+                "[autonum] ExecuteInsertRuns "
+                + InsertRangeBrief(locate.Range)
+                + " marks=" + AutonumConvert.DebugDescribeMarks(autonumMarks)
+                + " joined=" + TextUtils.EscapeNewlinesForDb(payload.JoinedText ?? ""));
             if (!TryWriteRuns(
                 doc,
                 locate.Range,
@@ -1933,14 +1939,29 @@ namespace WordAddIn1
                 }
 
                 string story = AutonumConvert.StripNewByOriginalTypes(autonumMarks, run.Text);
+                if (!replaceFirst)
+                {
+                    story = AutonumListWriteHelper.EnsureInsertNewPara(writeAt, story);
+                }
+
                 Word.Range written;
                 if (replaceFirst && i == 0 && numberedReplace)
                 {
+                    EasyWriteDiagnostics.Log(
+                        DebugCategory.Autonum,
+                        "[autonum] TryWriteRuns i=0 numbered Find path model="
+                        + TextUtils.EscapeNewlinesForDb(run.Text ?? ""));
                     written = AutonumListWriteHelper.WriteReplace(
                         doc, writeAt, run.Text, autonumMarks, true);
                 }
                 else
                 {
+                    EasyWriteDiagnostics.Log(
+                        DebugCategory.Autonum,
+                        "[autonum] TryWriteRuns i=" + i
+                        + " WriteTextWithBreaks replaceFirst=" + replaceFirst
+                        + " story=" + TextUtils.EscapeNewlinesForDb(story ?? "")
+                        + " writeAt=" + InsertRangeBrief(writeAt));
                     written = WordBreakWriteHelper.WriteTextWithBreaks(doc, writeAt, story);
                 }
 
@@ -2300,6 +2321,14 @@ namespace WordAddIn1
                 bool numbered = AutonumListWriteHelper.RangeHasAutonum(targetRange);
                 string storyText = AutonumConvert.StripNewByOriginalTypes(autonumMarks, replacementText);
                 result.NewSentences = SentenceSplitter.SplitForActionContent(storyText);
+                EasyWriteDiagnostics.Log(
+                    DebugCategory.Autonum,
+                    "[autonum] ExecuteReplace numbered=" + numbered
+                    + " codes=" + sentenceNames
+                    + " marks=" + AutonumConvert.DebugDescribeMarks(autonumMarks)
+                    + " new=" + TextUtils.EscapeNewlinesForDb(replacementText ?? "")
+                    + " story=" + TextUtils.EscapeNewlinesForDb(storyText ?? "")
+                    + " " + InsertRangeBrief(targetRange));
 
                 FormatInheritHelper.DbgLog(
                     numbered
@@ -2514,6 +2543,12 @@ namespace WordAddIn1
 
                 string insertText = insertContentBuilder.ToString();
                 var autonumMarks = AutonumListWriteHelper.TypesFromRange(insertRange);
+                EasyWriteDiagnostics.Log(
+                    DebugCategory.Autonum,
+                    "[autonum] ExecuteInsert "
+                    + InsertRangeBrief(insertRange)
+                    + " marks=" + AutonumConvert.DebugDescribeMarks(autonumMarks)
+                    + " insert=" + TextUtils.EscapeNewlinesForDb(insertText ?? ""));
                 insertRange = AutonumListWriteHelper.WriteInsert(
                     doc, insertRange, insertText, autonumMarks)
                     ?? insertRange;
@@ -2552,6 +2587,31 @@ namespace WordAddIn1
                 result.ErrorMessage = ex.Message;
                 System.Diagnostics.Debug.WriteLine($"[ProcessActions][insert] 插入失败: {ex.Message}");
                 return result;
+            }
+        }
+
+        private static string InsertRangeBrief(Word.Range range)
+        {
+            if (range == null)
+            {
+                return "range=null";
+            }
+
+            try
+            {
+                string t = range.Text ?? "";
+                bool cr = t.Length > 0 && t[t.Length - 1] == '\r';
+                string vis = TextUtils.EscapeNewlinesForDb(t);
+                if (vis.Length > 80)
+                {
+                    vis = vis.Substring(0, 80) + "…";
+                }
+
+                return "start=" + range.Start + " end=" + range.End + " cr=" + cr + " text=" + vis;
+            }
+            catch (Exception ex)
+            {
+                return "range-err=" + ex.Message;
             }
         }
 

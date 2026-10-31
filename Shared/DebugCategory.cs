@@ -33,6 +33,8 @@ namespace WordAddIn1
         public const string OpenFiles = "open_files";
         /// <summary>文字宿主 / 检查点 / 表后落点、浏览器附着、Desktop WebView 排障旁路。</summary>
         public const string Host = "host";
+        /// <summary>列表编号进 display：Find 替换 / 剥前缀 / 清续编 / insert 锚点。</summary>
+        public const string Autonum = "autonum";
 
         public static readonly HashSet<string> Known = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -54,7 +56,8 @@ namespace WordAddIn1
             ExcelEt,
             FormatTransfer,
             OpenFiles,
-            Host
+            Host,
+            Autonum
         };
     }
 }
