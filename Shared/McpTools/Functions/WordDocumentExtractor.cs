@@ -1767,8 +1767,11 @@ namespace WordAddIn1
         private static void VerifyDisplayContent(string displayContent, string readText, int chunkIndex)
         {
             // 去除 display_content 中的 [S_00000-start] 和 [S_00000-end] 类似标记
-            string displayContentWithoutMarkers = RemoveSentenceMarkers(displayContent);
-            bool isMatch = displayContentWithoutMarkers == readText;
+            string displayContentWithoutMarkers = DisplayStoryConvert.ToStory(
+                displayContent,
+                DisplayStoryConvert.LookupDocumentStateStory);
+            string readStory = DisplayStoryConvert.ToStory(readText);
+            bool isMatch = displayContentWithoutMarkers == readStory;
             
             // 打印对比结果
             Console.WriteLine($"");

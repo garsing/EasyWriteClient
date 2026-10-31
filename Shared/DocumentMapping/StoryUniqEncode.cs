@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text;
 using System.Text.RegularExpressions;
 using WordAddIn1;
 
@@ -61,7 +62,7 @@ namespace WordAddIn1.DocumentMapping
             }
             var toStorySw = Stopwatch.StartNew();
             string joined = string.Join("", mapped.ChunkParagraphDisplayContents ?? new List<string>());
-            string story = DisplayStoryConvert.ToStory(joined);
+            string story = DisplayStoryConvert.ToStory(joined, code => StoredOf(store, code));
             toStorySw.Stop();
             EasyWriteDiagnostics.LogTiming(
                 "StoryUniq.to_story",
@@ -219,6 +220,13 @@ namespace WordAddIn1.DocumentMapping
                 string code = store.FindOrCreateSentence(groups[0].Concat, segMark).Item1;
                 inoperable.Add(code);
                 content[code] = groups[0].Concat;
+                var d22Inner = new StringBuilder();
+                for (int k = 0; k < originalNames.Count; k++)
+                {
+                    d22Inner.Append(store.GetDisplayInner(originalNames[k]));
+                }
+
+                store.SetDisplayInner(code, d22Inner.ToString());
                 return new List<string> { code };
             }
 
@@ -233,10 +241,43 @@ namespace WordAddIn1.DocumentMapping
 
                 string merged = store.FindOrCreateSentence(g.Concat, segMark).Item1;
                 content[merged] = g.Concat;
+                var innerParts = new StringBuilder();
+                for (int k = g.Start; k <= g.End; k++)
+                {
+                    innerParts.Append(store.GetDisplayInner(originalNames[k]));
+                }
+
+                store.SetDisplayInner(merged, innerParts.ToString());
                 publicNames.Add(merged);
             }
 
             return publicNames;
+        }
+
+        private static string StoredOf(IMappingStore store, string code)
+        {
+            if (store == null || string.IsNullOrEmpty(code))
+            {
+                return null;
+            }
+
+            foreach (var row in store.GetSentenceMappings())
+            {
+                if (row != null && row.Count >= 3 && row[0] == code)
+                {
+                    return row[2];
+                }
+            }
+
+            foreach (var row in store.GetParagraphMappings())
+            {
+                if (row != null && row.Count >= 3 && row[0] == code)
+                {
+                    return row[2];
+                }
+            }
+
+            return null;
         }
 
         private static Dictionary<string, string> ContentMapFromStore(IMappingStore store)

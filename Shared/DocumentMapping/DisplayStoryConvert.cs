@@ -41,6 +41,12 @@ namespace WordAddIn1.DocumentMapping
             return ToMarks(display).Replace("^b", "\f");
         }
 
+        public static string ToStory(string display, Func<string, string> storyByCode)
+        {
+            string rewritten = AutonumConvert.ReplaceCodeInners(display, storyByCode);
+            return ToMarks(rewritten).Replace("^b", "\f");
+        }
+
         public static string StripWrappers(string display)
         {
             if (string.IsNullOrEmpty(display))
@@ -54,7 +60,25 @@ namespace WordAddIn1.DocumentMapping
             s = InTable.Replace(s, "");
             s = Chart.Replace(s, "");
             s = Image.Replace(s, "");
+            s = AutonumConvert.StripTags(s);
             return FormFeedText.UnescapeToChar12(s);
+        }
+
+        public static string LookupDocumentStateStory(string code)
+        {
+            if (string.IsNullOrEmpty(code))
+            {
+                return null;
+            }
+
+            if (code.StartsWith("P_", StringComparison.Ordinal))
+            {
+                string p = DocumentState.GetParagraphContent(code);
+                return string.IsNullOrEmpty(p) ? null : p;
+            }
+
+            string s = DocumentState.GetSentenceContent(code);
+            return string.IsNullOrEmpty(s) ? null : s;
         }
 
         public static string StripNeedle(string inner)

@@ -41,6 +41,7 @@ namespace WordAddIn1
 
         private static List<ChartOrderedEntry> _chartOrderedEntries;
         private static int _chartConsumeIndex;
+        private static OoxmlAutonum _autonum;
         private static int _chartDrawingsSeen;
         private static bool _chartStampOnWord;
         private static List<ChartResolveHelper.BodyChart> _chartSlotsForStamp;
@@ -201,6 +202,7 @@ namespace WordAddIn1
 
                 BeginReadImageContext(extractImages, pathForImages, imageSaveDir, fileHash);
                 string result;
+                _autonum = OoxmlAutonum.TryCreate(xmlDoc);
                 try
                 {
                     sw.Restart();
@@ -213,6 +215,7 @@ namespace WordAddIn1
                 }
                 finally
                 {
+                    _autonum = null;
                     EndReadImageContext();
                 }
 
@@ -1666,6 +1669,16 @@ namespace WordAddIn1
 
                         bool skipLayoutOnlyParagraphR = string.IsNullOrEmpty(paraContent)
                             && ShouldSuppressLayoutOnlyParagraphR(child, w);
+
+                        bool skipStamp = skipEmptyParagraphR || skipLayoutOnlyParagraphR;
+                        if (!skipStamp && _autonum != null)
+                        {
+                            string mark = _autonum.TryFormat(child);
+                            if (!string.IsNullOrEmpty(mark))
+                            {
+                                paraContent = AutonumConvert.MakeTag(mark) + (paraContent ?? "");
+                            }
+                        }
 
                         AppendParagraphToResult(
                             ref result, paraContent, hasChart, suppressTrailingR,

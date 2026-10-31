@@ -81,6 +81,23 @@ namespace WordAddIn1.DocumentMapping
             return Tuple.Create(name, true);
         }
 
+        public void SetDisplayInner(string name, string displayInner)
+        {
+            SetRowDisplayInner(SentenceMappings, name, displayInner);
+            SetRowDisplayInner(ParagraphMappings, name, displayInner);
+        }
+
+        public string GetDisplayInner(string name)
+        {
+            string v = RowDisplayInner(SentenceMappings, name);
+            if (v != null)
+            {
+                return v;
+            }
+
+            return RowDisplayInner(ParagraphMappings, name) ?? "";
+        }
+
         public void LinkSentenceToParagraph(string sentenceName, string paragraphName)
         {
             SentenceToParagraph[sentenceName] = paragraphName;
@@ -94,6 +111,48 @@ namespace WordAddIn1.DocumentMapping
             {
                 bucket.Add(sentenceName);
             }
+        }
+
+        private static void SetRowDisplayInner(List<List<string>> mappings, string name, string displayInner)
+        {
+            foreach (var row in mappings)
+            {
+                if (row.Count > 0 && row[0] == name)
+                {
+                    while (row.Count < 5)
+                    {
+                        if (row.Count == 3)
+                        {
+                            row.Add("0");
+                        }
+                        else
+                        {
+                            row.Add("");
+                        }
+                    }
+
+                    row[4] = displayInner ?? "";
+                    return;
+                }
+            }
+        }
+
+        private static string RowDisplayInner(List<List<string>> mappings, string name)
+        {
+            foreach (var row in mappings)
+            {
+                if (row.Count > 0 && row[0] == name)
+                {
+                    if (row.Count >= 5)
+                    {
+                        return row[4];
+                    }
+
+                    return row.Count >= 3 ? row[2] : "";
+                }
+            }
+
+            return null;
         }
 
         private static void UpdateMark(List<List<string>> mappings, string name, int mark)

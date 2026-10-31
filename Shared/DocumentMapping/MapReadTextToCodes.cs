@@ -68,7 +68,10 @@ namespace WordAddIn1.DocumentMapping
                 mapped.AllChunkSegsSentenceNames.Add(chunkSegsSentenceNames);
                 mapped.AllChunkSegsParagraphNames.Add(chunkSegsParagraphNames);
                 mapped.ChunkParagraphDisplayContents.Add(
-                    BuildParagraphDisplayContent.Build(chunkNonSegs, chunkSegsParagraphNames, paragraphContentMap));
+                    BuildParagraphDisplayContent.Build(
+                        chunkNonSegs,
+                        chunkSegsParagraphNames,
+                        DisplayMapFromMappings(store.GetParagraphMappings())));
             }
 
             mapped.NameToSentenceContentMap = ContentMapFromMappings(store.GetSentenceMappings());
@@ -83,6 +86,9 @@ namespace WordAddIn1.DocumentMapping
             StoryUniqEncode.Apply(mapped, store);
             uniqSw.Stop();
 
+            mapped.SentenceMappings = CloneMappings(store.GetSentenceMappings());
+            mapped.ParagraphMappings = CloneMappings(store.GetParagraphMappings());
+
             var displaySw = Stopwatch.StartNew();
             FinishSentenceDisplays(mapped);
             displaySw.Stop();
@@ -90,9 +96,6 @@ namespace WordAddIn1.DocumentMapping
                 "MapChunks.finish_display",
                 displaySw.ElapsedMilliseconds,
                 "chunks=" + mapped.ChunkDisplayContents.Count);
-
-            mapped.SentenceMappings = CloneMappings(store.GetSentenceMappings());
-            mapped.ParagraphMappings = CloneMappings(store.GetParagraphMappings());
             mapped.SentenceToParagraph = store.GetSentenceToParagraph()
                 .ToDictionary(kv => kv.Key, kv => kv.Value);
             mapped.ParagraphToSentences = store.GetParagraphToSentences().ToDictionary(
@@ -136,7 +139,13 @@ namespace WordAddIn1.DocumentMapping
         {
             mapped.ChunkDisplayContents.Clear();
             mapped.AllChunkSentenceNames.Clear();
-            var content = mapped.NameToSentenceContentMap;
+            var content = DisplayMapFromMappings(mapped.SentenceMappings)
+                ?? mapped.NameToSentenceContentMap;
+            if (content == null || content.Count == 0)
+            {
+                content = mapped.NameToSentenceContentMap;
+            }
+
             var inoperable = mapped.InoperableSentenceCodes
                 ?? new HashSet<string>(StringComparer.Ordinal);
             var wrapSw = Stopwatch.StartNew();
@@ -218,9 +227,11 @@ namespace WordAddIn1.DocumentMapping
             int paragraphOffset = 0;
             foreach (ParagraphBlock block in SplitTextByParagraphs.Split(segText))
             {
-                string stored = block.StoredText;
+                string tagged = block.StoredText;
+                string stored = AutonumConvert.StripTags(tagged);
                 var pPair = store.FindOrCreateParagraph(stored, segMark);
                 string pName = pPair.Item1;
+                RememberDisplayInner(store, pName, tagged, stored);
                 result.ParagraphNames.Add(pName);
                 paragraphRanges.Add(new ParagraphRange(pName, paragraphOffset, paragraphOffset + stored.Length));
                 paragraphOffset += stored.Length;
@@ -235,12 +246,14 @@ namespace WordAddIn1.DocumentMapping
                     continue;
                 }
 
-                var sPair = store.FindOrCreateSentence(sentenceContent, segMark);
+                string storedSentence = AutonumConvert.StripTags(sentenceContent);
+                var sPair = store.FindOrCreateSentence(storedSentence, segMark);
                 string sName = sPair.Item1;
+                RememberDisplayInner(store, sName, sentenceContent, storedSentence);
                 result.SentenceNames.Add(sName);
 
                 int sentenceStart = sentenceOffset;
-                sentenceOffset += sentenceContent.Length;
+                sentenceOffset += storedSentence.Length;
 
                 string paragraphName = FindParagraphNameAtOffset(paragraphRanges, sentenceStart);
                 if (!string.IsNullOrEmpty(paragraphName))
@@ -249,12 +262,13 @@ namespace WordAddIn1.DocumentMapping
                 }
             }
 
+            int storyLen = AutonumConvert.StripTags(segText).Length;
             if (EasyWriteDiagnostics.IsEnabled(DebugCategory.DocumentMapping)
-                && (paragraphOffset != segText.Length || sentenceOffset != segText.Length))
+                && (paragraphOffset != storyLen || sentenceOffset != storyLen))
             {
                 EasyWriteDiagnostics.Log(
                     DebugCategory.DocumentMapping,
-                    $"不重不漏校验失败 segLen={segText.Length} pSum={paragraphOffset} sSum={sentenceOffset}");
+                    $"不重不漏校验失败 segLen={storyLen} pSum={paragraphOffset} sSum={sentenceOffset}");
             }
 
             return result;
@@ -321,6 +335,39 @@ namespace WordAddIn1.DocumentMapping
             }
 
             return clone;
+        }
+
+        private static void RememberDisplayInner(
+            IMappingStore store,
+            string name,
+            string tagged,
+            string stored)
+        {
+            string visible = AutonumConvert.ToVisible(tagged);
+            string existing = store.GetDisplayInner(name);
+            if (string.IsNullOrEmpty(existing) || existing == stored)
+            {
+                store.SetDisplayInner(name, visible);
+            }
+        }
+
+        private static Dictionary<string, string> DisplayMapFromMappings(IReadOnlyList<IReadOnlyList<string>> mappings)
+        {
+            var map = new Dictionary<string, string>();
+            if (mappings == null)
+            {
+                return map;
+            }
+
+            foreach (var row in mappings)
+            {
+                if (row != null && row.Count >= 3)
+                {
+                    map[row[0]] = row.Count >= 5 && !string.IsNullOrEmpty(row[4]) ? row[4] : row[2];
+                }
+            }
+
+            return map;
         }
 
         private static Dictionary<string, string> ContentMapFromMappings(IReadOnlyList<IReadOnlyList<string>> mappings)

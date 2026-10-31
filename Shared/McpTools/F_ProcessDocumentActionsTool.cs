@@ -1684,6 +1684,10 @@ namespace WordAddIn1
             }
 
             result.OriginalCodes = names;
+            var autonumMarks = new List<string>();
+            autonumMarks.AddRange(AutonumListWriteHelper.TypesFromCodes(sentenceNames));
+            autonumMarks.AddRange(AutonumListWriteHelper.TypesFromRange(targetRange));
+            bool numbered = AutonumListWriteHelper.RangeHasAutonum(targetRange);
             string writeErr;
             if (!TryWriteRuns(
                 doc,
@@ -1693,7 +1697,10 @@ namespace WordAddIn1
                 replaceFirst: true,
                 WrittenFormatGlueHelper.IsPrefixSafe(sentenceNames, insertAfter: false),
                 out writeErr,
-                out List<string> newSentences))
+                out List<string> newSentences,
+                autonumMarks,
+                numbered,
+                aligned))
             {
                 result.ErrorMessage = writeErr;
                 return result;
@@ -1743,6 +1750,7 @@ namespace WordAddIn1
                 return result;
             }
 
+            var autonumMarks = AutonumListWriteHelper.TypesFromRange(locate.Range);
             if (!TryWriteRuns(
                 doc,
                 locate.Range,
@@ -1751,7 +1759,10 @@ namespace WordAddIn1
                 replaceFirst: false,
                 PrefixSafeForInsertTarget(target),
                 out string writeErr,
-                out List<string> newSentences))
+                out List<string> newSentences,
+                autonumMarks,
+                false,
+                payload.JoinedText))
             {
                 result.ErrorMessage = writeErr;
                 return result;
@@ -1898,11 +1909,15 @@ namespace WordAddIn1
             bool replaceFirst,
             bool firstPrefixSafe,
             out string error,
-            out List<string> newSentences)
+            out List<string> newSentences,
+            IList<string> autonumMarks = null,
+            bool numberedReplace = false,
+            string modelNew = null)
         {
             error = null;
             newSentences = new List<string>();
             Word.Range cursor = startRange;
+            int writtenStart = startRange != null ? startRange.Start : 0;
             for (int i = 0; i < runs.Count; i++)
             {
                 ActionContentHelper.Run run = runs[i];
@@ -1917,15 +1932,26 @@ namespace WordAddIn1
                     writeAt = doc.Range(cursor.End, cursor.End);
                 }
 
-                Word.Range written = WordBreakWriteHelper.WriteTextWithBreaks(doc, writeAt, run.Text)
-                    ?? writeAt;
+                string story = AutonumConvert.StripNewByOriginalTypes(autonumMarks, run.Text);
+                Word.Range written;
+                if (replaceFirst && i == 0 && numberedReplace)
+                {
+                    written = AutonumListWriteHelper.WriteReplace(
+                        doc, writeAt, run.Text, autonumMarks, true);
+                }
+                else
+                {
+                    written = WordBreakWriteHelper.WriteTextWithBreaks(doc, writeAt, story);
+                }
+
+                written = written ?? writeAt;
                 try
                 {
                     bool prefixSafe = i == 0
                         ? firstPrefixSafe
                         : WrittenFormatGlueHelper.PreviousRunEndsWithBreak(runs[i - 1].Text);
                     FormatInheritHelper.ApplyWrittenCharFormat(
-                        doc, written, run.Text ?? "", snap, prefixSafe, FindSentenceInRange);
+                        doc, written, story ?? "", snap, prefixSafe, FindSentenceInRange);
                 }
                 catch (Exception fmtEx)
                 {
@@ -1933,8 +1959,16 @@ namespace WordAddIn1
                     return false;
                 }
 
-                newSentences.AddRange(SentenceSplitter.SplitForActionContent(run.Text ?? ""));
+                newSentences.AddRange(SentenceSplitter.SplitForActionContent(story ?? ""));
                 cursor = written;
+            }
+
+            if (cursor != null)
+            {
+                AutonumListWriteHelper.ClearExtraListOnWritten(
+                    doc.Range(writtenStart, cursor.End),
+                    modelNew,
+                    autonumMarks);
             }
 
             MoveSelectionAfterInsert(doc, cursor);
@@ -2260,15 +2294,26 @@ namespace WordAddIn1
                     }
                 }
 
+                var autonumMarks = new List<string>();
+                autonumMarks.AddRange(AutonumListWriteHelper.TypesFromCodes(sentenceNames));
+                autonumMarks.AddRange(AutonumListWriteHelper.TypesFromRange(targetRange));
+                bool numbered = AutonumListWriteHelper.RangeHasAutonum(targetRange);
+                string storyText = AutonumConvert.StripNewByOriginalTypes(autonumMarks, replacementText);
+                result.NewSentences = SentenceSplitter.SplitForActionContent(storyText);
+
                 FormatInheritHelper.DbgLog(
-                    WordBreakWriteHelper.ContainsLayoutBreaks(replacementText)
-                        ? "ExecuteReplace 即将分段写入（\\f / ^b → InsertBreak）"
-                        : WordNoteMarkHelper.ContainsNoteMarks(replacementText)
-                            ? "ExecuteReplace 即将写入（含 ^f/^e → 脚注/尾注引用）"
-                            : "ExecuteReplace 即将 targetRange.Text=...（会清除该区间直接格式）");
-                Word.Range writtenRange = WordBreakWriteHelper.WriteTextWithBreaks(
-                    doc, targetRange, replacementText);
+                    numbered
+                        ? "ExecuteReplace 编号项走查找替换留 ListFormat"
+                        : WordBreakWriteHelper.ContainsLayoutBreaks(storyText)
+                            ? "ExecuteReplace 即将分段写入（\\f / ^b → InsertBreak）"
+                            : WordNoteMarkHelper.ContainsNoteMarks(storyText)
+                                ? "ExecuteReplace 即将写入（含 ^f/^e → 脚注/尾注引用）"
+                                : "ExecuteReplace 即将 targetRange.Text=...");
+                Word.Range writtenRange = AutonumListWriteHelper.WriteReplace(
+                    doc, targetRange, replacementText, autonumMarks, numbered);
                 targetRange = writtenRange ?? targetRange;
+                AutonumListWriteHelper.ClearExtraListOnWritten(
+                    targetRange, replacementText, autonumMarks);
                 FormatInheritHelper.DbgLogRangeFonts("ExecuteReplace targetRange AFTER Text=", targetRange);
 
                 Word.Range newRange = doc.Range(targetRange.Start, targetRange.End);
@@ -2279,7 +2324,7 @@ namespace WordAddIn1
                     FormatInheritHelper.ApplyWrittenCharFormat(
                         doc,
                         newRange,
-                        replacementText,
+                        storyText,
                         formatSnapshot,
                         WrittenFormatGlueHelper.IsPrefixSafe(sentenceNames, insertAfter: false),
                         FindSentenceInRange);
@@ -2468,8 +2513,12 @@ namespace WordAddIn1
                 }
 
                 string insertText = insertContentBuilder.ToString();
-                insertRange = WordBreakWriteHelper.WriteTextWithBreaks(doc, insertRange, insertText)
+                var autonumMarks = AutonumListWriteHelper.TypesFromRange(insertRange);
+                insertRange = AutonumListWriteHelper.WriteInsert(
+                    doc, insertRange, insertText, autonumMarks)
                     ?? insertRange;
+                AutonumListWriteHelper.ClearExtraListOnWritten(
+                    insertRange, insertText, autonumMarks);
                 MoveSelectionAfterInsert(doc, insertRange);
 
                 try

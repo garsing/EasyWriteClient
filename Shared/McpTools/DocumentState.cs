@@ -593,6 +593,77 @@ namespace WordAddIn1
             return newName;
         }
 
+        public static void SetDisplayInner(string name, string displayInner)
+        {
+            if (SetMappingDisplayInner(Session.SentenceNameMapping, name, displayInner))
+            {
+                return;
+            }
+
+            SetMappingDisplayInner(Session.ParagraphNameMapping, name, displayInner);
+        }
+
+        public static string GetDisplayInner(string name)
+        {
+            string v = MappingDisplayInner(Session.SentenceNameMapping, name);
+            if (v != null)
+            {
+                return v;
+            }
+
+            return MappingDisplayInner(Session.ParagraphNameMapping, name)
+                ?? GetSentenceContent(name)
+                ?? GetParagraphContent(name)
+                ?? "";
+        }
+
+        private static bool SetMappingDisplayInner(List<List<string>> mappings, string name, string displayInner)
+        {
+            if (mappings == null || string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            foreach (var mapping in mappings)
+            {
+                if (mapping != null && mapping.Count > 0 && mapping[0] == name)
+                {
+                    while (mapping.Count < 5)
+                    {
+                        mapping.Add(mapping.Count == 3 ? "0" : "");
+                    }
+
+                    mapping[4] = displayInner ?? "";
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string MappingDisplayInner(IReadOnlyList<IReadOnlyList<string>> mappings, string name)
+        {
+            if (mappings == null || string.IsNullOrEmpty(name))
+            {
+                return null;
+            }
+
+            foreach (var mapping in mappings)
+            {
+                if (mapping != null && mapping.Count > 0 && mapping[0] == name)
+                {
+                    if (mapping.Count >= 5 && !string.IsNullOrEmpty(mapping[4]))
+                    {
+                        return mapping[4];
+                    }
+
+                    return mapping.Count >= 3 ? mapping[2] : "";
+                }
+            }
+
+            return null;
+        }
+
         public static string GetSentenceContent(string sentenceName)
         {
             foreach (var mapping in Session.SentenceNameMapping)

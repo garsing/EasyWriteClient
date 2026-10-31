@@ -14,6 +14,10 @@ namespace WordAddIn1.DocumentMapping
 
         Tuple<string, bool> FindOrCreateParagraph(string storedText, int mark);
 
+        void SetDisplayInner(string name, string displayInner);
+
+        string GetDisplayInner(string name);
+
         void LinkSentenceToParagraph(string sentenceName, string paragraphName);
 
         IReadOnlyList<IReadOnlyList<string>> GetSentenceMappings();

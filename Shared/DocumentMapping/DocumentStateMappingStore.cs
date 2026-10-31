@@ -25,6 +25,16 @@ namespace WordAddIn1.DocumentMapping
             return Tuple.Create(name, false);
         }
 
+        public void SetDisplayInner(string name, string displayInner)
+        {
+            DocumentState.SetDisplayInner(name, displayInner);
+        }
+
+        public string GetDisplayInner(string name)
+        {
+            return DocumentState.GetDisplayInner(name);
+        }
+
         public void LinkSentenceToParagraph(string sentenceName, string paragraphName)
         {
             DocumentState.LinkSentenceToParagraph(sentenceName, paragraphName);

@@ -1361,13 +1361,9 @@ namespace WordDocumentRoundtripTest
 
         private static string DisplayToStory(string display)
         {
-            if (string.IsNullOrEmpty(display))
-            {
-                return "";
-            }
-
-            string s = StripDisplayWrappers(display);
-            return ConvertTables(s).Replace("\n", "\x0B").Replace("^b", "\f");
+            return DisplayStoryConvert.ToStory(
+                display,
+                DisplayStoryConvert.LookupDocumentStateStory);
         }
 
         private static readonly Regex DisplayPBlock = new Regex(
@@ -1477,13 +1473,10 @@ namespace WordDocumentRoundtripTest
 
         private static string StripDisplayWrappers(string display)
         {
-            string s = DisplayCodeStart.Replace(display, "");
-            s = DisplayCodeEnd.Replace(s, "");
-            s = s.Replace("[EMPTY]", "");
-            s = DisplayInTable.Replace(s, "");
-            s = DisplayChart.Replace(s, "");
-            s = DisplayImage.Replace(s, "");
-            return FormFeedText.UnescapeToChar12(s);
+            string rewritten = AutonumConvert.ReplaceCodeInners(
+                display,
+                DisplayStoryConvert.LookupDocumentStateStory);
+            return DisplayStoryConvert.StripWrappers(rewritten);
         }
 
         private static string ConvertTables(string text)

@@ -87,6 +87,13 @@ namespace WordAddIn1
 
             while (i < text.Length)
             {
+                int tagEnd = WordAddIn1.DocumentMapping.AutonumConvert.SkipTag(text, i);
+                if (tagEnd > i)
+                {
+                    i = tagEnd;
+                    continue;
+                }
+
                 bool foundSplit = false;
                 int sentenceEnd = 0;
 
