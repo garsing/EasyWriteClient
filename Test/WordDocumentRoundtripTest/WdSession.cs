@@ -1026,6 +1026,42 @@ namespace WordDocumentRoundtripTest
                 });
         }
 
+        public bool InsertTableBeforePara(string fullPath, int paraIndex, string cellText)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object paras = GetProp(doc, "Paragraphs");
+                    int n = Convert.ToInt32(GetProp(paras, "Count"));
+                    if (paraIndex < 1 || paraIndex > n)
+                    {
+                        return false;
+                    }
+
+                    object para = Invoke(paras, "Item", paraIndex);
+                    object at = GetProp(para, "Range");
+                    Invoke(at, "Collapse", 1);
+                    object tables = GetProp(doc, "Tables");
+                    object table = Invoke(tables, "Add", at, 1, 1);
+                    object cell = Invoke(table, "Cell", 1, 1);
+                    SetProp(GetProp(cell, "Range"), "Text", cellText ?? "");
+                    return true;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    if (paraIndex < 1 || paraIndex > doc.Paragraphs.Count)
+                    {
+                        return false;
+                    }
+
+                    Word.Range at = doc.Paragraphs[paraIndex].Range;
+                    at.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+                    Word.Table table = doc.Tables.Add(at, 1, 1);
+                    table.Cell(1, 1).Range.Text = cellText ?? "";
+                    return true;
+                });
+        }
+
         public bool ApplyNumberDefault(string fullPath, int fromPara, int toPara)
         {
             return ApplyList(fullPath, fromPara, toPara, false);

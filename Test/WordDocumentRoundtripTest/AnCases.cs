@@ -312,13 +312,39 @@ namespace WordDocumentRoundtripTest
                 s.CloseDocByPath(p.Path);
             }
 
-            if (TryPlant(run, s, "甲。\r甲。\r", (ss, path) => ss.ApplyNumberDefault(path, 1, 2),
+            if (TryPlant(run, s, "甲。\r甲。\r", (ss, path) =>
+                {
+                    if (!ss.InsertTableBeforePara(path, 2, "隔"))
+                    {
+                        return false;
+                    }
+
+                    List<string> stories = ss.ParaStories(path);
+                    int last = stories == null ? 0 : stories.Count;
+                    return ss.ApplyNumberDefault(path, 1, 1)
+                        && last >= 2
+                        && ss.ApplyNumberDefault(path, last, last);
+                },
                 out p, "an-merge-no-cross"))
             {
                 List<string> codes = Codes(p.Body, "S");
+                bool joinedAcrossTable = false;
+                foreach (string inner in Inners(p.Body, "S"))
+                {
+                    if (inner.IndexOf("甲", StringComparison.Ordinal) >= 0
+                        && (inner.IndexOf("隔", StringComparison.Ordinal) >= 0
+                            || inner.IndexOf("<table", StringComparison.OrdinalIgnoreCase) >= 0))
+                    {
+                        joinedAcrossTable = true;
+                    }
+                }
+
                 Ok(run, "an-merge-no-cross",
-                    NoTags(p.Body) && codes.Count >= 2,
-                    "跨 seg 并成 " + codes.Count + " 码 " + Snip(p.Body));
+                    NoTags(p.Body)
+                    && !string.IsNullOrEmpty(TableId(p.Body))
+                    && codes.Count >= 2
+                    && !joinedAcrossTable,
+                    "跨表 seg 码数=" + codes.Count + " " + Snip(p.Body));
                 s.CloseDocByPath(p.Path);
             }
 
