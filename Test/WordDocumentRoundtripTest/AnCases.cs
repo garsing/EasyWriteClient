@@ -138,13 +138,28 @@ namespace WordDocumentRoundtripTest
                 s.CloseDocByPath(p.Path);
             }
 
-            if (TryPlant(run, s, "标题段\r", (ss, path) => ss.TryApplyHeading1(path, 1),
+            if (TryPlant(run, s, "标题段\r", (ss, path) =>
+                {
+                    ss.TryApplyHeading1(path, 1);
+                    return true;
+                },
                 out p, "an-read-style"))
             {
-                bool numbered = AnyNumbered(p) || HasDecimalPrefix(FirstInner(p.Body, "S"));
+                string ls = "";
+                List<string> lists = s.ParaListStrings(p.Path);
+                if (lists != null && lists.Count > 0)
+                {
+                    ls = (lists[0] ?? "").Trim();
+                }
+
+                bool windowNum = ls.Length > 0;
+                bool displayNum = AnyNumbered(p) || HasDecimalPrefix(FirstInner(p.Body, "S"));
                 Ok(run, "an-read-style",
-                    numbered && NoTags(p.Body),
-                    numbered ? Snip(p.Body) : "本机标题1无编号");
+                    NoTags(p.Body) && displayNum == windowNum,
+                    windowNum
+                        ? (displayNum ? Snip(p.Body) : "窗口有编号但 display 无前缀 " + Snip(p.Body))
+                        : (displayNum ? "窗口无编号但 display 有前缀 " + Snip(p.Body) : "窗口无编号，display 亦无"));
+
                 s.CloseDocByPath(p.Path);
             }
 
