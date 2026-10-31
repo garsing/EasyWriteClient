@@ -811,8 +811,13 @@ namespace WordDocumentRoundtripTest
                 ToolResult wr = s.ProcessActions(p.Id, InsertAfter(Codes(p.Body, "S")[0], "hello"));
                 ToolResult got = s.GetContent(p.Id);
                 string body = got.Success ? WdSession.Str(got, "document_content") : "";
+                string inner = InnerContaining(body, "hello");
+                ParaSnap glued = FindStory(ContentParas(s, p.Path), "hello");
                 Ok(run, "an-reread-ins",
-                    wr.Success && got.Success && NoTags(body) && !HasDecimalPrefix(InnerContaining(body, "hello")),
+                    wr.Success && got.Success && NoTags(body)
+                    && HasDecimalPrefix(inner)
+                    && inner.IndexOf("hellob", StringComparison.Ordinal) >= 0
+                    && glued.Numbered && Strip(glued.Story) == "hellob",
                     wr.Success ? Snip(body) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
             }
