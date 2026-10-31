@@ -261,6 +261,23 @@ namespace WordAddIn1.DocumentMapping
                 return null;
             }
 
+            string found = LookupContent(store, code);
+            if (found != null)
+            {
+                return found;
+            }
+
+            string baseCode = StripPublicOrdinal(code);
+            if (baseCode != code)
+            {
+                return LookupContent(store, baseCode);
+            }
+
+            return null;
+        }
+
+        private static string LookupContent(IMappingStore store, string code)
+        {
             foreach (var row in store.GetSentenceMappings())
             {
                 if (row != null && row.Count >= 3 && row[0] == code)
@@ -278,6 +295,33 @@ namespace WordAddIn1.DocumentMapping
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// display 撞码公开号 P_xxxxx_1；映射表仍是 P_xxxxx。先精确命中（真·续段 P_xxxxx_1 在表里）。
+        /// </summary>
+        private static string StripPublicOrdinal(string code)
+        {
+            if (string.IsNullOrEmpty(code))
+            {
+                return code;
+            }
+
+            int u = code.LastIndexOf('_');
+            if (u <= 0 || u >= code.Length - 1)
+            {
+                return code;
+            }
+
+            for (int i = u + 1; i < code.Length; i++)
+            {
+                if (code[i] < '0' || code[i] > '9')
+                {
+                    return code;
+                }
+            }
+
+            return code.Substring(0, u);
         }
 
         private static Dictionary<string, string> ContentMapFromStore(IMappingStore store)
