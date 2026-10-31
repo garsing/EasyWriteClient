@@ -16,7 +16,10 @@ namespace WordAddIn1.BrowserHost
     {
         private bool _disposed;
         private EventHandler<CoreWebView2DownloadStartingEventArgs> _downloadStartingHandler;
-        private EventHandler<CoreWebView2ScriptDialogOpeningEventArgs> _scriptDialogHandler;
+        private CoreWebView2DevToolsProtocolEventReceiver _jsDialogOpening;
+        private CoreWebView2DevToolsProtocolEventReceiver _jsDialogClosed;
+        private EventHandler<CoreWebView2DevToolsProtocolEventReceivedEventArgs> _jsDialogOpeningHandler;
+        private EventHandler<CoreWebView2DevToolsProtocolEventReceivedEventArgs> _jsDialogClosedHandler;
         private BrowserScriptDialogSession _pendingScriptDialog;
         private readonly object _scriptDialogGate = new object();
         private TaskCompletionSource<bool> _scriptDialogSignal;
@@ -184,16 +187,9 @@ namespace WordAddIn1.BrowserHost
 
             core.Settings.AreDefaultContextMenusEnabled = true;
             core.Settings.AreDevToolsEnabled = false;
-            core.Settings.AreDefaultScriptDialogsEnabled = false;
+            core.Settings.AreDefaultScriptDialogsEnabled = true;
             ApplyChromeUserAgent(core);
-
-            if (_scriptDialogHandler == null)
-            {
-                _scriptDialogHandler = OnScriptDialogOpening;
-            }
-
-            core.ScriptDialogOpening -= _scriptDialogHandler;
-            core.ScriptDialogOpening += _scriptDialogHandler;
+            await EnableNativeScriptDialogsAsync(core).ConfigureAwait(true);
 
             core.SourceChanged += OnSourceChanged;
             core.DocumentTitleChanged += OnDocumentTitleChanged;
@@ -384,9 +380,14 @@ namespace WordAddIn1.BrowserHost
                         core.DownloadStarting -= _downloadStartingHandler;
                     }
 
-                    if (_scriptDialogHandler != null)
+                    if (_jsDialogOpening != null && _jsDialogOpeningHandler != null)
                     {
-                        core.ScriptDialogOpening -= _scriptDialogHandler;
+                        _jsDialogOpening.DevToolsProtocolEventReceived -= _jsDialogOpeningHandler;
+                    }
+
+                    if (_jsDialogClosed != null && _jsDialogClosedHandler != null)
+                    {
+                        _jsDialogClosed.DevToolsProtocolEventReceived -= _jsDialogClosedHandler;
                     }
                 }
             }
@@ -468,58 +469,116 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
-        private void OnScriptDialogOpening(object sender, CoreWebView2ScriptDialogOpeningEventArgs e)
+        private async Task EnableNativeScriptDialogsAsync(CoreWebView2 core)
         {
-            CoreWebView2Deferral deferral = null;
             try
             {
-                deferral = e.GetDeferral();
-                ScriptDialogTrace.Write("event kind=" + e.Kind + " msg=" + Clip(e.Message));
+                await core.CallDevToolsProtocolMethodAsync("Page.enable", "{}").ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                ScriptDialogTrace.Write("page-enable " + ex.GetType().Name);
+            }
+
+            if (_jsDialogOpeningHandler == null)
+            {
+                _jsDialogOpeningHandler = OnJsDialogOpening;
+            }
+
+            if (_jsDialogClosedHandler == null)
+            {
+                _jsDialogClosedHandler = OnJsDialogClosed;
+            }
+
+            _jsDialogOpening = core.GetDevToolsProtocolEventReceiver("Page.javascriptDialogOpening");
+            _jsDialogOpening.DevToolsProtocolEventReceived -= _jsDialogOpeningHandler;
+            _jsDialogOpening.DevToolsProtocolEventReceived += _jsDialogOpeningHandler;
+            _jsDialogClosed = core.GetDevToolsProtocolEventReceiver("Page.javascriptDialogClosed");
+            _jsDialogClosed.DevToolsProtocolEventReceived -= _jsDialogClosedHandler;
+            _jsDialogClosed.DevToolsProtocolEventReceived += _jsDialogClosedHandler;
+        }
+
+        private void OnJsDialogOpening(object sender, CoreWebView2DevToolsProtocolEventReceivedEventArgs e)
+        {
+            try
+            {
+                JObject obj = JObject.Parse(e.ParameterObjectAsJson ?? "{}");
+                string type = (string)obj["type"] ?? "";
+                string message = (string)obj["message"] ?? "";
+                string defaultPrompt = (string)obj["defaultPrompt"] ?? "";
+                ScriptDialogTrace.Write("event kind=" + type + " msg=" + Clip(message));
                 if (_pendingScriptDialog != null && _pendingScriptDialog.IsPending)
                 {
                     ScriptDialogTrace.Write("event-drop already-pending");
-                    deferral.Complete();
-                    deferral = null;
                     return;
                 }
 
-                BrowserScriptDialogKind kind = MapScriptDialogKind(e.Kind);
-                string message = e.Message ?? "";
-                string initial = kind == BrowserScriptDialogKind.Prompt ? (e.DefaultText ?? "") : "";
-                CoreWebView2Deferral held = deferral;
-                CoreWebView2ScriptDialogOpeningEventArgs args = e;
-                _pendingScriptDialog = BrowserScriptDialogSession.Create(
+                BrowserScriptDialogKind kind = MapScriptDialogKind(type);
+                string initial = kind == BrowserScriptDialogKind.Prompt ? defaultPrompt : "";
+                BrowserScriptDialogSession created = null;
+                created = BrowserScriptDialogSession.Create(
                     kind,
                     message,
                     initial,
-                    text =>
+                    text => HandleNativeDialog(true, text),
+                    () =>
                     {
-                        args.ResultText = text ?? "";
-                        args.Accept();
-                    },
-                    () => held.Complete());
-                deferral = null;
+                        if (created != null && created.Accepted)
+                        {
+                            return;
+                        }
+
+                        HandleNativeDialog(false, null);
+                    });
+                _pendingScriptDialog = created;
                 lock (_scriptDialogGate)
                 {
                     bool signaled = _scriptDialogSignal != null && _scriptDialogSignal.TrySetResult(true);
                     ScriptDialogTrace.Write("event-stored signal=" + signaled);
                 }
-
-                ShowPendingScriptDialog(_pendingScriptDialog);
             }
             catch (Exception ex)
             {
                 ScriptDialogTrace.Write("event-error " + ex.GetType().Name);
-                try
-                {
-                    if (deferral != null)
-                    {
-                        deferral.Complete();
-                    }
-                }
-                catch
-                {
-                }
+            }
+        }
+
+        private void OnJsDialogClosed(object sender, CoreWebView2DevToolsProtocolEventReceivedEventArgs e)
+        {
+            BrowserScriptDialogSession pending = _pendingScriptDialog;
+            ScriptDialogTrace.Write("dialog-native-closed");
+            if (pending == null)
+            {
+                return;
+            }
+
+            pending.NoteClosedExternally();
+            ClearScriptDialogIf(pending);
+        }
+
+        private void HandleNativeDialog(bool accept, string promptText)
+        {
+            CoreWebView2 core = Core;
+            if (core == null)
+            {
+                return;
+            }
+
+            var payload = new JObject { ["accept"] = accept };
+            if (promptText != null)
+            {
+                payload["promptText"] = promptText;
+            }
+
+            string json = payload.ToString(Formatting.None);
+            ScriptDialogTrace.Write("dialog-handle accept=" + accept);
+            try
+            {
+                core.CallDevToolsProtocolMethodAsync("Page.handleJavaScriptDialog", json);
+            }
+            catch (Exception ex)
+            {
+                ScriptDialogTrace.Write("dialog-handle-error " + ex.GetType().Name);
             }
         }
 
@@ -532,69 +591,6 @@ namespace WordAddIn1.BrowserHost
             }
 
             return value.Substring(0, 80);
-        }
-
-        private void ShowPendingScriptDialog(BrowserScriptDialogSession session)
-        {
-            Control host = WebView;
-            if (host == null || host.IsDisposed || session == null)
-            {
-                return;
-            }
-
-            string title = DisplayTitle;
-            try
-            {
-                host.BeginInvoke(new Action(() =>
-                {
-                    try
-                    {
-                        if (_disposed || !session.IsPending)
-                        {
-                            return;
-                        }
-
-                        ScriptDialogTrace.Write("dialog-show");
-                        bool accepted = BrowserScriptDialogForm.ShowModal(host, session, title);
-                        if (!session.IsPending)
-                        {
-                            ScriptDialogTrace.Write("dialog-closed-by-agent");
-                            return;
-                        }
-
-                        ScriptDialogTrace.Write(accepted ? "dialog-user-accept" : "dialog-user-dismiss");
-                        if (accepted)
-                        {
-                            session.Accept();
-                        }
-                        else
-                        {
-                            session.Dismiss();
-                        }
-
-                        ClearScriptDialogIf(session);
-                    }
-                    catch (Exception ex)
-                    {
-                        ScriptDialogTrace.Write("dialog-show-error " + ex.GetType().Name);
-                        try
-                        {
-                            if (session.IsPending)
-                            {
-                                session.Dismiss();
-                                ClearScriptDialogIf(session);
-                            }
-                        }
-                        catch
-                        {
-                        }
-                    }
-                }));
-            }
-            catch (Exception ex)
-            {
-                ScriptDialogTrace.Write("dialog-show-post " + ex.GetType().Name);
-            }
         }
 
         private void DismissPendingScriptDialog()
@@ -637,19 +633,24 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
-        private static BrowserScriptDialogKind MapScriptDialogKind(CoreWebView2ScriptDialogKind kind)
+        private static BrowserScriptDialogKind MapScriptDialogKind(string type)
         {
-            switch (kind)
+            if (string.Equals(type, "alert", StringComparison.OrdinalIgnoreCase))
             {
-                case CoreWebView2ScriptDialogKind.Alert:
-                    return BrowserScriptDialogKind.Alert;
-                case CoreWebView2ScriptDialogKind.Prompt:
-                    return BrowserScriptDialogKind.Prompt;
-                case CoreWebView2ScriptDialogKind.Beforeunload:
-                    return BrowserScriptDialogKind.Beforeunload;
-                default:
-                    return BrowserScriptDialogKind.Confirm;
+                return BrowserScriptDialogKind.Alert;
             }
+
+            if (string.Equals(type, "prompt", StringComparison.OrdinalIgnoreCase))
+            {
+                return BrowserScriptDialogKind.Prompt;
+            }
+
+            if (string.Equals(type, "beforeunload", StringComparison.OrdinalIgnoreCase))
+            {
+                return BrowserScriptDialogKind.Beforeunload;
+            }
+
+            return BrowserScriptDialogKind.Confirm;
         }
 
         private void OnDownloadStarting(object sender, CoreWebView2DownloadStartingEventArgs e)

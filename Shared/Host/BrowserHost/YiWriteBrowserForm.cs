@@ -18,6 +18,9 @@ namespace WordAddIn1.BrowserHost
     {
         internal const int MaxTabCount = 16;
 
+        /// <summary>测试用。正式运行留空，数据目录仍在本机 EasyWrite 下。</summary>
+        internal static string UserDataFolderOverride { get; set; }
+
         private const int WmNcHitTest = 0x84;
         private const int WmSetCursor = 0x20;
         private const int HtClient = 1;
@@ -201,10 +204,14 @@ namespace WordAddIn1.BrowserHost
                 return;
             }
 
-            string userData = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "EasyWrite",
-                "YiWriteBrowserWebView2");
+            string userData = UserDataFolderOverride;
+            if (string.IsNullOrWhiteSpace(userData))
+            {
+                userData = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "EasyWrite",
+                    "YiWriteBrowserWebView2");
+            }
             Directory.CreateDirectory(userData);
 
             try

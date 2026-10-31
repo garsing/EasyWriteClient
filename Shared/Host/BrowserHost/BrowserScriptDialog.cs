@@ -103,6 +103,11 @@ namespace WordAddIn1.BrowserHost
             Text = text ?? "";
         }
 
+        public void NoteClosedExternally()
+        {
+            Interlocked.Exchange(ref _done, 1);
+        }
+
         public void Accept()
         {
             if (Interlocked.Exchange(ref _done, 1) != 0)

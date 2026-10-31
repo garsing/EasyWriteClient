@@ -30,6 +30,9 @@ namespace BrowserNavigateTest
             }
 
             Application.EnableVisualStyles();
+            string data = Path.Combine(Path.GetTempPath(), "EasyWriteDlgLive", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(data);
+            YiWriteBrowserForm.UserDataFolderOverride = data;
             int code = 1;
             var finished = new ManualResetEvent(false);
             ThreadPool.QueueUserWorkItem(_ =>
