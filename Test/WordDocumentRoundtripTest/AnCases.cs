@@ -565,7 +565,7 @@ namespace WordDocumentRoundtripTest
                 ToolResult wr = s.ProcessActions(p.Id, InsertStart("head"));
                 ParaSnap head = FindStory(ContentParas(s, p.Path), "head");
                 Ok(run, "an-ins-start",
-                    wr.Success && head.Story != null && !head.Numbered,
+                    wr.Success && head.Story != null && head.Numbered && Strip(head.Story) == "heada",
                     wr.Success ? Dump(ContentParas(s, p.Path)) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
             }
@@ -632,10 +632,6 @@ namespace WordDocumentRoundtripTest
 
                 s.CloseDocByPath(p.Path);
             }
-            else
-            {
-                return;
-            }
 
             if (TryPlant(run, s, "a\rb\rhello\rtail\r", (ss, path) => ss.ApplyNumberDefault(path, 1, 2),
                 out p, "an-plain-stay-ins"))
@@ -676,7 +672,7 @@ namespace WordDocumentRoundtripTest
                 ToolResult wr = s.ProcessActions(p.Id, InsertAfter(Codes(p.Body, "S")[0], "2. n"));
                 ParaSnap b = FindStory(ContentParas(s, p.Path), "b");
                 Ok(run, "an-shift-ok-ins",
-                    wr.Success && b.Story != null && Strip(b.Story) == "b" && b.Numbered,
+                    wr.Success && b.Story != null && Strip(b.Story) == "nb" && b.Numbered,
                     wr.Success ? Dump(ContentParas(s, p.Path)) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
             }
@@ -740,7 +736,8 @@ namespace WordDocumentRoundtripTest
                 ParaSnap hello = FindStory(ContentParas(s, p.Path), "hello");
                 ParaSnap c = FindStory(ContentParas(s, p.Path), "c");
                 Ok(run, "an-rep-then-ins",
-                    ins.Success && hello.Story != null && !hello.Numbered && c.Numbered,
+                    ins.Success && hello.Story != null && hello.Numbered
+                    && Strip(hello.Story) == "hellod" && c.Numbered,
                     ins.Success ? Dump(ContentParas(s, p.Path)) : (ins.Error ?? ""));
                 s.CloseDocByPath(p.Path);
             }
@@ -939,17 +936,40 @@ namespace WordDocumentRoundtripTest
             }
             else if (id == "an-ins-mixed")
             {
-                numOk = FindStory(after, "x").Numbered && !FindStory(after, "y").Numbered;
+                ParaSnap y = FindStory(after, "y");
+                numOk = FindStory(after, "x").Numbered
+                    && y.Story != null
+                    && Strip(y.Story) == "yb";
             }
             else if (id == "an-ins-three-plain")
             {
-                numOk = !FindStory(after, "x").Numbered && !FindStory(after, "y").Numbered && !FindStory(after, "z").Numbered;
+                ParaSnap z = FindStory(after, "z");
+                numOk = !FindStory(after, "x").Numbered
+                    && !FindStory(after, "y").Numbered
+                    && z.Story != null
+                    && Strip(z.Story) == "zb";
             }
-            else if (id == "an-ins-plain-after-1" || id == "an-ins-plain-after-last")
+            else if (id == "an-ins-plain-after-1")
+            {
+                ParaSnap glued = FindStory(after, "hello");
+                numOk = FindStory(after, "a").Numbered
+                    && glued.Story != null
+                    && glued.Numbered
+                    && Strip(glued.Story) == "hellob";
+            }
+            else if (id == "an-ins-plain-after-last")
             {
                 numOk = !FindStory(after, "hello").Numbered
                     && FindStory(after, "a").Numbered
                     && FindStory(after, "b").Numbered;
+            }
+            else if (id == "an-ins-other-type")
+            {
+                ParaSnap z = FindStory(after, "z");
+                numOk = z.Story != null
+                    && z.Numbered
+                    && Strip(z.Story).IndexOf("z", StringComparison.Ordinal) >= 0
+                    && Strip(z.Story).IndexOf("b", StringComparison.Ordinal) >= 0;
             }
             else if (id == "an-ins-between-2-3")
             {

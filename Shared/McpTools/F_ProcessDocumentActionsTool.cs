@@ -1939,10 +1939,6 @@ namespace WordAddIn1
                 }
 
                 string story = AutonumConvert.StripNewByOriginalTypes(autonumMarks, run.Text);
-                if (!replaceFirst)
-                {
-                    story = AutonumListWriteHelper.EnsureInsertNewPara(writeAt, story);
-                }
 
                 Word.Range written;
                 if (replaceFirst && i == 0 && numberedReplace)
@@ -1984,7 +1980,7 @@ namespace WordAddIn1
                 cursor = written;
             }
 
-            if (cursor != null)
+            if (cursor != null && (replaceFirst || (modelNew ?? "").IndexOf('\r') >= 0))
             {
                 AutonumListWriteHelper.ClearExtraListOnWritten(
                     doc.Range(writtenStart, cursor.End),
@@ -2552,8 +2548,11 @@ namespace WordAddIn1
                 insertRange = AutonumListWriteHelper.WriteInsert(
                     doc, insertRange, insertText, autonumMarks)
                     ?? insertRange;
-                AutonumListWriteHelper.ClearExtraListOnWritten(
-                    insertRange, insertText, autonumMarks);
+                if ((insertText ?? "").IndexOf('\r') >= 0)
+                {
+                    AutonumListWriteHelper.ClearExtraListOnWritten(
+                        insertRange, insertText, autonumMarks);
+                }
                 MoveSelectionAfterInsert(doc, insertRange);
 
                 try

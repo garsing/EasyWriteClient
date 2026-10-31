@@ -109,9 +109,7 @@ namespace WordAddIn1
             string modelNew,
             IList<string> originalMarks)
         {
-            string story = EnsureInsertNewPara(
-                insertAt,
-                AutonumConvert.StripNewByOriginalTypes(originalMarks, modelNew));
+            string story = AutonumConvert.StripNewByOriginalTypes(originalMarks, modelNew);
             Dbg("WriteInsert marks=" + AutonumConvert.DebugDescribeMarks(originalMarks)
                 + " modelNew=" + Snip(modelNew)
                 + " story=" + Snip(story)
@@ -262,41 +260,6 @@ namespace WordAddIn1
                 Dbg("TryFindReplace err=" + ex.Message);
                 return null;
             }
-        }
-
-        public static string EnsureInsertNewPara(Word.Range insertAt, string story)
-        {
-            if (insertAt == null || string.IsNullOrEmpty(story) || story.IndexOf('\r') >= 0)
-            {
-                return story ?? "";
-            }
-
-            try
-            {
-                if (insertAt.Start != insertAt.End)
-                {
-                    return story;
-                }
-
-                int pos = insertAt.Start;
-                if (pos <= 0)
-                {
-                    return story;
-                }
-
-                string prev = insertAt.Document.Range(pos - 1, pos).Text ?? "";
-                if (prev == "\r" || prev == "\f")
-                {
-                    Dbg("EnsureInsertNewPara append \\r at pos=" + pos);
-                    return story + "\r";
-                }
-            }
-            catch (Exception ex)
-            {
-                Dbg("EnsureInsertNewPara err=" + ex.Message);
-            }
-
-            return story;
         }
 
         private static Word.Range TryFindReplaceByParagraph(Word.Document doc, Word.Range target, string story)
