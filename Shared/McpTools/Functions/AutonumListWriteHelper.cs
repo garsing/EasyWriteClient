@@ -218,7 +218,7 @@ namespace WordAddIn1
                 object findArg = findText;
                 object falseArg = false;
                 object trueArg = true;
-                object wrapArg = Word.WdFindWrap.wdFindContinue;
+                object wrapArg = Word.WdFindWrap.wdFindStop;
                 object replaceWithArg = repl;
                 object replaceArg = Word.WdReplace.wdReplaceOne;
                 bool ok = find.Execute(
@@ -259,115 +259,6 @@ namespace WordAddIn1
             {
                 Dbg("TryFindReplace err=" + ex.Message);
                 return null;
-            }
-        }
-
-        private static Word.Range TryFindReplaceByParagraph(Word.Document doc, Word.Range target, string story)
-        {
-            if (doc == null || target == null)
-            {
-                return null;
-            }
-
-            try
-            {
-                string[] segs = (story ?? "").Split('\r');
-                var slices = new List<int[]>();
-                int tStart = target.Start;
-                int tEnd = target.End;
-                foreach (Word.Paragraph p in target.Paragraphs)
-                {
-                    Word.Range pr = p.Range;
-                    int s = pr.Start;
-                    int e = pr.End;
-                    if (e <= tStart || s >= tEnd)
-                    {
-                        continue;
-                    }
-
-                    if (s < tStart)
-                    {
-                        s = tStart;
-                    }
-
-                    if (e > tEnd)
-                    {
-                        e = tEnd;
-                    }
-
-                    string slice = SafeSlice(doc, s, e);
-                    if (e > s && slice.EndsWith("\r", StringComparison.Ordinal))
-                    {
-                        e--;
-                    }
-
-                    slices.Add(new[] { s, e });
-                }
-
-                Dbg("TryFindReplaceByParagraph paras=" + slices.Count + " segs=" + segs.Length);
-                if (slices.Count == 0 || slices.Count != segs.Length)
-                {
-                    return null;
-                }
-
-                int shift = 0;
-                int writtenStart = slices[0][0];
-                int writtenEnd = slices[slices.Count - 1][1];
-                for (int i = 0; i < segs.Length; i++)
-                {
-                    int s = slices[i][0] + shift;
-                    int e = slices[i][1] + shift;
-                    if (e < s)
-                    {
-                        e = s;
-                    }
-
-                    Word.Range inner = doc.Range(s, e);
-                    string before = SafeText(inner);
-                    string neu = segs[i] ?? "";
-                    if (!ReplaceInner(inner, before, neu))
-                    {
-                        Dbg("TryFindReplaceByParagraph para " + i + " failed before=" + Snip(before));
-                        return null;
-                    }
-
-                    int oldLen = e - s;
-                    shift += neu.Length - oldLen;
-                    writtenEnd = s + neu.Length;
-                }
-
-                Word.Range written = doc.Range(writtenStart, writtenEnd);
-                Dbg("TryFindReplaceByParagraph written " + RangeBrief(written));
-                return written;
-            }
-            catch (Exception ex)
-            {
-                Dbg("TryFindReplaceByParagraph err=" + ex.Message);
-                return null;
-            }
-        }
-
-        private static bool ReplaceInner(Word.Range inner, string before, string neu)
-        {
-            if (inner == null)
-            {
-                return false;
-            }
-
-            neu = neu ?? "";
-            try
-            {
-                int start = inner.Start;
-                inner.Text = neu;
-                string after = SafeText(inner);
-                Dbg("ReplaceInner before=" + Snip(before) + " neu=" + Snip(neu) + " after=" + Snip(after));
-                return string.Equals(after, neu, StringComparison.Ordinal)
-                    || string.Equals(SafeSlice(inner.Document, start, start + neu.Length), neu, StringComparison.Ordinal);
-            }
-            catch (Exception ex)
-            {
-                Dbg("ReplaceInner Text= err=" + ex.Message);
-                return false;
             }
         }
 
