@@ -329,6 +329,27 @@ namespace WordDocumentRoundtripTest
                 return anRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (caseFilter.StartsWith("wy-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "wy", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 写后带回 display 与部分成功（wy）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                var wyRun = new TestRun { TotalTarget = WyCases.Target };
+                WyCases.Run(wyRun, host);
+                Console.WriteLine("正式用例 通过 " + wyRun.CasesPassed
+                    + "  失败 " + wyRun.CasesFailed
+                    + "  跳过 " + wyRun.CasesSkipped
+                    + "  （目标 " + WyCases.Target + "）");
+                return wyRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("wu-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wu", StringComparison.OrdinalIgnoreCase))
             {
