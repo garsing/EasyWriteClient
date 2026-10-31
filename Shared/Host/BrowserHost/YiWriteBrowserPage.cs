@@ -18,6 +18,8 @@ namespace WordAddIn1.BrowserHost
         private EventHandler<CoreWebView2DownloadStartingEventArgs> _downloadStartingHandler;
         private EventHandler<CoreWebView2ScriptDialogOpeningEventArgs> _scriptDialogHandler;
         private BrowserScriptDialogSession _pendingScriptDialog;
+        private readonly object _scriptDialogGate = new object();
+        private TaskCompletionSource<bool> _scriptDialogSignal;
 
         public YiWriteBrowserPage(string tabUuid)
         {
@@ -137,6 +139,22 @@ namespace WordAddIn1.BrowserHost
             if (ReferenceEquals(_pendingScriptDialog, session))
             {
                 _pendingScriptDialog = null;
+            }
+        }
+
+        /// <summary>点击开始前调用。确认框挂起时这个 Task 完成，调用方不必再等卡在 confirm 里的 CDP。</summary>
+        internal Task ArmScriptDialogWatch()
+        {
+            lock (_scriptDialogGate)
+            {
+                if (_pendingScriptDialog != null && _pendingScriptDialog.IsPending)
+                {
+                    return Task.CompletedTask;
+                }
+
+                _scriptDialogSignal = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                return _scriptDialogSignal.Task;
             }
         }
 
@@ -479,6 +497,13 @@ namespace WordAddIn1.BrowserHost
                     },
                     () => held.Complete());
                 deferral = null;
+                lock (_scriptDialogGate)
+                {
+                    if (_scriptDialogSignal != null)
+                    {
+                        _scriptDialogSignal.TrySetResult(true);
+                    }
+                }
             }
             catch
             {

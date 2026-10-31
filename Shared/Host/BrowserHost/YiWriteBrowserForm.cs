@@ -338,6 +338,17 @@ namespace WordAddIn1.BrowserHost
             get { return _newWindowsDuringTool > 0; }
         }
 
+        internal Task ArmToolPageScriptDialog()
+        {
+            YiWriteBrowserPage page = ActivePage;
+            if (page == null)
+            {
+                return null;
+            }
+
+            return page.ArmScriptDialogWatch();
+        }
+
         internal bool TryTakeOpenedToolTab(out string tabUuid)
         {
             tabUuid = null;

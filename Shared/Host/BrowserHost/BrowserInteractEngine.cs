@@ -200,35 +200,61 @@ namespace WordAddIn1.BrowserHost
             }
 
             string mode = ConfigManager.NormalizeBrowserClickMode(clickMode);
+            Task dialog = ArmScriptDialog(cdp);
             string objectId = await ResolveObjectIdAsync(cdp, backendNodeId, sessionId).ConfigureAwait(true);
-            string resultJson = await CallFunctionOnAsync(
-                cdp,
-                objectId,
-                PointerPrepareJs,
-                BuildCallObject(new JObject
-                {
-                    ["kind"] = "click",
-                    ["mode"] = mode
-                }),
-                sessionId).ConfigureAwait(true);
-            ThrowIfJsNotOk(resultJson, "点击被挡住");
-            if (ReadJsReveal(resultJson))
-            {
-                ReadJsHostPoint(resultJson, out double hostX, out double hostY);
-                await DispatchCdpMouseAsync(cdp, sessionId, "mouseMoved", hostX, hostY, false)
-                    .ConfigureAwait(true);
-                await Task.Delay(HoverSettleMs).ConfigureAwait(true);
-                resultJson = await CallFunctionOnAsync(
+            string resultJson = await CallUntilScriptDialogAsync(
+                dialog,
+                CallFunctionOnAsync(
                     cdp,
                     objectId,
                     PointerPrepareJs,
                     BuildCallObject(new JObject
                     {
                         ["kind"] = "click",
-                        ["mode"] = mode,
-                        ["afterReveal"] = true
+                        ["mode"] = mode
                     }),
-                    sessionId).ConfigureAwait(true);
+                    sessionId)).ConfigureAwait(true);
+            if (ScriptDialogOpened(dialog))
+            {
+                return;
+            }
+
+            ThrowIfJsNotOk(resultJson, "点击被挡住");
+            if (ReadJsReveal(resultJson))
+            {
+                ReadJsHostPoint(resultJson, out double hostX, out double hostY);
+                if (await UntilScriptDialogAsync(
+                        dialog,
+                        DispatchCdpMouseAsync(cdp, sessionId, "mouseMoved", hostX, hostY, false))
+                    .ConfigureAwait(true))
+                {
+                    return;
+                }
+
+                await Task.Delay(HoverSettleMs).ConfigureAwait(true);
+                if (ScriptDialogOpened(dialog))
+                {
+                    return;
+                }
+
+                resultJson = await CallUntilScriptDialogAsync(
+                    dialog,
+                    CallFunctionOnAsync(
+                        cdp,
+                        objectId,
+                        PointerPrepareJs,
+                        BuildCallObject(new JObject
+                        {
+                            ["kind"] = "click",
+                            ["mode"] = mode,
+                            ["afterReveal"] = true
+                        }),
+                        sessionId)).ConfigureAwait(true);
+                if (ScriptDialogOpened(dialog))
+                {
+                    return;
+                }
+
                 ThrowIfJsNotOk(resultJson, "点击被挡住");
                 if (ReadJsReveal(resultJson))
                 {
@@ -243,7 +269,7 @@ namespace WordAddIn1.BrowserHost
             }
 
             ReadJsPoint(resultJson, out double x, out double y);
-            await DispatchCdpClickAsync(cdp, objectId, x, y, sessionId).ConfigureAwait(true);
+            await DispatchCdpClickAsync(cdp, objectId, x, y, sessionId, dialog).ConfigureAwait(true);
         }
 
         public static async Task HoverAsync(
@@ -1591,23 +1617,51 @@ namespace WordAddIn1.BrowserHost
             string objectId,
             double x,
             double y,
-            string sessionId)
+            string sessionId,
+            Task dialog = null)
         {
-            await DispatchCdpMouseAsync(cdp, sessionId, "mouseMoved", x, y, false).ConfigureAwait(true);
-            await DispatchCdpMouseAsync(cdp, sessionId, "mousePressed", x, y, true).ConfigureAwait(true);
-            await DispatchCdpMouseAsync(cdp, sessionId, "mouseReleased", x, y, false).ConfigureAwait(true);
+            if (await UntilScriptDialogAsync(
+                    dialog,
+                    DispatchCdpMouseAsync(cdp, sessionId, "mouseMoved", x, y, false))
+                .ConfigureAwait(true))
+            {
+                return;
+            }
+
+            if (await UntilScriptDialogAsync(
+                    dialog,
+                    DispatchCdpMouseAsync(cdp, sessionId, "mousePressed", x, y, true))
+                .ConfigureAwait(true))
+            {
+                return;
+            }
+
+            if (await UntilScriptDialogAsync(
+                    dialog,
+                    DispatchCdpMouseAsync(cdp, sessionId, "mouseReleased", x, y, false))
+                .ConfigureAwait(true))
+            {
+                return;
+            }
             YiWriteBrowserForm yiForm = cdp as YiWriteBrowserForm;
             if (yiForm != null && yiForm.HasNewWindowDuringTool)
             {
                 return;
             }
 
+            if (ScriptDialogOpened(dialog))
+            {
+                return;
+            }
+
             try
             {
-                await CallFunctionOnAsync(
-                    cdp,
-                    objectId,
-                    @"function(x, y) {
+                await CallUntilScriptDialogAsync(
+                    dialog,
+                    CallFunctionOnAsync(
+                        cdp,
+                        objectId,
+                        @"function(x, y) {
   if (!this || !this.isConnected) return false;
   function parentComposed(el) {
     if (!el) return null;
@@ -1641,11 +1695,97 @@ namespace WordAddIn1.BrowserHost
   return true;
 }",
                     BuildCallArgsPair(x, y),
-                    sessionId).ConfigureAwait(true);
+                    sessionId)).ConfigureAwait(true);
             }
             catch
             {
             }
+        }
+
+        private static Task ArmScriptDialog(IBrowserCdp cdp)
+        {
+            YiWriteBrowserForm form = cdp as YiWriteBrowserForm;
+            if (form == null)
+            {
+                return null;
+            }
+
+            return form.ArmToolPageScriptDialog();
+        }
+
+        private static bool ScriptDialogOpened(Task dialog)
+        {
+            return dialog != null && dialog.IsCompleted;
+        }
+
+        private static async Task<string> CallUntilScriptDialogAsync(Task dialog, Task<string> work)
+        {
+            if (work == null)
+            {
+                return null;
+            }
+
+            if (!ScriptDialogOpened(dialog))
+            {
+                if (dialog == null)
+                {
+                    return await work.ConfigureAwait(true);
+                }
+
+                Task winner = await Task.WhenAny(work, dialog).ConfigureAwait(true);
+                if (!ReferenceEquals(winner, dialog) && !dialog.IsCompleted)
+                {
+                    return await work.ConfigureAwait(true);
+                }
+            }
+
+            Observe(work);
+            return null;
+        }
+
+        private static async Task<bool> UntilScriptDialogAsync(Task dialog, Task work)
+        {
+            if (work == null)
+            {
+                return ScriptDialogOpened(dialog);
+            }
+
+            if (dialog == null)
+            {
+                await work.ConfigureAwait(true);
+                return false;
+            }
+
+            if (!dialog.IsCompleted)
+            {
+                Task winner = await Task.WhenAny(work, dialog).ConfigureAwait(true);
+                if (!ReferenceEquals(winner, dialog) && !dialog.IsCompleted)
+                {
+                    await work.ConfigureAwait(true);
+                    return false;
+                }
+            }
+
+            Observe(work);
+            return true;
+        }
+
+        private static void Observe(Task work)
+        {
+            if (work == null)
+            {
+                return;
+            }
+
+            work.ContinueWith(
+                t =>
+                {
+                    if (t.Exception != null)
+                    {
+                        return;
+                    }
+                },
+                TaskContinuationOptions.OnlyOnFaulted);
         }
 
         private static async Task DispatchCdpHoverAsync(
