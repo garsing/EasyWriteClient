@@ -718,6 +718,14 @@ namespace WordAddIn1.BrowserHost
                 return BrowserSnapshotResult.Fail("附着标签不可用");
             }
 
+            BrowserScriptDialogSession pendingDialog = await BrowserScriptDialogAttach
+                .SyncAsync(channel)
+                .ConfigureAwait(true);
+            if (pendingDialog != null && pendingDialog.IsPending)
+            {
+                return BrowserScriptDialogAttach.Publish(channel, pendingDialog);
+            }
+
             try
             {
                 int? targetFrame = null;
@@ -922,6 +930,16 @@ namespace WordAddIn1.BrowserHost
                 return BrowserInteractResult.Fail("附着标签不可用");
             }
 
+            BrowserScriptDialogSession pendingDialog = await BrowserScriptDialogAttach
+                .SyncAsync(channel)
+                .ConfigureAwait(true);
+            if (pendingDialog != null && pendingDialog.IsPending)
+            {
+                return await BrowserScriptDialogAttach
+                    .InteractAsync(channel, pendingDialog, action, refId, text)
+                    .ConfigureAwait(true);
+            }
+
             string act = (action ?? "").Trim().ToLowerInvariant();
             if (act != "click" && act != "hover" && act != "type" && act != "scroll" && act != "press" && act != "select")
             {
@@ -1032,6 +1050,13 @@ namespace WordAddIn1.BrowserHost
                     ["attach_pointer"] = ConfigManager.GetBrowserAttachPointer(engine)
                 };
                 JObject result = await RpcAsync(channel.TabUuid, "rpc.interact", req).ConfigureAwait(true);
+                if (result != null
+                    && result["script_dialog"] != null
+                    && result["script_dialog"].Type != JTokenType.Null)
+                {
+                    BrowserScriptDialogAttach.Remember(channel.TabUuid, result["script_dialog"]);
+                }
+
                 TryLogAttachClickDiag(refId, entry, req, result);
                 string pageUrl = (string)result["url"] ?? channel.Url;
                 string title = (string)result["title"] ?? channel.Title;
@@ -1059,6 +1084,14 @@ namespace WordAddIn1.BrowserHost
             if (channel == null || !IsAttachTabLive(channel.TabUuid))
             {
                 return BrowserDownloadResult.Fail("附着标签不可用");
+            }
+
+            BrowserScriptDialogSession pendingDialog = await BrowserScriptDialogAttach
+                .SyncAsync(channel)
+                .ConfigureAwait(true);
+            if (pendingDialog != null && pendingDialog.IsPending)
+            {
+                return BrowserDownloadResult.Fail(BrowserScriptDialog.MustHandleFirst);
             }
 
             bool hasRef = !string.IsNullOrWhiteSpace(refId);
@@ -1217,6 +1250,11 @@ namespace WordAddIn1.BrowserHost
 
             JObject result = await RpcAsync(tabUuid, "rpc.cdp", req, TimeSpan.FromSeconds(45))
                 .ConfigureAwait(true);
+            if (result != null && result["script_dialog"] != null && result["script_dialog"].Type != JTokenType.Null)
+            {
+                BrowserScriptDialogAttach.Remember(tabUuid, result["script_dialog"]);
+            }
+
             return result != null ? result.ToString(Newtonsoft.Json.Formatting.None) : "{}";
         }
 

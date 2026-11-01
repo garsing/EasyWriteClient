@@ -1727,12 +1727,18 @@ namespace WordAddIn1.BrowserHost
         private static Task ArmScriptDialog(IBrowserCdp cdp)
         {
             YiWriteBrowserForm form = cdp as YiWriteBrowserForm;
-            if (form == null)
+            if (form != null)
+            {
+                return form.ArmToolPageScriptDialog();
+            }
+
+            AttachCdpSession attach = cdp as AttachCdpSession;
+            if (attach == null)
             {
                 return null;
             }
 
-            return form.ArmToolPageScriptDialog();
+            return attach.ArmScriptDialogWatch();
         }
 
         private static bool ScriptDialogOpened(Task dialog)

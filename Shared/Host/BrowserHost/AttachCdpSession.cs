@@ -17,6 +17,16 @@ namespace WordAddIn1.BrowserHost
             _title = title ?? "";
         }
 
+        public string TabUuid
+        {
+            get { return _tabUuid; }
+        }
+
+        public Task ArmScriptDialogWatch()
+        {
+            return BrowserScriptDialogAttach.Arm(_tabUuid);
+        }
+
         public string CurrentUrl
         {
             get { return _url; }

@@ -20,6 +20,14 @@ namespace WordAddIn1.BrowserHost
                 return BrowserSnapshotResult.Fail("附着标签不可用");
             }
 
+            BrowserScriptDialogSession pendingDialog = await BrowserScriptDialogAttach
+                .SyncAsync(channel)
+                .ConfigureAwait(true);
+            if (pendingDialog != null && pendingDialog.IsPending)
+            {
+                return BrowserScriptDialogAttach.Publish(channel, pendingDialog);
+            }
+
             var cdp = new AttachCdpSession(channel.TabUuid, channel.Url, channel.Title);
             await cdp.RefreshMetaAsync().ConfigureAwait(true);
 
@@ -209,6 +217,14 @@ namespace WordAddIn1.BrowserHost
                 return BrowserSnapshotResult.Fail("附着标签不可用");
             }
 
+            BrowserScriptDialogSession pendingLayer = await BrowserScriptDialogAttach
+                .SyncAsync(channel)
+                .ConfigureAwait(true);
+            if (pendingLayer != null && pendingLayer.IsPending)
+            {
+                return BrowserScriptDialogAttach.Publish(channel, pendingLayer);
+            }
+
             var cdp = new AttachCdpSession(channel.TabUuid, channel.Url, channel.Title);
             await cdp.RefreshMetaAsync().ConfigureAwait(true);
             BrowserFrameMap frameMap = await BrowserFrameResolver.LoadAsync(cdp).ConfigureAwait(true);
@@ -241,6 +257,16 @@ namespace WordAddIn1.BrowserHost
             if (channel == null || !ExtensionHost.IsAttachTabLive(channel.TabUuid))
             {
                 return BrowserInteractResult.Fail("附着标签不可用");
+            }
+
+            BrowserScriptDialogSession pendingDialog = await BrowserScriptDialogAttach
+                .SyncAsync(channel)
+                .ConfigureAwait(true);
+            if (pendingDialog != null && pendingDialog.IsPending)
+            {
+                return await BrowserScriptDialogAttach
+                    .InteractAsync(channel, pendingDialog, action, refId, text)
+                    .ConfigureAwait(true);
             }
 
             string act = (action ?? "").Trim().ToLowerInvariant();
@@ -434,7 +460,11 @@ namespace WordAddIn1.BrowserHost
                         .ConfigureAwait(true);
                 }
 
-                await cdp.RefreshMetaAsync().ConfigureAwait(true);
+                if (BrowserScriptDialogAttach.Peek(channel.TabUuid) == null)
+                {
+                    await cdp.RefreshMetaAsync().ConfigureAwait(true);
+                }
+
                 channel.UpdatePage(cdp.CurrentUrl, cdp.CurrentTitle, true);
                 return await BrowserResnapshotAfterAction
                     .CompleteInteractAsync(
@@ -458,6 +488,14 @@ namespace WordAddIn1.BrowserHost
             if (channel == null || !ExtensionHost.IsAttachTabLive(channel.TabUuid))
             {
                 return BrowserDownloadResult.Fail("附着标签不可用");
+            }
+
+            BrowserScriptDialogSession pendingDownload = await BrowserScriptDialogAttach
+                .SyncAsync(channel)
+                .ConfigureAwait(true);
+            if (pendingDownload != null && pendingDownload.IsPending)
+            {
+                return BrowserDownloadResult.Fail(BrowserScriptDialog.MustHandleFirst);
             }
 
             bool hasRef = !string.IsNullOrWhiteSpace(refId);

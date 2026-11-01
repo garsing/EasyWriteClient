@@ -8,7 +8,48 @@ let port = null;
 let browserKind = detectBrowserKind();
 let reconnectTimer = null;
 const pendingRpc = new Map();
+const pendingDialogs = new Map();
+const dialogWaiters = new Map();
 const CDP_FAIL = "未授予调试权限或无法附加调试器，无法使用 CDP 点击。";
+
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (!source || source.tabId == null) {
+    return;
+  }
+  const tabId = source.tabId;
+  if (method === "Page.javascriptDialogOpening") {
+    const dialog = {
+      type: (params && params.type) || "confirm",
+      message: (params && params.message) || "",
+      defaultPrompt: (params && params.defaultPrompt) || ""
+    };
+    if (pendingDialogs.has(tabId)) {
+      return;
+    }
+    pendingDialogs.set(tabId, dialog);
+    rememberDialog(tabId, dialog);
+    const waiters = dialogWaiters.get(tabId) || [];
+    dialogWaiters.delete(tabId);
+    waiters.forEach((resolve) => {
+      try { resolve(dialog); } catch (_) {}
+    });
+    return;
+  }
+  if (method === "Page.javascriptDialogClosed") {
+    pendingDialogs.delete(tabId);
+    forgetDialog(tabId);
+    detachDebugger({ tabId });
+  }
+});
+
+chrome.debugger.onDetach.addListener((source) => {
+  if (!source || source.tabId == null) {
+    return;
+  }
+  pendingDialogs.delete(source.tabId);
+  forgetDialog(source.tabId);
+  dialogWaiters.delete(source.tabId);
+});
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.type !== "yiwrite.pointer") {
@@ -44,9 +85,78 @@ async function attachDebugger(target) {
 }
 
 async function detachDebugger(target) {
+  if (target && pendingDialogs.has(target.tabId)) {
+    return;
+  }
   try {
     await chrome.debugger.detach(target);
   } catch (_) {}
+}
+
+async function rememberDialog(tabId, dialog) {
+  try {
+    const stored = await chrome.storage.session.get("scriptDialogs");
+    const map = (stored && stored.scriptDialogs) || {};
+    map[String(tabId)] = dialog;
+    await chrome.storage.session.set({ scriptDialogs: map });
+  } catch (_) {}
+}
+
+async function forgetDialog(tabId) {
+  try {
+    const stored = await chrome.storage.session.get("scriptDialogs");
+    const map = (stored && stored.scriptDialogs) || {};
+    delete map[String(tabId)];
+    await chrome.storage.session.set({ scriptDialogs: map });
+  } catch (_) {}
+}
+
+async function loadDialog(tabId) {
+  if (pendingDialogs.has(tabId)) {
+    return pendingDialogs.get(tabId);
+  }
+  try {
+    const stored = await chrome.storage.session.get("scriptDialogs");
+    const dialog = stored && stored.scriptDialogs && stored.scriptDialogs[String(tabId)];
+    if (dialog) {
+      pendingDialogs.set(tabId, dialog);
+      return dialog;
+    }
+  } catch (_) {}
+  return null;
+}
+
+function waitForDialog(tabId) {
+  if (pendingDialogs.has(tabId)) {
+    const existing = pendingDialogs.get(tabId);
+    return { promise: Promise.resolve(existing), cancel() {} };
+  }
+  let resolveFn;
+  const promise = new Promise((resolve) => {
+    resolveFn = resolve;
+  });
+  const list = dialogWaiters.get(tabId) || [];
+  list.push(resolveFn);
+  dialogWaiters.set(tabId, list);
+  return {
+    promise,
+    cancel() {
+      const cur = dialogWaiters.get(tabId) || [];
+      dialogWaiters.set(tabId, cur.filter((item) => item !== resolveFn));
+    }
+  };
+}
+
+async function armScriptDialog(tabId) {
+  const granted = await ensureDebuggerPermission();
+  if (!granted) {
+    return false;
+  }
+  await attachDebugger({ tabId });
+  try {
+    await chrome.debugger.sendCommand({ tabId }, "Page.enable");
+  } catch (_) {}
+  return true;
 }
 
 async function cdpCommand(msg) {
@@ -60,15 +170,42 @@ async function cdpCommand(msg) {
     throw new Error("CDP method 为空");
   }
   await attachDebugger({ tabId });
+  try {
+    await chrome.debugger.sendCommand({ tabId }, "Page.enable");
+  } catch (_) {}
   const target = { tabId };
   if (msg.session_id) {
     target.sessionId = String(msg.session_id);
   }
   const params = msg.params && typeof msg.params === "object" ? msg.params : {};
+  const isRelease = method === "Input.dispatchMouseEvent" && params.type === "mouseReleased";
+  const run = chrome.debugger.sendCommand(target, method, params).catch((e) => {
+    if (pendingDialogs.has(tabId)) {
+      return {};
+    }
+    throw e;
+  });
+  if (!isRelease) {
+    try {
+      const result = await run;
+      return result && typeof result === "object" ? result : {};
+    } catch (e) {
+      throw new Error(String((e && e.message) || e || CDP_FAIL));
+    }
+  }
+  const watch = waitForDialog(tabId);
   try {
-    const result = await chrome.debugger.sendCommand(target, method, params);
-    return result && typeof result === "object" ? result : {};
+    const winner = await Promise.race([
+      run.then((result) => ({ kind: "cdp", result })),
+      watch.promise.then((dialog) => ({ kind: "dialog", dialog }))
+    ]);
+    if (winner.kind === "dialog" || pendingDialogs.has(tabId)) {
+      return { script_dialog: winner.dialog || pendingDialogs.get(tabId) };
+    }
+    watch.cancel();
+    return winner.result && typeof winner.result === "object" ? winner.result : {};
   } catch (e) {
+    watch.cancel();
     throw new Error(String((e && e.message) || e || CDP_FAIL));
   }
 }
@@ -238,7 +375,8 @@ function onHostMessage(msg) {
   if (type === "rpc.snapshot" || type === "rpc.interact"
     || type === "rpc.navigate" || type === "rpc.download"
     || type === "rpc.download_wait" || type === "rpc.cdp"
-    || type === "rpc.activate_tab" || type === "rpc.screenshot") {
+    || type === "rpc.activate_tab" || type === "rpc.screenshot"
+    || type === "rpc.script_dialog") {
     handleRpc(msg).catch((e) => {
       sendToHost({
         type: "rpc.result",
@@ -278,6 +416,9 @@ async function handleRpc(msg) {
         break;
       case "rpc.screenshot":
         result = await screenshotTab(msg);
+        break;
+      case "rpc.script_dialog":
+        result = await scriptDialogRpc(msg);
         break;
       default:
         throw new Error("unknown rpc: " + msg.type);
@@ -665,6 +806,28 @@ async function snapshotTab(msg) {
   };
 }
 
+async function scriptDialogRpc(msg) {
+  const tabId = parseTabId(msg.tab_uuid);
+  const op = String(msg.op || "get");
+  if (op === "get") {
+    return { dialog: await loadDialog(tabId) };
+  }
+  const dialog = await loadDialog(tabId);
+  if (!dialog) {
+    throw new Error("确认框已关闭");
+  }
+  const accept = op === "accept";
+  const params = { accept };
+  if (accept && msg.prompt_text != null) {
+    params.promptText = String(msg.prompt_text);
+  }
+  await chrome.debugger.sendCommand({ tabId }, "Page.handleJavaScriptDialog", params);
+  pendingDialogs.delete(tabId);
+  await forgetDialog(tabId);
+  await detachDebugger({ tabId });
+  return { ok: true };
+}
+
 async function interactTab(msg) {
   const tabId = parseTabId(msg.tab_uuid);
   await chrome.tabs.update(tabId, { active: true });
@@ -672,7 +835,16 @@ async function interactTab(msg) {
     ? Number(msg.frame_id)
     : null;
   await ensureContentScript(tabId, frameId != null && Number.isFinite(frameId) ? frameId : undefined);
-  const resp = await sendToTab(tabId, {
+  const action = String(msg.action || "").toLowerCase();
+  let armed = false;
+  if (action === "click") {
+    try {
+      armed = await armScriptDialog(tabId);
+    } catch (_) {
+      armed = false;
+    }
+  }
+  const clickPromise = sendToTab(tabId, {
     type: "interact",
     action: msg.action,
     ref: msg.ref,
@@ -683,12 +855,33 @@ async function interactTab(msg) {
     css_path: msg.css_path || null,
     click_mode: msg.click_mode || null,
     attach_pointer: msg.attach_pointer || null
-  }, frameId != null && Number.isFinite(frameId) ? frameId : undefined);
+  }, frameId != null && Number.isFinite(frameId) ? frameId : undefined)
+    .catch((e) => ({ ok: false, error: String((e && e.message) || e || "interact 失败") }));
+  let watch = null;
+  if (armed) {
+    watch = waitForDialog(tabId);
+  }
+  const winner = watch
+    ? await Promise.race([
+      clickPromise.then((resp) => ({ kind: "click", resp })),
+      watch.promise.then((dialog) => ({ kind: "dialog", dialog }))
+    ])
+    : { kind: "click", resp: await clickPromise };
+  if (watch && winner.kind !== "dialog") {
+    watch.cancel();
+  }
+  const dialog = winner.kind === "dialog"
+    ? winner.dialog
+    : (pendingDialogs.get(tabId) || null);
+  if (!dialog && armed) {
+    await detachDebugger({ tabId });
+  }
+  const resp = winner.kind === "click" ? winner.resp : { ok: true, message: "clicked" };
   if (!resp || !resp.ok) {
     throw new Error((resp && resp.error) || "interact 失败");
   }
   const tab = await chrome.tabs.get(tabId);
-  return {
+  const payload = {
     url: tab.url || "",
     title: tab.title || "",
     message: resp.message || "ok",
@@ -698,6 +891,10 @@ async function interactTab(msg) {
     path: resp.path || "",
     ext_version: chrome.runtime.getManifest().version
   };
+  if (dialog) {
+    payload.script_dialog = dialog;
+  }
+  return payload;
 }
 
 async function downloadTab(msg) {
