@@ -150,8 +150,8 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 写入字体背景，和对照文档第 2 行相同：只涂文字，不涂段落标记。
-        /// 范围含 <c>\r</c> / 单元格结束符时，WPS 会把底纹收成段落底纹，字体组的字符底纹就改不掉。
+        /// 默认浅黄标记用突出显示。Word 和 WPS 的黄笔「无颜色」都能把它还原。
+        /// 字符底纹的「无颜色」清不掉自定义 fill。范围不含段落标记，避免收成段落底纹。
         /// </summary>
         public static void WriteCharBackground(Word.Range range, Word.WdColor color)
         {
@@ -163,14 +163,7 @@ namespace WordAddIn1
 
             try
             {
-                if (IsWps(target))
-                {
-                    WriteWpsCharShading(target, color);
-                }
-                else
-                {
-                    WriteWordHighlight(target, color);
-                }
+                WriteHighlightMarker(target, color);
             }
             catch (Exception ex)
             {
@@ -178,29 +171,10 @@ namespace WordAddIn1
             }
         }
 
-        /// <summary>WPS 字体组灰色 A 改的是字符底纹。突出显示另算一层，写底纹时关掉。</summary>
-        private static void WriteWpsCharShading(Word.Range target, Word.WdColor color)
-        {
-            if (color != Word.WdColor.wdColorAutomatic)
-            {
-                try
-                {
-                    target.HighlightColorIndex = Word.WdColorIndex.wdNoHighlight;
-                }
-                catch (Exception ex)
-                {
-                    DbgLog("WriteCharBackground 清突出显示失败: " + ex.Message);
-                }
-            }
-
-            target.Font.Shading.BackgroundPatternColor = color;
-        }
-
         /// <summary>
-        /// Word 字体组能清掉的是突出显示（黄笔）。字符底纹的「无颜色」清不掉 fill。
-        /// 默认浅黄标记用调色板黄色；调用方指定的其它颜色仍走字符底纹。
+        /// 默认浅黄用调色板黄色。调用方指定的其它颜色仍走字符底纹。
         /// </summary>
-        private static void WriteWordHighlight(Word.Range target, Word.WdColor color)
+        private static void WriteHighlightMarker(Word.Range target, Word.WdColor color)
         {
             if (color == Word.WdColor.wdColorAutomatic
                 || color == ConfigManager.DocumentColorHelper.InsertBackground)
@@ -230,22 +204,6 @@ namespace WordAddIn1
             }
 
             target.Font.Shading.BackgroundPatternColor = color;
-        }
-
-        private static bool IsWps(Word.Range range)
-        {
-            try
-            {
-                string path = range?.Application?.Path ?? "";
-                return path.IndexOf("WPS", StringComparison.OrdinalIgnoreCase) >= 0
-                    || path.IndexOf("Kingsoft", StringComparison.OrdinalIgnoreCase) >= 0
-                    || path.IndexOf("office6", StringComparison.OrdinalIgnoreCase) >= 0;
-            }
-            catch (Exception ex)
-            {
-                DbgLog("IsWps 失败: " + ex.Message);
-                return false;
-            }
         }
 
         /// <summary>去掉末尾段落标记和单元格结束符，避免底纹打到段落上。</summary>
