@@ -163,16 +163,88 @@ namespace WordAddIn1
 
             try
             {
-                if (color != Word.WdColor.wdColorAutomatic)
+                if (IsWps(target))
                 {
-                    target.HighlightColorIndex = Word.WdColorIndex.wdNoHighlight;
+                    WriteWpsCharShading(target, color);
                 }
-
-                target.Font.Shading.BackgroundPatternColor = color;
+                else
+                {
+                    WriteWordHighlight(target, color);
+                }
             }
             catch (Exception ex)
             {
                 DbgLog("WriteCharBackground 失败: " + ex.Message);
+            }
+        }
+
+        /// <summary>WPS 字体组灰色 A 改的是字符底纹。突出显示另算一层，写底纹时关掉。</summary>
+        private static void WriteWpsCharShading(Word.Range target, Word.WdColor color)
+        {
+            if (color != Word.WdColor.wdColorAutomatic)
+            {
+                try
+                {
+                    target.HighlightColorIndex = Word.WdColorIndex.wdNoHighlight;
+                }
+                catch (Exception ex)
+                {
+                    DbgLog("WriteCharBackground 清突出显示失败: " + ex.Message);
+                }
+            }
+
+            target.Font.Shading.BackgroundPatternColor = color;
+        }
+
+        /// <summary>
+        /// Word 字体组能清掉的是突出显示（黄笔）。字符底纹的「无颜色」清不掉 fill。
+        /// 默认浅黄标记用调色板黄色；调用方指定的其它颜色仍走字符底纹。
+        /// </summary>
+        private static void WriteWordHighlight(Word.Range target, Word.WdColor color)
+        {
+            if (color == Word.WdColor.wdColorAutomatic
+                || color == ConfigManager.DocumentColorHelper.InsertBackground)
+            {
+                try
+                {
+                    target.Font.Shading.BackgroundPatternColor = Word.WdColor.wdColorAutomatic;
+                }
+                catch (Exception ex)
+                {
+                    DbgLog("WriteCharBackground 清字符底纹失败: " + ex.Message);
+                }
+
+                target.HighlightColorIndex = color == Word.WdColor.wdColorAutomatic
+                    ? Word.WdColorIndex.wdNoHighlight
+                    : Word.WdColorIndex.wdYellow;
+                return;
+            }
+
+            try
+            {
+                target.HighlightColorIndex = Word.WdColorIndex.wdNoHighlight;
+            }
+            catch (Exception ex)
+            {
+                DbgLog("WriteCharBackground 清突出显示失败: " + ex.Message);
+            }
+
+            target.Font.Shading.BackgroundPatternColor = color;
+        }
+
+        private static bool IsWps(Word.Range range)
+        {
+            try
+            {
+                string path = range?.Application?.Path ?? "";
+                return path.IndexOf("WPS", StringComparison.OrdinalIgnoreCase) >= 0
+                    || path.IndexOf("Kingsoft", StringComparison.OrdinalIgnoreCase) >= 0
+                    || path.IndexOf("office6", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            catch (Exception ex)
+            {
+                DbgLog("IsWps 失败: " + ex.Message);
+                return false;
             }
         }
 
@@ -422,8 +494,9 @@ namespace WordAddIn1
 
             if (payload.IndexOf('\r') < 0)
             {
-                RecordFormatPlan(prefixSafe, mapped: false, "skip", "skip", "sentences", "no-cr");
-                ApplySentencesInSlice(doc, written, payload, snapshot, findSentenceInRange);
+                // 没有换行时写入范围就是这句话。Word 的 Find 在范围刚好等于句子、不含段标时会失败，套不上浅黄。
+                RecordFormatPlan(prefixSafe, mapped: false, "skip", "skip", "block", "no-cr");
+                ApplySnapshot(written, snapshot, charFormatOnly: true);
                 return;
             }
 
@@ -544,6 +617,30 @@ namespace WordAddIn1
                 Word.Range sentenceRange = findSentenceInRange(doc, searchRange, sentence);
                 if (sentenceRange == null)
                 {
+                    int take = sentence.Length;
+                    if (take > blockEnd - currentPos)
+                    {
+                        take = blockEnd - currentPos;
+                    }
+
+                    Word.Range direct = take > 0 ? doc.Range(currentPos, currentPos + take) : null;
+                    string got = "";
+                    try
+                    {
+                        got = direct?.Text ?? "";
+                    }
+                    catch (Exception ex)
+                    {
+                        DbgLog("ApplySentencesInSlice 读直接范围失败: " + ex.Message);
+                    }
+
+                    if (direct != null && got == sentence)
+                    {
+                        ApplySnapshot(direct, snapshot, charFormatOnly: true);
+                        currentPos = direct.End;
+                        continue;
+                    }
+
                     DbgLog($"ApplySentencesInSlice 句{idx} 未找到 pos={currentPos} preview=\"{PreviewText(sentence)}\"");
                     currentPos += sentence.Length;
                     continue;
@@ -780,6 +877,13 @@ namespace WordAddIn1
 
         private static void ApplyCharFormat(Word.Range range, Dictionary<string, object> format)
         {
+            // 含段落标记时，后面的 Font.Bold 会把已打上的字符底纹清掉，或把底纹收成段落底纹。
+            range = TrimTrailingMarks(range);
+            if (range == null)
+            {
+                return;
+            }
+
             try
             {
                 if (format.ContainsKey("font_name"))
@@ -803,11 +907,6 @@ namespace WordAddIn1
                 if (format.ContainsKey("font_color"))
                 {
                     range.Font.Color = ConvertRgbToWdColor(format["font_color"]?.ToString() ?? "");
-                }
-
-                if (format.ContainsKey("background_color"))
-                {
-                    WriteCharBackground(range, ConvertRgbToWdColor(format["background_color"]?.ToString() ?? ""));
                 }
 
                 if (format.ContainsKey("is_bold"))
@@ -834,6 +933,11 @@ namespace WordAddIn1
                         ? b
                         : (format["has_strikethrough"]?.ToString() == "True" || format["has_strikethrough"]?.ToString() == "true");
                     range.Font.StrikeThrough = hasStrikethrough ? 1 : 0;
+                }
+
+                if (format.ContainsKey("background_color"))
+                {
+                    WriteCharBackground(range, ConvertRgbToWdColor(format["background_color"]?.ToString() ?? ""));
                 }
             }
             catch (Exception ex)
