@@ -149,15 +149,102 @@ namespace WordAddIn1
             }
         }
 
-        /// <summary>写入字体背景。不改 <c>Range.Shading</c> / 单元格底纹。</summary>
+        /// <summary>
+        /// 写入字体背景，和对照文档第 2 行相同：只涂文字，不涂段落标记。
+        /// 范围含 <c>\r</c> / 单元格结束符时，WPS 会把底纹收成段落底纹，字体组的字符底纹就改不掉。
+        /// </summary>
         public static void WriteCharBackground(Word.Range range, Word.WdColor color)
         {
-            if (range == null)
+            Word.Range target = TrimTrailingMarks(range);
+            if (target == null)
             {
                 return;
             }
 
-            range.Font.Shading.BackgroundPatternColor = color;
+            try
+            {
+                if (color != Word.WdColor.wdColorAutomatic)
+                {
+                    target.HighlightColorIndex = Word.WdColorIndex.wdNoHighlight;
+                }
+
+                target.Font.Shading.BackgroundPatternColor = color;
+            }
+            catch (Exception ex)
+            {
+                DbgLog("WriteCharBackground 失败: " + ex.Message);
+            }
+        }
+
+        /// <summary>去掉末尾段落标记和单元格结束符，避免底纹打到段落上。</summary>
+        private static Word.Range TrimTrailingMarks(Word.Range range)
+        {
+            if (range == null)
+            {
+                return null;
+            }
+
+            int start;
+            int end;
+            Word.Document doc;
+            try
+            {
+                start = range.Start;
+                end = range.End;
+                doc = range.Document;
+            }
+            catch (Exception ex)
+            {
+                DbgLog("TrimTrailingMarks 读范围失败: " + ex.Message);
+                return null;
+            }
+
+            while (end > start)
+            {
+                string ch;
+                try
+                {
+                    ch = doc.Range(end - 1, end).Text ?? "";
+                }
+                catch (Exception ex)
+                {
+                    DbgLog("TrimTrailingMarks 读末字符失败: " + ex.Message);
+                    break;
+                }
+
+                if (ch.Length == 0)
+                {
+                    break;
+                }
+
+                char c = ch[0];
+                if (c != '\r' && c != '\a' && c != '\n' && c != '\v')
+                {
+                    break;
+                }
+
+                end--;
+            }
+
+            if (end <= start || doc == null)
+            {
+                return null;
+            }
+
+            if (start == range.Start && end == range.End)
+            {
+                return range;
+            }
+
+            try
+            {
+                return doc.Range(start, end);
+            }
+            catch (Exception ex)
+            {
+                DbgLog("TrimTrailingMarks 收缩范围失败: " + ex.Message);
+                return null;
+            }
         }
 
         /// <param name="charFormatOnly">为 true 时只写字体等字符格式，不 set_Style / 段落对齐（避免 partial range 触发整段样式重置为等线）</param>
