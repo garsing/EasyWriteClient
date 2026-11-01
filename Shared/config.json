@@ -23,7 +23,7 @@
   },
   "App": {
     "Name": "WordAddIn1",
-    "Version": "1.0.11",
+    "Version": "1.0.12",
     "DebugCategories": ["timing", "autonum"],
     "PreferPdfActivePrinterOnStartup": true,
     "BackendProcessTextLengthThreshold": 60000
