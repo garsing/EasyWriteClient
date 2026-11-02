@@ -203,7 +203,7 @@ namespace WordAddIn1
             public float FontStep { get; set; } = 0.5f;
             public float MinColumnWidth { get; set; } = 30f;
             /// <summary>段 1 总宽线性扫描步长（磅）。</summary>
-            public float WidthStep { get; set; } = 25f;
+            public float WidthStep { get; set; } = 50f;
             public int MaxIterations { get; set; } = 20;
             public bool AllowWrap { get; set; } = false;
             public float RowHeightMultiplier { get; set; } = 1.2f;
