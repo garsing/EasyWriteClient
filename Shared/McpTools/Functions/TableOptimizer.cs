@@ -281,6 +281,17 @@ namespace WordAddIn1
             {
                 LogTune($"LockTableFixedWidth: PreferredWidth({targetTotalPoints:F1}pt) 失败: {ex.Message}");
             }
+
+            // 总宽略小于上限时，空留在右边，不要顶到右缘、左边空一截。
+            try
+            {
+                table.Rows.LeftIndent = 0f;
+                table.Rows.Alignment = Word.WdRowAlignment.wdAlignRowLeft;
+            }
+            catch (Exception ex)
+            {
+                LogTune($"LockTableFixedWidth: 左对齐失败: {ex.Message}");
+            }
         }
 
         /// <summary>

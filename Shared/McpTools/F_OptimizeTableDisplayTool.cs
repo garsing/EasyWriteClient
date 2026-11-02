@@ -261,9 +261,40 @@ namespace WordAddIn1
                 return false;
             }
 
-            wMax = cellWidth;
+            float leftPad = 0f;
+            float rightPad = 0f;
+            try
+            {
+                leftPad = (float)cell.LeftPadding;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            try
+            {
+                rightPad = (float)cell.RightPadding;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            wMax = cellWidth - leftPad - rightPad;
+            if (wMax <= 0f)
+            {
+                error = "嵌套表但拿不到父级单元格宽度";
+                TableOptimizer.LogTune(
+                    "F_OptimizeTableDisplay: 父格可写宽度无效 " + parent.GeometricCode
+                    + " width=" + cellWidth.ToString("F1")
+                    + " padL=" + leftPad.ToString("F1")
+                    + " padR=" + rightPad.ToString("F1"));
+                return false;
+            }
+
             TableOptimizer.LogTune(
-                $"F_OptimizeTableDisplay: 嵌套表 父格={parent.GeometricCode} W_max={wMax:F1}pt 版心={pageWidth:F1}pt");
+                $"F_OptimizeTableDisplay: 嵌套表 父格={parent.GeometricCode} W_max={wMax:F1}pt（格宽={cellWidth:F1}pt 减左右衬 {leftPad:F1}+{rightPad:F1}）版心={pageWidth:F1}pt");
             return true;
         }
 
