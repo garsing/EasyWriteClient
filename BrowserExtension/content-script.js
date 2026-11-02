@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 51;
+  const CONTENT_VER = 53;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -2067,8 +2067,44 @@
     return el;
   }
 
+  function openHtmlCollapse(el) {
+    if (!el) return;
+    let node = el.nodeType === 3 ? el.parentElement : el;
+    let title = null;
+    try { title = node && node.closest && node.closest(".layui-colla-title, .collapse-title"); } catch (_) {}
+    if (!title) return;
+    const content = title.nextElementSibling;
+    const cn = content ? String(content.className || "") : "";
+    const isBody = /\blayui-colla-content\b/.test(cn) || /\bcollapse-content\b/.test(cn);
+    function hidden(elm) {
+      if (!elm) return true;
+      try {
+        const st = window.getComputedStyle(elm);
+        if (!st) return true;
+        if (st.display === "none" || st.visibility === "hidden") return true;
+        const h = parseFloat(st.height);
+        if (!isNaN(h) && h < 2) return true;
+      } catch (_) { return true; }
+      return false;
+    }
+    if (isBody && !hidden(content)) return;
+    const jq = window.jQuery || window.$;
+    if (jq) {
+      try { jq(title).trigger("click"); } catch (_) {}
+    }
+    if (isBody && !hidden(content)) return;
+    if (isBody && hidden(content)) {
+      try { content.classList.add("layui-show"); } catch (_) {}
+      try { content.style.display = "block"; content.style.height = "auto"; } catch (_) {}
+    }
+  }
+
   function resolveClickTarget(el) {
     if (!el) return el;
+    try {
+      const colla = el.closest && el.closest(".layui-colla-title, .collapse-title");
+      if (colla) return colla;
+    } catch (_) {}
     const tag = (el.tagName || "").toLowerCase();
     const role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase();
     if (tag !== "a" && role !== "link" && tag !== "button" && role !== "button") {
@@ -2147,6 +2183,7 @@
         { skipHit: regionImage }
       );
       if (!clicked.ok) return clicked;
+      openHtmlCollapse(regionImage ? el : target);
       const used = regionImage ? el : target;
       const box = boxCenter(used);
       return {

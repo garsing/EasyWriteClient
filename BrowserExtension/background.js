@@ -244,11 +244,20 @@ async function dispatchCdpPointer(tabId, kind, x, y) {
     buttons: 1,
     pointerType: "mouse"
   });
+  const upX = px + 1;
+  await send({
+    type: "mouseMoved",
+    x: upX,
+    y: py,
+    button: "left",
+    buttons: 1,
+    pointerType: "mouse"
+  });
   const watch = waitForDialog(tabId);
   try {
     const released = send({
       type: "mouseReleased",
-      x: px,
+      x: upX,
       y: py,
       button: "left",
       clickCount: 1,
@@ -627,7 +636,7 @@ function frameMessageOptions(frameId) {
   return { frameId };
 }
 
-const CONTENT_VER = 50;
+const CONTENT_VER = 53;
 
 async function ensureContentScript(tabId, frameId) {
   const opts = frameMessageOptions(frameId);

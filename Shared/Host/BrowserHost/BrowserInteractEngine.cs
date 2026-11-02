@@ -274,12 +274,14 @@ namespace WordAddIn1.BrowserHost
                 || ReadJsFallback(resultJson))
             {
                 ScriptDialogTrace.Write("click-return legacy-or-fallback mode=" + mode);
+                await TryOpenHtmlCollapseAsync(cdp, objectId, sessionId).ConfigureAwait(true);
                 return;
             }
 
             ReadJsPoint(resultJson, out double x, out double y);
             ScriptDialogTrace.Write("click-dispatch x=" + x.ToString("0") + " y=" + y.ToString("0"));
             await DispatchCdpClickAsync(cdp, objectId, x, y, sessionId, dialog).ConfigureAwait(true);
+            await TryOpenHtmlCollapseAsync(cdp, objectId, sessionId).ConfigureAwait(true);
             ScriptDialogTrace.Write("click-return dispatch-done dialog=" + ScriptDialogOpened(dialog));
         }
 
@@ -1184,11 +1186,20 @@ namespace WordAddIn1.BrowserHost
     var img = el.querySelector('a[href] img');
     return img && img.closest ? img.closest('a[href]') : null;
   }
+  function collapseTitle(el) {
+    if (!el || !el.closest) return null;
+    try { return el.closest('.layui-colla-title, .collapse-title'); } catch (eT) { return null; }
+  }
 
-  var t = this;
-  var tag = (this.tagName || '').toUpperCase();
+  var start = this && this.nodeType === 3 ? this.parentElement : this;
+  var t = start;
+  if (!isHover) {
+    var colla = collapseTitle(start);
+    if (colla) t = colla;
+  }
+  var tag = ((start && start.tagName) || '').toUpperCase();
   var role = '';
-  try { role = ((this.getAttribute && this.getAttribute('role')) || '').toLowerCase(); } catch (eR) {}
+  try { role = ((start && start.getAttribute && start.getAttribute('role')) || '').toLowerCase(); } catch (eR) {}
   var isImg = tag === 'IMG' || role === 'img' || role === 'image';
   if (isImg && !isHover && !isLegacy) {
     scrollIfNeeded(this);
@@ -1544,11 +1555,15 @@ namespace WordAddIn1.BrowserHost
                 ["pointerType"] = "mouse"
             };
             if (string.Equals(type, "mousePressed", StringComparison.Ordinal)
-                || string.Equals(type, "mouseReleased", StringComparison.Ordinal))
+                || string.Equals(type, "mouseReleased", StringComparison.Ordinal)
+                || (string.Equals(type, "mouseMoved", StringComparison.Ordinal) && pressed))
             {
                 payload["button"] = "left";
-                payload["clickCount"] = 1;
                 payload["buttons"] = pressed ? 1 : 0;
+                if (!string.Equals(type, "mouseMoved", StringComparison.Ordinal))
+                {
+                    payload["clickCount"] = 1;
+                }
             }
 
             await cdp.CallCdpAsync(
@@ -1623,6 +1638,65 @@ namespace WordAddIn1.BrowserHost
             ThrowIfJsNotOk(resultJson, "无法切换复选框");
         }
 
+        private const string OpenHtmlCollapseJs =
+            @"function() {
+  function asEl(n) {
+    if (!n) return null;
+    if (n.nodeType === 3) return n.parentElement;
+    return n.nodeType === 1 ? n : null;
+  }
+  function isHidden(el) {
+    if (!el) return true;
+    try {
+      var st = window.getComputedStyle(el);
+      if (!st) return true;
+      if (st.display === 'none' || st.visibility === 'hidden') return true;
+      var h = parseFloat(st.height);
+      if (!isNaN(h) && h < 2) return true;
+    } catch (e) { return true; }
+    return false;
+  }
+  var el = asEl(this);
+  if (!el) return { ok: true };
+  var title = null;
+  try { title = el.closest ? el.closest('.layui-colla-title, .collapse-title') : null; } catch (eC) {}
+  if (!title) return { ok: true, skip: true };
+  var content = title.nextElementSibling;
+  var cn = content ? String(content.className || '') : '';
+  var isBody = /\blayui-colla-content\b/.test(cn) || /\bcollapse-content\b/.test(cn);
+  if (isBody && !isHidden(content)) return { ok: true, already: true };
+  var jq = window.jQuery || window.$;
+  if (jq) {
+    try { jq(title).trigger('click'); } catch (eJ) {}
+  }
+  if (isBody && !isHidden(content)) return { ok: true, jq: true };
+  if (isBody && isHidden(content)) {
+    try { content.classList.add('layui-show'); } catch (eS) {}
+    try { content.style.display = 'block'; content.style.height = 'auto'; } catch (eD) {}
+    var item = title.parentElement;
+    if (item && item.classList) {
+      try { item.classList.add('layui-show'); } catch (eI) {}
+    }
+  }
+  return { ok: true };
+}";
+
+        private static async Task TryOpenHtmlCollapseAsync(IBrowserCdp cdp, string objectId, string sessionId)
+        {
+            if (cdp == null || string.IsNullOrEmpty(objectId))
+            {
+                return;
+            }
+
+            try
+            {
+                await CallFunctionOnAsync(cdp, objectId, OpenHtmlCollapseJs, null, sessionId).ConfigureAwait(true);
+            }
+            catch
+            {
+            }
+        }
+
         private static async Task DispatchCdpClickAsync(
             IBrowserCdp cdp,
             string objectId,
@@ -1651,10 +1725,21 @@ namespace WordAddIn1.BrowserHost
                 return;
             }
 
+            double upX = x + 1;
+            ScriptDialogTrace.Write("mouse-nudge-begin");
+            if (await UntilScriptDialogAsync(
+                    dialog,
+                    DispatchCdpMouseAsync(cdp, sessionId, "mouseMoved", upX, y, true))
+                .ConfigureAwait(true))
+            {
+                ScriptDialogTrace.Write("mouse-return dialog-during-nudge");
+                return;
+            }
+
             ScriptDialogTrace.Write("mouse-up-begin");
             if (await UntilScriptDialogAsync(
                     dialog,
-                    DispatchCdpMouseAsync(cdp, sessionId, "mouseReleased", x, y, false))
+                    DispatchCdpMouseAsync(cdp, sessionId, "mouseReleased", upX, y, false))
                 .ConfigureAwait(true))
             {
                 ScriptDialogTrace.Write("mouse-return dialog-during-up");
@@ -1714,7 +1799,7 @@ namespace WordAddIn1.BrowserHost
   } catch (e) {}
   return true;
 }",
-                    BuildCallArgsPair(x, y),
+                    BuildCallArgsPair(upX, y),
                     sessionId)).ConfigureAwait(true);
                 ScriptDialogTrace.Write("synthetic-click-end dialog=" + ScriptDialogOpened(dialog));
             }
