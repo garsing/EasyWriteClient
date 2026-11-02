@@ -203,6 +203,19 @@ namespace BrowserNavigateTest
                     ov.Success ? "应只见上层新增、不见底层新增" : ov.Error);
             }
 
+            string nestedId = OpenOk(run, s, http.Url("overlay-html-modal", "nested.html"), navHost, "snp-modal-nested-top");
+            if (nestedId != null)
+            {
+                ToolResult nv = s.Snap(nestedId);
+                string nt = Tree(nv);
+                Ok(run, "snp-modal-nested-top",
+                    nv.Success
+                    && nt.IndexOf("成员姓名", StringComparison.Ordinal) >= 0
+                    && nt.IndexOf("底层新增", StringComparison.Ordinal) < 0
+                    && nt.IndexOf("流程内新增", StringComparison.Ordinal) < 0,
+                    nv.Success ? "应只见最上层成员表、不见底层和流程详情按钮" : nv.Error);
+            }
+
             string sideId = OpenOk(run, s, http.Url("overlay-html-modal", "sidebar.html"), navHost, "snp-modal-keep-sidebar");
             if (sideId == null)
             {

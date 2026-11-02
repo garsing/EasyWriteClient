@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 53;
+  const CONTENT_VER = 54;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -390,17 +390,9 @@
       if (!isNaN(op) && op === 0) return false;
       return true;
     }
-    function isNarrowBar(el, W, H) {
+    function isTiny(el) {
       const r = el.getBoundingClientRect();
-      return r.width >= W * 0.8 && r.height > 0 && r.height <= H * 0.35;
-    }
-    function occupiesMain(el, W, H) {
-      const r = el.getBoundingClientRect();
-      if (r.width < 8 || r.height < 8) return false;
-      if (isNarrowBar(el, W, H)) return false;
-      const cx = W / 2, cy = H / 2;
-      if (!(r.left <= cx && r.right >= cx && r.top <= cy && r.bottom >= cy)) return false;
-      return r.width >= W * 0.4 && r.height >= H * 0.4;
+      return r.width < 8 || r.height < 8;
     }
     function isFloating(el) {
       let st;
@@ -427,15 +419,26 @@
       }
     }
     if (shadeZ < 0) return null;
-    let best = null, bestZ = -1;
+    const cands = [];
     for (let i = 0; i < all.length && i < 5000; i++) {
       const el = all[i];
       if (isShade(el, W, H)) continue;
       if (!isFloating(el)) continue;
-      if (!occupiesMain(el, W, H)) continue;
+      if (isTiny(el)) continue;
       const z = zOf(el);
       if (z < shadeZ) continue;
-      if (z > bestZ) { best = el; bestZ = z; }
+      cands.push(el);
+    }
+    let best = null, bestZ = -1;
+    for (let a = 0; a < cands.length; a++) {
+      let skip = false;
+      for (let b = 0; b < cands.length; b++) {
+        if (a === b) continue;
+        if (cands[b].contains(cands[a])) { skip = true; break; }
+      }
+      if (skip) continue;
+      const z = zOf(cands[a]);
+      if (z >= bestZ) { best = cands[a]; bestZ = z; }
     }
     if (best) best.setAttribute("data-yiwrite-modal-root", "1");
     return best;

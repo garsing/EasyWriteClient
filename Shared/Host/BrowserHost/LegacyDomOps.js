@@ -354,17 +354,9 @@
       if (!isNaN(op) && op === 0) return false;
       return true;
     }
-    function isNarrowBar(el, W, H) {
+    function isTiny(el) {
       var r = el.getBoundingClientRect();
-      return r.width >= W * 0.8 && r.height > 0 && r.height <= H * 0.35;
-    }
-    function occupiesMain(el, W, H) {
-      var r = el.getBoundingClientRect();
-      if (r.width < 8 || r.height < 8) return false;
-      if (isNarrowBar(el, W, H)) return false;
-      var cx = W / 2, cy = H / 2;
-      if (!(r.left <= cx && r.right >= cx && r.top <= cy && r.bottom >= cy)) return false;
-      return r.width >= W * 0.4 && r.height >= H * 0.4;
+      return r.width < 8 || r.height < 8;
     }
     function isFloating(el) {
       var st;
@@ -392,15 +384,26 @@
       }
     }
     if (shadeZ < 0) return null;
-    var best = null, bestZ = -1;
+    var cands = [];
     for (i = 0; i < all.length && i < 5000; i++) {
       var el = all[i];
       if (isShade(el, W, H)) continue;
       if (!isFloating(el)) continue;
-      if (!occupiesMain(el, W, H)) continue;
+      if (isTiny(el)) continue;
       var z = zOf(el);
       if (z < shadeZ) continue;
-      if (z > bestZ) { best = el; bestZ = z; }
+      cands.push(el);
+    }
+    var best = null, bestZ = -1, a, b, skip;
+    for (a = 0; a < cands.length; a++) {
+      skip = false;
+      for (b = 0; b < cands.length; b++) {
+        if (a === b) continue;
+        if (cands[b].contains(cands[a])) { skip = true; break; }
+      }
+      if (skip) continue;
+      z = zOf(cands[a]);
+      if (z >= bestZ) { best = cands[a]; bestZ = z; }
     }
     if (best) best.setAttribute("data-yiwrite-modal-root", "1");
     return best;

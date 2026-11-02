@@ -5,10 +5,10 @@ using Newtonsoft.Json.Linq;
 
 namespace WordAddIn1.BrowserHost
 {
-    /// <summary>
-    /// 认整页 HTML 弹出：浮层 + 占主界面 + 全页遮罩。命中则给节点打标，供快照只出这一层。
-    /// Cookie 窄条、无遮罩侧栏不命中。
-    /// </summary>
+        /// <summary>
+        /// 认整页 HTML 弹出：浮层 + 全页遮罩。命中则给 z 最高的一层根打标，供快照只出这一层。
+        /// Cookie 窄条、无遮罩侧栏不命中。嵌套小窗取最上面那层，不要求占主界面面积。
+        /// </summary>
     internal static class BrowserHtmlModalProbe
     {
         public const string MarkerAttr = "data-yiwrite-modal-root";
@@ -49,17 +49,9 @@ namespace WordAddIn1.BrowserHost
     if (!isNaN(op) && op===0) return false;
     return true;
   }
-  function isNarrowBar(el, W, H){
+  function isTiny(el){
     var r=el.getBoundingClientRect();
-    return r.width>=W*0.8 && r.height>0 && r.height<=H*0.35;
-  }
-  function occupiesMain(el, W, H){
-    var r=el.getBoundingClientRect();
-    if (r.width<8 || r.height<8) return false;
-    if (isNarrowBar(el, W, H)) return false;
-    var cx=W/2, cy=H/2;
-    if (!(r.left<=cx && r.right>=cx && r.top<=cy && r.bottom>=cy)) return false;
-    return r.width>=W*0.4 && r.height>=H*0.4;
+    return r.width<8 || r.height<8;
   }
   function isFloating(el){
     var st;
@@ -86,15 +78,26 @@ namespace WordAddIn1.BrowserHost
     }
   }
   if (shadeZ<0) return {found:false};
-  var best=null, bestZ=-1;
+  var cands=[];
   for (i=0;i<all.length && i<5000;i++){
     var el=all[i];
     if (isShade(el, W, H)) continue;
     if (!isFloating(el)) continue;
-    if (!occupiesMain(el, W, H)) continue;
+    if (isTiny(el)) continue;
     var z=zOf(el);
     if (z<shadeZ) continue;
-    if (z>bestZ) { best=el; bestZ=z; }
+    cands.push(el);
+  }
+  var best=null, bestZ=-1, a, b, skip;
+  for (a=0;a<cands.length;a++){
+    skip=false;
+    for (b=0;b<cands.length;b++){
+      if (a===b) continue;
+      if (cands[b].contains(cands[a])) { skip=true; break; }
+    }
+    if (skip) continue;
+    z=zOf(cands[a]);
+    if (z>=bestZ) { best=cands[a]; bestZ=z; }
   }
   if (!best) return {found:false};
   best.setAttribute('data-yiwrite-modal-root','1');
