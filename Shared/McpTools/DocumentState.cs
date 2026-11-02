@@ -13,7 +13,7 @@ namespace WordAddIn1
     /// 句子级别的文档状态管理（按 doc_uuid 分片，活动窗口读写当前分片）。
     /// 使用S_前缀 + 5位编码名称（S_00000, S_00001, ..., S_00009, S_0000a, ..., S_0000z, S_0000A, ..., S_ZZZZZ）来跟踪句子
     /// 编码顺序：数字(0-9) -> 小写字母(a-z) -> 大写字母(A-Z)
-        /// 使用T_前缀跟踪表格。主路径为 Title 戳 ew:T_+8 位随机；FindOrCreateTableId 仅作写 Title 失败时的内容哈希兜底。
+        /// 使用T_前缀跟踪表格。主路径为 Title 戳 ew:T_+8 位随机；写不上 Title 时用书签留同一号。FindOrCreateTableId 仅作书签也写失败时的内容哈希兜底，号只用字母数字。
     /// </summary>
     public static class DocumentState
     {
@@ -698,71 +698,83 @@ namespace WordAddIn1
         public static string FindOrCreateTableId(string tableContent)
         {
             string normalizedContent = tableContent ?? "";
-            string contentHash = GenerateContentHash(normalizedContent);
+            byte[] hashBytes;
+            using (var sha256 = SHA256.Create())
+            {
+                hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(normalizedContent));
+            }
+
+            string contentHash = Convert.ToBase64String(hashBytes);
 
             foreach (var mapping in Session.TableIdMapping)
             {
                 if (mapping.Count >= 2 && mapping[1] == contentHash)
                 {
-                    string storedId = mapping[0];
+                    string storedId = mapping[0] ?? "";
                     if (!storedId.StartsWith("T_"))
                     {
-                        mapping[0] = "T_" + storedId;
-                        return mapping[0];
+                        storedId = "T_" + storedId;
                     }
 
+                    if (!TableTitleStampHelper.IsAlnumTableId(storedId))
+                    {
+                        storedId = AllocateContentHashTableId(hashBytes);
+                    }
+
+                    mapping[0] = storedId;
                     return storedId;
                 }
             }
 
-            string tableIdBase = contentHash.Length >= 8 ? contentHash.Substring(0, 8) : contentHash;
-            string tableIdWithPrefix = "T_" + tableIdBase;
-
-            bool tableIdExists = false;
-            foreach (var mapping in Session.TableIdMapping)
-            {
-                if (mapping.Count >= 1)
-                {
-                    string storedId = mapping[0];
-                    if (storedId == tableIdWithPrefix || storedId == tableIdBase)
-                    {
-                        tableIdExists = true;
-                        break;
-                    }
-                }
-            }
-
-            if (tableIdExists)
-            {
-                for (int len = 12; len <= contentHash.Length; len += 4)
-                {
-                    string candidateIdBase = contentHash.Substring(0, len);
-                    string candidateIdWithPrefix = "T_" + candidateIdBase;
-                    bool candidateExists = false;
-                    foreach (var mapping in Session.TableIdMapping)
-                    {
-                        if (mapping.Count >= 1)
-                        {
-                            string storedId = mapping[0];
-                            if (storedId == candidateIdWithPrefix || storedId == candidateIdBase)
-                            {
-                                candidateExists = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (!candidateExists)
-                    {
-                        tableIdBase = candidateIdBase;
-                        tableIdWithPrefix = candidateIdWithPrefix;
-                        break;
-                    }
-                }
-            }
-
+            string tableIdWithPrefix = AllocateContentHashTableId(hashBytes);
             Session.TableIdMapping.Add(new List<string> { tableIdWithPrefix, contentHash, normalizedContent });
             return tableIdWithPrefix;
+        }
+
+        private static string AllocateContentHashTableId(byte[] hashBytes)
+        {
+            var taken = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var mapping in Session.TableIdMapping)
+            {
+                if (mapping.Count >= 1 && !string.IsNullOrEmpty(mapping[0]))
+                {
+                    taken.Add(mapping[0]);
+                }
+            }
+
+            int maxLen = hashBytes == null ? 0 : hashBytes.Length;
+            for (int len = 8; len <= maxLen; len += 4)
+            {
+                string id = TableTitleStampHelper.MintAlnumTableId(hashBytes, len);
+                if (!string.IsNullOrEmpty(id) && taken.Add(id))
+                {
+                    return id;
+                }
+            }
+
+            for (int salt = 1; salt <= 16; salt++)
+            {
+                byte[] salted;
+                using (var sha256 = SHA256.Create())
+                {
+                    var buf = new byte[(hashBytes == null ? 0 : hashBytes.Length) + 1];
+                    if (hashBytes != null && hashBytes.Length > 0)
+                    {
+                        Buffer.BlockCopy(hashBytes, 0, buf, 0, hashBytes.Length);
+                    }
+
+                    buf[buf.Length - 1] = (byte)salt;
+                    salted = sha256.ComputeHash(buf);
+                }
+
+                string id = TableTitleStampHelper.MintAlnumTableId(salted, 8);
+                if (!string.IsNullOrEmpty(id) && taken.Add(id))
+                {
+                    return id;
+                }
+            }
+
+            return TableTitleStampHelper.NewRandomTableId(taken);
         }
 
         public static string GetTableContent(string tableId)

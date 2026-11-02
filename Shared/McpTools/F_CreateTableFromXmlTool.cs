@@ -125,9 +125,17 @@ namespace WordAddIn1
                     string stampedId = TableTitleStampHelper.NewRandomTableId(occupied);
                     bool stampWritten = !string.IsNullOrEmpty(stampedId)
                         && TableTitleStampHelper.TryWriteStamp(createResult.Table, stampedId);
+                    if (!stampWritten && !string.IsNullOrEmpty(stampedId))
+                    {
+                        List<Word.Table> tablesNow = TableResolveHelper.GetAllTablesInOrder(document);
+                        int stampIndex = IndexOfSameTable(tablesNow, createResult.Table);
+                        stampWritten = stampIndex >= 0
+                            && TableTitleStampHelper.TryWriteBookmark(document, tablesNow, stampIndex, stampedId);
+                    }
+
                     if (!stampWritten)
                     {
-                        System.Diagnostics.Debug.WriteLine("[CreateTable] 立刻写 Title 失败，将由 ReadWord O7 兜底");
+                        System.Diagnostics.Debug.WriteLine("[CreateTable] 立刻写 Title 和书签都失败，将由 ReadWord 哈希兜底");
                     }
 
                     var warnings = new List<string>();
@@ -185,7 +193,16 @@ namespace WordAddIn1
                         {
                             // 嵌套表 Range.Start 常与父表撞点，禁止再用表序下标对号。
                             // ReadWord 若按序改写 Title，把刚打的戳写回这张 COM 表。
-                            TableTitleStampHelper.TryWriteStamp(createResult.Table, stampedId);
+                            if (!TableTitleStampHelper.TryWriteStamp(createResult.Table, stampedId))
+                            {
+                                List<Word.Table> tablesNow = TableResolveHelper.GetAllTablesInOrder(document);
+                                int stampIndex = IndexOfSameTable(tablesNow, createResult.Table);
+                                if (stampIndex >= 0)
+                                {
+                                    TableTitleStampHelper.TryWriteBookmark(document, tablesNow, stampIndex, stampedId);
+                                }
+                            }
+
                             resolvedTableId = stampedId;
                         }
                         else
@@ -1213,6 +1230,42 @@ namespace WordAddIn1
                     return new CreateResult { Success = false, Table = null, Error = $"{ex.Message}，降级为纯文本也失败: {ex2.Message}" };
                 }
             }
+        }
+
+        private static int IndexOfSameTable(List<Word.Table> tables, Word.Table table)
+        {
+            if (tables == null || table == null)
+            {
+                return -1;
+            }
+
+            int start;
+            int end;
+            try
+            {
+                start = table.Range.Start;
+                end = table.Range.End;
+            }
+            catch (Exception)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < tables.Count; i++)
+            {
+                try
+                {
+                    if (tables[i].Range.Start == start && tables[i].Range.End == end)
+                    {
+                        return i;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return -1;
         }
 
     }

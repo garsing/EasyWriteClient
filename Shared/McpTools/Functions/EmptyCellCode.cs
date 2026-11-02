@@ -18,6 +18,10 @@ namespace WordAddIn1
             @"^T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+$",
             RegexOptions.Compiled);
 
+        private static readonly Regex LooseGeometricPattern = new Regex(
+            @"^T_.+_r[0-9]+_c[0-9]+$",
+            RegexOptions.Compiled);
+
         public static readonly Regex MarkerPattern = new Regex(
             @"\[T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+-(?:start|end)\]",
             RegexOptions.Compiled);
@@ -55,6 +59,17 @@ namespace WordAddIn1
         public static bool IsEmptyCellCode(string code)
         {
             return !string.IsNullOrEmpty(code) && Pattern.IsMatch(code.Trim());
+        }
+
+        /// <summary>形如几何码，但表号含字母数字以外的字符（例如哈希 Base64 的 /）。</summary>
+        public static bool IsIllegalCharsetGeometricCode(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code) || IsEmptyCellCode(code))
+            {
+                return false;
+            }
+
+            return LooseGeometricPattern.IsMatch(code.Trim());
         }
 
         public static bool TryParse(string code, out Parsed parsed)

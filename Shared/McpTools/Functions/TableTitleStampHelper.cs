@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Word = Microsoft.Office.Interop.Word;
@@ -18,6 +19,19 @@ namespace WordAddIn1
         private static readonly Regex StampRegex = new Regex(
             @"^ew:T_([A-Za-z0-9]{8})",
             RegexOptions.Compiled);
+        private static readonly Regex BookmarkRegex = new Regex(
+            @"^ewT_([A-Za-z0-9]{8,32})$",
+            RegexOptions.Compiled);
+        private static readonly Regex AlnumTableIdRegex = new Regex(
+            @"^T_[A-Za-z0-9]+$",
+            RegexOptions.Compiled);
+
+        private struct StampBookmark
+        {
+            public string Name;
+            public string TableId;
+            public int Start;
+        }
 
         public static bool TryParse(string title, out string tableId, out string userSuffix)
         {
@@ -127,9 +141,65 @@ namespace WordAddIn1
             return NewRandomTableId(occupied);
         }
 
+        public static bool IsAlnumTableId(string tableId)
+        {
+            return !string.IsNullOrEmpty(tableId) && AlnumTableIdRegex.IsMatch(tableId);
+        }
+
+        /// <summary>内容哈希表号。按哈希字节映射到与戳相同的字母数字，不用 Base64。</summary>
+        public static string MintAlnumTableId(byte[] hash, int charCount)
+        {
+            if (hash == null || hash.Length == 0 || charCount < 1)
+            {
+                return null;
+            }
+
+            char[] chars = new char[charCount];
+            for (int i = 0; i < charCount; i++)
+            {
+                chars[i] = Alphabet[hash[i % hash.Length] % Alphabet.Length];
+            }
+
+            return "T_" + new string(chars);
+        }
+
+        public static bool TryParseBookmark(string name, out string tableId)
+        {
+            tableId = null;
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            Match m = BookmarkRegex.Match(name);
+            if (!m.Success)
+            {
+                return false;
+            }
+
+            tableId = "T_" + m.Groups[1].Value;
+            return true;
+        }
+
+        public static string BookmarkNameFor(string tableId)
+        {
+            if (!IsAlnumTableId(tableId))
+            {
+                return null;
+            }
+
+            string body = tableId.Substring(2);
+            if (body.Length < 8 || body.Length > 32)
+            {
+                return null;
+            }
+
+            return "ewT_" + body;
+        }
+
         /// <summary>
         /// 以 Word Title 为真源：按 GetAllTablesInOrder 下标认号。
-        /// 合法且本遍未占用则沿用；空或撞号则新发（写回仍走 Apply）。
+        /// Title 没有合法戳时，认挂在该表上的 ewT_ 书签。合法且本遍未占用则沿用；否则新发。
         /// </summary>
         public static List<string> CollectIdsFromWord(Word.Document document, ISet<string> occupied)
         {
@@ -145,25 +215,37 @@ namespace WordAddIn1
             }
 
             List<Word.Table> tables = TableResolveHelper.GetAllTablesInOrder(document);
+            List<StampBookmark> bookmarks = ReadStampBookmarks(document);
             for (int i = 0; i < tables.Count; i++)
             {
                 string id = null;
-                bool reused = false;
-                if (TryReadTitle(tables[i], out string title)
-                    && TryParse(title, out string existing, out _)
-                    && occupied.Add(existing))
+                string how = "新发";
+                string existing = null;
+                string title = null;
+                bool titleParsed = TryReadTitle(tables[i], out title)
+                    && TryParse(title, out existing, out _);
+                if (titleParsed && occupied.Add(existing))
                 {
                     id = existing;
-                    reused = true;
+                    how = "沿用Title";
                 }
-                else
+                else if (!titleParsed)
+                {
+                    string fromBookmark = BookmarkIdOwnedBy(tables, i, bookmarks);
+                    if (!string.IsNullOrEmpty(fromBookmark) && occupied.Add(fromBookmark))
+                    {
+                        id = fromBookmark;
+                        how = "沿用书签";
+                    }
+                }
+
+                if (id == null)
                 {
                     id = NewRandomTableId(occupied);
                 }
 
                 ids.Add(id);
-                System.Diagnostics.Debug.WriteLine(
-                    $"[TableStamp] Word真源 i={i} {(reused ? "沿用" : "新发")} {id ?? "(空)"}");
+                LogStamp($"[TableStamp] Word真源 i={i} {how} {id ?? "(空)"}");
             }
 
             return ids;
@@ -184,7 +266,7 @@ namespace WordAddIn1
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine("[TableStamp] 读 Title 失败: " + ex.Message);
+                LogStamp("[TableStamp] 读 Title 失败: " + Describe(ex));
                 return false;
             }
         }
@@ -203,7 +285,75 @@ namespace WordAddIn1
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine("[TableStamp] 写 Title 失败: " + ex.Message);
+                LogStamp("[TableStamp] 写 Title 失败: " + Describe(ex));
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Title 写不上时，把同一个 T_ 写进该书签。书签名 ewT_ + 表号正文，锚在该表 Range 起点。
+        /// </summary>
+        public static bool TryWriteBookmark(
+            Word.Document document,
+            IList<Word.Table> tables,
+            int index,
+            string tableId)
+        {
+            if (document == null || tables == null || index < 0 || index >= tables.Count)
+            {
+                return false;
+            }
+
+            string name = BookmarkNameFor(tableId);
+            Word.Table table = tables[index];
+            if (name == null || table == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (document.Bookmarks.Exists(name))
+                {
+                    Word.Bookmark existing = document.Bookmarks[name];
+                    if (OwnerIndex(tables, existing.Range.Start) == index)
+                    {
+                        return true;
+                    }
+
+                    LogStamp("[TableStamp] 书签名已被其他表占用: " + name);
+                    return false;
+                }
+
+                var owned = new List<string>();
+                int count = document.Bookmarks.Count;
+                for (int i = 1; i <= count; i++)
+                {
+                    Word.Bookmark bookmark = document.Bookmarks[i];
+                    if (!TryParseBookmark(bookmark.Name, out _))
+                    {
+                        continue;
+                    }
+
+                    if (OwnerIndex(tables, bookmark.Range.Start) == index)
+                    {
+                        owned.Add(bookmark.Name);
+                    }
+                }
+
+                for (int i = 0; i < owned.Count; i++)
+                {
+                    DeleteBookmark(document, owned[i]);
+                }
+
+                Word.Range anchor = table.Range.Duplicate;
+                anchor.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+                document.Bookmarks.Add(name, anchor);
+                return document.Bookmarks.Exists(name);
+            }
+            catch (Exception ex)
+            {
+                LogStamp("[TableStamp] 写书签失败: " + Describe(ex));
                 return false;
             }
         }
@@ -239,8 +389,8 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 按序把 assignedIds 写入各表 Title。写失败则该位改为内容哈希号（就地改 assignedIds）。
-        /// tableContents 可空；空则用 table.Range.Text 做 O7。
+        /// 按序把 assignedIds 写入各表 Title。Title 写失败则写书签，书签也失败才改为内容哈希号（就地改 assignedIds）。
+        /// tableContents 可空；空则用 table.Range.Text 做哈希兜底。
         /// </summary>
         public static void ApplyAssignedIds(
             Word.Document document,
@@ -269,17 +419,25 @@ namespace WordAddIn1
                     continue;
                 }
 
-                bool alreadyOk = TryReadTitle(table, out string current)
+                bool titleOk = TryReadTitle(table, out string current)
                     && TryParse(current, out string existingId, out _)
                     && existingId == wantId;
-                if (alreadyOk)
+                if (titleOk)
                 {
+                    RemoveStampBookmarks(document, tables, i);
                     continue;
                 }
 
                 if (TryWriteStamp(table, wantId))
                 {
-                    System.Diagnostics.Debug.WriteLine($"[TableStamp] i={i} 写入 {wantId}");
+                    RemoveStampBookmarks(document, tables, i);
+                    LogStamp($"[TableStamp] i={i} 写入 Title {wantId}");
+                    continue;
+                }
+
+                if (TryWriteBookmark(document, tables, i, wantId))
+                {
+                    LogStamp($"[TableStamp] i={i} 写入书签 {wantId}");
                     continue;
                 }
 
@@ -302,7 +460,184 @@ namespace WordAddIn1
 
                 string hashId = DocumentState.FindOrCreateTableId(hashContent);
                 assignedIds[i] = hashId;
-                System.Diagnostics.Debug.WriteLine($"[TableStamp] i={i} 写失败，O7 哈希 {hashId}");
+                LogStamp($"[TableStamp] i={i} 写 Title 与书签都失败，哈希 {hashId}");
+            }
+        }
+
+        private static void RemoveStampBookmarks(Word.Document document, IList<Word.Table> tables, int index)
+        {
+            if (document == null || tables == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var owned = new List<string>();
+                int count = document.Bookmarks.Count;
+                for (int i = 1; i <= count; i++)
+                {
+                    Word.Bookmark bookmark = document.Bookmarks[i];
+                    if (!TryParseBookmark(bookmark.Name, out _))
+                    {
+                        continue;
+                    }
+
+                    if (OwnerIndex(tables, bookmark.Range.Start) == index)
+                    {
+                        owned.Add(bookmark.Name);
+                    }
+                }
+
+                for (int i = 0; i < owned.Count; i++)
+                {
+                    DeleteBookmark(document, owned[i]);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogStamp("[TableStamp] 清理书签失败: " + Describe(ex));
+            }
+        }
+
+        private static List<StampBookmark> ReadStampBookmarks(Word.Document document)
+        {
+            var marks = new List<StampBookmark>();
+            if (document == null)
+            {
+                return marks;
+            }
+
+            try
+            {
+                int count = document.Bookmarks.Count;
+                for (int i = 1; i <= count; i++)
+                {
+                    Word.Bookmark bookmark = document.Bookmarks[i];
+                    if (!TryParseBookmark(bookmark.Name, out string tableId))
+                    {
+                        continue;
+                    }
+
+                    marks.Add(new StampBookmark
+                    {
+                        Name = bookmark.Name,
+                        TableId = tableId,
+                        Start = bookmark.Range.Start
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                LogStamp("[TableStamp] 读书签失败: " + Describe(ex));
+            }
+
+            return marks;
+        }
+
+        private static string BookmarkIdOwnedBy(IList<Word.Table> tables, int index, List<StampBookmark> marks)
+        {
+            if (marks == null)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < marks.Count; i++)
+            {
+                if (OwnerIndex(tables, marks[i].Start) == index)
+                {
+                    return marks[i].TableId;
+                }
+            }
+
+            return null;
+        }
+
+        private static int OwnerIndex(IList<Word.Table> tables, int position)
+        {
+            int best = -1;
+            int bestSpan = int.MaxValue;
+            if (tables == null)
+            {
+                return best;
+            }
+
+            for (int i = 0; i < tables.Count; i++)
+            {
+                Word.Table table = tables[i];
+                if (table == null)
+                {
+                    continue;
+                }
+
+                int start;
+                int end;
+                try
+                {
+                    start = table.Range.Start;
+                    end = table.Range.End;
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+
+                if (position < start || position >= end)
+                {
+                    continue;
+                }
+
+                int span = end - start;
+                if (span < bestSpan)
+                {
+                    best = i;
+                    bestSpan = span;
+                }
+            }
+
+            return best;
+        }
+
+        private static void DeleteBookmark(Word.Document document, string name)
+        {
+            try
+            {
+                if (document.Bookmarks.Exists(name))
+                {
+                    document.Bookmarks[name].Delete();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogStamp("[TableStamp] 删书签失败 " + name + ": " + Describe(ex));
+            }
+        }
+
+        private static string Describe(Exception ex)
+        {
+            if (ex == null)
+            {
+                return "";
+            }
+
+            COMException com = ex as COMException;
+            if (com == null)
+            {
+                return ex.Message;
+            }
+
+            return ex.Message + " hresult=0x" + com.ErrorCode.ToString("X8");
+        }
+
+        private static void LogStamp(string message)
+        {
+            System.Diagnostics.Debug.WriteLine(message);
+            try
+            {
+                EasyWriteLog.WriteLine(message);
+            }
+            catch (Exception)
+            {
             }
         }
 

@@ -353,6 +353,11 @@ namespace WordAddIn1
                     || part.StartsWith("C_", StringComparison.Ordinal)
                     || part.StartsWith("I_", StringComparison.Ordinal))
                 {
+                    if (EmptyCellCode.IsIllegalCharsetGeometricCode(part))
+                    {
+                        return FailParse($"{fieldLabel}.codes 表号含非字母数字，几何码无法写入");
+                    }
+
                     return FailParse($"{fieldLabel}.codes 仅支持 S_；表/图/图片请用 table / chart / image 字段");
                 }
 
