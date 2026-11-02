@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 
 namespace WordAddIn1.BrowserHost
 {
@@ -522,9 +523,26 @@ namespace WordAddIn1.BrowserHost
 
         private static Dictionary<string, object> CoerceRow(object item)
         {
+            if (item == null || item is string)
+            {
+                return null;
+            }
+
             if (item is Dictionary<string, object> dict)
             {
                 return dict;
+            }
+
+            var jo = item as JObject;
+            if (jo != null)
+            {
+                return jo.ToObject<Dictionary<string, object>>();
+            }
+
+            var token = item as JToken;
+            if (token != null && token.Type == JTokenType.Object)
+            {
+                return token.ToObject<Dictionary<string, object>>();
             }
 
             if (item is IDictionary map)

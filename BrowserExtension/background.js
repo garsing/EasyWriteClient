@@ -46,8 +46,6 @@ chrome.debugger.onDetach.addListener((source) => {
   if (!source || source.tabId == null) {
     return;
   }
-  pendingDialogs.delete(source.tabId);
-  forgetDialog(source.tabId);
   dialogWaiters.delete(source.tabId);
 });
 
@@ -224,36 +222,51 @@ async function dispatchCdpPointer(tabId, kind, x, y) {
     return;
   }
   await attachDebugger(target);
+  try {
+    await chrome.debugger.sendCommand(target, "Page.enable");
+  } catch (_) {}
   if (kind === "prepare") {
     return;
   }
+  const send = (params) => chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", params);
+  const px = Number(x);
+  const py = Number(y);
+  await send({ type: "mouseMoved", x: px, y: py, pointerType: "mouse" });
+  if (kind !== "click") {
+    return;
+  }
+  await send({
+    type: "mousePressed",
+    x: px,
+    y: py,
+    button: "left",
+    clickCount: 1,
+    buttons: 1,
+    pointerType: "mouse"
+  });
+  const watch = waitForDialog(tabId);
   try {
-    const send = (params) => chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", params);
-    const px = Number(x);
-    const py = Number(y);
-    await send({ type: "mouseMoved", x: px, y: py, pointerType: "mouse" });
-    if (kind === "click") {
-      await send({
-        type: "mousePressed",
-        x: px,
-        y: py,
-        button: "left",
-        clickCount: 1,
-        buttons: 1,
-        pointerType: "mouse"
-      });
-      await send({
-        type: "mouseReleased",
-        x: px,
-        y: py,
-        button: "left",
-        clickCount: 1,
-        buttons: 0,
-        pointerType: "mouse"
-      });
+    const released = send({
+      type: "mouseReleased",
+      x: px,
+      y: py,
+      button: "left",
+      clickCount: 1,
+      buttons: 0,
+      pointerType: "mouse"
+    });
+    const winner = await Promise.race([
+      released.then((result) => ({ kind: "cdp", result })),
+      watch.promise.then((dialog) => ({ kind: "dialog", dialog }))
+    ]);
+    if (winner.kind !== "dialog" && !pendingDialogs.has(tabId)) {
+      watch.cancel();
     }
-  } finally {
-    await detachDebugger(target);
+  } catch (e) {
+    watch.cancel();
+    if (!pendingDialogs.has(tabId)) {
+      throw e;
+    }
   }
 }
 
@@ -614,7 +627,7 @@ function frameMessageOptions(frameId) {
   return { frameId };
 }
 
-const CONTENT_VER = 45;
+const CONTENT_VER = 50;
 
 async function ensureContentScript(tabId, frameId) {
   const opts = frameMessageOptions(frameId);
@@ -844,6 +857,10 @@ async function interactTab(msg) {
       armed = false;
     }
   }
+  let watch = null;
+  if (armed) {
+    watch = waitForDialog(tabId);
+  }
   const clickPromise = sendToTab(tabId, {
     type: "interact",
     action: msg.action,
@@ -857,22 +874,47 @@ async function interactTab(msg) {
     attach_pointer: msg.attach_pointer || null
   }, frameId != null && Number.isFinite(frameId) ? frameId : undefined)
     .catch((e) => ({ ok: false, error: String((e && e.message) || e || "interact 失败") }));
-  let watch = null;
-  if (armed) {
-    watch = waitForDialog(tabId);
+  const timeoutMs = 6000;
+  const races = [
+    clickPromise.then((resp) => ({ kind: "click", resp })),
+    new Promise((resolve) => setTimeout(() => resolve({ kind: "timeout" }), timeoutMs))
+  ];
+  if (watch) {
+    races.push(watch.promise.then((dialog) => ({ kind: "dialog", dialog })));
   }
-  const winner = watch
-    ? await Promise.race([
-      clickPromise.then((resp) => ({ kind: "click", resp })),
-      watch.promise.then((dialog) => ({ kind: "dialog", dialog }))
-    ])
-    : { kind: "click", resp: await clickPromise };
-  if (watch && winner.kind !== "dialog") {
-    watch.cancel();
+  let winner = await Promise.race(races);
+  if (winner.kind === "timeout") {
+    const stuck = pendingDialogs.get(tabId) || await loadDialog(tabId);
+    if (!stuck) {
+      try {
+        await chrome.debugger.sendCommand({ tabId }, "Page.handleJavaScriptDialog", { accept: false });
+      } catch (_) {}
+    }
+    if (stuck) {
+      const tabStuck = await chrome.tabs.get(tabId);
+      return {
+        url: tabStuck.url || "",
+        title: tabStuck.title || "",
+        message: "clicked",
+        script_dialog: stuck,
+        ext_version: chrome.runtime.getManifest().version
+      };
+    }
+    throw new Error("页面无响应（可能卡住了脚本确认框）");
   }
-  const dialog = winner.kind === "dialog"
+  let dialog = winner.kind === "dialog"
     ? winner.dialog
     : (pendingDialogs.get(tabId) || null);
+  if (!dialog && armed && watch) {
+    const late = await Promise.race([
+      watch.promise.then((d) => d),
+      new Promise((resolve) => setTimeout(() => resolve(null), 400))
+    ]);
+    dialog = late || pendingDialogs.get(tabId) || await loadDialog(tabId);
+  }
+  if (watch) {
+    watch.cancel();
+  }
   if (!dialog && armed) {
     await detachDebugger({ tabId });
   }

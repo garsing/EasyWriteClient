@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 45;
+  const CONTENT_VER = 50;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -1444,6 +1444,100 @@
     };
   }
 
+  function classBlob(el) {
+    if (!el) return "";
+    const c = el.className;
+    const name = c && typeof c === "object" && c.baseVal != null ? String(c.baseVal) : String(c || "");
+    return (name + " " + (el.id || "")).toLowerCase();
+  }
+
+  function hasIconActionClass(el) {
+    return /delete|remove|trash|\bdel\b|shanchu|icon-del|\bedit\b|pencil|modify|bianji|icon-edit/.test(classBlob(el));
+  }
+
+  function isGlyphIcon(el) {
+    const tag = (el.tagName || "").toLowerCase();
+    if (tag !== "i" && tag !== "span" && tag !== "em") return false;
+    const inner = String(el.textContent || "").replace(/\s+/g, " ").trim();
+    if (inner.length > 4) return false;
+    if (/[\uE000-\uF8FF]/.test(inner)) return true;
+    return tag === "i" && inner.length <= 1;
+  }
+
+  function isClickableIcon(el) {
+    const tag = (el.tagName || "").toLowerCase();
+    if (tag !== "i" && tag !== "span" && tag !== "em") return false;
+    const role = (el.getAttribute("role") || "").toLowerCase();
+    if (role === "button" || role === "link" || role === "menuitem") return true;
+    if (el.getAttribute("onclick")) return true;
+    return hasIconActionClass(el) || isGlyphIcon(el);
+  }
+
+  function isHiddenBox(el) {
+    let st = null;
+    try { st = window.getComputedStyle(el); } catch (_) { return false; }
+    return !!(st && (st.display === "none" || st.visibility === "hidden"));
+  }
+
+  function isIconActionBar(el) {
+    const blob = classBlob(el);
+    if (/icon-delete|icon-drag|deleeidt|drag-ct|icon-edit|icon-del/.test(blob)) return true;
+    return !!(el.querySelector && el.querySelector(".icon-delete, .icon-drag, .deleEidt, .icon-edit"));
+  }
+
+  function visibleHost(el) {
+    let p = el && el.parentElement;
+    for (let d = 0; p && p !== document.body && p !== document.documentElement && d < 6; d++) {
+      let st = null;
+      let box = null;
+      try { st = window.getComputedStyle(p); } catch (_) {}
+      try { box = p.getBoundingClientRect(); } catch (_) {}
+      if (st && st.display !== "none" && st.visibility !== "hidden" && box && box.width > 1 && box.height > 1) {
+        return p;
+      }
+      p = p.parentElement;
+    }
+    return null;
+  }
+
+  function insideHiddenTemplate(el) {
+    let p = el.parentElement;
+    while (p && p !== document.body && p !== document.documentElement) {
+      if (isHiddenBox(p)) {
+        const inner = String(p.textContent || "").replace(/\s+/g, " ").trim();
+        const bar = inner.length <= 24 && isIconActionBar(p) && !!visibleHost(p);
+        if (!bar) return true;
+      }
+      p = p.parentElement;
+    }
+    return false;
+  }
+
+  function boxMissing(el) {
+    try {
+      const r = el.getBoundingClientRect();
+      return !r || r.width <= 0 || r.height <= 0;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function isRowHoverControl(el) {
+    if (!el || el.nodeType !== 1 || /settingcheck/.test(classBlob(el)) || insideHiddenTemplate(el)) return false;
+    const tag = (el.tagName || "").toLowerCase();
+    const role = (el.getAttribute("role") || "").toLowerCase();
+    const hoverRole = tag === "a" || tag === "button"
+      || role === "button" || role === "link" || role === "menuitem" || role === "tab";
+    if (!hoverRole && !isClickableIcon(el)) return false;
+    const inner = String(el.textContent || "").replace(/\s+/g, " ").trim();
+    if (inner.length > 16) return false;
+    let st = null;
+    try { st = window.getComputedStyle(el); } catch (_) {}
+    if (st && (st.display === "none" || st.visibility === "hidden")) return true;
+    if (st && parseFloat(st.opacity) === 0) return true;
+    return boxMissing(el);
+  }
+
   function cssPath(el) {
     if (!el || !el.tagName) return "";
     if (el.id) return "#" + CSS.escape(el.id);
@@ -1769,7 +1863,7 @@
         if (!(err.indexOf("没有可点区域") >= 0 && revealHost)) return { ok: false, error: err };
       }
     }
-    if (revealHost && hitTestError(el) && attachPointer === "cdp") {
+    if (revealHost && hitTestError(el) && attachPointer === "cdp" && clickMode !== "legacy") {
       await requestCdpPointer("prepare", 0, 0);
       try {
         await waitForDebuggerViewport();
@@ -1790,8 +1884,13 @@
     }
     try { el.focus && el.focus(); } catch (_) {}
     if (clickMode === "legacy") {
-      if (typeof el.click === "function") el.click();
-      else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      const target = el;
+      setTimeout(() => {
+        try {
+          if (typeof target.click === "function") target.click();
+          else target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+        } catch (_) {}
+      }, 200);
       return { ok: true };
     }
     const box = boxCenter(el);

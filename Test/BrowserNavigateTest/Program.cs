@@ -126,7 +126,7 @@ namespace BrowserNavigateTest
                 using (var http = new FixtureHttp())
                 {
                     var session = new NavSession();
-                    BatchCases.Run(run, session, http);
+                    BatchCases.Run(run, session, http, caseFilter);
                 }
             }
             else if (runInt)
@@ -161,7 +161,12 @@ namespace BrowserNavigateTest
                 ? (string.Equals(caseFilter, "dl-neg-no-event", StringComparison.OrdinalIgnoreCase)
                     ? 1
                     : (string.Equals(caseFilter, "dl-red", StringComparison.OrdinalIgnoreCase) ? 12 : 80))
-                : (runBat ? 32 : (runTab ? 75 : (runInt ? 160 : (runSnp ? 46 : 30))))));
+                : (runBat
+                    ? (string.Equals(caseFilter, "bat-", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(caseFilter, "bat", StringComparison.OrdinalIgnoreCase)
+                        ? 32
+                        : 1)
+                    : (runTab ? 75 : (runInt ? 160 : (runSnp ? 46 : 30))))));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed

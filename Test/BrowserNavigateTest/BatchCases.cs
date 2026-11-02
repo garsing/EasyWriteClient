@@ -10,6 +10,8 @@ namespace BrowserNavigateTest
     /// <summary>F_browser_interact actions[]。前缀 bat- / bat-unit-。</summary>
     internal static class BatchCases
     {
+        private static string LiveFilter;
+
         public static int RunUnit()
         {
             Console.WriteLine("浏览器 一次操作多个节点（bat-unit，不连 Desktop）");
@@ -26,20 +28,69 @@ namespace BrowserNavigateTest
             CompileNotArray(run);
             CompileItemNotObject(run);
             CompileSingleTop(run);
+            CompileJObjectRows(run);
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
                 + "  跳过 " + run.CasesSkipped
-                + "  （目标 11）");
+                + "  （目标 12）");
             return run.CasesFailed == 0 ? 0 : 1;
         }
 
-        public static void Run(TestRun run, NavSession s, FixtureHttp http)
+        public static void Run(TestRun run, NavSession s, FixtureHttp http, string filter = null)
         {
-            RunContract(run, s, http);
-            RunHappy(run, s, http);
-            RunPartial(run, s, http);
-            RunStop(run, s, http);
+            LiveFilter = filter;
+            if (WantAny(
+                "bat-neg-no-channel",
+                "bat-neg-wrong-kind",
+                "bat-neg-unknown-id",
+                "bat-neg-empty-actions",
+                "bat-neg-no-action-or-actions",
+                "bat-neg-actions-string",
+                "bat-mix-top-ignored"))
+            {
+                RunContract(run, s, http);
+            }
+
+            if (WantAny(
+                "bat-type-three",
+                "bat-results-order",
+                "bat-no-leak",
+                "bat-single-compat",
+                "bat-mix-verbs",
+                "bat-type-twice-overwrite",
+                "bat-click-checkbox",
+                "bat-hash-not-stop"))
+            {
+                RunHappy(run, s, http);
+            }
+
+            if (WantAny(
+                "bat-mid-bad-ref",
+                "bat-item-no-text",
+                "bat-item-bad-action",
+                "bat-item-click-no-ref",
+                "bat-item-press-no-key",
+                "bat-item-press-bad-key",
+                "bat-item-select-no-option",
+                "bat-item-select-bad-option",
+                "bat-item-download",
+                "bat-all-failed",
+                "bat-d18-skip",
+                "bat-d18-login-continue",
+                "bat-type-disabled-continue"))
+            {
+                RunPartial(run, s, http);
+            }
+
+            if (WantAny(
+                "bat-stop-confirm",
+                "bat-stop-nav",
+                "bat-stop-newtab",
+                "bat-stop-iframe"))
+            {
+                RunStop(run, s, http);
+            }
         }
 
         private static void CompileEmpty(TestRun run)
@@ -250,6 +301,39 @@ namespace BrowserNavigateTest
                 err ?? "单项顶层应编成 1 步");
         }
 
+        private static void CompileJObjectRows(TestRun run)
+        {
+            var rows = new JArray
+            {
+                new JObject
+                {
+                    ["action"] = "type",
+                    ["ref"] = "e1",
+                    ["text"] = "甲",
+                },
+                new JObject
+                {
+                    ["action"] = "click",
+                    ["ref"] = "e2",
+                },
+            };
+            List<BrowserInteractStep> steps;
+            string err;
+            bool ok = BrowserInteractBatch.TryCompile(
+                new Dictionary<string, object> { ["actions"] = rows },
+                out steps,
+                out err);
+            IntCases.Ok(
+                run,
+                "bat-unit-jobject-rows",
+                ok
+                    && steps != null
+                    && steps.Count == 2
+                    && string.Equals(steps[0].Text, "甲", StringComparison.Ordinal)
+                    && string.Equals(steps[1].Action, "click", StringComparison.OrdinalIgnoreCase),
+                err ?? "管道里的 JObject 项应能编进 steps");
+        }
+
         private static BrowserInteractItemResult Item(int index, string action, string status, string error)
         {
             return new BrowserInteractItemResult
@@ -366,10 +450,19 @@ namespace BrowserNavigateTest
 
         private static void RunHappy(TestRun run, NavSession s, FixtureHttp http)
         {
-            string id = IntCases.OpenOk(run, s, http.Url("batch-form", "index.html"), "bat-type-three");
+            string openFail = FirstWanted(
+                "bat-type-three",
+                "bat-results-order",
+                "bat-no-leak",
+                "bat-single-compat",
+                "bat-mix-verbs",
+                "bat-type-twice-overwrite",
+                "bat-click-checkbox",
+                "bat-hash-not-stop") ?? "bat-type-three";
+            string id = IntCases.OpenOk(run, s, http.Url("batch-form", "index.html"), openFail);
             if (id == null)
             {
-                IntCases.FailMany(
+                FailWanted(
                     run,
                     "依赖 batch-form",
                     "bat-type-three",
@@ -391,7 +484,7 @@ namespace BrowserNavigateTest
             string submit = IntCases.FindRef(tree, "提交", "button");
             if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(org) || string.IsNullOrEmpty(email))
             {
-                IntCases.FailMany(
+                FailWanted(
                     run,
                     "缺输入框 ref",
                     "bat-type-three",
@@ -405,151 +498,164 @@ namespace BrowserNavigateTest
                 return;
             }
 
-            ToolResult three = s.InteractBatch(
-                id,
-                new List<Dictionary<string, object>>
-                {
-                    TypeRow(name, "张三"),
-                    TypeRow(org, "某研究所"),
-                    TypeRow(email, "a@b.com"),
-                });
-            bool threeOk = three != null
-                && three.Success
-                && Outcome(three) == "all_succeeded"
-                && FirstLine(three).StartsWith("全部成功", StringComparison.Ordinal)
-                && AllStatus(three, "success")
-                && Rows(three).Count == 3
-                && ContainsAll(IntCases.Tree(three), "张三", "某研究所", "a@b.com");
-            IntCases.Ok(run, "bat-type-three", threeOk, Dump(three, "三框未一次填入"));
-            IntCases.Ok(
-                run,
-                "bat-results-order",
-                threeOk
-                    && IntAt(three, 0, "action_index") == 0
-                    && IntAt(three, 1, "action_index") == 1
-                    && IntAt(three, 2, "action_index") == 2
-                    && string.Equals(Cell(Rows(three)[0], "action"), "type", StringComparison.OrdinalIgnoreCase),
-                Dump(three, "results 顺序或 action_index 不对"));
-            IntCases.Ok(
-                run,
-                "bat-no-leak",
-                threeOk && !IntCases.HasLeak(three),
-                "回包泄漏 backendNodeId / cssPath / HTML");
-
-            ToolResult single = s.Interact(id, "type", name, text: "李四");
-            bool singleOk = single != null
-                && single.Success
-                && Outcome(single) == "all_succeeded"
-                && Rows(single).Count == 1
-                && StatusAt(single, 0) == "success"
-                && IntCases.Tree(single).IndexOf("李四", StringComparison.Ordinal) >= 0;
-            IntCases.Ok(run, "bat-single-compat", singleOk, Dump(single, "单项未走 batch_outcome"));
-
-            if (string.IsNullOrEmpty(kind) || string.IsNullOrEmpty(submit))
+            if (WantAny("bat-type-three", "bat-results-order", "bat-no-leak"))
             {
-                IntCases.FailMany(
+                ToolResult three = s.InteractBatch(
+                    id,
+                    new List<Dictionary<string, object>>
+                    {
+                        TypeRow(name, "张三"),
+                        TypeRow(org, "某研究所"),
+                        TypeRow(email, "a@b.com"),
+                    });
+                bool threeOk = three != null
+                    && three.Success
+                    && Outcome(three) == "all_succeeded"
+                    && FirstLine(three).StartsWith("全部成功", StringComparison.Ordinal)
+                    && AllStatus(three, "success")
+                    && Rows(three).Count == 3
+                    && ContainsAll(IntCases.Tree(three), "张三", "某研究所", "a@b.com");
+                Ok(run, "bat-type-three", threeOk, Dump(three, "三框未一次填入"));
+                Ok(
                     run,
-                    "缺课题类型或提交 ref",
-                    "bat-mix-verbs",
-                    "bat-type-twice-overwrite",
-                    "bat-click-checkbox",
-                    "bat-hash-not-stop");
-                return;
+                    "bat-results-order",
+                    threeOk
+                        && IntAt(three, 0, "action_index") == 0
+                        && IntAt(three, 1, "action_index") == 1
+                        && IntAt(three, 2, "action_index") == 2
+                        && string.Equals(Cell(Rows(three)[0], "action"), "type", StringComparison.OrdinalIgnoreCase),
+                    Dump(three, "results 顺序或 action_index 不对"));
+                Ok(
+                    run,
+                    "bat-no-leak",
+                    threeOk && !IntCases.HasLeak(three),
+                    "回包泄漏 backendNodeId / cssPath / HTML");
             }
 
-            tree = IntCases.WaitTree(s, id, true, "姓名", "提交");
-            name = IntCases.FindRef(tree, "姓名") ?? name;
-            kind = IntCases.FindRef(tree, "课题类型") ?? kind;
-            submit = IntCases.FindRef(tree, "提交", "button") ?? submit;
-            ToolResult mix = s.InteractBatch(
-                id,
-                new List<Dictionary<string, object>>
+            if (Want("bat-single-compat"))
+            {
+                ToolResult single = s.Interact(id, "type", name, text: "李四");
+                bool singleOk = single != null
+                    && single.Success
+                    && Outcome(single) == "all_succeeded"
+                    && Rows(single).Count == 1
+                    && StatusAt(single, 0) == "success"
+                    && IntCases.Tree(single).IndexOf("李四", StringComparison.Ordinal) >= 0;
+                Ok(run, "bat-single-compat", singleOk, Dump(single, "单项未走 batch_outcome"));
+            }
+
+            if (Want("bat-mix-verbs"))
+            {
+                if (string.IsNullOrEmpty(kind) || string.IsNullOrEmpty(submit))
                 {
-                    TypeRow(name, "王五"),
-                    new Dictionary<string, object>
-                    {
-                        ["action"] = "select",
-                        ["ref"] = kind,
-                        ["option"] = "应用研究",
-                    },
-                    new Dictionary<string, object>
-                    {
-                        ["action"] = "click",
-                        ["ref"] = submit,
-                    },
-                });
-            string mixTree = IntCases.Tree(mix);
-            bool mixOk = mix != null
-                && mix.Success
-                && Outcome(mix) == "all_succeeded"
-                && Rows(mix).Count == 3
-                && mixTree.IndexOf("王五", StringComparison.Ordinal) >= 0
-                && mixTree.IndexOf("已提交", StringComparison.Ordinal) >= 0;
-            IntCases.Ok(run, "bat-mix-verbs", mixOk, Dump(mix, "混动词未全部成功"));
+                    FailWanted(run, "缺课题类型或提交 ref", "bat-mix-verbs");
+                }
+                else
+                {
+                    tree = IntCases.WaitTree(s, id, true, "姓名", "提交");
+                    name = IntCases.FindRef(tree, "姓名") ?? name;
+                    kind = IntCases.FindRef(tree, "课题类型") ?? kind;
+                    submit = IntCases.FindRef(tree, "提交", "button") ?? submit;
+                    ToolResult mix = s.InteractBatch(
+                        id,
+                        new List<Dictionary<string, object>>
+                        {
+                            TypeRow(name, "王五"),
+                            new Dictionary<string, object>
+                            {
+                                ["action"] = "select",
+                                ["ref"] = kind,
+                                ["option"] = "应用研究",
+                            },
+                            new Dictionary<string, object>
+                            {
+                                ["action"] = "click",
+                                ["ref"] = submit,
+                            },
+                        });
+                    string mixTree = IntCases.Tree(mix);
+                    bool mixOk = mix != null
+                        && mix.Success
+                        && Outcome(mix) == "all_succeeded"
+                        && Rows(mix).Count == 3
+                        && mixTree.IndexOf("王五", StringComparison.Ordinal) >= 0
+                        && mixTree.IndexOf("已提交", StringComparison.Ordinal) >= 0;
+                    Ok(run, "bat-mix-verbs", mixOk, Dump(mix, "混动词未全部成功"));
+                }
+            }
 
             tree = IntCases.WaitTree(s, id, true, "姓名", "同意条款", "页内锚点");
             name = IntCases.FindRef(tree, "姓名") ?? name;
             string agree = IntCases.FindRef(tree, "同意条款");
             string anchor = IntCases.FindRef(tree, "页内锚点");
-            ToolResult twice = s.InteractBatch(
-                id,
-                new List<Dictionary<string, object>>
+            if (Want("bat-type-twice-overwrite"))
+            {
+                ToolResult twice = s.InteractBatch(
+                    id,
+                    new List<Dictionary<string, object>>
+                    {
+                        TypeRow(name, "初值"),
+                        TypeRow(name, "终值"),
+                    });
+                string twiceTree = IntCases.Tree(twice);
+                Ok(
+                    run,
+                    "bat-type-twice-overwrite",
+                    twice != null
+                        && twice.Success
+                        && twiceTree.IndexOf("终值", StringComparison.Ordinal) >= 0,
+                    Dump(twice, "同一 ref 第二次 type 应覆盖"));
+            }
+
+            if (Want("bat-click-checkbox"))
+            {
+                if (string.IsNullOrEmpty(agree))
                 {
-                    TypeRow(name, "初值"),
-                    TypeRow(name, "终值"),
-                });
-            string twiceTree = IntCases.Tree(twice);
-            IntCases.Ok(
-                run,
-                "bat-type-twice-overwrite",
-                twice != null
-                    && twice.Success
-                    && twiceTree.IndexOf("终值", StringComparison.Ordinal) >= 0,
-                Dump(twice, "同一 ref 第二次 type 应覆盖"));
-
-            if (string.IsNullOrEmpty(agree))
-            {
-                run.CaseFail("bat-click-checkbox", "缺同意条款 ref");
-            }
-            else
-            {
-                ToolResult ck = s.InteractBatch(
-                    id,
-                    new List<Dictionary<string, object>>
-                    {
-                        TypeRow(name, "勾选人"),
-                        new Dictionary<string, object> { ["action"] = "click", ["ref"] = agree },
-                    });
-                IntCases.Ok(
-                    run,
-                    "bat-click-checkbox",
-                    ck != null
-                        && ck.Success
-                        && IntCases.Tree(ck).IndexOf("已勾选", StringComparison.Ordinal) >= 0,
-                    Dump(ck, "勾选未进树"));
+                    FailWanted(run, "缺同意条款 ref", "bat-click-checkbox");
+                }
+                else
+                {
+                    ToolResult ck = s.InteractBatch(
+                        id,
+                        new List<Dictionary<string, object>>
+                        {
+                            TypeRow(name, "勾选人"),
+                            new Dictionary<string, object> { ["action"] = "click", ["ref"] = agree },
+                        });
+                    Ok(
+                        run,
+                        "bat-click-checkbox",
+                        ck != null
+                            && ck.Success
+                            && IntCases.Tree(ck).IndexOf("已勾选", StringComparison.Ordinal) >= 0,
+                        Dump(ck, "勾选未进树"));
+                }
             }
 
-            if (string.IsNullOrEmpty(anchor) || string.IsNullOrEmpty(name))
+            if (Want("bat-hash-not-stop"))
             {
-                run.CaseFail("bat-hash-not-stop", "缺页内锚点或姓名 ref");
-            }
-            else
-            {
-                ToolResult hash = s.InteractBatch(
-                    id,
-                    new List<Dictionary<string, object>>
-                    {
-                        new Dictionary<string, object> { ["action"] = "click", ["ref"] = anchor },
-                        TypeRow(name, "锚点后仍填"),
-                    });
-                IntCases.Ok(
-                    run,
-                    "bat-hash-not-stop",
-                    hash != null
-                        && hash.Success
-                        && StatusAt(hash, 1) == "success"
-                        && IntCases.Tree(hash).IndexOf("锚点后仍填", StringComparison.Ordinal) >= 0,
-                    Dump(hash, "只改 hash 不应停批"));
+                if (string.IsNullOrEmpty(anchor) || string.IsNullOrEmpty(name))
+                {
+                    FailWanted(run, "缺页内锚点或姓名 ref", "bat-hash-not-stop");
+                }
+                else
+                {
+                    ToolResult hash = s.InteractBatch(
+                        id,
+                        new List<Dictionary<string, object>>
+                        {
+                            new Dictionary<string, object> { ["action"] = "click", ["ref"] = anchor },
+                            TypeRow(name, "锚点后仍填"),
+                        });
+                    Ok(
+                        run,
+                        "bat-hash-not-stop",
+                        hash != null
+                            && hash.Success
+                            && StatusAt(hash, 1) == "success"
+                            && IntCases.Tree(hash).IndexOf("锚点后仍填", StringComparison.Ordinal) >= 0,
+                        Dump(hash, "只改 hash 不应停批"));
+                }
             }
         }
 
@@ -574,11 +680,11 @@ namespace BrowserNavigateTest
             }
             else
             {
-                string tree = IntCases.WaitTree(s, id, true, "姓名", "邮箱");
-                string name = IntCases.FindRef(tree, "姓名");
-                string org = IntCases.FindRef(tree, "单位");
-                string email = IntCases.FindRef(tree, "邮箱");
-                if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(org) || string.IsNullOrEmpty(email))
+                string name;
+                string org;
+                string email;
+                string kind;
+                if (!CopyFormRefs(s, id, out name, out org, out email, out kind))
                 {
                     IntCases.FailMany(
                         run,
@@ -614,6 +720,7 @@ namespace BrowserNavigateTest
                         && midTree.IndexOf("不该写入", StringComparison.Ordinal) < 0;
                     IntCases.Ok(run, "bat-mid-bad-ref", midOk, Dump(mid, "中间失败应跳过并继续"));
 
+                    CopyFormRefs(s, id, out name, out org, out email, out kind);
                     ToolResult noText = s.InteractBatch(
                         id,
                         new List<Dictionary<string, object>>
@@ -631,6 +738,7 @@ namespace BrowserNavigateTest
                             && StatusAt(noText, 2) == "success",
                         Dump(noText, "缺 text 只该项失败"));
 
+                    CopyFormRefs(s, id, out name, out org, out email, out kind);
                     ToolResult badAct = s.InteractBatch(
                         id,
                         new List<Dictionary<string, object>>
@@ -648,6 +756,7 @@ namespace BrowserNavigateTest
                             && StatusAt(badAct, 2) == "success",
                         Dump(badAct, "假动词只该项失败"));
 
+                    CopyFormRefs(s, id, out name, out org, out email, out kind);
                     ToolResult noRef = s.InteractBatch(
                         id,
                         new List<Dictionary<string, object>>
@@ -664,6 +773,7 @@ namespace BrowserNavigateTest
                             && StatusAt(noRef, 2) == "success",
                         Dump(noRef, "click 无 ref 只该项失败"));
 
+                    CopyFormRefs(s, id, out name, out org, out email, out kind);
                     ToolResult noKey = s.InteractBatch(
                         id,
                         new List<Dictionary<string, object>>
@@ -680,6 +790,7 @@ namespace BrowserNavigateTest
                             && (ErrorAt(noKey, 1).IndexOf("key", StringComparison.OrdinalIgnoreCase) >= 0),
                         Dump(noKey, "press 无 key 只该项失败"));
 
+                    CopyFormRefs(s, id, out name, out org, out email, out kind);
                     ToolResult badKey = s.InteractBatch(
                         id,
                         new List<Dictionary<string, object>>
@@ -701,7 +812,7 @@ namespace BrowserNavigateTest
                             && IntCases.ContainsAny(ErrorAt(badKey, 1), "白名单", "key"),
                         Dump(badKey, "非法 key 只该项失败"));
 
-                    string kind = IntCases.FindRef(tree, "课题类型");
+                    CopyFormRefs(s, id, out name, out org, out email, out kind);
                     if (string.IsNullOrEmpty(kind))
                     {
                         IntCases.FailMany(run, "缺课题类型 ref", "bat-item-select-no-option", "bat-item-select-bad-option");
@@ -724,6 +835,7 @@ namespace BrowserNavigateTest
                                 && ErrorAt(noOpt, 1).IndexOf("option", StringComparison.OrdinalIgnoreCase) >= 0,
                             Dump(noOpt, "select 无 option 只该项失败"));
 
+                        CopyFormRefs(s, id, out name, out org, out email, out kind);
                         ToolResult badOpt = s.InteractBatch(
                             id,
                             new List<Dictionary<string, object>>
@@ -746,6 +858,7 @@ namespace BrowserNavigateTest
                             Dump(badOpt, "假 option 只该项失败"));
                     }
 
+                    CopyFormRefs(s, id, out name, out org, out email, out kind);
                     ToolResult dl = s.InteractBatch(
                         id,
                         new List<Dictionary<string, object>>
@@ -888,100 +1001,117 @@ namespace BrowserNavigateTest
 
         private static void RunStop(TestRun run, NavSession s, FixtureHttp http)
         {
-            string id = IntCases.OpenOk(run, s, http.Url("batch-form", "index.html"), "bat-stop-confirm");
-            if (id == null)
+            if (Want("bat-stop-confirm"))
             {
-                IntCases.FailMany(
-                    run,
-                    "依赖 batch-form",
-                    "bat-stop-confirm",
-                    "bat-stop-nav",
-                    "bat-stop-newtab");
-            }
-            else
-            {
-                string tree = IntCases.WaitTree(s, id, true, "弹出确认", "姓名", "去完成页", "新窗口");
-                string confirm = IntCases.FindRef(tree, "弹出确认");
-                string name = IntCases.FindRef(tree, "姓名");
-                string go = IntCases.FindRef(tree, "去完成页");
-                string tab = IntCases.FindRef(tree, "新窗口");
-                if (string.IsNullOrEmpty(confirm) || string.IsNullOrEmpty(name))
+                string id = IntCases.OpenOk(run, s, http.Url("batch-form", "index.html"), "bat-stop-confirm");
+                if (id == null)
                 {
-                    run.CaseFail("bat-stop-confirm", "缺弹出确认或姓名 ref");
+                    FailWanted(run, "依赖 batch-form", "bat-stop-confirm");
                 }
                 else
                 {
-                    ToolResult dlg = s.InteractBatch(
-                        id,
-                        new List<Dictionary<string, object>>
-                        {
-                            new Dictionary<string, object> { ["action"] = "click", ["ref"] = confirm },
-                            TypeRow(name, "不应填入"),
-                        });
-                    string dlgTree = IntCases.Tree(dlg);
-                    bool dlgOk = PartialEnvelope(dlg)
-                        && StatusAt(dlg, 0) == "success"
-                        && StatusAt(dlg, 1) == "skipped"
-                        && dlgTree.IndexOf("不应填入", StringComparison.Ordinal) < 0;
-                    IntCases.Ok(run, "bat-stop-confirm", dlgOk, Dump(dlg, "确认框后应停批"));
-                    string cancel = IntCases.FindRef(dlgTree, "取消") ?? IntCases.FindRef(dlgTree, "确定");
-                    if (!string.IsNullOrEmpty(cancel))
+                    string tree = IntCases.WaitTree(s, id, true, "弹出确认", "姓名");
+                    string confirm = IntCases.FindRef(tree, "弹出确认");
+                    string name = IntCases.FindRef(tree, "姓名");
+                    if (string.IsNullOrEmpty(confirm) || string.IsNullOrEmpty(name))
                     {
-                        s.Interact(id, "click", cancel);
+                        FailWanted(run, "缺弹出确认或姓名 ref", "bat-stop-confirm");
+                    }
+                    else
+                    {
+                        ToolResult dlg = s.InteractBatch(
+                            id,
+                            new List<Dictionary<string, object>>
+                            {
+                                new Dictionary<string, object> { ["action"] = "click", ["ref"] = confirm },
+                                TypeRow(name, "不应填入"),
+                            });
+                        string dlgTree = IntCases.Tree(dlg);
+                        bool dlgOk = PartialEnvelope(dlg)
+                            && StatusAt(dlg, 0) == "success"
+                            && StatusAt(dlg, 1) == "skipped"
+                            && dlgTree.IndexOf("不应填入", StringComparison.Ordinal) < 0;
+                        Ok(run, "bat-stop-confirm", dlgOk, Dump(dlg, "确认框后应停批"));
+                        string cancel = IntCases.FindRef(dlgTree, "取消") ?? IntCases.FindRef(dlgTree, "确定");
+                        if (!string.IsNullOrEmpty(cancel))
+                        {
+                            s.Interact(id, "click", cancel);
+                        }
                     }
                 }
+            }
 
-                tree = IntCases.WaitTree(s, id, false, "去完成页");
-                go = IntCases.FindRef(tree, "去完成页") ?? go;
-                name = IntCases.FindRef(tree, "姓名") ?? name;
-                if (string.IsNullOrEmpty(go) || string.IsNullOrEmpty(name))
+            if (Want("bat-stop-nav"))
+            {
+                string id = IntCases.OpenOk(run, s, http.Url("batch-form", "index.html"), "bat-stop-nav");
+                if (id == null)
                 {
-                    run.CaseFail("bat-stop-nav", "缺去完成页或姓名 ref");
+                    FailWanted(run, "依赖 batch-form", "bat-stop-nav");
                 }
                 else
                 {
-                    ToolResult nav = s.InteractBatch(
-                        id,
-                        new List<Dictionary<string, object>>
-                        {
-                            new Dictionary<string, object> { ["action"] = "click", ["ref"] = go },
-                            TypeRow(name, "跳转后不填"),
-                        });
-                    string url = IntCases.Str(nav, "url");
-                    bool navOk = PartialEnvelope(nav)
-                        && StatusAt(nav, 0) == "success"
-                        && StatusAt(nav, 1) == "skipped"
-                        && url.IndexOf("done.html", StringComparison.OrdinalIgnoreCase) >= 0;
-                    IntCases.Ok(run, "bat-stop-nav", navOk, Dump(nav, "跳转后应停批"));
+                    string tree = IntCases.WaitTree(s, id, true, "去完成页", "姓名");
+                    string go = IntCases.FindRef(tree, "去完成页");
+                    string name = IntCases.FindRef(tree, "姓名");
+                    if (string.IsNullOrEmpty(go) || string.IsNullOrEmpty(name))
+                    {
+                        FailWanted(run, "缺去完成页或姓名 ref", "bat-stop-nav");
+                    }
+                    else
+                    {
+                        ToolResult nav = s.InteractBatch(
+                            id,
+                            new List<Dictionary<string, object>>
+                            {
+                                new Dictionary<string, object> { ["action"] = "click", ["ref"] = go },
+                                TypeRow(name, "跳转后不填"),
+                            });
+                        string url = IntCases.Str(nav, "url");
+                        bool navOk = PartialEnvelope(nav)
+                            && StatusAt(nav, 0) == "success"
+                            && StatusAt(nav, 1) == "skipped"
+                            && url.IndexOf("done.html", StringComparison.OrdinalIgnoreCase) >= 0;
+                        Ok(run, "bat-stop-nav", navOk, Dump(nav, "跳转后应停批"));
+                    }
                 }
+            }
 
+            if (Want("bat-stop-newtab"))
+            {
                 string tabId = IntCases.OpenOk(run, s, http.Url("batch-form", "index.html"), "bat-stop-newtab");
                 if (tabId == null)
                 {
-                    return;
-                }
-
-                string ttree = IntCases.WaitTree(s, tabId, true, "新窗口", "姓名");
-                tab = IntCases.FindRef(ttree, "新窗口");
-                name = IntCases.FindRef(ttree, "姓名");
-                if (string.IsNullOrEmpty(tab) || string.IsNullOrEmpty(name))
-                {
-                    run.CaseFail("bat-stop-newtab", "缺新窗口或姓名 ref");
+                    FailWanted(run, "依赖 batch-form", "bat-stop-newtab");
                 }
                 else
                 {
-                    ToolResult nt = s.InteractBatch(
-                        tabId,
-                        new List<Dictionary<string, object>>
-                        {
-                            new Dictionary<string, object> { ["action"] = "click", ["ref"] = tab },
-                            TypeRow(name, "新标签不填"),
-                        });
-                    bool ntOk = PartialEnvelope(nt)
-                        && StatusAt(nt, 0) == "success"
-                        && StatusAt(nt, 1) == "skipped";
-                    IntCases.Ok(run, "bat-stop-newtab", ntOk, Dump(nt, "新标签后应停批"));
+                    string ttree = IntCases.WaitTree(s, tabId, true, "新窗口", "姓名");
+                    string tab = IntCases.FindRef(ttree, "新窗口");
+                    string name = IntCases.FindRef(ttree, "姓名");
+                    if (string.IsNullOrEmpty(tab) || string.IsNullOrEmpty(name))
+                    {
+                        FailWanted(run, "缺新窗口或姓名 ref", "bat-stop-newtab");
+                    }
+                    else
+                    {
+                        ToolResult nt = s.InteractBatch(
+                            tabId,
+                            new List<Dictionary<string, object>>
+                            {
+                                new Dictionary<string, object> { ["action"] = "click", ["ref"] = tab },
+                                TypeRow(name, "新标签不填"),
+                            });
+                        bool ntOk = PartialEnvelope(nt)
+                            && StatusAt(nt, 0) == "success"
+                            && StatusAt(nt, 1) == "skipped";
+                        Ok(run, "bat-stop-newtab", ntOk, Dump(nt, "新标签后应停批"));
+                    }
                 }
+            }
+
+            if (!Want("bat-stop-iframe"))
+            {
+                return;
             }
 
             string ifr = IntCases.OpenOk(run, s, http.Url("batch-form", "outer.html"), "bat-stop-iframe");
@@ -995,7 +1125,7 @@ namespace BrowserNavigateTest
             string outer = IntCases.FindRef(ot, "外壳姓名");
             if (string.IsNullOrEmpty(frame) || string.IsNullOrEmpty(outer))
             {
-                run.CaseFail("bat-stop-iframe", "缺 iframe 行或外壳姓名 ref");
+                FailWanted(run, "缺 iframe 行或外壳姓名 ref", "bat-stop-iframe");
                 return;
             }
 
@@ -1013,7 +1143,26 @@ namespace BrowserNavigateTest
                 && (et.IndexOf("课程名", StringComparison.Ordinal) >= 0
                     || IntCases.Flag(exp, "expanded_frame"))
                 && et.IndexOf("外壳不应填", StringComparison.Ordinal) < 0;
-            IntCases.Ok(run, "bat-stop-iframe", expOk, Dump(exp, "展开 iframe 后应停批"));
+            Ok(run, "bat-stop-iframe", expOk, Dump(exp, "展开 iframe 后应停批"));
+        }
+
+        private static bool CopyFormRefs(
+            NavSession s,
+            string id,
+            out string name,
+            out string org,
+            out string email,
+            out string kind)
+        {
+            string tree = IntCases.WaitTree(s, id, true, "姓名", "邮箱");
+            name = IntCases.FindRef(tree, "姓名");
+            org = IntCases.FindRef(tree, "单位");
+            email = IntCases.FindRef(tree, "邮箱");
+            kind = IntCases.FindRef(tree, "课题类型", "combobox")
+                ?? IntCases.FindRef(tree, "课题类型");
+            return !string.IsNullOrEmpty(name)
+                && !string.IsNullOrEmpty(org)
+                && !string.IsNullOrEmpty(email);
         }
 
         private static Dictionary<string, object> TypeRow(string refId, string text)
@@ -1181,13 +1330,99 @@ namespace BrowserNavigateTest
             }
 
             string extra = Outcome(r);
+            string tree = IntCases.Tree(r);
+            if (tree.Length > 180)
+            {
+                tree = tree.Substring(0, 180);
+            }
+
             if (!string.IsNullOrEmpty(r.Error))
             {
-                return fallback + " · " + extra + " · " + r.Error;
+                return fallback + " · " + extra + " · " + r.Error + " · " + tree;
             }
 
             string msg = IntCases.Str(r, "message");
-            return string.IsNullOrEmpty(msg) ? fallback + " · " + extra : fallback + " · " + extra + " · " + msg;
+            string head = string.IsNullOrEmpty(msg) ? fallback + " · " + extra : fallback + " · " + extra + " · " + msg;
+            return string.IsNullOrEmpty(tree) ? head : head + " · " + tree;
+        }
+
+        private static bool AllLive()
+        {
+            return string.IsNullOrEmpty(LiveFilter)
+                || string.Equals(LiveFilter, "bat-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(LiveFilter, "bat", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool Want(string id)
+        {
+            return AllLive() || string.Equals(LiveFilter, id, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool WantAny(params string[] ids)
+        {
+            if (AllLive())
+            {
+                return true;
+            }
+
+            if (ids == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < ids.Length; i++)
+            {
+                if (Want(ids[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string FirstWanted(params string[] ids)
+        {
+            if (ids == null)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < ids.Length; i++)
+            {
+                if (Want(ids[i]))
+                {
+                    return ids[i];
+                }
+            }
+
+            return null;
+        }
+
+        private static void Ok(TestRun run, string id, bool pass, string reason)
+        {
+            if (!Want(id))
+            {
+                return;
+            }
+
+            IntCases.Ok(run, id, pass, reason);
+        }
+
+        private static void FailWanted(TestRun run, string reason, params string[] ids)
+        {
+            if (ids == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < ids.Length; i++)
+            {
+                if (Want(ids[i]))
+                {
+                    run.CaseFail(ids[i], reason);
+                }
+            }
         }
     }
 }

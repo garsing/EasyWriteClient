@@ -60,7 +60,7 @@ namespace WordAddIn1.BrowserHost
                     ["op"] = "get"
                 };
                 result = await ExtensionHost
-                    .RpcAsync(channel.TabUuid, "rpc.script_dialog", req, TimeSpan.FromSeconds(8))
+                    .RpcAsync(channel.TabUuid, "rpc.script_dialog", req, TimeSpan.FromSeconds(2))
                     .ConfigureAwait(true);
             }
             catch

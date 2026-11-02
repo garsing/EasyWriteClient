@@ -352,10 +352,29 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
+                try
+                {
+                    await RpcAsync(
+                            channel.TabUuid,
+                            "rpc.cdp",
+                            new JObject
+                            {
+                                ["tab_uuid"] = channel.TabUuid,
+                                ["method"] = "Page.handleJavaScriptDialog",
+                                ["params"] = new JObject { ["accept"] = false }
+                            },
+                            TimeSpan.FromSeconds(2))
+                        .ConfigureAwait(true);
+                }
+                catch
+                {
+                }
+
                 JObject result = await RpcAsync(
                     channel.TabUuid,
                     "rpc.navigate",
-                    new JObject { ["tab_uuid"] = channel.TabUuid, ["url"] = url.Trim() }).ConfigureAwait(true);
+                    new JObject { ["tab_uuid"] = channel.TabUuid, ["url"] = url.Trim() },
+                    TimeSpan.FromSeconds(8)).ConfigureAwait(true);
 
                 string pageUrl = (string)result["url"] ?? url.Trim();
                 string title = (string)result["title"] ?? "";
@@ -393,18 +412,7 @@ namespace WordAddIn1.BrowserHost
                 return BrowserNavigateResult.Fail("url 须为 http/https");
             }
 
-            if (!HasBridgeForBrowser(kind))
-            {
-                return BrowserNavigateResult.Fail(
-                    "未连接到 " + kind + " 扩展。请确认已侧载并启用「易写浏览器助手」，且易写 Desktop 在运行。");
-            }
-
-            // 若该浏览器已有可操作标签：优先同标签跳转（少开窗）
-            BrowserChannel existing = FindLiveAttachChannel(kind);
-            if (existing != null)
-            {
-                return await NavigateAsync(existing, uri.AbsoluteUri).ConfigureAwait(true);
-            }
+            // 已有标签若正停在脚本确认框，同标签跳转会一直等。每次新开标签。
 
             string exe = ResolveBrowserExe(kind);
             if (string.IsNullOrEmpty(exe))
@@ -431,6 +439,12 @@ namespace WordAddIn1.BrowserHost
                 kind, uri, before, TimeSpan.FromSeconds(20)).ConfigureAwait(true);
             if (matched == null)
             {
+                if (!HasBridgeForBrowser(kind))
+                {
+                    return BrowserNavigateResult.Fail(
+                        "未连接到 " + kind + " 扩展。请确认已在该浏览器侧载并启用「易写浏览器助手」。");
+                }
+
                 return BrowserNavigateResult.Fail(
                     "已启动 " + kind + "，但扩展未在超时内报到该页。请确认扩展已启用后重试。");
             }
@@ -459,8 +473,7 @@ namespace WordAddIn1.BrowserHost
                     }
                 }
 
-                // 扩展刚连上时 hello 可能未到，有任意桥也允许启动；报到时再按浏览器过滤
-                return BrowserBridgePipeServer.SnapshotClients().Count > 0;
+                return false;
             }
         }
 
@@ -525,9 +538,15 @@ namespace WordAddIn1.BrowserHost
                 targetPath = "/";
             }
 
+            DateTime kindDeadline = DateTime.UtcNow + TimeSpan.FromSeconds(4);
             while (DateTime.UtcNow < deadline)
             {
                 AgentRunCancellation.ThrowIfCancelled();
+                if (DateTime.UtcNow > kindDeadline && !HasBridgeForBrowser(kind))
+                {
+                    return null;
+                }
+
                 lock (Gate)
                 {
                     AttachTabInfo urlHit = null;
@@ -1052,7 +1071,11 @@ namespace WordAddIn1.BrowserHost
                     ["click_mode"] = ConfigManager.GetBrowserClickMode(engine),
                     ["attach_pointer"] = ConfigManager.GetBrowserAttachPointer(engine)
                 };
-                JObject result = await RpcAsync(channel.TabUuid, "rpc.interact", req).ConfigureAwait(true);
+                JObject result = await RpcAsync(
+                    channel.TabUuid,
+                    "rpc.interact",
+                    req,
+                    TimeSpan.FromSeconds(12)).ConfigureAwait(true);
                 if (result != null
                     && result["script_dialog"] != null
                     && result["script_dialog"].Type != JTokenType.Null)
@@ -1065,6 +1088,22 @@ namespace WordAddIn1.BrowserHost
                 string title = (string)result["title"] ?? channel.Title;
                 channel.UpdatePage(pageUrl, title, true);
                 BrowserScriptDialogSession after = BrowserScriptDialogAttach.Peek(channel.TabUuid);
+                if (after == null
+                    && string.Equals(act, "click", StringComparison.Ordinal))
+                {
+                    try
+                    {
+                        await CallCdpAsync(channel.TabUuid, "Page.enable", "{}").ConfigureAwait(true);
+                    }
+                    catch
+                    {
+                    }
+
+                    await Task.Delay(350).ConfigureAwait(true);
+                    after = BrowserScriptDialogAttach.Peek(channel.TabUuid)
+                        ?? await BrowserScriptDialogAttach.SyncAsync(channel).ConfigureAwait(true);
+                }
+
                 bool dialogNow = after != null && after.IsPending;
                 bool navigated = BrowserInteractBatch.UrlChanged(urlBefore, pageUrl);
                 BrowserInteractResult performed = BrowserInteractResult.OkStep(
@@ -1084,6 +1123,26 @@ namespace WordAddIn1.BrowserHost
             }
             catch (Exception ex)
             {
+                BrowserScriptDialogSession pending = BrowserScriptDialogAttach.Peek(channel.TabUuid)
+                    ?? await BrowserScriptDialogAttach.SyncAsync(channel).ConfigureAwait(true);
+                if (pending != null && pending.IsPending)
+                {
+                    BrowserInteractResult dialoged = BrowserInteractResult.OkStep(
+                        channel,
+                        act,
+                        string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
+                        BrowserResnapshotLayer.FromEntry(entry),
+                        null,
+                        false,
+                        null,
+                        false,
+                        true,
+                        null);
+                    return await BrowserInteractBatch
+                        .MaybeCompleteAsync(dialoged, completeAfter)
+                        .ConfigureAwait(true);
+                }
+
                 return BrowserInteractResult.Fail(ex.Message);
             }
         }
