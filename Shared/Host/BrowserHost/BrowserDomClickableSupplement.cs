@@ -840,9 +840,14 @@ namespace WordAddIn1.BrowserHost
                         continue;
                     }
 
+                    string name = (string)item["name"] ?? "";
+                    if (IsHiddenDialogAction(name))
+                    {
+                        continue;
+                    }
+
                     string refId = "e" + nextRef.ToString(CultureInfo.InvariantCulture);
                     nextRef++;
-                    string name = (string)item["name"] ?? "";
                     string role = (string)item["role"] ?? "button";
                     built.Refs[refId] = new BrowserRefEntry
                     {

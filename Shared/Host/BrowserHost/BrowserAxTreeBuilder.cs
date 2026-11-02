@@ -449,6 +449,12 @@ namespace WordAddIn1.BrowserHost
 
                 node.Name = name;
 
+                if (hoverReveal && node.Ignored && IsHiddenDialogAction(name))
+                {
+                    VisitChildren(node, depth, inheritName, inCardGroup);
+                    return;
+                }
+
                 if (FrameRoles.Contains(role))
                 {
                     string frameRef = null;
@@ -792,6 +798,13 @@ namespace WordAddIn1.BrowserHost
             }
 
             return string.Equals(n, "详情", StringComparison.Ordinal);
+        }
+
+        private static bool IsHiddenDialogAction(string name)
+        {
+            string n = (name ?? "").Trim();
+            return n == "提交" || n == "暂存" || n == "确定" || n == "保存"
+                || n == "取消" || n == "关闭" || n == "申请";
         }
 
         private static bool IsRootLike(string role)

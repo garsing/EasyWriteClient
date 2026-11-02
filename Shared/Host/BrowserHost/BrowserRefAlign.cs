@@ -135,7 +135,6 @@ namespace WordAddIn1.BrowserHost
             var oldByCss = UniqueCss(prev.Map);
             var usedOld = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var remap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            int hit = 0;
             foreach (string temp in order)
             {
                 if (!map.TryGetValue(temp, out BrowserRefEntry neu) || neu == null)
@@ -164,13 +163,6 @@ namespace WordAddIn1.BrowserHost
 
                 remap[temp] = oldId;
                 usedOld.Add(oldId);
-                hit++;
-            }
-
-            int denom = Math.Min(prev.Order.Count, order.Count);
-            if (denom >= 4 && hit * 10 < denom * 3)
-            {
-                return Identity(order);
             }
 
             var oldRest = new List<string>();
