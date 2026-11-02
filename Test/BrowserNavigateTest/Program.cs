@@ -60,6 +60,8 @@ namespace BrowserNavigateTest
                 : runTab ? "浏览器 中间栏 / 可点补全（tab-）"
                 : runBat ? "浏览器 一次操作多个节点（bat-）"
                 : runInt ? "浏览器 interact（int-）"
+                : runSnp && caseFilter.StartsWith("snp-modal", StringComparison.OrdinalIgnoreCase)
+                    ? "浏览器 HTML 弹出层快照（snp-modal-）"
                 : runSnp ? "浏览器 snapshot + iframe（snp-）"
                 : "浏览器 渠道 + navigate（nav-）";
             Console.WriteLine(suite);
@@ -152,7 +154,8 @@ namespace BrowserNavigateTest
                         http,
                         host,
                         chromeBefore,
-                        edgeBefore);
+                        edgeBefore,
+                        caseFilter);
                 }
             }
 
@@ -166,7 +169,9 @@ namespace BrowserNavigateTest
                         || string.Equals(caseFilter, "bat", StringComparison.OrdinalIgnoreCase)
                         ? 32
                         : 1)
-                    : (runTab ? 75 : (runInt ? 160 : (runSnp ? 46 : 30))))));
+                    : (runTab ? 75 : (runInt ? 160 : (runSnp
+                        ? (caseFilter.StartsWith("snp-modal", StringComparison.OrdinalIgnoreCase) ? 3 : 46)
+                        : 30))))));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed

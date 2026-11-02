@@ -7,16 +7,23 @@ namespace BrowserNavigateTest
 {
     internal static class SnpCases
     {
-        public static void Run(TestRun run, FixtureHttp http, string navHost, int chromeBefore, int edgeBefore)
+        public static void Run(TestRun run, FixtureHttp http, string navHost, int chromeBefore, int edgeBefore, string caseFilter = null)
         {
             var s = new NavSession();
             if (string.IsNullOrEmpty(navHost))
             {
                 navHost = "yiwrite";
             }
+
+            if (!string.IsNullOrEmpty(caseFilter)
+                && caseFilter.StartsWith("snp-modal", StringComparison.OrdinalIgnoreCase))
+            {
+                RunHtmlModal(run, s, http, navHost);
+                return;
+            }
+
             RunNeg(run, s, http, navHost);
             RunOverview(run, s, http, navHost);
-            RunHtmlModal(run, s, http, navHost);
             RunRealSlim(run, s, http, navHost);
             RunRealSaved(run, s, http, navHost);
             RunNoQuit(run, chromeBefore, edgeBefore);
