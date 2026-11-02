@@ -41,10 +41,11 @@ namespace WordAddIn1
                     string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
                     var outer = Stopwatch.StartNew();
                     var outerSteps = new Dictionary<string, long>();
+                    string display;
                     try
                     {
                         long tRead = outer.ElapsedMilliseconds;
-                        WordReader.ReadWord(document);
+                        display = WordReader.ReadWord(document);
                         outerSteps["工具-ReadWord映射"] = outer.ElapsedMilliseconds - tRead;
                         TableOptimizer.LogTune(
                             $"+{outer.ElapsedMilliseconds}ms 【耗时】工具-ReadWord映射={outerSteps["工具-ReadWord映射"]}ms");
@@ -55,11 +56,20 @@ namespace WordAddIn1
                     }
 
                     long tResolve = outer.ElapsedMilliseconds;
-                    Word.Table targetTable = ResolveTableById(document, tableId, out string resolveError);
+                    List<Word.Table> tables = TableResolveHelper.GetAllTablesInOrder(document);
+                    Word.Table targetTable = TableResolveHelper.TryResolveFromList(tables, tableId, out string resolveError);
                     outerSteps["工具-定位表格"] = outer.ElapsedMilliseconds - tResolve;
                     if (targetTable == null)
                     {
                         return new ToolResult { Success = false, Error = resolveError };
+                    }
+
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[DEBUG] F_OptimizeTableDisplay: 定位表格 {tableId}，尺寸={targetTable.Rows.Count}×{targetTable.Columns.Count}");
+
+                    if (!TryResolveWidthLimit(tables, display, tableId, targetTable, out float wMax, out string widthError))
+                    {
+                        return new ToolResult { Success = false, Error = widthError };
                     }
 
                     long tExtract = outer.ElapsedMilliseconds;
@@ -72,7 +82,7 @@ namespace WordAddIn1
                         $"F_OptimizeTableDisplay: 调用 OptimizeTable table_id={tableId}, 行×列={targetTable.Rows.Count}×{targetTable.Columns.Count}");
 
                     long tOpt = outer.ElapsedMilliseconds;
-                    var optimizeResult = TableOptimizer.OptimizeTable(targetTable, data);
+                    var optimizeResult = TableOptimizer.OptimizeTable(targetTable, data, null, wMax);
                     outerSteps["工具-OptimizeTable"] = outer.ElapsedMilliseconds - tOpt;
 
                     if (!optimizeResult.Success)
@@ -181,16 +191,80 @@ namespace WordAddIn1
             }
         }
 
-        private static Word.Table ResolveTableById(Word.Document document, string tableId, out string error)
+        private static bool TryResolveWidthLimit(
+            List<Word.Table> tables,
+            string display,
+            string tableId,
+            Word.Table targetTable,
+            out float wMax,
+            out string error)
         {
-            Word.Table table = TableResolveHelper.TryResolveTableById(document, tableId, out error);
-            if (table != null)
+            wMax = 0f;
+            error = null;
+            float pageWidth = TableOptimizer.GetAvailablePageWidthPoints(targetTable);
+            NestedTableParentFinder.Result parent = NestedTableParentFinder.Find(display, tableId);
+            if (parent.Kind == NestedTableParentFinder.Kind.TopLevel)
             {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[DEBUG] F_OptimizeTableDisplay: 定位表格 {tableId}，尺寸={table.Rows.Count}×{table.Columns.Count}");
+                wMax = pageWidth > 0f ? pageWidth : 500f;
+                TableOptimizer.LogTune(
+                    $"F_OptimizeTableDisplay: 顶层表 W_max={wMax:F1}pt（版心）");
+                return true;
             }
 
-            return table;
+            if (parent.Kind != NestedTableParentFinder.Kind.Nested)
+            {
+                error = string.IsNullOrEmpty(parent.Error)
+                    ? "嵌套表但拿不到父级单元格"
+                    : parent.Error;
+                TableOptimizer.LogTune("F_OptimizeTableDisplay: " + error);
+                return false;
+            }
+
+            Word.Table parentTable = TableResolveHelper.TryResolveFromList(
+                tables, parent.ParentTableId, out string parentError);
+            if (parentTable == null)
+            {
+                error = "嵌套表但拿不到父级单元格";
+                TableOptimizer.LogTune(
+                    "F_OptimizeTableDisplay: 父表未定位 " + parent.ParentTableId + " " + (parentError ?? ""));
+                return false;
+            }
+
+            Word.Cell cell = TableRowValuesHelper.TryResolveWritableCell(
+                parentTable, parent.Row, parent.Col);
+            if (cell == null)
+            {
+                error = "嵌套表但拿不到父级单元格";
+                TableOptimizer.LogTune(
+                    "F_OptimizeTableDisplay: 父格未定位 " + parent.GeometricCode);
+                return false;
+            }
+
+            float cellWidth;
+            try
+            {
+                cellWidth = (float)cell.Width;
+            }
+            catch (Exception ex)
+            {
+                error = "嵌套表但拿不到父级单元格宽度";
+                TableOptimizer.LogTune(
+                    "F_OptimizeTableDisplay: 读父格宽度失败 " + parent.GeometricCode + " " + ex.Message);
+                return false;
+            }
+
+            if (cellWidth <= 0f)
+            {
+                error = "嵌套表但拿不到父级单元格宽度";
+                TableOptimizer.LogTune(
+                    "F_OptimizeTableDisplay: 父格宽度无效 " + parent.GeometricCode + " width=" + cellWidth.ToString("F1"));
+                return false;
+            }
+
+            wMax = cellWidth;
+            TableOptimizer.LogTune(
+                $"F_OptimizeTableDisplay: 嵌套表 父格={parent.GeometricCode} W_max={wMax:F1}pt 版心={pageWidth:F1}pt");
+            return true;
         }
 
         private static List<List<string>> ExtractTableCellData(Word.Table table)

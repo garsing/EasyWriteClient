@@ -346,7 +346,8 @@ namespace WordAddIn1
         public static OptimizationResult OptimizeTable(
             Word.Table table,
             List<List<string>> data,
-            OptimizationConfig config = null)
+            OptimizationConfig config = null,
+            float? widthLimitPoints = null)
         {
             config ??= new OptimizationConfig();
             var result = new OptimizationResult();
@@ -366,9 +367,18 @@ namespace WordAddIn1
 
                 data ??= new List<List<string>>();
                 long tOverview = _clock.Now;
-                float wMax = GetAvailablePageWidthPoints(table);
-                if (wMax <= 0)
-                    wMax = 500f;
+                float wMax;
+                if (widthLimitPoints.HasValue)
+                {
+                    wMax = widthLimitPoints.Value;
+                    LogTune($"OptimizeTable: 使用传入上限 W_max={wMax:F1}pt");
+                }
+                else
+                {
+                    wMax = GetAvailablePageWidthPoints(table);
+                    if (wMax <= 0)
+                        wMax = 500f;
+                }
 
                 int colCount = table.Columns.Count;
                 int rowCount = table.Rows.Count;

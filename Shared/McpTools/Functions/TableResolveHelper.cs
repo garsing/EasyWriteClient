@@ -19,6 +19,21 @@ namespace WordAddIn1
             }
 
             List<Word.Table> allTables = GetAllTablesInOrder(document);
+            return TryResolveFromList(allTables, tableId, out error);
+        }
+
+        /// <summary>
+        /// 在已经收好的扁平表列表里按 <paramref name="tableId"/> 取表。不再枚举 COM。
+        /// </summary>
+        public static Word.Table TryResolveFromList(List<Word.Table> allTables, string tableId, out string error)
+        {
+            error = null;
+            if (allTables == null || string.IsNullOrEmpty(tableId))
+            {
+                error = $"找不到表格编号 '{tableId}'，请确认表格编号是否正确";
+                return null;
+            }
+
             Word.Table stamped = FindTableByTitleStamp(allTables, tableId);
             if (stamped != null)
             {
