@@ -204,6 +204,8 @@ namespace WordAddIn1
             public float MinColumnWidth { get; set; } = 30f;
             /// <summary>段 1 总宽线性扫描步长（磅）。</summary>
             public float WidthStep { get; set; } = 50f;
+            /// <summary>下一档会超过 W_max 时，锁在 W_max 再收回这一点（磅）。</summary>
+            public float WidthNearMaxShrinkPoints { get; set; } = 2f;
             public int MaxIterations { get; set; } = 20;
             public bool AllowWrap { get; set; } = false;
             public float RowHeightMultiplier { get; set; } = 1.2f;
@@ -846,6 +848,21 @@ namespace WordAddIn1
 
                 if (Math.Abs(probeWidth - hi) < 0.001f)
                     break;
+            }
+
+            // 再加一档会超过 W_max：不把表留在差一步的窄宽上，锁在版心略内侧。
+            if (best + 0.001f < hi)
+            {
+                float shrink = Math.Max(0f, config.WidthNearMaxShrinkPoints);
+                float cap = hi - shrink;
+                if (cap < lo)
+                {
+                    cap = hi;
+                }
+
+                LogTune(
+                    $"TryFindMinWidth(段1): 下一档超过 W_max，改用 {cap:F1}pt（W_max={hi:F1}pt 收回 {shrink:F1}pt），上一档={best:F1}pt");
+                best = cap;
             }
 
             WriteColumnWidths(table, ComputeColumnWidthsForTotal(plan, best));
