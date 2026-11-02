@@ -136,12 +136,42 @@ namespace WordAddIn1.BrowserHost
     } catch (e) {}
     return null;
   }
+  function isHiddenSel(sel) {
+    if (!sel) return true;
+    try {
+      var st = window.getComputedStyle(sel);
+      if (st.display === 'none' || st.visibility === 'hidden') return true;
+    } catch (eH) {}
+    return false;
+  }
+  function optionText(n) {
+    return String((n && (n.innerText || n.textContent)) || '').replace(/\s+/g, ' ').trim();
+  }
+  function fakeRoot(el) {
+    var n = el;
+    for (var i = 0; i < 10 && n; i++) {
+      var cls = n.className ? String(n.className) : '';
+      if (cls.indexOf('layui-form-select') >= 0) return n;
+      n = n.parentElement;
+    }
+    return el;
+  }
   var sel = findSelect(this);
-  if (!sel || !sel.options) return '';
   var out = [];
-  for (var i = 0; i < sel.options.length && out.length < 8; i++) {
-    var tx = String(sel.options[i].text || '').replace(/\s+/g, ' ').trim();
-    if (tx) out.push(tx);
+  if (sel && sel.options && !isHiddenSel(sel)) {
+    for (var i = 0; i < sel.options.length && out.length < 8; i++) {
+      var tx = String(sel.options[i].text || '').replace(/\s+/g, ' ').trim();
+      if (tx) out.push(tx);
+    }
+    return out.join('|');
+  }
+  var root = fakeRoot(this);
+  if (root && root.querySelectorAll) {
+    var nodes = root.querySelectorAll('dd, [role=""option""], [role=""treeitem""]');
+    for (var j = 0; j < nodes.length && out.length < 8; j++) {
+      var t = optionText(nodes[j]);
+      if (t) out.push(t);
+    }
   }
   return out.join('|');
 }";

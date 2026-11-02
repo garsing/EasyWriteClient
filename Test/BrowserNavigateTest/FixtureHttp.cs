@@ -23,6 +23,7 @@ namespace BrowserNavigateTest
             _roots["center-tabs"] = Path.Combine(repo, "tests", "center-tabs");
             _roots["hover-card"] = Path.Combine(repo, "tests", "hover-card");
             _roots["native-select"] = Path.Combine(repo, "tests", "native-select");
+            _roots["layui-select"] = Path.Combine(repo, "tests", "layui-select");
             _roots["overlay-cookie"] = Path.Combine(repo, "tests", "overlay-cookie");
             _roots["overlay-html-modal"] = Path.Combine(repo, "tests", "overlay-html-modal");
             _roots["file-chooser"] = Path.Combine(repo, "tests", "file-chooser");

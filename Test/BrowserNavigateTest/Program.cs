@@ -45,7 +45,8 @@ namespace BrowserNavigateTest
             bool runShot = caseFilter.StartsWith("shot-", StringComparison.OrdinalIgnoreCase);
             bool runDl = caseFilter.StartsWith("dl-", StringComparison.OrdinalIgnoreCase);
             bool runTab = caseFilter.StartsWith("tab-", StringComparison.OrdinalIgnoreCase);
-            bool runInt = caseFilter.StartsWith("int-", StringComparison.OrdinalIgnoreCase);
+            bool runIntSpan = caseFilter.StartsWith("int-span-select", StringComparison.OrdinalIgnoreCase);
+            bool runInt = !runIntSpan && caseFilter.StartsWith("int-", StringComparison.OrdinalIgnoreCase);
             bool runNav = caseFilter.StartsWith("nav-", StringComparison.OrdinalIgnoreCase);
             bool runBat = caseFilter.StartsWith("bat-", StringComparison.OrdinalIgnoreCase);
             bool runSnp = !runInt && !runNav && !runTab && !runDl && !runShot && !runRpt && !runBat;
@@ -59,6 +60,7 @@ namespace BrowserNavigateTest
                 : runDl ? "浏览器 download（dl-）"
                 : runTab ? "浏览器 中间栏 / 可点补全（tab-）"
                 : runBat ? "浏览器 一次操作多个节点（bat-）"
+                : runIntSpan ? "浏览器 SPAN 假下拉 select（int-span-select-）"
                 : runInt ? "浏览器 interact（int-）"
                 : runSnp && caseFilter.StartsWith("snp-modal", StringComparison.OrdinalIgnoreCase)
                     ? "浏览器 HTML 弹出层快照（snp-modal-）"
@@ -131,6 +133,13 @@ namespace BrowserNavigateTest
                     BatchCases.Run(run, session, http, caseFilter);
                 }
             }
+            else if (runIntSpan)
+            {
+                using (var http = new FixtureHttp())
+                {
+                    IntSpanSelectCases.Run(run, http, host);
+                }
+            }
             else if (runInt)
             {
                 using (var http = new FixtureHttp())
@@ -169,9 +178,9 @@ namespace BrowserNavigateTest
                         || string.Equals(caseFilter, "bat", StringComparison.OrdinalIgnoreCase)
                         ? 32
                         : 1)
-                    : (runTab ? 75 : (runInt ? 160 : (runSnp
+                    : (runTab ? 75 : (runIntSpan ? 3 : (runInt ? 160 : (runSnp
                         ? (caseFilter.StartsWith("snp-modal", StringComparison.OrdinalIgnoreCase) ? 8 : 46)
-                        : 30))))));
+                        : 30)))))));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed

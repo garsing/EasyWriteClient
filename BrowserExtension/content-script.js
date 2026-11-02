@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 56;
+  const CONTENT_VER = 57;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -607,11 +607,27 @@
     }
 
     function optionsOf(el) {
-      if ((el.tagName || "").toLowerCase() !== "select" || !el.options) return null;
       const out = [];
-      for (let i = 0; i < el.options.length && out.length < 8; i++) {
-        const tx = String(el.options[i].text || "").replace(/\s+/g, " ").trim();
-        if (tx) out.push(tx);
+      if ((el.tagName || "").toLowerCase() === "select" && el.options) {
+        for (let i = 0; i < el.options.length && out.length < 8; i++) {
+          const tx = String(el.options[i].text || "").replace(/\s+/g, " ").trim();
+          if (tx) out.push(tx);
+        }
+        return out.length ? out.join("|") : null;
+      }
+      let n = el;
+      let root = el;
+      for (let i = 0; i < 10 && n; i++) {
+        const cls = n.className ? String(n.className) : "";
+        if (cls.indexOf("layui-form-select") >= 0) { root = n; break; }
+        n = n.parentElement;
+      }
+      if (root && root.querySelectorAll) {
+        const nodes = root.querySelectorAll('dd, [role="option"], [role="treeitem"]');
+        for (let i = 0; i < nodes.length && out.length < 8; i++) {
+          const t = String(nodes[i].innerText || nodes[i].textContent || "").replace(/\s+/g, " ").trim();
+          if (t) out.push(t);
+        }
       }
       return out.length ? out.join("|") : null;
     }
@@ -2310,35 +2326,81 @@
     }
 
     if (action === "select") {
+      const option = String(msg.option || "");
+      function isHiddenSel(s) {
+        if (!s) return true;
+        try {
+          const st = window.getComputedStyle(s);
+          if (st.display === "none" || st.visibility === "hidden") return true;
+        } catch (_) {}
+        return false;
+      }
+      function applyNative(s) {
+        if (looksLikeNotEditable(s)) throw new Error("目标不可编辑");
+        let matched = false;
+        const preview = [];
+        for (let i = 0; i < s.options.length; i++) {
+          const opt = s.options[i];
+          const text = (opt.textContent || "").trim();
+          if (preview.length < 8 && text) preview.push(text);
+          if (opt.value === option || text === option || text.indexOf(option) >= 0 || String(opt.value).indexOf(option) >= 0) {
+            s.selectedIndex = i;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) {
+          throw new Error("未找到选项: " + option + (preview.length ? "。可选：" + preview.join("、") : ""));
+        }
+        s.dispatchEvent(new Event("input", { bubbles: true }));
+        s.dispatchEvent(new Event("change", { bubbles: true }));
+      }
       const sel = findSelect(el);
-      if (!sel) {
+      if (sel && !isHiddenSel(sel)) {
+        applyNative(sel);
+        return { ok: true, message: "selected", probe: entry.probe };
+      }
+      let root = el;
+      let walk = el;
+      for (let wi = 0; wi < 10 && walk; wi++) {
+        const cls = walk.className ? String(walk.className) : "";
+        if (cls.indexOf("layui-form-select") >= 0) { root = walk; break; }
+        walk = walk.parentElement;
+      }
+      const nodes = (root && root.querySelectorAll)
+        ? root.querySelectorAll('dd, [role="option"], [role="treeitem"]')
+        : [];
+      if (!nodes.length) {
         const tag = ((el && el.tagName) || "?").toLowerCase();
         throw new Error(
           "select 未落到原生下拉（当前是 " + tag
             + "）。请重新 snapshot，对带 options= 的那一行再 select，不要改 click。"
         );
       }
-      if (looksLikeNotEditable(sel)) {
-        throw new Error("目标不可编辑");
-      }
-      const option = String(msg.option || "");
-      let matched = false;
-      const preview = [];
-      for (let i = 0; i < sel.options.length; i++) {
-        const opt = sel.options[i];
-        const text = (opt.textContent || "").trim();
-        if (preview.length < 8 && text) preview.push(text);
-        if (opt.value === option || text === option || text.indexOf(option) >= 0 || String(opt.value).indexOf(option) >= 0) {
-          sel.selectedIndex = i;
-          matched = true;
-          break;
+      let hit = null;
+      const preview2 = [];
+      for (let j = 0; j < nodes.length; j++) {
+        const nd = nodes[j];
+        const t2 = String(nd.innerText || nd.textContent || "").replace(/\s+/g, " ").trim();
+        let v2 = "";
+        try { v2 = String((nd.getAttribute && (nd.getAttribute("lay-value") || nd.getAttribute("value"))) || "").trim(); } catch (_) {}
+        if (t2 && preview2.length < 8) preview2.push(t2);
+        if (!hit && (v2 === option || t2 === option || (option && t2.indexOf(option) >= 0) || (option && v2.indexOf(option) >= 0))) {
+          hit = nd;
         }
       }
-      if (!matched) {
-        throw new Error("未找到选项: " + option + (preview.length ? "。可选：" + preview.join("、") : ""));
+      if (!hit) {
+        throw new Error("未找到选项: " + option + (preview2.length ? "。可选：" + preview2.join("、") : ""));
       }
-      sel.dispatchEvent(new Event("input", { bubbles: true }));
-      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      let title = null;
+      try { title = root.querySelector && root.querySelector(".layui-select-title"); } catch (_) {}
+      try { (title || el).click(); } catch (_) {}
+      try { hit.click(); } catch (_) {}
+      let hidden = null;
+      try { hidden = root.querySelector && root.querySelector("select"); } catch (_) {}
+      if (hidden) {
+        try { applyNative(hidden); } catch (_) {}
+      }
       return { ok: true, message: "selected", probe: entry.probe };
     }
 

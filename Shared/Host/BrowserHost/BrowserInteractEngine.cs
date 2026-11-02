@@ -919,6 +919,75 @@ namespace WordAddIn1.BrowserHost
     } catch (eF) {}
     return null;
   }
+  function isHiddenSel(sel) {
+    if (!sel) return true;
+    try {
+      var st = window.getComputedStyle(sel);
+      if (st.display === 'none' || st.visibility === 'hidden') return true;
+    } catch (eH) {}
+    try {
+      var r = sel.getBoundingClientRect();
+      if (r.width < 2 && r.height < 2) return true;
+    } catch (eR) {}
+    return false;
+  }
+  function optionText(n) {
+    return String((n && (n.innerText || n.textContent)) || '').replace(/\s+/g, ' ').trim();
+  }
+  function fakeRoot(el) {
+    var n = el;
+    for (var i = 0; i < 10 && n; i++) {
+      var cls = n.className ? String(n.className) : '';
+      if (cls.indexOf('layui-form-select') >= 0) return n;
+      n = n.parentElement;
+    }
+    return el;
+  }
+  function optionList(root) {
+    var out = [];
+    if (!root || !root.querySelectorAll) return out;
+    var nodes = root.querySelectorAll('dd, [role=""option""], [role=""treeitem""]');
+    for (var i = 0; i < nodes.length; i++) {
+      if (optionText(nodes[i])) out.push(nodes[i]);
+    }
+    return out;
+  }
+  function previewOf(nodes) {
+    var out = [];
+    for (var i = 0; i < nodes.length && out.length < 8; i++) {
+      var t = optionText(nodes[i]);
+      if (t) out.push(t);
+    }
+    return out.join('、');
+  }
+  function matchNode(nodes, opt) {
+    var exact = null, contains = null;
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var t = optionText(n);
+      var v = '';
+      try { v = String((n.getAttribute && (n.getAttribute('lay-value') || n.getAttribute('value'))) || '').trim(); } catch (eV) {}
+      if (v === opt || t === opt) { exact = n; break; }
+      if (!contains && opt && ((t && t.indexOf(opt) >= 0) || (v && v.indexOf(opt) >= 0))) contains = n;
+    }
+    return exact || contains;
+  }
+  function applyNative(sel, opt) {
+    var exact = -1, contains = -1;
+    for (var i = 0; i < sel.options.length; i++) {
+      var o = sel.options[i];
+      var t = (o.text || '').trim();
+      var v = (o.value || '').trim();
+      if (v === opt || t === opt) { exact = i; break; }
+      if (contains < 0 && (t.indexOf(opt) >= 0 || v.indexOf(opt) >= 0)) contains = i;
+    }
+    var idx = exact >= 0 ? exact : contains;
+    if (idx < 0) return false;
+    sel.selectedIndex = idx;
+    sel.dispatchEvent(new Event('input', {bubbles:true}));
+    sel.dispatchEvent(new Event('change', {bubbles:true}));
+    return true;
+  }
   function optionPreview(sel) {
     var out = [];
     if (!sel || !sel.options) return '';
@@ -928,23 +997,29 @@ namespace WordAddIn1.BrowserHost
     }
     return out.join('、');
   }
-  var sel = findSelect(this);
-  if (!sel) return { ok:false, reason:'not_select', tag: (this.tagName || '?') };
-  sel.scrollIntoView({block:'center', inline:'center'});
-  sel.focus && sel.focus();
-  var exact = -1, contains = -1;
-  for (var i = 0; i < sel.options.length; i++) {
-    var o = sel.options[i];
-    var t = (o.text || '').trim();
-    var v = (o.value || '').trim();
-    if (v === option || t === option) { exact = i; break; }
-    if (contains < 0 && (t.indexOf(option) >= 0 || v.indexOf(option) >= 0)) contains = i;
+  var vis = findSelect(this);
+  if (vis && !isHiddenSel(vis)) {
+    vis.scrollIntoView({block:'center', inline:'center'});
+    vis.focus && vis.focus();
+    if (!applyNative(vis, option)) return { ok:false, reason:'no_match', options: optionPreview(vis) };
+    return { ok:true };
   }
-  var idx = exact >= 0 ? exact : contains;
-  if (idx < 0) return { ok:false, reason:'no_match', options: optionPreview(sel) };
-  sel.selectedIndex = idx;
-  sel.dispatchEvent(new Event('input', {bubbles:true}));
-  sel.dispatchEvent(new Event('change', {bubbles:true}));
+  var root = fakeRoot(this);
+  var nodes = optionList(root);
+  if (!nodes.length) {
+    var open = document.querySelector('.layui-form-selected, .layui-form-selectup');
+    if (open) nodes = optionList(open);
+  }
+  if (!nodes.length) return { ok:false, reason:'not_select', tag: (this.tagName || '?') };
+  var hit = matchNode(nodes, option);
+  if (!hit) return { ok:false, reason:'no_match', options: previewOf(nodes) };
+  var title = null;
+  try { title = root.querySelector && root.querySelector('.layui-select-title'); } catch (eT) {}
+  try { (title || this).click(); } catch (eC1) {}
+  try { hit.click(); } catch (eC2) {}
+  var hidden = null;
+  try { hidden = root.querySelector && root.querySelector('select'); } catch (eS) {}
+  if (hidden) applyNative(hidden, option);
   return { ok:true };
 }",
                 argsJson,

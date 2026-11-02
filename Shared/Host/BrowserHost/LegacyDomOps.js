@@ -564,11 +564,28 @@
   }
 
   function optionsOf(el) {
-    if ((el.tagName || "").toLowerCase() !== "select" || !el.options) return null;
     var out = [];
-    for (var i = 0; i < el.options.length && out.length < 8; i++) {
-      var tx = String(el.options[i].text || "").replace(/\s+/g, " ").trim();
-      if (tx) out.push(tx);
+    var i;
+    if ((el.tagName || "").toLowerCase() === "select" && el.options) {
+      for (i = 0; i < el.options.length && out.length < 8; i++) {
+        var tx = String(el.options[i].text || "").replace(/\s+/g, " ").trim();
+        if (tx) out.push(tx);
+      }
+      return out.length ? out.join("|") : null;
+    }
+    var n = el;
+    var root = el;
+    for (i = 0; i < 10 && n; i++) {
+      var cls = n.className ? String(n.className) : "";
+      if (cls.indexOf("layui-form-select") >= 0) { root = n; break; }
+      n = n.parentElement;
+    }
+    if (root && root.querySelectorAll) {
+      var nodes = root.querySelectorAll('dd, [role="option"], [role="treeitem"]');
+      for (i = 0; i < nodes.length && out.length < 8; i++) {
+        var t = String(nodes[i].innerText || nodes[i].textContent || "").replace(/\s+/g, " ").trim();
+        if (t) out.push(t);
+      }
     }
     return out.length ? out.join("|") : null;
   }
@@ -1059,29 +1076,76 @@
     }
 
     if (action === "select") {
+      var option = String(msg.option || "");
+      function isHiddenSel(s) {
+        if (!s) return true;
+        try {
+          var st = window.getComputedStyle(s);
+          if (st.display === "none" || st.visibility === "hidden") return true;
+        } catch (eHs) {}
+        return false;
+      }
+      function applyNative(s) {
+        if (looksLikeNotEditable(s)) throw new Error("目标不可编辑");
+        var matched = false;
+        var preview = [];
+        for (var i = 0; i < s.options.length; i++) {
+          var opt = s.options[i];
+          var tx = (opt.textContent || "").trim();
+          if (preview.length < 8 && tx) preview.push(tx);
+          if (opt.value === option || tx === option || tx.indexOf(option) >= 0 || String(opt.value).indexOf(option) >= 0) {
+            s.selectedIndex = i;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) {
+          throw new Error("未找到选项: " + option + (preview.length ? "。可选：" + preview.join("、") : ""));
+        }
+        s.dispatchEvent(new Event("input", { bubbles: true }));
+        s.dispatchEvent(new Event("change", { bubbles: true }));
+      }
       var sel = findSelect(el);
-      if (!sel) {
+      if (sel && !isHiddenSel(sel)) {
+        applyNative(sel);
+        return { ok: true, message: "selected", url: document.location.href, title: document.title };
+      }
+      var root = el;
+      var walk = el;
+      for (var wi = 0; wi < 10 && walk; wi++) {
+        var cls = walk.className ? String(walk.className) : "";
+        if (cls.indexOf("layui-form-select") >= 0) { root = walk; break; }
+        walk = walk.parentElement;
+      }
+      var nodes = [];
+      if (root && root.querySelectorAll) {
+        nodes = root.querySelectorAll('dd, [role="option"], [role="treeitem"]');
+      }
+      if (!nodes.length) {
         throw new Error("select 未落到原生下拉。请重新 snapshot，对带 options= 的那一行再 select。");
       }
-      if (looksLikeNotEditable(sel)) throw new Error("目标不可编辑");
-      var option = String(msg.option || "");
-      var matched = false;
-      var preview = [];
-      for (var i = 0; i < sel.options.length; i++) {
-        var opt = sel.options[i];
-        var tx = (opt.textContent || "").trim();
-        if (preview.length < 8 && tx) preview.push(tx);
-        if (opt.value === option || tx === option || tx.indexOf(option) >= 0 || String(opt.value).indexOf(option) >= 0) {
-          sel.selectedIndex = i;
-          matched = true;
-          break;
-        }
+      var hit = null;
+      var preview2 = [];
+      for (var j = 0; j < nodes.length; j++) {
+        var nd = nodes[j];
+        var t2 = String(nd.innerText || nd.textContent || "").replace(/\s+/g, " ").trim();
+        var v2 = "";
+        try { v2 = String((nd.getAttribute && (nd.getAttribute("lay-value") || nd.getAttribute("value"))) || "").trim(); } catch (eV2) {}
+        if (t2 && preview2.length < 8) preview2.push(t2);
+        if (!hit && (v2 === option || t2 === option || (option && t2.indexOf(option) >= 0) || (option && v2.indexOf(option) >= 0))) hit = nd;
       }
-      if (!matched) {
-        throw new Error("未找到选项: " + option + (preview.length ? "。可选：" + preview.join("、") : ""));
+      if (!hit) {
+        throw new Error("未找到选项: " + option + (preview2.length ? "。可选：" + preview2.join("、") : ""));
       }
-      sel.dispatchEvent(new Event("input", { bubbles: true }));
-      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      var title = null;
+      try { title = root.querySelector && root.querySelector(".layui-select-title"); } catch (eT) {}
+      try { (title || el).click(); } catch (eC1) {}
+      try { hit.click(); } catch (eC2) {}
+      var hidden = null;
+      try { hidden = root.querySelector && root.querySelector("select"); } catch (eS) {}
+      if (hidden) {
+        try { applyNative(hidden); } catch (eN) {}
+      }
       return { ok: true, message: "selected", url: document.location.href, title: document.title };
     }
 
