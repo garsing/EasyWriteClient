@@ -891,7 +891,6 @@ namespace WordAddIn1.BrowserHost
                     }
                 }
 
-                BrowserRefStore.Replace(channel.ChannelId, map);
                 TryLogAttachSnapshotDiag(pageUrl, map);
 
                 string focusRef = (string)result["focus_ref"];
@@ -917,6 +916,8 @@ namespace WordAddIn1.BrowserHost
                         }
                     }
                 }
+
+                BrowserRefAlign.Apply(channel.ChannelId, map, ref snapshot, null, ref focusRef);
                 return BrowserSnapshotResult.Ok(
                     channel,
                     pageUrl,

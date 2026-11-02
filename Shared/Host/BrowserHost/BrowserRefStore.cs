@@ -9,10 +9,70 @@ namespace WordAddIn1.BrowserHost
     internal static class BrowserRefStore
     {
         private static readonly object Gate = new object();
-        private static readonly Dictionary<string, Dictionary<string, BrowserRefEntry>> ByChannel =
-            new Dictionary<string, Dictionary<string, BrowserRefEntry>>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, Stored> ByChannel =
+            new Dictionary<string, Stored>(StringComparer.OrdinalIgnoreCase);
+
+        internal sealed class Stored
+        {
+            public Dictionary<string, BrowserRefEntry> Map;
+            public List<string> Order;
+            public int? ModalRootBackendId;
+            public int NextSeq;
+        }
+
+        public static Stored Peek(string channelId)
+        {
+            if (string.IsNullOrWhiteSpace(channelId))
+            {
+                return null;
+            }
+
+            lock (Gate)
+            {
+                Stored cur;
+                if (!ByChannel.TryGetValue(channelId, out cur) || cur == null || cur.Map == null)
+                {
+                    return null;
+                }
+
+                return new Stored
+                {
+                    Map = new Dictionary<string, BrowserRefEntry>(cur.Map, StringComparer.OrdinalIgnoreCase),
+                    Order = cur.Order == null ? new List<string>() : new List<string>(cur.Order),
+                    ModalRootBackendId = cur.ModalRootBackendId,
+                    NextSeq = cur.NextSeq
+                };
+            }
+        }
 
         public static void Replace(string channelId, IDictionary<string, BrowserRefEntry> map)
+        {
+            List<string> order = BrowserRefAlign.OrderFromKeys(map);
+            int max = 0;
+            if (map != null)
+            {
+                foreach (string k in map.Keys)
+                {
+                    if (k != null && k.Length > 1 && (k[0] == 'e' || k[0] == 'E'))
+                    {
+                        int n;
+                        if (int.TryParse(k.Substring(1), out n) && n > max)
+                        {
+                            max = n;
+                        }
+                    }
+                }
+            }
+
+            Replace(channelId, map, order, null, max + 1);
+        }
+
+        public static void Replace(
+            string channelId,
+            IDictionary<string, BrowserRefEntry> map,
+            IList<string> order,
+            int? modalRoot,
+            int nextSeq)
         {
             if (string.IsNullOrWhiteSpace(channelId))
             {
@@ -27,7 +87,13 @@ namespace WordAddIn1.BrowserHost
                     return;
                 }
 
-                ByChannel[channelId] = new Dictionary<string, BrowserRefEntry>(map, StringComparer.OrdinalIgnoreCase);
+                ByChannel[channelId] = new Stored
+                {
+                    Map = new Dictionary<string, BrowserRefEntry>(map, StringComparer.OrdinalIgnoreCase),
+                    Order = order == null ? new List<string>() : new List<string>(order),
+                    ModalRootBackendId = modalRoot,
+                    NextSeq = nextSeq < 1 ? 1 : nextSeq
+                };
             }
         }
 
@@ -54,13 +120,13 @@ namespace WordAddIn1.BrowserHost
 
             lock (Gate)
             {
-                if (!ByChannel.TryGetValue(channelId, out Dictionary<string, BrowserRefEntry> map)
-                    || map == null)
+                Stored cur;
+                if (!ByChannel.TryGetValue(channelId, out cur) || cur == null || cur.Map == null)
                 {
                     return false;
                 }
 
-                return map.TryGetValue(refId.Trim(), out entry) && entry != null;
+                return cur.Map.TryGetValue(refId.Trim(), out entry) && entry != null;
             }
         }
     }

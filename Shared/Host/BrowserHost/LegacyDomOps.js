@@ -800,9 +800,15 @@
       var print = node.print || depth === 0;
       if (print) {
         var tag = (node.el.tagName || "").toLowerCase();
+        var extra = "";
+        var shownName = String(nameOf(node.el) || "").replace(/\s+/g, " ").trim();
+        if (isRowHoverControl(node.el)
+            && /^(提交|暂存|确定|保存|取消|关闭|申请)$/.test(shownName)) {
+          emitChildren(node, depth + 1);
+          return;
+        }
         var ref = nextRef(chrome);
         if (!ref) refTrunc = true;
-        var extra = "";
         var val = valueOf(node.el);
         if (val != null && val !== "") extra += ' value="' + String(val).replace(/"/g, "'") + '"';
         var opts = optionsOf(node.el);

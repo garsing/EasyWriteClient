@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 55;
+  const CONTENT_VER = 56;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -1353,6 +1353,19 @@
             if (g) name = nameOf(g);
           }
         }
+        const shownName = String(name || "").replace(/\s+/g, " ").trim();
+        let hideMark = false;
+        if (!groupOnly) {
+          if (isRowHoverControl(node.el)
+            || ((isHoverRevealControl(node.el) || hasDetailLabel(node.el) || isImgtextBtn(node.el))
+              && (isHoverHiddenStyle(node.el) || (window.getComputedStyle(node.el).display === "none")))) {
+            hideMark = true;
+          }
+        }
+        if (hideMark && /^(提交|暂存|确定|保存|取消|关闭|申请)$/.test(shownName)) {
+          emitChildren(node, depth + 1);
+          return;
+        }
         let ref = null;
         if (!groupOnly) {
           ref = nextRef(chrome);
@@ -1362,11 +1375,7 @@
           const opts = optionsOf(node.el);
           if (opts) extra += " options=" + opts;
           if (tag === "input" && (node.el.getAttribute("type") || "") === "password") extra += " (password)";
-          if (isRowHoverControl(node.el)
-            || ((isHoverRevealControl(node.el) || hasDetailLabel(node.el) || isImgtextBtn(node.el))
-              && (isHoverHiddenStyle(node.el) || (window.getComputedStyle(node.el).display === "none")))) {
-            extra += " (隐藏)";
-          }
+          if (hideMark) extra += " (隐藏)";
         }
         appendLine(depth, node.role, name, ref, groupOnly ? null : node.el, extra);
         if (charStop) {

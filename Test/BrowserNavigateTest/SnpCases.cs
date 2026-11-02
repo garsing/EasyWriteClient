@@ -244,6 +244,46 @@ namespace BrowserNavigateTest
                     hv.Success
                         ? (hidOk ? "补全应有可见框、无 DataTables/隐藏框" : ht)
                         : hv.Error);
+                Ok(run, "snp-modal-no-hidden-submit",
+                    hv.Success
+                    && HasTextRef(ht, "提交")
+                    && ht.IndexOf("提交 (隐藏)", StringComparison.Ordinal) < 0,
+                    hv.Success
+                        ? (HasTextRef(ht, "提交") && ht.IndexOf("提交 (隐藏)", StringComparison.Ordinal) < 0
+                            ? "可见提交在、隐藏提交不在总览"
+                            : ht)
+                        : hv.Error);
+            }
+            else
+            {
+                run.CaseFail("snp-modal-no-hidden-submit", "依赖 hidden-inputs");
+            }
+
+            string stableId = OpenOk(run, s, http.Url("overlay-html-modal", "stable-ref.html"), navHost, "snp-modal-stable-ref");
+            if (stableId != null)
+            {
+                ToolResult s0 = s.Snap(stableId);
+                string t0 = Tree(s0);
+                string submit0 = FirstVisibleRef(t0, "提交");
+                string expand = FirstVisibleRef(t0, "展开选项");
+                if (s0.Success && submit0 != null && expand != null)
+                {
+                    ToolResult clicked = s.Interact(stableId, "click", expand);
+                    string t1 = Tree(s.Snap(stableId));
+                    string submit1 = FirstVisibleRef(t1, "提交");
+                    Ok(run, "snp-modal-stable-ref",
+                        clicked.Success
+                        && t1.IndexOf("选项甲", StringComparison.Ordinal) >= 0
+                        && submit1 != null
+                        && string.Equals(submit0, submit1, StringComparison.Ordinal),
+                        clicked.Success
+                            ? ("展开前 " + submit0 + " 展开后 " + submit1)
+                            : clicked.Error);
+                }
+                else
+                {
+                    run.CaseFail("snp-modal-stable-ref", s0.Success ? "树上没有展开选项或提交" : s0.Error);
+                }
             }
 
             string sideId = OpenOk(run, s, http.Url("overlay-html-modal", "sidebar.html"), navHost, "snp-modal-keep-sidebar");
@@ -568,6 +608,31 @@ namespace BrowserNavigateTest
             }
 
             return false;
+        }
+
+        private static string FirstVisibleRef(string tree, string text)
+        {
+            if (string.IsNullOrEmpty(tree) || string.IsNullOrEmpty(text))
+            {
+                return null;
+            }
+
+            foreach (string line in tree.Split('\n'))
+            {
+                if (line.IndexOf(text, StringComparison.Ordinal) < 0
+                    || line.IndexOf("(隐藏)", StringComparison.Ordinal) >= 0)
+                {
+                    continue;
+                }
+
+                Match m = Regex.Match(line, @"ref=(e\d+)");
+                if (m.Success)
+                {
+                    return m.Groups[1].Value;
+                }
+            }
+
+            return null;
         }
 
         private static bool IsShortButton(string tree, string longText)

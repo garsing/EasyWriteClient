@@ -209,6 +209,8 @@ namespace WordAddIn1.BrowserHost
     var st;
     try { st=window.getComputedStyle(el); } catch (e) { continue; }
     var own=ownText(el);
+    if (st && (st.display==='none' || st.visibility==='hidden' || parseFloat(st.opacity)===0)
+        && /^(提交|暂存|确定|保存|取消|关闭|申请)$/.test(String(own||'').replace(/\s+/g,' ').trim())) continue;
     var displayNone=!!(st && st.display==='none');
     var innerNow=String(el.textContent||'').replace(/\s+/g,' ').trim();
     var rowHover=(isHoverRole(el)||isClickableIcon(el)) && innerNow.length<=16 && !insideHiddenTemplate(el);
@@ -454,6 +456,10 @@ namespace WordAddIn1.BrowserHost
                     bool hidden = item["hidden"] != null
                         && item["hidden"].Type == JTokenType.Boolean
                         && (bool)item["hidden"];
+                    if (hidden && IsHiddenDialogAction(name))
+                    {
+                        continue;
+                    }
 
                     if (!header)
                     {
@@ -691,6 +697,13 @@ namespace WordAddIn1.BrowserHost
 
             int end = at + needle.Length;
             return end >= line.Length || !char.IsDigit(line[end]);
+        }
+
+        private static bool IsHiddenDialogAction(string name)
+        {
+            string n = (name ?? "").Trim();
+            return n == "提交" || n == "暂存" || n == "确定" || n == "保存"
+                || n == "取消" || n == "关闭" || n == "申请";
         }
 
         private static string JsonEscape(string s)

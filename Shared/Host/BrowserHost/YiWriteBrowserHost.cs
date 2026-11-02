@@ -698,7 +698,7 @@ namespace WordAddIn1.BrowserHost
                         .ConfigureAwait(true);
                 }
 
-                BrowserRefStore.Replace(channel.ChannelId, built.Refs);
+                BrowserRefAlign.Apply(channel.ChannelId, built);
                 channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, channel.Visible);
 
                 return BrowserSnapshotResult.Ok(
@@ -887,7 +887,7 @@ namespace WordAddIn1.BrowserHost
             await BrowserAccessibleNameFill
                 .FillTemporalValuesAsync(form, built, ax.SessionId)
                 .ConfigureAwait(true);
-            BrowserRefStore.Replace(channel.ChannelId, built.Refs);
+            BrowserRefAlign.Apply(channel.ChannelId, built);
             try
             {
                 channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, channel.Visible);

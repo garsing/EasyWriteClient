@@ -478,7 +478,14 @@ namespace WordAddIn1.BrowserHost
                 }
             }
 
-            BrowserRefStore.Replace(channel.ChannelId, map);
+            string snap = (string)result["snapshot"] ?? "";
+            string focus = (string)result["focus_ref"];
+            BrowserRefAlign.Apply(channel.ChannelId, map, ref snap, null, ref focus);
+            result["snapshot"] = snap;
+            if (!string.IsNullOrEmpty(focus))
+            {
+                result["focus_ref"] = focus;
+            }
         }
 
         private static async Task<JObject> EvaluateAsync(

@@ -170,7 +170,7 @@ namespace BrowserNavigateTest
                         ? 32
                         : 1)
                     : (runTab ? 75 : (runInt ? 160 : (runSnp
-                        ? (caseFilter.StartsWith("snp-modal", StringComparison.OrdinalIgnoreCase) ? 6 : 46)
+                        ? (caseFilter.StartsWith("snp-modal", StringComparison.OrdinalIgnoreCase) ? 8 : 46)
                         : 30))))));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
