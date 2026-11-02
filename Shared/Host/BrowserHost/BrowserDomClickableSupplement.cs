@@ -199,7 +199,8 @@ namespace WordAddIn1.BrowserHost
     return !!closestCardGroup(el.parentElement);
   }
   var items=[];
-  var all=document.querySelectorAll('body *');
+  var scope=document.querySelector('[data-yiwrite-modal-root=""1""]')||document.body;
+  var all=(scope&&scope.querySelectorAll)?scope.querySelectorAll('*'):document.querySelectorAll('body *');
   for (var i=0;i<all.length && items.length<120;i++){
     var el=all[i];
     var tag=(el.tagName||'').toLowerCase();

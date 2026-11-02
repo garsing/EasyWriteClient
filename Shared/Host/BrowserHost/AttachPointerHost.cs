@@ -116,8 +116,10 @@ namespace WordAddIn1.BrowserHost
                     json = await GetAxJsonAsync(cdp).ConfigureAwait(true);
                 }
 
-                BrowserAxBuildResult built = repeatWindow
-                    ? BrowserAxTreeBuilder.BuildOverview(
+                BrowserAxBuildResult built;
+                if (repeatWindow)
+                {
+                    built = BrowserAxTreeBuilder.BuildOverview(
                         json,
                         new BrowserAxTreeBuilder.RepeatWindowRequest
                         {
@@ -126,10 +128,19 @@ namespace WordAddIn1.BrowserHost
                             Ordinal = prior.RepeatOrdinal,
                             Start = rangeStart.Value,
                             End = rangeEnd.Value
-                        })
-                    : isDetail
-                        ? BrowserAxTreeBuilder.BuildDetail(json, refId.Trim(), prior)
-                        : BrowserAxTreeBuilder.BuildOverview(json);
+                        });
+                }
+                else if (isDetail)
+                {
+                    built = BrowserAxTreeBuilder.BuildDetail(json, refId.Trim(), prior);
+                }
+                else
+                {
+                    int? modalRoot = await BrowserHtmlModalProbe
+                        .TryGetBackendNodeIdAsync(cdp, sessionId)
+                        .ConfigureAwait(true);
+                    built = BrowserAxTreeBuilder.BuildOverview(json, modalRoot);
+                }
 
                 if (!built.Success)
                 {
@@ -694,7 +705,10 @@ namespace WordAddIn1.BrowserHost
                 return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
             }
 
-            BrowserAxBuildResult built = BrowserAxTreeBuilder.BuildOverview(ax.Json);
+            int? modalRoot = await BrowserHtmlModalProbe
+                .TryGetBackendNodeIdAsync(cdp, sessionId)
+                .ConfigureAwait(true);
+            BrowserAxBuildResult built = BrowserAxTreeBuilder.BuildOverview(ax.Json, modalRoot);
             if (!built.Success)
             {
                 return BrowserSnapshotResult.Fail(

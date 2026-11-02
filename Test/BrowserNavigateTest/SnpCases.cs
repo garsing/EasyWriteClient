@@ -16,6 +16,7 @@ namespace BrowserNavigateTest
             }
             RunNeg(run, s, http, navHost);
             RunOverview(run, s, http, navHost);
+            RunHtmlModal(run, s, http, navHost);
             RunRealSlim(run, s, http, navHost);
             RunRealSaved(run, s, http, navHost);
             RunNoQuit(run, chromeBefore, edgeBefore);
@@ -174,6 +175,56 @@ namespace BrowserNavigateTest
 
             ToolResult ov = s.Snap(Str(n, "channel_id"));
             Ok(run, "snp-ov-hidden", ov.Success, ov.Error);
+        }
+
+        private static void RunHtmlModal(TestRun run, NavSession s, FixtureHttp http, string navHost)
+        {
+            string modalId = OpenOk(run, s, http.Url("overlay-html-modal", "index.html"), navHost, "snp-modal-hide-bottom");
+            if (modalId == null)
+            {
+                run.CaseFail("snp-modal-keep-sidebar", "依赖弹出夹具");
+                run.CaseFail("snp-modal-keep-cookie", "依赖弹出夹具");
+            }
+            else
+            {
+                ToolResult ov = s.Snap(modalId);
+                string tree = Tree(ov);
+                Ok(run, "snp-modal-hide-bottom",
+                    ov.Success
+                    && tree.IndexOf("上层新增", StringComparison.Ordinal) >= 0
+                    && tree.IndexOf("底层新增", StringComparison.Ordinal) < 0,
+                    ov.Success ? "应只见上层新增、不见底层新增" : ov.Error);
+            }
+
+            string sideId = OpenOk(run, s, http.Url("overlay-html-modal", "sidebar.html"), navHost, "snp-modal-keep-sidebar");
+            if (sideId == null)
+            {
+                run.CaseFail("snp-modal-keep-cookie", "依赖侧栏夹具");
+            }
+            else
+            {
+                ToolResult side = s.Snap(sideId);
+                string st = Tree(side);
+                Ok(run, "snp-modal-keep-sidebar",
+                    side.Success
+                    && st.IndexOf("底层新增", StringComparison.Ordinal) >= 0
+                    && st.IndexOf("侧栏新增", StringComparison.Ordinal) >= 0,
+                    side.Success ? "无遮罩侧栏应两层都在" : side.Error);
+            }
+
+            string cookieId = OpenOk(run, s, http.Url("overlay-cookie", "index.html"), navHost, "snp-modal-keep-cookie");
+            if (cookieId == null)
+            {
+                return;
+            }
+
+            ToolResult ck = s.Snap(cookieId);
+            string ct = Tree(ck);
+            Ok(run, "snp-modal-keep-cookie",
+                ck.Success
+                && HasTextRef(ct, "查看结果")
+                && HasTextRef(ct, "接受"),
+                ck.Success ? "Cookie 条不应藏底层按钮" : ck.Error);
         }
 
         private static void RunDomInput(TestRun run, NavSession s, FixtureHttp http, string navHost)

@@ -91,6 +91,11 @@ namespace WordAddIn1.BrowserHost
                 return;
             }
 
+            if (built.HtmlModalApplied)
+            {
+                selector = ScopeSelector(selector, BrowserHtmlModalProbe.MarkerSelector);
+            }
+
             try
             {
                 string docJson = await cdp.CallCdpAsync(
@@ -328,6 +333,29 @@ namespace WordAddIn1.BrowserHost
             }
 
             return string.IsNullOrWhiteSpace(v) ? null : v;
+        }
+
+        private static string ScopeSelector(string selector, string scope)
+        {
+            if (string.IsNullOrWhiteSpace(selector) || string.IsNullOrWhiteSpace(scope))
+            {
+                return selector;
+            }
+
+            string[] parts = selector.Split(',');
+            var scoped = new List<string>();
+            foreach (string p in parts)
+            {
+                string t = (p ?? "").Trim();
+                if (t.Length == 0)
+                {
+                    continue;
+                }
+
+                scoped.Add(scope + " " + t);
+            }
+
+            return scoped.Count == 0 ? selector : string.Join(",", scoped);
         }
 
         private static string InferRole(string tag, string type, Dictionary<string, string> attrs)

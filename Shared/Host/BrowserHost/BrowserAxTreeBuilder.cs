@@ -55,12 +55,17 @@ namespace WordAddIn1.BrowserHost
 
         public static BrowserAxBuildResult BuildOverview(string axTreeJson)
         {
-            return Build(axTreeJson, detailRootRef: null, priorEntry: null, window: null);
+            return Build(axTreeJson, detailRootRef: null, priorEntry: null, window: null, modalRootBackendId: null);
         }
 
         public static BrowserAxBuildResult BuildOverview(string axTreeJson, RepeatWindowRequest window)
         {
-            return Build(axTreeJson, detailRootRef: null, priorEntry: null, window: window);
+            return Build(axTreeJson, detailRootRef: null, priorEntry: null, window: window, modalRootBackendId: null);
+        }
+
+        public static BrowserAxBuildResult BuildOverview(string axTreeJson, int? modalRootBackendId)
+        {
+            return Build(axTreeJson, detailRootRef: null, priorEntry: null, window: null, modalRootBackendId: modalRootBackendId);
         }
 
         public static BrowserAxBuildResult BuildDetail(
@@ -68,14 +73,15 @@ namespace WordAddIn1.BrowserHost
             string detailRef,
             BrowserRefEntry priorEntry)
         {
-            return Build(axTreeJson, detailRootRef: detailRef, priorEntry: priorEntry, window: null);
+            return Build(axTreeJson, detailRootRef: detailRef, priorEntry: priorEntry, window: null, modalRootBackendId: null);
         }
 
         private static BrowserAxBuildResult Build(
             string axTreeJson,
             string detailRootRef,
             BrowserRefEntry priorEntry,
-            RepeatWindowRequest window)
+            RepeatWindowRequest window,
+            int? modalRootBackendId)
         {
             var result = new BrowserAxBuildResult();
             if (string.IsNullOrWhiteSpace(axTreeJson))
@@ -137,7 +143,21 @@ namespace WordAddIn1.BrowserHost
             }
             else
             {
-                startId = FindRootId(byId);
+                startId = null;
+                if (modalRootBackendId.HasValue)
+                {
+                    startId = FindNodeIdByBackend(byId, modalRootBackendId.Value);
+                    if (!string.IsNullOrEmpty(startId))
+                    {
+                        result.HtmlModalApplied = true;
+                        result.ModalRootBackendId = modalRootBackendId;
+                    }
+                }
+
+                if (string.IsNullOrEmpty(startId))
+                {
+                    startId = FindRootId(byId);
+                }
             }
 
             if (string.IsNullOrEmpty(startId) || !byId.ContainsKey(startId))
@@ -922,6 +942,19 @@ namespace WordAddIn1.BrowserHost
             return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", " ").Replace("\n", " ");
         }
 
+        private static string FindNodeIdByBackend(Dictionary<string, AxNode> byId, int backendId)
+        {
+            foreach (var n in byId.Values)
+            {
+                if (n.BackendDomNodeId == backendId)
+                {
+                    return n.NodeId;
+                }
+            }
+
+            return null;
+        }
+
         private static string FindRootId(Dictionary<string, AxNode> byId)
         {
             var childOfSomeone = new HashSet<string>(StringComparer.Ordinal);
@@ -1168,6 +1201,12 @@ namespace WordAddIn1.BrowserHost
 
         public bool Truncated { get; set; }
         public string TruncatedReason { get; set; }
+
+        /// <summary>overview 已把树根收到整页 HTML 弹出层。</summary>
+        public bool HtmlModalApplied { get; set; }
+
+        public int? ModalRootBackendId { get; set; }
+
         public Dictionary<string, BrowserRefEntry> Refs { get; set; }
             = new Dictionary<string, BrowserRefEntry>(StringComparer.OrdinalIgnoreCase);
     }

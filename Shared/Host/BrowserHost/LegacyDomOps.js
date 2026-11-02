@@ -328,6 +328,84 @@
     return (name + " " + (el.id || "")).toLowerCase();
   }
 
+  function findMainHtmlModal() {
+    function wipe() {
+      var old = document.querySelectorAll("[data-yiwrite-modal-root]");
+      for (var w = 0; w < old.length; w++) old[w].removeAttribute("data-yiwrite-modal-root");
+    }
+    function zOf(el) {
+      try {
+        var z = parseInt(window.getComputedStyle(el).zIndex, 10);
+        return isNaN(z) ? 0 : z;
+      } catch (eZ) { return 0; }
+    }
+    function isShade(el, W, H) {
+      if (!el) return false;
+      if (/\blayui-layer-shade\b|\blayer-shade\b/.test(classBlob(el))) return true;
+      var st;
+      try { st = window.getComputedStyle(el); } catch (eS) { return false; }
+      if (!st || st.position !== "fixed") return false;
+      var r = el.getBoundingClientRect();
+      if (r.width < W * 0.9 || r.height < H * 0.9) return false;
+      if (r.left > 8 || r.top > 8) return false;
+      var zi = parseInt(st.zIndex, 10);
+      if (isNaN(zi) || zi < 1) return false;
+      var op = parseFloat(st.opacity);
+      if (!isNaN(op) && op === 0) return false;
+      return true;
+    }
+    function isNarrowBar(el, W, H) {
+      var r = el.getBoundingClientRect();
+      return r.width >= W * 0.8 && r.height > 0 && r.height <= H * 0.35;
+    }
+    function occupiesMain(el, W, H) {
+      var r = el.getBoundingClientRect();
+      if (r.width < 8 || r.height < 8) return false;
+      if (isNarrowBar(el, W, H)) return false;
+      var cx = W / 2, cy = H / 2;
+      if (!(r.left <= cx && r.right >= cx && r.top <= cy && r.bottom >= cy)) return false;
+      return r.width >= W * 0.4 && r.height >= H * 0.4;
+    }
+    function isFloating(el) {
+      var st;
+      try { st = window.getComputedStyle(el); } catch (eF) { return false; }
+      if (!st) return false;
+      if (st.position === "fixed") return true;
+      var c = classBlob(el);
+      if (/\blayui-layer\b/.test(c) && !/\blayui-layer-shade\b/.test(c)) return true;
+      var role = ((el.getAttribute && el.getAttribute("role")) || "").toLowerCase();
+      if (role === "dialog") return true;
+      if (((el.getAttribute && el.getAttribute("aria-modal")) || "").toLowerCase() === "true") return true;
+      return false;
+    }
+    wipe();
+    var W = window.innerWidth || document.documentElement.clientWidth || 0;
+    var H = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (W < 50 || H < 50 || !document.body) return null;
+    var all = document.body.querySelectorAll("*");
+    var shadeZ = -1;
+    var i;
+    for (i = 0; i < all.length && i < 5000; i++) {
+      if (isShade(all[i], W, H)) {
+        var zs = zOf(all[i]);
+        if (zs > shadeZ) shadeZ = zs;
+      }
+    }
+    if (shadeZ < 0) return null;
+    var best = null, bestZ = -1;
+    for (i = 0; i < all.length && i < 5000; i++) {
+      var el = all[i];
+      if (isShade(el, W, H)) continue;
+      if (!isFloating(el)) continue;
+      if (!occupiesMain(el, W, H)) continue;
+      var z = zOf(el);
+      if (z < shadeZ) continue;
+      if (z > bestZ) { best = el; bestZ = z; }
+    }
+    if (best) best.setAttribute("data-yiwrite-modal-root", "1");
+    return best;
+  }
+
   function isNamedIcon(el) {
     return /delete|remove|trash|\bdel\b|shanchu|icon-del|\bedit\b|pencil|modify|bianji|icon-edit/.test(classBlob(el));
   }
@@ -787,6 +865,9 @@
     if (String(msg.mode || "") === "detail" && msg.css_path) {
       rootEl = document.querySelector(msg.css_path);
       if (!rootEl) return { ok: false, error: "ref 无效或已过期，请重新 F_browser_snapshot" };
+    } else if (String(msg.mode || "") !== "detail") {
+      var modal = findMainHtmlModal();
+      if (modal) rootEl = modal;
     }
     var built = buildNode(rootEl);
     if (built) {
