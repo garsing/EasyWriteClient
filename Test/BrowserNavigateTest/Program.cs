@@ -36,29 +36,33 @@ namespace BrowserNavigateTest
                 return ScriptDialogCases.Run(caseFilter);
             }
 
+            if (caseFilter.StartsWith("bat-unit", StringComparison.OrdinalIgnoreCase))
+            {
+                return BatchCases.RunUnit();
+            }
+
             bool runRpt = caseFilter.StartsWith("rpt-", StringComparison.OrdinalIgnoreCase);
             bool runShot = caseFilter.StartsWith("shot-", StringComparison.OrdinalIgnoreCase);
             bool runDl = caseFilter.StartsWith("dl-", StringComparison.OrdinalIgnoreCase);
             bool runTab = caseFilter.StartsWith("tab-", StringComparison.OrdinalIgnoreCase);
             bool runInt = caseFilter.StartsWith("int-", StringComparison.OrdinalIgnoreCase);
             bool runNav = caseFilter.StartsWith("nav-", StringComparison.OrdinalIgnoreCase);
-            bool runSnp = !runInt && !runNav && !runTab && !runDl && !runShot && !runRpt;
+            bool runBat = caseFilter.StartsWith("bat-", StringComparison.OrdinalIgnoreCase);
+            bool runSnp = !runInt && !runNav && !runTab && !runDl && !runShot && !runRpt && !runBat;
 
             string host = GetHost(args);
             IntCases.NavHost = host;
 
-            Console.WriteLine(
-                runRpt
-                    ? "浏览器 重复结构收起（rpt-）"
-                    : (runShot
-                    ? "浏览器 可视区截图（shot-）"
-                    : (runDl
-                        ? "浏览器 download（dl-）"
-                        : (runTab
-                            ? "浏览器 中间栏 / 可点补全（tab-）"
-                            : (runInt
-                                ? "浏览器 interact（int-）"
-                                : (runSnp ? "浏览器 snapshot + iframe（snp-）" : "浏览器 渠道 + navigate（nav-）"))))));
+            string suite =
+                runRpt ? "浏览器 重复结构收起（rpt-）"
+                : runShot ? "浏览器 可视区截图（shot-）"
+                : runDl ? "浏览器 download（dl-）"
+                : runTab ? "浏览器 中间栏 / 可点补全（tab-）"
+                : runBat ? "浏览器 一次操作多个节点（bat-）"
+                : runInt ? "浏览器 interact（int-）"
+                : runSnp ? "浏览器 snapshot + iframe（snp-）"
+                : "浏览器 渠道 + navigate（nav-）";
+            Console.WriteLine(suite);
             Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
             Console.WriteLine(
                 host == "chrome"
@@ -117,6 +121,14 @@ namespace BrowserNavigateTest
                     TabCases.Run(run, http, chromeBefore, edgeBefore);
                 }
             }
+            else if (runBat)
+            {
+                using (var http = new FixtureHttp())
+                {
+                    var session = new NavSession();
+                    BatchCases.Run(run, session, http);
+                }
+            }
             else if (runInt)
             {
                 using (var http = new FixtureHttp())
@@ -149,7 +161,7 @@ namespace BrowserNavigateTest
                 ? (string.Equals(caseFilter, "dl-neg-no-event", StringComparison.OrdinalIgnoreCase)
                     ? 1
                     : (string.Equals(caseFilter, "dl-red", StringComparison.OrdinalIgnoreCase) ? 12 : 80))
-                : (runTab ? 75 : (runInt ? 160 : (runSnp ? 46 : 30)))));
+                : (runBat ? 32 : (runTab ? 75 : (runInt ? 160 : (runSnp ? 46 : 30))))));
             Console.WriteLine();
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed

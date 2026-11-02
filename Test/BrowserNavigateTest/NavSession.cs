@@ -132,6 +132,41 @@ namespace BrowserNavigateTest
             return DesktopToolPipe.Call("F_browser_interact", args);
         }
 
+        public ToolResult InteractBatch(
+            string channelId,
+            IList<Dictionary<string, object>> actions,
+            string topAction = null,
+            string topRef = null)
+        {
+            var args = new Dictionary<string, object>();
+            if (channelId != null)
+            {
+                args["channel_id"] = channelId;
+            }
+
+            if (topAction != null)
+            {
+                args["action"] = topAction;
+            }
+
+            if (topRef != null)
+            {
+                args["ref"] = topRef;
+            }
+
+            if (actions != null)
+            {
+                args["actions"] = actions;
+            }
+
+            return DesktopToolPipe.Call("F_browser_interact", args);
+        }
+
+        public ToolResult InteractRaw(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call("F_browser_interact", args ?? new Dictionary<string, object>());
+        }
+
         public ToolResult Download(
             string channelId = null,
             string refId = null,
