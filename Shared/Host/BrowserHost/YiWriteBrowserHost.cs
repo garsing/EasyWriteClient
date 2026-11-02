@@ -902,7 +902,8 @@ namespace WordAddIn1.BrowserHost
             string text,
             string direction,
             string key,
-            string option)
+            string option,
+            bool completeAfter = true)
         {
             if (channel == null)
             {
@@ -947,9 +948,12 @@ namespace WordAddIn1.BrowserHost
                             pendingDialog,
                             act,
                             refId,
-                            text)
+                            text,
+                            completeAfter)
                         .ConfigureAwait(true);
                 }
+
+                string urlBefore = form.CurrentUrl;
 
                 BrowserRefEntry entry = null;
                 bool needRef = act == "click" || act == "hover" || act == "type" || act == "select"
@@ -1172,16 +1176,25 @@ namespace WordAddIn1.BrowserHost
                     }
                 }
 
+                bool openedNewTab = extraMessage != null;
+                bool dialogNow = dialogPage != null
+                    && dialogPage.PendingScriptDialog != null
+                    && dialogPage.PendingScriptDialog.IsPending;
+                bool navigated = !openedNewTab && BrowserInteractBatch.UrlChanged(urlBefore, form.CurrentUrl);
+                BrowserInteractResult performed = BrowserInteractResult.OkStep(
+                    snapChannel,
+                    act,
+                    string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
+                    snapLayer,
+                    extraMessage,
+                    openedNewTab,
+                    openedNewTab ? channel.ChannelId : null,
+                    navigated,
+                    dialogNow,
+                    null);
                 ScriptDialogTrace.Write("interact-resnapshot-begin");
-                return await BrowserResnapshotAfterAction
-                    .CompleteInteractAsync(
-                        snapChannel,
-                        act,
-                        string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
-                        snapLayer,
-                        extraMessage,
-                        extraMessage != null,
-                        extraMessage != null ? channel.ChannelId : null)
+                return await BrowserInteractBatch
+                    .MaybeCompleteAsync(performed, completeAfter)
                     .ConfigureAwait(true);
             }
             catch (Exception ex)
@@ -1229,7 +1242,8 @@ namespace WordAddIn1.BrowserHost
             BrowserScriptDialogSession session,
             string action,
             string refId,
-            string text)
+            string text,
+            bool completeAfter)
         {
             BrowserScriptDialogStep step = BrowserScriptDialog.Apply(
                 session,
@@ -1257,12 +1271,20 @@ namespace WordAddIn1.BrowserHost
                 }).ConfigureAwait(true);
             }
 
-            return await BrowserResnapshotAfterAction
-                .CompleteInteractAsync(
-                    channel,
-                    action,
-                    string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
-                    BrowserResnapshotLayer.Shell())
+            bool closed = step == BrowserScriptDialogStep.Accept || step == BrowserScriptDialogStep.Dismiss;
+            BrowserInteractResult performed = BrowserInteractResult.OkStep(
+                channel,
+                action,
+                string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
+                BrowserResnapshotLayer.Shell(),
+                null,
+                false,
+                null,
+                false,
+                false,
+                closed ? "前一项处理了脚本确认框" : null);
+            return await BrowserInteractBatch
+                .MaybeCompleteAsync(performed, completeAfter)
                 .ConfigureAwait(true);
         }
 
@@ -1602,6 +1624,11 @@ namespace WordAddIn1.BrowserHost
         public string Snapshot { get; private set; }
         public bool Truncated { get; private set; }
         public string TruncatedReason { get; private set; }
+        public bool StopBatch { get; private set; }
+        public bool Navigated { get; private set; }
+        public bool DialogPending { get; private set; }
+        public string StopReason { get; private set; }
+        internal BrowserResnapshotLayer Layer { get; private set; }
 
         public static BrowserInteractResult Ok(
             BrowserChannel channel,
@@ -1705,6 +1732,58 @@ namespace WordAddIn1.BrowserHost
                 Mode = mode ?? "detail",
                 Truncated = truncated,
                 TruncatedReason = truncatedReason,
+                StopBatch = true,
+                StopReason = "前一项展开了 iframe",
+            };
+        }
+
+        internal static BrowserInteractResult OkStep(
+            BrowserChannel channel,
+            string action,
+            string refId,
+            BrowserResnapshotLayer layer,
+            string message,
+            bool openedNewTab,
+            string fromChannelId,
+            bool navigated,
+            bool dialogPending,
+            string stopReason)
+        {
+            bool stop = openedNewTab || navigated || dialogPending || !string.IsNullOrEmpty(stopReason);
+            string reason = stopReason;
+            if (string.IsNullOrEmpty(reason))
+            {
+                if (openedNewTab)
+                {
+                    reason = "前一项打开了新标签";
+                }
+                else if (navigated)
+                {
+                    reason = "前一项导致页面跳转";
+                }
+                else if (dialogPending)
+                {
+                    reason = "前一项弹出了脚本确认框";
+                }
+            }
+
+            return new BrowserInteractResult
+            {
+                Success = true,
+                Channel = channel,
+                Action = action,
+                Ref = refId,
+                Url = channel != null ? channel.Url : "",
+                Title = channel != null ? channel.Title : "",
+                Message = message ?? "",
+                RefsInvalidated = false,
+                Layer = layer,
+                OpenedNewTab = openedNewTab,
+                FromChannelId = fromChannelId,
+                Navigated = navigated,
+                DialogPending = dialogPending,
+                StopBatch = stop,
+                StopReason = reason,
             };
         }
 

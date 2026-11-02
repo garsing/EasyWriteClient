@@ -108,21 +108,46 @@ namespace WordAddIn1.BrowserHost
             string key,
             string option)
         {
+            return InteractCoreAsync(channel, action, refId, text, direction, key, option, true);
+        }
+
+        public static Task<BrowserInteractResult> InteractStepAsync(
+            BrowserChannel channel,
+            string action,
+            string refId,
+            string text,
+            string direction,
+            string key,
+            string option)
+        {
+            return InteractCoreAsync(channel, action, refId, text, direction, key, option, false);
+        }
+
+        private static Task<BrowserInteractResult> InteractCoreAsync(
+            BrowserChannel channel,
+            string action,
+            string refId,
+            string text,
+            string direction,
+            string key,
+            string option,
+            bool completeAfter)
+        {
             BrowserOpMode mode = BrowserOpMode.Resolve(channel);
             if (mode.IsPointer)
             {
                 return mode.IsAttach
                     ? AttachPointerHost.InteractAsync(
-                        channel, action, refId, text, direction, key, option)
+                        channel, action, refId, text, direction, key, option, completeAfter)
                     : YiWriteBrowserHost.InteractAsync(
-                        channel, action, refId, text, direction, key, option);
+                        channel, action, refId, text, direction, key, option, completeAfter);
             }
 
             return mode.IsAttach
                 ? ExtensionHost.InteractAsync(
-                    channel, action, refId, text, direction, key, option)
+                    channel, action, refId, text, direction, key, option, completeAfter)
                 : AgentLegacyHost.InteractAsync(
-                    channel, action, refId, text, direction, key, option);
+                    channel, action, refId, text, direction, key, option, completeAfter);
         }
 
         public static Task<BrowserDownloadResult> DownloadAsync(

@@ -252,7 +252,8 @@ namespace WordAddIn1.BrowserHost
             string text,
             string direction,
             string key,
-            string option)
+            string option,
+            bool completeAfter = true)
         {
             if (channel == null || !ExtensionHost.IsAttachTabLive(channel.TabUuid))
             {
@@ -265,7 +266,7 @@ namespace WordAddIn1.BrowserHost
             if (pendingDialog != null && pendingDialog.IsPending)
             {
                 return await BrowserScriptDialogAttach
-                    .InteractAsync(channel, pendingDialog, action, refId, text)
+                    .InteractAsync(channel, pendingDialog, action, refId, text, completeAfter)
                     .ConfigureAwait(true);
             }
 
@@ -277,6 +278,7 @@ namespace WordAddIn1.BrowserHost
 
             var cdp = new AttachCdpSession(channel.TabUuid, channel.Url, channel.Title);
             await cdp.RefreshMetaAsync().ConfigureAwait(true);
+            string urlBefore = cdp.CurrentUrl;
 
             try
             {
@@ -466,12 +468,22 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 channel.UpdatePage(cdp.CurrentUrl, cdp.CurrentTitle, true);
-                return await BrowserResnapshotAfterAction
-                    .CompleteInteractAsync(
-                        channel,
-                        act,
-                        string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
-                        BrowserResnapshotLayer.FromEntry(entry))
+                BrowserScriptDialogSession after = BrowserScriptDialogAttach.Peek(channel.TabUuid);
+                bool dialogNow = after != null && after.IsPending;
+                bool navigated = BrowserInteractBatch.UrlChanged(urlBefore, cdp.CurrentUrl);
+                BrowserInteractResult performed = BrowserInteractResult.OkStep(
+                    channel,
+                    act,
+                    string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
+                    BrowserResnapshotLayer.FromEntry(entry),
+                    null,
+                    false,
+                    null,
+                    navigated,
+                    dialogNow,
+                    null);
+                return await BrowserInteractBatch
+                    .MaybeCompleteAsync(performed, completeAfter)
                     .ConfigureAwait(true);
             }
             catch (Exception ex)

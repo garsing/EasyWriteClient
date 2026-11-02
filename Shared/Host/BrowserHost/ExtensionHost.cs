@@ -922,7 +922,8 @@ namespace WordAddIn1.BrowserHost
             string text,
             string direction,
             string key,
-            string option)
+            string option,
+            bool completeAfter = true)
         {
             EnsureStarted();
             if (channel == null || !IsAttachTabLive(channel.TabUuid))
@@ -936,9 +937,11 @@ namespace WordAddIn1.BrowserHost
             if (pendingDialog != null && pendingDialog.IsPending)
             {
                 return await BrowserScriptDialogAttach
-                    .InteractAsync(channel, pendingDialog, action, refId, text)
+                    .InteractAsync(channel, pendingDialog, action, refId, text, completeAfter)
                     .ConfigureAwait(true);
             }
+
+            string urlBefore = channel.Url;
 
             string act = (action ?? "").Trim().ToLowerInvariant();
             if (act != "click" && act != "hover" && act != "type" && act != "scroll" && act != "press" && act != "select")
@@ -1061,12 +1064,22 @@ namespace WordAddIn1.BrowserHost
                 string pageUrl = (string)result["url"] ?? channel.Url;
                 string title = (string)result["title"] ?? channel.Title;
                 channel.UpdatePage(pageUrl, title, true);
-                return await BrowserResnapshotAfterAction
-                    .CompleteInteractAsync(
-                        channel,
-                        act,
-                        string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
-                        BrowserResnapshotLayer.FromEntry(entry))
+                BrowserScriptDialogSession after = BrowserScriptDialogAttach.Peek(channel.TabUuid);
+                bool dialogNow = after != null && after.IsPending;
+                bool navigated = BrowserInteractBatch.UrlChanged(urlBefore, pageUrl);
+                BrowserInteractResult performed = BrowserInteractResult.OkStep(
+                    channel,
+                    act,
+                    string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
+                    BrowserResnapshotLayer.FromEntry(entry),
+                    null,
+                    false,
+                    null,
+                    navigated,
+                    dialogNow,
+                    null);
+                return await BrowserInteractBatch
+                    .MaybeCompleteAsync(performed, completeAfter)
                     .ConfigureAwait(true);
             }
             catch (Exception ex)

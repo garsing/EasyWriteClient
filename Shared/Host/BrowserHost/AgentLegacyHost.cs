@@ -146,7 +146,8 @@ namespace WordAddIn1.BrowserHost
             string text,
             string direction,
             string key,
-            string option)
+            string option,
+            bool completeAfter = true)
         {
             if (channel == null)
             {
@@ -171,6 +172,7 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
+                string urlBefore = form.CurrentUrl;
                 BrowserRefEntry entry = null;
                 bool needRef = act != "scroll" || !string.IsNullOrWhiteSpace(refId);
                 if (act == "press" && string.IsNullOrWhiteSpace(refId))
@@ -277,12 +279,20 @@ namespace WordAddIn1.BrowserHost
                 string pageUrl = (string)result["url"] ?? form.CurrentUrl;
                 string title = (string)result["title"] ?? form.CurrentTitle;
                 channel.UpdatePage(pageUrl, title, channel.Visible);
-                return await BrowserResnapshotAfterAction
-                    .CompleteInteractAsync(
-                        channel,
-                        act,
-                        string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
-                        BrowserResnapshotLayer.FromEntry(entry))
+                bool navigated = BrowserInteractBatch.UrlChanged(urlBefore, pageUrl);
+                BrowserInteractResult performed = BrowserInteractResult.OkStep(
+                    channel,
+                    act,
+                    string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
+                    BrowserResnapshotLayer.FromEntry(entry),
+                    null,
+                    false,
+                    null,
+                    navigated,
+                    false,
+                    null);
+                return await BrowserInteractBatch
+                    .MaybeCompleteAsync(performed, completeAfter)
                     .ConfigureAwait(true);
             }
             catch (Exception ex)

@@ -135,7 +135,8 @@ namespace WordAddIn1.BrowserHost
             BrowserScriptDialogSession session,
             string action,
             string refId,
-            string text)
+            string text,
+            bool completeAfter = true)
         {
             BrowserScriptDialogStep step = BrowserScriptDialog.Apply(
                 session,
@@ -172,12 +173,20 @@ namespace WordAddIn1.BrowserHost
                 Clear(channel.TabUuid);
             }
 
-            return await BrowserResnapshotAfterAction
-                .CompleteInteractAsync(
-                    channel,
-                    action,
-                    string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
-                    BrowserResnapshotLayer.Shell())
+            bool closed = step == BrowserScriptDialogStep.Accept || step == BrowserScriptDialogStep.Dismiss;
+            BrowserInteractResult performed = BrowserInteractResult.OkStep(
+                channel,
+                action,
+                string.IsNullOrWhiteSpace(refId) ? null : refId.Trim(),
+                BrowserResnapshotLayer.Shell(),
+                null,
+                false,
+                null,
+                false,
+                false,
+                closed ? "前一项处理了脚本确认框" : null);
+            return await BrowserInteractBatch
+                .MaybeCompleteAsync(performed, completeAfter)
                 .ConfigureAwait(true);
         }
 

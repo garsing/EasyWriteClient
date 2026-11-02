@@ -7,16 +7,10 @@ namespace WordAddIn1
 {
     /// <summary>
     /// 易写浏览页内交互：click / hover / type / scroll / press / select。
+    /// 可一次传 actions 数组。
     /// </summary>
     public static class F_BrowserInteractTool
     {
-        private static readonly HashSet<string> AllowedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "Enter", "Return", "Tab", "Escape", "Esc", "Backspace", "Delete",
-            "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
-            "Home", "End", "PageUp", "PageDown"
-        };
-
         public static void Register(
             Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
             object wordApplication)
@@ -27,43 +21,12 @@ namespace WordAddIn1
                 {
                     AgentRunCancellation.ThrowIfCancelled();
 
-                    string action = TryGetString(args, "action");
-                    if (string.IsNullOrWhiteSpace(action))
+                    if (!BrowserInteractBatch.TryCompile(args, out List<BrowserInteractStep> steps, out string compileError))
                     {
-                        return Fail("必须提供 action（click|hover|type|scroll|press|select）");
+                        return Fail(compileError ?? "必须提供 action 或 actions");
                     }
 
                     string channelId = TryGetString(args, "channel_id");
-                    string refId = TryGetString(args, "ref");
-                    string text = TryGetStringRaw(args, "text");
-                    string direction = TryGetString(args, "direction");
-                    string key = TryGetString(args, "key");
-                    string option = TryGetString(args, "option");
-
-                    string act = action.Trim().ToLowerInvariant();
-                    if (act == "press")
-                    {
-                        if (string.IsNullOrWhiteSpace(key))
-                        {
-                            return Fail("必须提供 key");
-                        }
-
-                        if (!AllowedKeys.Contains(key.Trim()))
-                        {
-                            return Fail("key 不在白名单: " + key);
-                        }
-                    }
-
-                    if (act == "type" && string.IsNullOrEmpty(text))
-                    {
-                        return Fail("type 必须提供 text");
-                    }
-
-                    if (act == "select" && string.IsNullOrWhiteSpace(option))
-                    {
-                        return Fail("select 必须提供 option");
-                    }
-
                     BrowserChannel channel;
                     if (!string.IsNullOrWhiteSpace(channelId))
                     {
@@ -96,52 +59,7 @@ namespace WordAddIn1
                         return Fail("浏览器渠道对应的页面已关闭: " + channel.ChannelId);
                     }
 
-                    BrowserInteractResult result = await BrowserHostAdapter
-                        .InteractAsync(channel, act, refId, text, direction, key, option)
-                        .ConfigureAwait(true);
-
-                    if (!result.Success)
-                    {
-                        return Fail(result.Error ?? "interact 失败");
-                    }
-
-                    var data = new Dictionary<string, object>
-                    {
-                        ["channel_id"] = ChannelRegistry.ToPublicId(result.Channel.ChannelId),
-                        ["kind"] = "browser",
-                        ["track"] = result.Channel.Track,
-                        ["action"] = result.Action ?? act,
-                        ["url"] = result.Url ?? "",
-                        ["title"] = result.Title ?? "",
-                        ["refs_invalidated"] = result.RefsInvalidated,
-                        ["message"] = result.Message ?? "",
-                    };
-
-                    if (!string.IsNullOrEmpty(result.Ref))
-                    {
-                        data["ref"] = result.Ref;
-                    }
-
-                    if (result.OpenedNewTab && result.Channel != null)
-                    {
-                        data["opened_tab"] = true;
-                        data["opened_channel_id"] = ChannelRegistry.ToPublicId(result.Channel.ChannelId);
-                        if (!string.IsNullOrWhiteSpace(result.FromChannelId))
-                        {
-                            data["from_channel_id"] = ChannelRegistry.ToPublicId(result.FromChannelId);
-                        }
-                    }
-
-                    BrowserResnapshotAfterAction.WriteSnapshotFields(
-                        data,
-                        result.ExpandedFrame,
-                        result.Resnapshot,
-                        result.Snapshot,
-                        result.Mode,
-                        result.Truncated,
-                        result.TruncatedReason);
-
-                    return new ToolResult { Success = true, Data = data };
+                    return await BrowserInteractBatch.Run(channel, steps).ConfigureAwait(true);
                 }
                 catch (OperationCanceledException)
                 {
@@ -162,17 +80,6 @@ namespace WordAddIn1
             }
 
             return Convert.ToString(args[key])?.Trim();
-        }
-
-        /// <summary>text 保留原样（仅 trim 首尾空白），失败路径不把全文写入错误。</summary>
-        private static string TryGetStringRaw(Dictionary<string, object> args, string key)
-        {
-            if (args == null || !args.ContainsKey(key) || args[key] == null)
-            {
-                return null;
-            }
-
-            return Convert.ToString(args[key]);
         }
 
         private static ToolResult Fail(string error)
