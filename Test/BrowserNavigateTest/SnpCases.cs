@@ -216,6 +216,36 @@ namespace BrowserNavigateTest
                     nv.Success ? "应只见最上层成员表、不见底层和流程详情按钮" : nv.Error);
             }
 
+            string deepId = OpenOk(run, s, http.Url("overlay-html-modal", "nested-deep.html"), navHost, "snp-modal-nested-deep");
+            if (deepId != null)
+            {
+                ToolResult dv = s.Snap(deepId);
+                string dt = Tree(dv);
+                Ok(run, "snp-modal-nested-deep",
+                    dv.Success
+                    && dt.IndexOf("成员姓名", StringComparison.Ordinal) >= 0
+                    && dt.IndexOf("底层新增", StringComparison.Ordinal) < 0
+                    && dt.IndexOf("流程内新增", StringComparison.Ordinal) < 0,
+                    dv.Success ? "节点很多时仍只见最上层成员表" : dv.Error);
+            }
+
+            string hidId = OpenOk(run, s, http.Url("overlay-html-modal", "hidden-inputs.html"), navHost, "snp-modal-skip-hidden-input");
+            if (hidId != null)
+            {
+                ToolResult hv = s.Snap(hidId, domSupplement: "input");
+                string ht = Tree(hv);
+                bool hidOk = hv.Success
+                    && (ht.IndexOf("可见姓名", StringComparison.Ordinal) >= 0
+                        || ht.IndexOf("请输入", StringComparison.Ordinal) >= 0)
+                    && ht.IndexOf("DataTables_", StringComparison.Ordinal) < 0
+                    && ht.IndexOf("隐藏姓名", StringComparison.Ordinal) < 0;
+                Ok(run, "snp-modal-skip-hidden-input",
+                    hidOk,
+                    hv.Success
+                        ? (hidOk ? "补全应有可见框、无 DataTables/隐藏框" : ht)
+                        : hv.Error);
+            }
+
             string sideId = OpenOk(run, s, http.Url("overlay-html-modal", "sidebar.html"), navHost, "snp-modal-keep-sidebar");
             if (sideId == null)
             {

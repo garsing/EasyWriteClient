@@ -68,26 +68,32 @@ namespace WordAddIn1.BrowserHost
   wipe();
   var W=vw(), H=vh();
   if (W<50 || H<50 || !document.body) return {found:false};
-  var all=document.body.querySelectorAll('*');
-  var shadeZ=-1;
-  var i;
-  for (i=0;i<all.length && i<5000;i++){
-    if (isShade(all[i], W, H)) {
-      var zs=zOf(all[i]);
-      if (zs>shadeZ) shadeZ=zs;
-    }
+  var shadeZ=-1, i, named, kids;
+  function considerShade(el){
+    if (!isShade(el, W, H)) return;
+    var zs=zOf(el);
+    if (zs>shadeZ) shadeZ=zs;
   }
+  named=document.querySelectorAll('.layui-layer-shade,.layer-shade');
+  for (i=0;i<named.length;i++) considerShade(named[i]);
+  kids=document.body.children;
+  for (i=0;i<kids.length;i++) considerShade(kids[i]);
   if (shadeZ<0) return {found:false};
   var cands=[];
-  for (i=0;i<all.length && i<5000;i++){
-    var el=all[i];
-    if (isShade(el, W, H)) continue;
-    if (!isFloating(el)) continue;
-    if (isTiny(el)) continue;
+  function considerLayer(el){
+    if (!el) return;
+    if (isShade(el, W, H)) return;
+    if (!isFloating(el)) return;
+    if (isTiny(el)) return;
     var z=zOf(el);
-    if (z<shadeZ) continue;
+    if (z<shadeZ) return;
+    var k;
+    for (k=0;k<cands.length;k++) if (cands[k]===el) return;
     cands.push(el);
   }
+  named=document.querySelectorAll('.layui-layer,[role=dialog],[aria-modal=true]');
+  for (i=0;i<named.length;i++) considerLayer(named[i]);
+  for (i=0;i<kids.length;i++) considerLayer(kids[i]);
   var best=null, bestZ=-1, a, b, skip;
   for (a=0;a<cands.length;a++){
     skip=false;

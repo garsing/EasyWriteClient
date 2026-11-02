@@ -98,6 +98,13 @@ namespace WordAddIn1.BrowserHost
 
             try
             {
+                if (!await MarkVisibleFillableAsync(cdp, selector).ConfigureAwait(true))
+                {
+                    return;
+                }
+
+                selector = "[data-yiwrite-fillable=\"1\"]";
+
                 string docJson = await cdp.CallCdpAsync(
                     "DOM.getDocument",
                     "{\"depth\":0,\"pierce\":true}").ConfigureAwait(true);
@@ -243,6 +250,75 @@ namespace WordAddIn1.BrowserHost
             catch
             {
                 // DOM 补全失败不阻断 AX snapshot
+            }
+        }
+
+        private static async Task<bool> MarkVisibleFillableAsync(IBrowserCdp cdp, string selector)
+        {
+            string selJson = Newtonsoft.Json.JsonConvert.SerializeObject(selector ?? "");
+            string expr =
+                @"(function(){
+  function wipe(){
+    var old=document.querySelectorAll('[data-yiwrite-fillable]');
+    for (var i=0;i<old.length;i++) old[i].removeAttribute('data-yiwrite-fillable');
+  }
+  function cssHidden(el){
+    try {
+      var st=window.getComputedStyle(el);
+      if (!st) return true;
+      if (st.display==='none' || st.visibility==='hidden') return true;
+      var op=parseFloat(st.opacity);
+      if (!isNaN(op) && op===0) return true;
+    } catch (e) { return true; }
+    return false;
+  }
+  function skipFill(el){
+    if (!el || el.nodeType!==1) return true;
+    var t=String(el.type||'').toLowerCase();
+    if (t==='hidden'||t==='submit'||t==='button'||t==='image'||t==='checkbox'||t==='radio'||t==='file') return true;
+    var idn=(el.id||'')+' '+(el.name||'');
+    if (/datatables_/i.test(idn)) return true;
+    if (cssHidden(el)) return true;
+    var r;
+    try { r=el.getBoundingClientRect(); } catch (eR) { return true; }
+    if (!r || r.width<8 || r.height<8) return true;
+    var p=el.parentElement;
+    while (p && p!==document.documentElement){
+      if (cssHidden(p)) return true;
+      p=p.parentElement;
+    }
+    return false;
+  }
+  wipe();
+  var list;
+  try { list=document.querySelectorAll(" + selJson + @"); } catch (eQ) { return {ok:false}; }
+  for (var i=0;i<list.length;i++){
+    if (!skipFill(list[i])) list[i].setAttribute('data-yiwrite-fillable','1');
+  }
+  return {ok:true};
+})()";
+            try
+            {
+                var payload = new JObject
+                {
+                    ["expression"] = expr,
+                    ["returnByValue"] = true
+                };
+                string json = await cdp.CallCdpAsync(
+                        "Runtime.evaluate",
+                        payload.ToString(Newtonsoft.Json.Formatting.None))
+                    .ConfigureAwait(true);
+                var ev = JObject.Parse(json ?? "{}");
+                if (ev["exceptionDetails"] != null && ev["exceptionDetails"].Type != JTokenType.Null)
+                {
+                    return false;
+                }
+
+                return ev["result"]?["value"]?["ok"]?.Value<bool>() ?? false;
+            }
+            catch
+            {
+                return false;
             }
         }
 

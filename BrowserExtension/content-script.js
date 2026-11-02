@@ -2,7 +2,7 @@
  * 易写 — 页内 snapshot / interact / download 辅助
  */
 (function () {
-  const CONTENT_VER = 54;
+  const CONTENT_VER = 55;
   if (window.__yiwriteContentVer === CONTENT_VER && window.__yiwriteOnMsg) {
     return;
   }
@@ -247,6 +247,29 @@
     return !/^(button|submit|reset|checkbox|radio|file|image|hidden)$/.test(typ);
   }
 
+  function skipUnfillableInput(el) {
+    if (!el || el.nodeType !== 1) return true;
+    const typ = String((el.getAttribute && el.getAttribute("type")) || el.type || "").toLowerCase();
+    if (/^(hidden|submit|button|image|checkbox|radio|file)$/.test(typ)) return true;
+    const idn = String(el.id || "") + " " + String(el.name || "");
+    if (/datatables_/i.test(idn)) return true;
+    try {
+      let p = el;
+      while (p && p !== document.documentElement) {
+        const st = window.getComputedStyle(p);
+        if (st && (st.display === "none" || st.visibility === "hidden")) return true;
+        const op = parseFloat(st && st.opacity);
+        if (!isNaN(op) && op === 0) return true;
+        p = p.parentElement;
+      }
+    } catch (_) { return true; }
+    try {
+      const r = el.getBoundingClientRect();
+      if (!r || r.width < 8 || r.height < 8) return true;
+    } catch (_) { return true; }
+    return false;
+  }
+
   function onlyTypeableIn(root) {
     if (!root || !root.querySelectorAll) return null;
     const list = root.querySelectorAll("input, textarea, [contenteditable='true'], [contenteditable='']");
@@ -410,25 +433,31 @@
     const W = window.innerWidth || document.documentElement.clientWidth || 0;
     const H = window.innerHeight || document.documentElement.clientHeight || 0;
     if (W < 50 || H < 50 || !document.body) return null;
-    const all = document.body.querySelectorAll("*");
     let shadeZ = -1;
-    for (let i = 0; i < all.length && i < 5000; i++) {
-      if (isShade(all[i], W, H)) {
-        const zs = zOf(all[i]);
-        if (zs > shadeZ) shadeZ = zs;
-      }
+    function considerShade(el) {
+      if (!isShade(el, W, H)) return;
+      const zs = zOf(el);
+      if (zs > shadeZ) shadeZ = zs;
     }
+    let named = document.querySelectorAll(".layui-layer-shade, .layer-shade");
+    for (let i = 0; i < named.length; i++) considerShade(named[i]);
+    const kids = document.body.children;
+    for (let i = 0; i < kids.length; i++) considerShade(kids[i]);
     if (shadeZ < 0) return null;
     const cands = [];
-    for (let i = 0; i < all.length && i < 5000; i++) {
-      const el = all[i];
-      if (isShade(el, W, H)) continue;
-      if (!isFloating(el)) continue;
-      if (isTiny(el)) continue;
+    function considerLayer(el) {
+      if (!el) return;
+      if (isShade(el, W, H)) return;
+      if (!isFloating(el)) return;
+      if (isTiny(el)) return;
       const z = zOf(el);
-      if (z < shadeZ) continue;
+      if (z < shadeZ) return;
+      for (let k = 0; k < cands.length; k++) if (cands[k] === el) return;
       cands.push(el);
     }
+    named = document.querySelectorAll('.layui-layer, [role="dialog"], [aria-modal="true"]');
+    for (let i = 0; i < named.length; i++) considerLayer(named[i]);
+    for (let i = 0; i < kids.length; i++) considerLayer(kids[i]);
     let best = null, bestZ = -1;
     for (let a = 0; a < cands.length; a++) {
       let skip = false;
@@ -1500,6 +1529,7 @@
         else if (k === "select") list = q("select");
         else if (k === "contenteditable") list = q("[contenteditable='true'], [contenteditable='']");
         list.forEach((el) => {
+          if (skipUnfillableInput(el)) return;
           if (shouldSkip(el)) return;
           const ref = nextRef(false);
           if (!ref) return;
