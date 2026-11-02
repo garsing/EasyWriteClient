@@ -59,6 +59,15 @@ namespace WordAddIn1
 
         public static List<Word.Table> GetAllTablesInOrder(Word.Document document)
         {
+            return GetAllTablesInOrder(document, display: null);
+        }
+
+        /// <summary>
+        /// 顶层用 <c>document.Tables</c>。内表用 display 找到父格，只进那一格的 <c>cell.Tables</c>。
+        /// <paramref name="display"/> 空则从 OOXML 抽表骨架。
+        /// </summary>
+        public static List<Word.Table> GetAllTablesInOrder(Word.Document document, string display)
+        {
             var allTables = new List<Word.Table>();
             if (document == null)
             {
@@ -67,24 +76,30 @@ namespace WordAddIn1
 
             try
             {
+                var tops = new List<Word.Table>();
                 foreach (Word.Table top in document.Tables)
                 {
-                    try
+                    if (top == null || ContainsSameTable(tops, top))
                     {
-                        if (top == null || ContainsSameTable(allTables, top))
-                        {
-                            continue;
-                        }
+                        continue;
+                    }
 
-                        allTables.Add(top);
-                        ExpandRangeTables(top, allTables);
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[TableResolve] 收集表格失败: {ex.Message}");
-                    }
+                    tops.Add(top);
                 }
 
+                tops.Sort(CompareByStart);
+                string markup = display;
+                if (string.IsNullOrEmpty(markup))
+                {
+                    markup = TableMarkupSkeleton.FromDocument(document);
+                }
+
+                if (string.IsNullOrEmpty(markup))
+                {
+                    return tops;
+                }
+
+                CollectByDisplayParentCells(markup, tops, allTables);
                 allTables.Sort(CompareByStart);
             }
             catch (Exception ex)
@@ -96,48 +111,136 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 从种子表的 Range.Tables 收内表和孙表。Range.Tables 含表自己，跳过。
-        /// 某宿主只给直接子表时，对刚收进的表再展开，直到没有新表。
+        /// display 出现序：顶层对 tops 的起点序；内表只解析父格，取尚未收入的 <c>cell.Tables</c>。
         /// </summary>
-        private static void ExpandRangeTables(Word.Table seed, List<Word.Table> allTables)
+        private static void CollectByDisplayParentCells(
+            string display,
+            List<Word.Table> tops,
+            List<Word.Table> allTables)
         {
-            var pending = new Queue<Word.Table>();
-            pending.Enqueue(seed);
-            while (pending.Count > 0)
+            var byId = new Dictionary<string, Word.Table>(StringComparer.Ordinal);
+            int topIndex = 0;
+            List<string> ids = NestedTableParentFinder.ListOpenIds(display);
+            for (int i = 0; i < ids.Count; i++)
             {
-                Word.Table current = pending.Dequeue();
-                Word.Tables inners;
+                string id = ids[i];
+                NestedTableParentFinder.Result loc = NestedTableParentFinder.Find(display, id);
+                if (loc.Kind == NestedTableParentFinder.Kind.TopLevel)
+                {
+                    if (topIndex >= tops.Count)
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[TableResolve] display 顶层表多于 document.Tables，跳过 {id}");
+                        continue;
+                    }
+
+                    Word.Table top = tops[topIndex];
+                    topIndex++;
+                    allTables.Add(top);
+                    byId[id] = top;
+                    continue;
+                }
+
+                if (loc.Kind != NestedTableParentFinder.Kind.Nested)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[TableResolve] {id} 父格失败: {loc.Error}");
+                    continue;
+                }
+
+                if (!byId.TryGetValue(loc.ParentTableId, out Word.Table parent) || parent == null)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[TableResolve] {id} 父表 {loc.ParentTableId} 尚未收入");
+                    continue;
+                }
+
+                Word.Table inner = TakeNextInnerFromParentCell(parent, loc.Row, loc.Col, allTables);
+                if (inner == null)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[TableResolve] {id} 父格 {loc.GeometricCode} 没有新的内表");
+                    continue;
+                }
+
+                allTables.Add(inner);
+                byId[id] = inner;
+            }
+        }
+
+        private static Word.Table TakeNextInnerFromParentCell(
+            Word.Table parent,
+            int row,
+            int col,
+            List<Word.Table> already)
+        {
+            Word.Cell cell;
+            try
+            {
+                cell = TableRowValuesHelper.TryResolveWritableCell(parent, row, col);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TableResolve] 父格定位失败: {ex.Message}");
+                return null;
+            }
+
+            if (cell == null)
+            {
+                return null;
+            }
+
+            var candidates = new List<Word.Table>();
+            AddCellTables(cell.Tables, parent, already, candidates);
+            if (candidates.Count == 0)
+            {
                 try
                 {
-                    inners = current.Range.Tables;
+                    AddCellTables(cell.Range.Tables, parent, already, candidates);
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[TableResolve] Range.Tables 收集失败: {ex.Message}");
-                    continue;
+                    System.Diagnostics.Debug.WriteLine($"[TableResolve] 父格 Range.Tables 失败: {ex.Message}");
                 }
+            }
 
-                if (inners == null)
+            if (candidates.Count == 0)
+            {
+                return null;
+            }
+
+            candidates.Sort(CompareByStart);
+            return candidates[0];
+        }
+
+        private static void AddCellTables(
+            Word.Tables source,
+            Word.Table parent,
+            List<Word.Table> already,
+            List<Word.Table> into)
+        {
+            if (source == null)
+            {
+                return;
+            }
+
+            foreach (Word.Table inner in source)
+            {
+                try
                 {
-                    continue;
+                    if (inner == null
+                        || IsSameTable(parent, inner)
+                        || ContainsSameTable(already, inner)
+                        || ContainsSameTable(into, inner))
+                    {
+                        continue;
+                    }
+
+                    into.Add(inner);
                 }
-
-                foreach (Word.Table inner in inners)
+                catch (Exception ex)
                 {
-                    try
-                    {
-                        if (inner == null || IsSameTable(current, inner) || ContainsSameTable(allTables, inner))
-                        {
-                            continue;
-                        }
-
-                        allTables.Add(inner);
-                        pending.Enqueue(inner);
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[TableResolve] Range.Tables 收集失败: {ex.Message}");
-                    }
+                    System.Diagnostics.Debug.WriteLine($"[TableResolve] cell.Tables 失败: {ex.Message}");
                 }
             }
         }

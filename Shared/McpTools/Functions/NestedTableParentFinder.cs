@@ -38,6 +38,41 @@ namespace WordAddIn1
             }
         }
 
+        /// <summary>
+        /// display 里每个 <c>&lt;table id&gt;</c> 的出现顺序（含内表）。
+        /// </summary>
+        public static List<string> ListOpenIds(string display)
+        {
+            var ids = new List<string>();
+            if (string.IsNullOrEmpty(display))
+            {
+                return ids;
+            }
+
+            int i = 0;
+            while (i < display.Length)
+            {
+                int lt = display.IndexOf('<', i);
+                if (lt < 0)
+                {
+                    break;
+                }
+
+                if (IsOpenTable(display, lt))
+                {
+                    string id = ReadId(OpenTag(display, lt));
+                    if (!string.IsNullOrEmpty(id))
+                    {
+                        ids.Add(id);
+                    }
+                }
+
+                i = lt + 1;
+            }
+
+            return ids;
+        }
+
         public static Result Find(string display, string tableId)
         {
             if (string.IsNullOrEmpty(display) || string.IsNullOrEmpty(tableId))

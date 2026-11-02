@@ -56,7 +56,7 @@ namespace WordAddIn1
                     }
 
                     long tResolve = outer.ElapsedMilliseconds;
-                    List<Word.Table> tables = TableResolveHelper.GetAllTablesInOrder(document);
+                    List<Word.Table> tables = TableResolveHelper.GetAllTablesInOrder(document, display);
                     Word.Table targetTable = TableResolveHelper.TryResolveFromList(tables, tableId, out string resolveError);
                     outerSteps["工具-定位表格"] = outer.ElapsedMilliseconds - tResolve;
                     if (targetTable == null)

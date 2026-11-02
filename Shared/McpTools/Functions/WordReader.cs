@@ -129,16 +129,10 @@ namespace WordAddIn1
                 DocumentState.ClearImageIdOrder();
                 DocumentState.ClearImageIdMapping(); // 图片按实例唯一，每次读文重建
                 _readOccupiedTableIds = new HashSet<string>(StringComparer.Ordinal);
-                _readWordAssignedIds = TableTitleStampHelper.CollectIdsFromWord(document, _readOccupiedTableIds);
-                EasyWriteDiagnostics.LogTiming(
-                    "CollectIdsFromWord",
-                    sw.ElapsedMilliseconds,
-                    "tables=" + _readWordAssignedIds.Count);
                 _readTableEmitIndex = 0;
                 _placeholderImageCounter = 0;
-                
-                // 直接从文档的 XML 提取段落和表格，避免重复
-                // 获取整个文档的 XML
+
+                // 先取 XML，用表骨架收 COM（含内表父格），再发号。避免 Range.Tables 漏内表。
                 sw.Restart();
                 string docXml = document.Content.WordOpenXML;
                 EasyWriteDiagnostics.LogTiming(
@@ -150,18 +144,26 @@ namespace WordAddIn1
                     throw new Exception("无法获取文档的 XML 内容");
                 }
 
-                // 解析 XML
                 sw.Restart();
                 XDocument xmlDoc = XDocument.Parse(docXml);
                 XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-
-                // 查找文档主体（body）
                 var body = xmlDoc.Descendants(w + "body").FirstOrDefault();
                 EasyWriteDiagnostics.LogTiming("parseXml", sw.ElapsedMilliseconds);
                 if (body == null)
                 {
                     throw new Exception("无法找到文档主体");
                 }
+
+                sw.Restart();
+                string tableSkeleton = TableMarkupSkeleton.FromBody(body);
+                _readWordAssignedIds = TableTitleStampHelper.CollectIdsFromWord(
+                    document,
+                    _readOccupiedTableIds,
+                    tableSkeleton);
+                EasyWriteDiagnostics.LogTiming(
+                    "CollectIdsFromWord",
+                    sw.ElapsedMilliseconds,
+                    "tables=" + _readWordAssignedIds.Count);
 
                 string fileHash = null;
                 string imageSaveDir = null;

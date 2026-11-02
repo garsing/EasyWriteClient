@@ -203,6 +203,14 @@ namespace WordAddIn1
         /// </summary>
         public static List<string> CollectIdsFromWord(Word.Document document, ISet<string> occupied)
         {
+            return CollectIdsFromWord(document, occupied, display: null);
+        }
+
+        public static List<string> CollectIdsFromWord(
+            Word.Document document,
+            ISet<string> occupied,
+            string display)
+        {
             var ids = new List<string>();
             if (document == null)
             {
@@ -214,7 +222,7 @@ namespace WordAddIn1
                 throw new ArgumentNullException(nameof(occupied));
             }
 
-            List<Word.Table> tables = TableResolveHelper.GetAllTablesInOrder(document);
+            List<Word.Table> tables = TableResolveHelper.GetAllTablesInOrder(document, display);
             List<StampBookmark> bookmarks = ReadStampBookmarks(document);
             for (int i = 0; i < tables.Count; i++)
             {
