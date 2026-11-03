@@ -202,7 +202,7 @@ namespace WordAddIn1
             public float MaxFontSize { get; set; } = DefaultOptimizationMaxFontSize;
             public float FontStep { get; set; } = 0.5f;
             public float MinColumnWidth { get; set; } = 30f;
-            /// <summary>段 1 总宽线性扫描步长（磅）。</summary>
+            /// <summary>布局路径加宽半段总宽步长（磅）。</summary>
             public float WidthStep { get; set; } = 50f;
             /// <summary>下一档会超过 W_max 时，锁在 W_max 再收回这一点（磅）。</summary>
             public float WidthNearMaxShrinkPoints { get; set; } = 2f;
@@ -217,7 +217,7 @@ namespace WordAddIn1
             /// <summary>利用率上限 L_text / W_tbl，见 §1.5。</summary>
             public float UtilizationMax { get; set; } = 0.95f;
             /// <summary>
-            /// 段 1/2：总高度平台判据与段 2 并列取最大字号（Word 行高有量化/舍入）。
+            /// 路径二分：与终点总高度平台并列的容差（Word 行高有量化/舍入）。
             /// </summary>
             public float HeightTieEpsilonPoints { get; set; } = 3f;
         }
@@ -415,131 +415,49 @@ namespace WordAddIn1
                     return result;
                 }
 
-                // 初始：最大字号
-                LogStep("1-字号", "全表设为 MaxFontSize", $"{config.MaxFontSize}pt（用于后续总高度测量）");
-                long tFont = _clock.Now;
-                try
-                {
-                    table.Range.Font.Size = config.MaxFontSize;
-                }
-                catch { /* ignore */ }
-                _clock.Mark("1-设MaxFontSize", tFont);
-
-                // 不再调用 AutoFitContent：会按内容撑宽列（日志里常见 618pt），与 LimitTableWidth 已给好的列宽冲突。
-                LogStep("段1-预处理", "不调用 AutoFitContent", "MaxFontSize 下按空列规则一次算列宽并写满 W_max，再线性加宽至 W_max");
-
-                long tEmpty = _clock.Now;
+                long tPlan = _clock.Now;
                 var widthPlan = CreateColumnWidthPlan(table, data, config);
-                WriteColumnWidths(table, ComputeColumnWidthsForTotal(widthPlan, wMax));
-                LockTableFixedWidth(table, wMax);
-                _clock.Mark("段1-预处理-空列分配", tEmpty);
-                float widthAfterEmpty = GetTableColumnsWidthSum(table);
-                LogStep("段1-预处理", "一次写列宽之后", $"列宽之和={widthAfterEmpty:F1}pt, 剩余预算={budget}");
-                if (budget <= 0)
+                _clock.Mark("路径-列宽计划", tPlan);
+                List<LayoutPathSlot> path = BuildLayoutPath(colCount, wMax, config);
+                if (path == null || path.Count == 0)
                 {
-                    result.HitMeasurementLimit = true;
-                    LogTune("OptimizeTable 【分支=FinishPartial】原因=段1 预处理后测量预算耗尽");
-                    var partialEmpty = FinishPartial(table, data, config, result, ref budget);
-                    AttachClock(partialEmpty);
-                    return partialEmpty;
-                }
-
-                float bestFont = config.MaxFontSize;
-                var bestWidths = ReadColumnWidths(table);
-
-                // 段 1：MaxFontSize 下线性加宽至 W_max（TryFind 内已写回并 Lock）。
-                float heightAtWMax = 0f;
-                long tSeg1 = _clock.Now;
-                float wFinal = TryFindMinWidthByStableHeight(
-                    table, widthPlan, config, wMax, ref budget, out heightAtWMax);
-                _clock.Mark("段1-总宽线性扫描", tSeg1);
-                bestWidths = ReadColumnWidths(table);
-                float wFinalSum = GetTableColumnsWidthSum(table);
-
-                if (budget <= 0)
-                {
-                    result.HitMeasurementLimit = true;
-                    LogTune("OptimizeTable 【分支=FinishPartial】原因=段1 总高度线性扫描后测量预算耗尽");
-                    var partialSeg1 = FinishPartial(table, data, config, result, ref budget);
-                    AttachClock(partialSeg1);
-                    return partialSeg1;
+                    result.Success = false;
+                    result.Error = "布局路径为空";
+                    LogTune("OptimizeTable: 布局路径为空，退出");
+                    AttachClock(result);
+                    return result;
                 }
 
                 float heightEps = Math.Max(0.5f, config.HeightTieEpsilonPoints);
-                LogStep("段1-结束", "加宽至 W_max",
-                    $"W≈{wFinalSum:F1}pt, W_max={wMax:F1}pt, W_max处参考高度≈{heightAtWMax:F2}pt, 高度容差={heightEps:F1}pt");
+                LogTune(
+                    $"OptimizeTable 【路径】档数={path.Count}, 起点 W={path[0].TotalWidth:F1}pt s={path[0].FontSize:F1}pt, 终点 W={path[path.Count - 1].TotalWidth:F1}pt s={path[path.Count - 1].FontSize:F1}pt, 容差={heightEps:F1}pt");
 
-                // 段 2：总宽锁 W_max，扫描字号 → min H，并列 max s。
-                // 采样须用自动行高；遍历结束后应用「至少」行高（见 ApplyOptimization）。
-                LogTune($"OptimizeTable 【段2-字号】固定总宽 W_max≈{wFinalSum:F1}pt，按「总高度最小、并列取最大字号」扫描");
+                long tSearch = _clock.Now;
+                int chosen = FindStopIndexOnLayoutPath(
+                    table, widthPlan, path, heightEps, ref budget);
+                _clock.Mark("路径-二分", tSearch);
 
-                float heightTieEpsilonPt = Math.Max(0.5f, config.HeightTieEpsilonPoints);
-                var fontSizeToTotalHeightSamples = new List<(float fontSizePoints, float totalHeightPoints)>();
-                float scanSpan = config.MaxFontSize - config.MinFontSize;
-                int approxSteps = scanSpan > 0
-                    ? (int)Math.Floor(scanSpan / config.FontStep) + 1
-                    : 1;
-                LogTune($"OptimizeTable 【段2-扫描】约{approxSteps}档: {config.MaxFontSize}pt → {config.MinFontSize}pt, 步长{config.FontStep}pt；每档=设字号+自动行高+测总高度");
-
-                long tSeg2 = _clock.Now;
-                for (float fs = config.MaxFontSize; fs >= config.MinFontSize - 0.001f; fs -= config.FontStep)
+                if (budget <= 0 && (chosen < 0 || chosen >= path.Count))
                 {
-                    if (budget <= 0)
-                    {
-                        result.HitMeasurementLimit = true;
-                        LogTune($"OptimizeTable 【段2-扫描】中断（预算耗尽），当前字号={fs:F1}pt, 已采样{fontSizeToTotalHeightSamples.Count}档");
-                        break;
-                    }
-
-                    long tFs = _clock != null ? _clock.Now : 0;
-                    try
-                    {
-                        table.Range.Font.Size = fs;
-                    }
-                    catch { /* ignore */ }
-                    AccTune("段2-设字号", tFs);
-
-                    tFs = _clock != null ? _clock.Now : 0;
-                    ApplyRowAutoHeightForMeasurement(table);
-                    AccTune("段2-自动行高", tFs);
-
-                    tFs = _clock != null ? _clock.Now : 0;
-                    float totalH = GetTableTotalHeightPoints(table, ref budget);
-                    AccTune("段2-测总高", tFs);
-                    fontSizeToTotalHeightSamples.Add((fs, totalH));
+                    result.HitMeasurementLimit = true;
+                    LogTune("OptimizeTable 【分支=FinishPartial】原因=路径二分测量预算耗尽");
+                    var partialPath = FinishPartial(table, data, config, result, ref budget);
+                    AttachClock(partialPath);
+                    return partialPath;
                 }
-                _clock.Mark("段2-字号扫描", tSeg2);
 
-                LogTune($"OptimizeTable 【段2-扫描-结束】已采样 {fontSizeToTotalHeightSamples.Count} 档, 剩余预算={budget}");
-                LogFontSizeToTotalHeightIndexTable(fontSizeToTotalHeightSamples, heightTieEpsilonPt);
-
-                if (fontSizeToTotalHeightSamples.Count == 0)
+                if (chosen < 0 || chosen >= path.Count)
                 {
-                    bestFont = config.MinFontSize;
-                    try
-                    {
-                        table.Range.Font.Size = config.MinFontSize;
-                    }
-                    catch { /* ignore */ }
-                    bestWidths = ReadColumnWidths(table);
-                    ApplyRowMinHeightsForFontSize(table, bestFont, config);
-                    LogTune($"OptimizeTable 【段2-决策】无有效高度采样，回退最小字号={bestFont:F1}pt + 最小行高");
+                    chosen = path.Count - 1;
                 }
-                else
-                {
-                    float minH = fontSizeToTotalHeightSamples.Min(t => t.totalHeightPoints);
-                    bestFont = fontSizeToTotalHeightSamples
-                        .Where(t => Math.Abs(t.totalHeightPoints - minH) <= heightTieEpsilonPt)
-                        .Max(t => t.fontSizePoints);
-                    bestWidths = ReadColumnWidths(table);
-                    try
-                    {
-                        table.Range.Font.Size = bestFont;
-                    }
-                    catch { /* ignore */ }
-                    ApplyRowMinHeightsForFontSize(table, bestFont, config);
-                    LogTune($"OptimizeTable 【段2-决策】总高度最小≈{minH:F2}pt（并列容差≤{heightTieEpsilonPt:F1}pt），并列中取最大字号={bestFont:F1}pt");
-                }
+
+                LayoutPathSlot picked = path[chosen];
+                ApplyLayoutPathSlot(table, widthPlan, picked);
+                float bestFont = picked.FontSize;
+                var bestWidths = ReadColumnWidths(table);
+                ApplyRowMinHeightsForFontSize(table, bestFont, config);
+                LogTune(
+                    $"OptimizeTable 【路径-决策】选档 i={chosen}/{path.Count - 1} W={picked.TotalWidth:F1}pt s={bestFont:F1}pt");
 
                 if (budget <= 0)
                     result.HitMeasurementLimit = true;
@@ -554,7 +472,7 @@ namespace WordAddIn1
                 result.ColumnWidths = bestWidths;
                 result.RequiresWrapping = Math.Abs(bestFont - config.MinFontSize) <= 0.001f;
                 result.HitMeasurementLimit |= budget <= 0;
-                LogTune($"OptimizeTable ========== 结束(段1+段2) ========== FinalFontSize={bestFont}pt, RequiresWrapping={result.RequiresWrapping}, HitMeasurementLimit={result.HitMeasurementLimit}, 列宽之和={GetTableColumnsWidthSum(table):F1}pt");
+                LogTune($"OptimizeTable ========== 结束(路径二分) ========== FinalFontSize={bestFont}pt, RequiresWrapping={result.RequiresWrapping}, HitMeasurementLimit={result.HitMeasurementLimit}, 列宽之和={GetTableColumnsWidthSum(table):F1}pt");
                 AttachClock(result);
                 return result;
             }
@@ -579,7 +497,7 @@ namespace WordAddIn1
             OptimizationResult result,
             ref int budget)
         {
-            LogTune("OptimizeTable 【分支=FinishPartial】测量预算提前耗尽：未完成段1+段2，固定 MaxFontSize 并应用垂直居中/行高");
+            LogTune("OptimizeTable 【分支=FinishPartial】测量预算提前耗尽：未完成路径二分，固定 MaxFontSize 并应用垂直居中/行高");
             LogTune($"FinishPartial: 列宽之和={GetTableColumnsWidthSum(table):F1}pt, 字号={config.MaxFontSize}pt, RequiresWrapping 将标为 true");
             var widths = ReadColumnWidths(table);
             ApplyOptimization(table, widths, config.MaxFontSize, data, config, ref budget);
@@ -789,98 +707,204 @@ namespace WordAddIn1
             return list;
         }
 
-        /// <summary>
-        /// 段 1：字号固定 MaxFontSize，从最小总宽线性加宽至 <paramref name="wMax"/>（与段 2 同用 <see cref="GetTableTotalHeightPoints"/>）。
-        /// 每档只按 <paramref name="plan"/> 算一次列宽并写 Word，不再先按比例写再空列覆盖。
-        /// </summary>
-        private static float TryFindMinWidthByStableHeight(
-            Word.Table table,
-            ColumnWidthPlan plan,
-            OptimizationConfig config,
-            float wMax,
-            ref int budget,
-            out float heightAtWMax)
+        public readonly struct LayoutPathSlot
         {
-            heightAtWMax = 0f;
-            int colCount = plan != null && plan.BaseWidths != null ? plan.BaseWidths.Length : 0;
-            if (colCount == 0 || wMax <= 0)
-                return wMax;
+            public LayoutPathSlot(float totalWidth, float fontSize)
+            {
+                TotalWidth = totalWidth;
+                FontSize = fontSize;
+            }
+
+            public float TotalWidth { get; }
+            public float FontSize { get; }
+        }
+
+        /// <summary>
+        /// 先加宽（最大字）再缩字（满宽附近）排成一列。满宽+最大字只出现一次。
+        /// </summary>
+        public static List<LayoutPathSlot> BuildLayoutPath(
+            int colCount,
+            float wMax,
+            OptimizationConfig config)
+        {
+            var path = new List<LayoutPathSlot>();
+            if (colCount <= 0 || wMax <= 0 || config == null)
+            {
+                return path;
+            }
 
             float lo = colCount * config.MinColumnWidth;
             float hi = wMax;
+            float widthStep = Math.Max(1f, config.WidthStep);
+            float shrink = Math.Max(0f, config.WidthNearMaxShrinkPoints);
+            float cap = hi - shrink;
+            if (cap < lo)
+            {
+                cap = hi;
+            }
+
+            float sMax = config.MaxFontSize;
             if (hi <= lo + 0.5f)
             {
-                LogTune($"TryFindMinWidth(段1): 区间无效 lo={lo:F1} hi={hi:F1}，跳过");
-                return hi;
+                path.Add(new LayoutPathSlot(hi, sMax));
             }
-
-            // 调用前已顶满 W_max；直接测总高度作为参考
-            long tAuto = _clock != null ? _clock.Now : 0;
-            ApplyRowAutoHeightForMeasurement(table);
-            AccTune("段1-自动行高", tAuto);
-            long tH0 = _clock != null ? _clock.Now : 0;
-            heightAtWMax = GetTableTotalHeightPoints(table, ref budget);
-            AccTune("段1-测总高", tH0);
-
-            float widthStep = Math.Max(1f, config.WidthStep);
-
-            LogTune(
-                $"TryFindMinWidth(段1): W_max 处总高度≈{heightAtWMax:F2}pt, 线性加宽至 W_max, 区间 [{lo:F1}, {hi:F1}], 步长={widthStep:F1}pt");
-
-            if (heightAtWMax <= 0f || budget <= 0)
+            else
             {
-                WriteColumnWidths(table, ComputeColumnWidthsForTotal(plan, hi));
-                LockTableFixedWidth(table, hi);
-                return hi;
-            }
-
-            int usedIter = 0;
-            float best = hi;
-            for (float w = lo; w <= hi + 0.001f && budget > 0; w += widthStep)
-            {
-                float probeWidth = Math.Min(w, hi);
-                usedIter++;
-                long tIter = _clock != null ? _clock.Now : 0;
-                WriteColumnWidths(table, ComputeColumnWidthsForTotal(plan, probeWidth));
-                AccTune("段1-写列宽", tIter);
-
-                tIter = _clock != null ? _clock.Now : 0;
-                ApplyRowAutoHeightForMeasurement(table);
-                AccTune("段1-自动行高", tIter);
-
-                tIter = _clock != null ? _clock.Now : 0;
-                float h = GetTableTotalHeightPoints(table, ref budget);
-                AccTune("段1-测总高", tIter);
-                if (budget <= 0)
-                    break;
-
-                LogTune($"TryFindMinWidth(段1): iter={usedIter} 总宽≈{probeWidth:F1}pt 总高度≈{h:F2}pt (W_max参考≈{heightAtWMax:F2}pt)");
-                best = probeWidth;
-
-                if (Math.Abs(probeWidth - hi) < 0.001f)
-                    break;
-            }
-
-            // 再加一档会超过 W_max：不把表留在差一步的窄宽上，锁在版心略内侧。
-            if (best + 0.001f < hi)
-            {
-                float shrink = Math.Max(0f, config.WidthNearMaxShrinkPoints);
-                float cap = hi - shrink;
-                if (cap < lo)
+                for (float w = lo; ; w += widthStep)
                 {
-                    cap = hi;
+                    path.Add(new LayoutPathSlot(w, sMax));
+                    float next = w + widthStep;
+                    if (next > hi + 0.001f)
+                    {
+                        break;
+                    }
                 }
 
-                LogTune(
-                    $"TryFindMinWidth(段1): 下一档超过 W_max，改用 {cap:F1}pt（W_max={hi:F1}pt 收回 {shrink:F1}pt），上一档={best:F1}pt");
-                best = cap;
+                float lastW = path[path.Count - 1].TotalWidth;
+                if (lastW > cap + 0.001f)
+                {
+                    path[path.Count - 1] = new LayoutPathSlot(cap, sMax);
+                }
+                else if (cap + 0.001f > lastW)
+                {
+                    path.Add(new LayoutPathSlot(cap, sMax));
+                }
             }
 
-            WriteColumnWidths(table, ComputeColumnWidthsForTotal(plan, best));
-            LockTableFixedWidth(table, best);
+            if (path.Count == 0)
+            {
+                path.Add(new LayoutPathSlot(cap, sMax));
+            }
+
+            float wCap = path[path.Count - 1].TotalWidth;
+            float fontStep = Math.Max(0.1f, config.FontStep);
+            for (float s = sMax - fontStep; s >= config.MinFontSize - 0.001f; s -= fontStep)
+            {
+                path.Add(new LayoutPathSlot(wCap, s));
+            }
+
+            return path;
+        }
+
+        private static int FindStopIndexOnLayoutPath(
+            Word.Table table,
+            ColumnWidthPlan plan,
+            List<LayoutPathSlot> path,
+            float heightEps,
+            ref int budget)
+        {
+            int n = path.Count - 1;
+            var heights = new float?[path.Count];
+
+            float hEnd = MeasureLayoutPathSlot(table, plan, path, heights, n, n, ref budget);
+            if (budget <= 0)
+            {
+                return -1;
+            }
+
+            float hStart = MeasureLayoutPathSlot(table, plan, path, heights, 0, n, ref budget);
+            if (budget <= 0)
+            {
+                return OnHeightPlateau(hStart, hEnd, heightEps) ? 0 : -1;
+            }
+
+            if (OnHeightPlateau(hStart, hEnd, heightEps))
+            {
+                LogTune("OptimizeTable 【路径】起点已贴终点平台，用起点");
+                return 0;
+            }
+
+            int left = 0;
+            int right = n;
+            while (right - left > 1)
+            {
+                if (budget <= 0)
+                {
+                    return OnHeightPlateau(heights[left] ?? float.MaxValue, hEnd, heightEps) ? left : right;
+                }
+
+                int mid = (left + right) / 2;
+                if (mid <= left || mid >= right)
+                {
+                    break;
+                }
+
+                float hMid = MeasureLayoutPathSlot(table, plan, path, heights, mid, n, ref budget);
+                if (budget <= 0)
+                {
+                    break;
+                }
+
+                if (hMid > hEnd + heightEps)
+                {
+                    LogTune($"OptimizeTable 【路径】i={mid} 比终点高，向右");
+                    left = mid;
+                }
+                else
+                {
+                    LogTune($"OptimizeTable 【路径】i={mid} 已贴平台，向左");
+                    right = mid;
+                }
+            }
+
+            float hLeft = heights[left] ?? MeasureLayoutPathSlot(table, plan, path, heights, left, n, ref budget);
+            int chosen = OnHeightPlateau(hLeft, hEnd, heightEps) ? left : right;
+            LogTune($"OptimizeTable 【路径】停在 i={chosen}（区间 [{left},{right}]）");
+            return chosen;
+        }
+
+        private static bool OnHeightPlateau(float height, float heightEnd, float heightEps)
+        {
+            return height <= heightEnd + heightEps;
+        }
+
+        private static float MeasureLayoutPathSlot(
+            Word.Table table,
+            ColumnWidthPlan plan,
+            List<LayoutPathSlot> path,
+            float?[] heights,
+            int i,
+            int n,
+            ref int budget)
+        {
+            if (heights[i].HasValue)
+            {
+                return heights[i].Value;
+            }
+
+            ApplyLayoutPathSlot(table, plan, path[i]);
+            long tAuto = _clock != null ? _clock.Now : 0;
+            ApplyRowAutoHeightForMeasurement(table);
+            AccTune("路径-自动行高", tAuto);
+            long tH = _clock != null ? _clock.Now : 0;
+            float h = GetTableTotalHeightPoints(table, ref budget);
+            AccTune("路径-测总高", tH);
+            heights[i] = h;
             LogTune(
-                $"TryFindMinWidth(段1): 结束 W≈{best:F1}pt, 列宽之和={GetTableColumnsWidthSum(table):F1}pt, 采样={usedIter}, 剩余预算={budget}");
-            return best;
+                $"OptimizeTable 【路径-测】i={i}/{n} W={path[i].TotalWidth:F1}pt s={path[i].FontSize:F1}pt H={h:F2}pt");
+            return h;
+        }
+
+        private static void ApplyLayoutPathSlot(
+            Word.Table table,
+            ColumnWidthPlan plan,
+            LayoutPathSlot slot)
+        {
+            long tW = _clock != null ? _clock.Now : 0;
+            WriteColumnWidths(table, ComputeColumnWidthsForTotal(plan, slot.TotalWidth));
+            LockTableFixedWidth(table, slot.TotalWidth);
+            AccTune("路径-写列宽", tW);
+            long tS = _clock != null ? _clock.Now : 0;
+            try
+            {
+                table.Range.Font.Size = slot.FontSize;
+            }
+            catch
+            {
+                // ignore
+            }
+
+            AccTune("路径-设字号", tS);
         }
 
         /// <summary>单格被迫换行评估（与 <see cref="HasForcedWrapInCell"/> 同一套数）。</summary>
