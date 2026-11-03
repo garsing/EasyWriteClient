@@ -821,6 +821,28 @@ namespace WordAddIn1
         public static void ClearTableIdOrder()
         {
             Session.TableIdOrder.Clear();
+            Session.NumberedTableMarkup = "";
+            Session.TableStampChannel = "";
+        }
+
+        public static string GetNumberedTableMarkup()
+        {
+            return Session.NumberedTableMarkup ?? "";
+        }
+
+        public static void SetNumberedTableMarkup(string markup)
+        {
+            Session.NumberedTableMarkup = markup ?? "";
+        }
+
+        public static string GetTableStampChannel()
+        {
+            return Session.TableStampChannel ?? "";
+        }
+
+        public static void SetTableStampChannel(string channel)
+        {
+            Session.TableStampChannel = channel ?? "";
         }
 
         public static void SetTableIndexToIdMap(Dictionary<int, string> tableIndexToIdMap)

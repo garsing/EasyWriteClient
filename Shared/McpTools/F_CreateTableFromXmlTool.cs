@@ -123,19 +123,10 @@ namespace WordAddIn1
 
                     var occupied = new HashSet<string>(DocumentState.GetTableIdOrder() ?? new List<string>());
                     string stampedId = TableTitleStampHelper.NewRandomTableId(occupied);
-                    bool stampWritten = !string.IsNullOrEmpty(stampedId)
-                        && TableTitleStampHelper.TryWriteStamp(createResult.Table, stampedId);
-                    if (!stampWritten && !string.IsNullOrEmpty(stampedId))
-                    {
-                        List<Word.Table> tablesNow = TableResolveHelper.GetAllTablesInOrder(document);
-                        int stampIndex = IndexOfSameTable(tablesNow, createResult.Table);
-                        stampWritten = stampIndex >= 0
-                            && TableTitleStampHelper.TryWriteBookmark(document, tablesNow, stampIndex, stampedId);
-                    }
-
+                    bool stampWritten = StampNewTable(document, createResult.Table, stampedId);
                     if (!stampWritten)
                     {
-                        System.Diagnostics.Debug.WriteLine("[CreateTable] 立刻写 Title 和书签都失败，将由 ReadWord 哈希兜底");
+                        System.Diagnostics.Debug.WriteLine("[CreateTable] 立刻写戳失败，将由 ReadWord 再认");
                     }
 
                     var warnings = new List<string>();
@@ -193,15 +184,7 @@ namespace WordAddIn1
                         {
                             // 嵌套表 Range.Start 常与父表撞点，禁止再用表序下标对号。
                             // ReadWord 若按序改写 Title，把刚打的戳写回这张 COM 表。
-                            if (!TableTitleStampHelper.TryWriteStamp(createResult.Table, stampedId))
-                            {
-                                List<Word.Table> tablesNow = TableResolveHelper.GetAllTablesInOrder(document);
-                                int stampIndex = IndexOfSameTable(tablesNow, createResult.Table);
-                                if (stampIndex >= 0)
-                                {
-                                    TableTitleStampHelper.TryWriteBookmark(document, tablesNow, stampIndex, stampedId);
-                                }
-                            }
+                            StampNewTable(document, createResult.Table, stampedId);
 
                             resolvedTableId = stampedId;
                         }
@@ -1232,40 +1215,26 @@ namespace WordAddIn1
             }
         }
 
-        private static int IndexOfSameTable(List<Word.Table> tables, Word.Table table)
+        private static bool StampNewTable(Word.Document document, Word.Table table, string stampedId)
         {
-            if (tables == null || table == null)
+            if (document == null || table == null || string.IsNullOrEmpty(stampedId))
             {
-                return -1;
+                return false;
             }
 
-            int start;
-            int end;
-            try
+            string channel = DocumentState.GetTableStampChannel();
+            if (channel == TableTitleStampHelper.ChannelBookmark)
             {
-                start = table.Range.Start;
-                end = table.Range.End;
-            }
-            catch (Exception)
-            {
-                return -1;
+                return TableTitleStampHelper.TryWriteBookmarkOnTable(document, table, stampedId);
             }
 
-            for (int i = 0; i < tables.Count; i++)
+            if (TableTitleStampHelper.TryWriteStamp(table, stampedId))
             {
-                try
-                {
-                    if (tables[i].Range.Start == start && tables[i].Range.End == end)
-                    {
-                        return i;
-                    }
-                }
-                catch (Exception)
-                {
-                }
+                return true;
             }
 
-            return -1;
+            DocumentState.SetTableStampChannel(TableTitleStampHelper.ChannelBookmark);
+            return TableTitleStampHelper.TryWriteBookmarkOnTable(document, table, stampedId);
         }
 
     }

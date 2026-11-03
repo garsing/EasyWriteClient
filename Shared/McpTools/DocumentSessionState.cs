@@ -18,6 +18,12 @@ namespace WordAddIn1
 
         public List<string> TableIdOrder { get; } = new List<string>();
 
+        /// <summary>ProcessDocument 留下的编号骨架（正式 T_），Title 定位用。</summary>
+        public string NumberedTableMarkup { get; set; } = "";
+
+        /// <summary>这份文档盖戳通道：title / bookmark。</summary>
+        public string TableStampChannel { get; set; } = "";
+
         /// <summary>[图表编号, 哈希码, 图表体内 XML]（文档内累积）</summary>
         public List<List<string>> ChartIdMapping { get; } = new List<List<string>>();
 

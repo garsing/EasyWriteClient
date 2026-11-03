@@ -71,25 +71,17 @@ namespace WordAddIn1
                 return result;
             }
 
-            int tableOrderIndex = DocumentState.GetTableIndex(tableId);
-            if (tableOrderIndex < 0)
+            Word.Table table = TableResolveHelper.TryResolveTableById(document, tableId, out string resolveError);
+            if (table == null)
             {
-                result.Error = $"找不到表格编号 '{tableId}'，请确认表格编号是否正确";
-                return result;
-            }
-
-            List<Word.Table> allTables = SentenceCodeLocator.GetAllTablesInOrder(document);
-            if (tableOrderIndex >= allTables.Count)
-            {
-                result.Error =
-                    $"表格编号 '{tableId}' 对应的索引{tableOrderIndex}无效，文档中只有{allTables.Count}个表格（包括嵌套表格）";
+                result.Error = resolveError ?? $"找不到表格编号 '{tableId}'，请确认表格编号是否正确";
                 return result;
             }
 
             try
             {
-                result.Table = allTables[tableOrderIndex];
-                result.TableIndex = GetTableIndex(document, result.Table);
+                result.Table = table;
+                result.TableIndex = GetTableIndex(document, table);
                 result.TableId = tableId;
                 result.Success = true;
                 return result;

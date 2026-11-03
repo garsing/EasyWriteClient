@@ -156,14 +156,17 @@ namespace WordAddIn1
 
                 sw.Restart();
                 string tableSkeleton = TableMarkupSkeleton.FromBody(body);
-                _readWordAssignedIds = TableTitleStampHelper.CollectIdsFromWord(
-                    document,
-                    _readOccupiedTableIds,
-                    tableSkeleton);
+                TableTitleStampHelper.StampPassResult stampPass =
+                    TableTitleStampHelper.StampAlignedTables(document, tableSkeleton);
+                _readWordAssignedIds = stampPass.Ids ?? new List<string>();
+                _readOccupiedTableIds = new HashSet<string>(_readWordAssignedIds, StringComparer.Ordinal);
+                DocumentState.SetTableStampChannel(stampPass.Channel);
+                DocumentState.SetNumberedTableMarkup(stampPass.NumberedMarkup);
                 EasyWriteDiagnostics.LogTiming(
                     "CollectIdsFromWord",
                     sw.ElapsedMilliseconds,
-                    "tables=" + _readWordAssignedIds.Count);
+                    "tables=" + _readWordAssignedIds.Count
+                    + " channel=" + (stampPass.Channel ?? ""));
 
                 string fileHash = null;
                 string imageSaveDir = null;
@@ -223,8 +226,7 @@ namespace WordAddIn1
 
                 sw.Restart();
                 BuildTableIdOrderFromText(result);
-                result = ApplyTableStampsAfterRead(document, result);
-                EasyWriteDiagnostics.LogTiming("tableStamps", sw.ElapsedMilliseconds);
+                EasyWriteDiagnostics.LogTiming("tableStamps", sw.ElapsedMilliseconds, "already_stamped");
                 if (_chartStampOnWord)
                 {
                     int expected = _chartOrderedEntries == null ? 0 : _chartOrderedEntries.Count;

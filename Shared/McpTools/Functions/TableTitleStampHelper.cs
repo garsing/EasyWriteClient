@@ -197,10 +197,62 @@ namespace WordAddIn1
             return "ewT_" + body;
         }
 
+        public const string ChannelTitle = "title";
+        public const string ChannelBookmark = "bookmark";
+
+        public sealed class StampPassResult
+        {
+            public string Channel;
+            public string NumberedMarkup;
+            public List<string> Ids = new List<string>();
+        }
+
         /// <summary>
-        /// 以 Word Title 为真源：按 GetAllTablesInOrder 下标认号。
-        /// Title 没有合法戳时，认挂在该表上的 ewT_ 书签。合法且本遍未占用则沿用；否则新发。
+        /// 骨架对齐 COM 后读戳或盖戳。一份文档只走 Title 或只走书签。已有号不动。
         /// </summary>
+        public static StampPassResult StampAlignedTables(
+            Word.Document document,
+            string skeletonMarkup)
+        {
+            var result = new StampPassResult
+            {
+                Channel = "",
+                NumberedMarkup = skeletonMarkup ?? "",
+                Ids = new List<string>()
+            };
+            if (document == null)
+            {
+                return result;
+            }
+
+            List<Word.Table> tables = TableResolveHelper.GetAllTablesInOrder(document, skeletonMarkup);
+            string channel = DecideChannel(document, tables);
+            result.Channel = channel;
+            var occupied = new HashSet<string>(StringComparer.Ordinal);
+            var ids = new List<string>();
+            for (int i = 0; i < tables.Count; i++)
+            {
+                Word.Table table = tables[i];
+                string id = ReadExistingId(document, table, channel, occupied);
+                string how = string.IsNullOrEmpty(id) ? "新发" : (channel == ChannelTitle ? "沿用Title" : "沿用书签");
+                if (string.IsNullOrEmpty(id))
+                {
+                    id = NewRandomTableId(occupied);
+                    if (!string.IsNullOrEmpty(id) && WriteStamp(document, table, id, channel))
+                    {
+                        how = channel == ChannelTitle ? "写入 Title" : "写入书签";
+                    }
+                }
+
+                ids.Add(id);
+                LogStamp($"[TableStamp] Word真源 i={i} {how} {id ?? "(空)"}");
+            }
+
+            result.Ids = ids;
+            result.NumberedMarkup = ReplaceSkeletonIds(skeletonMarkup, ids);
+            return result;
+        }
+
         public static List<string> CollectIdsFromWord(Word.Document document, ISet<string> occupied)
         {
             return CollectIdsFromWord(document, occupied, display: null);
@@ -211,52 +263,289 @@ namespace WordAddIn1
             ISet<string> occupied,
             string display)
         {
-            var ids = new List<string>();
-            if (document == null)
+            StampPassResult pass = StampAlignedTables(document, display);
+            if (occupied != null)
             {
-                return ids;
-            }
-
-            if (occupied == null)
-            {
-                throw new ArgumentNullException(nameof(occupied));
-            }
-
-            List<Word.Table> tables = TableResolveHelper.GetAllTablesInOrder(document, display);
-            List<StampBookmark> bookmarks = ReadStampBookmarks(document);
-            for (int i = 0; i < tables.Count; i++)
-            {
-                string id = null;
-                string how = "新发";
-                string existing = null;
-                string title = null;
-                bool titleParsed = TryReadTitle(tables[i], out title)
-                    && TryParse(title, out existing, out _);
-                if (titleParsed && occupied.Add(existing))
+                occupied.Clear();
+                for (int i = 0; i < pass.Ids.Count; i++)
                 {
-                    id = existing;
-                    how = "沿用Title";
-                }
-                else if (!titleParsed)
-                {
-                    string fromBookmark = BookmarkIdOwnedBy(tables, i, bookmarks);
-                    if (!string.IsNullOrEmpty(fromBookmark) && occupied.Add(fromBookmark))
+                    if (!string.IsNullOrEmpty(pass.Ids[i]))
                     {
-                        id = fromBookmark;
-                        how = "沿用书签";
+                        occupied.Add(pass.Ids[i]);
                     }
                 }
-
-                if (id == null)
-                {
-                    id = NewRandomTableId(occupied);
-                }
-
-                ids.Add(id);
-                LogStamp($"[TableStamp] Word真源 i={i} {how} {id ?? "(空)"}");
             }
 
-            return ids;
+            DocumentState.SetTableStampChannel(pass.Channel);
+            DocumentState.SetNumberedTableMarkup(pass.NumberedMarkup);
+            return pass.Ids;
+        }
+
+        private static string DecideChannel(Word.Document document, IList<Word.Table> tables)
+        {
+            bool anyTitle = false;
+            bool anyBookmark = false;
+            for (int i = 0; i < tables.Count; i++)
+            {
+                if (TryReadTitle(tables[i], out string title)
+                    && TryParse(title, out _, out _))
+                {
+                    anyTitle = true;
+                    break;
+                }
+
+                if (!string.IsNullOrEmpty(BookmarkNameOnTable(document, tables[i])))
+                {
+                    anyBookmark = true;
+                    break;
+                }
+            }
+
+            if (anyTitle)
+            {
+                return ChannelTitle;
+            }
+
+            if (anyBookmark)
+            {
+                return ChannelBookmark;
+            }
+
+            if (tables.Count > 0 && TryWriteTitleProbe(tables[0]))
+            {
+                return ChannelTitle;
+            }
+
+            return ChannelBookmark;
+        }
+
+        private static bool TryWriteTitleProbe(Word.Table table)
+        {
+            if (table == null)
+            {
+                return false;
+            }
+
+            string previous = "";
+            bool couldRead = TryReadTitle(table, out previous);
+            if (!couldRead)
+            {
+                previous = "";
+            }
+
+            if (!TryWriteTitle(table, previous))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static string ReadExistingId(
+            Word.Document document,
+            Word.Table table,
+            string channel,
+            ISet<string> occupied)
+        {
+            if (channel == ChannelTitle)
+            {
+                if (TryReadTitle(table, out string title)
+                    && TryParse(title, out string existing, out _)
+                    && occupied.Add(existing))
+                {
+                    return existing;
+                }
+
+                return null;
+            }
+
+            string nameOwned = BookmarkNameOnTable(document, table);
+            if (!string.IsNullOrEmpty(nameOwned)
+                && TryParseBookmark(nameOwned, out string fromBookmark)
+                && occupied.Add(fromBookmark))
+            {
+                return fromBookmark;
+            }
+
+            return null;
+        }
+
+        private static bool WriteStamp(
+            Word.Document document,
+            Word.Table table,
+            string tableId,
+            string channel)
+        {
+            if (channel == ChannelTitle)
+            {
+                bool ok = TryWriteStamp(table, tableId);
+                if (ok)
+                {
+                    LogStamp("[TableStamp] 写入 Title " + tableId);
+                }
+
+                return ok;
+            }
+
+            bool wrote = TryWriteBookmarkOnTable(document, table, tableId);
+            if (wrote)
+            {
+                LogStamp("[TableStamp] 写入书签 " + tableId);
+            }
+
+            return wrote;
+        }
+
+        public static bool TryWriteBookmarkOnTable(Word.Document document, Word.Table table, string tableId)
+        {
+            if (document == null || table == null)
+            {
+                return false;
+            }
+
+            string name = BookmarkNameFor(tableId);
+            if (name == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (document.Bookmarks.Exists(name))
+                {
+                    Word.Bookmark existing = document.Bookmarks[name];
+                    if (BookmarkCoversTable(existing, table))
+                    {
+                        return true;
+                    }
+
+                    LogStamp("[TableStamp] 书签名已被其他表占用: " + name);
+                    return false;
+                }
+
+                Word.Range cover = table.Range.Duplicate;
+                document.Bookmarks.Add(name, cover);
+                return document.Bookmarks.Exists(name);
+            }
+            catch (Exception ex)
+            {
+                LogStamp("[TableStamp] 写书签失败: " + Describe(ex));
+                return false;
+            }
+        }
+
+        public static Word.Range TryGetBookmarkRange(Word.Document document, string tableId)
+        {
+            if (document == null || string.IsNullOrEmpty(tableId))
+            {
+                return null;
+            }
+
+            string name = BookmarkNameFor(tableId);
+            if (name == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (!document.Bookmarks.Exists(name))
+                {
+                    return null;
+                }
+
+                return document.Bookmarks[name].Range;
+            }
+            catch (Exception ex)
+            {
+                LogStamp("[TableStamp] 取书签失败: " + Describe(ex));
+                return null;
+            }
+        }
+
+        private static string BookmarkNameOnTable(Word.Document document, Word.Table table)
+        {
+            if (document == null || table == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                int start;
+                int end;
+                try
+                {
+                    start = table.Range.Start;
+                    end = table.Range.End;
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+
+                int count = document.Bookmarks.Count;
+                for (int i = 1; i <= count; i++)
+                {
+                    Word.Bookmark bookmark = document.Bookmarks[i];
+                    if (!TryParseBookmark(bookmark.Name, out _))
+                    {
+                        continue;
+                    }
+
+                    int markStart = bookmark.Range.Start;
+                    int markEnd = bookmark.Range.End;
+                    if (markStart == start && markEnd == end)
+                    {
+                        return bookmark.Name;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogStamp("[TableStamp] 读书签失败: " + Describe(ex));
+            }
+
+            return null;
+        }
+
+        private static bool BookmarkCoversTable(Word.Bookmark bookmark, Word.Table table)
+        {
+            if (bookmark == null || table == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return bookmark.Range.Start == table.Range.Start
+                    && bookmark.Range.End == table.Range.End;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        public static string ReplaceSkeletonIds(string skeleton, IList<string> ids)
+        {
+            if (string.IsNullOrEmpty(skeleton) || ids == null || ids.Count == 0)
+            {
+                return skeleton ?? "";
+            }
+
+            var regex = new Regex(@"<table\s+id=""T_sk\d+""");
+            int seen = -1;
+            return regex.Replace(skeleton, match =>
+            {
+                seen++;
+                if (seen >= 0 && seen < ids.Count && !string.IsNullOrEmpty(ids[seen]))
+                {
+                    return "<table id=\"" + ids[seen] + "\"";
+                }
+
+                return match.Value;
+            });
         }
 
         public static bool TryReadTitle(Word.Table table, out string title)

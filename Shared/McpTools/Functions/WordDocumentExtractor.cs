@@ -1878,7 +1878,12 @@ namespace WordAddIn1
                 return;
             }
 
-            TableTitleStampHelper.ApplyAssignedIds(document, ids, tableContents: null);
+            string skeleton = TableMarkupSkeleton.FromDocument(document);
+            TableTitleStampHelper.StampPassResult pass =
+                TableTitleStampHelper.StampAlignedTables(document, skeleton);
+            DocumentState.SetTableStampChannel(pass.Channel);
+            DocumentState.SetNumberedTableMarkup(pass.NumberedMarkup);
+            ids = pass.Ids ?? ids;
             var map = new Dictionary<int, string>();
             for (int i = 0; i < ids.Count; i++)
             {

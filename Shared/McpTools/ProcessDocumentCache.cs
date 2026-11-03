@@ -27,6 +27,8 @@ namespace WordAddIn1
         public List<WordDocumentExtractor.ChunkInfo> ChunkInfo { get; set; }
         public Dictionary<int, string> TableIndexToIdMap { get; set; }
         public List<string> TableIdOrderSnapshot { get; set; }
+        public string NumberedTableMarkup { get; set; }
+        public string TableStampChannel { get; set; }
         public Dictionary<int, string> ChartIndexToIdMap { get; set; }
         public List<string> ChartIdOrderSnapshot { get; set; }
         public List<List<string>> ChartIdMappingSnapshot { get; set; }
@@ -425,6 +427,8 @@ namespace WordAddIn1
                 ChunkInfo = CloneChunkInfo(result.ChunkInfo),
                 TableIndexToIdMap = CloneTableIndexMap(result.TableIndexToIdMap),
                 TableIdOrderSnapshot = DocumentState.GetTableIdOrder()?.ToList(),
+                NumberedTableMarkup = DocumentState.GetNumberedTableMarkup(),
+                TableStampChannel = DocumentState.GetTableStampChannel(),
                 ChartIndexToIdMap = CloneChartIndexMapFromOrder(DocumentState.GetChartIdOrder()),
                 ChartIdOrderSnapshot = DocumentState.GetChartIdOrder()?.ToList(),
                 ChartIdMappingSnapshot = DocumentState.GetChartIdMappingSnapshot(),
@@ -509,6 +513,9 @@ namespace WordAddIn1
             {
                 DocumentState.SetTableIndexToIdMap(CloneChartIndexMapFromOrder(entry.TableIdOrderSnapshot));
             }
+
+            DocumentState.SetNumberedTableMarkup(entry.NumberedTableMarkup);
+            DocumentState.SetTableStampChannel(entry.TableStampChannel);
 
             if (entry.ChartIdOrderSnapshot != null)
             {

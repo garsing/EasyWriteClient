@@ -26,7 +26,7 @@ namespace WordAddIn1
 
             try
             {
-                Word.Table table = SentenceCodeLocator.ResolveTableById(doc, tableId);
+                Word.Table table = TableResolveHelper.TryResolveTableById(doc, tableId, out _);
                 if (table == null)
                 {
                     WordAddIn1.DocumentHost.HostProbe.Log("tbl-after-no-table", "id=" + tableId);
@@ -118,7 +118,7 @@ namespace WordAddIn1
 
             try
             {
-                return SentenceCodeLocator.ResolveTableById(doc, tableId) != null;
+                return TableResolveHelper.TryResolveTableById(doc, tableId, out _) != null;
             }
             catch
             {

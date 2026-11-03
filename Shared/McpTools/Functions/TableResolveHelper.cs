@@ -5,11 +5,20 @@ using Word = Microsoft.Office.Interop.Word;
 namespace WordAddIn1
 {
     /// <summary>
-    /// T_ → COM Table：只查 TableIdOrder + 文档序第 i 张。不按 Title 查找，不包 ReadWord。
+    /// T_ → COM Table。书签通道按 ewT_ 取 Range；Title 通道用留下的编号骨架。
     /// </summary>
     public static class TableResolveHelper
     {
         public static Word.Table TryResolveTableById(Word.Document document, string tableId, out string error)
+        {
+            return TryResolveTableById(document, tableId, refreshDocument: false, out error);
+        }
+
+        public static Word.Table TryResolveTableById(
+            Word.Document document,
+            string tableId,
+            bool refreshDocument,
+            out string error)
         {
             error = null;
             if (document == null || string.IsNullOrEmpty(tableId))
@@ -18,14 +27,65 @@ namespace WordAddIn1
                 return null;
             }
 
-            List<Word.Table> allTables = GetAllTablesInOrder(document);
-            return TryResolveFromList(allTables, tableId, out error);
+            if (refreshDocument)
+            {
+                try
+                {
+                    WordDocumentExtractor.ProcessDocument(
+                        document,
+                        ProcessDocumentOptions.ForGetDocumentContent("table_resolve"));
+                }
+                catch (Exception ex)
+                {
+                    error = $"找不到表格编号 '{tableId}'，请确认表格编号是否正确";
+                    System.Diagnostics.Debug.WriteLine("[TableResolve] ProcessDocument 失败: " + ex.Message);
+                    return null;
+                }
+            }
+
+            string channel = DocumentState.GetTableStampChannel();
+            if (channel == TableTitleStampHelper.ChannelBookmark)
+            {
+                Word.Range mark = TableTitleStampHelper.TryGetBookmarkRange(document, tableId);
+                if (mark == null)
+                {
+                    error = $"找不到表格编号 '{tableId}'，请确认表格编号是否正确";
+                    return null;
+                }
+
+                Word.Table fromBookmark = TableFromBookmarkRange(mark);
+                if (fromBookmark == null)
+                {
+                    error = $"找不到表格编号 '{tableId}'，请确认表格编号是否正确";
+                    return null;
+                }
+
+                return fromBookmark;
+            }
+
+            string markup = DocumentState.GetNumberedTableMarkup();
+            if (string.IsNullOrEmpty(markup))
+            {
+                markup = TableMarkupSkeleton.FromDocument(document);
+            }
+
+            List<Word.Table> allTables = GetAllTablesInOrder(document, markup);
+            return TryResolveFromList(allTables, tableId, markup, out error);
         }
 
         /// <summary>
         /// 在已经收好的扁平表列表里按 <paramref name="tableId"/> 取表。不再枚举 COM。
         /// </summary>
         public static Word.Table TryResolveFromList(List<Word.Table> allTables, string tableId, out string error)
+        {
+            return TryResolveFromList(allTables, tableId, DocumentState.GetNumberedTableMarkup(), out error);
+        }
+
+        public static Word.Table TryResolveFromList(
+            List<Word.Table> allTables,
+            string tableId,
+            string numberedMarkup,
+            out string error)
         {
             error = null;
             if (allTables == null || string.IsNullOrEmpty(tableId))
@@ -34,13 +94,12 @@ namespace WordAddIn1
                 return null;
             }
 
-            Word.Table stamped = FindTableByTitleStamp(allTables, tableId);
-            if (stamped != null)
+            int tableOrderIndex = IndexOfTableId(numberedMarkup, tableId);
+            if (tableOrderIndex < 0)
             {
-                return stamped;
+                tableOrderIndex = DocumentState.GetTableIndex(tableId);
             }
 
-            int tableOrderIndex = DocumentState.GetTableIndex(tableId);
             if (tableOrderIndex < 0)
             {
                 error = $"找不到表格编号 '{tableId}'，请确认表格编号是否正确";
@@ -55,6 +114,39 @@ namespace WordAddIn1
             }
 
             return allTables[tableOrderIndex];
+        }
+
+        private static int IndexOfTableId(string markup, string tableId)
+        {
+            if (string.IsNullOrEmpty(markup) || string.IsNullOrEmpty(tableId))
+            {
+                return -1;
+            }
+
+            List<string> ids = NestedTableParentFinder.ListOpenIds(markup);
+            return ids.IndexOf(tableId);
+        }
+
+        private static Word.Table TableFromBookmarkRange(Word.Range mark)
+        {
+            if (mark == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (mark.Tables != null && mark.Tables.Count > 0)
+                {
+                    return mark.Tables[1];
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[TableResolve] 书签 Range.Tables 失败: " + ex.Message);
+            }
+
+            return null;
         }
 
         public static List<Word.Table> GetAllTablesInOrder(Word.Document document)
@@ -256,30 +348,6 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine($"[TableResolve] 排序失败: {ex.Message}");
                 return 0;
             }
-        }
-
-        private static Word.Table FindTableByTitleStamp(List<Word.Table> tables, string tableId)
-        {
-            if (tables == null || string.IsNullOrEmpty(tableId))
-            {
-                return null;
-            }
-
-            for (int i = 0; i < tables.Count; i++)
-            {
-                if (!TableTitleStampHelper.TryReadTitle(tables[i], out string title)
-                    || !TableTitleStampHelper.TryParse(title, out string stampedId, out _))
-                {
-                    continue;
-                }
-
-                if (string.Equals(stampedId, tableId, StringComparison.Ordinal))
-                {
-                    return tables[i];
-                }
-            }
-
-            return null;
         }
 
         private static bool ContainsSameTable(List<Word.Table> tables, Word.Table table)
