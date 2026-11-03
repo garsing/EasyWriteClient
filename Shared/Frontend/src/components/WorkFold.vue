@@ -1,16 +1,15 @@
 <template>
   <div class="work-fold">
     <div class="work-fold-header" @click="toggleExpand">
+      <span class="work-fold-title">
+        奋力工作的记录
+        <span v-if="durationText" class="work-fold-duration">{{ durationText }}</span>
+      </span>
       <span
         class="chevron"
         :class="isExpanded ? 'chevron-down' : 'chevron-right'"
         aria-hidden="true"
       />
-      <span class="work-fold-icon-spacer" aria-hidden="true" />
-      <span class="work-fold-title">
-        奋力工作的记录
-        <span v-if="durationText" class="work-fold-duration">{{ durationText }}</span>
-      </span>
     </div>
     <div v-if="isExpanded" class="work-fold-body">
       <slot />
@@ -77,6 +76,11 @@ const toggleExpand = () => {
   border-right: 1.5px solid #999;
   border-bottom: 1.5px solid #999;
   display: inline-block;
+  opacity: 0;
+}
+
+.work-fold-header:hover .chevron {
+  opacity: 1;
 }
 
 .chevron-right {
@@ -87,14 +91,8 @@ const toggleExpand = () => {
   transform: rotate(45deg);
 }
 
-.work-fold-icon-spacer {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
 .work-fold-title {
-  flex: 1;
+  flex: 0 1 auto;
   font-size: 13px;
   font-weight: 500;
   color: #666;
@@ -108,6 +106,6 @@ const toggleExpand = () => {
 
 .work-fold-body {
   /* 比标题再缩一档，展开后是子级，不要和「奋力工作的记录」齐平 */
-  padding: 0 10px 8px 28px;
+  padding: 0 10px 8px 24px;
 }
 </style>

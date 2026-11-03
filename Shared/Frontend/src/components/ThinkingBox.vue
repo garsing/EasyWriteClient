@@ -1,14 +1,12 @@
 <template>
   <div v-if="content" class="thinking-box">
     <div class="thinking-box-header" @click="toggleExpand">
+      <span class="thinking-title">思考中</span>
       <span
         class="chevron"
         :class="isExpanded ? 'chevron-down' : 'chevron-right'"
         aria-hidden="true"
       />
-      <!-- 与 ToolCallBox 的 tool-icon 同宽，保证标题与工具名左对齐 -->
-      <span class="thinking-icon-spacer" aria-hidden="true" />
-      <span class="thinking-title">思考中</span>
     </div>
     <div
       v-if="isExpanded"
@@ -94,6 +92,11 @@ const toggleExpand = () => {
   border-right: 1.5px solid #999;
   border-bottom: 1.5px solid #999;
   display: inline-block;
+  opacity: 0;
+}
+
+.thinking-box-header:hover .chevron {
+  opacity: 1;
 }
 
 .chevron-right {
@@ -104,14 +107,8 @@ const toggleExpand = () => {
   transform: rotate(45deg);
 }
 
-.thinking-icon-spacer {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
 .thinking-title {
-  flex: 1;
+  flex: 0 1 auto;
   font-size: 13px;
   font-weight: 500;
   color: #999;

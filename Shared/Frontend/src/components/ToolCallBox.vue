@@ -1,14 +1,15 @@
 <template>
   <div class="tool-call-box">
     <div class="tool-call-header" :class="{ 'no-expand': !allowExpand }" @click="allowExpand && toggleExpand()">
-      <span
-        class="chevron"
-        :class="allowExpand && isExpanded ? 'chevron-down' : 'chevron-right'"
-        aria-hidden="true"
-      />
       <img v-if="icon" :src="icon" class="tool-icon" alt="" />
       <span class="tool-name">{{ displayName }}</span>
       <span v-if="progressLabel" class="tool-progress">{{ progressLabel }}</span>
+      <span
+        v-if="allowExpand"
+        class="chevron"
+        :class="isExpanded ? 'chevron-down' : 'chevron-right'"
+        aria-hidden="true"
+      />
     </div>
     <div v-if="isExpanded && allowExpand" class="tool-call-content">
       <pre :class="['code-content', `language-${language}`]"><code ref="codeElement" v-html="highlightedContent"></code></pre>
@@ -19,12 +20,12 @@
     </div>
     <div v-if="hasOutputText" class="tool-process-output">
       <div class="tool-process-output-header" @click="toggleOutput">
+        <span class="tool-process-output-label">输出</span>
         <span
           class="chevron"
           :class="outputExpanded ? 'chevron-down' : 'chevron-right'"
           aria-hidden="true"
         />
-        <span class="tool-process-output-label">输出</span>
       </div>
       <div
         v-show="outputExpanded"
@@ -329,16 +330,8 @@ const toggleExpand = () => {
   background-color: transparent;
 }
 
-.tool-call-header:hover {
-  background-color: rgba(0, 0, 0, 0.03);
-}
-
 .tool-call-header.no-expand {
   cursor: default;
-}
-
-.tool-call-header.no-expand:hover {
-  background-color: transparent;
 }
 
 .tool-icon {
@@ -358,6 +351,12 @@ const toggleExpand = () => {
   border-right: 1.5px solid #999;
   border-bottom: 1.5px solid #999;
   display: inline-block;
+  opacity: 0;
+}
+
+.tool-call-header:hover .chevron,
+.tool-process-output-header:hover .chevron {
+  opacity: 1;
 }
 
 .chevron-right {
@@ -369,7 +368,7 @@ const toggleExpand = () => {
 }
 
 .tool-name {
-  flex: 1;
+  flex: 0 1 auto;
   font-size: 13px;
   font-weight: 500;
   color: #666;
