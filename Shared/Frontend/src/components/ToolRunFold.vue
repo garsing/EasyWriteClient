@@ -1,17 +1,16 @@
 <template>
   <div class="tool-run-fold">
-    <div class="tool-run-header" @click="toggleExpand">
+    <div
+      class="tool-run-header"
+      :class="{ 'tool-run-header--busy': busy }"
+      @click="toggleExpand"
+    >
       <span
         class="chevron"
         :class="isExpanded ? 'chevron-down' : 'chevron-right'"
         aria-hidden="true"
       />
-      <img v-if="icon" :src="icon" class="tool-icon" alt="" />
-      <span v-else class="tool-icon-spacer" aria-hidden="true" />
-      <span class="tool-run-title">
-        <template v-if="title">{{ title }}</template>
-        <span class="tool-run-count" :class="{ 'tool-run-count--solo': !title }">已调用{{ toolCount }}个工具</span>
-      </span>
+      <span class="tool-run-title">{{ title }}</span>
     </div>
     <div v-if="isExpanded" class="tool-run-body">
       <template v-for="(segment, index) in segments" :key="childKey(segment, index)">
@@ -37,44 +36,50 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import ToolCallBoxDisplayRule from './ToolCallBoxDisplayRule.vue'
 import ThinkingBox from './ThinkingBox.vue'
-import { resolveRunHeading } from '../utils/toolRunGroup'
-import manipulateToolIcon from '../assets/images/manipulate_tool.png'
-import readToolIcon from '../assets/images/read_tool.png'
+import { currentToolName } from '../utils/toolRunGroup'
+import { getToolAlias } from '../utils/toolAlias'
 
 const props = defineProps({
   segments: {
     type: Array,
     default: () => []
+  },
+  /** 当前这组还在跑：标题亮光从左扫到右 */
+  busy: {
+    type: Boolean,
+    default: false
   }
 })
 
 const isExpanded = ref(false)
+const toolAlias = ref('')
 
 function toggleExpand () {
   isExpanded.value = !isExpanded.value
 }
 
-const toolCount = computed(() => {
-  return (props.segments || []).filter((s) => s && s.type === 'toolCall').length
-})
+const toolName = computed(() => currentToolName(props.segments))
 
-const heading = computed(() => resolveRunHeading(props.segments))
+const title = computed(() => toolAlias.value || toolName.value)
 
-const title = computed(() => {
-  if (heading.value === 'thinking') return '思考'
-  if (heading.value === 'explore') return '探索'
-  if (heading.value === 'operate') return '操作'
-  return ''
-})
-
-const icon = computed(() => {
-  if (heading.value === 'explore') return readToolIcon
-  if (heading.value === 'operate') return manipulateToolIcon
-  return null
-})
+watch(
+  toolName,
+  async (name) => {
+    if (!name) {
+      toolAlias.value = ''
+      return
+    }
+    try {
+      toolAlias.value = await getToolAlias(name)
+    } catch {
+      toolAlias.value = name
+    }
+  },
+  { immediate: true }
+)
 
 function childKey (segment, index) {
   if (segment?.type === 'toolCall') return `tool-${segment.startIndex ?? index}`
@@ -96,22 +101,47 @@ function childKey (segment, index) {
   cursor: pointer;
   user-select: none;
   background-color: transparent;
+  position: relative;
+  overflow: hidden;
+}
+
+.tool-run-header--busy::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 42%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.15) 35%,
+    rgba(255, 255, 255, 0.75) 50%,
+    rgba(255, 255, 255, 0.15) 65%,
+    transparent 100%
+  );
+  animation: tool-run-shine 1.7s ease-in-out infinite;
+}
+
+@keyframes tool-run-shine {
+  0% {
+    transform: translateX(-130%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-run-header--busy::after {
+    animation: none;
+    display: none;
+  }
 }
 
 .tool-run-header:hover {
   background-color: rgba(0, 0, 0, 0.03);
-}
-
-.tool-icon,
-.tool-icon-spacer {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
-.tool-icon {
-  object-fit: contain;
-  opacity: 0.75;
 }
 
 .chevron {
@@ -137,16 +167,6 @@ function childKey (segment, index) {
   font-size: 13px;
   font-weight: 500;
   color: #666;
-}
-
-.tool-run-count {
-  margin-left: 8px;
-  font-weight: 400;
-  color: #999;
-}
-
-.tool-run-count--solo {
-  margin-left: 0;
 }
 
 .tool-run-body {

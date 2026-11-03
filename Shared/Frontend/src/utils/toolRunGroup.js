@@ -1,4 +1,3 @@
-import { categoryOf } from './toolRunCategory.js'
 import { isHiddenTool } from './toolVisibility.js'
 
 /**
@@ -71,28 +70,17 @@ function makeRun (run) {
 }
 
 /**
- * 组标题。尾段是思考 → thinking。
- * 尾部工具还没有名字 → 往前找上一张已知名，中间的思考不抢标题。
- * 一张已知名都没有 → unknown。
- * @returns {'thinking'|'explore'|'operate'|'unknown'}
+ * 折叠条标题：从后往前找当前这张已知名的工具。
+ * 尾部还没补上 function.name 时沿用上一张。
  */
-export function resolveRunHeading (segments) {
+export function currentToolName (segments) {
   const segs = segments || []
   for (let i = segs.length - 1; i >= 0; i--) {
-    const seg = segs[i]
-    if (!seg) continue
-    if (seg.type === 'thinking') return 'thinking'
-    if (seg.type !== 'toolCall') continue
-    const cat = categoryOf(seg.toolName)
-    if (cat) return cat
-    for (let j = i - 1; j >= 0; j--) {
-      if (segs[j]?.type !== 'toolCall') continue
-      const prev = categoryOf(segs[j].toolName)
-      if (prev) return prev
-    }
-    return 'unknown'
+    if (segs[i]?.type !== 'toolCall') continue
+    const name = String(segs[i].toolName || '').trim()
+    if (name) return name
   }
-  return 'unknown'
+  return ''
 }
 
 export function toolRunKey (run, index) {

@@ -31,6 +31,7 @@
           <ToolRunFold
             v-else-if="segment.type === 'toolRun'"
             :segments="segment.segments"
+            :busy="isToolRunBusy(index)"
           />
         </template>
       </div>
@@ -64,7 +65,7 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
-  /** 当前轮：连续工具收成探索/操作/思考折叠。归档进奋力工作后不要开 */
+  /** 当前轮：连续工具收成折叠。归档进奋力工作后不要开 */
   groupTools: {
     type: Boolean,
     default: false
@@ -106,6 +107,17 @@ function isClampedText (segment, index) {
   if (props.groupTools) return !!segment.clamped
   // 仅当后面已经出现工具调用，才把这段改成过程灰字；流式尾段保持终稿字体
   return lastToolIndex.value > index
+}
+
+/** 进行中且这组后面还没有正文/新工具：标题走亮光滑动 */
+function isToolRunBusy (index) {
+  if (!props.message.isStreaming) return false
+  const segs = displaySegments.value
+  for (let i = index + 1; i < segs.length; i++) {
+    const type = segs[i] && segs[i].type
+    if (type === 'text' || type === 'toolCall' || type === 'toolRun') return false
+  }
+  return true
 }
 
 function segmentKey (segment, index) {
