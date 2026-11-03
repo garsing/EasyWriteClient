@@ -426,6 +426,32 @@ namespace WordDocumentRoundtripTest
                 return planRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (caseFilter.StartsWith("wt-st-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "wt-st", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 表格盖戳与定位短套（wt-st）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                int wordBeforeSt = OfficeAlive.Count("WINWORD");
+                int wpsBeforeSt = OfficeAlive.Count("wps");
+                bool wordWinBeforeSt = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforeSt = OfficeAlive.HasWindow("wps");
+                var stRun = new TestRun();
+                WtStCases.Run(
+                    stRun, host, wordBeforeSt, wpsBeforeSt, wordWinBeforeSt, wpsWinBeforeSt);
+                Console.WriteLine("正式用例 通过 " + stRun.CasesPassed
+                    + "  失败 " + stRun.CasesFailed
+                    + "  跳过 " + stRun.CasesSkipped
+                    + "  （目标 " + WtStCases.Target + "）");
+                return stRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("wt-id-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wt-id", StringComparison.OrdinalIgnoreCase))
             {
