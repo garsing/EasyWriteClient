@@ -386,7 +386,18 @@ function formatSub (att) {
 }
 
 .user-message > :deep(.message-copy-bar) {
-  margin-top: 2px;
+  height: 16px;
+  margin-top: -4px;
+}
+
+.user-message > :deep(.copy-btn) {
+  width: 16px;
+  height: 16px;
+}
+
+.user-message > :deep(.copy-icon) {
+  width: 13px;
+  height: 13px;
 }
 
 .message-shell {
