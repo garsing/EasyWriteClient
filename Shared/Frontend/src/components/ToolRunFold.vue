@@ -5,12 +5,12 @@
       :class="{ 'tool-run-header--busy': busy }"
       @click="toggleExpand"
     >
+      <span class="tool-run-title">{{ title }}</span>
       <span
         class="chevron"
         :class="isExpanded ? 'chevron-down' : 'chevron-right'"
         aria-hidden="true"
       />
-      <span class="tool-run-title">{{ title }}</span>
     </div>
     <div v-if="isExpanded" class="tool-run-body">
       <template v-for="(segment, index) in segments" :key="childKey(segment, index)">
@@ -101,47 +101,39 @@ function childKey (segment, index) {
   cursor: pointer;
   user-select: none;
   background-color: transparent;
-  position: relative;
-  overflow: hidden;
 }
 
-.tool-run-header--busy::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 42%;
-  pointer-events: none;
-  background: linear-gradient(
+.tool-run-header--busy .tool-run-title {
+  color: transparent;
+  background-image: linear-gradient(
     90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.15) 35%,
-    rgba(255, 255, 255, 0.75) 50%,
-    rgba(255, 255, 255, 0.15) 65%,
-    transparent 100%
+    #9a9a9a 0%,
+    #9a9a9a 36%,
+    #222 50%,
+    #9a9a9a 64%,
+    #9a9a9a 100%
   );
-  animation: tool-run-shine 1.7s ease-in-out infinite;
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: tool-run-shine 3.4s linear infinite;
 }
 
 @keyframes tool-run-shine {
   0% {
-    transform: translateX(-130%);
+    background-position: 100% 0;
   }
   100% {
-    transform: translateX(280%);
+    background-position: -120% 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tool-run-header--busy::after {
+  .tool-run-header--busy .tool-run-title {
+    color: #666;
+    background-image: none;
     animation: none;
-    display: none;
   }
-}
-
-.tool-run-header:hover {
-  background-color: rgba(0, 0, 0, 0.03);
 }
 
 .chevron {
@@ -152,6 +144,11 @@ function childKey (segment, index) {
   border-right: 1.5px solid #999;
   border-bottom: 1.5px solid #999;
   display: inline-block;
+  opacity: 0;
+}
+
+.tool-run-header:hover .chevron {
+  opacity: 1;
 }
 
 .chevron-right {
@@ -163,7 +160,7 @@ function childKey (segment, index) {
 }
 
 .tool-run-title {
-  flex: 1;
+  flex: 0 1 auto;
   font-size: 13px;
   font-weight: 500;
   color: #666;

@@ -58,8 +58,8 @@
           <div class="bubble-scroll-thumb" :style="thumbStyle" />
         </div>
       </div>
-      <MessageCopyBar :text="displayContent" align="right" />
     </div>
+    <MessageCopyBar v-if="displayContent" :text="displayContent" align="right" />
     <ImageLightbox
       v-if="preview"
       :src="preview.src"
@@ -385,19 +385,8 @@ function formatSub (att) {
   min-width: 0;
 }
 
-/* 复制条默认透明，不能占高度，否则气泡和下面的折叠之间会空出一条 */
-.user-text-wrap :deep(.message-copy-bar) {
-  position: absolute;
-  right: 0;
-  top: calc(100% - 1px);
-  margin-top: 0;
-  z-index: 1;
-}
-
-.user-text-wrap:hover :deep(.message-copy-bar),
-.user-text-wrap:focus-within :deep(.message-copy-bar) {
-  opacity: 1;
-  pointer-events: auto;
+.user-message > :deep(.message-copy-bar) {
+  margin-top: 2px;
 }
 
 .message-shell {

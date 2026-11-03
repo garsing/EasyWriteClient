@@ -76,11 +76,10 @@ onUnmounted(() => {
 .message-copy-bar {
   display: flex;
   align-items: center;
+  width: 100%;
+  box-sizing: border-box;
   height: 22px;
   margin-top: 2px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
 }
 
 .message-copy-bar.is-left {
@@ -103,6 +102,13 @@ onUnmounted(() => {
   background: transparent;
   color: #5f5f5f;
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.message-copy-bar:hover .copy-btn,
+.message-copy-bar:focus-within .copy-btn {
+  opacity: 1;
 }
 
 .copy-btn:hover {

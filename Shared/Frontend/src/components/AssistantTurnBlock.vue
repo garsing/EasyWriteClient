@@ -1,14 +1,18 @@
 <template>
   <div class="assistant-turn">
     <template v-if="!archived">
-      <div class="assistant-reply-wrap">
+      <SystemMessageBubble
+        v-if="liveWorkMessage"
+        :key="`live-work-${messages[0]?.id}`"
+        :message="liveWorkMessage"
+        group-tools
+      />
+      <div v-if="liveFinalMessage" class="assistant-reply-wrap">
         <SystemMessageBubble
-          v-if="liveMessage"
-          :key="`live-${messages[0]?.id}`"
-          :message="liveMessage"
-          group-tools
+          :key="`live-final-${messages[0]?.id}`"
+          :message="liveFinalMessage"
         />
-        <MessageCopyBar :text="copyText" align="left" />
+        <MessageCopyBar :text="finalCopyText" align="left" />
       </div>
     </template>
     <div v-else class="system-message">
@@ -152,16 +156,31 @@ function markClamp (message) {
   return kept
 }
 
-const liveMessage = computed(() => {
-  if (!props.messages.length) return null
-  const segments = []
-  for (const m of props.messages) segments.push(...markClamp(m))
+const streaming = computed(() => {
   const last = props.messages[props.messages.length - 1]
+  return !!last?.isStreaming
+})
+
+const liveWorkMessage = computed(() => {
+  if (!split.value.work.length) return null
   return {
-    id: `live-${props.messages[0]?.id}`,
+    id: `live-work-${props.messages[0]?.id}`,
     role: 'system',
-    segments,
-    isStreaming: !!last?.isStreaming
+    segments: markClamp({
+      segments: split.value.work,
+      isStreaming: streaming.value && !split.value.final
+    }),
+    isStreaming: streaming.value && !split.value.final
+  }
+})
+
+const liveFinalMessage = computed(() => {
+  if (!split.value.final) return null
+  return {
+    id: `live-final-${props.messages[0]?.id}`,
+    role: 'system',
+    segments: [{ ...split.value.final, clamped: false }],
+    isStreaming: streaming.value
   }
 })
 
@@ -177,12 +196,6 @@ const finalCopyText = computed(() => {
 <style scoped>
 .assistant-turn > .assistant-reply-wrap :deep(.message-copy-bar) {
   padding: 0 14px;
-}
-
-.assistant-reply-wrap:hover :deep(.message-copy-bar),
-.assistant-reply-wrap:focus-within :deep(.message-copy-bar) {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 .assistant-turn :deep(.system-message + .system-message .message-content) {
