@@ -104,9 +104,8 @@ const lastToolIndex = computed(() => {
 function isClampedText (segment, index) {
   if (props.forceProcess) return true
   if (props.groupTools) return !!segment.clamped
-  if (lastToolIndex.value > index) return true
-  // 流式中还不能确认自然结束，尾段也先限高；整轮结束后再展开
-  return !!props.message.isStreaming
+  // 仅当后面已经出现工具调用，才把这段改成过程灰字；流式尾段保持终稿字体
+  return lastToolIndex.value > index
 }
 
 function segmentKey (segment, index) {

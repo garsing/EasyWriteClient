@@ -145,9 +145,9 @@ function markClamp (message) {
   kept.forEach((s, i) => {
     if (s.type === 'toolCall') lastTool = i
   })
-  const streaming = !!message.isStreaming
+  // 无工具信号：尾段正文按终稿字体流。出现 toolCall 后，它前面的正文才改成过程灰字。
   kept.forEach((s, i) => {
-    if (s.type === 'text') s.clamped = lastTool > i || streaming
+    if (s.type === 'text') s.clamped = lastTool > i
   })
   return kept
 }
