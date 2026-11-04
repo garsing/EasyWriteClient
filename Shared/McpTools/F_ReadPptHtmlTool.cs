@@ -247,17 +247,21 @@ namespace WordAddIn1
                     if (exportResolved != null)
                     {
                         List<string> exportedRels = null;
-                        const string assetsFolder = "ppt_images";
-                        string assetsLocalDir = Path.Combine(
-                            WorkspacePathResolver.GetSessionDirectory(),
-                            assetsFolder);
-
+                        string assetsLocalDir = null;
                         if (!hostResult.IsSkeleton)
                         {
+                            if (!CurrDocsImagePaths.TryEnsurePptDirectory(
+                                    channel.TryGetDisplayNameSafe(),
+                                    out assetsLocalDir,
+                                    out string dirError))
+                            {
+                                return new ToolResult { Success = false, Error = dirError };
+                            }
+
                             if (!PresentationHostAdapter.TryExportPptHtmlPictures(
                                     channel,
                                     hostResult,
-                                    assetsFolder,
+                                    CurrDocsImagePaths.PptSuffix,
                                     assetsLocalDir,
                                     out exportedRels,
                                     out ToolResult exportPicError))
@@ -290,6 +294,20 @@ namespace WordAddIn1
                                     continue;
                                 }
 
+                                if (Path.IsPathRooted(rel))
+                                {
+                                    if (!File.Exists(rel))
+                                    {
+                                        return new ToolResult
+                                        {
+                                            Success = false,
+                                            Error = "导出图片本地文件缺失: " + rel
+                                        };
+                                    }
+
+                                    continue;
+                                }
+
                                 if (!FilePathResolver.TryResolve(rel, out ResolvedFilePath picResolved, out string picError)
                                     || !File.Exists(picResolved.LocalPath))
                                 {
@@ -314,7 +332,7 @@ namespace WordAddIn1
                             }
 
                             data["exported_images"] = exportedRels;
-                            data["assets_folder"] = assetsFolder;
+                            data["assets_folder"] = Path.GetFileName(assetsLocalDir ?? "");
                             data["assets_local_dir"] = assetsLocalDir;
                         }
 

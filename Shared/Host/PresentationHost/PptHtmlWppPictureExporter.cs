@@ -101,11 +101,12 @@ namespace WordAddIn1.PresentationHost
                     return false;
                 }
 
-                node.DataSrc = "workspace:" + relative;
+                string absolute = PptHtmlImageFileNaming.ToAbsoluteSrc(assetsLocalDir, relative);
+                node.DataSrc = absolute;
                 node.Editable = true;
-                if (!exportedRelativePaths.Contains(relative))
+                if (!exportedRelativePaths.Contains(absolute))
                 {
-                    exportedRelativePaths.Add(relative);
+                    exportedRelativePaths.Add(absolute);
                 }
             }
 

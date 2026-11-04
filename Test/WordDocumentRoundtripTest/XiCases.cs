@@ -133,7 +133,7 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "xi-lite-nofile",
                     !File.Exists(Path.Combine(curr, stem + ".docx"))
                         && !File.Exists(Path.Combine(curr, stem + "_copy.docx"))
-                        && !Directory.Exists(Path.Combine(curr, stem)),
+                        && !Directory.Exists(WordImageDir(curr, stem)),
                     "简单版读文后 curr_docs 出现了 " + stem);
 
                 string fullBefore;
@@ -156,7 +156,7 @@ namespace WordDocumentRoundtripTest
                         && !string.IsNullOrEmpty(display)
                         && !HasImageList(ext),
                     ext.Success ? "回包缺抽取成功或带了图片清单。message=" + WdSession.Str(ext, "message") : (ext.Error ?? ""));
-                string expectedPrefix = (curr + "\\" + stem + "\\image_1.").Replace('\\', '/');
+                string expectedPrefix = (WordImageDir(curr, stem) + "\\image_1.").Replace('\\', '/');
                 bool srcOk = ext.Success
                     && src.IndexOf(":/", StringComparison.Ordinal) >= 0
                     && src.IndexOf('\\') < 0
@@ -165,7 +165,7 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "xi-ok-src", srcOk, ext.Success ? "src=" + src + " 期望前缀 " + expectedPrefix : (ext.Error ?? ""));
                 Ok(run, "xi-ok-files",
                     ext.Success && PairExists(curr, stem) && !HashDir(curr, stem),
-                    "副本或 image 目录不在 " + Path.Combine(curr, stem));
+                    "副本或 image 目录不在 " + WordImageDir(curr, stem));
                 Ok(run, "xi-ok-fullname",
                     sawState && sawAfter && SamePath(fullBefore, fullAfter),
                     "抽前 " + fullBefore + " 抽后 " + fullAfter);
@@ -200,7 +200,7 @@ namespace WordDocumentRoundtripTest
                         && FirstSrc(againText).IndexOf("lightweight/placeholder_", StringComparison.Ordinal) >= 0,
                     "第二次读文 src=" + FirstSrc(againText));
 
-                string imageDir = Path.Combine(curr, stem);
+                string imageDir = WordImageDir(curr, stem);
                 Directory.CreateDirectory(imageDir);
                 string leftover = Path.Combine(imageDir, "image_99.png");
                 File.WriteAllBytes(leftover, new byte[] { 1, 2, 3 });
@@ -289,7 +289,7 @@ namespace WordDocumentRoundtripTest
                         && !string.IsNullOrEmpty(WdSession.Str(ext, "document_content")),
                     ext.Error ?? "空白稿没有抽取成功");
                 Ok(run, "xi-none-files",
-                    PairExists(curr, stem) && !HasImage1(Path.Combine(curr, stem)),
+                    PairExists(curr, stem) && !HasImage1(WordImageDir(curr, stem)),
                     "空白稿副本缺失，或写出了 image_N");
             }
             finally
@@ -362,7 +362,7 @@ namespace WordDocumentRoundtripTest
                 ToolResult ext = Extract(id, "s");
                 string display = WdSession.Str(ext, "document_content");
                 List<string> srcs = AllSrcs(display);
-                string imageDir = Path.Combine(curr, stem);
+                string imageDir = WordImageDir(curr, stem);
                 string docx = Path.Combine(curr, stem + ".docx");
                 string copy = Path.Combine(curr, stem + "_copy.docx");
                 string fullAfter;
@@ -379,8 +379,8 @@ namespace WordDocumentRoundtripTest
                     "src 数=" + srcs.Count);
                 Ok(run, "xi-c-two-abs",
                     srcs.Count >= 2
-                        && srcs[0].IndexOf("/" + stem + "/image_1.", StringComparison.OrdinalIgnoreCase) >= 0
-                        && srcs[1].IndexOf("/" + stem + "/image_2.", StringComparison.OrdinalIgnoreCase) >= 0
+                        && srcs[0].IndexOf("/" + stem + "_word/image_1.", StringComparison.OrdinalIgnoreCase) >= 0
+                        && srcs[1].IndexOf("/" + stem + "_word/image_2.", StringComparison.OrdinalIgnoreCase) >= 0
                         && File.Exists(srcs[0].Replace('/', '\\'))
                         && File.Exists(srcs[1].Replace('/', '\\')),
                     string.Join(" , ", srcs.ToArray()));
@@ -722,9 +722,14 @@ namespace WordDocumentRoundtripTest
                 && new FileInfo(Path.Combine(curr, stem + "_copy.docx")).Length > 0;
         }
 
+        private static string WordImageDir(string curr, string stem)
+        {
+            return Path.Combine(curr, stem + "_word");
+        }
+
         private static bool HashDir(string curr, string stem)
         {
-            string dir = Path.Combine(curr, stem);
+            string dir = WordImageDir(curr, stem);
             if (!Directory.Exists(dir))
             {
                 return true;

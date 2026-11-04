@@ -75,6 +75,13 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
+        public static string ToAbsoluteSrc(string assetsLocalDir, string relativePath)
+        {
+            string file = Path.GetFileName(relativePath ?? "");
+            string full = Path.GetFullPath(Path.Combine(assetsLocalDir ?? "", file));
+            return full.Replace('\\', '/');
+        }
+
         public static string ComputeSha256HexPrefix(string filePath, int prefixLen)
         {
             using (var stream = File.OpenRead(filePath))

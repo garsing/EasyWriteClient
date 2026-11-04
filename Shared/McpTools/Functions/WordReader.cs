@@ -2242,7 +2242,7 @@ namespace WordAddIn1
                 stem = "文档";
             }
 
-            return Path.Combine(dir ?? "", stem);
+            return Path.Combine(dir ?? "", stem + "_word");
         }
 
         private static void ResetImageDirectory(string imageSaveDir)
