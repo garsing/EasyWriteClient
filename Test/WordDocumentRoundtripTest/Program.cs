@@ -21,6 +21,12 @@ namespace WordDocumentRoundtripTest
                 return RunXiDesktop(args);
             }
 
+            if (caseFilter.StartsWith("xie-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "xie", StringComparison.OrdinalIgnoreCase))
+            {
+                return RunXie(args, caseFilter);
+            }
+
             if (caseFilter.StartsWith("px-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "px", StringComparison.OrdinalIgnoreCase))
             {
@@ -1065,6 +1071,31 @@ namespace WordDocumentRoundtripTest
             }
 
             return 30;
+        }
+
+        private static int RunXie(string[] args, string caseFilter)
+        {
+            string host = OfficeCkptSession.NormalizeExcelHost(GetArg(args, "--host="));
+            Console.WriteLine("表格 图片导出（xie-）");
+            Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+            Console.WriteLine(host == "et" ? "宿主 WPS 表格" : "宿主 Excel");
+            if (!DesktopLauncher.EnsureAvailable())
+            {
+                Console.WriteLine("连不上易写 Desktop。");
+                return 1;
+            }
+
+            var xieRun = new TestRun { TotalTarget = XieCases.Target };
+            var xieSw = Stopwatch.StartNew();
+            XieCases.IdFilter = caseFilter;
+            XieCases.Run(xieRun, host);
+            xieSw.Stop();
+            Console.WriteLine("正式用例 通过 " + xieRun.CasesPassed
+                + "  失败 " + xieRun.CasesFailed
+                + "  跳过 " + xieRun.CasesSkipped
+                + "  （目标 " + xieRun.TotalTarget + "）");
+            Console.WriteLine("ELAPSED_SEC=" + xieSw.Elapsed.TotalSeconds.ToString("F1"));
+            return xieRun.CasesFailed == 0 ? 0 : 1;
         }
 
         private static int RunPx(string[] args, string caseFilter)
