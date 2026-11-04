@@ -154,6 +154,23 @@
     return false;
   }
 
+  function inDismissableDialog(el) {
+    var sel = '[role="dialog"],[aria-modal="true"],.layui-layer,.el-dialog,.ant-modal,.modal-dialog,.ivu-modal';
+    var n = el;
+    while (n) {
+      try {
+        if (n.closest && n.closest(sel)) return true;
+      } catch (eDlg) {}
+      var root = n.getRootNode && n.getRootNode();
+      if (root && root.host) {
+        n = root.host;
+        continue;
+      }
+      break;
+    }
+    return false;
+  }
+
   function isTemporalInput(el) {
     if (!el || (el.tagName || "").toUpperCase() !== "INPUT") return false;
     return /^(date|time|datetime-local|month|week)$/i.test(String(el.type || ""));
@@ -1042,10 +1059,12 @@
       try { typeTarget.click(); } catch (e16) {}
       if (tag === "input" || tag === "textarea") {
         var filled = fillTextControl(typeTarget, text);
-        try {
-          typeTarget.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-          typeTarget.dispatchEvent(new KeyboardEvent("keyup", { key: "Escape", bubbles: true }));
-        } catch (e17) {}
+        if (!inDismissableDialog(typeTarget)) {
+          try {
+            typeTarget.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+            typeTarget.dispatchEvent(new KeyboardEvent("keyup", { key: "Escape", bubbles: true }));
+          } catch (e17) {}
+        }
         return { ok: true, message: "typed value=" + JSON.stringify(filled.value), url: document.location.href, title: document.title };
       }
       if (typeTarget.isContentEditable) {

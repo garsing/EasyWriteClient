@@ -387,6 +387,24 @@
     return false;
   }
 
+  // 这些层把 Esc 当成关闭。框在层里时不要自动按 Esc。
+  function inDismissableDialog(el) {
+    const sel = '[role="dialog"],[aria-modal="true"],.layui-layer,.el-dialog,.ant-modal,.modal-dialog,.ivu-modal';
+    let n = el;
+    while (n) {
+      try {
+        if (n.closest && n.closest(sel)) return true;
+      } catch (_) {}
+      const root = n.getRootNode && n.getRootNode();
+      if (root && root.host) {
+        n = root.host;
+        continue;
+      }
+      break;
+    }
+    return false;
+  }
+
   function findMainHtmlModal() {
     function wipe() {
       const old = document.querySelectorAll("[data-yiwrite-modal-root]");
@@ -2284,9 +2302,11 @@
         if (!filled.ok) {
           throw new Error(filled.error || "输入未生效");
         }
-        // Esc 收联想，避免挡「百度一下」
-        typeTarget.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-        typeTarget.dispatchEvent(new KeyboardEvent("keyup", { key: "Escape", bubbles: true }));
+        // 页面上的联想用 Esc 收起。弹层里不按，否则修改框会被关掉。
+        if (!inDismissableDialog(typeTarget)) {
+          typeTarget.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+          typeTarget.dispatchEvent(new KeyboardEvent("keyup", { key: "Escape", bubbles: true }));
+        }
         return {
           ok: true,
           message: "typed value=" + JSON.stringify(filled.value),
