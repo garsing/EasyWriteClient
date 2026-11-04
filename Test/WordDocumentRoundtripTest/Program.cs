@@ -21,6 +21,12 @@ namespace WordDocumentRoundtripTest
                 return RunXiDesktop(args);
             }
 
+            if (caseFilter.StartsWith("px-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "px", StringComparison.OrdinalIgnoreCase))
+            {
+                return RunPx(args, caseFilter);
+            }
+
             if (caseFilter.StartsWith("xlk-", StringComparison.OrdinalIgnoreCase)
                 || caseFilter.StartsWith("pk-", StringComparison.OrdinalIgnoreCase))
             {
@@ -1059,6 +1065,35 @@ namespace WordDocumentRoundtripTest
             }
 
             return 30;
+        }
+
+        private static int RunPx(string[] args, string caseFilter)
+        {
+            string hostArg = GetArg(args, "--host=");
+            string app = string.Equals(hostArg, "wpp", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(hostArg, "wps", StringComparison.OrdinalIgnoreCase)
+                ? "wpp"
+                : "ppt";
+            Console.WriteLine("演示 读页图片落盘（px-）");
+            Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+            Console.WriteLine(app == "wpp" ? "宿主 WPP" : "宿主 PPT");
+            if (!DesktopLauncher.EnsureAvailable())
+            {
+                Console.WriteLine("连不上易写 Desktop。");
+                return 1;
+            }
+
+            var pxRun = new TestRun { TotalTarget = PxCases.Target };
+            var pxSw = Stopwatch.StartNew();
+            PxCases.IdFilter = caseFilter;
+            PxCases.Run(pxRun, app);
+            pxSw.Stop();
+            Console.WriteLine("正式用例 通过 " + pxRun.CasesPassed
+                + "  失败 " + pxRun.CasesFailed
+                + "  跳过 " + pxRun.CasesSkipped
+                + "  （目标 " + pxRun.TotalTarget + "）");
+            Console.WriteLine("ELAPSED_SEC=" + pxSw.Elapsed.TotalSeconds.ToString("F1"));
+            return pxRun.CasesFailed == 0 ? 0 : 1;
         }
 
         private static string GetHost(string[] args)
