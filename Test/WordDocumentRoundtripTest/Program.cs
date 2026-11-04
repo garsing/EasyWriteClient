@@ -329,6 +329,31 @@ namespace WordDocumentRoundtripTest
                 return anRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if ((caseFilter.StartsWith("xi-", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(caseFilter, "xi", StringComparison.OrdinalIgnoreCase))
+                && !caseFilter.StartsWith("xid-", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 抽图副本与抽取图片（xi-）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                var xiRun = new TestRun { TotalTarget = XiCases.Target };
+                var xiSw = Stopwatch.StartNew();
+                XiCases.Run(xiRun, host);
+                xiSw.Stop();
+                Console.WriteLine("正式用例 通过 " + xiRun.CasesPassed
+                    + "  失败 " + xiRun.CasesFailed
+                    + "  跳过 " + xiRun.CasesSkipped
+                    + "  （目标 " + XiCases.Target + "）");
+                Console.WriteLine("ELAPSED_SEC=" + xiSw.Elapsed.TotalSeconds.ToString("F1"));
+                return xiRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("wy-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wy", StringComparison.OrdinalIgnoreCase))
             {

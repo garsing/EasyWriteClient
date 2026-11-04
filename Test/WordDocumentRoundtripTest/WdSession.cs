@@ -364,6 +364,29 @@ namespace WordDocumentRoundtripTest
                 });
         }
 
+        public bool TryReadOpenState(string fullPath, out string fullName, out bool saved)
+        {
+            string name = null;
+            bool savedFlag = true;
+            bool ok = IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    name = Convert.ToString(GetProp(doc, "FullName"));
+                    object flag = GetProp(doc, "Saved");
+                    savedFlag = flag is bool b ? b : Convert.ToBoolean(flag);
+                    return !string.IsNullOrEmpty(name);
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    name = doc.FullName;
+                    savedFlag = doc.Saved;
+                    return !string.IsNullOrEmpty(name);
+                });
+            fullName = name;
+            saved = savedFlag;
+            return ok;
+        }
+
         public ToolResult InsertPageBreakTool(string channelId, Dictionary<string, object> target)
         {
             var args = new Dictionary<string, object>();

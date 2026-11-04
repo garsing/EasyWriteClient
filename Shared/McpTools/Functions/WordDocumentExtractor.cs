@@ -2321,6 +2321,7 @@ namespace WordAddIn1
             }
 
             string before = ReadDocumentFullName(document);
+            bool savedBefore = ReadDocumentSaved(document);
             IPersistFile persistFile = GetPersistFile(document);
             if (persistFile == null)
             {
@@ -2334,7 +2335,35 @@ namespace WordAddIn1
                 throw new InvalidOperationException("抽取图片时活动文档路径被改变");
             }
 
+            // WPS 的 IPersistFile.Save 会把 Saved 标成 true，但原文件修改时间不变。写回抽前状态。
+            RestoreDocumentSaved(document, savedBefore);
             return File.Exists(fullPath) && new FileInfo(fullPath).Length > 0;
+        }
+
+        private static bool ReadDocumentSaved(Word.Document document)
+        {
+            try
+            {
+                return document == null || document.Saved;
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+        }
+
+        private static void RestoreDocumentSaved(Word.Document document, bool saved)
+        {
+            try
+            {
+                if (document != null && document.Saved != saved)
+                {
+                    document.Saved = saved;
+                }
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private static string ReadDocumentFullName(Word.Document document)
