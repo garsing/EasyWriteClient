@@ -28,6 +28,7 @@ namespace WordAddIn1
         private static string _readDocPath;
         private static string _readImageSaveDir;
         private static string _readFileHash;
+        private static int _readImageSerial;
         private static ZipArchive _readZip;
         private static Dictionary<string, string> _readRelsDict;
 
@@ -187,16 +188,27 @@ namespace WordAddIn1
 
                 if (extractImages)
                 {
-                    pathForImages = string.IsNullOrEmpty(docPath) ? document.FullName : docPath;
+                    if (string.IsNullOrEmpty(docPath))
+                    {
+                        throw new Exception("抽图缺少文档副本路径");
+                    }
+
+                    pathForImages = docPath;
                     string docUuid = DocumentState.CurrDocUuid;
 
                     EasyWriteDiagnostics.LogDocumentExtractVerbose($"[WordReader] 文档路径: {pathForImages}");
                     EasyWriteDiagnostics.LogDocumentExtractVerbose($"[WordReader] 文档UUID: {docUuid}");
 
                     fileHash = CalculateFileHash(pathForImages);
+                    if (string.IsNullOrEmpty(fileHash))
+                    {
+                        fileHash = "extract";
+                    }
+
                     EasyWriteDiagnostics.LogDocumentExtractVerbose($"[WordReader] 文件hash: {fileHash}");
 
-                    imageSaveDir = GetImageSaveDirectory(pathForImages, fileHash);
+                    imageSaveDir = ImageDirectoryForCopy(pathForImages);
+                    ResetImageDirectory(imageSaveDir);
                     EasyWriteDiagnostics.LogDocumentExtractVerbose($"[WordReader] 图片保存目录: {imageSaveDir}");
                 }
                 else
@@ -1062,6 +1074,7 @@ namespace WordAddIn1
             _readDocPath = docPath;
             _readImageSaveDir = imageSaveDir;
             _readFileHash = fileHash;
+            _readImageSerial = 0;
             _readZip = null;
             _readRelsDict = null;
         }
@@ -1075,6 +1088,7 @@ namespace WordAddIn1
             _readDocPath = null;
             _readImageSaveDir = null;
             _readFileHash = null;
+            _readImageSerial = 0;
         }
 
         private static string FormatImageTag(string imageId, string imagePath)
@@ -1183,20 +1197,14 @@ namespace WordAddIn1
 
             try
             {
-                string counterKey = _readFileHash.Length >= 10 ? _readFileHash.Substring(0, 10) : _readFileHash;
-                if (!_imageCounters.ContainsKey(counterKey))
-                {
-                    _imageCounters[counterKey] = 0;
-                }
-
                 string ext = Path.GetExtension(imagePathInZip);
                 if (string.IsNullOrEmpty(ext))
                 {
                     ext = ".png";
                 }
 
-                _imageCounters[counterKey]++;
-                string imageFilename = $"image_{_imageCounters[counterKey]}{ext}";
+                _readImageSerial++;
+                string imageFilename = $"image_{_readImageSerial}{ext}";
                 string imageSavePath = Path.Combine(_readImageSaveDir, imageFilename);
                 using (var sourceStream = imageEntry.Open())
                 using (var targetStream = File.Create(imageSavePath))
@@ -1204,8 +1212,7 @@ namespace WordAddIn1
                     sourceStream.CopyTo(targetStream);
                 }
 
-                string hashDirName = Path.GetFileName(_readImageSaveDir);
-                return $"{hashDirName}/{imageFilename}".Replace("\\", "/");
+                return Path.GetFullPath(imageSavePath).Replace('\\', '/');
             }
             catch (Exception ex)
             {
@@ -2219,6 +2226,38 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine($"[WordReader] 计算文件hash失败: {ex.Message}");
                 return null;
             }
+        }
+
+        private static string ImageDirectoryForCopy(string copyPath)
+        {
+            string dir = Path.GetDirectoryName(copyPath);
+            string stem = Path.GetFileNameWithoutExtension(copyPath) ?? "";
+            if (stem.EndsWith("_copy", StringComparison.OrdinalIgnoreCase))
+            {
+                stem = stem.Substring(0, stem.Length - "_copy".Length);
+            }
+
+            if (string.IsNullOrWhiteSpace(stem))
+            {
+                stem = "文档";
+            }
+
+            return Path.Combine(dir ?? "", stem);
+        }
+
+        private static void ResetImageDirectory(string imageSaveDir)
+        {
+            if (string.IsNullOrEmpty(imageSaveDir))
+            {
+                return;
+            }
+
+            if (Directory.Exists(imageSaveDir))
+            {
+                Directory.Delete(imageSaveDir, true);
+            }
+
+            Directory.CreateDirectory(imageSaveDir);
         }
 
         /// <summary>

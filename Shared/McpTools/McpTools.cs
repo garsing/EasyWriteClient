@@ -48,6 +48,7 @@ namespace WordAddIn1
             F_ModifyYamlFileTool.Register(toolRegistry, wordApplication);
             F_CsvToXmlTool.Register(toolRegistry, wordApplication);
             F_GetDocumentContentTool.Register(toolRegistry, wordApplication);
+            F_ExtractDocumentImagesTool.Register(toolRegistry, wordApplication);
             F_GetWorkbookContentTool.Register(toolRegistry, wordApplication);
             F_GetPresentationContentTool.Register(toolRegistry, wordApplication);
             F_ReadPptHtmlTool.Register(toolRegistry, wordApplication);

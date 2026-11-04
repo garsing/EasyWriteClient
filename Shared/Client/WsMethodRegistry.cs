@@ -44,6 +44,7 @@ namespace WordAddIn1
             _methodToToolName = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 { "document.getContent", "F_get_document_content" },
+                { "document.extractImages", "F_extract_document_images" },
                 { "document.open", "F_open_document" },
                 { "terminal.run", "F_run_terminal" },
                 { "terminal.close", "F_close_terminal" },

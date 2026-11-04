@@ -42,6 +42,12 @@ namespace WordAddIn1
         public bool ForceRefresh { get; set; } = false;
 
         /// <summary>
+        /// 为 true 时不算正文指纹、不读不写 ProcessDocument 缓存。
+        /// 抽图工具使用。不改变 <see cref="ProcessDocumentCache"/> 的命中规则。
+        /// </summary>
+        public bool SkipProcessCache { get; set; } = false;
+
+        /// <summary>
         /// 为 true 时禁止走后端 API 分块（WPS 本期，见文档操作适配层 I6b）。
         /// 超阈值时 <see cref="WordDocumentExtractor.ProcessDocument"/> 抛 <see cref="System.InvalidOperationException"/>。
         /// </summary>
@@ -67,6 +73,20 @@ namespace WordAddIn1
                 ExtractFormatMode = ExtractFormatMode.None,
                 SnapshotSource = snapshotSource,
                 ExtractImages = false,
+                VerboseDebug = false,
+                BuildDisplayContent = true
+            };
+        }
+
+        /// <summary>抽取文档图片：详细版 PD，不读不写缓存。</summary>
+        public static ProcessDocumentOptions ForExtractDocumentImages(string snapshotSource = "extract_document_images")
+        {
+            return new ProcessDocumentOptions
+            {
+                ExtractFormatMode = ExtractFormatMode.None,
+                SnapshotSource = snapshotSource,
+                ExtractImages = true,
+                SkipProcessCache = true,
                 VerboseDebug = false,
                 BuildDisplayContent = true
             };

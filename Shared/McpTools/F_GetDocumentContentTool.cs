@@ -113,7 +113,7 @@ namespace WordAddIn1
             };
         }
 
-        private static bool TryParseCodeLevel(
+        internal static bool TryParseCodeLevel(
             Dictionary<string, object> args,
             out string codeLevel,
             out string error)
@@ -181,7 +181,7 @@ namespace WordAddIn1
             return text;
         }
 
-        private static string BuildDocumentContent(WordDocumentExtractor.ProcessingResult processingResult, bool isParagraph)
+        internal static string BuildDocumentContent(WordDocumentExtractor.ProcessingResult processingResult, bool isParagraph)
         {
             if (processingResult.ProcessingMethod == "Local")
             {
@@ -245,7 +245,7 @@ namespace WordAddIn1
             return "";
         }
 
-        private static string BuildNote(string processingMethod, bool isParagraph)
+        internal static string BuildNote(string processingMethod, bool isParagraph)
         {
             if (processingMethod == "API")
             {
@@ -278,7 +278,7 @@ namespace WordAddIn1
                 + " 表内末句在 [S_…-start] 后带 [in_table=T_xxx]（旁标，不是编码、不是入参）。要插在表后请用 target.table，不要锚该句；要接在该句后仍用 codes。";
         }
 
-        private static string BuildDuplicateSentenceCodeNote()
+        internal static string BuildDuplicateSentenceCodeNote()
         {
             string snapshot = DocumentState.Snapshot;
             if (string.IsNullOrEmpty(snapshot))
@@ -314,7 +314,7 @@ namespace WordAddIn1
                 + "。使用 F_process_document_actions 定位时，须在 original/deletion/pre/post 的 codes 中写入 suggested_locator_codes（见 document-format §3.3）；禁止 index。";
         }
 
-        private static string BuildDuplicateParagraphCodeNote()
+        internal static string BuildDuplicateParagraphCodeNote()
         {
             var codes = ParagraphCodeAmbiguityHelper.GetOrderedParagraphCodesFromDisplay();
             if (codes == null || codes.Count == 0)

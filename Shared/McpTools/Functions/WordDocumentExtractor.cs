@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -858,9 +860,11 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine($"[第一步] 当前文档UUID: {docUuid}");
             }
 
+            BodyFingerprintDetail bodyDetail = null;
+            if (!options.SkipProcessCache)
+            {
             ProcessDocumentCache.EnsureFingerprintVersion();
 
-            BodyFingerprintDetail bodyDetail = null;
             var bodyCheckStopwatch = System.Diagnostics.Stopwatch.StartNew();
             if (options.ForceRefresh)
             {
@@ -914,14 +918,20 @@ namespace WordAddIn1
                     return hitResult;
                 }
             }
+            }
 
-            // 第一步半：ExtractImages 时 SaveAs+_copy 供解压抽图；轻量 API 见字数分支内 SaveDocumentCopy
+            // 第一步半：ExtractImages 时把内存另存为副本供解压抽图，不 Save 原文件、不切换活动文档
             string docCopyPath = null;
             string tempFilePath = null;
             if (options.ExtractImages)
             {
                 swStep.Restart();
-                TrySaveDocumentCopies(document, createSeparateCopy: true, verbose, out docCopyPath, out tempFilePath);
+                if (!TrySaveDocumentCopies(document, createSeparateCopy: true, verbose, out docCopyPath, out tempFilePath)
+                    || string.IsNullOrEmpty(docCopyPath))
+                {
+                    throw new InvalidOperationException("工作区根不可用或文档副本写入失败，无法抽取图片");
+                }
+
                 EasyWriteDiagnostics.LogTiming("saveCopies", swStep.ElapsedMilliseconds);
             }
 
@@ -1037,7 +1047,7 @@ namespace WordAddIn1
                         $"{FormatInheritHelper.DbgPrefix} ProcessDocument 跳过格式抽取（ExtractFormatMode=None）");
                 }
 
-                ProcessDocumentCache.SaveAfterFullRead(docUuid, bodyDetail, result, snapshotSource);
+                SaveProcessCacheIfEnabled(options, docUuid, bodyDetail, result, snapshotSource);
                 return result;
             }
 
@@ -1063,7 +1073,7 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine($"[格式提取] ⚠️ BodyOnly 异常: {ex.Message}");
                 }
 
-                ProcessDocumentCache.SaveAfterFullRead(docUuid, bodyDetail, result, snapshotSource);
+                SaveProcessCacheIfEnabled(options, docUuid, bodyDetail, result, snapshotSource);
                 return result;
             }
 
@@ -1180,7 +1190,7 @@ namespace WordAddIn1
                 // 格式提取失败不影响主流程，继续执行
             }
 
-            ProcessDocumentCache.SaveAfterFullRead(docUuid, bodyDetail, result, snapshotSource);
+            SaveProcessCacheIfEnabled(options, docUuid, bodyDetail, result, snapshotSource);
             return result;
             }
             finally
@@ -2162,9 +2172,23 @@ namespace WordAddIn1
             }
         }
 
+        private static void SaveProcessCacheIfEnabled(
+            ProcessDocumentOptions options,
+            string docUuid,
+            BodyFingerprintDetail bodyDetail,
+            ProcessingResult result,
+            string snapshotSource)
+        {
+            if (options != null && options.SkipProcessCache)
+            {
+                return;
+            }
+
+            ProcessDocumentCache.SaveAfterFullRead(docUuid, bodyDetail, result, snapshotSource);
+        }
+
         /// <summary>
         /// 轻量 API 路径：另存副本供 multipart 上传（不切换活动文档，避免 Word 占用文件）。
-        /// 复用 <see cref="DocumentCheckpointSaveHelper.SaveDocumentCopy"/>。
         /// </summary>
         private static bool TrySaveDocumentCopyForApi(
             Word.Document document,
@@ -2175,42 +2199,11 @@ namespace WordAddIn1
             docCopyPath = null;
             tempFilePath = null;
 
-            try
-            {
-                var userService = UserService.Instance;
-                string userName = userService.IsLoggedIn ? userService.UserName : "anonymous";
-                string baseDir = McpToolsHelpers.GetUserWorkDirectory("curr_docs", userName);
-                if (string.IsNullOrEmpty(baseDir))
-                {
-                    return false;
-                }
-
-                string docName = string.IsNullOrEmpty(document.Name) ? "文档" : Path.GetFileNameWithoutExtension(document.Name);
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string tempFileName = $"{timestamp}_{docName}.docx";
-                tempFilePath = Path.Combine(baseDir, tempFileName);
-
-                DocumentCheckpointSaveHelper.SaveDocumentCopy(document, tempFilePath);
-                docCopyPath = tempFilePath;
-
-                if (verbose)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[API副本] ✅ SaveDocumentCopy: {docCopyPath}");
-                }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[API副本] ⚠️ SaveDocumentCopy 失败: {ex.Message}");
-                docCopyPath = null;
-                tempFilePath = null;
-                return false;
-            }
+            return TrySaveDocumentCopies(document, createSeparateCopy: false, verbose, out docCopyPath, out tempFilePath);
         }
 
         /// <summary>
-        /// SaveAs 文档到用户 curr_docs 目录（ExtractImages 路径：Word 占用 SaveAs 路径，须另建 _copy 供解压/读取）。
+        /// 把活动文档内存另存到工作区根下的 curr_docs。不 Save 原文件，不切换活动文档。
         /// </summary>
         private static bool TrySaveDocumentCopies(
             Word.Document document,
@@ -2224,20 +2217,20 @@ namespace WordAddIn1
 
             try
             {
-                var userService = UserService.Instance;
-                string userName = userService.IsLoggedIn ? userService.UserName : "anonymous";
-                string baseDir = McpToolsHelpers.GetUserWorkDirectory("curr_docs", userName);
+                string baseDir = TryGetCurrDocsDirectory();
                 if (string.IsNullOrEmpty(baseDir))
                 {
                     return false;
                 }
 
-                string docName = string.IsNullOrEmpty(document.Name) ? "文档" : Path.GetFileNameWithoutExtension(document.Name);
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string tempFileName = $"{timestamp}_{docName}.docx";
-                tempFilePath = Path.Combine(baseDir, tempFileName);
+                string safeName = SanitizeDocumentStem(document);
+                tempFilePath = Path.Combine(baseDir, safeName + ".docx");
+                if (!TryPersistFileCopy(document, tempFilePath))
+                {
+                    tempFilePath = null;
+                    return false;
+                }
 
-                document.SaveAs2(tempFilePath, FileFormat: Word.WdSaveFormat.wdFormatDocumentDefault);
                 if (verbose)
                 {
                     System.Diagnostics.Debug.WriteLine($"[第一步半] ✅ 文档副本已保存: {tempFilePath}");
@@ -2245,10 +2238,7 @@ namespace WordAddIn1
 
                 if (createSeparateCopy)
                 {
-                    System.Threading.Thread.Sleep(500);
-
-                    string copyFileName = Path.GetFileNameWithoutExtension(tempFileName) + "_copy.docx";
-                    string copyFilePath = Path.Combine(baseDir, copyFileName);
+                    string copyFilePath = Path.Combine(baseDir, safeName + "_copy.docx");
                     File.Copy(tempFilePath, copyFilePath, overwrite: true);
                     docCopyPath = copyFilePath;
                     if (verbose)
@@ -2265,10 +2255,130 @@ namespace WordAddIn1
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[文档副本] ⚠️ SaveAs 失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[文档副本] ⚠️ 副本写入失败: {ex.Message}");
                 docCopyPath = null;
                 tempFilePath = null;
                 return false;
+            }
+        }
+
+        private static string TryGetCurrDocsDirectory()
+        {
+            string root = UserService.Instance.WorkspaceRootEffective;
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                return null;
+            }
+
+            string baseDir = Path.Combine(root, "curr_docs");
+            Directory.CreateDirectory(baseDir);
+            return baseDir;
+        }
+
+        private static string SanitizeDocumentStem(Word.Document document)
+        {
+            string raw = "文档";
+            try
+            {
+                if (document != null && !string.IsNullOrWhiteSpace(document.Name))
+                {
+                    raw = Path.GetFileNameWithoutExtension(document.Name);
+                }
+            }
+            catch (Exception)
+            {
+                raw = "文档";
+            }
+
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                raw = "文档";
+            }
+
+            foreach (char c in Path.GetInvalidFileNameChars())
+            {
+                raw = raw.Replace(c, '_');
+            }
+
+            return string.IsNullOrWhiteSpace(raw) ? "文档" : raw.Trim();
+        }
+
+        /// <summary>
+        /// IPersistFile.Save(path, false)：从内存写出副本，不把活动文档切到新路径，也不 Save 原文件。
+        /// </summary>
+        private static bool TryPersistFileCopy(Word.Document document, string path)
+        {
+            if (document == null || string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            string fullPath = Path.GetFullPath(path);
+            string dir = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            string before = ReadDocumentFullName(document);
+            IPersistFile persistFile = GetPersistFile(document);
+            if (persistFile == null)
+            {
+                return false;
+            }
+
+            persistFile.Save(fullPath, false);
+            string after = ReadDocumentFullName(document);
+            if (!string.Equals(before ?? "", after ?? "", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("抽取图片时活动文档路径被改变");
+            }
+
+            return File.Exists(fullPath) && new FileInfo(fullPath).Length > 0;
+        }
+
+        private static string ReadDocumentFullName(Word.Document document)
+        {
+            try
+            {
+                return document == null ? "" : (document.FullName ?? "");
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+        }
+
+        private static IPersistFile GetPersistFile(Word.Document document)
+        {
+            if (document == null || !Marshal.IsComObject(document))
+            {
+                return null;
+            }
+
+            try
+            {
+                return (IPersistFile)document;
+            }
+            catch (InvalidCastException)
+            {
+                IntPtr unk = IntPtr.Zero;
+                try
+                {
+                    unk = Marshal.GetIUnknownForObject(document);
+                    return (IPersistFile)Marshal.GetObjectForIUnknown(unk);
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+                finally
+                {
+                    if (unk != IntPtr.Zero)
+                    {
+                        Marshal.Release(unk);
+                    }
+                }
             }
         }
 

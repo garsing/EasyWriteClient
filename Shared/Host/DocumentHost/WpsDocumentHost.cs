@@ -176,5 +176,65 @@ namespace WordAddIn1.DocumentHost
                 DocumentDisplayName = displayName
             };
         }
+
+        public static GetDocumentContentHostResult ExtractDocumentImages(
+            DocumentSessionContext context,
+            string codeLevel)
+        {
+            if (context == null || context.WpsDocument == null)
+            {
+                throw new ArgumentException("WPS 文档上下文无效。");
+            }
+
+            if (!DocumentHostCompat.TryPrepareWpsInteropDocument(
+                    context,
+                    out Word.Document wordDoc,
+                    out string prepareError,
+                    activateDocument: false))
+            {
+                throw new InvalidOperationException(
+                    string.IsNullOrEmpty(prepareError)
+                        ? "unsupported: 当前 WPS 文档无法接入抽取管线；host=wps"
+                        : prepareError);
+            }
+
+            var options = ProcessDocumentOptions.ForExtractDocumentImages();
+            options.DisallowBackendApi = true;
+
+            WordDocumentExtractor.ProcessingResult processingResult;
+            try
+            {
+                processingResult = WordDocumentExtractor.ProcessDocument(wordDoc, options);
+            }
+            catch (InvalidOperationException ex)
+            {
+                if (ex.Message != null
+                    && ex.Message.IndexOf("unsupported", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    throw new InvalidOperationException(
+                        "unsupported: WPS 大文档后端 API 分块本期未接入（后续再处理）；host=wps。详情: "
+                        + ex.Message);
+                }
+
+                throw;
+            }
+
+            string displayName = null;
+            try
+            {
+                displayName = wordDoc.Name;
+            }
+            catch (Exception)
+            {
+                displayName = OpenFiles.WpsCom.TryReadName(context.WpsDocument);
+            }
+
+            return new GetDocumentContentHostResult
+            {
+                Context = context,
+                ProcessingResult = processingResult,
+                DocumentDisplayName = displayName
+            };
+        }
     }
 }

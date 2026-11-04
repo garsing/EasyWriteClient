@@ -270,6 +270,64 @@ namespace WordAddIn1.DocumentHost
             }
         }
 
+        /// <summary>
+        /// F_extract_document_images：详细版抽图。只读，不 Activate 文档窗口。
+        /// </summary>
+        public static bool TryExtractDocumentImages(
+            Dictionary<string, object> args,
+            object wordApplication,
+            string codeLevel,
+            out GetDocumentContentHostResult result,
+            out ToolResult errorResult)
+        {
+            result = null;
+            if (!TryResolveContext(
+                    args,
+                    wordApplication,
+                    out DocumentSessionContext context,
+                    out errorResult,
+                    activateDocument: false))
+            {
+                return false;
+            }
+
+            try
+            {
+                if (context.Kind == ChannelKind.Word)
+                {
+                    result = WordDocumentHost.ExtractDocumentImages(context, codeLevel);
+                    return true;
+                }
+
+                if (context.Kind == ChannelKind.Wps)
+                {
+                    result = WpsDocumentHost.ExtractDocumentImages(context, codeLevel);
+                    return true;
+                }
+
+                errorResult = UnsupportedResult(context.Kind, context.ChannelId, "extract_document_images");
+                return false;
+            }
+            catch (InvalidOperationException ex)
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = ex.Message
+                };
+                return false;
+            }
+            catch (Exception ex)
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = $"抽取文档图片失败: {ex.Message}"
+                };
+                return false;
+            }
+        }
+
         public static bool TryOpen(
             string fullPath,
             string app,

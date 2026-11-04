@@ -246,5 +246,36 @@ namespace WordAddIn1.DocumentHost
                 DocumentDisplayName = displayName
             };
         }
+
+        public static GetDocumentContentHostResult ExtractDocumentImages(
+            DocumentSessionContext context,
+            string codeLevel)
+        {
+            if (context == null || context.WordDocument == null)
+            {
+                throw new ArgumentException("Word 文档上下文无效。");
+            }
+
+            Word.Document document = context.WordDocument;
+            var processingResult = WordDocumentExtractor.ProcessDocument(
+                document,
+                ProcessDocumentOptions.ForExtractDocumentImages());
+
+            string displayName = null;
+            try
+            {
+                displayName = document.Name;
+            }
+            catch (Exception)
+            {
+            }
+
+            return new GetDocumentContentHostResult
+            {
+                Context = context,
+                ProcessingResult = processingResult,
+                DocumentDisplayName = displayName
+            };
+        }
     }
 }
