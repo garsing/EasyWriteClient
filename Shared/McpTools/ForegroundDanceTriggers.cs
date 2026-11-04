@@ -52,6 +52,7 @@ namespace WordAddIn1
             "F_excel_pivot",
             "F_excel_chart",
             "F_excel_image",
+            "F_excel_sort_filter",
             "F_apply_ppt_html",
             "F_manage_ppt_slide",
             "F_manage_ppt_shape",

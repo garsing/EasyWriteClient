@@ -48,6 +48,7 @@ namespace WordAddIn1
             "F_excel_chart",
             "F_manage_excel_sheet",
             "F_excel_image",
+            "F_excel_sort_filter",
         };
 
         public static bool ShouldCheckpoint(string toolName, IReadOnlyDictionary<string, object> parameters)
@@ -72,6 +73,23 @@ namespace WordAddIn1
 
                 action = action.Trim().ToLowerInvariant();
                 return action == "insert" || action == "update" || action == "delete";
+            }
+
+            if (string.Equals(toolName, "F_excel_sort_filter", StringComparison.Ordinal))
+            {
+                string action = null;
+                if (parameters != null && parameters.TryGetValue("action", out object raw) && raw != null)
+                {
+                    action = Convert.ToString(raw);
+                }
+
+                if (string.IsNullOrWhiteSpace(action))
+                {
+                    return false;
+                }
+
+                action = action.Trim().ToLowerInvariant();
+                return action == "add" || action == "update" || action == "clear";
             }
 
             return true;
@@ -176,6 +194,8 @@ namespace WordAddIn1
                     return F_ExcelChartTool.TryGetContractParseFailure(args, out failure);
                 case "F_excel_image":
                     return F_ExcelImageTool.TryGetContractParseFailure(args, out failure);
+                case "F_excel_sort_filter":
+                    return F_ExcelSortFilterTool.TryGetContractParseFailure(args, out failure);
                 case "F_manage_excel_sheet":
                     return F_ManageExcelSheetTool.TryGetContractParseFailure(args, out failure);
                 default:

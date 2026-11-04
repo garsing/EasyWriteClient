@@ -72,6 +72,7 @@ namespace WordAddIn1
                 { "workbook.pivot", "F_excel_pivot" },
                 { "workbook.chart", "F_excel_chart" },
                 { "workbook.image", "F_excel_image" },
+                { "workbook.sortFilter", "F_excel_sort_filter" },
                 { "workspace.renderSvg", "F_render_svg" },
                 { "channel.setDefault", "F_switch_default_channel" },
                 { "document.processActions", "F_process_document_actions" },

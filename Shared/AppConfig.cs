@@ -467,6 +467,7 @@ namespace WordAddIn1
                     "F_excel_pivot",
                     "F_excel_chart",
                     "F_excel_image",
+                    "F_excel_sort_filter",
                     "F_manage_excel_sheet",
                     "F_write_excel_range",
                     "F_restore_document_checkpoint",

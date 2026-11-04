@@ -68,6 +68,7 @@ namespace WordAddIn1
             F_ExcelPivotTool.Register(toolRegistry, wordApplication);
             F_ExcelChartTool.Register(toolRegistry, wordApplication);
             F_ExcelImageTool.Register(toolRegistry, wordApplication);
+            F_ExcelSortFilterTool.Register(toolRegistry, wordApplication);
             F_OpenDocumentTool.Register(toolRegistry, wordApplication);
             F_RunTerminalTool.Register(toolRegistry, wordApplication);
             F_CloseTerminalTool.Register(toolRegistry, wordApplication);

@@ -2064,5 +2064,40 @@ namespace WordAddIn1.SpreadsheetHost
             result.Kind = "excel";
             return true;
         }
+
+        public static bool TrySortFilter(
+            ExcelChannel channel,
+            SpreadsheetSortFilterRequest request,
+            out SpreadsheetSortFilterResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (channel == null || !channel.TryGetLiveWorkbook(out Excel.Workbook book))
+            {
+                error = "渠道对应的工作簿已关闭";
+                return false;
+            }
+
+            if (request == null || string.IsNullOrWhiteSpace(request.Action))
+            {
+                error = "必须提供 action";
+                return false;
+            }
+
+            if (!SpreadsheetSortFilterCom.TryExecuteOnExcelWorkbook(
+                    book,
+                    request,
+                    out SpreadsheetSortFilterResult partial,
+                    out error))
+            {
+                return false;
+            }
+
+            result = partial;
+            result.ChannelId = channel.ChannelId;
+            result.Kind = "excel";
+            return true;
+        }
     }
 }
