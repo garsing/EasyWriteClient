@@ -34,6 +34,12 @@ namespace WordAddIn1.SpreadsheetHost
             }
             catch (Exception ex)
             {
+                while (ex.InnerException != null
+                    && ex.GetType().Name.IndexOf("TargetInvocation", StringComparison.Ordinal) >= 0)
+                {
+                    ex = ex.InnerException;
+                }
+
                 error = "排序和筛选失败: " + ex.Message;
                 return false;
             }

@@ -231,6 +231,11 @@ namespace WordAddIn1.SpreadsheetHost
                 IDictionary<string, int> columns)
             {
                 object sort = EtCom.GetProperty(_sheet, "Sort");
+                if (sort == null)
+                {
+                    throw new InvalidOperationException("打开排序失败");
+                }
+
                 object fields = EtCom.GetProperty(sort, "SortFields");
                 EtCom.Invoke(fields, "Clear");
                 foreach (SortFilterSortKey key in sorts)
@@ -271,7 +276,7 @@ namespace WordAddIn1.SpreadsheetHost
                 }
                 else
                 {
-                    EtCom.Invoke(range, "AutoFilter");
+                    EtCom.InvokeFlex(range, "AutoFilter");
                 }
 
                 foreach (SortFilterColumn filter in filters)
@@ -283,7 +288,7 @@ namespace WordAddIn1.SpreadsheetHost
                     }
                     else if (string.IsNullOrEmpty(filter.Criteria2))
                     {
-                        EtCom.Invoke(range, "AutoFilter", field, filter.Criteria1);
+                        EtCom.InvokeFlex(range, "AutoFilter", field, filter.Criteria1, 1, Type.Missing, true);
                     }
                     else
                     {
@@ -368,6 +373,20 @@ namespace WordAddIn1.SpreadsheetHost
                     {
                         error = "筛选列「" + column + "」不是勾选或比较式，本工具不能读回";
                         return false;
+                    }
+
+                    if (string.IsNullOrEmpty(c2)
+                        && c1.StartsWith("=", StringComparison.Ordinal)
+                        && !c1.StartsWith(">=", StringComparison.Ordinal))
+                    {
+                        string value = c1.Substring(1);
+                        filters.Add(new SortFilterColumn
+                        {
+                            Column = column,
+                            IsIn = true,
+                            InValues = new List<string> { value }
+                        });
+                        continue;
                     }
 
                     filters.Add(new SortFilterColumn
@@ -467,7 +486,7 @@ namespace WordAddIn1.SpreadsheetHost
 
             private object RangeOf(int r1, int c1, int r2, int c2)
             {
-                return EtCom.Invoke(_sheet, "Range", A1Address.Range(r1, c1, r2, c2));
+                return EtCom.InvokeFlex(_sheet, "Range", A1Address.Range(r1, c1, r2, c2));
             }
 
             private static int TableDataLast(object table)

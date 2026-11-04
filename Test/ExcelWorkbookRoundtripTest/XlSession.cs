@@ -33,6 +33,7 @@ namespace ExcelWorkbookRoundtripTest
             F_ExcelPivotTool.Register(_tools, null);
             F_ExcelChartTool.Register(_tools, null);
             F_ExcelImageTool.Register(_tools, null);
+            F_ExcelSortFilterTool.Register(_tools, null);
             F_RenderSvgTool.Register(_tools, null);
         }
 

@@ -24,6 +24,8 @@ namespace ExcelWorkbookRoundtripTest
             bool runStruct = ShouldRun(caseFilter, "xls-");
             bool runWrite = ShouldRun(caseFilter, "xlw-");
             bool runBulk = ShouldRun(caseFilter, "xlb-");
+            bool runSortFilter = ShouldRun(caseFilter, "xsf-")
+                || string.Equals(caseFilter, "xsf", StringComparison.OrdinalIgnoreCase);
             bool runRead = ShouldRun(caseFilter, "xl-")
                 && !runBulk && !runWrite && !runStruct && !runManage && !runFmt && !runCond && !runPivot && !runChart
                 && !runImage;
@@ -79,6 +81,10 @@ namespace ExcelWorkbookRoundtripTest
             else if (runBulk)
             {
                 Console.WriteLine("Excel / ET 工具区域上限（xlb-）");
+            }
+            else if (runSortFilter)
+            {
+                Console.WriteLine("Excel / ET 排序和筛选（xsf-）");
             }
             else
             {
@@ -144,14 +150,21 @@ namespace ExcelWorkbookRoundtripTest
                 XiCases.Run(run, useEt);
             }
 
+            if (runSortFilter)
+            {
+                XsfCases.Run(run, useEt, caseFilter);
+            }
+
             sw.Stop();
 
             Console.WriteLine();
             int target = run550
                 ? run.TotalTarget
-                : (runBulk
-                    ? XlbCases.Target
-                    : (runImage ? 48 : ((runCond || runChart) ? 38 : 30)));
+                : (runSortFilter
+                    ? (IsWholeSortFilter(caseFilter) ? XsfCases.Target : run.CasesPassed + run.CasesFailed + run.CasesSkipped)
+                    : (runBulk
+                        ? XlbCases.Target
+                        : (runImage ? 48 : ((runCond || runChart) ? 38 : 30))));
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
                 + "  跳过 " + run.CasesSkipped
@@ -177,6 +190,12 @@ namespace ExcelWorkbookRoundtripTest
             }
 
             return "";
+        }
+
+        private static bool IsWholeSortFilter(string caseFilter)
+        {
+            return string.Equals(caseFilter, "xsf", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "xsf-", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool ShouldRun(string caseFilter, string prefix)

@@ -270,12 +270,21 @@ namespace WordAddIn1.SpreadsheetHost
                 }
                 else
                 {
-                    range.AutoFilter();
+                    try
+                    {
+                        ShowArrows(range);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new InvalidOperationException("打开筛选箭头失败: " + ex.Message, ex);
+                    }
                 }
 
                 foreach (SortFilterColumn filter in filters)
                 {
                     int field = columns[filter.Column] - firstCol + 1;
+                    try
+                    {
                     if (filter.IsIn)
                     {
                         range.AutoFilter(
@@ -283,11 +292,16 @@ namespace WordAddIn1.SpreadsheetHost
                             filter.InValues.ToArray(),
                             Excel.XlAutoFilterOperator.xlFilterValues,
                             Type.Missing,
-                            Type.Missing);
+                            true);
                     }
                     else if (string.IsNullOrEmpty(filter.Criteria2))
                     {
-                        range.AutoFilter(field, filter.Criteria1);
+                        range.AutoFilter(
+                            field,
+                            filter.Criteria1,
+                            Excel.XlAutoFilterOperator.xlAnd,
+                            Type.Missing,
+                            true);
                     }
                     else
                     {
@@ -298,7 +312,12 @@ namespace WordAddIn1.SpreadsheetHost
                                 ? Excel.XlAutoFilterOperator.xlOr
                                 : Excel.XlAutoFilterOperator.xlAnd,
                             filter.Criteria2,
-                            Type.Missing);
+                            true);
+                    }
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new InvalidOperationException("写入筛选失败: " + ex.Message, ex);
                     }
                 }
             }
@@ -370,6 +389,17 @@ namespace WordAddIn1.SpreadsheetHost
                     {
                         error = "筛选列「" + column + "」不是勾选或比较式，本工具不能读回";
                         return false;
+                    }
+
+                    if (string.IsNullOrEmpty(c2) && IsPlainEquals(c1))
+                    {
+                        filters.Add(new SortFilterColumn
+                        {
+                            Column = column,
+                            IsIn = true,
+                            InValues = new List<string> { StripEquals(c1) }
+                        });
+                        continue;
                     }
 
                     filters.Add(new SortFilterColumn
@@ -465,6 +495,12 @@ namespace WordAddIn1.SpreadsheetHost
             private Excel.Range TableRange(string tableName)
             {
                 return TableByName(tableName).Range;
+            }
+
+            private static void ShowArrows(Excel.Range range)
+            {
+                dynamic target = range;
+                target.AutoFilter();
             }
 
             private Excel.Range Rect(int r1, int c1, int r2, int c2)
@@ -570,6 +606,13 @@ namespace WordAddIn1.SpreadsheetHost
                 }
 
                 return Convert.ToString(criteria, CultureInfo.InvariantCulture) ?? "";
+            }
+
+            private static bool IsPlainEquals(string criteria)
+            {
+                return !string.IsNullOrEmpty(criteria)
+                    && criteria.StartsWith("=", StringComparison.Ordinal)
+                    && !criteria.StartsWith(">=", StringComparison.Ordinal);
             }
 
             private static string StripEquals(string text)
