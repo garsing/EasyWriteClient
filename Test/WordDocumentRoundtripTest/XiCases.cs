@@ -7,11 +7,21 @@ using WordAddIn1;
 namespace WordDocumentRoundtripTest
 {
     /// <summary>
-    /// 抽图副本改到工作区根。前缀 xi-。正式 25 条。环境条不在这里。
+    /// 抽图副本改到工作区根。前缀 xi-。正式 25 + 巩固 25。环境条不在这里。
     /// </summary>
     internal static class XiCases
     {
-        public const int Target = 25;
+        public const int Target = 50;
+
+        private static readonly string[] ConsolidateIds =
+        {
+            "xi-c-lv-s", "xi-c-lv-s2", "xi-c-lv-p", "xi-c-lv-p2", "xi-c-lv-empty", "xi-c-lv-upper",
+            "xi-c-two-both", "xi-c-two-abs", "xi-c-two-no3", "xi-c-two-png",
+            "xi-c-pk", "xi-c-not-open", "xi-c-hash", "xi-c-mem-text", "xi-c-disk-text", "xi-c-copy-text",
+            "xi-c-fields", "xi-c-chan", "xi-c-verbose", "xi-c-slash",
+            "xi-c-third", "xi-c-keep-img", "xi-c-get-mid",
+            "xi-c-lv-bad", "xi-c-junk"
+        };
 
         public static void Run(TestRun run, string host)
         {
@@ -45,6 +55,7 @@ namespace WordDocumentRoundtripTest
                 Fail(run, "xi-cache-keep", workspaceError);
                 Fail(run, "xi-cache-skip", workspaceError);
                 Fail(run, "xi-ckpt-dir", workspaceError);
+                FailIds(run, ConsolidateIds, workspaceError);
                 return;
             }
 
@@ -54,6 +65,7 @@ namespace WordDocumentRoundtripTest
             RunMain(run, s, curr, sessions);
             RunNone(run, s, curr);
             RunFailLevel(run, s, curr);
+            RunConsolidate(run, s, root, curr);
         }
 
         private static void RunSchema(TestRun run)
@@ -313,6 +325,199 @@ namespace WordDocumentRoundtripTest
             }
         }
 
+        private static void RunConsolidate(TestRun run, WdSession s, string root, string curr)
+        {
+            const string token = "XI巩固甲";
+            string png = WritePng();
+            string path = s.NewDocxPath();
+            string otherPath = null;
+            string badPath = null;
+            try
+            {
+                ToolResult opened = s.Open(path, true, s.App);
+                if (!opened.Success || !s.TypePlain(path, token + "。"))
+                {
+                    FailIds(run, ConsolidateIds, opened.Success ? "COM 写句子失败" : ("开稿失败: " + (opened.Error ?? "")));
+                    return;
+                }
+
+                string id = WdSession.Str(opened, "channel_id");
+                string stem = Path.GetFileNameWithoutExtension(path);
+                ToolResult ins1 = s.InsertImage(new Dictionary<string, object> { ["channel_id"] = id, ["path"] = png });
+                ToolResult ins2 = ins1.Success
+                    ? s.InsertImage(new Dictionary<string, object> { ["channel_id"] = id, ["path"] = png })
+                    : ins1;
+                if (!ins2.Success)
+                {
+                    FailIds(run, ConsolidateIds, "插两张图失败: " + (ins2.Error ?? ins1.Error ?? ""));
+                    return;
+                }
+
+                DateTime mtimeBefore = File.Exists(path) ? File.GetLastWriteTimeUtc(path) : DateTime.MinValue;
+                string fullBefore;
+                bool savedBefore;
+                s.TryReadOpenState(path, out fullBefore, out savedBefore);
+                string rootSlash = root.Replace('\\', '/').TrimEnd('/');
+
+                ToolResult ext = Extract(id, "s");
+                string display = WdSession.Str(ext, "document_content");
+                List<string> srcs = AllSrcs(display);
+                string imageDir = Path.Combine(curr, stem);
+                string docx = Path.Combine(curr, stem + ".docx");
+                string copy = Path.Combine(curr, stem + "_copy.docx");
+                string fullAfter;
+                bool savedAfter;
+                s.TryReadOpenState(path, out fullAfter, out savedAfter);
+
+                Ok(run, "xi-c-lv-s",
+                    ext.Success && WdSession.Str(ext, "message") == "抽取成功" && WdSession.Str(ext, "code_level") == "sentence",
+                    Dump(ext));
+                Ok(run, "xi-c-two-both",
+                    srcs.Count >= 2
+                        && File.Exists(srcs[0].Replace('/', '\\'))
+                        && File.Exists(srcs[1].Replace('/', '\\')),
+                    "src 数=" + srcs.Count);
+                Ok(run, "xi-c-two-abs",
+                    srcs.Count >= 2
+                        && srcs[0].IndexOf("/" + stem + "/image_1.", StringComparison.OrdinalIgnoreCase) >= 0
+                        && srcs[1].IndexOf("/" + stem + "/image_2.", StringComparison.OrdinalIgnoreCase) >= 0
+                        && File.Exists(srcs[0].Replace('/', '\\'))
+                        && File.Exists(srcs[1].Replace('/', '\\')),
+                    string.Join(" , ", srcs.ToArray()));
+                Ok(run, "xi-c-two-no3",
+                    srcs.Count == 2 && Directory.Exists(imageDir) && Directory.GetFiles(imageDir, "image_3.*").Length == 0,
+                    "src 数=" + srcs.Count);
+                Ok(run, "xi-c-two-png",
+                    srcs.Count >= 2
+                        && StartsWith(srcs[0].Replace('/', '\\'), new byte[] { 0x89, 0x50, 0x4E, 0x47 })
+                        && StartsWith(srcs[1].Replace('/', '\\'), new byte[] { 0x89, 0x50, 0x4E, 0x47 }),
+                    "落盘文件不是 PNG");
+                Ok(run, "xi-c-pk",
+                    StartsWith(docx, new byte[] { 0x50, 0x4B }) && StartsWith(copy, new byte[] { 0x50, 0x4B }),
+                    "副本不是 zip 文档");
+                Ok(run, "xi-c-not-open",
+                    savedBefore == false && savedAfter == false
+                        && !string.IsNullOrEmpty(fullAfter)
+                        && fullAfter.IndexOf("curr_docs", StringComparison.OrdinalIgnoreCase) < 0
+                        && SamePath(fullBefore, fullAfter),
+                    "Saved " + savedBefore + "→" + savedAfter + " " + fullBefore + " → " + fullAfter);
+                DateTime mtimeAfter = File.Exists(path) ? File.GetLastWriteTimeUtc(path) : DateTime.MinValue;
+                Ok(run, "xi-c-hash",
+                    mtimeBefore != DateTime.MinValue && mtimeBefore == mtimeAfter,
+                    "原文件时间 " + mtimeBefore.ToString("o") + " → " + mtimeAfter.ToString("o"));
+                Ok(run, "xi-c-mem-text",
+                    display.IndexOf(token, StringComparison.Ordinal) >= 0,
+                    "抽图 display 里没有未保存句子");
+                Ok(run, "xi-c-disk-text",
+                    !ZipContains(path, token),
+                    "未保存句子写进了原文件");
+                Ok(run, "xi-c-copy-text",
+                    ZipContains(copy, token),
+                    "副本里没有内存中的句子");
+                Ok(run, "xi-c-fields",
+                    WdSession.Str(ext, "processing_method").Length > 0
+                        && string.Equals(WdSession.Str(ext, "host"), s.Host, StringComparison.OrdinalIgnoreCase),
+                    "host=" + WdSession.Str(ext, "host") + " method=" + WdSession.Str(ext, "processing_method"));
+                Ok(run, "xi-c-chan",
+                    WdSession.Str(ext, "channel_id") == id && WdSession.IsShortId(id),
+                    "回包 channel_id=" + WdSession.Str(ext, "channel_id") + " 期望 " + id);
+                Ok(run, "xi-c-slash",
+                    srcs.Count >= 2
+                        && srcs[0].StartsWith(rootSlash + "/curr_docs/", StringComparison.OrdinalIgnoreCase)
+                        && srcs[0].IndexOf('\\') < 0
+                        && srcs[1].IndexOf('\\') < 0,
+                    string.Join(" , ", srcs.ToArray()));
+
+                ToolResult mid = s.GetContent(id);
+                string midSrc = FirstSrc(WdSession.Str(mid, "document_content"));
+                Ok(run, "xi-c-get-mid",
+                    mid.Success && midSrc.IndexOf("lightweight/placeholder_", StringComparison.Ordinal) >= 0,
+                    "中途读文 src=" + midSrc);
+
+                ToolResult upper = Extract(id, "SENTENCE", true);
+                string upperText = WdSession.Str(upper, "document_content");
+                Ok(run, "xi-c-lv-upper",
+                    upper.Success && WdSession.Str(upper, "code_level") == "sentence" && WdSession.Str(upper, "message") == "抽取成功",
+                    Dump(upper));
+                Ok(run, "xi-c-verbose",
+                    upper.Success && AllSrcs(upperText).Count == 2 && upperText.IndexOf(token, StringComparison.Ordinal) >= 0,
+                    "verbose 抽图 src 数=" + AllSrcs(upperText).Count);
+
+                Directory.CreateDirectory(imageDir);
+                string junkTxt = Path.Combine(imageDir, "note.txt");
+                string junkImg = Path.Combine(imageDir, "image_9.png");
+                File.WriteAllText(junkTxt, "x");
+                File.WriteAllBytes(junkImg, new byte[] { 9 });
+                ToolResult again = Extract(id, "s_");
+                Ok(run, "xi-c-lv-s2",
+                    again.Success && WdSession.Str(again, "code_level") == "sentence",
+                    Dump(again));
+                Ok(run, "xi-c-junk",
+                    !File.Exists(junkTxt) && !File.Exists(junkImg)
+                        && Directory.Exists(imageDir) && Directory.GetFiles(imageDir, "image_1.*").Length == 1,
+                    "残留 note.txt 或 image_9 还在");
+                Ok(run, "xi-c-third",
+                    PairExists(curr, stem) && !TimestampExtra(curr, stem),
+                    "再抽后不是唯一一对副本");
+
+                ToolResult emptyLv = Extract(id, "");
+                Ok(run, "xi-c-lv-empty",
+                    emptyLv.Success && WdSession.Str(emptyLv, "code_level") == "sentence" && WdSession.Str(emptyLv, "message") == "抽取成功",
+                    Dump(emptyLv));
+                ToolResult para = Extract(id, "p");
+                Ok(run, "xi-c-lv-p",
+                    para.Success
+                        && WdSession.Str(para, "code_level") == "paragraph"
+                        && FirstSrc(WdSession.Str(para, "document_content")).IndexOf("/image_1.", StringComparison.OrdinalIgnoreCase) >= 0,
+                    Dump(para));
+                ToolResult para2 = Extract(id, "p_");
+                Ok(run, "xi-c-lv-p2",
+                    para2.Success && WdSession.Str(para2, "code_level") == "paragraph" && WdSession.Str(para2, "message") == "抽取成功",
+                    Dump(para2));
+
+                badPath = s.NewDocxPath();
+                ToolResult badOpen = s.Open(badPath, true, s.App);
+                string badId = WdSession.Str(badOpen, "channel_id");
+                string badStem = Path.GetFileNameWithoutExtension(badPath);
+                ToolResult bad = badOpen.Success ? Extract(badId, "1") : badOpen;
+                Ok(run, "xi-c-lv-bad",
+                    badOpen.Success
+                        && FailedClean(bad)
+                        && (bad.Error ?? "").IndexOf("code_level", StringComparison.OrdinalIgnoreCase) >= 0
+                        && !File.Exists(Path.Combine(curr, badStem + ".docx")),
+                    Dump(bad));
+
+                otherPath = s.NewDocxPath();
+                ToolResult otherOpen = s.Open(otherPath, true, s.App);
+                string otherId = WdSession.Str(otherOpen, "channel_id");
+                ToolResult otherIns = otherOpen.Success
+                    ? s.InsertImage(new Dictionary<string, object> { ["channel_id"] = otherId, ["path"] = png })
+                    : otherOpen;
+                ToolResult otherExt = otherIns.Success ? Extract(otherId, null) : otherIns;
+                Ok(run, "xi-c-keep-img",
+                    otherExt.Success
+                        && Directory.Exists(imageDir)
+                        && Directory.GetFiles(imageDir, "image_1.*").Length == 1
+                        && Directory.GetFiles(imageDir, "image_2.*").Length == 1,
+                    otherExt.Success ? "另一份稿抽完后，前一份的 image_1/image_2 丢了" : (otherExt.Error ?? ""));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+                if (otherPath != null)
+                {
+                    s.CloseDocByPath(otherPath);
+                }
+
+                if (badPath != null)
+                {
+                    s.CloseDocByPath(badPath);
+                }
+
+                TryDelete(png);
+            }
+        }
+
         private static void FailMain(TestRun run, string reason)
         {
             string[] ids =
@@ -331,6 +536,11 @@ namespace WordDocumentRoundtripTest
 
         private static ToolResult Extract(string channelId, string codeLevel)
         {
+            return Extract(channelId, codeLevel, false);
+        }
+
+        private static ToolResult Extract(string channelId, string codeLevel, bool verbose)
+        {
             var args = new Dictionary<string, object>();
             if (channelId != null)
             {
@@ -340,6 +550,11 @@ namespace WordDocumentRoundtripTest
             if (codeLevel != null)
             {
                 args["code_level"] = codeLevel;
+            }
+
+            if (verbose)
+            {
+                args["verbose"] = true;
             }
 
             return DesktopToolPipe.Call("F_extract_document_images", args);
@@ -389,6 +604,82 @@ namespace WordDocumentRoundtripTest
                 || data.ContainsKey("image_files")
                 || data.ContainsKey("image_list")
                 || data.ContainsKey("files");
+        }
+
+        private static List<string> AllSrcs(string text)
+        {
+            var list = new List<string>();
+            if (string.IsNullOrEmpty(text))
+            {
+                return list;
+            }
+
+            foreach (Match m in Regex.Matches(text, "src=\"([^\"]*)\""))
+            {
+                list.Add(m.Groups[1].Value);
+            }
+
+            return list;
+        }
+
+        private static bool StartsWith(string path, byte[] magic)
+        {
+            try
+            {
+                if (!File.Exists(path) || magic == null)
+                {
+                    return false;
+                }
+
+                byte[] head = new byte[magic.Length];
+                using (FileStream fs = File.OpenRead(path))
+                {
+                    if (fs.Read(head, 0, head.Length) != head.Length)
+                    {
+                        return false;
+                    }
+                }
+
+                for (int i = 0; i < magic.Length; i++)
+                {
+                    if (head[i] != magic[i])
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool ZipContains(string path, string token)
+        {
+            try
+            {
+                using (var zip = System.IO.Compression.ZipFile.OpenRead(path))
+                {
+                    System.IO.Compression.ZipArchiveEntry entry = zip.GetEntry("word/document.xml");
+                    if (entry == null)
+                    {
+                        return false;
+                    }
+
+                    using (Stream stream = entry.Open())
+                    using (var reader = new StreamReader(stream))
+                    {
+                        string xml = reader.ReadToEnd();
+                        return xml.IndexOf(token, StringComparison.Ordinal) >= 0;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         private static string FirstSrc(string text)
@@ -657,6 +948,14 @@ namespace WordDocumentRoundtripTest
         private static void Fail(TestRun run, string id, string reason)
         {
             run.CaseFail(id, reason);
+        }
+
+        private static void FailIds(TestRun run, string[] ids, string reason)
+        {
+            foreach (string id in ids)
+            {
+                run.CaseFail(id, reason);
+            }
         }
     }
 }
