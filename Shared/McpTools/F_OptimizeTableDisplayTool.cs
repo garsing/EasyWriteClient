@@ -41,23 +41,31 @@ namespace WordAddIn1
                     string tableId = args.ContainsKey("table_id") ? args["table_id"]?.ToString() : "";
                     var outer = Stopwatch.StartNew();
                     var outerSteps = new Dictionary<string, long>();
-                    string display;
                     try
                     {
-                        long tRead = outer.ElapsedMilliseconds;
-                        display = WordReader.ReadWord(document);
-                        outerSteps["工具-ReadWord映射"] = outer.ElapsedMilliseconds - tRead;
+                        long tPd = outer.ElapsedMilliseconds;
+                        var options = ProcessDocumentOptions.ForProcessActions("optimize_table");
+                        options.DisallowBackendApi = docHandle.DisallowBackendApi;
+                        WordDocumentExtractor.ProcessDocument(document, options);
+                        outerSteps["工具-PD"] = outer.ElapsedMilliseconds - tPd;
                         TableOptimizer.LogTune(
-                            $"+{outer.ElapsedMilliseconds}ms 【耗时】工具-ReadWord映射={outerSteps["工具-ReadWord映射"]}ms");
+                            $"+{outer.ElapsedMilliseconds}ms 【耗时】工具-PD={outerSteps["工具-PD"]}ms");
                     }
                     catch (Exception ex)
                     {
-                        return new ToolResult { Success = false, Error = $"生成表格映射表失败：{ex.Message}" };
+                        return new ToolResult { Success = false, Error = $"刷新文档失败：{ex.Message}" };
+                    }
+
+                    string markup = DocumentState.GetNumberedTableMarkup();
+                    if (string.IsNullOrWhiteSpace(markup))
+                    {
+                        TableOptimizer.LogTune("F_OptimizeTableDisplay: 编号骨架为空");
+                        return new ToolResult { Success = false, Error = "编号骨架为空" };
                     }
 
                     long tResolve = outer.ElapsedMilliseconds;
-                    List<Word.Table> tables = TableResolveHelper.GetAllTablesInOrder(document, display);
-                    Word.Table targetTable = TableResolveHelper.TryResolveFromList(tables, tableId, out string resolveError);
+                    Word.Table targetTable = TableResolveHelper.TryResolveTableById(
+                        document, tableId, out string resolveError);
                     outerSteps["工具-定位表格"] = outer.ElapsedMilliseconds - tResolve;
                     if (targetTable == null)
                     {
@@ -67,7 +75,7 @@ namespace WordAddIn1
                     System.Diagnostics.Debug.WriteLine(
                         $"[DEBUG] F_OptimizeTableDisplay: 定位表格 {tableId}，尺寸={targetTable.Rows.Count}×{targetTable.Columns.Count}");
 
-                    if (!TryResolveWidthLimit(tables, display, tableId, targetTable, out float wMax, out string widthError))
+                    if (!TryResolveWidthLimit(document, markup, tableId, targetTable, out float wMax, out string widthError))
                     {
                         return new ToolResult { Success = false, Error = widthError };
                     }
@@ -192,8 +200,8 @@ namespace WordAddIn1
         }
 
         private static bool TryResolveWidthLimit(
-            List<Word.Table> tables,
-            string display,
+            Word.Document document,
+            string markup,
             string tableId,
             Word.Table targetTable,
             out float wMax,
@@ -202,7 +210,7 @@ namespace WordAddIn1
             wMax = 0f;
             error = null;
             float pageWidth = TableOptimizer.GetAvailablePageWidthPoints(targetTable);
-            NestedTableParentFinder.Result parent = NestedTableParentFinder.Find(display, tableId);
+            NestedTableParentFinder.Result parent = NestedTableParentFinder.Find(markup, tableId);
             if (parent.Kind == NestedTableParentFinder.Kind.TopLevel)
             {
                 wMax = pageWidth > 0f ? pageWidth : 500f;
@@ -220,8 +228,8 @@ namespace WordAddIn1
                 return false;
             }
 
-            Word.Table parentTable = TableResolveHelper.TryResolveFromList(
-                tables, parent.ParentTableId, out string parentError);
+            Word.Table parentTable = TableResolveHelper.TryResolveTableById(
+                document, parent.ParentTableId, out string parentError);
             if (parentTable == null)
             {
                 error = "嵌套表但拿不到父级单元格";
