@@ -34,6 +34,8 @@ namespace WordAddIn1.SpreadsheetHost
         public double WidthCm { get; set; }
 
         public double HeightCm { get; set; }
+
+        public string Path { get; set; }
     }
 
     internal sealed class SpreadsheetImageResult
@@ -91,9 +93,9 @@ namespace WordAddIn1.SpreadsheetHost
             request = null;
             error = null;
             string action = GetString(args, "action").ToLowerInvariant();
-            if (action != "list" && action != "insert" && action != "update" && action != "delete")
+            if (action != "list" && action != "insert" && action != "update" && action != "delete" && action != "export")
             {
-                error = "action 须为 list | insert | update | delete";
+                error = "action 须为 list | insert | update | delete | export";
                 return false;
             }
 
@@ -114,6 +116,23 @@ namespace WordAddIn1.SpreadsheetHost
                 {
                     Action = action,
                     Sheet = string.IsNullOrEmpty(sheet) ? null : sheet
+                };
+                return true;
+            }
+
+            if (action == "export")
+            {
+                if (!string.IsNullOrEmpty(imageId) && !ImageIdRegex.IsMatch(imageId))
+                {
+                    error = "必须提供 image_id（I_ + 8 位）";
+                    return false;
+                }
+
+                request = new SpreadsheetImageRequest
+                {
+                    Action = action,
+                    Sheet = string.IsNullOrEmpty(sheet) ? null : sheet,
+                    ImageId = string.IsNullOrEmpty(imageId) ? null : imageId
                 };
                 return true;
             }

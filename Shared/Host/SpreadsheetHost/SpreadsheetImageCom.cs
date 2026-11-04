@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
+using System.IO;
 using Excel = Microsoft.Office.Interop.Excel;
 using Office = Microsoft.Office.Core;
 
@@ -31,6 +32,11 @@ namespace WordAddIn1.SpreadsheetHost
                 if (request.Action == "list")
                 {
                     return TryListExcel(book, request, result, out error);
+                }
+
+                if (request.Action == "export")
+                {
+                    return TryExportExcel(book, request, result, out error);
                 }
 
                 if (request.Action == "insert")
@@ -106,6 +112,392 @@ namespace WordAddIn1.SpreadsheetHost
             result.Images = images;
             result.ImagesCount = images.Count;
             return true;
+        }
+
+        private static bool TryExportExcel(
+            Excel.Workbook book,
+            SpreadsheetImageRequest request,
+            SpreadsheetImageResult result,
+            out string error)
+        {
+            error = null;
+            string fullBefore = "";
+            bool savedBefore = true;
+            DateTime mtimeBefore = DateTime.MinValue;
+            bool sawMtime = false;
+            bool stamped = false;
+            try
+            {
+                fullBefore = book.FullName ?? "";
+                savedBefore = book.Saved;
+                if (File.Exists(fullBefore))
+                {
+                    mtimeBefore = File.GetLastWriteTimeUtc(fullBefore);
+                    sawMtime = true;
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (!string.IsNullOrEmpty(request.Sheet))
+                {
+                    CollectExcelPictures(book, request.Sheet, out error);
+                    if (error != null)
+                    {
+                        return false;
+                    }
+                }
+
+                List<Excel.Shape> all = CollectExcelPictures(book, null, out error);
+                if (error != null)
+                {
+                    return false;
+                }
+
+                if (!TryFindExcelIdCollision(all, out error))
+                {
+                    return false;
+                }
+
+                var chosen = new List<Excel.Shape>();
+                foreach (Excel.Shape pic in all)
+                {
+                    if (!string.IsNullOrEmpty(request.Sheet) && !SameSheet(SheetNameOf(pic), request.Sheet))
+                    {
+                        continue;
+                    }
+
+                    if (!string.IsNullOrEmpty(request.ImageId))
+                    {
+                        if (!SpreadsheetImageStampHelper.TryParse(ReadAlt(pic), out string existing, out _)
+                            || !string.Equals(existing, request.ImageId, StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+                    }
+
+                    chosen.Add(pic);
+                }
+
+                if (!string.IsNullOrEmpty(request.ImageId) && chosen.Count == 0)
+                {
+                    error = "未找到图片: " + request.ImageId;
+                    return false;
+                }
+
+                if (!TryAssignExcelIds(chosen, out Dictionary<Excel.Shape, string> ids, out bool didStamp, out error))
+                {
+                    return false;
+                }
+
+                stamped = didStamp;
+
+                var images = new List<SpreadsheetImageInfo>();
+                if (chosen.Count > 0)
+                {
+                    if (!CurrDocsImagePaths.TryEnsureHostDirectory(book.Name, CurrDocsImagePaths.ExcelSuffix, out string directory, out error))
+                    {
+                        return false;
+                    }
+
+                    foreach (Excel.Shape pic in chosen)
+                    {
+                        string id = ids[pic];
+                        string finalPath = Path.Combine(directory, id + ".png");
+                        if (!TryExportExcelShapePng(pic, finalPath, out error))
+                        {
+                            return false;
+                        }
+
+                        FillInfo(pic, id, images, result.Warnings);
+                        images[images.Count - 1].Path = Path.GetFullPath(finalPath).Replace('\\', '/');
+                    }
+                }
+
+                string fullAfter = "";
+                try
+                {
+                    fullAfter = book.FullName ?? "";
+                }
+                catch
+                {
+                }
+
+                if (!string.IsNullOrEmpty(fullBefore)
+                    && !string.Equals(NormalizePath(fullBefore), NormalizePath(fullAfter), StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "导出图片时活动工作簿路径被改变";
+                    return false;
+                }
+
+                result.Images = images;
+                result.ImagesCount = images.Count;
+                return true;
+            }
+            finally
+            {
+                RestoreExcelBookState(book, fullBefore, savedBefore, mtimeBefore, sawMtime, stamped);
+            }
+        }
+
+        private static bool TryFindExcelIdCollision(List<Excel.Shape> pics, out string error)
+        {
+            error = null;
+            var occupied = new HashSet<string>(StringComparer.Ordinal);
+            foreach (Excel.Shape pic in pics)
+            {
+                if (SpreadsheetImageStampHelper.TryParse(ReadAlt(pic), out string id, out _) && !occupied.Add(id))
+                {
+                    error = "簿内两张图撞同一个 I_";
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TryAssignExcelIds(
+            List<Excel.Shape> pics,
+            out Dictionary<Excel.Shape, string> ids,
+            out bool stamped,
+            out string error)
+        {
+            ids = new Dictionary<Excel.Shape, string>();
+            stamped = false;
+            error = null;
+            var occupied = new HashSet<string>(StringComparer.Ordinal);
+            var collisions = new HashSet<string>(StringComparer.Ordinal);
+            foreach (Excel.Shape pic in pics)
+            {
+                if (SpreadsheetImageStampHelper.TryParse(ReadAlt(pic), out string id, out _))
+                {
+                    if (!occupied.Add(id))
+                    {
+                        collisions.Add(id);
+                    }
+                }
+            }
+
+            if (collisions.Count > 0)
+            {
+                error = "簿内两张图撞同一个 I_";
+                return false;
+            }
+
+            foreach (Excel.Shape pic in pics)
+            {
+                string alt = ReadAlt(pic);
+                if (!SpreadsheetImageStampHelper.TryParse(alt, out string id, out string suffix))
+                {
+                    id = SpreadsheetImageStampHelper.NewRandomImageId(occupied);
+                    if (id == null)
+                    {
+                        error = "无法分配 image_id";
+                        return false;
+                    }
+
+                    pic.AlternativeText = SpreadsheetImageStampHelper.Format(id, suffix);
+                    stamped = true;
+                }
+
+                ids[pic] = id;
+            }
+
+            return true;
+        }
+
+        private static bool TryExportExcelShapePng(Excel.Shape pic, string finalPath, out string error)
+        {
+            error = null;
+            string tempPath = Path.Combine(
+                Path.GetDirectoryName(finalPath) ?? "",
+                "_tmp_" + Guid.NewGuid().ToString("N") + ".png");
+            Excel.ChartObject chartObj = null;
+            try
+            {
+                Excel.Worksheet sheet = pic.Parent as Excel.Worksheet;
+                if (sheet == null)
+                {
+                    error = "导出图片失败 (" + finalPath + "): 找不到所在工作表";
+                    return false;
+                }
+
+                try
+                {
+                    sheet.Activate();
+                }
+                catch
+                {
+                }
+
+                double width = Math.Max(10, pic.Width);
+                double height = Math.Max(10, pic.Height);
+                Excel.XlCopyPictureFormat[] formats =
+                {
+                    Excel.XlCopyPictureFormat.xlBitmap,
+                    Excel.XlCopyPictureFormat.xlPicture
+                };
+                Exception last = null;
+                foreach (Excel.XlCopyPictureFormat format in formats)
+                {
+                    try
+                    {
+                        pic.CopyPicture(Excel.XlPictureAppearance.xlScreen, format);
+                        chartObj = (Excel.ChartObject)sheet.ChartObjects().Add(pic.Left, pic.Top, width, height);
+                        try
+                        {
+                            chartObj.Activate();
+                        }
+                        catch
+                        {
+                        }
+
+                        chartObj.Chart.Paste();
+                        chartObj.Chart.Export(tempPath, "PNG");
+                        DeleteExcelChartQuiet(ref chartObj);
+                        if (File.Exists(tempPath) && new FileInfo(tempPath).Length > 8 && IsPngFile(tempPath))
+                        {
+                            File.Copy(tempPath, finalPath, true);
+                            return true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        last = ex;
+                        DeleteExcelChartQuiet(ref chartObj);
+                    }
+                }
+
+                error = last != null
+                    ? "导出图片失败: " + last.Message
+                    : "导出图片失败: 未生成 PNG";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                error = "导出图片失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                DeleteExcelChartQuiet(ref chartObj);
+                try
+                {
+                    if (File.Exists(tempPath))
+                    {
+                        File.Delete(tempPath);
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private static void DeleteExcelChartQuiet(ref Excel.ChartObject chartObj)
+        {
+            if (chartObj == null)
+            {
+                return;
+            }
+
+            try
+            {
+                chartObj.Delete();
+            }
+            catch
+            {
+            }
+
+            chartObj = null;
+        }
+
+        private static void RestoreExcelBookState(
+            Excel.Workbook book,
+            string fullBefore,
+            bool savedBefore,
+            DateTime mtimeBefore,
+            bool sawMtime,
+            bool stamped)
+        {
+            try
+            {
+                bool diskWritten = false;
+                if (sawMtime && File.Exists(fullBefore))
+                {
+                    diskWritten = File.GetLastWriteTimeUtc(fullBefore) != mtimeBefore;
+                }
+
+                if (diskWritten)
+                {
+                    return;
+                }
+
+                if (stamped)
+                {
+                    if (book.Saved)
+                    {
+                        book.Saved = false;
+                    }
+
+                    return;
+                }
+
+                if (book.Saved != savedBefore)
+                {
+                    book.Saved = savedBefore;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static string SheetNameOf(Excel.Shape pic)
+        {
+            try
+            {
+                return ((Excel.Worksheet)pic.Parent).Name ?? "";
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static bool SameSheet(string actual, string wanted)
+        {
+            return string.Equals(actual ?? "", wanted ?? "", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsPngFile(string path)
+        {
+            try
+            {
+                using (var stream = File.OpenRead(path))
+                {
+                    if (stream.Length < 8)
+                    {
+                        return false;
+                    }
+
+                    var magic = new byte[4];
+                    stream.Read(magic, 0, 4);
+                    return magic[0] == 0x89 && magic[1] == 0x50 && magic[2] == 0x4E && magic[3] == 0x47;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string NormalizePath(string path)
+        {
+            return (path ?? "").Replace('/', '\\').Trim();
         }
 
         private static bool TryInsertExcel(

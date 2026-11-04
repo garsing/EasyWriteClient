@@ -10,6 +10,8 @@ namespace WordAddIn1
     {
         public const string WordSuffix = "word";
         public const string PptSuffix = "ppt";
+        public const string ExcelSuffix = "excel";
+        public const string EtSuffix = "et";
 
         public static bool TryEnsurePptDirectory(string presentationName, out string directory, out string error)
         {
@@ -24,6 +26,33 @@ namespace WordAddIn1
 
             string stem = SanitizeStem(presentationName);
             directory = Path.Combine(root, "curr_docs", stem + "_" + PptSuffix);
+            try
+            {
+                Directory.CreateDirectory(directory);
+            }
+            catch (Exception ex)
+            {
+                directory = null;
+                error = "无法创建图片目录: " + ex.Message;
+                return false;
+            }
+
+            return true;
+        }
+
+        public static bool TryEnsureHostDirectory(string documentName, string suffix, out string directory, out string error)
+        {
+            directory = null;
+            error = null;
+            string root = UserService.Instance == null ? null : UserService.Instance.WorkspaceRootEffective;
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                error = "工作区根不可用，无法导出图片";
+                return false;
+            }
+
+            string stem = SanitizeStem(documentName);
+            directory = Path.Combine(root, "curr_docs", stem + "_" + suffix);
             try
             {
                 Directory.CreateDirectory(directory);

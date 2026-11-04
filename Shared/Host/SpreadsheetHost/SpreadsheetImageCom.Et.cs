@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using WordAddIn1.OpenFiles;
 
 namespace WordAddIn1.SpreadsheetHost
@@ -23,6 +24,11 @@ namespace WordAddIn1.SpreadsheetHost
                 if (request.Action == "list")
                 {
                     return TryListEt(book, request, result, out error);
+                }
+
+                if (request.Action == "export")
+                {
+                    return TryExportEt(book, request, result, out error);
                 }
 
                 if (request.Action == "insert")
@@ -98,6 +104,356 @@ namespace WordAddIn1.SpreadsheetHost
             result.Images = images;
             result.ImagesCount = images.Count;
             return true;
+        }
+
+        private static bool TryExportEt(
+            object book,
+            SpreadsheetImageRequest request,
+            SpreadsheetImageResult result,
+            out string error)
+        {
+            error = null;
+            string fullBefore = ReadEtString(book, "FullName");
+            bool savedBefore = ReadEtSaved(book);
+            DateTime mtimeBefore = DateTime.MinValue;
+            bool sawMtime = false;
+            bool stamped = false;
+            if (File.Exists(fullBefore))
+            {
+                mtimeBefore = File.GetLastWriteTimeUtc(fullBefore);
+                sawMtime = true;
+            }
+
+            try
+            {
+                if (!string.IsNullOrEmpty(request.Sheet))
+                {
+                    CollectEtPictures(book, request.Sheet, out error);
+                    if (error != null)
+                    {
+                        return false;
+                    }
+                }
+
+                List<object> all = CollectEtPictures(book, null, out error);
+                if (error != null)
+                {
+                    return false;
+                }
+
+                if (!TryFindEtIdCollision(all, out error))
+                {
+                    return false;
+                }
+
+                var chosen = new List<object>();
+                foreach (object pic in all)
+                {
+                    if (!string.IsNullOrEmpty(request.Sheet) && !SameSheet(EtSheetName(pic), request.Sheet))
+                    {
+                        continue;
+                    }
+
+                    if (!string.IsNullOrEmpty(request.ImageId))
+                    {
+                        if (!SpreadsheetImageStampHelper.TryParse(ReadAltEt(pic), out string existing, out _)
+                            || !string.Equals(existing, request.ImageId, StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+                    }
+
+                    chosen.Add(pic);
+                }
+
+                if (!string.IsNullOrEmpty(request.ImageId) && chosen.Count == 0)
+                {
+                    error = "未找到图片: " + request.ImageId;
+                    return false;
+                }
+
+                if (!TryAssignEtIds(chosen, out Dictionary<object, string> ids, out bool didStamp, out error))
+                {
+                    return false;
+                }
+
+                stamped = didStamp;
+                var images = new List<SpreadsheetImageInfo>();
+                if (chosen.Count > 0)
+                {
+                    string bookName = ReadEtString(book, "Name");
+                    if (!CurrDocsImagePaths.TryEnsureHostDirectory(bookName, CurrDocsImagePaths.EtSuffix, out string directory, out error))
+                    {
+                        return false;
+                    }
+
+                    foreach (object pic in chosen)
+                    {
+                        string id = ids[pic];
+                        string finalPath = Path.Combine(directory, id + ".png");
+                        if (!TryExportEtShapePng(pic, finalPath, out error))
+                        {
+                            return false;
+                        }
+
+                        FillInfoEt(pic, id, images, result.Warnings);
+                        images[images.Count - 1].Path = Path.GetFullPath(finalPath).Replace('\\', '/');
+                    }
+                }
+
+                string fullAfter = ReadEtString(book, "FullName");
+                if (!string.IsNullOrEmpty(fullBefore)
+                    && !string.Equals(NormalizePath(fullBefore), NormalizePath(fullAfter), StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "导出图片时活动工作簿路径被改变";
+                    return false;
+                }
+
+                result.Images = images;
+                result.ImagesCount = images.Count;
+                return true;
+            }
+            finally
+            {
+                RestoreEtBookState(book, savedBefore, fullBefore, mtimeBefore, sawMtime, stamped);
+            }
+        }
+
+        private static bool TryFindEtIdCollision(List<object> pics, out string error)
+        {
+            error = null;
+            var occupied = new HashSet<string>(StringComparer.Ordinal);
+            foreach (object pic in pics)
+            {
+                if (SpreadsheetImageStampHelper.TryParse(ReadAltEt(pic), out string id, out _) && !occupied.Add(id))
+                {
+                    error = "簿内两张图撞同一个 I_";
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TryAssignEtIds(
+            List<object> pics,
+            out Dictionary<object, string> ids,
+            out bool stamped,
+            out string error)
+        {
+            ids = new Dictionary<object, string>();
+            stamped = false;
+            error = null;
+            var occupied = new HashSet<string>(StringComparer.Ordinal);
+            foreach (object pic in pics)
+            {
+                if (SpreadsheetImageStampHelper.TryParse(ReadAltEt(pic), out string id, out _))
+                {
+                    occupied.Add(id);
+                }
+            }
+
+            foreach (object pic in pics)
+            {
+                string alt = ReadAltEt(pic);
+                if (!SpreadsheetImageStampHelper.TryParse(alt, out string id, out string suffix))
+                {
+                    id = SpreadsheetImageStampHelper.NewRandomImageId(occupied);
+                    if (id == null)
+                    {
+                        error = "无法分配 image_id";
+                        return false;
+                    }
+
+                    EtCom.TrySetProperty(pic, "AlternativeText", SpreadsheetImageStampHelper.Format(id, suffix));
+                    stamped = true;
+                }
+
+                ids[pic] = id;
+            }
+
+            return true;
+        }
+
+        private static bool TryExportEtShapePng(object pic, string finalPath, out string error)
+        {
+            error = null;
+            string tempPath = Path.Combine(
+                Path.GetDirectoryName(finalPath) ?? "",
+                "_tmp_" + Guid.NewGuid().ToString("N") + ".png");
+            object chartObj = null;
+            try
+            {
+                object sheet = EtCom.GetProperty(pic, "Parent");
+                if (sheet == null)
+                {
+                    error = "导出图片失败: 找不到所在工作表";
+                    return false;
+                }
+
+                try
+                {
+                    EtCom.Invoke(sheet, "Activate");
+                }
+                catch
+                {
+                }
+
+                const int xlScreen = 1;
+                const int xlBitmap = 2;
+                const int xlPicture = -4147;
+                double left = Convert.ToDouble(EtCom.GetProperty(pic, "Left"));
+                double top = Convert.ToDouble(EtCom.GetProperty(pic, "Top"));
+                double width = Math.Max(10, Convert.ToDouble(EtCom.GetProperty(pic, "Width")));
+                double height = Math.Max(10, Convert.ToDouble(EtCom.GetProperty(pic, "Height")));
+                int[] formats = { xlBitmap, xlPicture };
+                Exception last = null;
+                foreach (int format in formats)
+                {
+                    try
+                    {
+                        EtCom.Invoke(pic, "CopyPicture", xlScreen, format);
+                        object charts = EtCom.GetProperty(sheet, "ChartObjects");
+                        chartObj = EtCom.Invoke(charts, "Add", left, top, width, height);
+                        try
+                        {
+                            EtCom.Invoke(chartObj, "Activate");
+                        }
+                        catch
+                        {
+                        }
+
+                        object chart = EtCom.GetProperty(chartObj, "Chart");
+                        EtCom.Invoke(chart, "Paste");
+                        EtCom.Invoke(chart, "Export", tempPath, "PNG");
+                        DeleteEtChartQuiet(ref chartObj);
+                        if (File.Exists(tempPath) && new FileInfo(tempPath).Length > 8 && IsPngFile(tempPath))
+                        {
+                            File.Copy(tempPath, finalPath, true);
+                            return true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        last = ex;
+                        DeleteEtChartQuiet(ref chartObj);
+                    }
+                }
+
+                error = last != null
+                    ? "导出图片失败: " + last.Message
+                    : "导出图片失败: 未生成 PNG";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                error = "导出图片失败: " + ex.Message;
+                return false;
+            }
+            finally
+            {
+                DeleteEtChartQuiet(ref chartObj);
+                try
+                {
+                    if (File.Exists(tempPath))
+                    {
+                        File.Delete(tempPath);
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private static void DeleteEtChartQuiet(ref object chartObj)
+        {
+            if (chartObj == null)
+            {
+                return;
+            }
+
+            try
+            {
+                EtCom.Invoke(chartObj, "Delete");
+            }
+            catch
+            {
+            }
+
+            chartObj = null;
+        }
+
+        private static void RestoreEtBookState(
+            object book,
+            bool savedBefore,
+            string fullBefore,
+            DateTime mtimeBefore,
+            bool sawMtime,
+            bool stamped)
+        {
+            try
+            {
+                bool diskWritten = false;
+                if (sawMtime && File.Exists(fullBefore))
+                {
+                    diskWritten = File.GetLastWriteTimeUtc(fullBefore) != mtimeBefore;
+                }
+
+                if (diskWritten)
+                {
+                    return;
+                }
+
+                bool wantSaved = stamped ? false : savedBefore;
+                EtCom.TrySetProperty(book, "Saved", wantSaved);
+            }
+            catch
+            {
+            }
+        }
+
+        private static string EtSheetName(object pic)
+        {
+            try
+            {
+                object parent = EtCom.GetProperty(pic, "Parent");
+                return EtCom.TryReadName(parent) ?? "";
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static string ReadEtString(object target, string name)
+        {
+            try
+            {
+                return Convert.ToString(EtCom.GetProperty(target, name)) ?? "";
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static bool ReadEtSaved(object book)
+        {
+            try
+            {
+                object raw = EtCom.GetProperty(book, "Saved");
+                if (raw is bool flag)
+                {
+                    return flag;
+                }
+
+                return Convert.ToInt32(raw) != 0;
+            }
+            catch
+            {
+                return true;
+            }
         }
 
         private static bool TryInsertEt(

@@ -44,26 +44,36 @@ namespace WordAddIn1
                         ["action"] = hostResult.Action ?? ""
                     };
 
-                    if (hostResult.Action == "list")
+                    if (hostResult.Action == "list" || hostResult.Action == "export")
                     {
                         var images = new List<Dictionary<string, object>>();
                         if (hostResult.Images != null)
                         {
                             foreach (SpreadsheetImageInfo info in hostResult.Images)
                             {
-                                images.Add(new Dictionary<string, object>
+                                var row = new Dictionary<string, object>
                                 {
                                     ["image_id"] = info.ImageId ?? "",
                                     ["sheet"] = info.Sheet ?? "",
                                     ["anchor"] = info.Anchor ?? "",
                                     ["width_cm"] = info.WidthCm,
                                     ["height_cm"] = info.HeightCm
-                                });
+                                };
+                                if (hostResult.Action == "export" && !string.IsNullOrEmpty(info.Path))
+                                {
+                                    row["path"] = info.Path;
+                                }
+
+                                images.Add(row);
                             }
                         }
 
                         data["images"] = images;
                         data["images_count"] = hostResult.ImagesCount;
+                        if (hostResult.Action == "export")
+                        {
+                            data["message"] = "抽取成功";
+                        }
                     }
                     else
                     {
