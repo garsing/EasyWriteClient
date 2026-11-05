@@ -144,9 +144,24 @@ namespace ExcelWorkbookRoundtripTest
                 }
 
                 ToolResult read = session.Read(id, sheet, "C2:C5");
-                if (!read.Success || !Has(Str(read, "table"), "华北"))
+                if (!read.Success || Has(Str(read, "table"), "华北") || !Has(Str(read, "table"), "华东"))
                 {
-                    return "隐藏行应仍能读到 华北";
+                    return "读表格应只剩可见的华东";
+                }
+
+                string export = session.NewCsvPath();
+                ToolResult exported = session.Read(id, sheet, "C2:C5", null, export);
+                if (!exported.Success)
+                {
+                    return exported.Error;
+                }
+
+                string csv = System.IO.File.ReadAllText(export);
+                if (csv.IndexOf("华北", StringComparison.Ordinal) >= 0
+                    || csv.IndexOf("华南", StringComparison.Ordinal) >= 0
+                    || csv.IndexOf("华东", StringComparison.Ordinal) < 0)
+                {
+                    return "导出应只剩可见的华东";
                 }
 
                 return IsNum(session.ReadValue2(ch, sheet, "A2"), 1) ? null : "筛选改动了编号列";
@@ -224,9 +239,9 @@ namespace ExcelWorkbookRoundtripTest
                 }
 
                 ToolResult read = session.Read(id, sheet, "C2:C5");
-                if (!read.Success || !Has(Str(read, "table"), "华北"))
+                if (!read.Success || Has(Str(read, "table"), "华北"))
                 {
-                    return "隐藏的华北应仍能读到";
+                    return "读表格不应再出现已隐藏的华北";
                 }
 
                 ToolResult byExpr = Call(session, id, sheet, "update", "C1:D1", index: 1,

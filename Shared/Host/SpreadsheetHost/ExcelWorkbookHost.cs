@@ -295,10 +295,15 @@ namespace WordAddIn1.SpreadsheetHost
 
             int rowCount = actualLastRow - firstRow + 1;
             int colCount = actualLastCol - firstCol + 1;
+            HashSet<int> visibleRows = VisibleRows(sheet, firstRow, actualLastRow, firstCol);
             var rows = new List<PreviewRow>();
             for (int r = 0; r < rowCount; r++)
             {
                 int sheetRow = firstRow + r;
+                if (visibleRows != null && !visibleRows.Contains(sheetRow))
+                {
+                    continue;
+                }
                 var row = new PreviewRow { RowNumber = sheetRow, Cells = new List<PreviewCell>() };
                 for (int c = 0; c < colCount; c++)
                 {
@@ -351,6 +356,61 @@ namespace WordAddIn1.SpreadsheetHost
                 Rows = rows
             };
             return true;
+        }
+
+        private static HashSet<int> VisibleRows(Excel.Worksheet sheet, int firstRow, int lastRow, int col)
+        {
+            if (sheet == null || lastRow < firstRow || col <= 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                Excel.Range body = sheet.Range[A1Address.Range(firstRow, col, lastRow, col)];
+                Excel.Range visible = body.SpecialCells(Excel.XlCellType.xlCellTypeVisible);
+                return RowNumbers(visible);
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                return new HashSet<int>();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static HashSet<int> RowNumbers(Excel.Range visible)
+        {
+            var rows = new HashSet<int>();
+            if (visible == null)
+            {
+                return rows;
+            }
+
+            Excel.Areas areas = visible.Areas;
+            if (areas == null)
+            {
+                return rows;
+            }
+
+            foreach (Excel.Range area in areas)
+            {
+                if (area == null)
+                {
+                    continue;
+                }
+
+                int start = area.Row;
+                int count = area.Rows.Count;
+                for (int i = 0; i < count; i++)
+                {
+                    rows.Add(start + i);
+                }
+            }
+
+            return rows;
         }
 
         public static bool TryCaptureRange(

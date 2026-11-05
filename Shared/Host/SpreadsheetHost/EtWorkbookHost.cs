@@ -289,10 +289,15 @@ namespace WordAddIn1.SpreadsheetHost
 
             int rowCount = actualLastRow - firstRow + 1;
             int colCount = actualLastCol - firstCol + 1;
+            HashSet<int> visibleRows = VisibleRows(sheet, firstRow, actualLastRow, firstCol);
             var rows = new List<PreviewRow>();
             for (int r = 0; r < rowCount; r++)
             {
                 int sheetRow = firstRow + r;
+                if (visibleRows != null && !visibleRows.Contains(sheetRow))
+                {
+                    continue;
+                }
                 var row = new PreviewRow { RowNumber = sheetRow, Cells = new List<PreviewCell>() };
                 for (int c = 0; c < colCount; c++)
                 {
@@ -348,6 +353,78 @@ namespace WordAddIn1.SpreadsheetHost
                 Rows = rows
             };
             return true;
+        }
+
+        private static HashSet<int> VisibleRows(object sheet, int firstRow, int lastRow, int col)
+        {
+            if (sheet == null || lastRow < firstRow || col <= 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                object body = GetSheetRange(sheet, A1Address.Range(firstRow, col, lastRow, col));
+                object visible = EtCom.Invoke(body, "SpecialCells", 12);
+                return RowNumbers(visible);
+            }
+            catch (System.Reflection.TargetInvocationException ex)
+            {
+                if (ex.InnerException is System.Runtime.InteropServices.COMException)
+                {
+                    return new HashSet<int>();
+                }
+
+                return null;
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                return new HashSet<int>();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static HashSet<int> RowNumbers(object visible)
+        {
+            var rows = new HashSet<int>();
+            if (visible == null)
+            {
+                return rows;
+            }
+
+            object areas = EtCom.GetProperty(visible, "Areas");
+            if (areas == null)
+            {
+                AddAreaRows(rows, visible);
+                return rows;
+            }
+
+            int count = Convert.ToInt32(EtCom.GetProperty(areas, "Count"), System.Globalization.CultureInfo.InvariantCulture);
+            for (int i = 1; i <= count; i++)
+            {
+                AddAreaRows(rows, EtCom.GetIndexed(areas, i));
+            }
+
+            return rows;
+        }
+
+        private static void AddAreaRows(HashSet<int> rows, object area)
+        {
+            if (area == null)
+            {
+                return;
+            }
+
+            int start = Convert.ToInt32(EtCom.GetProperty(area, "Row"), System.Globalization.CultureInfo.InvariantCulture);
+            object areaRows = EtCom.GetProperty(area, "Rows");
+            int count = Convert.ToInt32(EtCom.GetProperty(areaRows, "Count"), System.Globalization.CultureInfo.InvariantCulture);
+            for (int i = 0; i < count; i++)
+            {
+                rows.Add(start + i);
+            }
         }
 
         public static bool TryCaptureRange(

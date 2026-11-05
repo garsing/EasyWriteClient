@@ -113,33 +113,34 @@ namespace WordAddIn1.SpreadsheetHost
                 return null;
             }
 
-            rowCount = lastRow - firstRow + 1;
             colCount = lastCol - firstCol + 1;
-            var grid = new List<List<string>>(rowCount);
-            for (int r = 0; r < rowCount; r++)
-            {
-                var line = new List<string>(colCount);
-                for (int c = 0; c < colCount; c++)
-                {
-                    line.Add("");
-                }
-
-                grid.Add(line);
-            }
-
             if (previewRows == null)
             {
-                return grid;
+                rowCount = lastRow - firstRow + 1;
+                return BlankGrid(rowCount, colCount);
             }
 
+            var packed = new List<PreviewRow>();
             foreach (PreviewRow row in previewRows)
             {
-                if (row?.Cells == null)
+                if (row == null || row.RowNumber < firstRow || row.RowNumber > lastRow)
                 {
                     continue;
                 }
 
-                foreach (PreviewCell cell in row.Cells)
+                packed.Add(row);
+            }
+
+            rowCount = packed.Count;
+            var grid = BlankGrid(rowCount, colCount);
+            for (int rr = 0; rr < packed.Count; rr++)
+            {
+                if (packed[rr].Cells == null)
+                {
+                    continue;
+                }
+
+                foreach (PreviewCell cell in packed[rr].Cells)
                 {
                     if (cell == null || string.IsNullOrEmpty(cell.Addr))
                     {
@@ -151,15 +152,36 @@ namespace WordAddIn1.SpreadsheetHost
                         continue;
                     }
 
-                    int rr = sheetRow - firstRow;
+                    if (sheetRow != packed[rr].RowNumber)
+                    {
+                        continue;
+                    }
+
                     int cc = sheetCol - firstCol;
-                    if (rr < 0 || cc < 0 || rr >= rowCount || cc >= colCount)
+                    if (cc < 0 || cc >= colCount)
                     {
                         continue;
                     }
 
                     grid[rr][cc] = cell.Text ?? "";
                 }
+            }
+
+            return grid;
+        }
+
+        private static List<List<string>> BlankGrid(int rowCount, int colCount)
+        {
+            var grid = new List<List<string>>(rowCount);
+            for (int r = 0; r < rowCount; r++)
+            {
+                var line = new List<string>(colCount);
+                for (int c = 0; c < colCount; c++)
+                {
+                    line.Add("");
+                }
+
+                grid.Add(line);
             }
 
             return grid;
