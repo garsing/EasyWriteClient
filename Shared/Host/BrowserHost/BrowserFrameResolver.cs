@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text.RegularExpressions;
 using System.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -240,7 +239,7 @@ namespace WordAddIn1.BrowserHost
             return null;
         }
 
-        /// <summary>展开后树仍是外壳（根标题还是父页，或展开的那行 iframe 还在）→ 没进去。空表示已经进去。</summary>
+        /// <summary>展开结果没有内容。有内容的树直接返回，即使看起来像外壳或里面还有 iframe。</summary>
         public static string ParentShellReason(string treeText, string parentTitle, string frameName = null)
         {
             if (string.IsNullOrWhiteSpace(treeText))
@@ -248,22 +247,10 @@ namespace WordAddIn1.BrowserHost
                 return "empty-tree";
             }
 
-            if (!string.IsNullOrWhiteSpace(parentTitle)
-                && HeadLines(treeText, 12).IndexOf(parentTitle, StringComparison.Ordinal) >= 0
-                && HasIframeRow(treeText))
-            {
-                return "title-and-iframe-row";
-            }
-
-            if (HasIframeNamed(treeText, frameName))
-            {
-                return "iframe-named";
-            }
-
             return null;
         }
 
-        /// <summary>展开后树仍是外壳（根标题还是父页，或展开的那行 iframe 还在）→ 没进去。</summary>
+        /// <summary>展开结果没有内容。</summary>
         public static bool TreeStillParentShell(string treeText, string parentTitle, string frameName = null)
         {
             return ParentShellReason(treeText, parentTitle, frameName) != null;
@@ -276,22 +263,7 @@ namespace WordAddIn1.BrowserHost
             ref string reason,
             ref string childRoot)
         {
-            if (ax == null || !HasNodes(ax.Json))
-            {
-                reason = "no-nodes";
-                return;
-            }
-
-            childRoot = ReadAxRootName(ax.Json);
-            if (!isRoot
-                && !string.IsNullOrWhiteSpace(parentTitle)
-                && string.Equals(childRoot, parentTitle, StringComparison.Ordinal))
-            {
-                reason = "root-name-equals-parent";
-                return;
-            }
-
-            reason = "unusable";
+            reason = "no-nodes";
         }
 
         private static async System.Threading.Tasks.Task<string> GetAxTreeJsonAsync(
@@ -472,116 +444,7 @@ namespace WordAddIn1.BrowserHost
                 return false;
             }
 
-            if (isRoot)
-            {
-                return true;
-            }
-
-            return !AxLooksLikeParentDocument(ax.Json, parentTitle, parentUrl);
-        }
-
-        private static bool AxLooksLikeParentDocument(string json, string parentTitle, string parentUrl)
-        {
-            if (string.IsNullOrWhiteSpace(parentTitle))
-            {
-                return false;
-            }
-
-            return string.Equals(ReadAxRootName(json), parentTitle, StringComparison.Ordinal);
-        }
-
-        private static string ReadAxRootName(string json)
-        {
-            return ReadAxRootField(json, name: true);
-        }
-
-        private static string ReadAxRootUrl(string json)
-        {
-            return ReadAxRootField(json, name: false);
-        }
-
-        private static string ReadAxRootField(string json, bool name)
-        {
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                return "";
-            }
-
-            try
-            {
-                JArray nodes = JObject.Parse(json)["nodes"] as JArray;
-                if (nodes == null)
-                {
-                    return "";
-                }
-
-                foreach (JToken token in nodes)
-                {
-                    JObject jo = token as JObject;
-                    if (jo == null)
-                    {
-                        continue;
-                    }
-
-                    string role = ReadAxValue(jo["role"]);
-                    if (!string.Equals(role, "RootWebArea", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(role, "WebArea", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    return name
-                        ? ReadAxValue(jo["name"])
-                        : ReadAxNamedProperty(jo["properties"], "url");
-                }
-            }
-            catch
-            {
-            }
-
-            return "";
-        }
-
-        private static string ReadAxValue(JToken t)
-        {
-            if (t == null || t.Type == JTokenType.Null)
-            {
-                return "";
-            }
-
-            JObject o = t as JObject;
-            if (o != null && o["value"] != null && o["value"].Type != JTokenType.Null)
-            {
-                return Convert.ToString(o["value"]) ?? "";
-            }
-
-            return Convert.ToString(t) ?? "";
-        }
-
-        private static string ReadAxNamedProperty(JToken propertiesToken, string propertyName)
-        {
-            JArray props = propertiesToken as JArray;
-            if (props == null || string.IsNullOrEmpty(propertyName))
-            {
-                return "";
-            }
-
-            foreach (JToken p in props)
-            {
-                JObject po = p as JObject;
-                if (po == null)
-                {
-                    continue;
-                }
-
-                string pname = Convert.ToString(po["name"]) ?? "";
-                if (string.Equals(pname, propertyName, StringComparison.OrdinalIgnoreCase))
-                {
-                    return ReadAxValue(po["value"]);
-                }
-            }
-
-            return "";
+            return true;
         }
 
         private static bool OriginsMatch(string a, string b)
@@ -605,56 +468,6 @@ namespace WordAddIn1.BrowserHost
             return Uri.TryCreate(url ?? "", UriKind.Absolute, out u)
                 && (string.Equals(u.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
                     || string.Equals(u.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase));
-        }
-
-        private static string HeadLines(string text, int maxLines)
-        {
-            if (string.IsNullOrEmpty(text) || maxLines < 1)
-            {
-                return "";
-            }
-
-            int seen = 0;
-            for (int i = 0; i < text.Length; i++)
-            {
-                if (text[i] != '\n')
-                {
-                    continue;
-                }
-
-                seen++;
-                if (seen >= maxLines)
-                {
-                    return text.Substring(0, i);
-                }
-            }
-
-            return text;
-        }
-
-        private static bool HasIframeRow(string tree)
-        {
-            if (string.IsNullOrEmpty(tree))
-            {
-                return false;
-            }
-
-            return tree.IndexOf("Iframe ", StringComparison.OrdinalIgnoreCase) >= 0
-                || tree.IndexOf("- iframe", StringComparison.OrdinalIgnoreCase) >= 0
-                || tree.IndexOf("- Iframe", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private static bool HasIframeNamed(string tree, string frameName)
-        {
-            if (string.IsNullOrEmpty(tree) || string.IsNullOrWhiteSpace(frameName))
-            {
-                return false;
-            }
-
-            return Regex.IsMatch(
-                tree,
-                @"iframe[^\r\n]*""" + Regex.Escape(frameName.Trim()) + @"""",
-                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         }
 
         private static void WalkFrameTree(JObject tree, BrowserFrameMap map, string parentId)
