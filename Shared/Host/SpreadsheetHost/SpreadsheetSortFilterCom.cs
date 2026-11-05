@@ -343,7 +343,7 @@ namespace WordAddIn1.SpreadsheetHost
                         continue;
                     }
 
-                    string column = ReadCell(panel.HeaderRow, panel.FirstCol + i - 1);
+                    string column = (ReadCell(panel.HeaderRow, panel.FirstCol + i - 1) ?? "").Trim();
                     int op = 0;
                     try
                     {
@@ -417,14 +417,24 @@ namespace WordAddIn1.SpreadsheetHost
             {
                 sorts = new List<SortFilterSortKey>();
                 error = null;
-                if (!panel.IsTable)
+                Excel.Sort sort = null;
+                if (panel.IsTable)
+                {
+                    Excel.ListObject table = TableByName(panel.TableName);
+                    sort = table == null ? null : table.Sort;
+                }
+
+                if (sort == null || sort.SortFields == null || sort.SortFields.Count == 0)
+                {
+                    sort = _sheet.Sort;
+                }
+
+                if (sort == null || sort.SortFields == null || sort.SortFields.Count == 0)
                 {
                     return true;
                 }
 
-                Excel.ListObject table = TableByName(panel.TableName);
-                Excel.Sort sort = table.Sort;
-                if (sort == null || sort.SortFields == null)
+                if (!SortRangeCoversPanel(sort, panel))
                 {
                     return true;
                 }
@@ -448,12 +458,35 @@ namespace WordAddIn1.SpreadsheetHost
                         : "asc";
                     sorts.Add(new SortFilterSortKey
                     {
-                        Column = ReadCell(panel.HeaderRow, col),
+                        Column = (ReadCell(panel.HeaderRow, col) ?? "").Trim(),
                         Order = order
                     });
                 }
 
                 return true;
+            }
+
+            private static bool SortRangeCoversPanel(Excel.Sort sort, SortFilterLivePanel panel)
+            {
+                Excel.Range range = null;
+                try
+                {
+                    range = sort.Rng;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+
+                if (range == null)
+                {
+                    return false;
+                }
+
+                int row = range.Row;
+                int first = range.Column;
+                int last = first + range.Columns.Count - 1;
+                return row == panel.HeaderRow && first <= panel.FirstCol && last >= panel.LastCol;
             }
 
             public int CountVisible(int headerRow, int firstCol, int lastRow)

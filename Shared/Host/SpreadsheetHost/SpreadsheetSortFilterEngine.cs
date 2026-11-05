@@ -237,6 +237,13 @@ namespace WordAddIn1.SpreadsheetHost
                 return false;
             }
 
+            if ((written.Sorts == null || written.Sorts.Count == 0)
+                && request.Sorts != null
+                && request.Sorts.Count > 0)
+            {
+                written.Sorts = request.Sorts;
+            }
+
             result.Panel = written;
             return true;
         }

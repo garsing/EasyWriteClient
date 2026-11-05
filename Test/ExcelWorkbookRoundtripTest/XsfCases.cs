@@ -169,11 +169,6 @@ namespace ExcelWorkbookRoundtripTest
                     return result.Error;
                 }
 
-                if (CountOf(PanelField(result, "sorts")) != 0)
-                {
-                    return "工作表筛选不应编造 sorts";
-                }
-
                 if (!IsNum(session.ReadValue2(ch, sheet, "D2"), 3000))
                 {
                     return "金额列没有倒序";
@@ -185,7 +180,8 @@ namespace ExcelWorkbookRoundtripTest
                     return "range 外的编号/姓名跟着动了";
                 }
 
-                return null;
+                return SortKeyOk(PanelField(result, "sorts"), "金额", "desc")
+                    ?? SortKeyOk(PanelSorts(Call(session, id, sheet, "list")), "金额", "desc");
             });
 
             Book(run, session, filter, "xsf-sort-all", (id, ch, sheet) =>
@@ -213,7 +209,8 @@ namespace ExcelWorkbookRoundtripTest
                     return "整行没有按金额倒序";
                 }
 
-                return null;
+                return SortKeyOk(PanelField(result, "sorts"), "金额", "desc")
+                    ?? SortKeyOk(PanelSorts(Call(session, id, sheet, "list")), "金额", "desc");
             });
 
             Book(run, session, filter, "xsf-expr-and", (id, ch, sheet) =>
@@ -988,6 +985,34 @@ namespace ExcelWorkbookRoundtripTest
             if (data != null && data.ContainsKey(key))
             {
                 return data[key];
+            }
+
+            return null;
+        }
+
+        private static object PanelSorts(ToolResult list)
+        {
+            Dictionary<string, object> panel = PanelAt(list, 0);
+            if (panel == null || !panel.ContainsKey("sorts"))
+            {
+                return null;
+            }
+
+            return panel["sorts"];
+        }
+
+        private static string SortKeyOk(object sorts, string column, string order)
+        {
+            Dictionary<string, object> key = ItemAt(sorts, 0);
+            if (key == null)
+            {
+                return "sorts 为空";
+            }
+
+            if (!string.Equals(Text(key["column"]), column, StringComparison.Ordinal)
+                || !string.Equals(Text(key["order"]), order, StringComparison.Ordinal))
+            {
+                return "sorts=" + Text(key["column"]) + "/" + Text(key["order"]);
             }
 
             return null;

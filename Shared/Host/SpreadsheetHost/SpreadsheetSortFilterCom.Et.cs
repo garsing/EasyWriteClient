@@ -326,7 +326,7 @@ namespace WordAddIn1.SpreadsheetHost
                         continue;
                     }
 
-                    string column = ReadCell(panel.HeaderRow, panel.FirstCol + i - 1);
+                    string column = (ReadCell(panel.HeaderRow, panel.FirstCol + i - 1) ?? "").Trim();
                     int op = 0;
                     try
                     {
@@ -404,18 +404,24 @@ namespace WordAddIn1.SpreadsheetHost
             {
                 sorts = new List<SortFilterSortKey>();
                 error = null;
-                if (!panel.IsTable)
+                object sort = null;
+                if (panel.IsTable)
+                {
+                    object table = FindTable(panel.TableName);
+                    sort = table == null ? null : EtCom.GetProperty(table, "Sort");
+                }
+
+                if (!HasSortFields(sort))
+                {
+                    sort = EtCom.GetProperty(_sheet, "Sort");
+                }
+
+                if (!HasSortFields(sort) || !SortRangeCoversPanel(sort, panel))
                 {
                     return true;
                 }
 
-                object sort = EtCom.GetProperty(FindTable(panel.TableName), "Sort");
-                object fields = sort == null ? null : EtCom.GetProperty(sort, "SortFields");
-                if (fields == null)
-                {
-                    return true;
-                }
-
+                object fields = EtCom.GetProperty(sort, "SortFields");
                 int count = Convert.ToInt32(EtCom.GetProperty(fields, "Count"), CultureInfo.InvariantCulture);
                 for (int i = 1; i <= count; i++)
                 {
@@ -435,12 +441,58 @@ namespace WordAddIn1.SpreadsheetHost
                     int order = Convert.ToInt32(EtCom.GetProperty(field, "Order"), CultureInfo.InvariantCulture);
                     sorts.Add(new SortFilterSortKey
                     {
-                        Column = ReadCell(panel.HeaderRow, col),
+                        Column = (ReadCell(panel.HeaderRow, col) ?? "").Trim(),
                         Order = order == 2 ? "desc" : "asc"
                     });
                 }
 
                 return true;
+            }
+
+            private static bool HasSortFields(object sort)
+            {
+                if (sort == null)
+                {
+                    return false;
+                }
+
+                try
+                {
+                    object fields = EtCom.GetProperty(sort, "SortFields");
+                    if (fields == null)
+                    {
+                        return false;
+                    }
+
+                    return Convert.ToInt32(EtCom.GetProperty(fields, "Count"), CultureInfo.InvariantCulture) > 0;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+
+            private static bool SortRangeCoversPanel(object sort, SortFilterLivePanel panel)
+            {
+                object range = null;
+                try
+                {
+                    range = EtCom.GetProperty(sort, "Rng");
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+
+                if (range == null)
+                {
+                    return false;
+                }
+
+                int row = ReadInt(range, "Row");
+                int first = ReadInt(range, "Column");
+                int last = first + ReadInt(EtCom.GetProperty(range, "Columns"), "Count") - 1;
+                return row == panel.HeaderRow && first <= panel.FirstCol && last >= panel.LastCol;
             }
 
             public int CountVisible(int headerRow, int firstCol, int lastRow)
