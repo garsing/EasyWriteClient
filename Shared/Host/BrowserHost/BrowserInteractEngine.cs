@@ -433,13 +433,6 @@ namespace WordAddIn1.BrowserHost
                     + "\"，期望=\"" + Truncate(want, 40) + "\"）");
             }
 
-            // 4) 收起页面上的下拉联想。弹层里的输入不按 Esc，否则修改框会被关掉。
-            if (!await InDismissableDialogAsync(cdp, objectId, sessionId).ConfigureAwait(true))
-            {
-                await DispatchKeyAsync(cdp, "keyDown", "Escape", sessionId).ConfigureAwait(true);
-                await DispatchKeyAsync(cdp, "keyUp", "Escape", sessionId).ConfigureAwait(true);
-            }
-
             await CallFunctionOnAsync(
                 cdp,
                 objectId,
@@ -796,43 +789,6 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
-        private const string InDismissableDialogJs =
-            @"function() {
-  var sel = '[role=""dialog""],[aria-modal=""true""],.layui-layer,.el-dialog,.ant-modal,.modal-dialog,.ivu-modal';
-  var n = this;
-  while (n) {
-    try {
-      if (n.closest && n.closest(sel)) return true;
-    } catch (e) {}
-    var root = n.getRootNode && n.getRootNode();
-    if (root && root.host) { n = root.host; continue; }
-    break;
-  }
-  return false;
-}";
-
-        private static async Task<bool> InDismissableDialogAsync(
-            IBrowserCdp cdp,
-            string objectId,
-            string sessionId)
-        {
-            try
-            {
-                string json = await CallFunctionOnAsync(
-                    cdp,
-                    objectId,
-                    InDismissableDialogJs,
-                    null,
-                    sessionId).ConfigureAwait(true);
-                var token = JObject.Parse(json ?? "{}")["result"]?["value"];
-                return token != null && token.Type == JTokenType.Boolean && (bool)token;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
         private static string ReadTypedValue(string resultJson)
         {
             try
@@ -926,20 +882,6 @@ namespace WordAddIn1.BrowserHost
                     "function(){ this.focus && this.focus(); }",
                     null,
                     sessionId).ConfigureAwait(true);
-
-                // 带 ref 的 Enter：先 Esc 收联想。弹层内不按，避免把对话框关掉。
-                if (string.Equals(keyName, "Enter", StringComparison.Ordinal)
-                    && !await InDismissableDialogAsync(cdp, objectId, sessionId).ConfigureAwait(true))
-                {
-                    await DispatchKeyAsync(cdp, "keyDown", "Escape", sessionId).ConfigureAwait(true);
-                    await DispatchKeyAsync(cdp, "keyUp", "Escape", sessionId).ConfigureAwait(true);
-                    await CallFunctionOnAsync(
-                        cdp,
-                        objectId,
-                        "function(){ this.focus && this.focus(); }",
-                        null,
-                        sessionId).ConfigureAwait(true);
-                }
             }
 
             await DispatchKeyAsync(cdp, "keyDown", keyName, sessionId).ConfigureAwait(true);
