@@ -228,10 +228,18 @@ namespace WordAddIn1.BrowserHost
             if (ReadJsReveal(resultJson))
             {
                 ReadJsHostPoint(resultJson, out double hostX, out double hostY);
+                FrameOrigin hostOrigin = await FrameContentOriginAsync(cdp, objectId, sessionId)
+                    .ConfigureAwait(true);
                 ScriptDialogTrace.Write("click-reveal-move-begin");
                 if (await UntilScriptDialogAsync(
                         dialog,
-                        DispatchCdpMouseAsync(cdp, sessionId, "mouseMoved", hostX, hostY, false))
+                        DispatchCdpMouseAsync(
+                            cdp,
+                            sessionId,
+                            "mouseMoved",
+                            hostX + hostOrigin.X,
+                            hostY + hostOrigin.Y,
+                            false))
                     .ConfigureAwait(true))
                 {
                     ScriptDialogTrace.Write("click-return dialog-during-reveal-move");
@@ -1843,6 +1851,72 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
+        private struct FrameOrigin
+        {
+            public double X;
+            public double Y;
+        }
+
+        /// <summary>内层坐标换成当前鼠标会话的视口坐标。同源 iframe 没有单独会话，要加上每一层框的位置。</summary>
+        private static async Task<FrameOrigin> FrameContentOriginAsync(
+            IBrowserCdp cdp,
+            string objectId,
+            string sessionId)
+        {
+            var origin = new FrameOrigin();
+            if (cdp == null || string.IsNullOrEmpty(objectId))
+            {
+                return origin;
+            }
+
+            try
+            {
+                string json = await CallFunctionOnAsync(
+                    cdp,
+                    objectId,
+                    @"function() {
+  var dx = 0, dy = 0, win = null, guard = 0;
+  try { win = this.ownerDocument && this.ownerDocument.defaultView; } catch (e0) {}
+  while (win && guard < 8) {
+    var frameEl = null;
+    try { frameEl = win.frameElement; } catch (e1) { break; }
+    if (!frameEl || !frameEl.getBoundingClientRect) break;
+    var rect = frameEl.getBoundingClientRect();
+    dx += rect.left + (frameEl.clientLeft || 0);
+    dy += rect.top + (frameEl.clientTop || 0);
+    var parent = null;
+    try { parent = win.parent; } catch (e2) { break; }
+    if (!parent || parent === win) break;
+    win = parent;
+    guard++;
+  }
+  return { dx: dx, dy: dy };
+}",
+                    null,
+                    sessionId).ConfigureAwait(true);
+                var jo = JObject.Parse(json ?? "{}");
+                var value = jo["result"]?["value"] as JObject;
+                if (value != null)
+                {
+                    if (value["dx"] != null)
+                    {
+                        origin.X = (double)value["dx"];
+                    }
+
+                    if (value["dy"] != null)
+                    {
+                        origin.Y = (double)value["dy"];
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ScriptDialogTrace.Write("frame-origin-error " + ex.GetType().Name);
+            }
+
+            return origin;
+        }
+
         private static async Task DispatchCdpClickAsync(
             IBrowserCdp cdp,
             string objectId,
@@ -1851,10 +1925,18 @@ namespace WordAddIn1.BrowserHost
             string sessionId,
             Task dialog = null)
         {
+            FrameOrigin origin = await FrameContentOriginAsync(cdp, objectId, sessionId).ConfigureAwait(true);
+            double vx = x + origin.X;
+            double vy = y + origin.Y;
+            ScriptDialogTrace.Write(
+                "mouse-viewport x=" + vx.ToString("0", CultureInfo.InvariantCulture)
+                + " y=" + vy.ToString("0", CultureInfo.InvariantCulture)
+                + " dx=" + origin.X.ToString("0", CultureInfo.InvariantCulture)
+                + " dy=" + origin.Y.ToString("0", CultureInfo.InvariantCulture));
             ScriptDialogTrace.Write("mouse-move-begin");
             if (await UntilScriptDialogAsync(
                     dialog,
-                    DispatchCdpMouseAsync(cdp, sessionId, "mouseMoved", x, y, false))
+                    DispatchCdpMouseAsync(cdp, sessionId, "mouseMoved", vx, vy, false))
                 .ConfigureAwait(true))
             {
                 ScriptDialogTrace.Write("mouse-return dialog-during-move");
@@ -1864,7 +1946,7 @@ namespace WordAddIn1.BrowserHost
             ScriptDialogTrace.Write("mouse-down-begin");
             if (await UntilScriptDialogAsync(
                     dialog,
-                    DispatchCdpMouseAsync(cdp, sessionId, "mousePressed", x, y, true))
+                    DispatchCdpMouseAsync(cdp, sessionId, "mousePressed", vx, vy, true))
                 .ConfigureAwait(true))
             {
                 ScriptDialogTrace.Write("mouse-return dialog-during-down");
@@ -1874,7 +1956,7 @@ namespace WordAddIn1.BrowserHost
             ScriptDialogTrace.Write("mouse-up-begin");
             if (await UntilScriptDialogAsync(
                     dialog,
-                    DispatchCdpMouseAsync(cdp, sessionId, "mouseReleased", x, y, false))
+                    DispatchCdpMouseAsync(cdp, sessionId, "mouseReleased", vx, vy, false))
                 .ConfigureAwait(true))
             {
                 ScriptDialogTrace.Write("mouse-return dialog-during-up");
@@ -2039,7 +2121,15 @@ namespace WordAddIn1.BrowserHost
             double y,
             string sessionId)
         {
-            await DispatchCdpMouseAsync(cdp, sessionId, "mouseMoved", x, y, false).ConfigureAwait(true);
+            FrameOrigin origin = await FrameContentOriginAsync(cdp, objectId, sessionId).ConfigureAwait(true);
+            await DispatchCdpMouseAsync(
+                    cdp,
+                    sessionId,
+                    "mouseMoved",
+                    x + origin.X,
+                    y + origin.Y,
+                    false)
+                .ConfigureAwait(true);
             await CallFunctionOnAsync(
                 cdp,
                 objectId,
