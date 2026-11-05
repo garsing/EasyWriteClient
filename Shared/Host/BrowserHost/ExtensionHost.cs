@@ -834,8 +834,10 @@ namespace WordAddIn1.BrowserHost
                         parentTitle = title ?? channel.Title;
                     }
 
-                    if (BrowserFrameResolver.TreeStillParentShell(snapshot, parentTitle, frameName))
+                    string shellReason = BrowserFrameResolver.ParentShellReason(snapshot, parentTitle, frameName);
+                    if (shellReason != null)
                     {
+                        BrowserFrameTrace.Drop("extension", shellReason, parentTitle, frameName, pageUrl);
                         return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
                     }
                 }

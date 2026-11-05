@@ -732,6 +732,7 @@ namespace WordAddIn1.BrowserHost
         {
             if (channel == null || form == null || prior == null)
             {
+                BrowserFrameTrace.Drop("yiwrite-expand", "bad-args", form?.CurrentTitle, prior?.Name, "");
                 return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
             }
 
@@ -755,6 +756,7 @@ namespace WordAddIn1.BrowserHost
 
             if (string.IsNullOrWhiteSpace(childId))
             {
+                BrowserFrameTrace.Drop("yiwrite-expand", "no-child-frame", form.CurrentTitle, prior.Name, "");
                 return BrowserSnapshotResult.Fail("无法读取 iframe（无子 frame）");
             }
 
@@ -767,13 +769,17 @@ namespace WordAddIn1.BrowserHost
                     refId,
                     frameMap)
                 .ConfigureAwait(true);
-            if (expanded != null
-                && expanded.Success
-                && BrowserFrameResolver.TreeStillParentShell(
-                    expanded.Snapshot,
-                    form.CurrentTitle,
-                    prior.Name))
+            string shellReason = expanded != null && expanded.Success
+                ? BrowserFrameResolver.ParentShellReason(expanded.Snapshot, form.CurrentTitle, prior.Name)
+                : null;
+            if (shellReason != null)
             {
+                BrowserFrameTrace.Drop(
+                    "yiwrite-expand",
+                    shellReason,
+                    form.CurrentTitle,
+                    prior.Name,
+                    expanded.Url);
                 return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
             }
 
@@ -840,6 +846,7 @@ namespace WordAddIn1.BrowserHost
         {
             if (channel == null || form == null || string.IsNullOrWhiteSpace(frameId))
             {
+                BrowserFrameTrace.Drop("yiwrite-doc", "bad-args", form?.CurrentTitle, "", frameId);
                 return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
             }
 
@@ -862,12 +869,25 @@ namespace WordAddIn1.BrowserHost
             BrowserAxBuildResult built = BrowserAxTreeBuilder.BuildOverview(ax.Json, modalRoot);
             if (!built.Success)
             {
+                if (string.IsNullOrWhiteSpace(built.Error))
+                {
+                    BrowserFrameTrace.Drop("yiwrite-doc", "build-failed", form.CurrentTitle, "", frameId);
+                }
+
                 return BrowserSnapshotResult.Fail(
                     string.IsNullOrWhiteSpace(built.Error) ? "无法读取 iframe 内容" : built.Error);
             }
 
-            if (BrowserFrameResolver.TreeStillParentShell(built.TreeText, form.CurrentTitle))
+            string childUrl = null;
+            if (frameMap != null)
             {
+                frameMap.UrlByFrame.TryGetValue(frameId, out childUrl);
+            }
+
+            string docShell = BrowserFrameResolver.ParentShellReason(built.TreeText, form.CurrentTitle);
+            if (docShell != null)
+            {
+                BrowserFrameTrace.Drop("yiwrite-doc", docShell, form.CurrentTitle, "", childUrl);
                 return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
             }
 

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -133,6 +135,7 @@ namespace WordAddIn1.BrowserHost
         {
             if (cdp == null)
             {
+                BrowserFrameTrace.Drop("ax", "no-cdp", "", "", "");
                 return null;
             }
 
@@ -148,6 +151,8 @@ namespace WordAddIn1.BrowserHost
                 map = await LoadAsync(cdp).ConfigureAwait(true);
             }
 
+            string lastReason = "ax-empty";
+            string childRoot = "";
             if (!string.IsNullOrWhiteSpace(existingSessionId))
             {
                 BrowserFrameAxResult fromSession = await TryGetAxOnSessionAsync(cdp, existingSessionId, depth)
@@ -156,6 +161,8 @@ namespace WordAddIn1.BrowserHost
                 {
                     return fromSession;
                 }
+
+                NoteUnusable(fromSession, isRoot, parentTitle, ref lastReason, ref childRoot);
             }
 
             string childUrl = null;
@@ -171,6 +178,7 @@ namespace WordAddIn1.BrowserHost
                 string sessionId = await TryAttachOopifAsync(cdp, frameId, parentUrl).ConfigureAwait(true);
                 if (string.IsNullOrWhiteSpace(sessionId))
                 {
+                    BrowserFrameTrace.Drop("ax", "oopif-attach-failed", parentTitle, childRoot, childUrl);
                     return null;
                 }
 
@@ -181,6 +189,8 @@ namespace WordAddIn1.BrowserHost
                     return attached;
                 }
 
+                NoteUnusable(attached, false, parentTitle, ref lastReason, ref childRoot);
+                BrowserFrameTrace.Drop("ax", lastReason, parentTitle, childRoot, childUrl);
                 return null;
             }
 
@@ -197,9 +207,12 @@ namespace WordAddIn1.BrowserHost
                     {
                         return local;
                     }
+
+                    NoteUnusable(local, isRoot, parentTitle, ref lastReason, ref childRoot);
                 }
                 catch
                 {
+                    lastReason = "ax-exception";
                 }
             }
 
@@ -214,7 +227,37 @@ namespace WordAddIn1.BrowserHost
                     {
                         return attached;
                     }
+
+                    NoteUnusable(attached, false, parentTitle, ref lastReason, ref childRoot);
                 }
+                else if (lastReason == "ax-empty" || lastReason == "ax-exception")
+                {
+                    lastReason = "oopif-attach-failed";
+                }
+            }
+
+            BrowserFrameTrace.Drop("ax", lastReason, parentTitle, childRoot, childUrl);
+            return null;
+        }
+
+        /// <summary>展开后树仍是外壳（根标题还是父页，或展开的那行 iframe 还在）→ 没进去。空表示已经进去。</summary>
+        public static string ParentShellReason(string treeText, string parentTitle, string frameName = null)
+        {
+            if (string.IsNullOrWhiteSpace(treeText))
+            {
+                return "empty-tree";
+            }
+
+            if (!string.IsNullOrWhiteSpace(parentTitle)
+                && HeadLines(treeText, 12).IndexOf(parentTitle, StringComparison.Ordinal) >= 0
+                && HasIframeRow(treeText))
+            {
+                return "title-and-iframe-row";
+            }
+
+            if (HasIframeNamed(treeText, frameName))
+            {
+                return "iframe-named";
             }
 
             return null;
@@ -223,19 +266,32 @@ namespace WordAddIn1.BrowserHost
         /// <summary>展开后树仍是外壳（根标题还是父页，或展开的那行 iframe 还在）→ 没进去。</summary>
         public static bool TreeStillParentShell(string treeText, string parentTitle, string frameName = null)
         {
-            if (string.IsNullOrWhiteSpace(treeText))
+            return ParentShellReason(treeText, parentTitle, frameName) != null;
+        }
+
+        private static void NoteUnusable(
+            BrowserFrameAxResult ax,
+            bool isRoot,
+            string parentTitle,
+            ref string reason,
+            ref string childRoot)
+        {
+            if (ax == null || !HasNodes(ax.Json))
             {
-                return true;
+                reason = "no-nodes";
+                return;
             }
 
-            if (!string.IsNullOrWhiteSpace(parentTitle)
-                && HeadLines(treeText, 12).IndexOf(parentTitle, StringComparison.Ordinal) >= 0
-                && HasIframeRow(treeText))
+            childRoot = ReadAxRootName(ax.Json);
+            if (!isRoot
+                && !string.IsNullOrWhiteSpace(parentTitle)
+                && string.Equals(childRoot, parentTitle, StringComparison.Ordinal))
             {
-                return true;
+                reason = "root-name-equals-parent";
+                return;
             }
 
-            return HasIframeNamed(treeText, frameName);
+            reason = "unusable";
         }
 
         private static async System.Threading.Tasks.Task<string> GetAxTreeJsonAsync(
@@ -739,5 +795,57 @@ namespace WordAddIn1.BrowserHost
         public string Json { get; set; }
 
         public string SessionId { get; set; }
+    }
+
+    /// <summary>iframe 树被丢弃时记一行原因。模型仍只看到原来的失败句。</summary>
+    internal static class BrowserFrameTrace
+    {
+        private static readonly object Gate = new object();
+
+        public static string LogPath
+        {
+            get
+            {
+                return Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "EasyWrite",
+                    "iframe-read.log");
+            }
+        }
+
+        public static void Drop(string where, string reason, string parentTitle, string child, string url)
+        {
+            string line = DateTime.Now.ToString("HH:mm:ss.fff")
+                + " iframe-drop where=" + (where ?? "")
+                + " reason=" + (reason ?? "")
+                + " parent=" + Quote(parentTitle)
+                + " child=" + Quote(child)
+                + " url=" + Quote(url);
+            lock (Gate)
+            {
+                try
+                {
+                    string path = LogPath;
+                    Directory.CreateDirectory(Path.GetDirectoryName(path));
+                    File.AppendAllText(path, line + Environment.NewLine);
+                }
+                catch
+                {
+                }
+            }
+
+            EasyWriteDiagnostics.Log(DebugCategory.Host, line);
+        }
+
+        private static string Quote(string value)
+        {
+            string text = (value ?? "").Replace("\r", " ").Replace("\n", " ").Trim();
+            if (text.Length > 160)
+            {
+                text = text.Substring(0, 160);
+            }
+
+            return "\"" + text.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+        }
     }
 }

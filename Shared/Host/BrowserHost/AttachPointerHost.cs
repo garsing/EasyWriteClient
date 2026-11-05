@@ -653,6 +653,7 @@ namespace WordAddIn1.BrowserHost
 
             if (string.IsNullOrWhiteSpace(childId))
             {
+                BrowserFrameTrace.Drop("attach-expand", "no-child-frame", cdp.CurrentTitle, prior.Name, "");
                 return BrowserSnapshotResult.Fail("无法读取 iframe（无子 frame）");
             }
 
@@ -665,13 +666,17 @@ namespace WordAddIn1.BrowserHost
                     refId,
                     frameMap)
                 .ConfigureAwait(true);
-            if (expanded != null
-                && expanded.Success
-                && BrowserFrameResolver.TreeStillParentShell(
-                    expanded.Snapshot,
-                    cdp.CurrentTitle,
-                    prior.Name))
+            string shellReason = expanded != null && expanded.Success
+                ? BrowserFrameResolver.ParentShellReason(expanded.Snapshot, cdp.CurrentTitle, prior.Name)
+                : null;
+            if (shellReason != null)
             {
+                BrowserFrameTrace.Drop(
+                    "attach-expand",
+                    shellReason,
+                    cdp.CurrentTitle,
+                    prior.Name,
+                    expanded.Url);
                 return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
             }
 
@@ -689,6 +694,7 @@ namespace WordAddIn1.BrowserHost
         {
             if (channel == null || cdp == null || string.IsNullOrWhiteSpace(frameId))
             {
+                BrowserFrameTrace.Drop("attach-doc", "bad-args", cdp?.CurrentTitle, "", frameId);
                 return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
             }
 
@@ -711,12 +717,25 @@ namespace WordAddIn1.BrowserHost
             BrowserAxBuildResult built = BrowserAxTreeBuilder.BuildOverview(ax.Json, modalRoot);
             if (!built.Success)
             {
+                if (string.IsNullOrWhiteSpace(built.Error))
+                {
+                    BrowserFrameTrace.Drop("attach-doc", "build-failed", cdp.CurrentTitle, "", frameId);
+                }
+
                 return BrowserSnapshotResult.Fail(
                     string.IsNullOrWhiteSpace(built.Error) ? "无法读取 iframe 内容" : built.Error);
             }
 
-            if (BrowserFrameResolver.TreeStillParentShell(built.TreeText, cdp.CurrentTitle))
+            string childUrl = null;
+            if (frameMap != null)
             {
+                frameMap.UrlByFrame.TryGetValue(frameId, out childUrl);
+            }
+
+            string docShell = BrowserFrameResolver.ParentShellReason(built.TreeText, cdp.CurrentTitle);
+            if (docShell != null)
+            {
+                BrowserFrameTrace.Drop("attach-doc", docShell, cdp.CurrentTitle, "", childUrl);
                 return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
             }
 

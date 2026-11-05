@@ -48,6 +48,14 @@ namespace WordAddIn1.BrowserHost
                         .ConfigureAwait(true);
                     if (frameSnap == null || frameSnap["ok"]?.Value<bool>() != true)
                     {
+                        BrowserFrameTrace.Drop(
+                            "legacy",
+                            string.IsNullOrWhiteSpace((string)frameSnap?["error"])
+                                ? "legacy-snapshot-failed"
+                                : (string)frameSnap["error"],
+                            form.CurrentTitle,
+                            prior.Name,
+                            form.CurrentUrl);
                         return BrowserSnapshotResult.Fail((string)frameSnap?["error"] ?? "无法读取 iframe 内容");
                     }
 
