@@ -716,10 +716,19 @@ namespace WordAddIn1.BrowserHost
             return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", " ").Replace("\n", " ");
         }
 
+        private const int MaxNodeChildren = 40;
+
         private const string HiddenChildrenJs =
             @"function() {
   var root = this;
-  if (!root || !root.querySelectorAll) return [];
+  if (!root || !root.querySelectorAll) return { tooBig: false, count: 0, items: [] };
+  var all = root.querySelectorAll('*');
+  if (all.length > 40) return { tooBig: true, count: all.length, items: [] };
+  function blob(el) {
+    var c = el.className;
+    var name = c && typeof c === 'object' && c.baseVal != null ? String(c.baseVal) : String(c || '');
+    return String(name || '').replace(/\s+/g, ' ').trim();
+  }
   function hid(el) {
     var n = el;
     while (n && n !== root) {
@@ -730,36 +739,102 @@ namespace WordAddIn1.BrowserHost
     }
     return false;
   }
-  function blob(el) {
-    var c = el.className;
-    var name = c && typeof c === 'object' && c.baseVal != null ? String(c.baseVal) : String(c || '');
-    return String(name || '').replace(/\s+/g, ' ').trim();
+  function isGlyph(el) {
+    var tag = (el.tagName || '').toLowerCase();
+    if (tag !== 'i' && tag !== 'span' && tag !== 'em') return false;
+    var inner = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (inner.length > 4) return false;
+    if (/[\uE000-\uF8FF]/.test(inner)) return true;
+    return tag === 'i' && inner.length <= 1;
+  }
+  function visibleBox(el) {
+    var st;
+    try { st = window.getComputedStyle(el); } catch (e) { return false; }
+    if (!st || st.display === 'none' || st.visibility === 'hidden' || parseFloat(st.opacity) === 0) return false;
+    var r;
+    try { r = el.getBoundingClientRect(); } catch (e2) { return false; }
+    return !!(r && r.width > 0 && r.height > 0);
+  }
+  function rowText(el) {
+    var p = el.parentElement;
+    if (!p) return '';
+    var kids = p.children || [];
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      if (k === el) continue;
+      var t = String(k.innerText || k.textContent || '').replace(/[\uE000-\uF8FF]/g, '').replace(/\s+/g, ' ').trim();
+      if (t && t.length >= 2 && t.length <= 24) return t;
+    }
+    return '';
+  }
+  function classHint(el) {
+    var parts = blob(el).toLowerCase().match(/[a-z][a-z0-9-]{2,24}/g) || [];
+    var skip = { icon: 1, iconfont: 1, icons: 1 };
+    var picked = '';
+    for (var i = 0; i < parts.length; i++) {
+      if (!skip[parts[i]]) picked = parts[i];
+    }
+    return picked;
   }
   var items = [];
-  var all = root.querySelectorAll('*');
-  for (var i = 0; i < all.length && items.length < 40; i++) {
+  var seen = [];
+  function push(el, hidden) {
+    if (!el || seen.indexOf(el) >= 0) return;
+    seen.push(el);
+    var mark = 'ywH' + items.length;
+    try { el.setAttribute('data-yw-clk', mark); } catch (e3) { return; }
+    var tag = (el.tagName || '').toLowerCase();
+    var name = '';
+    if (hidden) {
+      var cls = blob(el);
+      var bits = cls.split(' ').filter(function(x) { return x; }).slice(0, 3).join('.');
+      name = tag + (bits ? '.' + bits : '');
+      var onclick = '';
+      try { onclick = el.getAttribute('onclick') || ''; } catch (e2) {}
+      var fn = String(onclick).match(/([A-Za-z_][A-Za-z0-9_]{2,40})\s*\(/);
+      if (fn) name += ' ' + fn[1];
+    } else {
+      name = '图标';
+      var hint = classHint(el);
+      if (hint) name += ' ' + hint;
+      var row = rowText(el);
+      if (row && name.indexOf(row) < 0) name += ' ' + row;
+    }
+    items.push({
+      mark: mark,
+      name: name.slice(0, 80),
+      role: tag === 'a' ? 'link' : 'button',
+      hidden: !!hidden
+    });
+  }
+  for (var i = 0; i < all.length; i++) {
     var el = all[i];
     var tag = (el.tagName || '').toLowerCase();
     if (tag === 'script' || tag === 'style' || tag === 'path' || tag === 'noscript') continue;
-    if (!hid(el)) continue;
-    var cls = blob(el);
-    var onclick = '';
-    try { onclick = el.getAttribute('onclick') || ''; } catch (e2) {}
-    var keep = !!cls || !!onclick || tag === 'a' || tag === 'button' || tag === 'input' || tag === 'i' || tag === 'span' || tag === 'em' || tag === 'p';
-    if (!keep) continue;
-    var mark = 'ywH' + items.length;
-    try { el.setAttribute('data-yw-clk', mark); } catch (e3) { continue; }
-    var bits = cls.split(' ').filter(function(x) { return x; }).slice(0, 3).join('.');
-    var name = tag + (bits ? '.' + bits : '');
-    var fn = String(onclick).match(/([A-Za-z_][A-Za-z0-9_]{2,40})\s*\(/);
-    if (fn) name += ' ' + fn[1];
-    items.push({ mark: mark, name: name.slice(0, 80), role: tag === 'a' ? 'link' : 'button' });
+    if (hid(el)) {
+      var cls = blob(el);
+      var onclick = '';
+      try { onclick = el.getAttribute('onclick') || ''; } catch (e2) {}
+      var keep = !!cls || !!onclick || tag === 'a' || tag === 'button' || tag === 'input' || tag === 'i' || tag === 'span' || tag === 'em' || tag === 'p';
+      if (keep) push(el, true);
+      continue;
+    }
+    if (isGlyph(el) && visibleBox(el)) push(el, false);
   }
-  return items;
+  var parent = root.parentElement;
+  if (parent && parent.children) {
+    var sibs = parent.children;
+    for (var s = 0; s < sibs.length; s++) {
+      var sib = sibs[s];
+      if (sib === root) continue;
+      if (isGlyph(sib) && visibleBox(sib)) push(sib, false);
+    }
+  }
+  return { tooBig: false, count: all.length, items: items };
 }";
 
         /// <summary>
-        /// 对某个 ref 列出它下面 display:none / visibility:hidden 的子节点，各自给 ref。
+        /// 对某个 ref 补它下面的隐藏子节点，以及可见小图标。底下元素超过 40 个则整次不补。
         /// </summary>
         public static async Task MergeHiddenChildrenAsync(
             IBrowserCdp cdp,
@@ -782,14 +857,38 @@ namespace WordAddIn1.BrowserHost
                     .CallFunctionOnAsync(cdp, objectId, HiddenChildrenJs, null, sessionId)
                     .ConfigureAwait(true);
                 JObject jo = JObject.Parse(resultJson ?? "{}");
-                JArray items = jo["result"]?["value"] as JArray;
+                JToken value = jo["result"]?["value"];
+                JObject payload = value as JObject;
+                JArray items = payload?["items"] as JArray ?? value as JArray;
+                bool tooBig = payload != null
+                    && payload["tooBig"] != null
+                    && payload["tooBig"].Type == JTokenType.Boolean
+                    && (bool)payload["tooBig"];
+                int childCount = 0;
+                if (payload != null && payload["count"] != null)
+                {
+                    int.TryParse(payload["count"].ToString(), out childCount);
+                }
+
                 var sb = new StringBuilder(built.TreeText ?? "");
                 if (sb.Length > 0 && !sb.ToString().EndsWith("\n"))
                 {
                     sb.AppendLine();
                 }
 
-                sb.AppendLine("- (隐藏子节点)");
+                sb.AppendLine("- (补查子节点)");
+                if (tooBig)
+                {
+                    sb.AppendLine(
+                        "  - 这个节点太大，底下有 "
+                        + childCount.ToString(CultureInfo.InvariantCulture)
+                        + " 个节点，超过 "
+                        + MaxNodeChildren.ToString(CultureInfo.InvariantCulture)
+                        + "。换更小的一行再查。");
+                    built.TreeText = sb.ToString().TrimEnd();
+                    return;
+                }
+
                 if (items == null || items.Count == 0)
                 {
                     sb.AppendLine("  - 无");
@@ -865,7 +964,17 @@ namespace WordAddIn1.BrowserHost
                         sb.Append(" \"").Append(Escape(name.Trim())).Append('"');
                     }
 
-                    sb.AppendLine(" (隐藏)");
+                    bool itemHidden = item["hidden"] == null
+                        || item["hidden"].Type != JTokenType.Boolean
+                        || (bool)item["hidden"];
+                    if (itemHidden)
+                    {
+                        sb.AppendLine(" (隐藏)");
+                    }
+                    else
+                    {
+                        sb.AppendLine();
+                    }
                 }
 
                 if (added == 0)
