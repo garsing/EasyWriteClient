@@ -313,6 +313,90 @@ namespace WordAddIn1.SpreadsheetHost
             return left + (orJoin ? " or " : " and ") + ToExprAtom(criteria2);
         }
 
+        public static bool TryTwoChecked(string criteria1, string criteria2, out List<string> values)
+        {
+            values = null;
+            if (!IsCheckedEquals(criteria1) || !IsCheckedEquals(criteria2))
+            {
+                return false;
+            }
+
+            values = new List<string>
+            {
+                criteria1.Substring(1),
+                criteria2.Substring(1)
+            };
+            return values[0].Length > 0 && values[1].Length > 0;
+        }
+
+        public static List<string> ReadCheckedValues(object criteria1, object criteria2)
+        {
+            var values = new List<string>();
+            AppendChecked(values, criteria1);
+            AppendChecked(values, criteria2);
+            return values;
+        }
+
+        private static void AppendChecked(List<string> values, object criteria)
+        {
+            if (criteria == null || criteria is DBNull || criteria.GetType().Name == "Missing")
+            {
+                return;
+            }
+
+            if (criteria is IEnumerable enumerable && !(criteria is string))
+            {
+                foreach (object item in enumerable)
+                {
+                    AppendCheckedOne(values, item);
+                }
+
+                return;
+            }
+
+            if (criteria is Array array)
+            {
+                foreach (object item in array)
+                {
+                    AppendCheckedOne(values, item);
+                }
+
+                return;
+            }
+
+            AppendCheckedOne(values, criteria);
+        }
+
+        private static void AppendCheckedOne(List<string> values, object item)
+        {
+            if (item == null || item is DBNull)
+            {
+                return;
+            }
+
+            string text = Convert.ToString(item, CultureInfo.InvariantCulture) ?? "";
+            if (text.StartsWith("=", StringComparison.Ordinal) && !text.StartsWith(">=", StringComparison.Ordinal))
+            {
+                text = text.Substring(1);
+            }
+
+            if (text.Length == 0 || values.Contains(text))
+            {
+                return;
+            }
+
+            values.Add(text);
+        }
+
+        private static bool IsCheckedEquals(string criteria)
+        {
+            return !string.IsNullOrEmpty(criteria)
+                && criteria.StartsWith("=", StringComparison.Ordinal)
+                && !criteria.StartsWith(">=", StringComparison.Ordinal)
+                && criteria.IndexOf('*') < 0
+                && criteria.IndexOf('?') < 0;
+        }
+
         public static Dictionary<string, object> PanelToWire(SortFilterPanel panel)
         {
             var sorts = new List<Dictionary<string, object>>();

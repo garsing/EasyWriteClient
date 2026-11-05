@@ -289,7 +289,7 @@ namespace WordAddIn1.SpreadsheetHost
                     {
                         range.AutoFilter(
                             field,
-                            filter.InValues.ToArray(),
+                            CheckedValues(filter.InValues),
                             Excel.XlAutoFilterOperator.xlFilterValues,
                             Type.Missing,
                             true);
@@ -362,11 +362,21 @@ namespace WordAddIn1.SpreadsheetHost
 
                     if (op == XlFilterValues)
                     {
+                        object second = null;
+                        try
+                        {
+                            second = filter.Criteria2;
+                        }
+                        catch (Exception)
+                        {
+                            second = null;
+                        }
+
                         filters.Add(new SortFilterColumn
                         {
                             Column = column,
                             IsIn = true,
-                            InValues = ReadValueList(filter.Criteria1)
+                            InValues = SpreadsheetSortFilterParse.ReadCheckedValues(filter.Criteria1, second)
                         });
                         continue;
                     }
@@ -398,6 +408,18 @@ namespace WordAddIn1.SpreadsheetHost
                             Column = column,
                             IsIn = true,
                             InValues = new List<string> { StripEquals(c1) }
+                        });
+                        continue;
+                    }
+
+                    if (op == XlOr
+                        && SpreadsheetSortFilterParse.TryTwoChecked(c1, c2, out List<string> checkedValues))
+                    {
+                        filters.Add(new SortFilterColumn
+                        {
+                            Column = column,
+                            IsIn = true,
+                            InValues = checkedValues
                         });
                         continue;
                     }
@@ -530,6 +552,17 @@ namespace WordAddIn1.SpreadsheetHost
                 return TableByName(tableName).Range;
             }
 
+            private static object[] CheckedValues(IList<string> values)
+            {
+                var boxed = new object[values.Count];
+                for (int i = 0; i < values.Count; i++)
+                {
+                    boxed[i] = values[i];
+                }
+
+                return boxed;
+            }
+
             private static void ShowArrows(Excel.Range range)
             {
                 dynamic target = range;
@@ -603,32 +636,6 @@ namespace WordAddIn1.SpreadsheetHost
                 }
 
                 return a.FirstCol.CompareTo(b.FirstCol);
-            }
-
-            private static List<string> ReadValueList(object criteria)
-            {
-                var values = new List<string>();
-                if (criteria is IEnumerable enumerable && !(criteria is string))
-                {
-                    foreach (object item in enumerable)
-                    {
-                        string text = StripEquals(CriteriaText(item));
-                        if (!string.IsNullOrEmpty(text))
-                        {
-                            values.Add(text);
-                        }
-                    }
-
-                    return values;
-                }
-
-                string single = StripEquals(CriteriaText(criteria));
-                if (!string.IsNullOrEmpty(single))
-                {
-                    values.Add(single);
-                }
-
-                return values;
             }
 
             private static string CriteriaText(object criteria)

@@ -284,7 +284,7 @@ namespace WordAddIn1.SpreadsheetHost
                     int field = columns[filter.Column] - firstCol + 1;
                     if (filter.IsIn)
                     {
-                        EtCom.InvokeFlex(range, "AutoFilter", field, filter.InValues.ToArray(), 7, Type.Missing, Type.Missing);
+                        EtCom.InvokeFlex(range, "AutoFilter", field, CheckedValues(filter.InValues), 7, Type.Missing, Type.Missing);
                     }
                     else if (string.IsNullOrEmpty(filter.Criteria2))
                     {
@@ -343,14 +343,24 @@ namespace WordAddIn1.SpreadsheetHost
                         return false;
                     }
 
-                    object criteria1 = EtCom.GetProperty(filter, "Criteria1");
+                    object criteria1 = EtCom.InvokeFlex(filter, "Criteria1");
                     if (op == 7)
                     {
+                        object second = null;
+                        try
+                        {
+                            second = EtCom.InvokeFlex(filter, "Criteria2");
+                        }
+                        catch (Exception)
+                        {
+                            second = null;
+                        }
+
                         filters.Add(new SortFilterColumn
                         {
                             Column = column,
                             IsIn = true,
-                            InValues = ReadValueList(criteria1)
+                            InValues = SpreadsheetSortFilterParse.ReadCheckedValues(criteria1, second)
                         });
                         continue;
                     }
@@ -385,6 +395,18 @@ namespace WordAddIn1.SpreadsheetHost
                             Column = column,
                             IsIn = true,
                             InValues = new List<string> { value }
+                        });
+                        continue;
+                    }
+
+                    if (op == 2
+                        && SpreadsheetSortFilterParse.TryTwoChecked(c1, c2, out List<string> checkedValues))
+                    {
+                        filters.Add(new SortFilterColumn
+                        {
+                            Column = column,
+                            IsIn = true,
+                            InValues = checkedValues
                         });
                         continue;
                     }
@@ -599,40 +621,15 @@ namespace WordAddIn1.SpreadsheetHost
                 return Convert.ToInt32(value, CultureInfo.InvariantCulture) != 0;
             }
 
-            private static List<string> ReadValueList(object criteria)
+            private static object[] CheckedValues(IList<string> values)
             {
-                var values = new List<string>();
-                if (criteria is IEnumerable enumerable && !(criteria is string))
+                var boxed = new object[values.Count];
+                for (int i = 0; i < values.Count; i++)
                 {
-                    foreach (object item in enumerable)
-                    {
-                        string text = Convert.ToString(item, CultureInfo.InvariantCulture) ?? "";
-                        if (text.StartsWith("=", StringComparison.Ordinal) && !text.StartsWith(">=", StringComparison.Ordinal))
-                        {
-                            text = text.Substring(1);
-                        }
-
-                        if (!string.IsNullOrEmpty(text))
-                        {
-                            values.Add(text);
-                        }
-                    }
-
-                    return values;
+                    boxed[i] = values[i];
                 }
 
-                string single = Convert.ToString(criteria, CultureInfo.InvariantCulture) ?? "";
-                if (single.StartsWith("=", StringComparison.Ordinal))
-                {
-                    single = single.Substring(1);
-                }
-
-                if (!string.IsNullOrEmpty(single))
-                {
-                    values.Add(single);
-                }
-
-                return values;
+                return boxed;
             }
 
             private static bool HasWildcard(string criteria)

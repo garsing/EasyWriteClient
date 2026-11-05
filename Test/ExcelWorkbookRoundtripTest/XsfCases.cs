@@ -12,7 +12,7 @@ namespace ExcelWorkbookRoundtripTest
     /// <summary>排序和筛选。前缀 xsf-。不要并进已绿的 xl- / xlw- / xlp-。</summary>
     internal static class XsfCases
     {
-        public const int Target = 24;
+        public const int Target = 25;
 
         public static void Run(TestRun run, bool et, string filter)
         {
@@ -150,6 +150,105 @@ namespace ExcelWorkbookRoundtripTest
                 }
 
                 return IsNum(session.ReadValue2(ch, sheet, "A2"), 1) ? null : "筛选改动了编号列";
+            });
+
+            Book(run, session, filter, "xsf-in-two", (id, ch, sheet) =>
+            {
+                string seeded = SeedMain(session, ch, sheet);
+                if (seeded != null)
+                {
+                    return seeded;
+                }
+
+                ToolResult both = Call(session, id, sheet, "add", "A1:D1", filters: new object[]
+                {
+                    FilterIn("地区", "华东", "华南"),
+                    FilterIn("姓名", "甲", "丁")
+                });
+                if (!both.Success)
+                {
+                    return both.Error;
+                }
+
+                if (IntOf(both, "visible_rows") != 2)
+                {
+                    return "两列勾选应剩甲/华东和丁/华南，可见 " + IntOf(both, "visible_rows");
+                }
+
+                if (RowHidden(ch, sheet, 2) || !RowHidden(ch, sheet, 3)
+                    || !RowHidden(ch, sheet, 4) || RowHidden(ch, sheet, 5))
+                {
+                    return "乙和丙应隐藏，甲和丁应可见";
+                }
+
+                string name = InText(both, "姓名");
+                string region = InText(both, "地区");
+                if (name == null || name.IndexOf("甲", StringComparison.Ordinal) < 0
+                    || name.IndexOf("丁", StringComparison.Ordinal) < 0
+                    || region == null || region.IndexOf("华东", StringComparison.Ordinal) < 0
+                    || region.IndexOf("华南", StringComparison.Ordinal) < 0
+                    || name.StartsWith("expr:", StringComparison.Ordinal))
+                {
+                    return "两列都应读回 in，姓名=" + name + " 地区=" + region;
+                }
+
+                ToolResult result = Call(session, id, sheet, "update", "C1:D1", index: 1,
+                    sorts: new object[] { SortKey("金额", "desc") },
+                    filters: new object[] { FilterIn("地区", "华东", "华南") });
+                if (!result.Success)
+                {
+                    return result.Error;
+                }
+
+                if (IntOf(result, "visible_rows") != 3)
+                {
+                    return "华东+华南应剩 3 行，可见 " + IntOf(result, "visible_rows");
+                }
+
+                if (!RowHidden(ch, sheet, 2) || RowHidden(ch, sheet, 3))
+                {
+                    return "排完后的华北应隐藏，华南应可见";
+                }
+
+                string backed = InText(result, "地区");
+                if (backed == null || backed.IndexOf("华东", StringComparison.Ordinal) < 0
+                    || backed.IndexOf("华南", StringComparison.Ordinal) < 0)
+                {
+                    return "两个勾选应读回 in，实际 " + backed;
+                }
+
+                string listed = InText(Call(session, id, sheet, "list"), "地区");
+                if (!string.Equals(listed, backed, StringComparison.Ordinal))
+                {
+                    return "list 的 in 与回包不一致: " + listed;
+                }
+
+                ToolResult read = session.Read(id, sheet, "C2:C5");
+                if (!read.Success || !Has(Str(read, "table"), "华北"))
+                {
+                    return "隐藏的华北应仍能读到";
+                }
+
+                ToolResult byExpr = Call(session, id, sheet, "update", "C1:D1", index: 1,
+                    filters: new object[] { FilterExpr("地区", "=\"华东\" or =\"华南\"") });
+                if (!byExpr.Success)
+                {
+                    return byExpr.Error;
+                }
+
+                if (IntOf(byExpr, "visible_rows") != 3 || !RowHidden(ch, sheet, 2) || RowHidden(ch, sheet, 3))
+                {
+                    return "两个等于用 or 写回后，华北应仍隐藏，可见 " + IntOf(byExpr, "visible_rows");
+                }
+
+                string exprBack = InText(byExpr, "地区");
+                if (exprBack == null || exprBack.StartsWith("expr:", StringComparison.Ordinal)
+                    || exprBack.IndexOf("华东", StringComparison.Ordinal) < 0)
+                {
+                    return "两个等于应读回 in，实际 " + exprBack;
+                }
+
+                return null;
             });
 
             Book(run, session, filter, "xsf-sort-part", (id, ch, sheet) =>
@@ -1016,6 +1115,62 @@ namespace ExcelWorkbookRoundtripTest
             }
 
             return null;
+        }
+
+        private static string InText(ToolResult result, string column)
+        {
+            Dictionary<string, object> data = Data(result);
+            object filters = data != null && data.ContainsKey("panels")
+                ? (PanelAt(result, 0) != null && PanelAt(result, 0).ContainsKey("filters")
+                    ? PanelAt(result, 0)["filters"]
+                    : null)
+                : PanelField(result, "filters");
+            if (!(filters is IEnumerable enumerable) || filters is string)
+            {
+                return null;
+            }
+
+            foreach (object raw in enumerable)
+            {
+                if (!(raw is Dictionary<string, object> item))
+                {
+                    continue;
+                }
+
+                if (!item.ContainsKey("column")
+                    || !string.Equals(Text(item["column"]), column, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (!item.ContainsKey("in") || item["in"] == null)
+                {
+                    return item.ContainsKey("expr") ? "expr:" + Text(item["expr"]) : "missing";
+                }
+
+                return FilterJoin(item["in"]);
+            }
+
+            return null;
+        }
+
+        private static string FilterJoin(object raw)
+        {
+            if (raw is string text)
+            {
+                return text;
+            }
+
+            var parts = new List<string>();
+            if (raw is IEnumerable enumerable && !(raw is string))
+            {
+                foreach (object item in enumerable)
+                {
+                    parts.Add(Convert.ToString(item, CultureInfo.InvariantCulture));
+                }
+            }
+
+            return string.Join(",", parts);
         }
 
         private static string FilterText(ToolResult result, string key)
