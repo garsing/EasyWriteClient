@@ -1851,6 +1851,9 @@ namespace WordAddIn1.BrowserHost
             string sessionId,
             Task dialog = null)
         {
+            await ArmClickWatchAsync(cdp, objectId, sessionId).ConfigureAwait(true);
+            try
+            {
             ScriptDialogTrace.Write("mouse-move-begin");
             if (await UntilScriptDialogAsync(
                     dialog,
@@ -1905,6 +1908,13 @@ namespace WordAddIn1.BrowserHost
                 return;
             }
 
+            bool seen = await ConsumeClickSeenAsync(cdp, objectId, sessionId).ConfigureAwait(true);
+            if (seen)
+            {
+                ScriptDialogTrace.Write("synthetic-click-skip seen=true");
+                return;
+            }
+
             ScriptDialogTrace.Write("synthetic-click-begin");
             try
             {
@@ -1955,7 +1965,110 @@ namespace WordAddIn1.BrowserHost
             {
                 ScriptDialogTrace.Write("synthetic-click-error " + ex.GetType().Name);
             }
+            }
+            finally
+            {
+                await ConsumeClickSeenAsync(cdp, objectId, sessionId).ConfigureAwait(true);
+            }
         }
+
+        private static async Task ArmClickWatchAsync(IBrowserCdp cdp, string objectId, string sessionId)
+        {
+            if (cdp == null || string.IsNullOrEmpty(objectId))
+            {
+                return;
+            }
+
+            try
+            {
+                await CallFunctionOnAsync(cdp, objectId, ArmClickWatchJs, null, sessionId)
+                    .ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                ScriptDialogTrace.Write("click-watch-arm-error " + ex.GetType().Name);
+            }
+        }
+
+        private static async Task<bool> ConsumeClickSeenAsync(IBrowserCdp cdp, string objectId, string sessionId)
+        {
+            if (cdp == null || string.IsNullOrEmpty(objectId))
+            {
+                return false;
+            }
+
+            try
+            {
+                string json = await CallFunctionOnAsync(cdp, objectId, ConsumeClickWatchJs, null, sessionId)
+                    .ConfigureAwait(true);
+                var jo = JObject.Parse(json ?? "{}");
+                var value = jo["result"]?["value"];
+                return value != null && value.Type == JTokenType.Boolean && (bool)value;
+            }
+            catch (Exception ex)
+            {
+                ScriptDialogTrace.Write("click-watch-read-error " + ex.GetType().Name);
+                return false;
+            }
+        }
+
+        private const string ArmClickWatchJs =
+            @"function() {
+  var target = this;
+  if (!target) return false;
+  var doc = target.ownerDocument || document;
+  function parentComposed(el) {
+    if (!el) return null;
+    if (el.assignedSlot) return el.assignedSlot;
+    if (el.parentElement) return el.parentElement;
+    var root = el.getRootNode && el.getRootNode();
+    if (root && root.host) return root.host;
+    return null;
+  }
+  function sameComposed(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    var n = a;
+    while (n) { if (n === b) return true; n = parentComposed(n); }
+    n = b;
+    while (n) { if (n === a) return true; n = parentComposed(n); }
+    try {
+      return !!(a.contains && a.contains(b)) || !!(b.contains && b.contains(a));
+    } catch (eS) { return false; }
+  }
+  function hits(e) {
+    if (!e) return false;
+    try {
+      var path = e.composedPath && e.composedPath();
+      if (path) {
+        for (var i = 0; i < path.length; i++) if (path[i] === target) return true;
+      }
+    } catch (eP) {}
+    return sameComposed(e.target, target);
+  }
+  if (doc.__yiwriteClickHook) {
+    try { doc.removeEventListener('click', doc.__yiwriteClickHook, true); } catch (eR) {}
+  }
+  doc.__yiwriteClickSeen = false;
+  var hook = function(e) {
+    try { if (hits(e)) doc.__yiwriteClickSeen = true; } catch (eH) {}
+  };
+  doc.__yiwriteClickHook = hook;
+  doc.addEventListener('click', hook, true);
+  return true;
+}";
+
+        private const string ConsumeClickWatchJs =
+            @"function() {
+  var doc = (this && this.ownerDocument) || document;
+  var seen = !!doc.__yiwriteClickSeen;
+  if (doc.__yiwriteClickHook) {
+    try { doc.removeEventListener('click', doc.__yiwriteClickHook, true); } catch (eR) {}
+    doc.__yiwriteClickHook = null;
+  }
+  doc.__yiwriteClickSeen = false;
+  return seen;
+}";
 
         private static async Task ProbeClickPointAsync(
             IBrowserCdp cdp,
