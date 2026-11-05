@@ -1074,7 +1074,8 @@ namespace WordAddIn1.BrowserHost
                             entry.BackendDomNodeId.Value,
                             sessionId,
                             ConfigManager.GetBrowserClickMode("yiwrite"),
-                            entry.Role)
+                            entry.Role,
+                            entry.FrameId)
                         .ConfigureAwait(true);
                     BrowserScriptDialogSession afterClick = dialogPage != null ? dialogPage.PendingScriptDialog : null;
                     ScriptDialogTrace.Write(
@@ -1083,7 +1084,7 @@ namespace WordAddIn1.BrowserHost
                 else if (act == "hover")
                 {
                     await BrowserInteractEngine
-                        .HoverAsync(form, entry.BackendDomNodeId.Value, sessionId)
+                        .HoverAsync(form, entry.BackendDomNodeId.Value, sessionId, entry.FrameId)
                         .ConfigureAwait(true);
                 }
                 else if (act == "type")

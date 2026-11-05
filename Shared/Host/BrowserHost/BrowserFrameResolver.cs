@@ -40,7 +40,7 @@ namespace WordAddIn1.BrowserHost
                 {
                     var payload = new JObject { ["frameId"] = frameId };
                     string ownerJson = await cdp
-                        .CallCdpAsync("Page.getFrameOwner", payload.ToString(Formatting.None))
+                        .CallCdpAsync("DOM.getFrameOwner", payload.ToString(Formatting.None))
                         .ConfigureAwait(true);
                     JObject owner = JObject.Parse(ownerJson);
                     if (owner["backendNodeId"] != null

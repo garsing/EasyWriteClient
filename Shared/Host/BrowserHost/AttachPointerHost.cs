@@ -374,13 +374,14 @@ namespace WordAddIn1.BrowserHost
                             entry.BackendDomNodeId.Value,
                             sessionId,
                             ConfigManager.GetBrowserClickMode(engine),
-                            entry.Role)
+                            entry.Role,
+                            entry.FrameId)
                         .ConfigureAwait(true);
                 }
                 else if (act == "hover")
                 {
                     await BrowserInteractEngine
-                        .HoverAsync(cdp, entry.BackendDomNodeId.Value, sessionId)
+                        .HoverAsync(cdp, entry.BackendDomNodeId.Value, sessionId, entry.FrameId)
                         .ConfigureAwait(true);
                 }
                 else if (act == "type")
@@ -587,7 +588,8 @@ namespace WordAddIn1.BrowserHost
                             entry.BackendDomNodeId.Value,
                             entry.CdpSessionId,
                             ConfigManager.GetBrowserClickMode(engine),
-                            entry.Role)
+                            entry.Role,
+                            entry.FrameId)
                         .ConfigureAwait(true);
                 }
                 catch
