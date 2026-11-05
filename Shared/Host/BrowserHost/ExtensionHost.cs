@@ -920,6 +920,16 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 BrowserRefAlign.Apply(channel.ChannelId, map, ref snapshot, null, ref focusRef);
+                if (expandingFrame && targetFrame.HasValue)
+                {
+                    BrowserFrameMemory.Remember(
+                        channel.ChannelId,
+                        new BrowserResnapshotLayer
+                        {
+                            AttachFrameId = targetFrame
+                        });
+                }
+
                 return BrowserSnapshotResult.Ok(
                     channel,
                     pageUrl,

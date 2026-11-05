@@ -63,14 +63,20 @@ namespace WordAddIn1.BrowserHost
             return YiWriteBrowserHost.CaptureViewportAsync(channel);
         }
 
-        public static Task<BrowserSnapshotResult> SnapshotAsync(
+        public static async Task<BrowserSnapshotResult> SnapshotAsync(
             BrowserChannel channel,
             string refId,
             string domSupplement = null,
             int? rangeStart = null,
             int? rangeEnd = null,
-            bool hiddenChildren = false)
+            bool hiddenChildren = false,
+            bool clear = false)
         {
+            if (clear && !string.IsNullOrWhiteSpace(refId))
+            {
+                return await ClearThenExpandAsync(channel, refId).ConfigureAwait(true);
+            }
+
             if (string.IsNullOrWhiteSpace(refId))
             {
                 if (!BrowserDomInputSupplement.TryResolveSelector(
@@ -79,24 +85,98 @@ namespace WordAddIn1.BrowserHost
                     out string normalized,
                     out string domErr))
                 {
-                    return Task.FromResult(
-                        BrowserSnapshotResult.Fail(domErr ?? "dom_supplement 无效"));
+                    return BrowserSnapshotResult.Fail(domErr ?? "dom_supplement 无效");
                 }
 
                 domSupplement = normalized;
+            }
+
+            if (clear)
+            {
+                if (channel != null)
+                {
+                    BrowserFrameMemory.Forget(channel.ChannelId);
+                }
+            }
+            else if (string.IsNullOrWhiteSpace(refId)
+                && channel != null
+                && BrowserFrameMemory.TryGet(channel.ChannelId, out BrowserResnapshotLayer remembered))
+            {
+                bool? alive = await BrowserFrameMemory
+                    .StillThereAsync(channel, remembered)
+                    .ConfigureAwait(true);
+                if (alive == false)
+                {
+                    BrowserFrameMemory.Forget(channel.ChannelId);
+                }
+                else
+                {
+                    BrowserSnapshotResult layered = await BrowserResnapshotAfterAction
+                        .CaptureAsync(channel, remembered)
+                        .ConfigureAwait(true);
+                    if (layered != null && layered.Success)
+                    {
+                        return layered;
+                    }
+
+                    return layered ?? BrowserSnapshotResult.Fail("取无障碍树失败");
+                }
             }
 
             BrowserOpMode mode = BrowserOpMode.Resolve(channel);
             if (mode.IsPointer)
             {
                 return mode.IsAttach
-                    ? AttachPointerHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren)
-                    : YiWriteBrowserHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren);
+                    ? await AttachPointerHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren).ConfigureAwait(true)
+                    : await YiWriteBrowserHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren).ConfigureAwait(true);
             }
 
             return mode.IsAttach
-                ? ExtensionHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren)
-                : AgentLegacyHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren);
+                ? await ExtensionHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren).ConfigureAwait(true)
+                : await AgentLegacyHost.SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren).ConfigureAwait(true);
+        }
+
+        /// <summary>先从当前 ref 表取出 iframe 行，再忘掉记忆，然后拍子文档。失败时记忆保持已清。</summary>
+        private static async Task<BrowserSnapshotResult> ClearThenExpandAsync(
+            BrowserChannel channel,
+            string refId)
+        {
+            if (channel == null)
+            {
+                return BrowserSnapshotResult.Fail("无浏览器渠道");
+            }
+
+            string id = refId.Trim();
+            if (!BrowserRefStore.TryGet(channel.ChannelId, id, out BrowserRefEntry prior) || prior == null)
+            {
+                BrowserFrameMemory.Forget(channel.ChannelId);
+                return BrowserSnapshotResult.Fail("ref 无效或已过期，请重新 F_browser_snapshot");
+            }
+
+            if (!BrowserRiskGuard.IsFrameRole(prior))
+            {
+                BrowserFrameMemory.Forget(channel.ChannelId);
+                return BrowserSnapshotResult.Fail("该 ref 不是 iframe 结构行");
+            }
+
+            BrowserResnapshotLayer layer = BrowserFrameMemory.LayerForIframeEntry(channel, prior);
+            if (layer == null)
+            {
+                BrowserFrameMemory.Forget(channel.ChannelId);
+                return BrowserSnapshotResult.Fail("无法读取 iframe（无子 frame）");
+            }
+
+            BrowserFrameMemory.Forget(channel.ChannelId);
+            BrowserSnapshotResult expanded = await BrowserResnapshotAfterAction
+                .CaptureAsync(channel, layer)
+                .ConfigureAwait(true);
+            if (expanded != null && expanded.Success)
+            {
+                BrowserFrameMemory.Remember(channel.ChannelId, layer);
+                return expanded;
+            }
+
+            return expanded ?? BrowserSnapshotResult.Fail("无法读取 iframe 内容");
         }
 
         public static Task<BrowserInteractResult> InteractAsync(

@@ -23,8 +23,18 @@ namespace WordAddIn1
                     string channelId = TryGetString(args, "channel_id");
                     string refId = TryGetString(args, "ref");
                     string domSupplement = TryGetString(args, "dom_supplement");
+                    if (!TryGetBool(args, "clear", out bool clear))
+                    {
+                        return Fail("clear 无效");
+                    }
+
                     if (TryGetBool(args, "hidden_children", out bool hiddenChildren))
                     {
+                        if (clear && hiddenChildren)
+                        {
+                            return Fail("clear 不能和 hidden_children 一起用");
+                        }
+
                         if (hiddenChildren && string.IsNullOrWhiteSpace(refId))
                         {
                             return Fail("hidden_children 需要和 ref 一起传");
@@ -73,7 +83,7 @@ namespace WordAddIn1
                     }
 
                     BrowserSnapshotResult result = await BrowserHostAdapter
-                        .SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren)
+                        .SnapshotAsync(channel, refId, domSupplement, rangeStart, rangeEnd, hiddenChildren, clear)
                         .ConfigureAwait(true);
 
                     if (!result.Success)

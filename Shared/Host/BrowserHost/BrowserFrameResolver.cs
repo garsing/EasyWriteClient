@@ -603,6 +603,38 @@ namespace WordAddIn1.BrowserHost
         }
     }
 
+    internal static class BrowserFramePresence
+    {
+        /// <summary>帧树是空的（多半是读取失败）时返回 null，避免把超时当成「帧没了」。</summary>
+        public static bool? Listed(BrowserFrameMap map, string frameId)
+        {
+            if (map == null || string.IsNullOrWhiteSpace(frameId))
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(map.RootFrameId)
+                && map.ParentOf.Count == 0
+                && map.UrlByFrame.Count == 0)
+            {
+                return null;
+            }
+
+            string id = frameId.Trim();
+            if (string.Equals(id, map.RootFrameId, System.StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (map.ParentOf.ContainsKey(id) || map.UrlByFrame.ContainsKey(id))
+            {
+                return true;
+            }
+
+            return false;
+        }
+    }
+
     internal sealed class BrowserFrameAxResult
     {
         public string Json { get; set; }

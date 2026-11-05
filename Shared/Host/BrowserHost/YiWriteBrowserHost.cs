@@ -783,7 +783,45 @@ namespace WordAddIn1.BrowserHost
                 return BrowserSnapshotResult.Fail("无法读取 iframe 内容");
             }
 
+            if (expanded != null && expanded.Success && !string.IsNullOrWhiteSpace(childId))
+            {
+                BrowserFrameMemory.Remember(
+                    channel.ChannelId,
+                    new BrowserResnapshotLayer
+                    {
+                        FrameId = childId,
+                        CdpSessionId = prior.CdpSessionId
+                    });
+            }
+
             return expanded;
+        }
+
+        internal static async Task<bool?> FrameListedAsync(BrowserChannel channel, string frameId)
+        {
+            if (channel == null || string.IsNullOrWhiteSpace(frameId))
+            {
+                return null;
+            }
+
+            if (!TryPrepareFormForTab(channel.TabUuid, out YiWriteBrowserForm form, out _))
+            {
+                return null;
+            }
+
+            try
+            {
+                BrowserFrameMap map = await BrowserFrameResolver.LoadAsync(form).ConfigureAwait(true);
+                return BrowserFramePresence.Listed(map, frameId);
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                form.UnpinToolPage();
+            }
         }
 
         /// <summary>拍某一文档层的整棵 overview（壳走 SnapshotAsync(ref=null)）。</summary>

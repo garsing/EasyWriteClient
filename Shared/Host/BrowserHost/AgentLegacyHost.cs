@@ -60,6 +60,26 @@ namespace WordAddIn1.BrowserHost
                     }
 
                     ApplySnapshotNodes(channel, frameSnap, prior.AttachFrameId, prior.FrameId);
+                    if (!string.IsNullOrWhiteSpace(prior.ChildFrameId))
+                    {
+                        BrowserFrameMemory.Remember(
+                            channel.ChannelId,
+                            new BrowserResnapshotLayer
+                            {
+                                FrameId = prior.ChildFrameId,
+                                CdpSessionId = prior.CdpSessionId
+                            });
+                    }
+                    else if (!string.IsNullOrWhiteSpace(prior.CdpSessionId))
+                    {
+                        BrowserFrameMemory.Remember(
+                            channel.ChannelId,
+                            new BrowserResnapshotLayer
+                            {
+                                CdpSessionId = prior.CdpSessionId
+                            });
+                    }
+
                     string frameUrl = (string)frameSnap["url"] ?? form.CurrentUrl;
                     string frameTitle = (string)frameSnap["title"] ?? form.CurrentTitle;
                     channel.UpdatePage(frameUrl, frameTitle, channel.Visible);
@@ -144,7 +164,74 @@ namespace WordAddIn1.BrowserHost
             BrowserChannel channel,
             BrowserResnapshotLayer layer)
         {
+            if (layer != null && !string.IsNullOrWhiteSpace(layer.FrameId))
+            {
+                return YiWriteBrowserHost.SnapshotLayerAsync(channel, layer);
+            }
+
+            if (layer != null && !string.IsNullOrWhiteSpace(layer.CdpSessionId))
+            {
+                return SnapshotOverviewInSessionAsync(channel, layer.CdpSessionId);
+            }
+
             return SnapshotAsync(channel, null, null);
+        }
+
+        private static async Task<BrowserSnapshotResult> SnapshotOverviewInSessionAsync(
+            BrowserChannel channel,
+            string sessionId)
+        {
+            if (channel == null)
+            {
+                return BrowserSnapshotResult.Fail("无浏览器渠道");
+            }
+
+            if (!YiWriteBrowserHost.IsPageLive(channel.TabUuid))
+            {
+                return BrowserSnapshotResult.Fail("浏览器渠道对应的页面已关闭: " + channel.ChannelId);
+            }
+
+            if (!YiWriteBrowserHost.TryPrepareFormForTab(channel.TabUuid, out YiWriteBrowserForm form, out string prepError))
+            {
+                return BrowserSnapshotResult.Fail(prepError ?? "引擎不可用");
+            }
+
+            try
+            {
+                JObject result = await EvaluateAsync(
+                        form,
+                        "snapshot",
+                        new JObject { ["mode"] = "overview" },
+                        sessionId)
+                    .ConfigureAwait(true);
+                if (result == null || result["ok"]?.Value<bool>() != true)
+                {
+                    return BrowserSnapshotResult.Fail((string)result?["error"] ?? "无法读取 iframe 内容");
+                }
+
+                ApplySnapshotNodes(channel, result, null, null);
+                string pageUrl = (string)result["url"] ?? form.CurrentUrl;
+                string title = (string)result["title"] ?? form.CurrentTitle;
+                channel.UpdatePage(pageUrl, title, channel.Visible);
+                return BrowserSnapshotResult.Ok(
+                    channel,
+                    pageUrl,
+                    title,
+                    "overview",
+                    null,
+                    (string)result["snapshot"] ?? "",
+                    result["truncated"]?.Value<bool>() ?? false,
+                    (string)result["truncated_reason"],
+                    null);
+            }
+            catch (Exception ex)
+            {
+                return BrowserSnapshotResult.Fail(ex.Message);
+            }
+            finally
+            {
+                form.UnpinToolPage();
+            }
         }
 
         public static async Task<BrowserInteractResult> InteractAsync(

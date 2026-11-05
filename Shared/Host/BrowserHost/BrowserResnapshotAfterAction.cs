@@ -84,6 +84,7 @@ namespace WordAddIn1.BrowserHost
             if (channel != null)
             {
                 BrowserRefStore.Clear(channel.ChannelId);
+                await BrowserFrameMemory.ForgetIfAbsentAsync(channel).ConfigureAwait(true);
             }
 
             string missed = string.IsNullOrWhiteSpace(extraMessage)
@@ -130,6 +131,7 @@ namespace WordAddIn1.BrowserHost
             if (channel != null)
             {
                 BrowserRefStore.Clear(channel.ChannelId);
+                await BrowserFrameMemory.ForgetIfAbsentAsync(channel).ConfigureAwait(true);
             }
 
             return BrowserDownloadResult.OkMissedTree(
