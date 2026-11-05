@@ -916,6 +916,7 @@ namespace WordAddIn1.BrowserHost
             {
             }
 
+            BrowserFrameTrace.Keep("yiwrite-doc", form.CurrentTitle, built.TreeText, childUrl);
             return BrowserSnapshotResult.Ok(
                 channel,
                 form.CurrentUrl,

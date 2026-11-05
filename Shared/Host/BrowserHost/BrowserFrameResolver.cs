@@ -815,8 +815,19 @@ namespace WordAddIn1.BrowserHost
 
         public static void Drop(string where, string reason, string parentTitle, string child, string url)
         {
+            Write("iframe-drop", where, reason, parentTitle, child, url);
+        }
+
+        public static void Keep(string where, string parentTitle, string child, string url)
+        {
+            Write("iframe-keep", where, "accepted", parentTitle, child, url);
+        }
+
+        private static void Write(string kind, string where, string reason, string parentTitle, string child, string url)
+        {
             string line = DateTime.Now.ToString("HH:mm:ss.fff")
-                + " iframe-drop where=" + (where ?? "")
+                + " " + (kind ?? "")
+                + " where=" + (where ?? "")
                 + " reason=" + (reason ?? "")
                 + " parent=" + Quote(parentTitle)
                 + " child=" + Quote(child)

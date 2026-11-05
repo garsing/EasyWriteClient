@@ -273,13 +273,22 @@ namespace WordAddIn1.BrowserHost
             if (string.Equals(mode, "legacy", StringComparison.Ordinal)
                 || ReadJsFallback(resultJson))
             {
-                ScriptDialogTrace.Write("click-return legacy-or-fallback mode=" + mode);
+                ScriptDialogTrace.Write(
+                    "click-return legacy-or-fallback mode=" + mode
+                    + " target=" + ReadJsText(resultJson, "target")
+                    + " hit=" + ReadJsText(resultJson, "hit")
+                    + " box=" + ReadJsText(resultJson, "box"));
                 await TryOpenHtmlCollapseAsync(cdp, objectId, sessionId).ConfigureAwait(true);
                 return;
             }
 
             ReadJsPoint(resultJson, out double x, out double y);
-            ScriptDialogTrace.Write("click-dispatch x=" + x.ToString("0") + " y=" + y.ToString("0"));
+            ScriptDialogTrace.Write(
+                "click-dispatch x=" + x.ToString("0", CultureInfo.InvariantCulture)
+                + " y=" + y.ToString("0", CultureInfo.InvariantCulture)
+                + " target=" + ReadJsText(resultJson, "target")
+                + " hit=" + ReadJsText(resultJson, "hit")
+                + " box=" + ReadJsText(resultJson, "box"));
             await DispatchCdpClickAsync(cdp, objectId, x, y, sessionId, dialog).ConfigureAwait(true);
             await TryOpenHtmlCollapseAsync(cdp, objectId, sessionId).ConfigureAwait(true);
             ScriptDialogTrace.Write("click-return dispatch-done dialog=" + ScriptDialogOpened(dialog));
@@ -1276,6 +1285,11 @@ namespace WordAddIn1.BrowserHost
     if (text.length > 40) text = text.slice(0, 40);
     return text ? (tag + ' ' + text) : tag;
   }
+  function describe(el) {
+    var base = previewHit(el);
+    var cls = classNameOf(el).replace(/\s+/g, ' ').trim().split(' ').filter(function(x){ return x; }).slice(0, 3).join('.');
+    return cls ? (base + ' .' + cls) : base;
+  }
   function doClick(t) {
     if (typeof t.click === 'function') t.click();
     else t.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window}));
@@ -1420,7 +1434,7 @@ namespace WordAddIn1.BrowserHost
     }
     if (isRowHoverTarget(t)) {
       doClick(t);
-      return { ok: true, fallback: true };
+      return { ok: true, fallback: true, target: describe(t) };
     }
   }
   if (r.width <= 0 || r.height <= 0) {
@@ -1439,11 +1453,12 @@ namespace WordAddIn1.BrowserHost
   if (!isOnTarget(hit, t)) {
     return { ok: false, error: '点击被挡住：挡在上面的是「' + previewHit(hit) + '」。请先操作该蒙层（如接受 Cookie / 关闭），再点原来的目标。' };
   }
+  var box = Math.round(r.width) + 'x' + Math.round(r.height);
   if (isLegacy) {
     doClick(t);
-    return { ok: true };
+    return { ok: true, target: describe(t), hit: describe(hit), box: box };
   }
-  return { ok: true, x: x, y: y };
+  return { ok: true, x: x, y: y, target: describe(t), hit: describe(hit), box: box };
 }";
 
         private const string ScrollIntoOverflowJs =
@@ -1627,6 +1642,20 @@ namespace WordAddIn1.BrowserHost
             catch
             {
                 return false;
+            }
+        }
+
+        private static string ReadJsText(string resultJson, string field)
+        {
+            try
+            {
+                var jo = JObject.Parse(resultJson ?? "{}");
+                var v = jo["result"]?["value"] as JObject;
+                return (string)v?[field] ?? "";
+            }
+            catch
+            {
+                return "";
             }
         }
 
@@ -1864,6 +1893,7 @@ namespace WordAddIn1.BrowserHost
             }
 
             ScriptDialogTrace.Write("mouse-up-end");
+            await ProbeClickPointAsync(cdp, objectId, upX, y, sessionId, "after-mouse").ConfigureAwait(true);
             YiWriteBrowserForm yiForm = cdp as YiWriteBrowserForm;
             if (yiForm != null && yiForm.HasNewWindowDuringTool)
             {
@@ -1919,10 +1949,66 @@ namespace WordAddIn1.BrowserHost
                     BuildCallArgsPair(upX, y),
                     sessionId)).ConfigureAwait(true);
                 ScriptDialogTrace.Write("synthetic-click-end dialog=" + ScriptDialogOpened(dialog));
+                await ProbeClickPointAsync(cdp, objectId, upX, y, sessionId, "after-synthetic").ConfigureAwait(true);
             }
             catch (Exception ex)
             {
                 ScriptDialogTrace.Write("synthetic-click-error " + ex.GetType().Name);
+            }
+        }
+
+        private static async Task ProbeClickPointAsync(
+            IBrowserCdp cdp,
+            string objectId,
+            double x,
+            double y,
+            string sessionId,
+            string when)
+        {
+            try
+            {
+                string json = await CallFunctionOnAsync(
+                    cdp,
+                    objectId,
+                    @"function(x, y) {
+  function textOf(el) {
+    var text = '';
+    try { text = String(el.innerText || el.textContent || ''); } catch (eT) {}
+    text = text.replace(/\s+/g, ' ').trim();
+    if (text.length > 24) text = text.slice(0, 24);
+    return text;
+  }
+  function describe(el) {
+    if (!el || !el.tagName) return '';
+    var tag = String(el.tagName || '').toLowerCase();
+    var text = textOf(el);
+    var cls = '';
+    try { cls = String(el.className || '').replace(/\s+/g, ' ').trim(); } catch (eC) {}
+    var parts = cls.split(' ').filter(function(s){ return s; }).slice(0, 4);
+    return tag + (text ? ' ' + text : '') + (parts.length ? ' .' + parts.join('.') : '');
+  }
+  var hit = null;
+  try { hit = document.elementFromPoint(x, y); } catch (eH) {}
+  var anchor = null;
+  try { anchor = hit && hit.closest ? hit.closest('a,button,[role=button]') : null; } catch (eA) {}
+  var parent = anchor && anchor.parentElement;
+  return { hit: describe(hit), anchor: describe(anchor), parent: describe(parent) };
+}",
+                    BuildCallArgsPair(x, y),
+                    sessionId).ConfigureAwait(true);
+                var jo = JObject.Parse(json ?? "{}");
+                var v = jo["result"]?["value"] as JObject;
+                ScriptDialogTrace.Write(
+                    "click-" + when
+                    + " x=" + x.ToString("0", CultureInfo.InvariantCulture)
+                    + " y=" + y.ToString("0", CultureInfo.InvariantCulture)
+                    + " hit=" + ((string)v?["hit"] ?? "")
+                    + " anchor=" + ((string)v?["anchor"] ?? "")
+                    + " parent=" + ((string)v?["parent"] ?? ""));
+            }
+            catch (Exception ex)
+            {
+                ScriptDialogTrace.Write("click-" + when + " error=" + ex.GetType().Name);
             }
         }
 

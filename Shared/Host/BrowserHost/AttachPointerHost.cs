@@ -758,6 +758,7 @@ namespace WordAddIn1.BrowserHost
             BrowserRefAlign.Apply(channel.ChannelId, built);
             channel.UpdatePage(cdp.CurrentUrl, cdp.CurrentTitle, true);
 
+            BrowserFrameTrace.Keep("attach-doc", cdp.CurrentTitle, built.TreeText, childUrl);
             return BrowserSnapshotResult.Ok(
                 channel,
                 cdp.CurrentUrl,
