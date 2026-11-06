@@ -1,7 +1,7 @@
 <template>
   <div v-if="content" class="thinking-box">
-    <div class="thinking-box-header" @click="toggleExpand">
-      <span class="thinking-title">思考中</span>
+    <div class="thinking-header" @click="toggleExpand">
+      <span class="thinking-title">思考</span>
       <span
         class="chevron"
         :class="isExpanded ? 'chevron-down' : 'chevron-right'"
@@ -11,7 +11,7 @@
     <div
       v-if="isExpanded"
       ref="bodyRef"
-      class="thinking-box-body"
+      class="thinking-body"
     >{{ content }}</div>
   </div>
 </template>
@@ -30,7 +30,7 @@ const props = defineProps({
   }
 })
 
-// 进行中默认展开（让用户看见在吐字）；完成后默认折叠
+// 与工具卡一致：进行中展开，完成后折叠
 const isExpanded = ref(!props.isComplete)
 
 watch(
@@ -46,7 +46,6 @@ watch(
 
 const bodyRef = ref(null)
 
-// 流式进行中：固定高度区域内自动滚到底，呈现「一直在出字」
 watch(
   () => props.content,
   async () => {
@@ -65,7 +64,6 @@ const toggleExpand = () => {
 </script>
 
 <style scoped>
-/* 外壳与 ToolCallBox 对齐，避免左右错位 */
 .thinking-box {
   margin: 4px 0;
   border: none;
@@ -74,7 +72,7 @@ const toggleExpand = () => {
   overflow: hidden;
 }
 
-.thinking-box-header {
+.thinking-header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -95,7 +93,7 @@ const toggleExpand = () => {
   opacity: 0;
 }
 
-.thinking-box-header:hover .chevron {
+.thinking-header:hover .chevron {
   opacity: 1;
 }
 
@@ -111,27 +109,29 @@ const toggleExpand = () => {
   flex: 0 1 auto;
   font-size: 13px;
   font-weight: 500;
-  color: #999;
+  color: #666;
+  min-width: 0;
 }
 
-.thinking-box-body {
-  /* 与 tool-call-content 左缩进一致；固定高度 + 滚动（滚动条隐藏，仍可滚轮/触控滚动） */
+.thinking-body {
   padding: 0 10px 10px 24px;
   max-height: 120px;
   overflow-y: auto;
   overflow-x: hidden;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #999;
-  word-wrap: break-word;
+  margin: 0;
+  font-family: 'Courier New', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #666;
   white-space: pre-wrap;
+  word-wrap: break-word;
   background-color: transparent;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* 旧 Edge */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
-.thinking-box-body::-webkit-scrollbar {
-  display: none; /* Chrome / WebView2 */
+.thinking-body::-webkit-scrollbar {
+  display: none;
   width: 0;
   height: 0;
 }

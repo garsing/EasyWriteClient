@@ -83,6 +83,18 @@ export function currentToolName (segments) {
   return ''
 }
 
+/**
+ * 外层折叠标题。末段仍是进行中的思考时显示「思考」，否则显示当前工具。
+ */
+export function currentRunTitle (segments) {
+  const segs = segments || []
+  const last = segs.length ? segs[segs.length - 1] : null
+  if (last && last.type === 'thinking' && !last.isComplete) {
+    return { thinking: true, toolName: '' }
+  }
+  return { thinking: false, toolName: currentToolName(segs) }
+}
+
 export function toolRunKey (run, index) {
   if (run?.startIndex != null && run.startIndex !== '') return `run-${run.startIndex}`
   if (run?.toolCallId) return `run-${run.toolCallId}`

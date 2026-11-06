@@ -294,7 +294,10 @@ export class ToolCallAccumulator {
     const segments = [...this._committedSegments]
 
     if (this._activeThinking && this._activeThinking.content) {
-      segments.push({ ...this._activeThinking })
+      const thinking = { ...this._activeThinking }
+      // 正文或下一张工具已经开始，这段思考收起，外层标题不再停在「思考」
+      if (tailText || inProgressTools.length > 0) thinking.isComplete = true
+      segments.push(thinking)
     }
 
     if (inProgressTools.length > 0) {

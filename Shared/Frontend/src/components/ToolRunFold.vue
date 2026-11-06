@@ -39,7 +39,7 @@
 import { computed, ref, watch } from 'vue'
 import ToolCallBoxDisplayRule from './ToolCallBoxDisplayRule.vue'
 import ThinkingBox from './ThinkingBox.vue'
-import { currentToolName } from '../utils/toolRunGroup'
+import { currentRunTitle } from '../utils/toolRunGroup'
 import { getToolAlias } from '../utils/toolAlias'
 
 const props = defineProps({
@@ -61,9 +61,13 @@ function toggleExpand () {
   isExpanded.value = !isExpanded.value
 }
 
-const toolName = computed(() => currentToolName(props.segments))
+const runTitle = computed(() => currentRunTitle(props.segments))
+const toolName = computed(() => runTitle.value.toolName)
 
-const title = computed(() => toolAlias.value || toolName.value)
+const title = computed(() => {
+  if (runTitle.value.thinking) return '思考'
+  return toolAlias.value || toolName.value
+})
 
 watch(
   toolName,
