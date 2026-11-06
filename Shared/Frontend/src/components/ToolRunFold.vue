@@ -101,7 +101,7 @@ function childKey (segment, index) {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 8px 10px 8px 0;
   cursor: pointer;
   user-select: none;
   background-color: transparent;
