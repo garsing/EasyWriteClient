@@ -612,6 +612,7 @@
     var nodes = {};
     var counter = 0;
     var lines = [];
+    var printedCss = [];
     var truncated = false;
     var truncatedReason = null;
     var chromeLeft = 0;
@@ -762,7 +763,18 @@
       return name ? ' "' + String(name).replace(/"/g, "'") + '"' : "";
     }
 
+    function notePrinted(depth, el) {
+      while (printedCss.length > depth) printedCss.pop();
+      while (printedCss.length < depth) printedCss.push("");
+      var ancestors = printedCss.slice().reverse();
+      var ownPath = "";
+      try { if (el) ownPath = cssPath(el); } catch (ePath) {}
+      printedCss.push(ownPath);
+      return { ancestors: ancestors, ownPath: ownPath };
+    }
+
     function appendLine(depth, role, name, ref, el, extra) {
+      var noted = notePrinted(depth, el);
       var indent = "";
       for (var d = 0; d < Math.min(depth, 12); d++) indent += "  ";
       var line = indent + "- " + role + quoteName(name);
@@ -771,7 +783,14 @@
       lines.push(line);
       if (lines.join("\n").length > MAX_CHARS) charStop = true;
       if (ref && el) {
-        nodes[ref] = { role: role, name: name, cssPath: cssPath(el), probe: probeOf(el), tag: (el.tagName || "").toLowerCase() };
+        nodes[ref] = {
+          role: role,
+          name: name,
+          cssPath: noted.ownPath,
+          ancestorCss: noted.ancestors,
+          probe: probeOf(el),
+          tag: (el.tagName || "").toLowerCase()
+        };
       }
     }
 
@@ -790,10 +809,13 @@
       }
       var label = "共 " + run.count + " 项，当前 " + start + "-" + end;
       var headerRef = nextRef(true);
+      var headerNoted = notePrinted(depth, parent.el);
       if (headerRef) {
         nodes[headerRef] = {
           role: "repeat", name: label, isRepeat: true,
-          repeatParentCss: cssPath(parent.el), repeatSignature: run.signature,
+          cssPath: headerNoted.ownPath,
+          ancestorCss: headerNoted.ancestors,
+          repeatParentCss: headerNoted.ownPath, repeatSignature: run.signature,
           repeatOrdinal: run.ordinal, repeatCount: run.count
         };
         if (matched) focusRef = headerRef;

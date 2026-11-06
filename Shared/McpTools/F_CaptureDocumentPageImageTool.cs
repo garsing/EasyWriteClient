@@ -80,7 +80,7 @@ namespace WordAddIn1
                     else if (channel.Kind == ChannelKind.Browser)
                     {
                         captured = await OfficeStaScheduler
-                            .InvokeOnUiAsync(() => CaptureBrowserAsync(channel))
+                            .InvokeOnUiAsync(() => CaptureBrowserAsync(channel, args))
                             .ConfigureAwait(false);
                     }
                     else
@@ -174,6 +174,17 @@ namespace WordAddIn1
             out PageCaptureRequest pageReq)
         {
             pageReq = new PageCaptureRequest();
+            bool hasRef = HasNonEmpty(args, "ref");
+            string upErr = TryParseUp(args, out int? up);
+            if (upErr != null)
+            {
+                return upErr;
+            }
+
+            if (kind != ChannelKind.Browser && (hasRef || up.HasValue))
+            {
+                return "ref 只用于浏览器局部截图";
+            }
             string pageErr = TryParseOptionalInt(args, "page_number", out pageReq.PageNumber);
             if (pageErr != null)
             {
@@ -290,6 +301,11 @@ namespace WordAddIn1
                 if (pageReq.PageNumber.HasValue || hasSheet || hasRange)
                 {
                     return "网页截图不收 page_number/sheet/range，只截当前可视区";
+                }
+
+                if (up.HasValue && !hasRef)
+                {
+                    return "up 需要和 ref 一起传";
                 }
 
                 return null;
@@ -475,7 +491,9 @@ namespace WordAddIn1
                 });
         }
 
-        private static async Task<ToolResult> CaptureBrowserAsync(IOperationChannel channel)
+        private static async Task<ToolResult> CaptureBrowserAsync(
+            IOperationChannel channel,
+            Dictionary<string, object> args)
         {
             BrowserChannel browser = channel as BrowserChannel;
             if (browser == null)
@@ -494,9 +512,20 @@ namespace WordAddIn1
                 return Fail("浏览器渠道对应的页面已关闭: " + browser.ChannelId);
             }
 
-            BrowserCaptureResult result = await BrowserHostAdapter
-                .CaptureViewportAsync(browser)
-                .ConfigureAwait(true);
+            string refId = HasNonEmpty(args, "ref") ? Convert.ToString(args["ref"]).Trim() : null;
+            BrowserCaptureResult result;
+            if (string.IsNullOrEmpty(refId))
+            {
+                result = await BrowserHostAdapter.CaptureViewportAsync(browser).ConfigureAwait(true);
+            }
+            else
+            {
+                TryParseUp(args, out int? up);
+                result = await BrowserHostAdapter
+                    .CaptureLocalAsync(browser, refId, up ?? 1)
+                    .ConfigureAwait(true);
+            }
+
             if (!result.Success)
             {
                 return Fail(result.Error ?? "截取可视区失败");
@@ -529,6 +558,48 @@ namespace WordAddIn1
             data["image_base64"] = Convert.ToBase64String(image.Bytes);
             data["captured_at"] = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz");
             return new ToolResult { Success = true, Data = data };
+        }
+
+        private static string TryParseUp(IReadOnlyDictionary<string, object> args, out int? value)
+        {
+            value = null;
+            if (args == null || !args.ContainsKey("up") || args["up"] == null)
+            {
+                return null;
+            }
+
+            string rawText = Convert.ToString(args["up"])?.Trim();
+            if (string.IsNullOrEmpty(rawText))
+            {
+                return null;
+            }
+
+            object raw = args["up"];
+            int parsed;
+            if (raw is int i)
+            {
+                parsed = i;
+            }
+            else if (raw is long l && l <= int.MaxValue && l >= int.MinValue)
+            {
+                parsed = (int)l;
+            }
+            else if (raw is double d && Math.Abs(d - Math.Round(d)) < double.Epsilon)
+            {
+                parsed = (int)Math.Round(d);
+            }
+            else if (!int.TryParse(rawText, out parsed))
+            {
+                return "up 须为从 1 起的正整数";
+            }
+
+            if (parsed < 1)
+            {
+                return "up 须为从 1 起的正整数";
+            }
+
+            value = parsed;
+            return null;
         }
 
         private static string TryParseOptionalInt(

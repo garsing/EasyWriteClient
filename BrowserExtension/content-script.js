@@ -495,6 +495,7 @@
     const nodes = {};
     let counter = 0;
     const lines = [];
+    const printedCss = [];
     let truncated = false;
     let truncatedReason = null;
     let chromeLeft = 0;
@@ -1276,7 +1277,18 @@
       return name ? ' "' + String(name).replace(/"/g, "'") + '"' : "";
     }
 
+    function notePrinted(depth, el) {
+      while (printedCss.length > depth) printedCss.pop();
+      while (printedCss.length < depth) printedCss.push("");
+      const ancestors = printedCss.slice().reverse();
+      let ownPath = "";
+      try { if (el) ownPath = cssPath(el); } catch (_) {}
+      printedCss.push(ownPath);
+      return { ancestors: ancestors, ownPath: ownPath };
+    }
+
     function appendLine(depth, role, name, ref, el, extra) {
+      const noted = notePrinted(depth, el);
       const indent = "  ".repeat(Math.min(depth, 12));
       let line = indent + "- " + role + quoteName(name);
       if (ref) line += " [ref=" + ref + "]";
@@ -1288,7 +1300,8 @@
         const rec = {
           role,
           name,
-          cssPath: cssPath(el),
+          cssPath: noted.ownPath,
+          ancestorCss: noted.ancestors,
           probe: probeOf(el),
           tag
         };
@@ -1320,12 +1333,15 @@
       }
       let label = "共 " + run.count + " 项，当前 " + start + "-" + end;
       const headerRef = nextRef(true);
+      const headerNoted = notePrinted(depth, parent.el);
       if (headerRef) {
         nodes[headerRef] = {
           role: "repeat",
           name: label,
+          cssPath: headerNoted.ownPath,
+          ancestorCss: headerNoted.ancestors,
           isRepeat: true,
-          repeatParentCss: cssPath(parent.el),
+          repeatParentCss: headerNoted.ownPath,
           repeatSignature: run.signature,
           repeatOrdinal: run.ordinal,
           repeatCount: run.count

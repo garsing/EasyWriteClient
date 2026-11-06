@@ -178,5 +178,42 @@ namespace WordAddIn1.BrowserHost
 
         /// <summary>accept / dismiss / input。</summary>
         public string ScriptDialogControl { get; set; }
+
+        /// <summary>快照里已打印的祖先，从近到远。空项表示那一行没有可截的盒。</summary>
+        public List<BrowserPrintedAncestor> PrintedAncestors { get; set; }
+    }
+
+    internal sealed class BrowserPrintedAncestor
+    {
+        public int? BackendDomNodeId { get; set; }
+
+        public string AttachCssPath { get; set; }
+
+        public bool HasBox
+        {
+            get
+            {
+                return BackendDomNodeId.HasValue || !string.IsNullOrWhiteSpace(AttachCssPath);
+            }
+        }
+
+        internal static List<BrowserPrintedAncestor> FromCssPaths(IList<string> paths)
+        {
+            if (paths == null)
+            {
+                return null;
+            }
+
+            var list = new List<BrowserPrintedAncestor>();
+            for (int i = 0; i < paths.Count; i++)
+            {
+                string path = paths[i];
+                list.Add(string.IsNullOrWhiteSpace(path)
+                    ? new BrowserPrintedAncestor()
+                    : new BrowserPrintedAncestor { AttachCssPath = path });
+            }
+
+            return list;
+        }
     }
 }

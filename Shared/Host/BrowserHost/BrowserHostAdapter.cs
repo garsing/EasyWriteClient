@@ -63,6 +63,33 @@ namespace WordAddIn1.BrowserHost
             return YiWriteBrowserHost.CaptureViewportAsync(channel);
         }
 
+        internal static async Task<BrowserCaptureResult> CaptureLocalAsync(
+            BrowserChannel channel,
+            string refId,
+            int up)
+        {
+            if (channel != null
+                && string.Equals(channel.Track, "attach", StringComparison.OrdinalIgnoreCase))
+            {
+                var cdp = new AttachCdpSession(channel.TabUuid, channel.Url, channel.Title);
+                return await BrowserLocalCapture.CaptureAsync(cdp, channel, refId, up).ConfigureAwait(true);
+            }
+
+            if (!YiWriteBrowserHost.TryPrepareFormForTab(channel?.TabUuid, out YiWriteBrowserForm form, out string prepError))
+            {
+                return BrowserCaptureResult.Fail(prepError ?? "引擎不可用");
+            }
+
+            try
+            {
+                return await BrowserLocalCapture.CaptureAsync(form, channel, refId, up).ConfigureAwait(true);
+            }
+            finally
+            {
+                form.UnpinToolPage();
+            }
+        }
+
         public static async Task<BrowserSnapshotResult> SnapshotAsync(
             BrowserChannel channel,
             string refId,

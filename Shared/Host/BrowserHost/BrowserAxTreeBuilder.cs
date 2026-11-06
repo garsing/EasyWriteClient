@@ -177,6 +177,39 @@ namespace WordAddIn1.BrowserHost
             bool pageHasRuns = analysis.RunsByParent.Count > 0;
             bool windowApplied = false;
             bool windowInvalid = false;
+            var printedBackends = new List<int?>();
+
+            void BeginPrinted(int depth)
+            {
+                while (printedBackends.Count > depth)
+                {
+                    printedBackends.RemoveAt(printedBackends.Count - 1);
+                }
+
+                while (printedBackends.Count < depth)
+                {
+                    printedBackends.Add(null);
+                }
+            }
+
+            List<BrowserPrintedAncestor> TakeAncestors()
+            {
+                var list = new List<BrowserPrintedAncestor>();
+                for (int i = printedBackends.Count - 1; i >= 0; i--)
+                {
+                    int? id = printedBackends[i];
+                    list.Add(id.HasValue
+                        ? new BrowserPrintedAncestor { BackendDomNodeId = id }
+                        : new BrowserPrintedAncestor());
+                }
+
+                return list;
+            }
+
+            void PushPrinted(int? backend)
+            {
+                printedBackends.Add(backend);
+            }
 
             string TakeRef(bool chrome)
             {
@@ -226,6 +259,8 @@ namespace WordAddIn1.BrowserHost
 
                 string planned = "共 " + run.Count + " 项，当前 " + start + "-" + end;
                 string headerRef = TakeRef(chrome: true);
+                BeginPrinted(depth);
+                List<BrowserPrintedAncestor> headerAncestors = TakeAncestors();
                 if (headerRef != null)
                 {
                     refs[headerRef] = new BrowserRefEntry
@@ -237,7 +272,8 @@ namespace WordAddIn1.BrowserHost
                         RepeatParentBackendId = parent.BackendDomNodeId,
                         RepeatSignature = run.Signature,
                         RepeatOrdinal = run.Ordinal,
-                        RepeatCount = run.Count
+                        RepeatCount = run.Count,
+                        PrintedAncestors = headerAncestors
                     };
                     if (matched)
                     {
@@ -246,6 +282,7 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 AppendLine(sb, depth, "repeat", planned, headerRef, note: null);
+                PushPrinted(parent.BackendDomNodeId);
 
                 bool prevTrunc = truncated;
                 string prevReason = truncatedReason;
@@ -282,6 +319,8 @@ namespace WordAddIn1.BrowserHost
                         }
 
                         string oneRef = null;
+                        BeginPrinted(depth + 1);
+                        List<BrowserPrintedAncestor> itemAncestors = TakeAncestors();
                         if (item.BackendDomNodeId.HasValue)
                         {
                             oneRef = TakeRef(chrome: false);
@@ -296,12 +335,14 @@ namespace WordAddIn1.BrowserHost
                                     AxNodeId = item.NodeId,
                                     BackendDomNodeId = item.BackendDomNodeId,
                                     Role = itemRole,
-                                    Name = itemName
+                                    Name = itemName,
+                                    PrintedAncestors = itemAncestors
                                 };
                             }
                         }
 
                         AppendLine(sb, depth + 1, itemRole, itemName, oneRef, note: null);
+                        PushPrinted(item.BackendDomNodeId);
                         printedEnd = n;
                     }
                 }
@@ -418,7 +459,9 @@ namespace WordAddIn1.BrowserHost
                     string ignName = SanitizeAccessibleName(node.Name ?? "");
                     if (LooksLikeCardGroup(ignName, node, byId))
                     {
+                        BeginPrinted(depth);
                         AppendLine(sb, depth, peekRole, ignName, null, note: null);
+                        PushPrinted(node.BackendDomNodeId);
                         VisitChildren(node, depth + 1, ignName, true);
                         return;
                     }
@@ -458,6 +501,8 @@ namespace WordAddIn1.BrowserHost
                 if (FrameRoles.Contains(role))
                 {
                     string frameRef = null;
+                    BeginPrinted(depth);
+                    List<BrowserPrintedAncestor> frameAncestors = TakeAncestors();
                     if (refs.Count < MaxRefNodes)
                     {
                         frameRef = "e" + nextRef;
@@ -467,7 +512,8 @@ namespace WordAddIn1.BrowserHost
                             AxNodeId = node.NodeId,
                             BackendDomNodeId = node.BackendDomNodeId,
                             Role = role,
-                            Name = name
+                            Name = name,
+                            PrintedAncestors = frameAncestors
                         };
                     }
                     else
@@ -477,6 +523,7 @@ namespace WordAddIn1.BrowserHost
                     }
 
                     AppendLine(sb, depth, role, name, frameRef, note: null);
+                    PushPrinted(node.BackendDomNodeId);
                     if (sb.Length >= MaxTreeChars)
                     {
                         truncated = true;
@@ -534,9 +581,16 @@ namespace WordAddIn1.BrowserHost
 
                 if (print)
                 {
+                    BeginPrinted(depth);
+                    if (refId != null && refs.TryGetValue(refId, out BrowserRefEntry printedEntry))
+                    {
+                        printedEntry.PrintedAncestors = TakeAncestors();
+                    }
+
                     string note = (hoverReveal && node.Ignored) ? "隐藏" : null;
                     string value = ShouldPrintValue(node) ? (node.Value ?? "") : null;
                     AppendLine(sb, depth, role, name, refId, note, value);
+                    PushPrinted(node.BackendDomNodeId);
                     if (sb.Length >= MaxTreeChars)
                     {
                         truncated = true;

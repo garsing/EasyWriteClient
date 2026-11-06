@@ -878,6 +878,8 @@ namespace WordAddIn1.BrowserHost
                             entry.ChildFrameId = childFrame.Value.ToString(CultureInfo.InvariantCulture);
                         }
 
+                        entry.PrintedAncestors = ReadAncestorCss(n["ancestorCss"]);
+
                         if (docFrame.HasValue)
                         {
                             entry.FrameId = docFrame.Value.ToString(CultureInfo.InvariantCulture);
@@ -1414,6 +1416,23 @@ namespace WordAddIn1.BrowserHost
             }
 
             return resp["result"] as JObject ?? new JObject();
+        }
+
+        private static List<BrowserPrintedAncestor> ReadAncestorCss(JToken token)
+        {
+            JArray arr = token as JArray;
+            if (arr == null)
+            {
+                return null;
+            }
+
+            var paths = new List<string>();
+            foreach (JToken item in arr)
+            {
+                paths.Add(item != null && item.Type == JTokenType.String ? item.Value<string>() : "");
+            }
+
+            return BrowserPrintedAncestor.FromCssPaths(paths);
         }
 
         private static int? ReadOptionalInt(JToken token)

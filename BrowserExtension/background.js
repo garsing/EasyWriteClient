@@ -533,7 +533,7 @@ async function activateTab(tabUuid) {
   return { activated: true };
 }
 
-async function captureTabViaCdp(tabId) {
+async function captureTabViaCdp(tabId, clip, beyond) {
   const granted = await ensureDebuggerPermission();
   if (!granted) {
     throw new Error("Failed to capture tab: image readback failed");
@@ -541,10 +541,18 @@ async function captureTabViaCdp(tabId) {
   const target = { tabId };
   await attachDebugger(target);
   try {
-    const result = await chrome.debugger.sendCommand(target, "Page.captureScreenshot", {
-      format: "jpeg",
-      quality: 70
-    });
+    const params = { format: "jpeg", quality: 70 };
+    if (clip && Number(clip.width) > 0 && Number(clip.height) > 0) {
+      params.clip = {
+        x: Number(clip.x) || 0,
+        y: Number(clip.y) || 0,
+        width: Number(clip.width),
+        height: Number(clip.height),
+        scale: 1
+      };
+      if (beyond) params.captureBeyondViewport = true;
+    }
+    const result = await chrome.debugger.sendCommand(target, "Page.captureScreenshot", params);
     if (!result || !result.data) {
       throw new Error("CDP 截图无数据");
     }
@@ -569,10 +577,12 @@ async function screenshotTab(msg) {
   }
   // 与当初能出图的路径对齐：切标签后立刻拍一次。压画质在内存里做，不连拍。
   let dataUrl;
+  const clip = msg.clip && typeof msg.clip === "object" ? msg.clip : null;
+  const beyond = msg.capture_beyond_viewport === true && !!clip;
   try {
-    dataUrl = clickMode === "legacy"
+    dataUrl = clickMode === "legacy" && !clip
       ? await captureVisibleTabLimited(tab.windowId, 70)
-      : await captureTabViaCdp(tabId);
+      : await captureTabViaCdp(tabId, clip, beyond);
     dataUrl = await shrinkJpegDataUrl(dataUrl, 900000);
   } catch (e) {
     const msg = String(e && e.message ? e.message : e);

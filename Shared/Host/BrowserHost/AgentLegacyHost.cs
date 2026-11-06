@@ -558,6 +558,7 @@ namespace WordAddIn1.BrowserHost
                         FrameId = frameId,
                         AttachFrameId = attachFrameId,
                         IsRepeat = n["isRepeat"]?.Value<bool>() ?? false,
+                        PrintedAncestors = ReadAncestorCss(n["ancestorCss"]),
                         RepeatParentCss = (string)n["repeatParentCss"],
                         RepeatSignature = (string)n["repeatSignature"],
                         RepeatOrdinal = n["repeatOrdinal"]?.Value<int>() ?? 0,
@@ -624,6 +625,23 @@ namespace WordAddIn1.BrowserHost
             }
 
             return new JObject { ["ok"] = false, ["error"] = "DOM 脚本无返回" };
+        }
+
+        private static List<BrowserPrintedAncestor> ReadAncestorCss(JToken token)
+        {
+            JArray arr = token as JArray;
+            if (arr == null)
+            {
+                return null;
+            }
+
+            var paths = new List<string>();
+            foreach (JToken item in arr)
+            {
+                paths.Add(item != null && item.Type == JTokenType.String ? item.Value<string>() : "");
+            }
+
+            return BrowserPrintedAncestor.FromCssPaths(paths);
         }
     }
 }
