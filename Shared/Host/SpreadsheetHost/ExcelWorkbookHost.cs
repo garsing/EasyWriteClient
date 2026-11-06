@@ -295,12 +295,12 @@ namespace WordAddIn1.SpreadsheetHost
 
             int rowCount = actualLastRow - firstRow + 1;
             int colCount = actualLastCol - firstCol + 1;
-            HashSet<int> visibleRows = VisibleRows(sheet, firstRow, actualLastRow, firstCol);
+            bool omitFilteredRows = FilterIsHidingRows(sheet);
             var rows = new List<PreviewRow>();
             for (int r = 0; r < rowCount; r++)
             {
                 int sheetRow = firstRow + r;
-                if (visibleRows != null && !visibleRows.Contains(sheetRow))
+                if (omitFilteredRows && RowIsHidden(sheet, sheetRow))
                 {
                     continue;
                 }
@@ -358,59 +358,62 @@ namespace WordAddIn1.SpreadsheetHost
             return true;
         }
 
-        private static HashSet<int> VisibleRows(Excel.Worksheet sheet, int firstRow, int lastRow, int col)
+        /// <summary>
+        /// 筛选正在藏行时为 true。不用 SpecialCells：范围内没有可见单元格时它抛异常，读表会变成空表。
+        /// </summary>
+        private static bool FilterIsHidingRows(Excel.Worksheet sheet)
         {
-            if (sheet == null || lastRow < firstRow || col <= 0)
+            if (sheet == null)
             {
-                return null;
+                return false;
             }
 
             try
             {
-                Excel.Range body = sheet.Range[A1Address.Range(firstRow, col, lastRow, col)];
-                Excel.Range visible = body.SpecialCells(Excel.XlCellType.xlCellTypeVisible);
-                return RowNumbers(visible);
-            }
-            catch (System.Runtime.InteropServices.COMException)
-            {
-                return new HashSet<int>();
+                if (sheet.FilterMode)
+                {
+                    return true;
+                }
             }
             catch (Exception)
             {
-                return null;
             }
+
+            try
+            {
+                foreach (Excel.ListObject table in sheet.ListObjects)
+                {
+                    try
+                    {
+                        Excel.AutoFilter filter = table == null ? null : table.AutoFilter;
+                        if (filter != null && filter.FilterMode)
+                        {
+                            return true;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return false;
         }
 
-        private static HashSet<int> RowNumbers(Excel.Range visible)
+        private static bool RowIsHidden(Excel.Worksheet sheet, int sheetRow)
         {
-            var rows = new HashSet<int>();
-            if (visible == null)
+            try
             {
-                return rows;
+                Excel.Range line = sheet.Rows[sheetRow] as Excel.Range;
+                return line != null && line.Hidden;
             }
-
-            Excel.Areas areas = visible.Areas;
-            if (areas == null)
+            catch (Exception)
             {
-                return rows;
+                return false;
             }
-
-            foreach (Excel.Range area in areas)
-            {
-                if (area == null)
-                {
-                    continue;
-                }
-
-                int start = area.Row;
-                int count = area.Rows.Count;
-                for (int i = 0; i < count; i++)
-                {
-                    rows.Add(start + i);
-                }
-            }
-
-            return rows;
         }
 
         public static bool TryCaptureRange(

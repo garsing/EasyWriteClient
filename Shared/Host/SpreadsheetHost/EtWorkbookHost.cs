@@ -289,12 +289,12 @@ namespace WordAddIn1.SpreadsheetHost
 
             int rowCount = actualLastRow - firstRow + 1;
             int colCount = actualLastCol - firstCol + 1;
-            HashSet<int> visibleRows = VisibleRows(sheet, firstRow, actualLastRow, firstCol);
+            bool omitFilteredRows = FilterIsHidingRows(sheet);
             var rows = new List<PreviewRow>();
             for (int r = 0; r < rowCount; r++)
             {
                 int sheetRow = firstRow + r;
-                if (visibleRows != null && !visibleRows.Contains(sheetRow))
+                if (omitFilteredRows && RowIsHidden(sheet, sheetRow))
                 {
                     continue;
                 }
@@ -355,75 +355,83 @@ namespace WordAddIn1.SpreadsheetHost
             return true;
         }
 
-        private static HashSet<int> VisibleRows(object sheet, int firstRow, int lastRow, int col)
+        /// <summary>
+        /// 筛选正在藏行时为 true。不用 SpecialCells：范围内没有可见单元格时它抛异常，读表会变成空表。
+        /// </summary>
+        private static bool FilterIsHidingRows(object sheet)
         {
-            if (sheet == null || lastRow < firstRow || col <= 0)
+            if (sheet == null)
             {
-                return null;
+                return false;
+            }
+
+            if (ReadBool(sheet, "FilterMode"))
+            {
+                return true;
             }
 
             try
             {
-                object body = GetSheetRange(sheet, A1Address.Range(firstRow, col, lastRow, col));
-                object visible = EtCom.Invoke(body, "SpecialCells", 12);
-                return RowNumbers(visible);
-            }
-            catch (System.Reflection.TargetInvocationException ex)
-            {
-                if (ex.InnerException is System.Runtime.InteropServices.COMException)
+                object tables = EtCom.GetProperty(sheet, "ListObjects");
+                if (tables == null)
                 {
-                    return new HashSet<int>();
+                    return false;
                 }
 
-                return null;
-            }
-            catch (System.Runtime.InteropServices.COMException)
-            {
-                return new HashSet<int>();
+                int count = Convert.ToInt32(
+                    EtCom.GetProperty(tables, "Count"),
+                    System.Globalization.CultureInfo.InvariantCulture);
+                for (int i = 1; i <= count; i++)
+                {
+                    object table = EtCom.GetIndexed(tables, i);
+                    object filter = table == null ? null : EtCom.GetProperty(table, "AutoFilter");
+                    if (filter != null && ReadBool(filter, "FilterMode"))
+                    {
+                        return true;
+                    }
+                }
             }
             catch (Exception)
             {
-                return null;
+            }
+
+            return false;
+        }
+
+        private static bool RowIsHidden(object sheet, int sheetRow)
+        {
+            try
+            {
+                object rows = EtCom.GetProperty(sheet, "Rows");
+                object line = rows == null ? null : EtCom.GetIndexed(rows, sheetRow);
+                return line != null && ReadBool(line, "Hidden");
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
 
-        private static HashSet<int> RowNumbers(object visible)
+        private static bool ReadBool(object target, string name)
         {
-            var rows = new HashSet<int>();
-            if (visible == null)
+            object value = EtCom.GetProperty(target, name);
+            if (value == null)
             {
-                return rows;
+                return false;
             }
 
-            object areas = EtCom.GetProperty(visible, "Areas");
-            if (areas == null)
+            if (value is bool flag)
             {
-                AddAreaRows(rows, visible);
-                return rows;
+                return flag;
             }
 
-            int count = Convert.ToInt32(EtCom.GetProperty(areas, "Count"), System.Globalization.CultureInfo.InvariantCulture);
-            for (int i = 1; i <= count; i++)
+            try
             {
-                AddAreaRows(rows, EtCom.GetIndexed(areas, i));
+                return Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture) != 0;
             }
-
-            return rows;
-        }
-
-        private static void AddAreaRows(HashSet<int> rows, object area)
-        {
-            if (area == null)
+            catch (Exception)
             {
-                return;
-            }
-
-            int start = Convert.ToInt32(EtCom.GetProperty(area, "Row"), System.Globalization.CultureInfo.InvariantCulture);
-            object areaRows = EtCom.GetProperty(area, "Rows");
-            int count = Convert.ToInt32(EtCom.GetProperty(areaRows, "Count"), System.Globalization.CultureInfo.InvariantCulture);
-            for (int i = 0; i < count; i++)
-            {
-                rows.Add(start + i);
+                return false;
             }
         }
 
