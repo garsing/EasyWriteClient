@@ -20,6 +20,11 @@ namespace BrowserNavigateTest
                 return ChromeGapProbe.Run();
             }
 
+            if (string.Equals(GetArg(args, "--probe="), "repeat-shot", StringComparison.OrdinalIgnoreCase))
+            {
+                return RepeatShotProbe.Run();
+            }
+
             string caseFilter = GetArg(args, "--case=");
             if (caseFilter.StartsWith("repeat", StringComparison.OrdinalIgnoreCase))
             {

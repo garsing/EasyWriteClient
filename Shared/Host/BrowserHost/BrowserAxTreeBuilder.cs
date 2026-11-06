@@ -178,17 +178,20 @@ namespace WordAddIn1.BrowserHost
             bool windowApplied = false;
             bool windowInvalid = false;
             var printedBackends = new List<int?>();
+            var printedCss = new List<string>();
 
             void BeginPrinted(int depth)
             {
                 while (printedBackends.Count > depth)
                 {
                     printedBackends.RemoveAt(printedBackends.Count - 1);
+                    printedCss.RemoveAt(printedCss.Count - 1);
                 }
 
                 while (printedBackends.Count < depth)
                 {
                     printedBackends.Add(null);
+                    printedCss.Add(null);
                 }
             }
 
@@ -198,17 +201,35 @@ namespace WordAddIn1.BrowserHost
                 for (int i = printedBackends.Count - 1; i >= 0; i--)
                 {
                     int? id = printedBackends[i];
-                    list.Add(id.HasValue
-                        ? new BrowserPrintedAncestor { BackendDomNodeId = id }
-                        : new BrowserPrintedAncestor());
+                    string css = i < printedCss.Count ? printedCss[i] : null;
+                    if (id.HasValue)
+                    {
+                        list.Add(new BrowserPrintedAncestor { BackendDomNodeId = id });
+                    }
+                    else if (!string.IsNullOrWhiteSpace(css))
+                    {
+                        list.Add(new BrowserPrintedAncestor { AttachCssPath = css });
+                    }
+                    else
+                    {
+                        list.Add(new BrowserPrintedAncestor());
+                    }
                 }
 
                 return list;
             }
 
-            void PushPrinted(int? backend)
+            void PushPrinted(int? backend, string role = null)
             {
                 printedBackends.Add(backend);
+                string css = null;
+                if (!backend.HasValue
+                    && string.Equals(role, "RootWebArea", StringComparison.OrdinalIgnoreCase))
+                {
+                    css = "html";
+                }
+
+                printedCss.Add(css);
             }
 
             string TakeRef(bool chrome)
@@ -282,7 +303,7 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 AppendLine(sb, depth, "repeat", planned, headerRef, note: null);
-                PushPrinted(parent.BackendDomNodeId);
+                PushPrinted(parent.BackendDomNodeId, parent.Role);
 
                 bool prevTrunc = truncated;
                 string prevReason = truncatedReason;
@@ -342,7 +363,7 @@ namespace WordAddIn1.BrowserHost
                         }
 
                         AppendLine(sb, depth + 1, itemRole, itemName, oneRef, note: null);
-                        PushPrinted(item.BackendDomNodeId);
+                        PushPrinted(item.BackendDomNodeId, item.Role);
                         printedEnd = n;
                     }
                 }
@@ -461,7 +482,7 @@ namespace WordAddIn1.BrowserHost
                     {
                         BeginPrinted(depth);
                         AppendLine(sb, depth, peekRole, ignName, null, note: null);
-                        PushPrinted(node.BackendDomNodeId);
+                        PushPrinted(node.BackendDomNodeId, node.Role);
                         VisitChildren(node, depth + 1, ignName, true);
                         return;
                     }
@@ -523,7 +544,7 @@ namespace WordAddIn1.BrowserHost
                     }
 
                     AppendLine(sb, depth, role, name, frameRef, note: null);
-                    PushPrinted(node.BackendDomNodeId);
+                    PushPrinted(node.BackendDomNodeId, node.Role);
                     if (sb.Length >= MaxTreeChars)
                     {
                         truncated = true;
@@ -590,7 +611,7 @@ namespace WordAddIn1.BrowserHost
                     string note = (hoverReveal && node.Ignored) ? "隐藏" : null;
                     string value = ShouldPrintValue(node) ? (node.Value ?? "") : null;
                     AppendLine(sb, depth, role, name, refId, note, value);
-                    PushPrinted(node.BackendDomNodeId);
+                    PushPrinted(node.BackendDomNodeId, role);
                     if (sb.Length >= MaxTreeChars)
                     {
                         truncated = true;

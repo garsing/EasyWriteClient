@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>重复段裁图</title>
+</head>
+<body>
+  <h1>课题来源</h1>
+  <div id="rows"></div>
+  <script>
+    var host = document.getElementById("rows");
+    for (var i = 1; i <= 6; i++) {
+      var row = document.createElement("div");
+      row.setAttribute("aria-label", "来源" + i);
+      for (var p = 0; p < 8; p++) {
+        var para = document.createElement("p");
+        para.textContent = "选项" + p + " 来源" + i;
+        row.appendChild(para);
+      }
+      host.appendChild(row);
+    }
+  </script>
+</body>
+</html>

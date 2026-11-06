@@ -37,8 +37,7 @@ namespace WordAddIn1.BrowserHost
                 return BrowserCaptureResult.Fail(StaleRef);
             }
 
-            if (entry.IsRepeat || entry.IsScriptDialog
-                || (!entry.BackendDomNodeId.HasValue && string.IsNullOrWhiteSpace(entry.AttachCssPath)))
+            if (entry.IsScriptDialog)
             {
                 return BrowserCaptureResult.Fail(StaleRef);
             }
@@ -337,7 +336,10 @@ namespace WordAddIn1.BrowserHost
 
         private const string MeasureFn =
             "function(){"
-            + "var el=this;if(!el||!el.getBoundingClientRect)return{ok:false};"
+            + "var el=this;"
+            + "if(el&&el.nodeType===9)el=el.documentElement;"
+            + "if(el&&el.nodeType===3)el=el.parentElement;"
+            + "if(!el||!el.getBoundingClientRect)return{ok:false};"
             + "var rect=el.getBoundingClientRect();var clipped=false;var n=el.parentElement;"
             + "while(n){"
             + "var st=window.getComputedStyle(n);var oy=st.overflowY;var ox=st.overflowX;"
@@ -355,6 +357,10 @@ namespace WordAddIn1.BrowserHost
 
         private const string ScrollFn =
             "function(){"
+            + "var el=this;"
+            + "if(el&&el.nodeType===9)el=el.documentElement;"
+            + "if(el&&el.nodeType===3)el=el.parentElement;"
+            + "if(!el||!el.parentElement&&el.nodeType!==1)return{};"
             + "var token='yw'+Date.now()+Math.floor(Math.random()*1000);"
             + "function mark(root){var n=root;while(n){"
             + "var st;try{st=n.ownerDocument.defaultView.getComputedStyle(n);}catch(e){st=null;}"
@@ -363,13 +369,13 @@ namespace WordAddIn1.BrowserHost
             + "if(can&&(n.scrollHeight>n.clientHeight+1||n.scrollWidth>n.clientWidth+1)){"
             + "n.setAttribute('data-yw-shot',token);n.setAttribute('data-yw-top',String(n.scrollTop||0));n.setAttribute('data-yw-left',String(n.scrollLeft||0));}}"
             + "n=n.parentElement;}}"
-            + "mark(this.parentElement);"
+            + "mark(el.parentElement);"
             + "var w=window;var guard=0;"
             + "while(w&&guard<8){"
             + "w.__ywShot=token;w.__ywX=w.scrollX||0;w.__ywY=w.scrollY||0;"
             + "try{if(w.frameElement)mark(w.frameElement.parentElement);}catch(e1){}"
             + "guard++;try{if(!w.parent||w.parent===w)break;w=w.parent;}catch(e2){break;}}"
-            + "try{this.scrollIntoView({block:'nearest',inline:'nearest'});}catch(e3){}"
+            + "try{el.scrollIntoView({block:'nearest',inline:'nearest'});}catch(e3){}"
             + "return{token:token};"
             + "}";
 
