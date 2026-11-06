@@ -801,23 +801,21 @@ namespace WordAddIn1
                 ["geo_plan_log"] = DocumentActionPathLog.Snapshot()
             };
 
-            if (executed > 0)
+            string display = F_GetDocumentContentTool.TryBuildSentenceDisplayFromLastCache(out string displayError);
+            if (!string.IsNullOrEmpty(display))
             {
-                string display = F_GetDocumentContentTool.TryBuildSentenceDisplayFromLastCache(out string displayError);
-                if (!string.IsNullOrEmpty(display))
-                {
-                    data["document_content"] = display;
-                    data["code_level"] = "sentence";
-                    data["channel_id"] = channelPublicId ?? "";
-                }
-                else
-                {
-                    data["document_display_error"] = string.IsNullOrEmpty(displayError)
-                        ? "没带上 display"
-                        : displayError;
-                }
+                data["document_content"] = display;
+                data["code_level"] = "sentence";
+                data["channel_id"] = channelPublicId ?? "";
             }
             else
+            {
+                data["document_display_error"] = string.IsNullOrEmpty(displayError)
+                    ? "没带上 display"
+                    : displayError;
+            }
+
+            if (executed == 0)
             {
                 data["checkpoint_cleanup_only"] = true;
             }
