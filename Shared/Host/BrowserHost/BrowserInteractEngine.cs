@@ -229,7 +229,7 @@ namespace WordAddIn1.BrowserHost
             if (ReadJsReveal(resultJson))
             {
                 ReadJsHostPoint(resultJson, out double hostX, out double hostY);
-                FrameOrigin hostOrigin = await FrameContentOriginAsync(cdp, objectId, sessionId, frameId)
+                BrowserFrameOrigin.Offset hostOrigin = await BrowserFrameOrigin.ContentAsync(cdp, objectId, sessionId, frameId)
                     .ConfigureAwait(true);
                 ScriptDialogTrace.Write("click-reveal-move-begin");
                 if (await UntilScriptDialogAsync(
@@ -1795,191 +1795,6 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
-        private struct FrameOrigin
-        {
-            public double X;
-            public double Y;
-        }
-
-        /// <summary>内层坐标换成当前鼠标会话的视口坐标。同源 iframe 没有单独会话，按框架树把每一层框的位置都加上。</summary>
-        private static async Task<FrameOrigin> FrameContentOriginAsync(
-            IBrowserCdp cdp,
-            string objectId,
-            string sessionId,
-            string frameId)
-        {
-            if (string.IsNullOrEmpty(sessionId) && !string.IsNullOrWhiteSpace(frameId))
-            {
-                return await FrameTreeOriginAsync(cdp, frameId).ConfigureAwait(true);
-            }
-
-            return await FrameElementOriginAsync(cdp, objectId, sessionId).ConfigureAwait(true);
-        }
-
-        private static async Task<FrameOrigin> FrameTreeOriginAsync(IBrowserCdp cdp, string frameId)
-        {
-            var origin = new FrameOrigin();
-            if (cdp == null || string.IsNullOrWhiteSpace(frameId))
-            {
-                return origin;
-            }
-
-            BrowserFrameMap map;
-            try
-            {
-                map = await BrowserFrameResolver.LoadAsync(cdp).ConfigureAwait(true);
-            }
-            catch (Exception ex)
-            {
-                ScriptDialogTrace.Write("frame-origin-error " + ex.GetType().Name);
-                return origin;
-            }
-
-            string id = frameId;
-            int guard = 0;
-            var parts = new System.Text.StringBuilder();
-            while (guard < 8 && !string.IsNullOrEmpty(id))
-            {
-                if (!string.IsNullOrEmpty(map.RootFrameId)
-                    && string.Equals(id, map.RootFrameId, StringComparison.Ordinal))
-                {
-                    break;
-                }
-
-                if (!map.ParentOf.ContainsKey(id))
-                {
-                    break;
-                }
-
-                FrameOrigin hop = await IframeBoxInParentAsync(cdp, id).ConfigureAwait(true);
-                origin.X += hop.X;
-                origin.Y += hop.Y;
-                parts.Append(" +")
-                    .Append(hop.X.ToString("0.##", CultureInfo.InvariantCulture))
-                    .Append(",")
-                    .Append(hop.Y.ToString("0.##", CultureInfo.InvariantCulture));
-                id = map.ParentOf[id];
-                guard++;
-            }
-
-            ScriptDialogTrace.Write("frame-origin" + parts);
-            return origin;
-        }
-
-        private static async Task<FrameOrigin> IframeBoxInParentAsync(IBrowserCdp cdp, string frameId)
-        {
-            var origin = new FrameOrigin();
-            try
-            {
-                var payload = new JObject { ["frameId"] = frameId };
-                string ownerJson = await cdp
-                    .CallCdpAsync("DOM.getFrameOwner", payload.ToString(Newtonsoft.Json.Formatting.None))
-                    .ConfigureAwait(true);
-                JObject owner = JObject.Parse(ownerJson ?? "{}");
-                if (owner["backendNodeId"] == null
-                    || !int.TryParse(owner["backendNodeId"].ToString(), out int backend)
-                    || backend == 0)
-                {
-                    ScriptDialogTrace.Write("frame-origin-miss frame=" + frameId);
-                    return origin;
-                }
-
-                string objectId = await ResolveObjectIdAsync(cdp, backend, null).ConfigureAwait(true);
-                string json = await CallFunctionOnAsync(
-                    cdp,
-                    objectId,
-                    @"function() {
-  var rect = this.getBoundingClientRect();
-  return {
-    x: rect.left + (this.clientLeft || 0),
-    y: rect.top + (this.clientTop || 0)
-  };
-}",
-                    null,
-                    null).ConfigureAwait(true);
-                var value = JObject.Parse(json ?? "{}")["result"]?["value"] as JObject;
-                if (value != null)
-                {
-                    if (value["x"] != null)
-                    {
-                        origin.X = (double)value["x"];
-                    }
-
-                    if (value["y"] != null)
-                    {
-                        origin.Y = (double)value["y"];
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                ScriptDialogTrace.Write(
-                    "frame-origin-miss frame=" + frameId
-                    + " " + ex.GetType().Name
-                    + " " + (ex.Message ?? ""));
-            }
-
-            return origin;
-        }
-
-        private static async Task<FrameOrigin> FrameElementOriginAsync(
-            IBrowserCdp cdp,
-            string objectId,
-            string sessionId)
-        {
-            var origin = new FrameOrigin();
-            if (cdp == null || string.IsNullOrEmpty(objectId))
-            {
-                return origin;
-            }
-
-            try
-            {
-                string json = await CallFunctionOnAsync(
-                    cdp,
-                    objectId,
-                    @"function() {
-  var dx = 0, dy = 0, win = null, guard = 0;
-  try { win = this.ownerDocument && this.ownerDocument.defaultView; } catch (e0) {}
-  while (win && guard < 8) {
-    var frameEl = null;
-    try { frameEl = win.frameElement; } catch (e1) { break; }
-    if (!frameEl || !frameEl.getBoundingClientRect) break;
-    var rect = frameEl.getBoundingClientRect();
-    dx += rect.left + (frameEl.clientLeft || 0);
-    dy += rect.top + (frameEl.clientTop || 0);
-    var parent = null;
-    try { parent = win.parent; } catch (e2) { break; }
-    if (!parent || parent === win) break;
-    win = parent;
-    guard++;
-  }
-  return { dx: dx, dy: dy };
-}",
-                    null,
-                    sessionId).ConfigureAwait(true);
-                var jo = JObject.Parse(json ?? "{}");
-                var value = jo["result"]?["value"] as JObject;
-                if (value != null)
-                {
-                    if (value["dx"] != null)
-                    {
-                        origin.X = (double)value["dx"];
-                    }
-
-                    if (value["dy"] != null)
-                    {
-                        origin.Y = (double)value["dy"];
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                ScriptDialogTrace.Write("frame-origin-error " + ex.GetType().Name);
-            }
-
-            return origin;
-        }
 
         private static async Task DispatchCdpClickAsync(
             IBrowserCdp cdp,
@@ -1990,7 +1805,7 @@ namespace WordAddIn1.BrowserHost
             Task dialog = null,
             string frameId = null)
         {
-            FrameOrigin origin = await FrameContentOriginAsync(cdp, objectId, sessionId, frameId).ConfigureAwait(true);
+            BrowserFrameOrigin.Offset origin = await BrowserFrameOrigin.ContentAsync(cdp, objectId, sessionId, frameId).ConfigureAwait(true);
             double vx = x + origin.X;
             double vy = y + origin.Y;
             ScriptDialogTrace.Write(
@@ -2187,7 +2002,7 @@ namespace WordAddIn1.BrowserHost
             string sessionId,
             string frameId = null)
         {
-            FrameOrigin origin = await FrameContentOriginAsync(cdp, objectId, sessionId, frameId).ConfigureAwait(true);
+            BrowserFrameOrigin.Offset origin = await BrowserFrameOrigin.ContentAsync(cdp, objectId, sessionId, frameId).ConfigureAwait(true);
             await DispatchCdpMouseAsync(
                     cdp,
                     sessionId,

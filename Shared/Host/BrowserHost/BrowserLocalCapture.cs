@@ -95,18 +95,24 @@ namespace WordAddIn1.BrowserHost
                             return BrowserCaptureResult.Fail(NoRegion);
                         }
 
-                        scrolled = true;
                         box = await CallOnAsync(cdp, sessionId, objectId, MeasureFn, null).ConfigureAwait(true);
                         if (!BoxOk(box) || box.Value<bool?>("clipped") == true)
                         {
                             return BrowserCaptureResult.Fail(NoRegion);
                         }
+                    }
 
+                    BrowserFrameOrigin.Offset origin = await BrowserFrameOrigin
+                        .ContentAsync(cdp, objectId, sessionId, entry.FrameId)
+                        .ConfigureAwait(true);
+                    bool nested = Math.Abs(origin.X) > 0.5 || Math.Abs(origin.Y) > 0.5;
+                    if (nested || box.Value<bool?>("clipped") == true)
+                    {
                         jpeg = await ShootAsync(
                             cdp,
                             sessionId,
-                            box.Value<double?>("left") ?? 0,
-                            box.Value<double?>("top") ?? 0,
+                            (box.Value<double?>("left") ?? 0) + origin.X,
+                            (box.Value<double?>("top") ?? 0) + origin.Y,
                             box.Value<double?>("w") ?? 0,
                             box.Value<double?>("h") ?? 0,
                             beyond: false).ConfigureAwait(true);
