@@ -2,8 +2,8 @@ import { isHiddenTool } from './toolVisibility.js'
 
 /**
  * 把连续、中间没有可见正文的工具收成 toolRun。
- * 可见工具卡不足两张时不包外层。B_todo 丢掉。
- * 第一张工具前的思考留在组外；工具之间以及最后一张工具之后的思考留在组内。
+ * 可见工具卡不足两张、且没有思考时不包外层。B_todo 丢掉。
+ * 思考跟相邻工具走：工具前、工具间、正文后的思考都收进同一组，不单独成行。
  *
  * @param {Array} segments 已去掉 todoList 与纯空白正文
  * @returns {Array}
@@ -14,18 +14,13 @@ export function groupToolRuns (segments) {
   let run = []
   let tools = 0
 
-  function emitLead () {
-    if (lead.length) output.push(...lead)
-    lead = []
-  }
-
   function flush () {
-    if (tools >= 2) {
+    if (tools >= 2 || (tools === 1 && run.some((s) => s && s.type === 'thinking'))) {
       output.push(makeRun(run))
     } else if (tools === 1) {
       output.push(...run)
     } else {
-      emitLead()
+      if (lead.length) output.push(...lead)
       if (run.length) output.push(...run)
     }
     lead = []
@@ -42,12 +37,16 @@ export function groupToolRuns (segments) {
       continue
     }
     if (seg.type === 'thinking') {
-      if (tools === 0) lead.push(seg)
-      else run.push(seg)
+      if (tools > 0) run.push(seg)
+      else if (lead.length) lead.push(seg)
+      else if (!attachThinking(output, seg)) lead.push(seg)
       continue
     }
     if (seg.type === 'toolCall') {
-      if (tools === 0) emitLead()
+      if (tools === 0 && lead.length) {
+        run.push(...lead)
+        lead = []
+      }
       run.push(seg)
       tools += 1
       continue
@@ -57,6 +56,25 @@ export function groupToolRuns (segments) {
   }
   flush()
   return output
+}
+
+/** 正文后面才到的思考，收回前面那组工具，避免在答案下面再单列一行。 */
+function attachThinking (output, seg) {
+  for (let i = output.length - 1; i >= 0; i--) {
+    const item = output[i]
+    if (!item) continue
+    if (item.type === 'text') continue
+    if (item.type === 'toolRun') {
+      item.segments.push(seg)
+      return true
+    }
+    if (item.type === 'toolCall') {
+      output[i] = makeRun([item, seg])
+      return true
+    }
+    break
+  }
+  return false
 }
 
 function makeRun (run) {
