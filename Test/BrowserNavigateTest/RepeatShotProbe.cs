@@ -99,35 +99,84 @@ namespace BrowserNavigateTest
             string tree = snap.Snapshot ?? "";
             Console.WriteLine(tree.Replace("\r\n", "\n"));
             string repeatRef = FindRepeatRef(tree);
-            if (string.IsNullOrEmpty(repeatRef))
+            string headingRef = FindNamedRef(tree, "课题来源");
+            if (string.IsNullOrEmpty(repeatRef) || string.IsNullOrEmpty(headingRef))
             {
-                Console.WriteLine("FAIL 这页没有折出 repeat");
+                Console.WriteLine("FAIL 缺 repeat 或标题 ref");
                 return 1;
             }
 
-            Console.WriteLine("capture ref=" + repeatRef + " up=1");
-            BrowserCaptureResult shot = await BrowserHostAdapter
-                .CaptureLocalAsync(nav.Channel, repeatRef, 1)
+            Console.WriteLine("capture heading ref=" + headingRef + " 不传 up");
+            BrowserCaptureResult own = await BrowserHostAdapter
+                .CaptureLocalAsync(nav.Channel, headingRef, null)
                 .ConfigureAwait(true);
-            string error = shot == null ? "" : (shot.Error ?? "");
-            Console.WriteLine("capture success=" + (shot != null && shot.Success) + " error=" + error);
-            bool imageOk = shot != null
-                && shot.Success
-                && shot.Image != null
-                && shot.Image.Bytes != null
-                && shot.Image.Bytes.Length > 0
-                && shot.Image.Width > 0
-                && shot.Image.Height > 0;
-            if (imageOk)
+            bool ownOk = own != null
+                && own.Success
+                && own.Image != null
+                && own.Image.Height > 0
+                && own.Image.Height < 400;
+            Console.WriteLine(
+                "heading success=" + (own != null && own.Success)
+                + " error=" + (own == null ? "" : own.Error)
+                + " size=" + (own != null && own.Image != null ? own.Image.Width + "x" + own.Image.Height : ""));
+            if (!ownOk)
             {
-                Console.WriteLine(
-                    "PASS 重复段标题按上一行裁出图 "
-                    + shot.Image.Width + "x" + shot.Image.Height);
-                return 0;
+                Console.WriteLine("FAIL 标题没有裁出自己的盒子");
+                return 1;
             }
 
-            Console.WriteLine("FAIL 重复段标题没有按上一行裁出图");
-            return 1;
+            Console.WriteLine("capture repeat ref=" + repeatRef + " 不传 up");
+            BrowserCaptureResult repeatOwn = await BrowserHostAdapter
+                .CaptureLocalAsync(nav.Channel, repeatRef, null)
+                .ConfigureAwait(true);
+            string repeatError = repeatOwn == null ? "" : (repeatOwn.Error ?? "");
+            Console.WriteLine("repeat-own success=" + (repeatOwn != null && repeatOwn.Success) + " error=" + repeatError);
+            if (repeatOwn == null || repeatOwn.Success || repeatError.IndexOf("没有可截区域", StringComparison.Ordinal) < 0)
+            {
+                Console.WriteLine("FAIL 重复段标题应没有自己的盒子");
+                return 1;
+            }
+
+            Console.WriteLine("capture repeat ref=" + repeatRef + " up=1");
+            BrowserCaptureResult parent = await BrowserHostAdapter
+                .CaptureLocalAsync(nav.Channel, repeatRef, 1)
+                .ConfigureAwait(true);
+            bool parentOk = parent != null
+                && parent.Success
+                && parent.Image != null
+                && parent.Image.Height > own.Image.Height;
+            Console.WriteLine(
+                "repeat-up success=" + (parent != null && parent.Success)
+                + " error=" + (parent == null ? "" : parent.Error)
+                + " size=" + (parent != null && parent.Image != null ? parent.Image.Width + "x" + parent.Image.Height : ""));
+            if (!parentOk)
+            {
+                Console.WriteLine("FAIL up=1 没有裁到比标题更大的上一行");
+                return 1;
+            }
+
+            Console.WriteLine("PASS 默认裁本节点，up 再往上");
+            return 0;
+        }
+
+        private static string FindNamedRef(string tree, string name)
+        {
+            string[] lines = (tree ?? "").Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string line in lines)
+            {
+                if (line.IndexOf(name, StringComparison.Ordinal) < 0)
+                {
+                    continue;
+                }
+
+                string refId = RefOnLine(line);
+                if (!string.IsNullOrEmpty(refId))
+                {
+                    return refId;
+                }
+            }
+
+            return null;
         }
 
         private static string FindRepeatRef(string tree)
@@ -140,31 +189,42 @@ namespace BrowserNavigateTest
                     continue;
                 }
 
-                int at = line.IndexOf("[ref=", StringComparison.Ordinal);
-                if (at < 0)
+                string refId = RefOnLine(line);
+                if (!string.IsNullOrEmpty(refId))
                 {
-                    at = line.IndexOf("ref=", StringComparison.Ordinal);
-                }
-
-                if (at < 0)
-                {
-                    continue;
-                }
-
-                int start = line.IndexOf('=', at) + 1;
-                int end = start;
-                while (end < line.Length && (char.IsLetterOrDigit(line[end]) || line[end] == '_'))
-                {
-                    end++;
-                }
-
-                if (end > start)
-                {
-                    return line.Substring(start, end - start);
+                    return refId;
                 }
             }
 
             return null;
+        }
+
+        private static string RefOnLine(string line)
+        {
+            if (string.IsNullOrEmpty(line))
+            {
+                return null;
+            }
+
+            int at = line.IndexOf("ref=", StringComparison.Ordinal);
+            if (at < 0)
+            {
+                return null;
+            }
+
+            int start = at + 4;
+            int end = start;
+            while (end < line.Length && (char.IsLetterOrDigit(line[end]) || line[end] == '_'))
+            {
+                end++;
+            }
+
+            if (end <= start)
+            {
+                return null;
+            }
+
+            return line.Substring(start, end - start);
         }
 
         private static string FindRepo()

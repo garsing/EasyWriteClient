@@ -20,14 +20,14 @@ namespace WordAddIn1.BrowserHost
             IBrowserCdp cdp,
             BrowserChannel channel,
             string refId,
-            int up)
+            int? up)
         {
             if (cdp == null || channel == null)
             {
                 return BrowserCaptureResult.Fail("无浏览器渠道");
             }
 
-            if (up < 1)
+            if (up.HasValue && up.Value < 1)
             {
                 return BrowserCaptureResult.Fail("up 须为从 1 起的正整数");
             }
@@ -42,15 +42,27 @@ namespace WordAddIn1.BrowserHost
                 return BrowserCaptureResult.Fail(StaleRef);
             }
 
-            if (entry.PrintedAncestors == null || entry.PrintedAncestors.Count < up)
+            BrowserPrintedAncestor ancestor;
+            if (!up.HasValue)
             {
-                return BrowserCaptureResult.Fail(NotEnough);
+                ancestor = OwnBox(entry);
+                if (ancestor == null)
+                {
+                    return BrowserCaptureResult.Fail(NoRegion);
+                }
             }
-
-            BrowserPrintedAncestor ancestor = entry.PrintedAncestors[up - 1];
-            if (ancestor == null || !ancestor.HasBox)
+            else
             {
-                return BrowserCaptureResult.Fail(NoRegion);
+                if (entry.PrintedAncestors == null || entry.PrintedAncestors.Count < up.Value)
+                {
+                    return BrowserCaptureResult.Fail(NotEnough);
+                }
+
+                ancestor = entry.PrintedAncestors[up.Value - 1];
+                if (ancestor == null || !ancestor.HasBox)
+                {
+                    return BrowserCaptureResult.Fail(NoRegion);
+                }
             }
 
             string sessionId = string.IsNullOrWhiteSpace(entry.CdpSessionId) ? null : entry.CdpSessionId;
@@ -157,6 +169,26 @@ namespace WordAddIn1.BrowserHost
                     }
                 }
             }
+        }
+
+        private static BrowserPrintedAncestor OwnBox(BrowserRefEntry entry)
+        {
+            if (entry == null)
+            {
+                return null;
+            }
+
+            if (entry.BackendDomNodeId.HasValue)
+            {
+                return new BrowserPrintedAncestor { BackendDomNodeId = entry.BackendDomNodeId };
+            }
+
+            if (!string.IsNullOrWhiteSpace(entry.AttachCssPath))
+            {
+                return new BrowserPrintedAncestor { AttachCssPath = entry.AttachCssPath };
+            }
+
+            return null;
         }
 
         private static bool BoxOk(JObject box)

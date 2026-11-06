@@ -522,7 +522,7 @@ namespace WordAddIn1
             {
                 TryParseUp(args, out int? up);
                 result = await BrowserHostAdapter
-                    .CaptureLocalAsync(browser, refId, up ?? 1)
+                    .CaptureLocalAsync(browser, refId, up)
                     .ConfigureAwait(true);
             }
 

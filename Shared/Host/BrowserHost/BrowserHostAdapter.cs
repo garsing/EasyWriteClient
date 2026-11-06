@@ -66,7 +66,7 @@ namespace WordAddIn1.BrowserHost
         internal static async Task<BrowserCaptureResult> CaptureLocalAsync(
             BrowserChannel channel,
             string refId,
-            int up)
+            int? up)
         {
             if (channel != null
                 && string.Equals(channel.Track, "attach", StringComparison.OrdinalIgnoreCase))
