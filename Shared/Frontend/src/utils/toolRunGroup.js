@@ -1,42 +1,59 @@
 import { isHiddenTool } from './toolVisibility.js'
 
 /**
- * 两段思考中间夹着的正文收回前一段，再把相邻思考并成一段。
- * 否则过程里会变成「思考 / 一行字 / 思考」。
+ * 两次思考中间夹着正文时：思考并成一段，中间的字挪到这段思考后面，
+ * 和紧跟着的正文直接接上。工具隔开的思考不动。
  */
 export function foldTextStuckBetweenThinking (segments) {
+  const segs = (segments || []).filter(Boolean)
   const out = []
-  const segs = segments || []
-  for (let i = 0; i < segs.length; i++) {
+  let i = 0
+  while (i < segs.length) {
     const seg = segs[i]
-    if (!seg) continue
-    const prev = out[out.length - 1]
-    const next = segs[i + 1]
-    if (
-      seg.type === 'text' &&
-      prev && prev.type === 'thinking' &&
-      next && next.type === 'thinking'
+    if (seg.type !== 'thinking') {
+      out.push({ ...seg })
+      i += 1
+      continue
+    }
+    const thinkings = [seg]
+    const texts = []
+    let j = i
+    while (
+      segs[j + 1] && segs[j + 1].type === 'text' &&
+      segs[j + 2] && segs[j + 2].type === 'thinking'
     ) {
-      prev.content = appendPiece(prev.content, seg.content)
+      texts.push(segs[j + 1])
+      thinkings.push(segs[j + 2])
+      j += 2
+    }
+    if (thinkings.length === 1) {
+      out.push({ ...seg })
+      i += 1
       continue
     }
-    if (seg.type === 'thinking' && prev && prev.type === 'thinking') {
-      prev.content = appendPiece(prev.content, seg.content)
-      if (seg.isComplete) prev.isComplete = true
-      continue
+    if (segs[j + 1] && segs[j + 1].type === 'text') {
+      texts.push(segs[j + 1])
+      j += 1
     }
-    out.push({ ...seg })
+    out.push(mergeThinkings(thinkings))
+    const joined = texts.map((t) => t.content || '').join('')
+    if (joined) {
+      const lastText = texts[texts.length - 1]
+      out.push({ ...lastText, type: 'text', content: joined })
+    }
+    i = j + 1
   }
   return out
 }
 
-function appendPiece (base, piece) {
-  const left = base || ''
-  const right = piece || ''
-  if (!right) return left
-  if (!left) return right
-  if (/\s$/.test(left) || /^\s/.test(right)) return left + right
-  return `${left}\n${right}`
+function mergeThinkings (thinkings) {
+  const first = thinkings[0]
+  return {
+    ...first,
+    type: 'thinking',
+    content: thinkings.map((t) => t.content || '').filter((s) => s).join('\n'),
+    isComplete: thinkings.every((t) => t.isComplete !== false)
+  }
 }
 
 /**
