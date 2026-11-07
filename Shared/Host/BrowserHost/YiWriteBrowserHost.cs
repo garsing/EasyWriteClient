@@ -1085,8 +1085,11 @@ namespace WordAddIn1.BrowserHost
 
                     if (!string.IsNullOrEmpty(entry.XPath) && entry.BackendDomNodeId.HasValue)
                     {
-                        int? fresh = await BrowserInteractEngine
-                            .BackendIdForXPathAsync(form, entry.XPath, entry.CdpSessionId)
+                        int? world = await BrowserDomBackend
+                            .TryCreateFrameWorldAsync(form, entry.FrameId, entry.CdpSessionId)
+                            .ConfigureAwait(true);
+                        int? fresh = await BrowserDomBackend
+                            .FromXPathAsync(form, entry.XPath, world, entry.CdpSessionId)
                             .ConfigureAwait(true);
                         if (fresh.HasValue)
                         {
@@ -1131,18 +1134,21 @@ namespace WordAddIn1.BrowserHost
 
                     if (!entry.BackendDomNodeId.HasValue)
                     {
+                        int? world = await BrowserDomBackend
+                            .TryCreateFrameWorldAsync(form, entry.FrameId, entry.CdpSessionId)
+                            .ConfigureAwait(true);
                         int? resolved = null;
                         if (!string.IsNullOrWhiteSpace(entry.XPath))
                         {
-                            resolved = await BrowserInteractEngine
-                                .BackendIdForXPathAsync(form, entry.XPath, entry.CdpSessionId)
+                            resolved = await BrowserDomBackend
+                                .FromXPathAsync(form, entry.XPath, world, entry.CdpSessionId)
                                 .ConfigureAwait(true);
                         }
 
                         if (!resolved.HasValue && !string.IsNullOrWhiteSpace(entry.AttachCssPath))
                         {
-                            resolved = await BrowserInteractEngine
-                                .BackendIdForCssAsync(form, entry.AttachCssPath, entry.CdpSessionId)
+                            resolved = await BrowserDomBackend
+                                .FromCssAsync(form, entry.AttachCssPath, world, entry.CdpSessionId)
                                 .ConfigureAwait(true);
                         }
 

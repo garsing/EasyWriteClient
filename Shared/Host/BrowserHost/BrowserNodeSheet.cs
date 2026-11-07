@@ -40,49 +40,54 @@ namespace WordAddIn1.BrowserHost
             string sessionId = string.IsNullOrWhiteSpace(plate.Entry.CdpSessionId)
                 ? null
                 : plate.Entry.CdpSessionId;
+            int? contextId = await BrowserDomBackend
+                .TryCreateFrameWorldAsync(cdp, plate.Entry.FrameId, sessionId)
+                .ConfigureAwait(true);
             BrowserRefStore.BeginSheet(channel.ChannelId);
-            foreach (NodeItem item in items)
+            try
             {
-                int? backendId = null;
-                if (!string.IsNullOrWhiteSpace(item.XPath))
+                foreach (NodeItem item in items)
                 {
-                    backendId = await BrowserInteractEngine
-                        .BackendIdForXPathAsync(cdp, item.XPath, sessionId)
+                    if (string.IsNullOrWhiteSpace(item.Mark))
+                    {
+                        item.RefId = null;
+                        continue;
+                    }
+
+                    int? backendId = await BrowserDomBackend
+                        .FromMarkAsync(cdp, item.Mark, contextId, sessionId)
                         .ConfigureAwait(true);
-                }
+                    if (!backendId.HasValue)
+                    {
+                        item.RefId = null;
+                        continue;
+                    }
 
-                if (!backendId.HasValue && !string.IsNullOrWhiteSpace(item.Css))
-                {
-                    backendId = await BrowserInteractEngine
-                        .BackendIdForCssAsync(cdp, item.Css, sessionId)
-                        .ConfigureAwait(true);
-                }
+                    string existing = BrowserRefStore.FindExisting(channel.ChannelId, backendId, item.Css);
+                    if (!string.IsNullOrEmpty(existing))
+                    {
+                        item.RefId = existing;
+                        continue;
+                    }
 
-                string existing = BrowserRefStore.FindExisting(channel.ChannelId, backendId, item.Css);
-                if (!string.IsNullOrEmpty(existing))
-                {
-                    item.RefId = existing;
-                    continue;
+                    var entry = new BrowserRefEntry
+                    {
+                        BackendDomNodeId = backendId,
+                        AttachCssPath = string.IsNullOrWhiteSpace(item.Css) ? null : item.Css,
+                        XPath = string.IsNullOrWhiteSpace(item.XPath) ? null : item.XPath,
+                        Name = item.Text,
+                        Role = "dom",
+                        FrameId = plate.Entry.FrameId,
+                        CdpSessionId = plate.Entry.CdpSessionId,
+                        AttachFrameId = plate.Entry.AttachFrameId
+                    };
+                    item.RefId = BrowserRefStore.Append(channel.ChannelId, entry);
                 }
-
-                if (!backendId.HasValue && string.IsNullOrWhiteSpace(item.Css))
-                {
-                    item.RefId = null;
-                    continue;
-                }
-
-                var entry = new BrowserRefEntry
-                {
-                    BackendDomNodeId = backendId,
-                    AttachCssPath = string.IsNullOrWhiteSpace(item.Css) ? null : item.Css,
-                    XPath = string.IsNullOrWhiteSpace(item.XPath) ? null : item.XPath,
-                    Name = item.Text,
-                    Role = "dom",
-                    FrameId = plate.Entry.FrameId,
-                    CdpSessionId = plate.Entry.CdpSessionId,
-                    AttachFrameId = plate.Entry.AttachFrameId
-                };
-                item.RefId = BrowserRefStore.Append(channel.ChannelId, entry);
+            }
+            finally
+            {
+                await BrowserDomBackend.ClearSheetMarksAsync(cdp, contextId, sessionId)
+                    .ConfigureAwait(true);
             }
 
             items.RemoveAll(item => string.IsNullOrEmpty(item.RefId));
@@ -126,7 +131,8 @@ namespace WordAddIn1.BrowserHost
                     H = h,
                     Text = (obj.Value<string>("text") ?? "").Trim(),
                     Css = obj.Value<string>("css") ?? "",
-                    XPath = obj.Value<string>("xpath") ?? ""
+                    XPath = obj.Value<string>("xpath") ?? "",
+                    Mark = obj.Value<string>("mark") ?? ""
                 });
             }
 
@@ -433,6 +439,7 @@ namespace WordAddIn1.BrowserHost
             public string Text;
             public string Css;
             public string XPath;
+            public string Mark;
             public string RefId;
         }
 

@@ -567,7 +567,9 @@ namespace WordAddIn1.BrowserHost
             + "var items=[];"
             + "for(var j=0;j<els.length;j++){var el=els[j];if(isWrap(el))continue;var b=el.getBoundingClientRect();"
             + "var label=textOf(el)||stateOf(el);"
-            + "items.push({x:b.left-rr.left,y:b.top-rr.top,w:b.width,h:b.height,text:label,css:cssPath(el),xpath:xpath(el)});}"
+            + "var mark='sh'+items.length;"
+            + "try{el.setAttribute('data-yw-clk',mark);}catch(eMark){continue;}"
+            + "items.push({x:b.left-rr.left,y:b.top-rr.top,w:b.width,h:b.height,text:label,css:cssPath(el),xpath:xpath(el),mark:mark});}"
             + "return{ok:true,items:items};"
             + "}";
 

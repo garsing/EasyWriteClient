@@ -524,33 +524,8 @@ namespace WordAddIn1.BrowserHost
             string frameId,
             string sessionId)
         {
-            if (string.IsNullOrWhiteSpace(frameId))
-            {
-                return null;
-            }
-
-            try
-            {
-                var payload = new JObject
-                {
-                    ["frameId"] = frameId,
-                    ["worldName"] = "yiwrite_clickable"
-                };
-                string json = await cdp
-                    .CallCdpAsync("Page.createIsolatedWorld", payload.ToString(Formatting.None), sessionId)
-                    .ConfigureAwait(true);
-                JObject jo = JObject.Parse(json);
-                if (jo["executionContextId"] != null
-                    && jo["executionContextId"].Type != JTokenType.Null)
-                {
-                    return jo["executionContextId"].Value<int>();
-                }
-            }
-            catch
-            {
-            }
-
-            return null;
+            return await BrowserDomBackend.TryCreateFrameWorldAsync(cdp, frameId, sessionId)
+                .ConfigureAwait(true);
         }
 
         private static async Task<JArray> EvaluateArrayAsync(
@@ -593,39 +568,8 @@ namespace WordAddIn1.BrowserHost
             int? contextId,
             string sessionId)
         {
-            string expr = "document.querySelector('[data-yw-clk=" + JsonEscape(mark) + "]')";
-            var payload = new JObject
-            {
-                ["expression"] = expr,
-                ["returnByValue"] = false
-            };
-            if (contextId.HasValue)
-            {
-                payload["contextId"] = contextId.Value;
-            }
-
-            string json = await cdp
-                .CallCdpAsync("Runtime.evaluate", payload.ToString(Formatting.None), sessionId)
+            return await BrowserDomBackend.FromMarkAsync(cdp, mark, contextId, sessionId)
                 .ConfigureAwait(true);
-            JObject jo = JObject.Parse(json);
-            string objectId = (string)jo["result"]?["objectId"];
-            if (string.IsNullOrEmpty(objectId))
-            {
-                return null;
-            }
-
-            var descPayload = new JObject { ["objectId"] = objectId };
-            string descJson = await cdp
-                .CallCdpAsync("DOM.describeNode", descPayload.ToString(Formatting.None), sessionId)
-                .ConfigureAwait(true);
-            JObject desc = JObject.Parse(descJson);
-            JToken backend = desc["node"]?["backendNodeId"];
-            if (backend == null || backend.Type == JTokenType.Null)
-            {
-                return null;
-            }
-
-            return backend.Value<int>();
         }
 
         private static bool ReadReturnedBool(string resultJson)
@@ -704,11 +648,6 @@ namespace WordAddIn1.BrowserHost
             string n = (name ?? "").Trim();
             return n == "提交" || n == "暂存" || n == "确定" || n == "保存"
                 || n == "取消" || n == "关闭" || n == "申请";
-        }
-
-        private static string JsonEscape(string s)
-        {
-            return "\"" + (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
         }
 
         private static string Escape(string s)
