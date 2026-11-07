@@ -956,10 +956,6 @@ button.section-header {
   color: inherit;
 }
 
-button.section-header:hover {
-  background: rgba(0, 0, 0, 0.04);
-}
-
 .section-header-toggle,
 .section-chevron-btn,
 .open-files-refresh {
@@ -991,8 +987,6 @@ button.section-header:hover {
   border-radius: 6px;
 }
 
-.section-header-toggle:hover,
-.section-chevron-btn:hover,
 .open-files-refresh:hover:not(:disabled) {
   background: rgba(0, 0, 0, 0.04);
 }
