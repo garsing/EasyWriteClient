@@ -1010,8 +1010,8 @@ button.section-header:hover {
 }
 
 .open-files-refresh-icon {
-  width: 14px;
-  height: 14px;
+  width: 11px;
+  height: 11px;
   object-fit: contain;
   display: block;
 }
