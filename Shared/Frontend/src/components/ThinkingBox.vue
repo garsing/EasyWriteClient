@@ -30,19 +30,8 @@ const props = defineProps({
   }
 })
 
-// 与工具卡一致：进行中展开，完成后折叠
-const isExpanded = ref(!props.isComplete)
-
-watch(
-  () => props.isComplete,
-  (complete, wasComplete) => {
-    if (complete && !wasComplete) {
-      isExpanded.value = false
-    } else if (!complete && wasComplete) {
-      isExpanded.value = true
-    }
-  }
-)
+// 默认折叠，只有点标题才展开
+const isExpanded = ref(false)
 
 const bodyRef = ref(null)
 
