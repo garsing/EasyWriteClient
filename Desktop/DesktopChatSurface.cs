@@ -595,6 +595,8 @@ namespace EasyWriteClient.Desktop
             });
             _bridge.RegisterHandler("openContainingFolder", HandleOpenContainingFolderAsync);
             _bridge.RegisterHandler("createOpenFile", HandleCreateOpenFileAsync);
+            _bridge.RegisterHandler("listUserCheckpoints", HandleListUserCheckpointsAsync);
+            _bridge.RegisterHandler("restoreUserCheckpoint", HandleRestoreUserCheckpointAsync);
             _bridge.RegisterHandler("openUrlInYiWriteBrowser", HandleOpenUrlInYiWriteBrowserAsync);
             // 侧栏底栏用户名：轻量查询，不走设置窗体的 getUserSettings（该 handler 只在 UserSettingsForm 注册）
             _bridge.RegisterHandler("getCurrentUser", _ =>
@@ -823,6 +825,56 @@ namespace EasyWriteClient.Desktop
             {
                 return new { success = false, message = ex.Message };
             }
+        }
+
+        private static string ReadBridgeString(object data, string name)
+        {
+            if (data is JObject jObj)
+            {
+                return jObj[name]?.ToString();
+            }
+
+            if (data == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return JObject.FromObject(data)[name]?.ToString();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private Task<object> HandleListUserCheckpointsAsync(object data)
+        {
+            string channelId = (ReadBridgeString(data, "channelId") ?? "").Trim();
+            return Task.FromResult(DocumentCheckpointService.ListUserCheckpoints(channelId));
+        }
+
+        private Task<object> HandleRestoreUserCheckpointAsync(object data)
+        {
+            string channelId = (ReadBridgeString(data, "channelId") ?? "").Trim();
+            string timestamp = (ReadBridgeString(data, "timestamp") ?? "").Trim();
+            if (string.IsNullOrEmpty(timestamp))
+            {
+                return Task.FromResult<object>(new { success = false, message = "缺少 timestamp" });
+            }
+
+            ToolResult result = DocumentCheckpointService.RestoreUserCheckpoint(channelId, timestamp);
+            if (result != null && result.Success)
+            {
+                return Task.FromResult<object>(new { success = true });
+            }
+
+            return Task.FromResult<object>(new
+            {
+                success = false,
+                message = result?.Error ?? "切换失败"
+            });
         }
 
         private async Task<object> HandleCreateOpenFileAsync(object data)
@@ -1505,6 +1557,25 @@ namespace EasyWriteClient.Desktop
             }
             finally
             {
+                try
+                {
+                    if (InvokeRequired)
+                    {
+                        Invoke((MethodInvoker)delegate
+                        {
+                            DocumentCheckpointService.TrySaveUserCheckpointsForRound();
+                        });
+                    }
+                    else
+                    {
+                        DocumentCheckpointService.TrySaveUserCheckpointsForRound();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("[DesktopChatSurface] 轮末用户副本失败: " + ex.Message);
+                }
+
                 ResetUploadContext();
             }
         }

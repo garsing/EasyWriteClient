@@ -347,7 +347,7 @@ namespace WordAddIn1
                 return result;
             }
 
-            DocumentCheckpointService.AppendActionLogAfterMutation(toolName, args);
+            DocumentCheckpointService.AppendActionLogAfterMutation(toolName, args, before.DocUuid);
             return result;
         }
 

@@ -32,11 +32,13 @@ namespace WordAddIn1
                         return Task.FromResult(new ToolResult { Success = false, Error = kindError });
                     }
 
-                    string uuid = live.DocUuid;
+                    string uuid = DocumentCheckpointService.BindCheckpointIdentity(live, create: false, out _);
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_list_document_operations] channel_id={channel.ChannelId} uuid={uuid}");
 
-                    string text = DocumentCheckpointService.FormatListTextForDocUuid(uuid);
+                    string text = string.IsNullOrEmpty(uuid)
+                        ? "当前文档尚无操作记录。"
+                        : DocumentCheckpointService.FormatListTextForDocUuid(uuid);
                     return Task.FromResult(new ToolResult
                     {
                         Success = true,

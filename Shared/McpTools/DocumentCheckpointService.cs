@@ -14,10 +14,15 @@ namespace WordAddIn1
 {
     public static class DocumentCheckpointService
     {
-        private const int MaxCheckpointSlots = 5;
+        private const int MaxOrdinaryPerBranch = 10;
+        private const int MaxUserPerBranch = 20;
+        public const string RoundMutatingMessage = "正在修改，请先停止或等这一轮结束";
 
         private static readonly Dictionary<string, DocumentCheckpointSession> Sessions =
             new Dictionary<string, DocumentCheckpointSession>(StringComparer.Ordinal);
+
+        private static readonly Dictionary<string, string> RoundMutatingChannelByDocId =
+            new Dictionary<string, string>(StringComparer.Ordinal);
 
         private static Word.Application _wordApplication;
 
@@ -106,10 +111,60 @@ namespace WordAddIn1
 
             if (!Sessions.TryGetValue(docUuid, out DocumentCheckpointSession session))
             {
-                session = new DocumentCheckpointSession { DocUuid = docUuid };
+                session = CheckpointHistoryStore.TryLoad(docUuid);
+                if (session == null)
+                {
+                    session = NewSession(docUuid);
+                }
+
                 Sessions[docUuid] = session;
             }
 
+            return session;
+        }
+
+        public static DocumentCheckpointSession PeekSession(string docId)
+        {
+            if (string.IsNullOrEmpty(docId))
+            {
+                return null;
+            }
+
+            if (Sessions.TryGetValue(docId, out DocumentCheckpointSession session))
+            {
+                return session;
+            }
+
+            session = CheckpointHistoryStore.TryLoad(docId);
+            if (session != null)
+            {
+                Sessions[docId] = session;
+            }
+
+            return session;
+        }
+
+        public static void StartFreshIdentity(string docId, string fullName, object live)
+        {
+            if (string.IsNullOrEmpty(docId))
+            {
+                return;
+            }
+
+            var session = NewSession(docId);
+            ApplyLiveMetadata(session, live, fullName);
+            Sessions[docId] = session;
+            Persist(session);
+        }
+
+        private static DocumentCheckpointSession NewSession(string docId)
+        {
+            var session = new DocumentCheckpointSession
+            {
+                DocUuid = docId,
+                CurrentBranch = 1
+            };
+            session.Branches.Add(new CheckpointBranch { Id = 1 });
             return session;
         }
 
@@ -144,21 +199,26 @@ namespace WordAddIn1
                 return Fail(ex.Message, "ckpt-bind-throw");
             }
 
-            if (string.IsNullOrEmpty(live.DocUuid) && live.Live is Word.Document wordDoc)
+            string docId = BindCheckpointIdentity(live, create: true, out string identityError);
+            if (string.IsNullOrEmpty(docId))
             {
-                live.DocUuid = DocumentState.EnsureCurrDocUuid(wordDoc);
+                return Fail(
+                    string.IsNullOrEmpty(identityError)
+                        ? "创建文档副本失败: 无法写入文档身份 EasyWriteDocId"
+                        : identityError,
+                    "ckpt-no-uuid");
             }
 
-            if (string.IsNullOrEmpty(live.DocUuid))
-            {
-                return Fail("当前文档尚未绑定 doc_uuid", "ckpt-no-uuid");
-            }
+            live.DocUuid = docId;
+            DocumentCheckpointSession session = GetOrCreateSession(docId);
+            ApplyLiveMetadata(session, live.Live, EasyWriteDocIdStore.TryReadFullName(live.Live), live.Adapter.CopyExtension);
+            MaybeFork(session);
 
-            string dir = GetDocCheckpointDirectory(live.DocUuid);
+            string dir = GetDocCheckpointDirectory(docId);
             Directory.CreateDirectory(dir);
 
             string timestamp = GenerateUniqueTimestamp(dir);
-            string path = GetCheckpointFilePath(live.DocUuid, timestamp, live.Adapter.CopyExtension);
+            string path = GetCheckpointFilePath(docId, timestamp, live.Adapter.CopyExtension);
 
             try
             {
@@ -167,17 +227,16 @@ namespace WordAddIn1
             catch (Exception ex)
             {
                 HostProbe.Log("ckpt-save-fail", HostProbe.Ex(ex));
+                RevertBranchIfEmpty(session);
+                Persist(session);
                 return Fail($"创建文档副本失败: {ex.Message}", "ckpt-save");
             }
 
-            DocumentCheckpointSession session = GetOrCreateSession(live.DocUuid);
-            AppendCheckpointEntry(session, timestamp);
+            AppendCheckpointEntry(session, timestamp, session.CurrentBranch, userRollback: false, operations: null);
             session.CaretByTimestamp[timestamp] = caret;
-
-            if (session.CheckpointTimestampsInOrder.Count > MaxCheckpointSlots)
-            {
-                EvictOldestCheckpoint(session, live.DocUuid);
-            }
+            EvictOldestOrdinary(session, docId);
+            RoundMutatingChannelByDocId[docId] = live.ChannelId ?? "";
+            Persist(session);
 
             HostProbe.Log("ckpt-ok", "path=" + path + " ts=" + timestamp);
             System.Diagnostics.Debug.WriteLine(
@@ -390,15 +449,16 @@ namespace WordAddIn1
 
         public static void AppendActionLogAfterMutation(
             string toolName,
-            IReadOnlyDictionary<string, object> parameters)
+            IReadOnlyDictionary<string, object> parameters,
+            string checkpointDocId)
         {
-            string docUuid = DocumentState.CurrDocUuid;
-            if (string.IsNullOrEmpty(docUuid))
+            if (string.IsNullOrEmpty(checkpointDocId))
             {
                 return;
             }
 
-            DocumentCheckpointSession session = GetOrCreateSession(docUuid);
+            DocumentCheckpointSession session = GetOrCreateSession(checkpointDocId);
+            int branch = session.CurrentBranch > 0 ? session.CurrentBranch : 1;
 
             if (string.Equals(toolName, "F_process_document_actions", StringComparison.Ordinal))
             {
@@ -410,11 +470,13 @@ namespace WordAddIn1
                 session.Entries.Add(new OperationLogEntry
                 {
                     Kind = OperationLogEntryKind.Action,
+                    Branch = branch,
                     ToolName = toolName,
                     ActionLineBody = json
                 });
             }
 
+            Persist(session);
             System.Diagnostics.Debug.WriteLine($"[Checkpoint] append action tool={toolName}");
         }
 
@@ -481,6 +543,9 @@ namespace WordAddIn1
 
             RemoveCheckpointAndFollowingActions(docUuid, timestamp, deleteNewerFiles: false);
             DeleteCheckpointFile(docUuid, timestamp);
+            DocumentCheckpointSession session = GetSession(docUuid);
+            RevertBranchIfEmpty(session);
+            Persist(session);
             System.Diagnostics.Debug.WriteLine($"[Checkpoint] cleanup-only failed invoke timestamp={timestamp}");
         }
 
@@ -561,6 +626,9 @@ namespace WordAddIn1
                 DocumentState.ClearAfterCheckpointRestore();
                 RemoveCheckpointAndFollowingActions(docUuid, timestamp, deleteNewerFiles: false);
                 DeleteCheckpointFile(docUuid, timestamp);
+                DocumentCheckpointSession session = GetSession(docUuid);
+                RevertBranchIfEmpty(session);
+                Persist(session);
             }
             catch (Exception ex)
             {
@@ -772,7 +840,7 @@ namespace WordAddIn1
                 return new ToolResult { Success = false, Error = "当前文档尚未绑定 doc_uuid" };
             }
 
-            DocumentCheckpointSession session = GetSession(live.DocUuid);
+            DocumentCheckpointSession session = GetOrCreateSession(live.DocUuid);
             if (session == null || !session.CheckpointTimestampsInOrder.Contains(timestamp))
             {
                 return new ToolResult
@@ -813,10 +881,16 @@ namespace WordAddIn1
             }
 
             DocumentState.ClearAfterCheckpointRestore();
-            int removed = TruncateLogAfterCheckpoint(live.DocUuid, timestamp);
+            OperationLogEntry restored = FindCheckpointEntry(session, timestamp);
+            if (restored != null)
+            {
+                session.PositionBranch = restored.Branch > 0 ? restored.Branch : session.CurrentBranch;
+                session.PositionTimestamp = timestamp;
+                Persist(session);
+            }
 
             System.Diagnostics.Debug.WriteLine(
-                $"[Checkpoint] restore timestamp={timestamp} truncate removed={removed}");
+                $"[Checkpoint] restore timestamp={timestamp} positionBranch={session.PositionBranch}");
 
             return new ToolResult
             {
@@ -837,7 +911,7 @@ namespace WordAddIn1
                 return "当前文档尚无操作记录。";
             }
 
-            DocumentCheckpointSession session = GetSession(docUuid);
+            DocumentCheckpointSession session = GetOrCreateSession(docUuid);
             return OperationLogFormatter.FormatListText(session);
         }
 
@@ -848,14 +922,20 @@ namespace WordAddIn1
                 return;
             }
 
-            string docUuid = DocumentIdentity.TryResolveUuid(document);
-            if (string.IsNullOrEmpty(docUuid))
+            string fileId = EasyWriteDocIdStore.TryRead(document);
+            if (!string.IsNullOrEmpty(fileId))
             {
-                return;
+                Sessions.Remove(fileId);
+                RoundMutatingChannelByDocId.Remove(fileId);
             }
 
-            ClearSessionForDocument(docUuid);
-            System.Diagnostics.Debug.WriteLine($"[Checkpoint] clear on DocumentClose uuid={docUuid}");
+            string docUuid = DocumentIdentity.TryResolveUuid(document);
+            if (!string.IsNullOrEmpty(docUuid))
+            {
+                Sessions.Remove(docUuid);
+            }
+
+            System.Diagnostics.Debug.WriteLine($"[Checkpoint] unload on DocumentClose fileId={fileId}");
         }
 
         public static void ClearSessionForDocument(string docUuid)
@@ -866,71 +946,40 @@ namespace WordAddIn1
             }
 
             Sessions.Remove(docUuid);
-
-            string dir = GetDocCheckpointDirectory(docUuid);
-            if (Directory.Exists(dir))
-            {
-                try
-                {
-                    Directory.Delete(dir, recursive: true);
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[Checkpoint] delete dir failed uuid={docUuid}: {ex.Message}");
-                }
-            }
+            RoundMutatingChannelByDocId.Remove(docUuid);
         }
 
         public static void ClearAllOnShutdown()
         {
-            var uuids = Sessions.Keys.ToList();
-            foreach (string uuid in uuids)
-            {
-                ClearSessionForDocument(uuid);
-            }
-
             Sessions.Clear();
+            RoundMutatingChannelByDocId.Clear();
         }
 
         public static void ClearOrphanUuidFoldersOnShutdown()
         {
-            if (_wordApplication == null)
+        }
+
+        private static void AppendCheckpointEntry(
+            DocumentCheckpointSession session,
+            string timestamp,
+            int branch,
+            bool userRollback,
+            List<CheckpointOperationRecord> operations)
+        {
+            var entry = new OperationLogEntry
             {
-                return;
+                Kind = OperationLogEntryKind.Checkpoint,
+                Timestamp = timestamp,
+                Branch = branch > 0 ? branch : 1,
+                UserRollback = userRollback
+            };
+            if (operations != null)
+            {
+                entry.Operations.AddRange(operations);
             }
 
-            string root = GetCheckpointRootDirectory();
-            if (!Directory.Exists(root))
-            {
-                return;
-            }
-
-            var liveUuids = new HashSet<string>(StringComparer.Ordinal);
-            foreach (Word.Document doc in _wordApplication.Documents)
-            {
-                string uuid = DocumentIdentity.TryResolveUuid(doc);
-                if (!string.IsNullOrEmpty(uuid))
-                {
-                    liveUuids.Add(uuid);
-                }
-            }
-
-            foreach (string dir in Directory.GetDirectories(root))
-            {
-                string name = Path.GetFileName(dir);
-                if (!liveUuids.Contains(name))
-                {
-                    try
-                    {
-                        Directory.Delete(dir, recursive: true);
-                        System.Diagnostics.Debug.WriteLine($"[Checkpoint] clear orphan dir uuid={name}");
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[Checkpoint] orphan dir delete failed: {ex.Message}");
-                    }
-                }
-            }
+            session.Entries.Add(entry);
+            session.CheckpointTimestampsInOrder.Add(timestamp);
         }
 
         private static void AppendCheckpointEntry(DocumentCheckpointSession session, string timestamp)
@@ -964,6 +1013,7 @@ namespace WordAddIn1
                 session.Entries.Add(new OperationLogEntry
                 {
                     Kind = OperationLogEntryKind.Action,
+                    Branch = session.CurrentBranch > 0 ? session.CurrentBranch : 1,
                     ToolName = toolName,
                     ActionLineBody = json
                 });
@@ -1174,6 +1224,521 @@ namespace WordAddIn1
             }
 
             return false;
+        }
+
+        public static string BindCheckpointIdentity(CheckpointLiveTarget live, bool create, out string error)
+        {
+            error = null;
+            if (live == null || live.Live == null)
+            {
+                error = "没有活动的文档窗口";
+                return null;
+            }
+
+            string existing = EasyWriteDocIdStore.TrySplitOnSaveAs(live.Live);
+            if (string.IsNullOrEmpty(existing))
+            {
+                existing = EasyWriteDocIdStore.TryRead(live.Live);
+            }
+
+            if (string.IsNullOrEmpty(existing))
+            {
+                if (!create)
+                {
+                    return null;
+                }
+
+                existing = Uuid7Generator.GenerateUuid7();
+                if (!EasyWriteDocIdStore.TryWrite(live.Live, existing))
+                {
+                    error = "创建文档副本失败: 无法写入文档身份 EasyWriteDocId";
+                    return null;
+                }
+            }
+
+            DocumentCheckpointSession session = GetOrCreateSession(existing);
+            ApplyLiveMetadata(
+                session,
+                live.Live,
+                EasyWriteDocIdStore.TryReadFullName(live.Live),
+                live.Adapter?.CopyExtension);
+            return existing;
+        }
+
+        public static bool IsRoundMutating(string docId)
+        {
+            return !string.IsNullOrEmpty(docId) && RoundMutatingChannelByDocId.ContainsKey(docId);
+        }
+
+        public static void TrySaveUserCheckpointsForRound()
+        {
+            if (RoundMutatingChannelByDocId.Count == 0)
+            {
+                return;
+            }
+
+            var touches = new List<KeyValuePair<string, string>>(RoundMutatingChannelByDocId);
+            foreach (KeyValuePair<string, string> touch in touches)
+            {
+                try
+                {
+                    TrySaveUserCheckpoint(touch.Key, touch.Value);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("[Checkpoint] user checkpoint failed: " + ex.Message);
+                }
+                finally
+                {
+                    RoundMutatingChannelByDocId.Remove(touch.Key);
+                }
+            }
+        }
+
+        public static object ListUserCheckpoints(string channelId)
+        {
+            if (!TryLiveForChannel(channelId, out CheckpointLiveTarget live, out string error))
+            {
+                return new { success = false, message = error };
+            }
+
+            string docId = BindCheckpointIdentity(live, create: false, out error);
+            if (string.IsNullOrEmpty(docId))
+            {
+                return new { success = true, items = new object[0] };
+            }
+
+            DocumentCheckpointSession session = GetOrCreateSession(docId);
+            int branch = session.CurrentBranch > 0 ? session.CurrentBranch : 1;
+            var items = new List<object>();
+            for (int i = session.Entries.Count - 1; i >= 0; i--)
+            {
+                OperationLogEntry entry = session.Entries[i];
+                if (entry.Kind != OperationLogEntryKind.Checkpoint
+                    || !entry.UserRollback
+                    || entry.Branch != branch)
+                {
+                    continue;
+                }
+
+                var operations = new List<object>();
+                foreach (CheckpointOperationRecord op in entry.Operations)
+                {
+                    operations.Add(new { tool = op.Tool ?? "", arguments = op.Arguments ?? "{}" });
+                }
+
+                items.Add(new
+                {
+                    timestamp = entry.Timestamp,
+                    current = entry.Branch == session.PositionBranch
+                        && string.Equals(entry.Timestamp, session.PositionTimestamp, StringComparison.Ordinal),
+                    operations
+                });
+            }
+
+            return new { success = true, items };
+        }
+
+        public static ToolResult RestoreUserCheckpoint(string channelId, string timestamp)
+        {
+            if (!TryLiveForChannel(channelId, out CheckpointLiveTarget live, out string error))
+            {
+                return new ToolResult { Success = false, Error = error };
+            }
+
+            string docId = BindCheckpointIdentity(live, create: false, out error);
+            if (string.IsNullOrEmpty(docId))
+            {
+                return new ToolResult { Success = false, Error = "这份文档还没有历史记录" };
+            }
+
+            if (IsRoundMutating(docId))
+            {
+                return new ToolResult { Success = false, Error = RoundMutatingMessage };
+            }
+
+            live.DocUuid = docId;
+            return RestoreCheckpoint(timestamp, live);
+        }
+
+        private static void TrySaveUserCheckpoint(string docId, string channelId)
+        {
+            DocumentCheckpointSession session = GetSession(docId) ?? CheckpointHistoryStore.TryLoad(docId);
+            if (session == null)
+            {
+                return;
+            }
+
+            Sessions[docId] = session;
+            int branch = session.CurrentBranch > 0 ? session.CurrentBranch : 1;
+            int start = SpanStartIndex(session, branch);
+            if (!HasOrdinaryCheckpointAfter(session, branch, start))
+            {
+                return;
+            }
+
+            if (!TryLiveForChannel(channelId, out CheckpointLiveTarget live, out _))
+            {
+                return;
+            }
+
+            live.DocUuid = docId;
+            CheckpointCaret caret = null;
+            try
+            {
+                caret = live.Adapter.CaptureCaret(live);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[Checkpoint] user caret failed: " + ex.Message);
+            }
+
+            string dir = GetDocCheckpointDirectory(docId);
+            Directory.CreateDirectory(dir);
+            string timestamp = GenerateUniqueTimestamp(dir);
+            string path = GetCheckpointFilePath(docId, timestamp, live.Adapter.CopyExtension);
+            live.Adapter.SaveCopy(live, path);
+            if (caret != null)
+            {
+                session.CaretByTimestamp[timestamp] = caret;
+            }
+
+            AppendCheckpointEntry(session, timestamp, branch, userRollback: true, CollectOperations(session, branch, start));
+            session.PositionBranch = branch;
+            session.PositionTimestamp = timestamp;
+            ApplyLiveMetadata(session, live.Live, EasyWriteDocIdStore.TryReadFullName(live.Live), live.Adapter.CopyExtension);
+            EvictOldestUser(session, docId);
+            Persist(session);
+        }
+
+        private static bool TryLiveForChannel(string channelId, out CheckpointLiveTarget live, out string error)
+        {
+            live = null;
+            error = null;
+            if (string.IsNullOrEmpty(channelId)
+                || !ChannelRegistry.TryGet(channelId, out IOperationChannel channel)
+                || channel == null)
+            {
+                error = "找不到这份打开的文档";
+                return false;
+            }
+
+            if (!CheckpointKindAdapters.TryFromChannel(channel, out live, out string kindError))
+            {
+                error = string.IsNullOrEmpty(kindError) ? "当前渠道不能回滚" : kindError;
+                return false;
+            }
+
+            return true;
+        }
+
+        private static void MaybeFork(DocumentCheckpointSession session)
+        {
+            int branch = session.CurrentBranch > 0 ? session.CurrentBranch : 1;
+            session.CurrentBranch = branch;
+            string tip = LatestUserTimestamp(session, branch);
+            if (string.IsNullOrEmpty(tip) || string.IsNullOrEmpty(session.PositionTimestamp))
+            {
+                return;
+            }
+
+            if (session.PositionBranch == branch
+                && string.Equals(session.PositionTimestamp, tip, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (session.PositionBranch == branch && IsAfterTip(session, branch, tip, session.PositionTimestamp))
+            {
+                return;
+            }
+
+            int next = 1;
+            foreach (CheckpointBranch item in session.Branches)
+            {
+                if (item.Id >= next)
+                {
+                    next = item.Id + 1;
+                }
+            }
+
+            session.Branches.Add(new CheckpointBranch
+            {
+                Id = next,
+                ForkedFromBranch = session.PositionBranch > 0 ? session.PositionBranch : branch,
+                ForkedFromTimestamp = session.PositionTimestamp
+            });
+            session.CurrentBranch = next;
+        }
+
+        private static void RevertBranchIfEmpty(DocumentCheckpointSession session)
+        {
+            if (session == null || session.CurrentBranch <= 1)
+            {
+                return;
+            }
+
+            int branch = session.CurrentBranch;
+            foreach (OperationLogEntry entry in session.Entries)
+            {
+                if (entry.Kind == OperationLogEntryKind.Checkpoint && entry.Branch == branch)
+                {
+                    return;
+                }
+            }
+
+            CheckpointBranch info = null;
+            foreach (CheckpointBranch item in session.Branches)
+            {
+                if (item.Id == branch)
+                {
+                    info = item;
+                    break;
+                }
+            }
+
+            if (info == null)
+            {
+                return;
+            }
+
+            session.Branches.Remove(info);
+            if (info.ForkedFromBranch > 0)
+            {
+                session.CurrentBranch = info.ForkedFromBranch;
+                session.PositionBranch = info.ForkedFromBranch;
+                session.PositionTimestamp = info.ForkedFromTimestamp;
+            }
+        }
+
+        private static int SpanStartIndex(DocumentCheckpointSession session, int branch)
+        {
+            int start = -1;
+            for (int i = 0; i < session.Entries.Count; i++)
+            {
+                OperationLogEntry entry = session.Entries[i];
+                if (entry.Kind == OperationLogEntryKind.Checkpoint
+                    && entry.UserRollback
+                    && entry.Branch == branch)
+                {
+                    start = i;
+                }
+            }
+
+            return start;
+        }
+
+        private static bool HasOrdinaryCheckpointAfter(DocumentCheckpointSession session, int branch, int start)
+        {
+            for (int i = start + 1; i < session.Entries.Count; i++)
+            {
+                OperationLogEntry entry = session.Entries[i];
+                if (entry.Kind == OperationLogEntryKind.Checkpoint
+                    && !entry.UserRollback
+                    && entry.Branch == branch)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static List<CheckpointOperationRecord> CollectOperations(
+            DocumentCheckpointSession session,
+            int branch,
+            int start)
+        {
+            var operations = new List<CheckpointOperationRecord>();
+            for (int i = start + 1; i < session.Entries.Count; i++)
+            {
+                OperationLogEntry entry = session.Entries[i];
+                if (entry.Kind != OperationLogEntryKind.Action || entry.Branch != branch)
+                {
+                    continue;
+                }
+
+                operations.Add(new CheckpointOperationRecord
+                {
+                    Tool = entry.ToolName,
+                    Arguments = entry.ActionLineBody
+                });
+            }
+
+            return operations;
+        }
+
+        private static string LatestUserTimestamp(DocumentCheckpointSession session, int branch)
+        {
+            string timestamp = null;
+            foreach (OperationLogEntry entry in session.Entries)
+            {
+                if (entry.Kind == OperationLogEntryKind.Checkpoint
+                    && entry.UserRollback
+                    && entry.Branch == branch)
+                {
+                    timestamp = entry.Timestamp;
+                }
+            }
+
+            return timestamp;
+        }
+
+        private static bool IsAfterTip(
+            DocumentCheckpointSession session,
+            int branch,
+            string tip,
+            string timestamp)
+        {
+            int tipIndex = -1;
+            int posIndex = -1;
+            for (int i = 0; i < session.Entries.Count; i++)
+            {
+                OperationLogEntry entry = session.Entries[i];
+                if (entry.Kind != OperationLogEntryKind.Checkpoint || entry.Branch != branch)
+                {
+                    continue;
+                }
+
+                if (string.Equals(entry.Timestamp, tip, StringComparison.Ordinal))
+                {
+                    tipIndex = i;
+                }
+
+                if (string.Equals(entry.Timestamp, timestamp, StringComparison.Ordinal))
+                {
+                    posIndex = i;
+                }
+            }
+
+            return tipIndex >= 0 && posIndex > tipIndex;
+        }
+
+        private static void EvictOldestOrdinary(DocumentCheckpointSession session, string docId)
+        {
+            EvictOldest(session, docId, userRollback: false, MaxOrdinaryPerBranch);
+        }
+
+        private static void EvictOldestUser(DocumentCheckpointSession session, string docId)
+        {
+            EvictOldest(session, docId, userRollback: true, MaxUserPerBranch);
+        }
+
+        private static void EvictOldest(
+            DocumentCheckpointSession session,
+            string docId,
+            bool userRollback,
+            int max)
+        {
+            int branch = session.CurrentBranch > 0 ? session.CurrentBranch : 1;
+            while (CountCheckpoints(session, branch, userRollback) > max)
+            {
+                string oldest = null;
+                foreach (OperationLogEntry entry in session.Entries)
+                {
+                    if (entry.Kind == OperationLogEntryKind.Checkpoint
+                        && entry.UserRollback == userRollback
+                        && entry.Branch == branch)
+                    {
+                        oldest = entry.Timestamp;
+                        break;
+                    }
+                }
+
+                if (string.IsNullOrEmpty(oldest))
+                {
+                    return;
+                }
+
+                if (userRollback)
+                {
+                    RemoveCheckpointEntryOnly(session, docId, oldest);
+                }
+                else
+                {
+                    RemoveCheckpointAndFollowingActions(docId, oldest, deleteNewerFiles: false);
+                    DeleteCheckpointFile(docId, oldest);
+                }
+            }
+        }
+
+        private static int CountCheckpoints(DocumentCheckpointSession session, int branch, bool userRollback)
+        {
+            int count = 0;
+            foreach (OperationLogEntry entry in session.Entries)
+            {
+                if (entry.Kind == OperationLogEntryKind.Checkpoint
+                    && entry.UserRollback == userRollback
+                    && entry.Branch == branch)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static void RemoveCheckpointEntryOnly(DocumentCheckpointSession session, string docId, string timestamp)
+        {
+            for (int i = 0; i < session.Entries.Count; i++)
+            {
+                OperationLogEntry entry = session.Entries[i];
+                if (entry.Kind == OperationLogEntryKind.Checkpoint
+                    && string.Equals(entry.Timestamp, timestamp, StringComparison.Ordinal))
+                {
+                    session.Entries.RemoveAt(i);
+                    break;
+                }
+            }
+
+            session.CheckpointTimestampsInOrder.Remove(timestamp);
+            DeleteCheckpointFile(docId, timestamp);
+        }
+
+        private static OperationLogEntry FindCheckpointEntry(DocumentCheckpointSession session, string timestamp)
+        {
+            int index = FindCheckpointEntryIndex(session, timestamp);
+            return index < 0 ? null : session.Entries[index];
+        }
+
+        private static void ApplyLiveMetadata(DocumentCheckpointSession session, object live, string fullName, string extension = null)
+        {
+            if (session == null)
+            {
+                return;
+            }
+
+            string name = EasyWriteDocIdStore.TryReadName(live);
+            if (!string.IsNullOrEmpty(name))
+            {
+                session.Name = name;
+            }
+
+            if (EasyWriteDocIdStore.IsPersistedPath(fullName))
+            {
+                session.Path = fullName;
+                if (string.IsNullOrEmpty(extension))
+                {
+                    extension = Path.GetExtension(fullName);
+                }
+            }
+
+            if (!string.IsNullOrEmpty(extension))
+            {
+                session.Kind = EasyWriteDocIdStore.KindFromExtension(extension.TrimStart('.'));
+            }
+        }
+
+        private static void Persist(DocumentCheckpointSession session)
+        {
+            try
+            {
+                CheckpointHistoryStore.Save(session);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[Checkpoint] history save failed: " + ex.Message);
+            }
         }
 
         private static CheckpointBeforeResult Fail(string error, string site = null)

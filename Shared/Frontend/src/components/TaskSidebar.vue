@@ -246,6 +246,34 @@
       >
         复制名称
       </button>
+      <button
+        v-if="ctxMenu.showHistory"
+        type="button"
+        class="open-file-ctx-item"
+        @click="handleToggleHistory"
+      >
+        历史记录
+      </button>
+    </div>
+
+    <div
+      v-if="historyMenu.visible"
+      class="open-file-ctx-menu open-file-history-menu"
+      :style="{ top: historyMenu.top + 'px', left: historyMenu.left + 'px' }"
+      @mousedown.stop
+    >
+      <button
+        v-for="row in historyMenu.items"
+        :key="row.timestamp"
+        type="button"
+        class="open-file-ctx-item open-file-history-row"
+        @click="handleRestoreHistory(row)"
+        @mouseenter="showHistoryHover($event, row)"
+        @mouseleave="hideHoverTip"
+      >
+        <span class="open-file-history-dot">{{ row.current ? '●' : '' }}</span>
+        <span>{{ row.label }}</span>
+      </button>
     </div>
 
     <div
@@ -283,6 +311,7 @@ import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
 import userIcon from '../assets/images/avatar.png'
 import refreshIcon from '../assets/images/refresh.png'
 import { openFileSelectionKey } from '../utils/selectedOpenFiles.js'
+import { getToolAlias } from '../utils/toolAlias.js'
 import { listPersistentOpenFileGroups, resolveOpenFileAppGroupKey, resolveOpenFileTypeIcon } from '../utils/openFileAppIcon.js'
 
 const BROWSER_OPEN_FILE_GROUPS = new Set(['chrome', 'edge', 'yiwrite'])
@@ -371,8 +400,20 @@ const ctxMenu = ref({
   path: '',
   hasPath: false,
   canOpenFolder: false,
+  showHistory: false,
+  channelId: '',
   displayName: ''
 })
+
+const historyMenu = ref({
+  visible: false,
+  top: 0,
+  left: 0,
+  channelId: '',
+  items: []
+})
+
+const HISTORY_VERBS = { insert: '插入', replace: '替换', delete: '删除' }
 
 const createMenu = ref({
   visible: false,
@@ -476,13 +517,26 @@ function hideHoverTip () {
   }
 }
 
+function closeHistoryMenu () {
+  historyMenu.value = {
+    visible: false,
+    top: 0,
+    left: 0,
+    channelId: '',
+    items: []
+  }
+}
+
 function closeFileContextMenu () {
+  closeHistoryMenu()
   ctxMenu.value = {
     ...ctxMenu.value,
     visible: false,
     path: '',
     hasPath: false,
     canOpenFolder: false,
+    showHistory: false,
+    channelId: '',
     displayName: ''
   }
 }
@@ -603,10 +657,13 @@ function openFileContextMenu (event, item) {
   hideHoverTip()
   closeCreateMenu()
   const path = (item?.fullPath || item?.full_path || '').trim()
-  const canOpenFolder = !isBrowserOpenFile(item)
+  const browser = isBrowserOpenFile(item)
+  const canOpenFolder = !browser
+  const showHistory = !browser
   const displayName = (item?.displayName || '未命名文档').trim()
   const menuW = 140
-  const menuH = 8 + 36 * (canOpenFolder ? 2 : 1)
+  const itemCount = (canOpenFolder ? 1 : 0) + 1 + (showHistory ? 1 : 0)
+  const menuH = 8 + 36 * itemCount
   let left = event.clientX
   let top = event.clientY
   if (left + menuW > window.innerWidth - 8) {
@@ -622,7 +679,131 @@ function openFileContextMenu (event, item) {
     path,
     hasPath: !!path,
     canOpenFolder,
+    showHistory,
+    channelId: (item?.channelId || item?.channel_id || '').trim(),
     displayName
+  }
+}
+
+function historyTimeLabel (timestamp, stamps) {
+  const match = /^(\d{8})_(\d{6})(.*)$/.exec(timestamp || '')
+  if (!match) return timestamp || ''
+  const clock = `${match[2].slice(0, 2)}:${match[2].slice(2, 4)}:${match[2].slice(4, 6)}`
+  const collision = stamps.filter((ts) => String(ts).startsWith(`${match[1]}_${match[2]}`)).length > 1
+  return collision && match[3] ? `${clock}${match[3]}` : clock
+}
+
+function historyVerbLine (op) {
+  let parsed = null
+  try {
+    parsed = JSON.parse(op?.arguments || '{}')
+  } catch (e) {
+    parsed = null
+  }
+  if (!parsed || typeof parsed !== 'object') return ''
+  const type = String(parsed.type || parsed.action || '').toLowerCase()
+  const verb = HISTORY_VERBS[type]
+  if (!verb) return ''
+  let body = parsed[type]
+  if (body && typeof body === 'object') {
+    body = body.text || body.content || ''
+  }
+  if (body == null) body = ''
+  if (typeof body !== 'string') body = String(body)
+  body = body.replace(/\s+/g, ' ').trim()
+  if (body.length > 20) body = `${body.slice(0, 20)}…`
+  return body ? `${verb}「${body}」` : verb
+}
+
+async function historyHoverText (row) {
+  const ops = Array.isArray(row?.operations) ? row.operations : []
+  const groups = []
+  ops.forEach((op) => {
+    const tool = op?.tool || ''
+    const last = groups[groups.length - 1]
+    if (last && last.tool === tool) last.ops.push(op)
+    else groups.push({ tool, ops: [op] })
+  })
+  const lines = []
+  for (const group of groups) {
+    lines.push(await getToolAlias(group.tool))
+    group.ops.slice(0, 3).forEach((op) => {
+      const line = historyVerbLine(op)
+      if (line) lines.push(`  ${line}`)
+    })
+  }
+  lines.push(`共 ${ops.length} 次操作`)
+  return lines.join('\n')
+}
+
+async function handleToggleHistory (event) {
+  if (historyMenu.value.visible && historyMenu.value.channelId === ctxMenu.value.channelId) {
+    closeHistoryMenu()
+    return
+  }
+  const channelId = ctxMenu.value.channelId
+  const anchor = event.currentTarget?.getBoundingClientRect?.() || {
+    top: ctxMenu.value.top,
+    right: ctxMenu.value.left + 140,
+    bottom: ctxMenu.value.top + 32
+  }
+  let items = []
+  try {
+    const res = await sendMessage('listUserCheckpoints', { channelId })
+    if (res && res.success === false) {
+      showCreateFailTip(anchor, res.message || '读取历史失败')
+      return
+    }
+    const raw = Array.isArray(res?.items) ? res.items : []
+    const stamps = raw.map((row) => row.timestamp)
+    items = raw.map((row) => ({
+      timestamp: row.timestamp,
+      current: !!row.current,
+      operations: row.operations || [],
+      label: historyTimeLabel(row.timestamp, stamps)
+    }))
+  } catch (e) {
+    showCreateFailTip(anchor, e?.message || '读取历史失败')
+    return
+  }
+  const menuW = 168
+  const menuH = Math.max(36, 8 + 36 * items.length)
+  let left = anchor.right + 4
+  let top = anchor.top
+  if (left + menuW > window.innerWidth - 8) {
+    left = Math.max(8, anchor.left - menuW - 4)
+  }
+  if (top + menuH > window.innerHeight - 8) {
+    top = Math.max(8, window.innerHeight - menuH - 8)
+  }
+  historyMenu.value = { visible: true, top, left, channelId, items }
+}
+
+async function showHistoryHover (event, row) {
+  const text = await historyHoverText(row)
+  showHoverTip(event, text)
+}
+
+async function handleRestoreHistory (row) {
+  const channelId = historyMenu.value.channelId
+  const anchor = {
+    top: historyMenu.value.top,
+    left: historyMenu.value.left,
+    right: historyMenu.value.left + 160,
+    bottom: historyMenu.value.top + 28
+  }
+  try {
+    const res = await sendMessage('restoreUserCheckpoint', {
+      channelId,
+      timestamp: row.timestamp
+    })
+    if (res && res.success === false) {
+      showCreateFailTip(anchor, res.message || '切换失败')
+      return
+    }
+    closeFileContextMenu()
+  } catch (e) {
+    showCreateFailTip(anchor, e?.message || '切换失败')
   }
 }
 
@@ -1268,6 +1449,23 @@ button.section-header {
 .open-file-ctx-item:disabled {
   color: #9a978f;
   cursor: not-allowed;
+}
+
+.open-file-history-menu {
+  min-width: 148px;
+}
+
+.open-file-history-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.open-file-history-dot {
+  width: 1em;
+  flex-shrink: 0;
+  text-align: center;
+  color: #1f1e1c;
 }
 
 .open-file-name {

@@ -26,7 +26,7 @@ namespace WordAddIn1
             return Serializer.Serialize(truncated);
         }
 
-        public static string FormatListLine(OperationLogEntry entry, int index)
+        public static string FormatListLine(OperationLogEntry entry, int index, bool showBranch)
         {
             if (entry == null)
             {
@@ -35,7 +35,18 @@ namespace WordAddIn1
 
             if (entry.Kind == OperationLogEntryKind.Checkpoint)
             {
-                return $"{index}. 副本{entry.Timestamp}";
+                if (entry.UserRollback)
+                {
+                    return null;
+                }
+
+                string line = $"{index}. 副本{entry.Timestamp}";
+                if (entry.Branch > 0 && showBranch)
+                {
+                    line += " 分支" + entry.Branch;
+                }
+
+                return line;
             }
 
             string body = string.IsNullOrEmpty(entry.ActionLineBody) ? "{}" : entry.ActionLineBody;
@@ -50,10 +61,32 @@ namespace WordAddIn1
                 return "当前文档尚无操作记录。";
             }
 
+            bool showBranch = session.Branches.Count > 1;
             var lines = new List<string>();
+            int index = 1;
             for (int i = 0; i < session.Entries.Count; i++)
             {
-                lines.Add(FormatListLine(session.Entries[i], i + 1));
+                OperationLogEntry entry = session.Entries[i];
+                if (entry != null
+                    && entry.Kind == OperationLogEntryKind.Checkpoint
+                    && entry.UserRollback)
+                {
+                    continue;
+                }
+
+                string line = FormatListLine(entry, index, showBranch);
+                if (string.IsNullOrEmpty(line))
+                {
+                    continue;
+                }
+
+                lines.Add(line);
+                index++;
+            }
+
+            if (lines.Count == 0)
+            {
+                return "当前文档尚无操作记录。";
             }
 
             return string.Join("\n", lines);

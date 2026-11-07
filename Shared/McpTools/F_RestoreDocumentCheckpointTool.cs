@@ -43,6 +43,17 @@ namespace WordAddIn1
                         return Task.FromResult(new ToolResult { Success = false, Error = kindError });
                     }
 
+                    string docId = DocumentCheckpointService.BindCheckpointIdentity(live, create: false, out string identityError);
+                    if (string.IsNullOrEmpty(docId))
+                    {
+                        return Task.FromResult(new ToolResult
+                        {
+                            Success = false,
+                            Error = identityError ?? "当前文档还没有可恢复的副本"
+                        });
+                    }
+
+                    live.DocUuid = docId;
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_restore_document_checkpoint] channel_id={channel.ChannelId}, ts={timestamp}");
 
