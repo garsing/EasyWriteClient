@@ -45,7 +45,7 @@ namespace WordDocumentRoundtripTest
             GeoN(run, s, "wm-c-col-ird", three, 3, p => Ird(p), GeoRun(3,
                 "write via=map type=insert", "write via=map type=replace", "write via=map type=delete"));
             GeoN(run, s, "wm-c-col-flash", two, 2, p => Rep(p, 2), GeoRun(2),
-                extraCounts: new[] { WmCases.Count("flash row=", 1) });
+                extraCounts: new[] { WmCases.Count("flash table=", 1) });
             GeoN(run, s, "wm-c-col-head", two, 2, p =>
             {
                 var a = Rep(p, 2);
@@ -83,7 +83,7 @@ namespace WordDocumentRoundtripTest
                 WmCases.GeoDelete(p.Geos[1])
             }, GeoRun(2, "write via=map type=replace", "write via=map type=delete"));
             GeoN(run, s, "wm-c-row-flash", two, 2, p => Rep(p, 2), GeoRun(2),
-                extraCounts: new[] { WmCases.Count("flash row=", 2) });
+                extraCounts: new[] { WmCases.Count("flash table=", 1) });
             GeoN(run, s, "wm-c-row-order", two, 2, p => Rep(p, 2), null, custom: (id, wr, p) => OrderAssert(run, id, wr, p));
         }
 
@@ -110,7 +110,7 @@ namespace WordDocumentRoundtripTest
             GeoN(run, s, "wm-c-rc-ird", many, 3, p => Ird(p), GeoRun(3,
                 "write via=map type=insert", "write via=map type=replace", "write via=map type=delete"));
             GeoN(run, s, "wm-c-rc-flash", two, 2, p => Rep(p, 2), GeoRun(2),
-                extraCounts: new[] { WmCases.Count("flash row=", 2) });
+                extraCounts: new[] { WmCases.Count("flash table=", 1) });
         }
 
         private static void RunOutside(TestRun run, WdSession s)
@@ -313,7 +313,7 @@ namespace WordDocumentRoundtripTest
             GeoN(run, s, "wm-c-del3", g23, 3, p => Del(p, 3), GeoRun(3, "write via=map type=delete"));
             string row3 = Tbl(W3, Tr(Td(""), Td(""), Td("")));
             GeoN(run, s, "wm-c-same-row-3", row3, 3, p => Rep(p, 3), GeoRun(3),
-                extraCounts: new[] { WmCases.Count("flash row=", 1) });
+                extraCounts: new[] { WmCases.Count("flash table=", 1) });
         }
 
         private static void RunMisc(TestRun run, WdSession s)

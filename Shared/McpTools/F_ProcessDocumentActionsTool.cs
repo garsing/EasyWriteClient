@@ -1419,21 +1419,11 @@ namespace WordAddIn1
                         stop = true;
                         stopReason = "集合内前一格失败，本格未写";
                     }
-
-                    bool last = i == members.Count - 1;
-                    int nextRow = -1;
-                    if (!last && TryGetGeoCell(members[i + 1].Action, out EmptyCellCode.Parsed nextGeo))
-                    {
-                        nextRow = nextGeo.Row;
-                    }
-
-                    if (last || nextRow != geo.Row)
-                    {
-                        TableRowValuesHelper.TryFlashScreen(app);
-                        DocumentActionPathLog.Record(
-                            DocumentActionPathLog.LogTag + " flash row=" + geo.Row);
-                    }
                 }
+
+                TableRowValuesHelper.TryFlashScreen(app);
+                DocumentActionPathLog.Record(
+                    DocumentActionPathLog.LogTag + " flash table=" + firstGeo.TableId);
             }
             finally
             {
