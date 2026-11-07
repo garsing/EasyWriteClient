@@ -268,12 +268,13 @@
         :key="row.timestamp"
         type="button"
         class="open-file-ctx-item open-file-history-row"
-        :class="{ 'is-current': row.current }"
         @click="handleRestoreHistory(row)"
         @mouseenter="showHistoryHover($event, row)"
         @mouseleave="hideHistoryHover"
       >
-        <span>{{ row.label }}</span>
+        <span class="open-file-history-dot" :class="{ on: row.current }"></span>
+        <span class="open-file-history-time">{{ row.time }}</span>
+        <span class="open-file-history-name">{{ row.label }}</span>
       </button>
     </div>
 
@@ -713,6 +714,14 @@ function openFileContextMenu (event, item) {
   }
 }
 
+function historyTimeLabel (timestamp, stamps) {
+  const match = /^(\d{8})_(\d{6})(.*)$/.exec(timestamp || '')
+  if (!match) return timestamp || ''
+  const clock = `${match[2].slice(0, 2)}:${match[2].slice(2, 4)}:${match[2].slice(4, 6)}`
+  const collision = stamps.filter((ts) => String(ts).startsWith(`${match[1]}_${match[2]}`)).length > 1
+  return collision && match[3] ? `${clock}${match[3]}` : clock
+}
+
 function historyParseArguments (raw) {
   try {
     const parsed = JSON.parse(raw || '{}')
@@ -830,6 +839,7 @@ async function handleToggleHistory (event) {
       return
     }
     const raw = Array.isArray(res?.items) ? res.items : []
+    const stamps = raw.map((row) => row.timestamp)
     items = []
     for (const row of raw) {
       const operations = row.operations || []
@@ -837,6 +847,7 @@ async function handleToggleHistory (event) {
         timestamp: row.timestamp,
         current: !!row.current,
         operations,
+        time: historyTimeLabel(row.timestamp, stamps),
         label: await historyRowLabel(operations)
       })
     }
@@ -844,7 +855,7 @@ async function handleToggleHistory (event) {
     showCreateFailTip(anchor, e?.message || '读取历史失败')
     return
   }
-  const menuW = items.length ? 240 : 220
+  const menuW = items.length ? 280 : 220
   const menuH = 8 + 36 * Math.max(items.length, 1)
   let left = anchor.right + 4
   let top = anchor.top
@@ -1561,15 +1572,34 @@ button.section-header {
 }
 
 .open-file-history-row {
-  display: block;
-  max-width: 240px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 280px;
+}
+
+.open-file-history-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: transparent;
+}
+
+.open-file-history-dot.on {
+  background: #1890ff;
+}
+
+.open-file-history-time {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.open-file-history-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.open-file-history-row.is-current {
-  font-weight: 600;
 }
 
 .open-file-history-hover {
