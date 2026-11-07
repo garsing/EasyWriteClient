@@ -1743,5 +1743,18 @@ body,
 .app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-track {
   background: transparent !important;
 }
+
+.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-button,
+.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-button:single-button,
+.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-button:double-button,
+.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-button:horizontal:start:decrement,
+.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-button:horizontal:end:increment,
+.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-button:vertical:start:decrement,
+.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-button:vertical:end:increment {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
 </style>
 
