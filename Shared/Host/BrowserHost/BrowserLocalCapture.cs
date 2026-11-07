@@ -92,6 +92,16 @@ namespace WordAddIn1.BrowserHost
                     return LocalPlate.Fail(NoRegion);
                 }
 
+                if (collectNodes)
+                {
+                    string widened = await CallElementAsync(cdp, sessionId, objectId, WidenFn).ConfigureAwait(true);
+                    if (!string.IsNullOrEmpty(widened) && widened != objectId)
+                    {
+                        await ReleaseObjectAsync(cdp, sessionId, objectId).ConfigureAwait(true);
+                        objectId = widened;
+                    }
+                }
+
                 JObject box = await CallOnAsync(cdp, sessionId, objectId, MeasureFn, null).ConfigureAwait(true);
                 if (!BoxOk(box))
                 {
@@ -193,19 +203,51 @@ namespace WordAddIn1.BrowserHost
             }
             finally
             {
-                if (!string.IsNullOrEmpty(objectId))
-                {
-                    try
-                    {
-                        var release = new JObject { ["objectId"] = objectId };
-                        await cdp.CallCdpAsync("Runtime.releaseObject", release.ToString(Formatting.None), sessionId)
-                            .ConfigureAwait(true);
-                    }
-                    catch
-                    {
-                    }
-                }
+                await ReleaseObjectAsync(cdp, sessionId, objectId).ConfigureAwait(true);
             }
+        }
+
+        private static async Task ReleaseObjectAsync(IBrowserCdp cdp, string sessionId, string objectId)
+        {
+            if (cdp == null || string.IsNullOrEmpty(objectId))
+            {
+                return;
+            }
+
+            try
+            {
+                var release = new JObject { ["objectId"] = objectId };
+                await cdp.CallCdpAsync("Runtime.releaseObject", release.ToString(Formatting.None), sessionId)
+                    .ConfigureAwait(true);
+            }
+            catch
+            {
+            }
+        }
+
+        private static async Task<string> CallElementAsync(
+            IBrowserCdp cdp,
+            string sessionId,
+            string objectId,
+            string functionDeclaration)
+        {
+            var payload = new JObject
+            {
+                ["objectId"] = objectId,
+                ["functionDeclaration"] = functionDeclaration,
+                ["returnByValue"] = false
+            };
+            string json = await cdp.CallCdpAsync("Runtime.callFunctionOn", payload.ToString(Formatting.None), sessionId)
+                .ConfigureAwait(true);
+            JObject jo = Parse(json);
+            JToken ex = jo["exceptionDetails"];
+            if (ex != null && ex.Type != JTokenType.Null)
+            {
+                string msg = (string)ex["exception"]?["description"] ?? (string)ex["text"] ?? NoRegion;
+                throw new InvalidOperationException(msg);
+            }
+
+            return (string)jo["result"]?["objectId"];
         }
 
         internal static BrowserCaptureResult FinishImage(
@@ -437,6 +479,45 @@ namespace WordAddIn1.BrowserHost
             return JObject.Parse(json);
         }
 
+        /// <summary>
+        /// 文字节点的盒子包不住同一行左侧的箭头和方框。编号时把总图扩到仍不超过 15 个可编号元素的那一层，页面本身不扩进去。15 与 BrowserNodeSheet.MaxNodes 一致。
+        /// </summary>
+        private const string WidenFn =
+            "function(){"
+            + "var el=this;"
+            + "if(el&&el.nodeType===9)el=el.documentElement;"
+            + "if(el&&el.nodeType===3)el=el.parentElement;"
+            + "if(!el||!el.parentElement)return el;"
+            + "function hidden(node){var st;try{st=getComputedStyle(node);}catch(e){return true;}"
+            + "return !st||st.display==='none'||st.visibility==='hidden';}"
+            + "function svgPart(node){var tag=(node.tagName||'').toLowerCase();"
+            + "return tag==='path'||tag==='rect'||tag==='circle'||tag==='line'||tag==='polyline'||tag==='polygon'||tag==='ellipse';}"
+            + "function skipTag(node){var tag=(node.tagName||'').toLowerCase();"
+            + "return tag==='script'||tag==='style'||tag==='noscript'||tag==='br';}"
+            + "function count(root){var rr=root.getBoundingClientRect();"
+            + "function intersects(r){return r.width>1&&r.height>1&&r.left<rr.right-0.5&&r.right>rr.left+0.5&&r.top<rr.bottom-0.5&&r.bottom>rr.top+0.5;}"
+            + "var all=root.querySelectorAll?root.querySelectorAll('*'):[];var els=[];"
+            + "for(var i=0;i<all.length;i++){var node=all[i];if(node===root||skipTag(node)||svgPart(node)||hidden(node))continue;"
+            + "if(!intersects(node.getBoundingClientRect()))continue;els.push(node);}"
+            + "function isWrap(node){var kids=node.children;if(!kids||!kids.length)return false;"
+            + "var minL=1e9,minT=1e9,maxR=-1e9,maxB=-1e9,n=0;"
+            + "for(var k=0;k<kids.length;k++){var c=kids[k];if(skipTag(c)||svgPart(c)||hidden(c))continue;"
+            + "var kb=c.getBoundingClientRect();if(kb.width<=1||kb.height<=1)continue;n++;"
+            + "if(kb.left<minL)minL=kb.left;if(kb.top<minT)minT=kb.top;if(kb.right>maxR)maxR=kb.right;if(kb.bottom>maxB)maxB=kb.bottom;}"
+            + "if(!n)return false;var rb=node.getBoundingClientRect();"
+            + "return Math.abs(rb.left-minL)<2&&Math.abs(rb.top-minT)<2&&Math.abs(rb.right-maxR)<2&&Math.abs(rb.bottom-maxB)<2;}"
+            + "var kept=0;for(var j=0;j<els.length;j++){if(!isWrap(els[j]))kept++;}return kept;}"
+            + "var best=el;var parent=el.parentElement;var guard=0;"
+            + "var startH=el.getBoundingClientRect().height||0;"
+            + "while(parent&&parent.nodeType===1&&guard++<8){"
+            + "var tag=(parent.tagName||'').toLowerCase();if(tag==='body'||tag==='html')break;"
+            + "var pr=parent.getBoundingClientRect();if(pr.width<2||pr.height<2)break;"
+            + "if(pr.height>Math.max(480,startH*6))break;"
+            + "var n=count(parent);if(n>15||n<1)break;"
+            + "best=parent;parent=parent.parentElement;}"
+            + "return best;"
+            + "}";
+
         private const string ListFn =
             "function(){"
             + "var root=this;"
@@ -476,9 +557,17 @@ namespace WordAddIn1.BrowserHost
             + "function textOf(el){var t=String(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim();"
             + "if(!t||t.length>24)return '';"
             + "for(var i=0;i<t.length;i++){var c=t.charCodeAt(i);if(c>=0xE000&&c<=0xF8FF)return '';}return t;}"
+            + "function stateOf(el){var c=String(el.className||'').toLowerCase();"
+            + "if(!/checkbox|radio|duox|option-icon|banxuan/.test(c))return '';"
+            + "var blob=c;var p=el.parentElement;if(p)blob+=' '+String(p.className||'').toLowerCase();"
+            + "var aria=el.getAttribute?el.getAttribute('aria-checked'):'';"
+            + "if(aria==='mixed'||/indeterminate|banxuan|\\bhalf\\b/.test(blob))return '半选';"
+            + "if(aria==='true'||/\\bselected\\b|\\bchecked\\b/.test(blob))return '已选';"
+            + "if(aria==='false')return '未选';return '';}"
             + "var items=[];"
             + "for(var j=0;j<els.length;j++){var el=els[j];if(isWrap(el))continue;var b=el.getBoundingClientRect();"
-            + "items.push({x:b.left-rr.left,y:b.top-rr.top,w:b.width,h:b.height,text:textOf(el),css:cssPath(el),xpath:xpath(el)});}"
+            + "var label=textOf(el)||stateOf(el);"
+            + "items.push({x:b.left-rr.left,y:b.top-rr.top,w:b.width,h:b.height,text:label,css:cssPath(el),xpath:xpath(el)});}"
             + "return{ok:true,items:items};"
             + "}";
 
