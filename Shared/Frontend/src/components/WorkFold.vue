@@ -57,6 +57,8 @@ const toggleExpand = () => {
 <style scoped>
 .work-fold {
   margin: 0;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .work-fold-header {

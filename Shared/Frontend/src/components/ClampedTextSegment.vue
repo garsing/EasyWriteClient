@@ -113,6 +113,16 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.text-segment {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.text-segment-inner {
+  max-width: 100%;
+  min-width: 0;
+}
+
 .text-segment--clamped {
   max-height: 80px;
   overflow-y: auto;
@@ -124,7 +134,12 @@ onUnmounted(() => {
 }
 
 .text-segment-inner :deep(.md-table-wrap) {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   overflow-x: auto;
+  overflow-y: hidden;
   margin: 10px 0;
   border: 1px solid #e6e6e6;
   border-radius: 12px;

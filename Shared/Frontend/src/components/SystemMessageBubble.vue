@@ -151,6 +151,9 @@ const showStreamingSpinner = computed(() => {
 .system-message {
   display: flex;
   justify-content: flex-start;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
   margin-bottom: 4px;
 }
 
@@ -171,7 +174,10 @@ const showStreamingSpinner = computed(() => {
 }
 
 .message-content {
+  min-width: 0;
   max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
   background-color: transparent;
   color: #333;
   padding: 10px 14px;
@@ -179,6 +185,8 @@ const showStreamingSpinner = computed(() => {
 }
 
 .message-text {
+  min-width: 0;
+  max-width: 100%;
   font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   font-weight: 500;

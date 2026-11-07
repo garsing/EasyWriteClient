@@ -1720,5 +1720,28 @@ body,
   height: 0 !important;
   background: transparent !important;
 }
+
+/* 宽表格在格子里横滚，滚动条要露出来（上面的全局规则会把伪元素藏掉） */
+.app-shell.host-desktop .md-table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: #c4c4c4 transparent;
+  -ms-overflow-style: auto;
+}
+
+.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar {
+  display: block !important;
+  height: 8px !important;
+  width: 8px !important;
+  background: transparent !important;
+}
+
+.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-thumb {
+  background: #c8c8c8 !important;
+  border-radius: 4px;
+}
+
+.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-track {
+  background: transparent !important;
+}
 </style>
 

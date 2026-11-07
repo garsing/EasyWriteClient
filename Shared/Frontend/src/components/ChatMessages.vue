@@ -229,6 +229,8 @@ watch(() => props.messages, (newMessages, oldMessages) => {
 .chat-messages {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   overflow-anchor: none;
   /* 顶 padding 会在吸顶条上方留出一条可透视缝，改由吸顶条自己垫 */
@@ -242,6 +244,7 @@ watch(() => props.messages, (newMessages, oldMessages) => {
 .chat-main-column {
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   margin: 0 auto;
   box-sizing: border-box;
 }
@@ -344,6 +347,8 @@ watch(() => props.messages, (newMessages, oldMessages) => {
 .message-wrapper {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
 }
 </style>
 

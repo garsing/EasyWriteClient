@@ -242,13 +242,25 @@ function formatWorkDuration (ms) {
   margin-bottom: 0;
 }
 
+.assistant-turn,
+.assistant-reply-wrap {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .system-message {
   display: flex;
   justify-content: flex-start;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
 }
 
 .message-content {
+  min-width: 0;
   max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
   padding: 10px 14px;
 }
 </style>
