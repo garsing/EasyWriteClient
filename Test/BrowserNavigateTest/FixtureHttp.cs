@@ -37,6 +37,7 @@ namespace BrowserNavigateTest
             _roots["viewport-shot"] = Path.Combine(repo, "tests", "viewport-shot");
             _roots["repeat-rows"] = Path.Combine(repo, "tests", "repeat-rows");
             _roots["batch-form"] = Path.Combine(repo, "tests", "batch-form");
+            _roots["hours-loop"] = Path.Combine(repo, "tests", "hours-loop");
             _roots["real"] = Path.Combine(
                 repo, "docs", "测试", "浏览器测试", "snapshot与iframe", "真实html");
 

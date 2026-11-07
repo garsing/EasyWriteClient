@@ -54,7 +54,9 @@ namespace BrowserNavigateTest
             bool runInt = !runIntSpan && caseFilter.StartsWith("int-", StringComparison.OrdinalIgnoreCase);
             bool runNav = caseFilter.StartsWith("nav-", StringComparison.OrdinalIgnoreCase);
             bool runBat = caseFilter.StartsWith("bat-", StringComparison.OrdinalIgnoreCase);
-            bool runSnp = !runInt && !runNav && !runTab && !runDl && !runShot && !runRpt && !runBat;
+            bool runHrs = caseFilter.StartsWith("hrs-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "hrs", StringComparison.OrdinalIgnoreCase);
+            bool runSnp = !runInt && !runNav && !runTab && !runDl && !runShot && !runRpt && !runBat && !runHrs;
 
             string host = GetHost(args);
             IntCases.NavHost = host;
@@ -65,6 +67,7 @@ namespace BrowserNavigateTest
                 : runDl ? "浏览器 download（dl-）"
                 : runTab ? "浏览器 中间栏 / 可点补全（tab-）"
                 : runBat ? "浏览器 一次操作多个节点（bat-）"
+                : runHrs ? "浏览器 工时填报绕圈（hrs-）"
                 : runIntSpan ? "浏览器 SPAN 假下拉 select（int-span-select-）"
                 : runInt ? "浏览器 interact（int-）"
                 : runSnp && caseFilter.StartsWith("snp-modal", StringComparison.OrdinalIgnoreCase)
@@ -138,6 +141,13 @@ namespace BrowserNavigateTest
                     BatchCases.Run(run, session, http, caseFilter);
                 }
             }
+            else if (runHrs)
+            {
+                using (var http = new FixtureHttp())
+                {
+                    HoursLoopCases.Run(run, http, host, caseFilter);
+                }
+            }
             else if (runIntSpan)
             {
                 using (var http = new FixtureHttp())
@@ -174,7 +184,11 @@ namespace BrowserNavigateTest
             }
 
             sw.Stop();
-            int target = runRpt ? 17 : (runShot ? 30 : (runDl
+            bool hrsAll = string.Equals(caseFilter, "hrs", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "hrs-", StringComparison.OrdinalIgnoreCase);
+            int target = runHrs
+                ? (hrsAll ? 9 : 1)
+                : runRpt ? 17 : (runShot ? 30 : (runDl
                 ? (string.Equals(caseFilter, "dl-neg-no-event", StringComparison.OrdinalIgnoreCase)
                     ? 1
                     : (string.Equals(caseFilter, "dl-red", StringComparison.OrdinalIgnoreCase) ? 12 : 80))
