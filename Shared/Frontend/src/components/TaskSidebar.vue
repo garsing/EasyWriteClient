@@ -278,7 +278,7 @@
     </div>
 
     <div
-      v-if="historyHover.visible && (historyHover.when || historyHover.groups.length || historyHover.footer)"
+      v-if="historyHover.visible && (historyHover.when || historyHover.note || historyHover.groups.length || historyHover.footer)"
       class="sidebar-hover-tip open-file-history-hover"
       :style="{
         top: historyHover.top + 'px',
@@ -287,6 +287,7 @@
       }"
     >
       <div v-if="historyHover.when" class="open-file-history-when">{{ historyHover.when }}</div>
+      <div v-if="historyHover.note" class="open-file-history-note">{{ historyHover.note }}</div>
       <div v-for="(block, i) in historyHover.groups" :key="i" class="open-file-history-op">
         <div class="open-file-history-op-title">{{ block.title }}</div>
         <div v-for="(line, j) in block.lines" :key="j" class="open-file-history-op-line">{{ line }}</div>
@@ -434,6 +435,7 @@ const historyMenu = ref({
 const historyHover = ref({
   visible: false,
   when: '',
+  note: '',
   groups: [],
   footer: '',
   top: 0,
@@ -550,6 +552,7 @@ function hideHistoryHover () {
     ...historyHover.value,
     visible: false,
     when: '',
+    note: '',
     groups: [],
     footer: ''
   }
@@ -809,7 +812,9 @@ function historyGroups (operations) {
   return groups
 }
 
-async function historyRowLabel (operations) {
+async function historyRowLabel (operations, baseline) {
+  if (baseline === 'origin') return '原始版本'
+  if (baseline === 'before') return '修改前'
   const seen = []
   historyGroups(operations).forEach((group) => {
     if (group.tool && !seen.includes(group.tool)) seen.push(group.tool)
@@ -865,12 +870,14 @@ async function handleToggleHistory (event) {
     items = []
     for (const row of raw) {
       const operations = row.operations || []
+      const baseline = row.baseline || ''
       items.push({
         timestamp: row.timestamp,
         current: !!row.current,
         operations,
+        baseline,
         when: historyWhenLabel(row.timestamp, stamps),
-        label: await historyRowLabel(operations)
+        label: await historyRowLabel(operations, baseline)
       })
     }
   } catch (e) {
@@ -893,7 +900,10 @@ async function handleToggleHistory (event) {
 async function showHistoryHover (event, row) {
   const token = ++historyHoverToken
   const el = event.currentTarget
-  const blocks = await historyHoverBlocks(row)
+  const baseline = row?.baseline || ''
+  const blocks = baseline
+    ? { groups: [], footer: '', note: '智能体修改前的稿' }
+    : await historyHoverBlocks(row)
   if (token !== historyHoverToken || !el || typeof el.getBoundingClientRect !== 'function') return
   const rect = el.getBoundingClientRect()
   const gap = 8
@@ -905,6 +915,7 @@ async function showHistoryHover (event, row) {
   historyHover.value = {
     visible: true,
     when: row?.when || '',
+    note: blocks.note || '',
     groups: blocks.groups,
     footer: blocks.footer,
     top: rect.top,
@@ -1630,6 +1641,7 @@ button.section-header {
   color: #69b1ff;
 }
 
+.open-file-history-when + .open-file-history-note,
 .open-file-history-when + .open-file-history-op,
 .open-file-history-op + .open-file-history-op,
 .open-file-history-op-foot {
@@ -1641,6 +1653,7 @@ button.section-header {
   font-weight: 600;
 }
 
+.open-file-history-note,
 .open-file-history-op-line,
 .open-file-history-op-foot {
   color: #bdbdbd;

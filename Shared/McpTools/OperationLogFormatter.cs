@@ -26,7 +26,7 @@ namespace WordAddIn1
             return Serializer.Serialize(truncated);
         }
 
-        public static string FormatListLine(OperationLogEntry entry, int index, bool showBranch)
+        public static string FormatListLine(OperationLogEntry entry, int index)
         {
             if (entry == null)
             {
@@ -35,18 +35,12 @@ namespace WordAddIn1
 
             if (entry.Kind == OperationLogEntryKind.Checkpoint)
             {
-                if (entry.UserRollback)
+                if (entry.UserRollback || entry.Retired)
                 {
                     return null;
                 }
 
-                string line = $"{index}. 副本{entry.Timestamp}";
-                if (entry.Branch > 0 && showBranch)
-                {
-                    line += " 分支" + entry.Branch;
-                }
-
-                return line;
+                return $"{index}. 副本{entry.Timestamp}";
             }
 
             string body = string.IsNullOrEmpty(entry.ActionLineBody) ? "{}" : entry.ActionLineBody;
@@ -61,20 +55,52 @@ namespace WordAddIn1
                 return "当前文档尚无操作记录。";
             }
 
-            bool showBranch = session.Branches.Count > 1;
+            int latest = 1;
+            foreach (CheckpointBranch branch in session.Branches)
+            {
+                if (branch != null && branch.Id > latest)
+                {
+                    latest = branch.Id;
+                }
+            }
+
+            foreach (OperationLogEntry entry in session.Entries)
+            {
+                if (entry != null && entry.Branch > latest)
+                {
+                    latest = entry.Branch;
+                }
+            }
+
             var lines = new List<string>();
             int index = 1;
-            for (int i = 0; i < session.Entries.Count; i++)
+            bool listActions = false;
+            foreach (OperationLogEntry entry in session.Entries)
             {
-                OperationLogEntry entry = session.Entries[i];
-                if (entry != null
-                    && entry.Kind == OperationLogEntryKind.Checkpoint
-                    && entry.UserRollback)
+                if (entry == null || entry.Branch != latest)
                 {
                     continue;
                 }
 
-                string line = FormatListLine(entry, index, showBranch);
+                if (entry.Kind == OperationLogEntryKind.Checkpoint)
+                {
+                    listActions = !entry.UserRollback && !entry.Retired;
+                    if (!listActions)
+                    {
+                        continue;
+                    }
+
+                    lines.Add($"{index}. 副本{entry.Timestamp}");
+                    index++;
+                    continue;
+                }
+
+                if (!listActions)
+                {
+                    continue;
+                }
+
+                string line = FormatListLine(entry, index);
                 if (string.IsNullOrEmpty(line))
                 {
                     continue;

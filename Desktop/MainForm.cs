@@ -258,6 +258,7 @@ namespace EasyWriteClient.Desktop
                     HostCallbacks.GetStealForegroundEnabled = null;
                 }
 
+                DocumentCheckpointService.ClearAllOnShutdown();
                 WordHost.Shutdown();
                 ExcelHost.Shutdown();
                 PowerPointHost.Shutdown();

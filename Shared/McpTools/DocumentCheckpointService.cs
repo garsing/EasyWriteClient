@@ -24,6 +24,9 @@ namespace WordAddIn1
         private static readonly Dictionary<string, string> RoundMutatingChannelByDocId =
             new Dictionary<string, string>(StringComparer.Ordinal);
 
+        private static readonly Dictionary<string, string> RoundBeforeUserTimestampByDocId =
+            new Dictionary<string, string>(StringComparer.Ordinal);
+
         private static Word.Application _wordApplication;
 
         public static void SetWordApplication(object wordApplication)
@@ -232,7 +235,14 @@ namespace WordAddIn1
                 return Fail($"创建文档副本失败: {ex.Message}", "ckpt-save");
             }
 
-            AppendCheckpointEntry(session, timestamp, session.CurrentBranch, userRollback: false, operations: null);
+            string hash = CheckpointContentHash.FromFile(path);
+            if (!RoundBeforeUserTimestampByDocId.ContainsKey(docId))
+            {
+                AppendCheckpointEntry(session, timestamp, session.CurrentBranch, userRollback: true, operations: null, hash);
+                RoundBeforeUserTimestampByDocId[docId] = timestamp;
+            }
+
+            AppendCheckpointEntry(session, timestamp, session.CurrentBranch, userRollback: false, operations: null, hash);
             session.CaretByTimestamp[timestamp] = caret;
             EvictOldestOrdinary(session, docId);
             RoundMutatingChannelByDocId[docId] = live.ChannelId ?? "";
@@ -541,8 +551,7 @@ namespace WordAddIn1
                 return;
             }
 
-            RemoveCheckpointAndFollowingActions(docUuid, timestamp, deleteNewerFiles: false);
-            DeleteCheckpointFile(docUuid, timestamp);
+            RemoveFailedInvokeCheckpoint(docUuid, timestamp);
             DocumentCheckpointSession session = GetSession(docUuid);
             RevertBranchIfEmpty(session);
             Persist(session);
@@ -624,8 +633,7 @@ namespace WordAddIn1
             try
             {
                 DocumentState.ClearAfterCheckpointRestore();
-                RemoveCheckpointAndFollowingActions(docUuid, timestamp, deleteNewerFiles: false);
-                DeleteCheckpointFile(docUuid, timestamp);
+                RemoveFailedInvokeCheckpoint(docUuid, timestamp);
                 DocumentCheckpointSession session = GetSession(docUuid);
                 RevertBranchIfEmpty(session);
                 Persist(session);
@@ -850,6 +858,18 @@ namespace WordAddIn1
                 };
             }
 
+            OperationLogEntry chosen = FindPreferredCheckpoint(session, timestamp);
+            if (chosen != null
+                && !chosen.UserRollback
+                && (chosen.Retired || chosen.Branch != LatestBranchId(session)))
+            {
+                return new ToolResult
+                {
+                    Success = false,
+                    Error = "这份副本已经不能恢复"
+                };
+            }
+
             string path = FindCheckpointFile(live.DocUuid, timestamp);
             if (!File.Exists(path))
             {
@@ -951,8 +971,63 @@ namespace WordAddIn1
 
         public static void ClearAllOnShutdown()
         {
+            try
+            {
+                MarkOrdinaryRetiredOnShutdown();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[Checkpoint] retire on shutdown failed: " + ex.Message);
+            }
+
             Sessions.Clear();
             RoundMutatingChannelByDocId.Clear();
+            RoundBeforeUserTimestampByDocId.Clear();
+        }
+
+        public static void MarkOrdinaryRetiredOnShutdown()
+        {
+            var roots = new List<string>();
+            try
+            {
+                roots.Add(GetCheckpointRootDirectory());
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[Checkpoint] checkpoint root failed: " + ex.Message);
+            }
+
+            string tempRoot = Path.Combine(Path.GetTempPath(), "EasyWrite", "document_checkpoints");
+            if (Directory.Exists(tempRoot))
+            {
+                bool seen = false;
+                foreach (string root in roots)
+                {
+                    if (string.Equals(root, tempRoot, StringComparison.OrdinalIgnoreCase))
+                    {
+                        seen = true;
+                        break;
+                    }
+                }
+
+                if (!seen)
+                {
+                    roots.Add(tempRoot);
+                }
+            }
+
+            foreach (string root in roots)
+            {
+                if (string.IsNullOrEmpty(root) || !Directory.Exists(root))
+                {
+                    continue;
+                }
+
+                foreach (string dir in Directory.GetDirectories(root))
+                {
+                    CheckpointHistoryStore.MarkOrdinaryRetired(Path.Combine(dir, "history.json"));
+                }
+            }
         }
 
         public static void ClearOrphanUuidFoldersOnShutdown()
@@ -964,14 +1039,17 @@ namespace WordAddIn1
             string timestamp,
             int branch,
             bool userRollback,
-            List<CheckpointOperationRecord> operations)
+            List<CheckpointOperationRecord> operations,
+            string hash)
         {
             var entry = new OperationLogEntry
             {
                 Kind = OperationLogEntryKind.Checkpoint,
                 Timestamp = timestamp,
                 Branch = branch > 0 ? branch : 1,
-                UserRollback = userRollback
+                UserRollback = userRollback,
+                Hash = hash ?? "",
+                Retired = false
             };
             if (operations != null)
             {
@@ -979,7 +1057,10 @@ namespace WordAddIn1
             }
 
             session.Entries.Add(entry);
-            session.CheckpointTimestampsInOrder.Add(timestamp);
+            if (!session.CheckpointTimestampsInOrder.Contains(timestamp))
+            {
+                session.CheckpointTimestampsInOrder.Add(timestamp);
+            }
         }
 
         private static void AppendCheckpointEntry(DocumentCheckpointSession session, string timestamp)
@@ -1111,6 +1192,267 @@ namespace WordAddIn1
             session.Entries.RemoveRange(checkpointIndex, removeCount);
             session.CheckpointTimestampsInOrder.Remove(timestamp);
             DeleteCheckpointFile(docUuid, timestamp);
+        }
+
+        private static void RemoveFailedInvokeCheckpoint(string docUuid, string timestamp)
+        {
+            DocumentCheckpointSession session = GetSession(docUuid);
+            if (session == null)
+            {
+                DeleteCheckpointFile(docUuid, timestamp);
+                return;
+            }
+
+            int ordinary = FindCheckpointEntryIndex(session, timestamp, userRollback: false);
+            if (ordinary >= 0)
+            {
+                RemoveOrdinaryEntry(session, docUuid, ordinary);
+            }
+
+            for (int i = session.Entries.Count - 1; i >= 0; i--)
+            {
+                OperationLogEntry entry = session.Entries[i];
+                if (entry.Kind == OperationLogEntryKind.Checkpoint
+                    && entry.UserRollback
+                    && string.Equals(entry.Timestamp, timestamp, StringComparison.Ordinal))
+                {
+                    session.Entries.RemoveAt(i);
+                }
+            }
+
+            session.CheckpointTimestampsInOrder.Remove(timestamp);
+            DeleteCheckpointFile(docUuid, timestamp);
+            if (RoundBeforeUserTimestampByDocId.TryGetValue(docUuid, out string paired)
+                && string.Equals(paired, timestamp, StringComparison.Ordinal))
+            {
+                RoundBeforeUserTimestampByDocId.Remove(docUuid);
+            }
+        }
+
+        private static void RemoveOrdinaryEntry(DocumentCheckpointSession session, string docId, int index)
+        {
+            if (session == null || index < 0 || index >= session.Entries.Count)
+            {
+                return;
+            }
+
+            string timestamp = session.Entries[index].Timestamp;
+            int end = index + 1;
+            while (end < session.Entries.Count
+                && session.Entries[end].Kind != OperationLogEntryKind.Checkpoint)
+            {
+                end++;
+            }
+
+            session.Entries.RemoveRange(index, end - index);
+            if (!CheckpointTimestampStillUsed(session, timestamp))
+            {
+                session.CheckpointTimestampsInOrder.Remove(timestamp);
+                DeleteCheckpointFile(docId, timestamp);
+            }
+        }
+
+        private static void RemoveSpecificCheckpoint(DocumentCheckpointSession session, string docId, int index)
+        {
+            if (session == null || index < 0 || index >= session.Entries.Count)
+            {
+                return;
+            }
+
+            string timestamp = session.Entries[index].Timestamp;
+            session.Entries.RemoveAt(index);
+            if (!CheckpointTimestampStillUsed(session, timestamp))
+            {
+                session.CheckpointTimestampsInOrder.Remove(timestamp);
+                DeleteCheckpointFile(docId, timestamp);
+            }
+        }
+
+        private static bool CheckpointTimestampStillUsed(DocumentCheckpointSession session, string timestamp)
+        {
+            foreach (OperationLogEntry entry in session.Entries)
+            {
+                if (entry.Kind == OperationLogEntryKind.Checkpoint
+                    && string.Equals(entry.Timestamp, timestamp, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static int FindCheckpointEntryIndex(DocumentCheckpointSession session, string timestamp, bool userRollback)
+        {
+            for (int i = 0; i < session.Entries.Count; i++)
+            {
+                OperationLogEntry entry = session.Entries[i];
+                if (entry.Kind == OperationLogEntryKind.Checkpoint
+                    && entry.UserRollback == userRollback
+                    && string.Equals(entry.Timestamp, timestamp, StringComparison.Ordinal))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static OperationLogEntry FindPreferredCheckpoint(DocumentCheckpointSession session, string timestamp)
+        {
+            OperationLogEntry ordinary = null;
+            foreach (OperationLogEntry entry in session.Entries)
+            {
+                if (entry.Kind != OperationLogEntryKind.Checkpoint
+                    || !string.Equals(entry.Timestamp, timestamp, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (entry.UserRollback)
+                {
+                    return entry;
+                }
+
+                ordinary = entry;
+            }
+
+            return ordinary;
+        }
+
+        private static int LatestBranchId(DocumentCheckpointSession session)
+        {
+            int latest = 1;
+            if (session == null)
+            {
+                return latest;
+            }
+
+            foreach (CheckpointBranch branch in session.Branches)
+            {
+                if (branch != null && branch.Id > latest)
+                {
+                    latest = branch.Id;
+                }
+            }
+
+            foreach (OperationLogEntry entry in session.Entries)
+            {
+                if (entry != null && entry.Branch > latest)
+                {
+                    latest = entry.Branch;
+                }
+            }
+
+            return latest;
+        }
+
+        private static int CountUsableOrdinary(DocumentCheckpointSession session, int branch)
+        {
+            int count = 0;
+            foreach (OperationLogEntry entry in session.Entries)
+            {
+                if (entry.Kind == OperationLogEntryKind.Checkpoint
+                    && !entry.UserRollback
+                    && !entry.Retired
+                    && entry.Branch == branch)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static int FindOldestUsableOrdinary(DocumentCheckpointSession session, int branch)
+        {
+            for (int i = 0; i < session.Entries.Count; i++)
+            {
+                OperationLogEntry entry = session.Entries[i];
+                if (entry.Kind == OperationLogEntryKind.Checkpoint
+                    && !entry.UserRollback
+                    && !entry.Retired
+                    && entry.Branch == branch)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int CountBillableUsers(DocumentCheckpointSession session, int branch)
+        {
+            int count = 0;
+            bool seenFirst = false;
+            string previousHash = null;
+            foreach (OperationLogEntry entry in session.Entries)
+            {
+                if (entry.Kind != OperationLogEntryKind.Checkpoint
+                    || !entry.UserRollback
+                    || entry.Branch != branch)
+                {
+                    continue;
+                }
+
+                if (!seenFirst)
+                {
+                    seenFirst = true;
+                    previousHash = entry.Hash ?? "";
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(entry.Hash)
+                    && string.Equals(entry.Hash, previousHash, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                count++;
+                previousHash = entry.Hash ?? "";
+            }
+
+            return count;
+        }
+
+        private static int FindOldestBillableUser(DocumentCheckpointSession session, int branch)
+        {
+            bool seenFirst = false;
+            string previousHash = null;
+            for (int i = 0; i < session.Entries.Count; i++)
+            {
+                OperationLogEntry entry = session.Entries[i];
+                if (entry.Kind != OperationLogEntryKind.Checkpoint
+                    || !entry.UserRollback
+                    || entry.Branch != branch)
+                {
+                    continue;
+                }
+
+                if (!seenFirst)
+                {
+                    seenFirst = true;
+                    previousHash = entry.Hash ?? "";
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(entry.Hash)
+                    && string.Equals(entry.Hash, previousHash, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                return i;
+            }
+
+            return -1;
+        }
+
+        private sealed class UserCheckpointRow
+        {
+            public OperationLogEntry Entry { get; set; }
+            public string Baseline { get; set; }
+            public List<string> HiddenTimestamps { get; } = new List<string>();
         }
 
         private static int FindCheckpointEntryIndex(DocumentCheckpointSession session, string timestamp)
@@ -1291,6 +1633,7 @@ namespace WordAddIn1
                 finally
                 {
                     RoundMutatingChannelByDocId.Remove(touch.Key);
+                    RoundBeforeUserTimestampByDocId.Remove(touch.Key);
                 }
             }
         }
@@ -1310,10 +1653,10 @@ namespace WordAddIn1
 
             DocumentCheckpointSession session = GetOrCreateSession(docId);
             int branch = session.CurrentBranch > 0 ? session.CurrentBranch : 1;
-            var items = new List<object>();
-            for (int i = session.Entries.Count - 1; i >= 0; i--)
+            var kept = new List<UserCheckpointRow>();
+            string previousHash = null;
+            foreach (OperationLogEntry entry in session.Entries)
             {
-                OperationLogEntry entry = session.Entries[i];
                 if (entry.Kind != OperationLogEntryKind.Checkpoint
                     || !entry.UserRollback
                     || entry.Branch != branch)
@@ -1321,18 +1664,53 @@ namespace WordAddIn1
                     continue;
                 }
 
+                if (kept.Count > 0
+                    && !string.IsNullOrEmpty(entry.Hash)
+                    && string.Equals(entry.Hash, previousHash, StringComparison.Ordinal))
+                {
+                    kept[kept.Count - 1].HiddenTimestamps.Add(entry.Timestamp);
+                    continue;
+                }
+
+                kept.Add(new UserCheckpointRow { Entry = entry });
+                previousHash = entry.Hash ?? "";
+            }
+
+            bool originAssigned = false;
+            foreach (UserCheckpointRow row in kept)
+            {
+                if (row.Entry.Operations.Count > 0)
+                {
+                    continue;
+                }
+
+                row.Baseline = originAssigned ? "before" : "origin";
+                originAssigned = true;
+            }
+
+            var items = new List<object>();
+            for (int i = kept.Count - 1; i >= 0; i--)
+            {
+                UserCheckpointRow row = kept[i];
+                OperationLogEntry entry = row.Entry;
                 var operations = new List<object>();
                 foreach (CheckpointOperationRecord op in entry.Operations)
                 {
                     operations.Add(new { tool = op.Tool ?? "", arguments = op.Arguments ?? "{}" });
                 }
 
+                string baseline = row.Baseline ?? "";
+
+                bool current = entry.Branch == session.PositionBranch
+                    && (string.Equals(entry.Timestamp, session.PositionTimestamp, StringComparison.Ordinal)
+                        || row.HiddenTimestamps.Contains(session.PositionTimestamp));
                 items.Add(new
                 {
                     timestamp = entry.Timestamp,
-                    current = entry.Branch == session.PositionBranch
-                        && string.Equals(entry.Timestamp, session.PositionTimestamp, StringComparison.Ordinal),
-                    operations
+                    hash = entry.Hash ?? "",
+                    current,
+                    operations,
+                    baseline
                 });
             }
 
@@ -1403,7 +1781,8 @@ namespace WordAddIn1
                 session.CaretByTimestamp[timestamp] = caret;
             }
 
-            AppendCheckpointEntry(session, timestamp, branch, userRollback: true, CollectOperations(session, branch, start));
+            string hash = CheckpointContentHash.FromFile(path);
+            AppendCheckpointEntry(session, timestamp, branch, userRollback: true, CollectOperations(session, branch, start), hash);
             session.PositionBranch = branch;
             session.PositionTimestamp = timestamp;
             ApplyLiveMetadata(session, live.Live, EasyWriteDocIdStore.TryReadFullName(live.Live), live.Adapter.CopyExtension);
@@ -1616,83 +1995,32 @@ namespace WordAddIn1
 
         private static void EvictOldestOrdinary(DocumentCheckpointSession session, string docId)
         {
-            EvictOldest(session, docId, userRollback: false, MaxOrdinaryPerBranch);
-        }
-
-        private static void EvictOldestUser(DocumentCheckpointSession session, string docId)
-        {
-            EvictOldest(session, docId, userRollback: true, MaxUserPerBranch);
-        }
-
-        private static void EvictOldest(
-            DocumentCheckpointSession session,
-            string docId,
-            bool userRollback,
-            int max)
-        {
             int branch = session.CurrentBranch > 0 ? session.CurrentBranch : 1;
-            while (CountCheckpoints(session, branch, userRollback) > max)
+            while (CountUsableOrdinary(session, branch) > MaxOrdinaryPerBranch)
             {
-                string oldest = null;
-                foreach (OperationLogEntry entry in session.Entries)
-                {
-                    if (entry.Kind == OperationLogEntryKind.Checkpoint
-                        && entry.UserRollback == userRollback
-                        && entry.Branch == branch)
-                    {
-                        oldest = entry.Timestamp;
-                        break;
-                    }
-                }
-
-                if (string.IsNullOrEmpty(oldest))
+                int index = FindOldestUsableOrdinary(session, branch);
+                if (index < 0)
                 {
                     return;
                 }
 
-                if (userRollback)
-                {
-                    RemoveCheckpointEntryOnly(session, docId, oldest);
-                }
-                else
-                {
-                    RemoveCheckpointAndFollowingActions(docId, oldest, deleteNewerFiles: false);
-                    DeleteCheckpointFile(docId, oldest);
-                }
+                RemoveOrdinaryEntry(session, docId, index);
             }
         }
 
-        private static int CountCheckpoints(DocumentCheckpointSession session, int branch, bool userRollback)
+        private static void EvictOldestUser(DocumentCheckpointSession session, string docId)
         {
-            int count = 0;
-            foreach (OperationLogEntry entry in session.Entries)
+            int branch = session.CurrentBranch > 0 ? session.CurrentBranch : 1;
+            while (CountBillableUsers(session, branch) > MaxUserPerBranch)
             {
-                if (entry.Kind == OperationLogEntryKind.Checkpoint
-                    && entry.UserRollback == userRollback
-                    && entry.Branch == branch)
+                int index = FindOldestBillableUser(session, branch);
+                if (index < 0)
                 {
-                    count++;
+                    return;
                 }
+
+                RemoveSpecificCheckpoint(session, docId, index);
             }
-
-            return count;
-        }
-
-        private static void RemoveCheckpointEntryOnly(DocumentCheckpointSession session, string docId, string timestamp)
-        {
-            for (int i = 0; i < session.Entries.Count; i++)
-            {
-                OperationLogEntry entry = session.Entries[i];
-                if (entry.Kind == OperationLogEntryKind.Checkpoint
-                    && string.Equals(entry.Timestamp, timestamp, StringComparison.Ordinal))
-                {
-                    session.Entries.RemoveAt(i);
-                    break;
-                }
-            }
-
-            session.CheckpointTimestampsInOrder.Remove(timestamp);
-            DeleteCheckpointFile(docId, timestamp);
         }
 
         private static OperationLogEntry FindCheckpointEntry(DocumentCheckpointSession session, string timestamp)

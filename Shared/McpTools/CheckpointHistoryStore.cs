@@ -35,6 +35,52 @@ namespace WordAddIn1
             }
         }
 
+        public static void MarkOrdinaryRetired(string historyPath)
+        {
+            if (string.IsNullOrEmpty(historyPath) || !File.Exists(historyPath))
+            {
+                return;
+            }
+
+            try
+            {
+                string json = File.ReadAllText(historyPath);
+                HistoryFile file = JsonConvert.DeserializeObject<HistoryFile>(json, Settings);
+                if (file == null || file.Entries == null)
+                {
+                    return;
+                }
+
+                bool changed = false;
+                foreach (HistoryEntry entry in file.Entries)
+                {
+                    if (entry == null
+                        || !string.Equals(entry.Kind, "checkpoint", StringComparison.OrdinalIgnoreCase)
+                        || entry.UserRollback
+                        || entry.Retired)
+                    {
+                        continue;
+                    }
+
+                    entry.Retired = true;
+                    changed = true;
+                }
+
+                if (!changed)
+                {
+                    return;
+                }
+
+                string temp = historyPath + ".tmp";
+                File.WriteAllText(temp, JsonConvert.SerializeObject(file, Formatting.Indented, Settings));
+                File.Replace(temp, historyPath, null);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[Checkpoint] retire history failed: " + ex.Message);
+            }
+        }
+
         public static void Save(DocumentCheckpointSession session)
         {
             if (session == null || string.IsNullOrEmpty(session.DocUuid))
@@ -118,6 +164,8 @@ namespace WordAddIn1
                     Branch = entry.Branch > 0 ? entry.Branch : 1,
                     Timestamp = entry.Timestamp,
                     UserRollback = entry.UserRollback,
+                    Hash = entry.Hash ?? "",
+                    Retired = entry.Retired,
                     ToolName = entry.Tool,
                     ActionLineBody = entry.Arguments
                 };
@@ -199,6 +247,8 @@ namespace WordAddIn1
                     Branch = entry.Branch > 0 ? entry.Branch : 1,
                     Timestamp = entry.Timestamp,
                     UserRollback = entry.UserRollback,
+                    Hash = string.IsNullOrEmpty(entry.Hash) ? null : entry.Hash,
+                    Retired = entry.Retired,
                     Tool = entry.ToolName,
                     Arguments = entry.ActionLineBody
                 };
@@ -263,6 +313,8 @@ namespace WordAddIn1
             public int Branch { get; set; }
             public string Timestamp { get; set; }
             public bool UserRollback { get; set; }
+            public string Hash { get; set; }
+            public bool Retired { get; set; }
             public CheckpointCaret Caret { get; set; }
             public string Tool { get; set; }
             public string Arguments { get; set; }

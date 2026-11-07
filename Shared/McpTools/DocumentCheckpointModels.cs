@@ -19,6 +19,8 @@ namespace WordAddIn1
         public string ActionLineBody { get; set; }
         public int Branch { get; set; } = 1;
         public bool UserRollback { get; set; }
+        public string Hash { get; set; }
+        public bool Retired { get; set; }
         public List<CheckpointOperationRecord> Operations { get; } = new List<CheckpointOperationRecord>();
     }
 
