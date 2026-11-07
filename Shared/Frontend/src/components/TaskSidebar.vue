@@ -273,20 +273,26 @@
         @mouseleave="hideHistoryHover"
       >
         <span class="open-file-history-dot" :class="{ on: row.current }"></span>
-        <span class="open-file-history-time">{{ row.time }}</span>
         <span class="open-file-history-name">{{ row.label }}</span>
       </button>
     </div>
 
     <div
-      v-if="historyHover.visible && historyHover.text"
+      v-if="historyHover.visible && (historyHover.when || historyHover.groups.length || historyHover.footer)"
       class="sidebar-hover-tip open-file-history-hover"
       :style="{
         top: historyHover.top + 'px',
         left: historyHover.left + 'px',
         maxWidth: historyHover.maxWidth + 'px'
       }"
-    >{{ historyHover.text }}</div>
+    >
+      <div v-if="historyHover.when" class="open-file-history-when">{{ historyHover.when }}</div>
+      <div v-for="(block, i) in historyHover.groups" :key="i" class="open-file-history-op">
+        <div class="open-file-history-op-title">{{ block.title }}</div>
+        <div v-for="(line, j) in block.lines" :key="j" class="open-file-history-op-line">{{ line }}</div>
+      </div>
+      <div v-if="historyHover.footer" class="open-file-history-op-foot">{{ historyHover.footer }}</div>
+    </div>
 
     <div
       v-if="createMenu.visible"
@@ -427,7 +433,9 @@ const historyMenu = ref({
 
 const historyHover = ref({
   visible: false,
-  text: '',
+  when: '',
+  groups: [],
+  footer: '',
   top: 0,
   left: 0,
   maxWidth: 280
@@ -541,7 +549,9 @@ function hideHistoryHover () {
   historyHover.value = {
     ...historyHover.value,
     visible: false,
-    text: ''
+    when: '',
+    groups: [],
+    footer: ''
   }
 }
 
@@ -714,12 +724,24 @@ function openFileContextMenu (event, item) {
   }
 }
 
-function historyTimeLabel (timestamp, stamps) {
-  const match = /^(\d{8})_(\d{6})(.*)$/.exec(timestamp || '')
+function historyWhenLabel (timestamp, stamps) {
+  const match = /^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})(.*)$/.exec(timestamp || '')
   if (!match) return timestamp || ''
-  const clock = `${match[2].slice(0, 2)}:${match[2].slice(2, 4)}:${match[2].slice(4, 6)}`
-  const collision = stamps.filter((ts) => String(ts).startsWith(`${match[1]}_${match[2]}`)).length > 1
-  return collision && match[3] ? `${clock}${match[3]}` : clock
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const clock = `${match[4]}:${match[5]}:${match[6]}`
+  const collision = stamps.filter((ts) => String(ts).startsWith(`${match[1]}${match[2]}${match[3]}_${match[4]}${match[5]}${match[6]}`)).length > 1
+  const clockText = collision && match[7] ? `${clock}${match[7]}` : clock
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const that = new Date(year, month - 1, day)
+  const diffDays = Math.round((today.getTime() - that.getTime()) / 86400000)
+  let dayText = `${month}月${day}日`
+  if (diffDays === 0) dayText = '今天'
+  else if (diffDays === 1) dayText = '昨天'
+  else if (year !== now.getFullYear()) dayText = `${year}年${month}月${day}日`
+  return `${dayText} ${clockText}`
 }
 
 function historyParseArguments (raw) {
@@ -800,14 +822,13 @@ async function historyRowLabel (operations) {
   return `${aliases.join('、')}等操作`
 }
 
-async function historyHoverText (row) {
+async function historyHoverBlocks (row) {
   const ops = Array.isArray(row?.operations) ? row.operations : []
-  const lines = []
+  const groups = []
   let index = 1
   for (const group of historyGroups(ops)) {
     const alias = await getToolAlias(group.tool)
-    lines.push(`${index}. ${alias}：`)
-    index += 1
+    const lines = []
     let sub = 1
     group.ops.slice(0, 3).forEach((op) => {
       const line = historyOpLine(op)
@@ -815,9 +836,10 @@ async function historyHoverText (row) {
       lines.push(`（${sub}）${line}`)
       sub += 1
     })
+    groups.push({ title: `${index}. ${alias}：`, lines })
+    index += 1
   }
-  lines.push(`等${ops.length}个操作`)
-  return lines.join('\n')
+  return { groups, footer: `等${ops.length}个操作` }
 }
 
 async function handleToggleHistory (event) {
@@ -847,7 +869,7 @@ async function handleToggleHistory (event) {
         timestamp: row.timestamp,
         current: !!row.current,
         operations,
-        time: historyTimeLabel(row.timestamp, stamps),
+        when: historyWhenLabel(row.timestamp, stamps),
         label: await historyRowLabel(operations)
       })
     }
@@ -871,7 +893,7 @@ async function handleToggleHistory (event) {
 async function showHistoryHover (event, row) {
   const token = ++historyHoverToken
   const el = event.currentTarget
-  const text = await historyHoverText(row)
+  const blocks = await historyHoverBlocks(row)
   if (token !== historyHoverToken || !el || typeof el.getBoundingClientRect !== 'function') return
   const rect = el.getBoundingClientRect()
   const gap = 8
@@ -882,7 +904,9 @@ async function showHistoryHover (event, row) {
   }
   historyHover.value = {
     visible: true,
-    text,
+    when: row?.when || '',
+    groups: blocks.groups,
+    footer: blocks.footer,
     top: rect.top,
     left,
     maxWidth
@@ -1590,11 +1614,6 @@ button.section-header {
   background: #1890ff;
 }
 
-.open-file-history-time {
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
-
 .open-file-history-name {
   min-width: 0;
   overflow: hidden;
@@ -1605,6 +1624,27 @@ button.section-header {
 .open-file-history-hover {
   z-index: 1200;
   white-space: pre-wrap;
+}
+
+.open-file-history-when {
+  color: #69b1ff;
+}
+
+.open-file-history-when + .open-file-history-op,
+.open-file-history-op + .open-file-history-op,
+.open-file-history-op-foot {
+  margin-top: 4px;
+}
+
+.open-file-history-op-title {
+  color: #f5f5f5;
+  font-weight: 600;
+}
+
+.open-file-history-op-line,
+.open-file-history-op-foot {
+  color: #bdbdbd;
+  font-weight: 400;
 }
 
 .open-file-name {
