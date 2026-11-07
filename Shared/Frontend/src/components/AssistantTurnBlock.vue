@@ -35,6 +35,7 @@ import { computed } from 'vue'
 import SystemMessageBubble from './SystemMessageBubble.vue'
 import WorkFold from './WorkFold.vue'
 import MessageCopyBar from './MessageCopyBar.vue'
+import { foldTextStuckBetweenThinking } from '../utils/toolRunGroup'
 
 const props = defineProps({
   messages: {
@@ -73,7 +74,7 @@ function collectSegments (messages) {
 }
 
 const split = computed(() => {
-  const segs = collectSegments(props.messages)
+  const segs = foldTextStuckBetweenThinking(collectSegments(props.messages))
   const aborted = props.messages.some((m) => m.aborted)
   if (aborted) {
     return { work: segs, final: null }

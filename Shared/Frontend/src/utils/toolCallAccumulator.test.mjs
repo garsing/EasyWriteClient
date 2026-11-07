@@ -2,6 +2,7 @@
  * toolCallAccumulator 单测（node toolCallAccumulator.test.mjs）
  */
 import { ToolCallAccumulator } from './toolCallAccumulator.js'
+import { foldTextStuckBetweenThinking } from './toolRunGroup.js'
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg)
@@ -132,5 +133,41 @@ const tools7 = segs7.filter((s) => s.type === 'toolCall')
 assert(tools7.length === 2, 'both tools visible')
 assert(tools7[0].toolName === 'B_read_skill_file', 'late name stays first')
 assert(tools7[1].toolName === 'B_write_python', 'already-named tool stays second')
+
+// 思考未结束又夹进正文、并继续思考：正文收回思考，不要在两段「思考」中间单独成行
+const accThink = new ToolCallAccumulator()
+accThink.feedReasoningFromCumulative('先看图', '')
+accThink.feedReasoningFromCumulative('先看图\n再对编号', '能理解，图')
+const thinkSegs = accThink.buildSegments('能理解，图我读到了。上半是标注。')
+const thinkBlocks = thinkSegs.filter((s) => s.type === 'thinking')
+const thinkTexts = thinkSegs.filter((s) => s.type === 'text')
+assert(thinkBlocks.length === 1, 'mid-thinking text does not open a second thinking')
+assert(thinkBlocks[0].content.includes('先看图'), 'first reasoning kept')
+assert(thinkBlocks[0].content.includes('能理解，图'), 'stray text folded into thinking')
+assert(thinkBlocks[0].content.includes('再对编号'), 'later reasoning kept on the same thinking')
+assert(thinkTexts.length === 1 && thinkTexts[0].content === '我读到了。上半是标注。', 'answer stays after thinking')
+
+// 工具轮已经落下正文后再思考：这段正文仍单独成段
+const accAfterTool = new ToolCallAccumulator()
+accAfterTool.feedReasoningFromCumulative('想', '')
+accAfterTool.feedDeltaToolCalls([
+  { index: 0, id: 'c', function: { name: 'B_calculate', arguments: '{}' } }
+])
+accAfterTool.feedFinishReason('tool_calls', '先算。')
+accAfterTool.feedReasoningFromCumulative('想再核对', '先算。')
+const afterTool = accAfterTool.buildSegments('先算。结果是 2。')
+assert(afterTool.some((s) => s.type === 'text' && s.content === '先算。'), 'text before the tool stays')
+assert(afterTool.some((s) => s.type === 'thinking' && s.content === '再核对'), 'reasoning after the tool is its own thinking')
+assert(afterTool.some((s) => s.type === 'text' && s.content === '结果是 2。'), 'final answer after the second thinking')
+
+const folded = foldTextStuckBetweenThinking([
+  { type: 'thinking', content: '先看图', isComplete: true },
+  { type: 'text', content: '能理解，图' },
+  { type: 'thinking', content: '再对编号', isComplete: true },
+  { type: 'text', content: '我读到了。' }
+])
+assert(folded.length === 2, 'stray text between thinking is folded')
+assert(folded[0].type === 'thinking' && folded[0].content.includes('能理解，图'), 'stray text moves into thinking')
+assert(folded[1].type === 'text' && folded[1].content === '我读到了。', 'final answer stays')
 
 console.log('[OK] toolCallAccumulator tests passed')

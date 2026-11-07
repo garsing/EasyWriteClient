@@ -1,6 +1,45 @@
 import { isHiddenTool } from './toolVisibility.js'
 
 /**
+ * 两段思考中间夹着的正文收回前一段，再把相邻思考并成一段。
+ * 否则过程里会变成「思考 / 一行字 / 思考」。
+ */
+export function foldTextStuckBetweenThinking (segments) {
+  const out = []
+  const segs = segments || []
+  for (let i = 0; i < segs.length; i++) {
+    const seg = segs[i]
+    if (!seg) continue
+    const prev = out[out.length - 1]
+    const next = segs[i + 1]
+    if (
+      seg.type === 'text' &&
+      prev && prev.type === 'thinking' &&
+      next && next.type === 'thinking'
+    ) {
+      prev.content = appendPiece(prev.content, seg.content)
+      continue
+    }
+    if (seg.type === 'thinking' && prev && prev.type === 'thinking') {
+      prev.content = appendPiece(prev.content, seg.content)
+      if (seg.isComplete) prev.isComplete = true
+      continue
+    }
+    out.push({ ...seg })
+  }
+  return out
+}
+
+function appendPiece (base, piece) {
+  const left = base || ''
+  const right = piece || ''
+  if (!right) return left
+  if (!left) return right
+  if (/\s$/.test(left) || /^\s/.test(right)) return left + right
+  return `${left}\n${right}`
+}
+
+/**
  * 把连续、中间没有可见正文的工具收成 toolRun。
  * 可见工具卡不足两张、且没有思考时不包外层。B_todo 丢掉。
  * 思考跟相邻工具走：工具前、工具间、正文后的思考都收进同一组，不单独成行。

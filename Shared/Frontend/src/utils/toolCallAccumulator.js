@@ -5,6 +5,13 @@
  * thinking 按时间线插入当前轮位置，不永久置顶整条气泡。
  */
 
+function appendPiece (base, piece) {
+  if (!piece) return base || ''
+  if (!base) return piece
+  if (/\s$/.test(base) || /^\s/.test(piece)) return base + piece
+  return `${base}\n${piece}`
+}
+
 function isValidJson(str) {
   if (!str || !str.trim()) return false
   try {
@@ -176,8 +183,13 @@ export class ToolCallAccumulator {
   _feedReasoningDelta(delta, contentSoFar) {
     const uncommittedText = contentSoFar.slice(this._committedContentLength)
 
-    // 本轮已有正文后再来 thinking：先落下一段 thinking（若有）与正文，再开新 thinking
-    if (uncommittedText) {
+    // 思考还没被工具轮切断，中间又夹进正文并继续思考：
+    // 这段字收回当前思考，避免两段「思考」中间单独卡一行。
+    if (uncommittedText && this._activeThinking && this._activeThinking.content) {
+      this._activeThinking.content = appendPiece(this._activeThinking.content, uncommittedText)
+      this._committedContentLength = contentSoFar.length
+    } else if (uncommittedText) {
+      // 思考已经落下（例如工具轮之后）再来正文、然后又思考：正文单独成段
       this._flushActiveThinking({ complete: true })
       this._committedSegments.push({ type: 'text', content: uncommittedText })
       this._committedContentLength = contentSoFar.length
