@@ -1,7 +1,6 @@
 <template>
   <div class="tool-call-box">
     <div class="tool-call-header" :class="{ 'no-expand': !allowExpand }" @click="allowExpand && toggleExpand()">
-      <img v-if="icon" :src="icon" class="tool-icon" alt="" />
       <span class="tool-name">{{ displayName }}</span>
       <span v-if="progressLabel" class="tool-progress">{{ progressLabel }}</span>
       <span
@@ -71,10 +70,6 @@ const props = defineProps({
   language: {
     type: String,
     default: 'text' // 语言类型：python, yaml, json, text
-  },
-  icon: {
-    type: String,
-    default: null // 图标路径，可选
   },
   result: {
     type: Object,
@@ -332,14 +327,6 @@ const toggleExpand = () => {
 
 .tool-call-header.no-expand {
   cursor: default;
-}
-
-.tool-icon {
-  width: 16px;
-  height: 16px;
-  object-fit: contain;
-  flex-shrink: 0;
-  opacity: 0.75;
 }
 
 /* 与 Todo 进度条一致：90° 直角折角 */

@@ -7,7 +7,6 @@
     :is-complete="isComplete"
     :allow-expand="shouldShowDetails"
     :language="languageType"
-    :icon="toolIcon"
     :result="result"
     :output-text="outputText"
     :output-done="outputDone"
@@ -19,8 +18,6 @@
 <script setup>
 import { computed } from 'vue'
 import ToolCallBox from './ToolCallBox.vue'
-import manipulateToolIcon from '../assets/images/manipulate_tool.png'
-import readToolIcon from '../assets/images/read_tool.png'
 import { toolsHidden } from '../utils/toolVisibility'
 
 const props = defineProps({
@@ -56,43 +53,6 @@ const props = defineProps({
     type: Number,
     default: 0
   }
-})
-
-// 使用 manipulate_tool.png 图标的工具列表
-const manipulateTools = [
-  'F_create_chart_from_xml',
-  'F_create_table_from_yaml',
-  'F_csv_to_xml',
-  'F_extract_table_format',
-  'F_extract_table_data',
-  'F_apply_table_data_from_xml',
-  'F_greet',
-  'F_modify_yaml_file',
-  'F_process_paragraph_actions',
-  'F_process_document_actions',
-  'F_write_file',
-  'B_calculate',
-  'B_run_python',
-  'F_run_terminal',
-  'F_close_terminal',
-  'F_close_document'
-]
-
-// 使用 read_tool.png 图标的工具列表
-const readTools = [
-  'F_read_file',
-  'F_split_document_by_paragraphs',
-  'F_get_document_content'
-]
-
-// 根据工具名称返回对应的图标路径
-const toolIcon = computed(() => {
-  if (manipulateTools.includes(props.toolName)) {
-    return manipulateToolIcon
-  } else if (readTools.includes(props.toolName)) {
-    return readToolIcon
-  }
-  return null // 没有图标的工具返回 null
 })
 
 // 完全不显示（连折叠框标题也不出）。优先于 toolsWithDetails。名单在 toolVisibility.js。

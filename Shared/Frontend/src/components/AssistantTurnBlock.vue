@@ -20,6 +20,7 @@
         <WorkFold v-if="workMessage" :duration-ms="durationMs">
           <SystemMessageBubble :message="workMessage" compact force-process />
         </WorkFold>
+        <div v-else-if="ranText" class="ran-line">{{ ranText }}</div>
         <div v-if="finalMessage" class="assistant-reply-wrap">
           <SystemMessageBubble :message="finalMessage" compact />
           <MessageCopyBar :text="finalCopyText" align="left" />
@@ -191,11 +192,42 @@ const finalCopyText = computed(() => {
   if (seg?.content && String(seg.content).trim()) return String(seg.content).trim()
   return copyText.value
 })
+
+/** 没有可收进「奋力工作的记录」的过程时，回复上面写后端耗时。 */
+const ranText = computed(() => {
+  const text = formatWorkDuration(props.durationMs)
+  return text ? `已运行 ${text}` : ''
+})
+
+function formatWorkDuration (ms) {
+  const n = Number(ms)
+  if (!Number.isFinite(n) || n < 500) return ''
+  const totalSec = Math.round(n / 1000)
+  if (totalSec < 1) return ''
+  const hours = Math.floor(totalSec / 3600)
+  const minutes = Math.floor((totalSec % 3600) / 60)
+  const seconds = totalSec % 60
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}小时${minutes}分` : `${hours}小时`
+  }
+  if (minutes > 0) {
+    return seconds > 0 ? `${minutes}分${seconds}秒` : `${minutes}分`
+  }
+  return `${seconds}秒`
+}
 </script>
 
 <style scoped>
 .assistant-turn > .assistant-reply-wrap :deep(.message-copy-bar) {
   padding: 0 14px;
+}
+
+.ran-line {
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #999;
 }
 
 .assistant-turn :deep(.system-message + .system-message .message-content) {
