@@ -5,6 +5,7 @@
       <div v-if="turn.user" class="chat-turn-user">
         <UserMessageBubble :message="turn.user" />
       </div>
+      <div v-if="turn.liveTimerText" class="live-turn-timer">{{ turn.liveTimerText }}</div>
       <div
         v-for="item in turn.rest"
         :key="item.key"
@@ -34,6 +35,16 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  /** 当前看见的会话这一轮还在跑。别的会话在处理时不要当成这一轮 */
+  running: {
+    type: Boolean,
+    default: false
+  },
+  /** 进行中的「已处理 …」。空则不画 */
+  liveTimerText: {
+    type: String,
+    default: ''
+  },
   /** 递增则强制钉到最新（切历史 / 切形态 / 发送新消息）；不沿用上翻取消跟随 */
   pinToLatestToken: {
     type: [Number, String],
@@ -42,8 +53,7 @@ const props = defineProps({
 })
 
 /** 用户气泡 / 提示单独一项；连续助手消息合成一轮。
- * 归档：后面已有用户消息，或从历史加载（切对话 / 重开应用）——最后一轮也收进「奋力工作的记录」。
- * 只有本会话刚生成完 / 刚点停止的那一轮保持展开。 */
+ * 归档：后面已有用户消息；或这一轮已经不在跑（含历史）。刚点停止的本轮先展开。 */
 /** 只认后端 duration_ms（回推或历史回放）。没有或不足 500ms 不展示。 */
 function computeTurnDurationMs (user) {
   const n = Number(user?.duration_ms ?? user?.durationMs)
@@ -75,11 +85,17 @@ const displayItems = computed(() => {
     }
     const hasUserAfter = list.slice(i).some((x) => x.role === 'user')
     const fromHistory = run.every((x) => x.fromHistory)
+    const aborted = run.some((m) => m.aborted)
+    const streaming = run.some((m) => m.isStreaming)
+    const stillRunning = !hasUserAfter && (props.running || streaming)
+    let archived = true
+    if (stillRunning) archived = false
+    else if (aborted && !fromHistory && !hasUserAfter) archived = false
     items.push({
       kind: 'assistant',
       key: `asst-${run.map((x) => x.id).join('-')}`,
       messages: run,
-      archived: hasUserAfter || fromHistory,
+      archived,
       durationMs: computeTurnDurationMs(lastUser)
     })
   }
@@ -99,6 +115,9 @@ const displayTurns = computed(() => {
     } else {
       turns[turns.length - 1].rest.push(item)
     }
+  }
+  if (props.liveTimerText && turns.length) {
+    turns[turns.length - 1].liveTimerText = props.liveTimerText
   }
   return turns
 })
@@ -268,6 +287,16 @@ watch(() => props.messages, (newMessages, oldMessages) => {
 
 .chat-turn-user + .message-wrapper {
   margin-top: 4px;
+}
+
+.live-turn-timer {
+  margin-top: 4px;
+  margin-bottom: 4px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #999;
 }
 
 /* 折叠标题自己有内边距，紧跟用户气泡时不再叠一层顶 padding */

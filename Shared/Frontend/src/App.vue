@@ -62,6 +62,8 @@
       <ChatMessages
         v-if="messages.length > 0"
         :messages="messages"
+        :running="visibleTurnRunning"
+        :live-timer-text="liveTimerText"
         :pin-to-latest-token="pinToLatestToken"
       />
       <ChatEmptyState
@@ -544,8 +546,65 @@ function removeChatAttachment (id) {
 
 const messages = ref([])
 const toolCallAccumulators = new Map()
-/** 后端 turnTiming 的毫秒数。不写当前这句，等下一句发出后填进上一轮。 */
-let heldTurnDurationMs = null
+/** 当前会话进行中的那一轮。切会话不清，结束或点停止才丢。 */
+const liveTimer = ref(null)
+const liveTimerNowMs = ref(0)
+let liveTimerTick = null
+
+function isDraftConversationId (id) {
+  return id == null || id === '' || String(id) === '-1' || String(id) === DRAFT_TASK_ID
+}
+
+function sameConversation (a, b) {
+  if (isDraftConversationId(a) && isDraftConversationId(b)) return true
+  return String(a) === String(b)
+}
+
+function formatLiveTimer (elapsedMs) {
+  const totalSec = Math.max(0, Math.floor(Number(elapsedMs) / 1000))
+  const hours = Math.floor(totalSec / 3600)
+  const minutes = Math.floor((totalSec % 3600) / 60)
+  const seconds = totalSec % 60
+  if (hours > 0) {
+    return minutes > 0 ? `已处理 ${hours}小时${minutes}分` : `已处理 ${hours}小时`
+  }
+  if (minutes > 0) {
+    return seconds > 0 ? `已处理 ${minutes}分${seconds}秒` : `已处理 ${minutes}分`
+  }
+  return `已处理 ${totalSec}s`
+}
+
+function ensureLiveTimerTick () {
+  if (liveTimerTick != null) return
+  liveTimerTick = setInterval(() => {
+    liveTimerNowMs.value = Date.now()
+  }, 1000)
+}
+
+function clearLiveTimer () {
+  liveTimer.value = null
+  if (liveTimerTick != null) {
+    clearInterval(liveTimerTick)
+    liveTimerTick = null
+  }
+}
+
+function startLiveTimer () {
+  const startedAtMs = Date.now()
+  liveTimer.value = {
+    conversationId: activeTaskId.value,
+    startedAtMs
+  }
+  liveTimerNowMs.value = startedAtMs
+  ensureLiveTimerTick()
+}
+
+function rekeyLiveTimer (conversationId) {
+  const slot = liveTimer.value
+  if (!slot || !isDraftConversationId(slot.conversationId)) return
+  if (isDraftConversationId(conversationId)) return
+  liveTimer.value = { ...slot, conversationId }
+}
 
 function userMessageIndexes () {
   const indexes = []
@@ -564,35 +623,31 @@ function hasAssistantAfter (userIndex) {
   return false
 }
 
-function clearHeldTurnDuration () {
-  heldTurnDurationMs = null
-}
-
-/** 用时只填已经收进历史的那条提问，不填正在进行的最后一句。 */
-function fillHistoryTurnDuration (durationMs) {
-  const indexes = userMessageIndexes()
-  if (indexes.length < 2) return false
-  const last = indexes[indexes.length - 1]
-  if (hasAssistantAfter(last)) return false
-  messages.value[indexes[indexes.length - 2]].duration_ms = durationMs
-  return true
-}
-
+/** 回推一到就写入本轮 user。下一条已经发出、后面还没有助手时，写到倒数第二条。 */
 function applyTurnTiming (durationMs) {
-  if (fillHistoryTurnDuration(durationMs)) {
-    heldTurnDurationMs = null
+  const indexes = userMessageIndexes()
+  if (!indexes.length) return
+  const last = indexes[indexes.length - 1]
+  if (!hasAssistantAfter(last) && indexes.length >= 2) {
+    messages.value[indexes[indexes.length - 2]].duration_ms = durationMs
     return
   }
-  heldTurnDurationMs = durationMs
-}
-
-function flushHeldTurnDuration () {
-  if (heldTurnDurationMs == null) return
-  if (fillHistoryTurnDuration(heldTurnDurationMs)) {
-    heldTurnDurationMs = null
-  }
+  messages.value[last].duration_ms = durationMs
 }
 const isProcessing = ref(false)
+const visibleTurnRunning = computed(() => {
+  const slot = liveTimer.value
+  if (!slot || !isProcessing.value) return false
+  return sameConversation(slot.conversationId, activeTaskId.value)
+})
+const liveTimerText = computed(() => {
+  const slot = liveTimer.value
+  if (!slot || !visibleTurnRunning.value) return ''
+  return formatLiveTimer(liveTimerNowMs.value - slot.startedAtMs)
+})
+watch(isProcessing, (value) => {
+  if (!value) clearLiveTimer()
+})
 const loopConfirm = ref(null)
 const stoppedLocally = ref(false)
 const drainActive = ref(false)
@@ -619,8 +674,9 @@ function removeDrainHint () {
   }
 }
 
-/** 用户点停止：当前助手轮没有自然收尾，下一问时整轮收进「奋力工作的记录」 */
+/** 用户点停止：计时马上消失。这一轮没有自然收尾，先保持展开，下一问再整轮收进「奋力工作的记录」 */
 function handleUserStop () {
+  clearLiveTimer()
   loopConfirm.value = null
   for (let i = messages.value.length - 1; i >= 0; i--) {
     const m = messages.value[i]
@@ -673,9 +729,10 @@ const handleSend = async (content) => {
   pendingInput.value = raw
   panelHint.value = ''
 
-  // 立即设置处理状态，确保按钮显示停止图标
+  // 立即设置处理状态，确保按钮显示停止图标。计时从这一点起跳
   isProcessing.value = true
   stoppedLocally.value = false
+  startLiveTimer()
   console.log('[App] 开始发送消息，设置 isProcessing = true')
 
   const attachmentsSnap = snapshotAttachments(chatAttachmentItems.value)
@@ -690,7 +747,6 @@ const handleSend = async (content) => {
   }
   console.log('[App] 添加用户消息:', { id: userMessage.id, content: userMessage.content.substring(0, 20), messageCount: messages.value.length })
   messages.value.push(userMessage)
-  flushHeldTurnDuration()
   pinToLatestToken.value++
   receivedBackendMessages.value.add(userMessage.id)
   console.log('[App] 用户消息已添加，当前消息数量:', messages.value.length)
@@ -1272,7 +1328,6 @@ onMounted(() => {
       console.log('[App] 清空消息列表')
       messages.value = []
       toolCallAccumulators.clear()
-      clearHeldTurnDuration()
       panelHint.value = ''
       // 待发送附件与打开文件芯片一样：切会话 / 新建不清除，只在发送后 reset
       resetTodoProgressBar()
@@ -1298,10 +1353,17 @@ onMounted(() => {
       const payload = data.data || data
       const raw = payload.messages || []
       toolCallAccumulators.clear()
-      clearHeldTurnDuration()
       panelHint.value = ''
       resetTodoProgressBar()
       messages.value = raw.map((m) => normalizeHistoryMessage(m))
+      if (
+        liveTimer.value
+        && payload.conversationId
+        && sameConversation(liveTimer.value.conversationId, payload.conversationId)
+        && !isProcessing.value
+      ) {
+        clearLiveTimer()
+      }
       if (payload.conversationId && payload.conversationId !== '-1') {
         activeTaskId.value = payload.conversationId
         // 保留 draftSlotVisible：从新对话点进历史后，列表顶仍显示「新对话」
@@ -1314,6 +1376,7 @@ onMounted(() => {
     } else if (data.type === 'conversationIdChanged') {
       const payload = data.data || data
       if (payload?.conversationId && payload.conversationId !== '-1') {
+        rekeyLiveTimer(payload.conversationId)
         activeTaskId.value = payload.conversationId
         // 仅在未挂「新对话」入口时清理（例如当前草稿首次落成正式会话）
         if (!draftSlotVisible.value) {
@@ -1438,6 +1501,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearTodoBarHideTimer()
+  clearLiveTimer()
 })
 
 // 恢复输入框内容（通过事件传递给 ChatInput）
