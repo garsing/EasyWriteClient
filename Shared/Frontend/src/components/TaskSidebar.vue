@@ -268,14 +268,24 @@
         :key="row.timestamp"
         type="button"
         class="open-file-ctx-item open-file-history-row"
+        :class="{ 'is-current': row.current }"
         @click="handleRestoreHistory(row)"
         @mouseenter="showHistoryHover($event, row)"
-        @mouseleave="hideHoverTip"
+        @mouseleave="hideHistoryHover"
       >
-        <span class="open-file-history-dot">{{ row.current ? '●' : '' }}</span>
         <span>{{ row.label }}</span>
       </button>
     </div>
+
+    <div
+      v-if="historyHover.visible && historyHover.text"
+      class="sidebar-hover-tip open-file-history-hover"
+      :style="{
+        top: historyHover.top + 'px',
+        left: historyHover.left + 'px',
+        maxWidth: historyHover.maxWidth + 'px'
+      }"
+    >{{ historyHover.text }}</div>
 
     <div
       v-if="createMenu.visible"
@@ -414,7 +424,14 @@ const historyMenu = ref({
   items: []
 })
 
-const HISTORY_VERBS = { insert: '插入', replace: '替换', delete: '删除' }
+const historyHover = ref({
+  visible: false,
+  text: '',
+  top: 0,
+  left: 0,
+  maxWidth: 280
+})
+let historyHoverToken = 0
 
 const createMenu = ref({
   visible: false,
@@ -518,7 +535,17 @@ function hideHoverTip () {
   }
 }
 
+function hideHistoryHover () {
+  historyHoverToken += 1
+  historyHover.value = {
+    ...historyHover.value,
+    visible: false,
+    text: ''
+  }
+}
+
 function closeHistoryMenu () {
+  hideHistoryHover()
   historyMenu.value = {
     visible: false,
     top: 0,
@@ -686,54 +713,101 @@ function openFileContextMenu (event, item) {
   }
 }
 
-function historyTimeLabel (timestamp, stamps) {
-  const match = /^(\d{8})_(\d{6})(.*)$/.exec(timestamp || '')
-  if (!match) return timestamp || ''
-  const clock = `${match[2].slice(0, 2)}:${match[2].slice(2, 4)}:${match[2].slice(4, 6)}`
-  const collision = stamps.filter((ts) => String(ts).startsWith(`${match[1]}_${match[2]}`)).length > 1
-  return collision && match[3] ? `${clock}${match[3]}` : clock
-}
-
-function historyVerbLine (op) {
-  let parsed = null
+function historyParseArguments (raw) {
   try {
-    parsed = JSON.parse(op?.arguments || '{}')
+    const parsed = JSON.parse(raw || '{}')
+    return parsed && typeof parsed === 'object' ? parsed : null
   } catch (e) {
-    parsed = null
+    return null
   }
-  if (!parsed || typeof parsed !== 'object') return ''
-  const type = String(parsed.type || parsed.action || '').toLowerCase()
-  const verb = HISTORY_VERBS[type]
-  if (!verb) return ''
-  let body = parsed[type]
-  if (body && typeof body === 'object') {
-    body = body.text || body.content || ''
-  }
-  if (body == null) body = ''
-  if (typeof body !== 'string') body = String(body)
-  body = body.replace(/\s+/g, ' ').trim()
-  if (body.length > 20) body = `${body.slice(0, 20)}…`
-  return body ? `${verb}「${body}」` : verb
 }
 
-async function historyHoverText (row) {
-  const ops = Array.isArray(row?.operations) ? row.operations : []
+function historyPlainText (value) {
+  if (value == null) return ''
+  if (typeof value === 'string') return value.replace(/\s+/g, ' ').trim()
+  if (typeof value !== 'object') return String(value).trim()
+  const direct = value.text || value.content || value.new || value.insert || value.sentence
+  if (typeof direct === 'string' && direct.trim()) return direct.replace(/\s+/g, ' ').trim()
+  const start = typeof value.start === 'string' ? value.start.trim() : ''
+  const end = typeof value.end === 'string' ? value.end.trim() : ''
+  if (start && end && start !== end) return `${start}…${end}`
+  return start || end || ''
+}
+
+function historyActionBody (parsed, type) {
+  if (!parsed) return ''
+  const detail = parsed.detail && typeof parsed.detail === 'object' ? parsed.detail : {}
+  if (type === 'insert') {
+    return historyPlainText(detail.insert ?? parsed.insert ?? detail.new ?? parsed.new)
+  }
+  if (type === 'replace') {
+    return historyPlainText(detail.new ?? parsed.new ?? detail.replace ?? parsed.replace)
+  }
+  if (type === 'delete') {
+    return historyPlainText(
+      detail.deletion ?? parsed.deletion ?? detail.delete ?? parsed.delete ?? detail.text ?? parsed.text
+    )
+  }
+  return ''
+}
+
+function historyClip (text) {
+  const body = (text || '').trim()
+  if (body.length <= 20) return body
+  return `${body.slice(0, 20)}…`
+}
+
+function historyOpLine (op) {
+  const parsed = historyParseArguments(op?.arguments)
+  if (!parsed) return ''
+  const type = String(parsed.type || parsed.action || '').toLowerCase()
+  const body = historyClip(historyActionBody(parsed, type))
+  if (type === 'delete') return body ? `删除：${body}` : '删除'
+  if (type === 'insert' || type === 'replace') return body
+  return ''
+}
+
+function historyGroups (operations) {
   const groups = []
-  ops.forEach((op) => {
+  ;(operations || []).forEach((op) => {
     const tool = op?.tool || ''
     const last = groups[groups.length - 1]
     if (last && last.tool === tool) last.ops.push(op)
     else groups.push({ tool, ops: [op] })
   })
+  return groups
+}
+
+async function historyRowLabel (operations) {
+  const seen = []
+  historyGroups(operations).forEach((group) => {
+    if (group.tool && !seen.includes(group.tool)) seen.push(group.tool)
+  })
+  const aliases = []
+  for (const tool of seen.slice(0, 2)) {
+    aliases.push(await getToolAlias(tool))
+  }
+  if (!aliases.length) return '等操作'
+  return `${aliases.join('、')}等操作`
+}
+
+async function historyHoverText (row) {
+  const ops = Array.isArray(row?.operations) ? row.operations : []
   const lines = []
-  for (const group of groups) {
-    lines.push(await getToolAlias(group.tool))
+  let index = 1
+  for (const group of historyGroups(ops)) {
+    const alias = await getToolAlias(group.tool)
+    lines.push(`${index}. ${alias}：`)
+    index += 1
+    let sub = 1
     group.ops.slice(0, 3).forEach((op) => {
-      const line = historyVerbLine(op)
-      if (line) lines.push(`  ${line}`)
+      const line = historyOpLine(op)
+      if (!line) return
+      lines.push(`（${sub}）${line}`)
+      sub += 1
     })
   }
-  lines.push(`共 ${ops.length} 次操作`)
+  lines.push(`等${ops.length}个操作`)
   return lines.join('\n')
 }
 
@@ -756,18 +830,21 @@ async function handleToggleHistory (event) {
       return
     }
     const raw = Array.isArray(res?.items) ? res.items : []
-    const stamps = raw.map((row) => row.timestamp)
-    items = raw.map((row) => ({
-      timestamp: row.timestamp,
-      current: !!row.current,
-      operations: row.operations || [],
-      label: historyTimeLabel(row.timestamp, stamps)
-    }))
+    items = []
+    for (const row of raw) {
+      const operations = row.operations || []
+      items.push({
+        timestamp: row.timestamp,
+        current: !!row.current,
+        operations,
+        label: await historyRowLabel(operations)
+      })
+    }
   } catch (e) {
     showCreateFailTip(anchor, e?.message || '读取历史失败')
     return
   }
-  const menuW = items.length ? 168 : 220
+  const menuW = items.length ? 240 : 220
   const menuH = 8 + 36 * Math.max(items.length, 1)
   let left = anchor.right + 4
   let top = anchor.top
@@ -781,8 +858,24 @@ async function handleToggleHistory (event) {
 }
 
 async function showHistoryHover (event, row) {
+  const token = ++historyHoverToken
+  const el = event.currentTarget
   const text = await historyHoverText(row)
-  showHoverTip(event, text)
+  if (token !== historyHoverToken || !el || typeof el.getBoundingClientRect !== 'function') return
+  const rect = el.getBoundingClientRect()
+  const gap = 8
+  const maxWidth = 280
+  let left = rect.right + gap
+  if (left + 160 > window.innerWidth - 8) {
+    left = Math.max(8, rect.left - maxWidth - gap)
+  }
+  historyHover.value = {
+    visible: true,
+    text,
+    top: rect.top,
+    left,
+    maxWidth
+  }
 }
 
 async function handleRestoreHistory (row) {
@@ -1468,16 +1561,20 @@ button.section-header {
 }
 
 .open-file-history-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: block;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.open-file-history-dot {
-  width: 1em;
-  flex-shrink: 0;
-  text-align: center;
-  color: #1f1e1c;
+.open-file-history-row.is-current {
+  font-weight: 600;
+}
+
+.open-file-history-hover {
+  z-index: 1200;
+  white-space: pre-wrap;
 }
 
 .open-file-name {
