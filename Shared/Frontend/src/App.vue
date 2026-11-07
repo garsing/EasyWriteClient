@@ -1714,47 +1714,18 @@ body,
   -ms-overflow-style: none;
 }
 
-.app-shell.host-desktop *::-webkit-scrollbar {
+.app-shell.host-desktop *:not(.md-table-wrap)::-webkit-scrollbar {
   display: none !important;
   width: 0 !important;
   height: 0 !important;
   background: transparent !important;
 }
 
-/* 宽表格在格子里横滚，滚动条要露出来（上面的全局规则会把伪元素藏掉） */
+/* 宽表格用标准细滚动条。不要再写 ::-webkit-scrollbar，否则 WebView2 会画回带左右箭头的系统条。 */
 .app-shell.host-desktop .md-table-wrap {
   scrollbar-width: thin;
   scrollbar-color: #c4c4c4 transparent;
   -ms-overflow-style: auto;
-}
-
-.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar {
-  display: block !important;
-  height: 8px !important;
-  width: 8px !important;
-  background: transparent !important;
-}
-
-.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-thumb {
-  background: #c8c8c8 !important;
-  border-radius: 4px;
-}
-
-.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-track {
-  background: transparent !important;
-}
-
-.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-button,
-.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-button:single-button,
-.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-button:double-button,
-.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-button:horizontal:start:decrement,
-.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-button:horizontal:end:increment,
-.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-button:vertical:start:decrement,
-.app-shell.host-desktop .md-table-wrap::-webkit-scrollbar-button:vertical:end:increment {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  background: transparent !important;
 }
 </style>
 
