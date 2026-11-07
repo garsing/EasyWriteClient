@@ -225,6 +225,84 @@ namespace WordAddIn1.BrowserHost
             return int.TryParse(id.Substring(1), out n) ? n : 0;
         }
 
+        /// <summary>沿用当前表里同一 DOM 节点的编码。不改快照正文。</summary>
+        public static string FindExisting(string channelId, int? backendDomNodeId, string cssPath)
+        {
+            if (string.IsNullOrWhiteSpace(channelId))
+            {
+                return null;
+            }
+
+            lock (Gate)
+            {
+                Stored cur;
+                if (!ByChannel.TryGetValue(channelId, out cur) || cur == null || cur.Map == null)
+                {
+                    return null;
+                }
+
+                foreach (KeyValuePair<string, BrowserRefEntry> kv in cur.Map)
+                {
+                    BrowserRefEntry entry = kv.Value;
+                    if (entry == null)
+                    {
+                        continue;
+                    }
+
+                    if (backendDomNodeId.HasValue
+                        && entry.BackendDomNodeId.HasValue
+                        && entry.BackendDomNodeId.Value == backendDomNodeId.Value)
+                    {
+                        return kv.Key;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(cssPath)
+                        && string.Equals(entry.AttachCssPath, cssPath, StringComparison.Ordinal))
+                    {
+                        return kv.Key;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>追加一条引用。序号用 NextSeq。不替换 LastTree。</summary>
+        public static string Append(string channelId, BrowserRefEntry entry)
+        {
+            if (string.IsNullOrWhiteSpace(channelId) || entry == null)
+            {
+                return null;
+            }
+
+            lock (Gate)
+            {
+                Stored cur;
+                if (!ByChannel.TryGetValue(channelId, out cur) || cur == null || cur.Map == null)
+                {
+                    return null;
+                }
+
+                int n = cur.NextSeq < 1 ? 1 : cur.NextSeq;
+                string id = "e" + n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                while (cur.Map.ContainsKey(id))
+                {
+                    n++;
+                    id = "e" + n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                }
+
+                cur.Map[id] = entry;
+                if (cur.Order == null)
+                {
+                    cur.Order = new List<string>();
+                }
+
+                cur.Order.Add(id);
+                cur.NextSeq = n + 1;
+                return id;
+            }
+        }
+
         public static bool TryGet(string channelId, string refId, out BrowserRefEntry entry)
         {
             entry = null;

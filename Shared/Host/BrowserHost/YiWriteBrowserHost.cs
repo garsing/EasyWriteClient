@@ -1666,11 +1666,14 @@ namespace WordAddIn1.BrowserHost
         public string Title { get; private set; }
         public ImageCaptureCompressor.CompressedImage Image { get; private set; }
 
+        public string Note { get; private set; }
+
         public static BrowserCaptureResult Ok(
             BrowserChannel channel,
             string url,
             string title,
-            ImageCaptureCompressor.CompressedImage image)
+            ImageCaptureCompressor.CompressedImage image,
+            string note = null)
         {
             return new BrowserCaptureResult
             {
@@ -1678,7 +1681,8 @@ namespace WordAddIn1.BrowserHost
                 Channel = channel,
                 Url = url ?? "",
                 Title = title ?? "",
-                Image = image
+                Image = image,
+                Note = string.IsNullOrWhiteSpace(note) ? null : note
             };
         }
 

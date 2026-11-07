@@ -175,10 +175,26 @@ namespace WordAddIn1
         {
             pageReq = new PageCaptureRequest();
             bool hasRef = HasNonEmpty(args, "ref");
+            string nodesErr = TryParseNodes(args, out bool nodes);
+            if (nodesErr != null)
+            {
+                return nodesErr;
+            }
+
             string upErr = TryParseUp(args, out int? up);
             if (upErr != null)
             {
                 return upErr;
+            }
+
+            if (kind != ChannelKind.Browser && nodes)
+            {
+                return "nodes 只用于浏览器局部截图";
+            }
+
+            if (nodes && !hasRef)
+            {
+                return "nodes 需要和 ref 一起传";
             }
 
             if (kind != ChannelKind.Browser && (hasRef || up.HasValue))
@@ -513,6 +529,7 @@ namespace WordAddIn1
             }
 
             string refId = HasNonEmpty(args, "ref") ? Convert.ToString(args["ref"]).Trim() : null;
+            TryParseNodes(args, out bool nodes);
             BrowserCaptureResult result;
             if (string.IsNullOrEmpty(refId))
             {
@@ -521,9 +538,9 @@ namespace WordAddIn1
             else
             {
                 TryParseUp(args, out int? up);
-                result = await BrowserHostAdapter
-                    .CaptureLocalAsync(browser, refId, up)
-                    .ConfigureAwait(true);
+                result = nodes
+                    ? await BrowserHostAdapter.CaptureNodesAsync(browser, refId, up).ConfigureAwait(true)
+                    : await BrowserHostAdapter.CaptureLocalAsync(browser, refId, up).ConfigureAwait(true);
             }
 
             if (!result.Success)
@@ -531,15 +548,19 @@ namespace WordAddIn1
                 return Fail(result.Error ?? "截取可视区失败");
             }
 
-            return OkImage(
-                result.Image,
-                new Dictionary<string, object>
-                {
-                    ["source_kind"] = "browser",
-                    ["channel_id"] = ChannelRegistry.ToPublicId(result.Channel.ChannelId) ?? result.Channel.ChannelId,
-                    ["url"] = result.Url ?? "",
-                    ["title"] = result.Title ?? ""
-                });
+            var extra = new Dictionary<string, object>
+            {
+                ["source_kind"] = "browser",
+                ["channel_id"] = ChannelRegistry.ToPublicId(result.Channel.ChannelId) ?? result.Channel.ChannelId,
+                ["url"] = result.Url ?? "",
+                ["title"] = result.Title ?? ""
+            };
+            if (!string.IsNullOrWhiteSpace(result.Note))
+            {
+                extra["note"] = result.Note;
+            }
+
+            return OkImage(result.Image, extra);
         }
 
         private static ToolResult OkImage(
@@ -558,6 +579,36 @@ namespace WordAddIn1
             data["image_base64"] = Convert.ToBase64String(image.Bytes);
             data["captured_at"] = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz");
             return new ToolResult { Success = true, Data = data };
+        }
+
+        private static string TryParseNodes(IReadOnlyDictionary<string, object> args, out bool value)
+        {
+            value = false;
+            if (args == null || !args.ContainsKey("nodes") || args["nodes"] == null)
+            {
+                return null;
+            }
+
+            object raw = args["nodes"];
+            if (raw is bool flag)
+            {
+                value = flag;
+                return null;
+            }
+
+            string text = Convert.ToString(raw)?.Trim();
+            if (string.IsNullOrEmpty(text) || text.Equals("false", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            if (text.Equals("true", StringComparison.OrdinalIgnoreCase))
+            {
+                value = true;
+                return null;
+            }
+
+            return "nodes 须为 true";
         }
 
         private static string TryParseUp(IReadOnlyDictionary<string, object> args, out int? value)

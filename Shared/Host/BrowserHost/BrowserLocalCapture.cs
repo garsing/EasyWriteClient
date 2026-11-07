@@ -22,24 +22,41 @@ namespace WordAddIn1.BrowserHost
             string refId,
             int? up)
         {
+            LocalPlate plate = await CapturePlateAsync(cdp, channel, refId, up, collectNodes: false)
+                .ConfigureAwait(true);
+            if (plate.Error != null)
+            {
+                return BrowserCaptureResult.Fail(plate.Error);
+            }
+
+            return FinishImage(cdp, channel, plate.Jpeg, null);
+        }
+
+        internal static async Task<LocalPlate> CapturePlateAsync(
+            IBrowserCdp cdp,
+            BrowserChannel channel,
+            string refId,
+            int? up,
+            bool collectNodes)
+        {
             if (cdp == null || channel == null)
             {
-                return BrowserCaptureResult.Fail("无浏览器渠道");
+                return LocalPlate.Fail("无浏览器渠道");
             }
 
             if (up.HasValue && up.Value < 1)
             {
-                return BrowserCaptureResult.Fail("up 须为从 1 起的正整数");
+                return LocalPlate.Fail("up 须为从 1 起的正整数");
             }
 
             if (!BrowserRefStore.TryGet(channel.ChannelId, refId, out BrowserRefEntry entry) || entry == null)
             {
-                return BrowserCaptureResult.Fail(StaleRef);
+                return LocalPlate.Fail(StaleRef);
             }
 
             if (entry.IsScriptDialog)
             {
-                return BrowserCaptureResult.Fail(StaleRef);
+                return LocalPlate.Fail(StaleRef);
             }
 
             BrowserPrintedAncestor ancestor;
@@ -48,20 +65,20 @@ namespace WordAddIn1.BrowserHost
                 ancestor = OwnBox(entry);
                 if (ancestor == null)
                 {
-                    return BrowserCaptureResult.Fail(NoRegion);
+                    return LocalPlate.Fail(NoRegion);
                 }
             }
             else
             {
                 if (entry.PrintedAncestors == null || entry.PrintedAncestors.Count < up.Value)
                 {
-                    return BrowserCaptureResult.Fail(NotEnough);
+                    return LocalPlate.Fail(NotEnough);
                 }
 
                 ancestor = entry.PrintedAncestors[up.Value - 1];
                 if (ancestor == null || !ancestor.HasBox)
                 {
-                    return BrowserCaptureResult.Fail(NoRegion);
+                    return LocalPlate.Fail(NoRegion);
                 }
             }
 
@@ -72,17 +89,18 @@ namespace WordAddIn1.BrowserHost
                 objectId = await ResolveObjectAsync(cdp, sessionId, ancestor).ConfigureAwait(true);
                 if (string.IsNullOrEmpty(objectId))
                 {
-                    return BrowserCaptureResult.Fail(NoRegion);
+                    return LocalPlate.Fail(NoRegion);
                 }
 
                 JObject box = await CallOnAsync(cdp, sessionId, objectId, MeasureFn, null).ConfigureAwait(true);
                 if (!BoxOk(box))
                 {
-                    return BrowserCaptureResult.Fail(NoRegion);
+                    return LocalPlate.Fail(NoRegion);
                 }
 
                 bool scrolled = false;
                 byte[] jpeg = null;
+                JArray items = null;
                 try
                 {
                     if (box.Value<bool?>("clipped") == true)
@@ -92,14 +110,25 @@ namespace WordAddIn1.BrowserHost
                         string token = marked?.Value<string>("token");
                         if (string.IsNullOrEmpty(token))
                         {
-                            return BrowserCaptureResult.Fail(NoRegion);
+                            return LocalPlate.Fail(NoRegion);
                         }
 
                         box = await CallOnAsync(cdp, sessionId, objectId, MeasureFn, null).ConfigureAwait(true);
                         if (!BoxOk(box) || box.Value<bool?>("clipped") == true)
                         {
-                            return BrowserCaptureResult.Fail(NoRegion);
+                            return LocalPlate.Fail(NoRegion);
                         }
+                    }
+
+                    if (collectNodes)
+                    {
+                        JObject listed = await CallOnAsync(cdp, sessionId, objectId, ListFn, null).ConfigureAwait(true);
+                        if (listed.Value<bool?>("ok") != true)
+                        {
+                            return LocalPlate.Fail(NoRegion);
+                        }
+
+                        items = listed["items"] as JArray ?? new JArray();
                     }
 
                     BrowserFrameOrigin.Offset origin = await BrowserFrameOrigin
@@ -146,19 +175,21 @@ namespace WordAddIn1.BrowserHost
 
                 if (jpeg == null || jpeg.Length == 0)
                 {
-                    return BrowserCaptureResult.Fail(NoRegion);
+                    return LocalPlate.Fail(NoRegion);
                 }
 
-                using (var stream = new MemoryStream(jpeg))
-                using (var bitmap = new Bitmap(stream))
+                return new LocalPlate
                 {
-                    ImageCaptureCompressor.CompressedImage image = ImageCaptureCompressor.Compress(bitmap);
-                    return BrowserCaptureResult.Ok(channel, cdp.CurrentUrl, cdp.CurrentTitle, image);
-                }
+                    Jpeg = jpeg,
+                    CssW = box.Value<double?>("w") ?? 0,
+                    CssH = box.Value<double?>("h") ?? 0,
+                    Items = items,
+                    Entry = entry
+                };
             }
             catch (Exception ex)
             {
-                return BrowserCaptureResult.Fail(string.IsNullOrWhiteSpace(ex.Message) ? NoRegion : ex.Message);
+                return LocalPlate.Fail(string.IsNullOrWhiteSpace(ex.Message) ? NoRegion : ex.Message);
             }
             finally
             {
@@ -174,6 +205,40 @@ namespace WordAddIn1.BrowserHost
                     {
                     }
                 }
+            }
+        }
+
+        internal static BrowserCaptureResult FinishImage(
+            IBrowserCdp cdp,
+            BrowserChannel channel,
+            byte[] jpeg,
+            string note)
+        {
+            if (jpeg == null || jpeg.Length == 0)
+            {
+                return BrowserCaptureResult.Fail(NoRegion);
+            }
+
+            using (var stream = new MemoryStream(jpeg))
+            using (var bitmap = new Bitmap(stream))
+            {
+                ImageCaptureCompressor.CompressedImage image = ImageCaptureCompressor.Compress(bitmap);
+                return BrowserCaptureResult.Ok(channel, cdp.CurrentUrl, cdp.CurrentTitle, image, note);
+            }
+        }
+
+        internal sealed class LocalPlate
+        {
+            public string Error;
+            public byte[] Jpeg;
+            public double CssW;
+            public double CssH;
+            public JArray Items;
+            public BrowserRefEntry Entry;
+
+            public static LocalPlate Fail(string error)
+            {
+                return new LocalPlate { Error = error ?? NoRegion };
             }
         }
 
@@ -371,6 +436,51 @@ namespace WordAddIn1.BrowserHost
 
             return JObject.Parse(json);
         }
+
+        private const string ListFn =
+            "function(){"
+            + "var root=this;"
+            + "if(root&&root.nodeType===9)root=root.documentElement;"
+            + "if(root&&root.nodeType===3)root=root.parentElement;"
+            + "if(!root||!root.getBoundingClientRect)return{ok:false};"
+            + "var rr=root.getBoundingClientRect();"
+            + "function hidden(el){var st;try{st=getComputedStyle(el);}catch(e){return true;}"
+            + "return !st||st.display==='none'||st.visibility==='hidden';}"
+            + "function svgPart(el){var tag=(el.tagName||'').toLowerCase();"
+            + "return tag==='path'||tag==='rect'||tag==='circle'||tag==='line'||tag==='polyline'||tag==='polygon'||tag==='ellipse';}"
+            + "function skipTag(el){var tag=(el.tagName||'').toLowerCase();"
+            + "return tag==='script'||tag==='style'||tag==='noscript'||tag==='br';}"
+            + "function intersects(r){return r.width>1&&r.height>1&&r.left<rr.right-0.5&&r.right>rr.left+0.5&&r.top<rr.bottom-0.5&&r.bottom>rr.top+0.5;}"
+            + "var all=root.querySelectorAll?root.querySelectorAll('*'):[];"
+            + "var els=[];"
+            + "for(var i=0;i<all.length;i++){var el=all[i];if(el===root||skipTag(el)||svgPart(el)||hidden(el))continue;"
+            + "var r=el.getBoundingClientRect();if(!intersects(r))continue;els.push(el);}"
+            + "function isWrap(el){var kids=el.children;if(!kids||!kids.length)return false;"
+            + "var minL=1e9,minT=1e9,maxR=-1e9,maxB=-1e9,n=0;"
+            + "for(var k=0;k<kids.length;k++){var c=kids[k];if(skipTag(c)||svgPart(c)||hidden(c))continue;"
+            + "var kb=c.getBoundingClientRect();if(kb.width<=1||kb.height<=1)continue;n++;"
+            + "if(kb.left<minL)minL=kb.left;if(kb.top<minT)minT=kb.top;if(kb.right>maxR)maxR=kb.right;if(kb.bottom>maxB)maxB=kb.bottom;}"
+            + "if(!n)return false;var rb=el.getBoundingClientRect();"
+            + "return Math.abs(rb.left-minL)<2&&Math.abs(rb.top-minT)<2&&Math.abs(rb.right-maxR)<2&&Math.abs(rb.bottom-maxB)<2;}"
+            + "function cssPath(el){var parts=[];var n=el;var guard=0;"
+            + "while(n&&n.nodeType===1&&guard++<40){var tag=String(n.tagName||'').toLowerCase();"
+            + "if(!tag||tag==='html'){parts.unshift('html');break;}var parent=n.parentElement;if(!parent)break;"
+            + "var idx=1;var sib=n;while((sib=sib.previousElementSibling)){if(String(sib.tagName||'').toLowerCase()===tag)idx++;}"
+            + "parts.unshift(tag+':nth-of-type('+idx+')');n=parent;}return parts.join(' > ');}"
+            + "function xpath(el){var parts=[];var n=el;var guard=0;"
+            + "while(n&&n.nodeType===1&&guard++<80){var tag=String(n.tagName||'').toLowerCase();if(!tag)break;"
+            + "if(tag==='html'){parts.unshift('html');break;}var parent=n.parentElement;if(!parent)break;"
+            + "var idx=1;var seen=0;for(var c=parent.firstElementChild;c;c=c.nextElementSibling){"
+            + "if(String(c.tagName||'').toLowerCase()===tag){seen++;if(c===n)idx=seen;}}"
+            + "parts.unshift(tag+'['+idx+']');n=parent;}return parts.length?('/'+parts.join('/')):'';}"
+            + "function textOf(el){var t=String(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim();"
+            + "if(!t||t.length>24)return '';"
+            + "for(var i=0;i<t.length;i++){var c=t.charCodeAt(i);if(c>=0xE000&&c<=0xF8FF)return '';}return t;}"
+            + "var items=[];"
+            + "for(var j=0;j<els.length;j++){var el=els[j];if(isWrap(el))continue;var b=el.getBoundingClientRect();"
+            + "items.push({x:b.left-rr.left,y:b.top-rr.top,w:b.width,h:b.height,text:textOf(el),css:cssPath(el),xpath:xpath(el)});}"
+            + "return{ok:true,items:items};"
+            + "}";
 
         private const string MeasureFn =
             "function(){"
