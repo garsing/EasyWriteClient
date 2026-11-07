@@ -792,6 +792,7 @@ namespace WordAddIn1.BrowserHost
             await BrowserAccessibleNameFill
                 .FillTemporalValuesAsync(cdp, built, ax.SessionId)
                 .ConfigureAwait(true);
+            await BrowserInteractEngine.StampXPathsAsync(cdp, built.Refs.Values).ConfigureAwait(true);
             BrowserRefAlign.Apply(channel.ChannelId, built);
             channel.UpdatePage(cdp.CurrentUrl, cdp.CurrentTitle, true);
 

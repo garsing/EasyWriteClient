@@ -1575,7 +1575,7 @@ namespace WordAddIn1.BrowserHost
             return objectId;
         }
 
-        private const string AbsoluteXPathJs =
+        private const string LocalXPathJs =
             @"function() {
   function absXPath(start) {
     var parts = [];
@@ -1610,6 +1610,60 @@ namespace WordAddIn1.BrowserHost
   try { return absXPath(this); } catch (e) { return ''; }
 }";
 
+        private const string AbsoluteXPathJs =
+            @"function() {
+  function absXPath(start) {
+    var parts = [];
+    var n = start;
+    var guard = 0;
+    while (n && n.nodeType === 1 && guard++ < 80) {
+      var tag = String(n.tagName || '').toLowerCase();
+      if (!tag) break;
+      if (tag === 'html') { parts.unshift('html'); break; }
+      var parent = n.parentElement;
+      var kids = parent;
+      if (!parent) {
+        var root = n.getRootNode && n.getRootNode();
+        if (root && root.host && root.firstElementChild) {
+          kids = root;
+          parent = root.host;
+        } else break;
+      }
+      var idx = 1;
+      var seen = 0;
+      for (var c = kids.firstElementChild; c; c = c.nextElementSibling) {
+        if (String(c.tagName || '').toLowerCase() === tag) {
+          seen++;
+          if (c === n) idx = seen;
+        }
+      }
+      parts.unshift(tag + '[' + idx + ']');
+      n = parent;
+    }
+    return parts.length ? ('/' + parts.join('/')) : '';
+  }
+  var path = '';
+  try { path = absXPath(this); } catch (e) { return ''; }
+  if (!path) return '';
+  var win = null;
+  try { win = this.ownerDocument && this.ownerDocument.defaultView; } catch (e0) {}
+  var guard = 0;
+  while (win && guard++ < 8) {
+    var frameEl = null;
+    try { frameEl = win.frameElement; } catch (e1) { break; }
+    if (!frameEl) break;
+    var framePath = '';
+    try { framePath = absXPath(frameEl); } catch (e2) { break; }
+    if (!framePath) break;
+    path = framePath + path;
+    var parent = null;
+    try { parent = win.parent; } catch (e3) { break; }
+    if (!parent || parent === win) break;
+    win = parent;
+  }
+  return path;
+}";
+
         internal static async Task StampXPathsAsync(
             IBrowserCdp cdp,
             IEnumerable<BrowserRefEntry> entries)
@@ -1619,6 +1673,7 @@ namespace WordAddIn1.BrowserHost
                 return;
             }
 
+            var prefixCache = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (BrowserRefEntry entry in entries)
             {
                 if (entry == null || !entry.BackendDomNodeId.HasValue || !string.IsNullOrEmpty(entry.XPath))
@@ -1634,10 +1689,22 @@ namespace WordAddIn1.BrowserHost
                         cdp, objectId, AbsoluteXPathJs, null, entry.CdpSessionId).ConfigureAwait(true);
                     var jo = JObject.Parse(json ?? "{}");
                     string path = (string)jo["result"]?["value"] ?? "";
-                    if (path.StartsWith("/html", StringComparison.Ordinal))
+                    if (!path.StartsWith("/html", StringComparison.Ordinal))
                     {
-                        entry.XPath = path;
+                        continue;
                     }
+
+                    if (path.IndexOf("/html", 1, StringComparison.Ordinal) < 0)
+                    {
+                        string prefix = await FrameOwnerPrefixAsync(cdp, entry.FrameId, prefixCache)
+                            .ConfigureAwait(true);
+                        if (!string.IsNullOrEmpty(prefix))
+                        {
+                            path = prefix + path;
+                        }
+                    }
+
+                    entry.XPath = path;
                 }
                 catch
                 {
@@ -1645,18 +1712,110 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
+        internal static async Task<string> FrameOwnerPrefixAsync(
+            IBrowserCdp cdp,
+            string frameId,
+            Dictionary<string, string> cache)
+        {
+            if (cdp == null || string.IsNullOrWhiteSpace(frameId))
+            {
+                return "";
+            }
+
+            if (cache != null && cache.TryGetValue(frameId, out string cached))
+            {
+                return cached ?? "";
+            }
+
+            string prefix = "";
+            try
+            {
+                BrowserFrameMap map = await BrowserFrameResolver.LoadAsync(cdp).ConfigureAwait(true);
+                if (map != null
+                    && (string.IsNullOrEmpty(map.RootFrameId)
+                        || !string.Equals(frameId, map.RootFrameId, StringComparison.Ordinal)))
+                {
+                    var chain = new List<string>();
+                    string id = frameId;
+                    int guard = 0;
+                    while (guard++ < 8 && !string.IsNullOrEmpty(id))
+                    {
+                        if (!string.IsNullOrEmpty(map.RootFrameId)
+                            && string.Equals(id, map.RootFrameId, StringComparison.Ordinal))
+                        {
+                            break;
+                        }
+
+                        if (!map.ParentOf.ContainsKey(id))
+                        {
+                            break;
+                        }
+
+                        chain.Add(id);
+                        id = map.ParentOf[id];
+                    }
+
+                    chain.Reverse();
+                    foreach (string child in chain)
+                    {
+                        string hop = await IframeElementXPathAsync(cdp, child).ConfigureAwait(true);
+                        if (string.IsNullOrEmpty(hop))
+                        {
+                            prefix = "";
+                            break;
+                        }
+
+                        prefix += hop;
+                    }
+                }
+            }
+            catch
+            {
+                prefix = "";
+            }
+
+            if (cache != null)
+            {
+                cache[frameId] = prefix ?? "";
+            }
+
+            return prefix ?? "";
+        }
+
+        private static async Task<string> IframeElementXPathAsync(IBrowserCdp cdp, string frameId)
+        {
+            var payload = new JObject { ["frameId"] = frameId };
+            string ownerJson = await cdp
+                .CallCdpAsync("DOM.getFrameOwner", payload.ToString(Newtonsoft.Json.Formatting.None))
+                .ConfigureAwait(true);
+            JObject owner = JObject.Parse(ownerJson ?? "{}");
+            if (owner["backendNodeId"] == null
+                || !int.TryParse(owner["backendNodeId"].ToString(), out int backend)
+                || backend == 0)
+            {
+                return "";
+            }
+
+            string objectId = await ResolveObjectIdAsync(cdp, backend, null).ConfigureAwait(true);
+            string json = await CallFunctionOnAsync(cdp, objectId, LocalXPathJs, null, null)
+                .ConfigureAwait(true);
+            string path = (string)JObject.Parse(json ?? "{}")["result"]?["value"] ?? "";
+            return path.StartsWith("/html", StringComparison.Ordinal) ? path : "";
+        }
+
         internal static async Task<string> CallFunctionOnAsync(
             IBrowserCdp cdp,
             string objectId,
             string functionDeclaration,
             string argumentsJsonArrayOrNull,
-            string sessionId = null)
+            string sessionId = null,
+            bool returnByValue = true)
         {
             var payload = new JObject
             {
                 ["objectId"] = objectId,
                 ["functionDeclaration"] = functionDeclaration,
-                ["returnByValue"] = true,
+                ["returnByValue"] = returnByValue,
                 ["awaitPromise"] = true
             };
             if (!string.IsNullOrEmpty(argumentsJsonArrayOrNull))

@@ -43,6 +43,9 @@ namespace WordAddIn1.BrowserHost
             int? contextId = await BrowserDomBackend
                 .TryCreateFrameWorldAsync(cdp, plate.Entry.FrameId, sessionId)
                 .ConfigureAwait(true);
+            string framePrefix = await BrowserInteractEngine
+                .FrameOwnerPrefixAsync(cdp, plate.Entry.FrameId, null)
+                .ConfigureAwait(true);
             BrowserRefStore.BeginSheet(channel.ChannelId);
             try
             {
@@ -74,7 +77,7 @@ namespace WordAddIn1.BrowserHost
                     {
                         BackendDomNodeId = backendId,
                         AttachCssPath = string.IsNullOrWhiteSpace(item.Css) ? null : item.Css,
-                        XPath = string.IsNullOrWhiteSpace(item.XPath) ? null : item.XPath,
+                        XPath = QualifyXPath(framePrefix, item.XPath),
                         Name = item.Text,
                         Role = "dom",
                         FrameId = plate.Entry.FrameId,
@@ -98,6 +101,21 @@ namespace WordAddIn1.BrowserHost
 
             byte[] sheet = Compose(plate.Jpeg, plate.CssW, plate.CssH, items);
             return BrowserLocalCapture.FinishImage(cdp, channel, sheet, SheetNote(items));
+        }
+
+        private static string QualifyXPath(string prefix, string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            if (string.IsNullOrEmpty(prefix) || path.IndexOf("/html", 1, StringComparison.Ordinal) >= 0)
+            {
+                return path;
+            }
+
+            return prefix + path;
         }
 
         private static List<NodeItem> ReadItems(JArray raw)
