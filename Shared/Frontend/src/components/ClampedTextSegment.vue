@@ -29,8 +29,20 @@ function normalizeTextContent (text) {
   return String(text).replace(/^\s+|\s+$/g, '').replace(/\n{3,}/g, '\n\n')
 }
 
+// GFM 自动链接用 [^\s<]*，中文和全角标点不算空白，会把网址后面的正文一起吞进 <a>。
+// 在网址和后续非网址字符之间插入发丝空格，让链接停在网址末尾。
+const BARE_URL = /((?:https?:\/\/|ftp:\/\/|www\.)[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+)/g
+
+function splitUrlFromFollowingText (text) {
+  return text.replace(BARE_URL, (url, _match, offset, source) => {
+    const next = source[offset + url.length]
+    if (!next || /[\sA-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]/.test(next)) return url
+    return url + '\u200a'
+  })
+}
+
 const html = computed(() => {
-  const text = normalizeTextContent(props.content)
+  const text = splitUrlFromFollowingText(normalizeTextContent(props.content))
   if (!text) return ''
   try {
     return marked.parse(text)
