@@ -1688,19 +1688,70 @@ namespace WordAddIn1.BrowserHost
                     "DOM.describeNode",
                     new JObject { ["objectId"] = objectId }.ToString(Newtonsoft.Json.Formatting.None),
                     sessionId).ConfigureAwait(true);
-                var node = JObject.Parse(described ?? "{}");
-                JToken id = node["node"]?["backendNodeId"];
-                if (id == null)
-                {
-                    return null;
-                }
-
-                return (int)id;
+                return ReadBackendId(described);
             }
             catch
             {
                 return null;
             }
+        }
+
+        /// <summary>XPath 对不上时，用同一条 CSS 在该 frame 里再取一次节点号。</summary>
+        internal static async Task<int?> BackendIdForCssAsync(
+            IBrowserCdp cdp,
+            string css,
+            string sessionId)
+        {
+            if (cdp == null || string.IsNullOrWhiteSpace(css))
+            {
+                return null;
+            }
+
+            try
+            {
+                string docJson = await cdp.CallCdpAsync("DOM.getDocument", "{\"depth\":0}", sessionId)
+                    .ConfigureAwait(true);
+                int? root = JObject.Parse(docJson ?? "{}")["root"]?.Value<int?>("nodeId");
+                if (!root.HasValue)
+                {
+                    return null;
+                }
+
+                string found = await cdp.CallCdpAsync(
+                    "DOM.querySelector",
+                    new JObject
+                    {
+                        ["nodeId"] = root.Value,
+                        ["selector"] = css
+                    }.ToString(Newtonsoft.Json.Formatting.None),
+                    sessionId).ConfigureAwait(true);
+                int? nodeId = JObject.Parse(found ?? "{}").Value<int?>("nodeId");
+                if (!nodeId.HasValue || nodeId.Value == 0)
+                {
+                    return null;
+                }
+
+                string described = await cdp.CallCdpAsync(
+                    "DOM.describeNode",
+                    new JObject { ["nodeId"] = nodeId.Value }.ToString(Newtonsoft.Json.Formatting.None),
+                    sessionId).ConfigureAwait(true);
+                return ReadBackendId(described);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static int? ReadBackendId(string described)
+        {
+            JToken id = JObject.Parse(described ?? "{}")["node"]?["backendNodeId"];
+            if (id == null || id.Type == JTokenType.Null)
+            {
+                return null;
+            }
+
+            return id.Value<int?>();
         }
 
         internal static async Task<string> CallFunctionOnAsync(

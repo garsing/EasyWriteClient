@@ -51,6 +51,13 @@ namespace WordAddIn1.BrowserHost
                         .ConfigureAwait(true);
                 }
 
+                if (!backendId.HasValue && !string.IsNullOrWhiteSpace(item.Css))
+                {
+                    backendId = await BrowserInteractEngine
+                        .BackendIdForCssAsync(cdp, item.Css, sessionId)
+                        .ConfigureAwait(true);
+                }
+
                 string existing = BrowserRefStore.FindExisting(channel.ChannelId, backendId, item.Css);
                 if (!string.IsNullOrEmpty(existing))
                 {

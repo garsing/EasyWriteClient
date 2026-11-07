@@ -1131,7 +1131,27 @@ namespace WordAddIn1.BrowserHost
 
                     if (!entry.BackendDomNodeId.HasValue)
                     {
-                        return BrowserInteractResult.Fail("该 ref 缺少可操作节点定位，请重新 F_browser_snapshot");
+                        int? resolved = null;
+                        if (!string.IsNullOrWhiteSpace(entry.XPath))
+                        {
+                            resolved = await BrowserInteractEngine
+                                .BackendIdForXPathAsync(form, entry.XPath, entry.CdpSessionId)
+                                .ConfigureAwait(true);
+                        }
+
+                        if (!resolved.HasValue && !string.IsNullOrWhiteSpace(entry.AttachCssPath))
+                        {
+                            resolved = await BrowserInteractEngine
+                                .BackendIdForCssAsync(form, entry.AttachCssPath, entry.CdpSessionId)
+                                .ConfigureAwait(true);
+                        }
+
+                        if (!resolved.HasValue)
+                        {
+                            return BrowserInteractResult.Fail("该 ref 缺少可操作节点定位，请重新 F_browser_snapshot");
+                        }
+
+                        entry.BackendDomNodeId = resolved;
                     }
                 }
 
