@@ -41,11 +41,18 @@ function splitUrlFromFollowingText (text) {
   })
 }
 
+function wrapMarkdownTables (html) {
+  return html.replace(
+    /<table\b[^>]*>[\s\S]*?<\/table>/g,
+    (table) => `<div class="md-table-wrap">${table}</div>`
+  )
+}
+
 const html = computed(() => {
   const text = splitUrlFromFollowingText(normalizeTextContent(props.content))
   if (!text) return ''
   try {
-    return marked.parse(text)
+    return wrapMarkdownTables(marked.parse(text))
   } catch {
     return text
   }
@@ -114,6 +121,56 @@ onUnmounted(() => {
   color: #999;
   scrollbar-width: none;
   -ms-overflow-style: none;
+}
+
+.text-segment-inner :deep(.md-table-wrap) {
+  overflow-x: auto;
+  margin: 10px 0;
+  border: 1px solid #e6e6e6;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.text-segment-inner :deep(table) {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.text-segment-inner :deep(th),
+.text-segment-inner :deep(td) {
+  padding: 12px 16px;
+  border-bottom: 1px solid #ececec;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.text-segment-inner :deep(th) {
+  font-weight: 600;
+  color: #111;
+}
+
+.text-segment-inner :deep(td) {
+  font-weight: 400;
+  color: #222;
+}
+
+.text-segment-inner :deep(tr:last-child td) {
+  border-bottom: none;
+}
+
+.text-segment-inner :deep(th[align='center']),
+.text-segment-inner :deep(td[align='center']) {
+  text-align: center;
+}
+
+.text-segment-inner :deep(th[align='right']),
+.text-segment-inner :deep(td[align='right']) {
+  text-align: right;
 }
 
 .text-segment-inner :deep(a) {
