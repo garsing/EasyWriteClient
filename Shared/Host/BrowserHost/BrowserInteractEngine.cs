@@ -1442,15 +1442,15 @@ namespace WordAddIn1.BrowserHost
     var bb = bar.getBoundingClientRect();
     var vh = window.innerHeight || document.documentElement.clientHeight || 0;
     var cy = tr0.top + tr0.height / 2;
-    var pad = 8;
-    var dy = 0;
-    if (bb.top < vh * 0.5 && bb.bottom > cy - 1) dy = (bb.bottom + pad) - cy;
-    else if (bb.bottom > vh * 0.5 && bb.top < cy + 1) dy = cy - (bb.top - pad);
-    if (!dy) return false;
+    var pad = 12;
+    var scrollDelta = 0;
+    if (bb.top < vh * 0.5 && bb.bottom > cy - 1) scrollDelta = cy - (bb.bottom + pad);
+    else if (bb.bottom > vh * 0.5 && bb.top < cy + 1) scrollDelta = cy - (bb.top - pad);
+    if (!scrollDelta) return false;
     var sc = scrollParent(target);
     if (sc === document.body || sc === document.documentElement || sc === document.scrollingElement)
-      window.scrollBy(0, dy);
-    else sc.scrollTop += dy;
+      window.scrollBy(0, scrollDelta);
+    else sc.scrollTop += scrollDelta;
     return true;
   }
   if (!isHover && t && nudgeOffBar(t)) {
