@@ -262,6 +262,7 @@
       :style="{ top: historyMenu.top + 'px', left: historyMenu.left + 'px' }"
       @mousedown.stop
     >
+      <div v-if="!historyMenu.items.length" class="open-file-history-empty">无智能体操作历史记录</div>
       <button
         v-for="row in historyMenu.items"
         :key="row.timestamp"
@@ -766,8 +767,8 @@ async function handleToggleHistory (event) {
     showCreateFailTip(anchor, e?.message || '读取历史失败')
     return
   }
-  const menuW = 168
-  const menuH = Math.max(36, 8 + 36 * items.length)
+  const menuW = items.length ? 168 : 220
+  const menuH = 8 + 36 * Math.max(items.length, 1)
   let left = anchor.right + 4
   let top = anchor.top
   if (left + menuW > window.innerWidth - 8) {
@@ -1452,7 +1453,18 @@ button.section-header {
 }
 
 .open-file-history-menu {
-  min-width: 148px;
+  min-width: 72px;
+}
+
+.open-file-history-empty {
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.2;
+  text-align: center;
+  color: #9a978f;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
 }
 
 .open-file-history-row {
