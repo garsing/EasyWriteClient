@@ -18,6 +18,10 @@ namespace WordAddIn1.BrowserHost
         private static readonly Dictionary<string, string> LastTree =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>最近一次编号截图写进表里的 ref。快照替换整表后把它们补回去，点得到。</summary>
+        private static readonly Dictionary<string, Dictionary<string, BrowserRefEntry>> SheetRefs =
+            new Dictionary<string, Dictionary<string, BrowserRefEntry>>(StringComparer.OrdinalIgnoreCase);
+
         internal sealed class Stored
         {
             public Dictionary<string, BrowserRefEntry> Map;
@@ -93,13 +97,66 @@ namespace WordAddIn1.BrowserHost
                     return;
                 }
 
-                ByChannel[channelId] = new Stored
+                var stored = new Stored
                 {
                     Map = new Dictionary<string, BrowserRefEntry>(map, StringComparer.OrdinalIgnoreCase),
                     Order = order == null ? new List<string>() : new List<string>(order),
                     ModalRootBackendId = modalRoot,
                     NextSeq = nextSeq < 1 ? 1 : nextSeq
                 };
+                KeepSheet(channelId, stored);
+                ByChannel[channelId] = stored;
+            }
+        }
+
+        /// <summary>新的一次编号截图开始。上一张图的编码不再保留。</summary>
+        public static void BeginSheet(string channelId)
+        {
+            if (string.IsNullOrWhiteSpace(channelId))
+            {
+                return;
+            }
+
+            lock (Gate)
+            {
+                SheetRefs[channelId] = new Dictionary<string, BrowserRefEntry>(StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
+        private static void KeepSheet(string channelId, Stored stored)
+        {
+            Dictionary<string, BrowserRefEntry> sheet;
+            if (stored == null || stored.Map == null
+                || !SheetRefs.TryGetValue(channelId, out sheet) || sheet == null)
+            {
+                return;
+            }
+
+            int max = stored.NextSeq < 1 ? 1 : stored.NextSeq;
+            foreach (KeyValuePair<string, BrowserRefEntry> kv in sheet)
+            {
+                if (string.IsNullOrEmpty(kv.Key) || kv.Value == null || stored.Map.ContainsKey(kv.Key))
+                {
+                    continue;
+                }
+
+                stored.Map[kv.Key] = kv.Value;
+                if (stored.Order == null)
+                {
+                    stored.Order = new List<string>();
+                }
+
+                stored.Order.Add(kv.Key);
+                int n = ParseRefNum(kv.Key);
+                if (n + 1 > max)
+                {
+                    max = n + 1;
+                }
+            }
+
+            if (max > stored.NextSeq)
+            {
+                stored.NextSeq = max;
             }
         }
 
@@ -115,6 +172,7 @@ namespace WordAddIn1.BrowserHost
                 ByChannel.Remove(channelId);
                 XPathToRef.Remove(channelId);
                 LastTree.Remove(channelId);
+                SheetRefs.Remove(channelId);
             }
         }
 
@@ -284,6 +342,15 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 int n = cur.NextSeq < 1 ? 1 : cur.NextSeq;
+                foreach (string key in cur.Map.Keys)
+                {
+                    int have = ParseRefNum(key);
+                    if (have + 1 > n)
+                    {
+                        n = have + 1;
+                    }
+                }
+
                 string id = "e" + n.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 while (cur.Map.ContainsKey(id))
                 {
@@ -299,6 +366,12 @@ namespace WordAddIn1.BrowserHost
 
                 cur.Order.Add(id);
                 cur.NextSeq = n + 1;
+                Dictionary<string, BrowserRefEntry> sheet;
+                if (SheetRefs.TryGetValue(channelId, out sheet) && sheet != null)
+                {
+                    sheet[id] = entry;
+                }
+
                 return id;
             }
         }

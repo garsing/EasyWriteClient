@@ -40,6 +40,7 @@ namespace WordAddIn1.BrowserHost
             string sessionId = string.IsNullOrWhiteSpace(plate.Entry.CdpSessionId)
                 ? null
                 : plate.Entry.CdpSessionId;
+            BrowserRefStore.BeginSheet(channel.ChannelId);
             foreach (NodeItem item in items)
             {
                 int? backendId = null;
@@ -84,7 +85,7 @@ namespace WordAddIn1.BrowserHost
             }
 
             byte[] sheet = Compose(plate.Jpeg, plate.CssW, plate.CssH, items);
-            return BrowserLocalCapture.FinishImage(cdp, channel, sheet, null);
+            return BrowserLocalCapture.FinishImage(cdp, channel, sheet, SheetNote(items));
         }
 
         private static List<NodeItem> ReadItems(JArray raw)
@@ -136,7 +137,7 @@ namespace WordAddIn1.BrowserHost
                 using (var g = Graphics.FromImage(overview))
                 {
                     g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-                    using (var font = LabelFont(11f, bold: true))
+                    using (var font = LabelFont(18f, bold: true))
                     using (var textBrush = new SolidBrush(Color.FromArgb(192, 57, 43)))
                     using (var fill = new SolidBrush(Color.White))
                     using (var pen = new Pen(Color.FromArgb(192, 57, 43), 2f))
@@ -256,6 +257,30 @@ namespace WordAddIn1.BrowserHost
                     }
                 }
             }
+        }
+
+        private static string SheetNote(List<NodeItem> items)
+        {
+            List<SheetRow> rows = GroupRows(items);
+            var lines = new List<string>();
+            foreach (SheetRow row in rows)
+            {
+                foreach (NodeItem item in row.Items)
+                {
+                    if (!string.IsNullOrEmpty(item.RefId))
+                    {
+                        lines.Add(RowLabel(item, row));
+                    }
+                }
+            }
+
+            if (lines.Count == 0)
+            {
+                return null;
+            }
+
+            return "这些编码已在当前引用表，直接点，不要另起一套，也不要按画面上的小字改号：\n"
+                + string.Join("\n", lines);
         }
 
         private static string RowLabel(NodeItem item, SheetRow row)
