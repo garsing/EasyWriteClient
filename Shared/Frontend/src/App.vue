@@ -23,6 +23,7 @@
       @select="handleDesktopSelectTask"
       @select-open-file="handleSelectOpenFile"
       @load-more="loadMoreTasks"
+      @refresh-open-files="applyOpenFiles"
     />
     <div
       class="chat-container"
@@ -276,6 +277,10 @@ function handleSelectOpenFile (item) {
 
 function handleRemoveSelectedOpenFile (id) {
   selectedOpenFiles.value = selectedOpenFiles.value.filter((x) => x.id !== id)
+}
+
+function applyOpenFiles (items) {
+  if (Array.isArray(items)) openFiles.value = items
 }
 
 async function refreshOpenFiles () {

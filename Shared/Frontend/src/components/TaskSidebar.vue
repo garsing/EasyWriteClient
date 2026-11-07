@@ -61,16 +61,34 @@
 
     <!-- 新建任务与历史任务之间：打开文件（只读列表） -->
     <div v-if="!collapsed" class="open-files-section">
-      <button
-        type="button"
-        class="section-header"
-        :aria-expanded="openFilesExpanded"
-        :title="openFilesExpanded ? '收起打开文件' : '展开打开文件'"
-        @click="openFilesExpanded = !openFilesExpanded"
-      >
-        <span class="section-title">打开文件（{{ openFilesCount }}）</span>
-        <span class="section-chevron" :class="{ open: openFilesExpanded }" aria-hidden="true">›</span>
-      </button>
+      <div class="section-header">
+        <button
+          type="button"
+          class="section-header-toggle"
+          :aria-expanded="openFilesExpanded"
+          :title="openFilesExpanded ? '收起打开文件' : '展开打开文件'"
+          @click="openFilesExpanded = !openFilesExpanded"
+        >
+          <span class="section-title">打开文件（{{ openFilesCount }}）</span>
+        </button>
+        <button
+          type="button"
+          class="open-files-refresh"
+          title="重新检测已打开的文件"
+          aria-label="刷新打开文件"
+          :disabled="refreshingOpenFiles"
+          @click="handleRefreshOpenFiles"
+        >{{ refreshingOpenFiles ? '检测中' : '刷新' }}</button>
+        <button
+          type="button"
+          class="section-chevron-btn"
+          :aria-expanded="openFilesExpanded"
+          :aria-label="openFilesExpanded ? '收起打开文件' : '展开打开文件'"
+          @click="openFilesExpanded = !openFilesExpanded"
+        >
+          <span class="section-chevron" :class="{ open: openFilesExpanded }" aria-hidden="true">›</span>
+        </button>
+      </div>
 
       <div class="open-files-list-clip" :class="{ open: openFilesExpanded }">
         <div class="open-files-list-clip-inner">
@@ -282,7 +300,7 @@ const props = defineProps({
   error: { type: String, default: '' }
 })
 
-const emit = defineEmits(['toggle', 'new-task', 'select', 'select-open-file', 'load-more'])
+const emit = defineEmits(['toggle', 'new-task', 'select', 'select-open-file', 'load-more', 'refresh-open-files'])
 
 const { sendMessage, onMessage } = useWebViewBridge()
 
@@ -290,6 +308,7 @@ const { sendMessage, onMessage } = useWebViewBridge()
 const tasksExpanded = ref(true)
 /** 打开文件列表是否展开；默认展开，不持久化 */
 const openFilesExpanded = ref(true)
+const refreshingOpenFiles = ref(false)
 /** 应用分组展开态：key → boolean；缺省视为展开 */
 const appGroupExpanded = ref({})
 
@@ -363,6 +382,20 @@ const createMenu = ref({
 
 let createFailTipTimer = null
 const CREATE_FAIL_TIP_MS = 2500
+
+async function handleRefreshOpenFiles () {
+  if (refreshingOpenFiles.value) return
+  refreshingOpenFiles.value = true
+  try {
+    const res = await sendMessage('refreshOpenFiles', {})
+    const items = res?.items ?? res?.data?.items
+    if (Array.isArray(items)) emit('refresh-open-files', items)
+  } catch (e) {
+    console.warn('[TaskSidebar] 刷新打开文件失败:', e?.message || e)
+  } finally {
+    refreshingOpenFiles.value = false
+  }
+}
 
 function onTaskListScroll (e) {
   if (!props.hasMore || props.loadingMore || props.loading) return
@@ -901,22 +934,79 @@ async function handleOpenSettings () {
 .section-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 4px;
   width: 100%;
   margin: 0;
+  padding: 4px 6px 4px 10px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+button.section-header {
+  justify-content: space-between;
   border: none;
   background: transparent;
   padding: 8px 10px 6px;
-  flex-shrink: 0;
-  user-select: none;
   cursor: pointer;
   border-radius: 6px;
   font: inherit;
   color: inherit;
 }
 
-.section-header:hover {
+button.section-header:hover {
   background: rgba(0, 0, 0, 0.04);
+}
+
+.section-header-toggle,
+.section-chevron-btn,
+.open-files-refresh {
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.section-header-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 4px 0;
+  text-align: left;
+  border-radius: 6px;
+}
+
+.section-chevron-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 6px;
+}
+
+.section-header-toggle:hover,
+.section-chevron-btn:hover,
+.open-files-refresh:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.open-files-refresh {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b6963;
+}
+
+.open-files-refresh:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .section-title {

@@ -571,6 +571,28 @@ namespace EasyWriteClient.Desktop
                     : Array.Empty<object>();
                 return Task.FromResult<object>(new { items });
             });
+            _bridge.RegisterHandler("refreshOpenFiles", _ =>
+            {
+                try
+                {
+                    _openFilesMonitor?.TryAttachNow();
+                    var items = _openFilesMonitor != null
+                        ? _openFilesMonitor.GetFrontendSnapshot()
+                        : Array.Empty<object>();
+                    return Task.FromResult<object>(new { success = true, items });
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        "[DesktopChatSurface] refreshOpenFiles: " + ex.Message);
+                    return Task.FromResult<object>(new
+                    {
+                        success = false,
+                        message = ex.Message,
+                        items = Array.Empty<object>()
+                    });
+                }
+            });
             _bridge.RegisterHandler("openContainingFolder", HandleOpenContainingFolderAsync);
             _bridge.RegisterHandler("createOpenFile", HandleCreateOpenFileAsync);
             _bridge.RegisterHandler("openUrlInYiWriteBrowser", HandleOpenUrlInYiWriteBrowserAsync);
