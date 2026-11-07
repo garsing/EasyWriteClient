@@ -12,6 +12,12 @@ namespace WordAddIn1.BrowserHost
         private static readonly Dictionary<string, Stored> ByChannel =
             new Dictionary<string, Stored>(StringComparer.OrdinalIgnoreCase);
 
+        private static readonly Dictionary<string, Dictionary<string, string>> XPathToRef =
+            new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+
+        private static readonly Dictionary<string, string> LastTree =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         internal sealed class Stored
         {
             public Dictionary<string, BrowserRefEntry> Map;
@@ -107,7 +113,116 @@ namespace WordAddIn1.BrowserHost
             lock (Gate)
             {
                 ByChannel.Remove(channelId);
+                XPathToRef.Remove(channelId);
+                LastTree.Remove(channelId);
             }
+        }
+
+        /// <summary>已发号的绝对 XPath。不跟当前树的 ref 表一起换掉。</summary>
+        public static bool TryIssued(string channelId, string xpath, out string refId)
+        {
+            refId = null;
+            if (string.IsNullOrWhiteSpace(channelId) || string.IsNullOrWhiteSpace(xpath))
+            {
+                return false;
+            }
+
+            lock (Gate)
+            {
+                Dictionary<string, string> map;
+                if (!XPathToRef.TryGetValue(channelId, out map) || map == null)
+                {
+                    return false;
+                }
+
+                return map.TryGetValue(xpath, out refId) && !string.IsNullOrEmpty(refId);
+            }
+        }
+
+        public static void RememberIssued(string channelId, string xpath, string refId)
+        {
+            if (string.IsNullOrWhiteSpace(channelId)
+                || string.IsNullOrWhiteSpace(xpath)
+                || string.IsNullOrWhiteSpace(refId))
+            {
+                return;
+            }
+
+            lock (Gate)
+            {
+                Dictionary<string, string> map;
+                if (!XPathToRef.TryGetValue(channelId, out map) || map == null)
+                {
+                    map = new Dictionary<string, string>(StringComparer.Ordinal);
+                    XPathToRef[channelId] = map;
+                }
+
+                map[xpath] = refId;
+            }
+        }
+
+        public static int NextIssuedSeq(string channelId)
+        {
+            int max = 0;
+            lock (Gate)
+            {
+                Dictionary<string, string> map;
+                if (string.IsNullOrWhiteSpace(channelId)
+                    || !XPathToRef.TryGetValue(channelId, out map)
+                    || map == null)
+                {
+                    return 1;
+                }
+
+                foreach (string id in map.Values)
+                {
+                    int n = ParseRefNum(id);
+                    if (n > max)
+                    {
+                        max = n;
+                    }
+                }
+            }
+
+            return max + 1;
+        }
+
+        public static void RememberTree(string channelId, string tree)
+        {
+            if (string.IsNullOrWhiteSpace(channelId) || string.IsNullOrEmpty(tree))
+            {
+                return;
+            }
+
+            lock (Gate)
+            {
+                LastTree[channelId] = tree;
+            }
+        }
+
+        public static bool TryLastTree(string channelId, out string tree)
+        {
+            tree = null;
+            if (string.IsNullOrWhiteSpace(channelId))
+            {
+                return false;
+            }
+
+            lock (Gate)
+            {
+                return LastTree.TryGetValue(channelId, out tree) && !string.IsNullOrEmpty(tree);
+            }
+        }
+
+        private static int ParseRefNum(string id)
+        {
+            if (string.IsNullOrEmpty(id) || id.Length < 2 || (id[0] != 'e' && id[0] != 'E'))
+            {
+                return 0;
+            }
+
+            int n;
+            return int.TryParse(id.Substring(1), out n) ? n : 0;
         }
 
         public static bool TryGet(string channelId, string refId, out BrowserRefEntry entry)
@@ -158,6 +273,9 @@ namespace WordAddIn1.BrowserHost
 
         /// <summary>OOPIF 子 session（不对 Agent 暴露）。</summary>
         public string CdpSessionId { get; set; }
+
+        /// <summary>网页 DOM 带序号的绝对 XPath。只用于发号，不出现在树正文里。</summary>
+        public string XPath { get; set; }
 
         /// <summary>重复段标题。没有单独的可点节点。</summary>
         public bool IsRepeat { get; set; }

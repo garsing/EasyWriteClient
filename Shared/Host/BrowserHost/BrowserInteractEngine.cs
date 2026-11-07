@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace WordAddIn1.BrowserHost
@@ -1253,8 +1255,10 @@ namespace WordAddIn1.BrowserHost
       if (!box || box.width <= 1 || box.height <= 1) return;
       var vw = window.innerWidth || document.documentElement.clientWidth || 0;
       var vh = window.innerHeight || document.documentElement.clientHeight || 0;
-      var visible = box.bottom > 0 && box.right > 0 && box.top < vh && box.left < vw;
-      if (!visible) el.scrollIntoView({block:'nearest', inline:'nearest'});
+      var cx = box.left + box.width / 2;
+      var cy = box.top + box.height / 2;
+      var centerIn = cx > 0 && cy > 0 && cx < vw && cy < vh;
+      if (!centerIn) el.scrollIntoView({block:'nearest', inline:'nearest'});
     } catch (eSc) {}
   }
 
@@ -1397,12 +1401,73 @@ namespace WordAddIn1.BrowserHost
         : '点击被挡住：目标没有可点区域。'
     };
   }
+  function barOf(el) {
+    var n = el;
+    var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    for (var i = 0; n && n.nodeType === 1 && i < 8; i++) {
+      var st = null;
+      try { st = window.getComputedStyle(n); } catch (eB) { break; }
+      var pos = st ? st.position : '';
+      if (pos === 'fixed' || pos === 'sticky') {
+        var b = n.getBoundingClientRect();
+        if (b.width > vw * 0.7 && b.height > vh * 0.7) return null;
+        return n;
+      }
+      n = n.parentElement;
+    }
+    return null;
+  }
+  function scrollParent(el) {
+    var p = el && el.parentElement;
+    while (p && p !== document.body && p !== document.documentElement) {
+      var st = null;
+      try { st = window.getComputedStyle(p); } catch (eS) { break; }
+      var oy = st && st.overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight + 1) return p;
+      p = p.parentElement;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+  function nudgeOffBar(target) {
+    if (!target || !target.getBoundingClientRect) return false;
+    var tr0 = target.getBoundingClientRect();
+    var hx = tr0.left + tr0.width / 2;
+    var hy = tr0.top + tr0.height / 2;
+    var hit0 = null;
+    try { hit0 = document.elementFromPoint(hx, hy); } catch (eH0) {}
+    if (!hit0 || isOnTarget(hit0, target)) return false;
+    var bar = barOf(hit0);
+    if (!bar) return false;
+    var bb = bar.getBoundingClientRect();
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    var cy = tr0.top + tr0.height / 2;
+    var pad = 8;
+    var dy = 0;
+    if (bb.top < vh * 0.5 && bb.bottom > cy - 1) dy = (bb.bottom + pad) - cy;
+    else if (bb.bottom > vh * 0.5 && bb.top < cy + 1) dy = cy - (bb.top - pad);
+    if (!dy) return false;
+    var sc = scrollParent(target);
+    if (sc === document.body || sc === document.documentElement || sc === document.scrollingElement)
+      window.scrollBy(0, dy);
+    else sc.scrollTop += dy;
+    return true;
+  }
+  if (!isHover && t && nudgeOffBar(t)) {
+    try { r = t.getBoundingClientRect(); } catch (eR2) {}
+    x = r.left + r.width / 2;
+    y = r.top + r.height / 2;
+  }
   var hit = null;
   try { hit = document.elementFromPoint(x, y); } catch (eH) {}
   if (!hit) {
     return { ok: false, error: '点击被挡住：目标不在当前视口内，请先 scroll 再点。' };
   }
   if (!isOnTarget(hit, t)) {
+    var barNow = barOf(hit);
+    if (barNow) {
+      return { ok: false, error: '点击被挡住：固定条「' + previewHit(barNow) + '」挡住了目标，请滚动后再点。' };
+    }
     return { ok: false, error: '点击被挡住：挡在上面的是「' + previewHit(hit) + '」。请先操作该蒙层（如接受 Cookie / 关闭），再点原来的目标。' };
   }
   var box = Math.round(r.width) + 'x' + Math.round(r.height);
@@ -1508,6 +1573,134 @@ namespace WordAddIn1.BrowserHost
             }
 
             return objectId;
+        }
+
+        private const string AbsoluteXPathJs =
+            @"function() {
+  function absXPath(start) {
+    var parts = [];
+    var n = start;
+    var guard = 0;
+    while (n && n.nodeType === 1 && guard++ < 80) {
+      var tag = String(n.tagName || '').toLowerCase();
+      if (!tag) break;
+      if (tag === 'html') { parts.unshift('html'); break; }
+      var parent = n.parentElement;
+      var kids = parent;
+      if (!parent) {
+        var root = n.getRootNode && n.getRootNode();
+        if (root && root.host && root.firstElementChild) {
+          kids = root;
+          parent = root.host;
+        } else break;
+      }
+      var idx = 1;
+      var seen = 0;
+      for (var c = kids.firstElementChild; c; c = c.nextElementSibling) {
+        if (String(c.tagName || '').toLowerCase() === tag) {
+          seen++;
+          if (c === n) idx = seen;
+        }
+      }
+      parts.unshift(tag + '[' + idx + ']');
+      n = parent;
+    }
+    return parts.length ? ('/' + parts.join('/')) : '';
+  }
+  try { return absXPath(this); } catch (e) { return ''; }
+}";
+
+        internal static async Task StampXPathsAsync(
+            IBrowserCdp cdp,
+            IEnumerable<BrowserRefEntry> entries)
+        {
+            if (cdp == null || entries == null)
+            {
+                return;
+            }
+
+            foreach (BrowserRefEntry entry in entries)
+            {
+                if (entry == null || !entry.BackendDomNodeId.HasValue || !string.IsNullOrEmpty(entry.XPath))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    string objectId = await ResolveObjectIdAsync(
+                        cdp, entry.BackendDomNodeId.Value, entry.CdpSessionId).ConfigureAwait(true);
+                    string json = await CallFunctionOnAsync(
+                        cdp, objectId, AbsoluteXPathJs, null, entry.CdpSessionId).ConfigureAwait(true);
+                    var jo = JObject.Parse(json ?? "{}");
+                    string path = (string)jo["result"]?["value"] ?? "";
+                    if (path.StartsWith("/html", StringComparison.Ordinal))
+                    {
+                        entry.XPath = path;
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        internal static async Task<int?> BackendIdForXPathAsync(
+            IBrowserCdp cdp,
+            string xpath,
+            string sessionId)
+        {
+            if (cdp == null || string.IsNullOrWhiteSpace(xpath))
+            {
+                return null;
+            }
+
+            string expression = "document.evaluate("
+                + JsonConvert.SerializeObject(xpath)
+                + ", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue";
+            string json;
+            try
+            {
+                json = await cdp.CallCdpAsync(
+                    "Runtime.evaluate",
+                    new JObject
+                    {
+                        ["expression"] = expression,
+                        ["returnByValue"] = false
+                    }.ToString(Newtonsoft.Json.Formatting.None),
+                    sessionId).ConfigureAwait(true);
+            }
+            catch
+            {
+                return null;
+            }
+
+            var jo = JObject.Parse(json ?? "{}");
+            string objectId = (string)jo["result"]?["objectId"];
+            if (string.IsNullOrEmpty(objectId))
+            {
+                return null;
+            }
+
+            try
+            {
+                string described = await cdp.CallCdpAsync(
+                    "DOM.describeNode",
+                    new JObject { ["objectId"] = objectId }.ToString(Newtonsoft.Json.Formatting.None),
+                    sessionId).ConfigureAwait(true);
+                var node = JObject.Parse(described ?? "{}");
+                JToken id = node["node"]?["backendNodeId"];
+                if (id == null)
+                {
+                    return null;
+                }
+
+                return (int)id;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         internal static async Task<string> CallFunctionOnAsync(

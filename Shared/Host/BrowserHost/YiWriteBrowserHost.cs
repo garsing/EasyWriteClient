@@ -487,6 +487,31 @@ namespace WordAddIn1.BrowserHost
             }
         }
 
+        private static BrowserSnapshotResult PreviousTreeOrFail(
+            BrowserChannel channel,
+            YiWriteBrowserForm form,
+            string error)
+        {
+            string prev;
+            if (channel != null
+                && BrowserRefStore.TryLastTree(channel.ChannelId, out prev))
+            {
+                return BrowserSnapshotResult.Ok(
+                    channel,
+                    form != null ? form.CurrentUrl : channel.Url,
+                    form != null ? form.CurrentTitle : channel.Title,
+                    "overview",
+                    null,
+                    prev,
+                    false,
+                    null,
+                    null,
+                    "这次没有展开，用的是上一棵树。");
+            }
+
+            return BrowserSnapshotResult.Fail(error ?? "ref 无效或已过期，请重新 F_browser_snapshot");
+        }
+
         /// <summary>读页 snapshot：overview 或按 ref detail。</summary>
         public static async Task<BrowserSnapshotResult> SnapshotAsync(
             BrowserChannel channel,
@@ -534,7 +559,9 @@ namespace WordAddIn1.BrowserHost
             {
                 if (!BrowserRefStore.TryGet(channel.ChannelId, refId.Trim(), out prior) || prior == null)
                 {
-                    return BrowserSnapshotResult.Fail(
+                    return PreviousTreeOrFail(
+                        channel,
+                        form,
                         "ref 无效或已过期，请重新 F_browser_snapshot");
                 }
             }
@@ -647,6 +674,14 @@ namespace WordAddIn1.BrowserHost
 
                 if (!built.Success)
                 {
+                    if (isDetail && !repeatWindow)
+                    {
+                        return PreviousTreeOrFail(
+                            channel,
+                            form,
+                            built.Error ?? "取无障碍树失败");
+                    }
+
                     return BrowserSnapshotResult.Fail(built.Error ?? "取无障碍树失败");
                 }
 
@@ -698,7 +733,10 @@ namespace WordAddIn1.BrowserHost
                         .ConfigureAwait(true);
                 }
 
-                BrowserRefAlign.Apply(channel.ChannelId, built);
+                await BrowserInteractEngine.StampXPathsAsync(form, built.Refs.Values).ConfigureAwait(true);
+                bool detailOnly = isDetail && !repeatWindow;
+                BrowserRefAlign.Apply(channel.ChannelId, built, detailOnly);
+                BrowserRefStore.RememberTree(channel.ChannelId, built.TreeText);
                 channel.UpdatePage(form.CurrentUrl, form.CurrentTitle, channel.Visible);
 
                 return BrowserSnapshotResult.Ok(
@@ -1045,6 +1083,17 @@ namespace WordAddIn1.BrowserHost
                         return BrowserInteractResult.Fail("ref 无效或已过期，请重新 F_browser_snapshot");
                     }
 
+                    if (!string.IsNullOrEmpty(entry.XPath) && entry.BackendDomNodeId.HasValue)
+                    {
+                        int? fresh = await BrowserInteractEngine
+                            .BackendIdForXPathAsync(form, entry.XPath, entry.CdpSessionId)
+                            .ConfigureAwait(true);
+                        if (fresh.HasValue)
+                        {
+                            entry.BackendDomNodeId = fresh;
+                        }
+                    }
+
                     if (BrowserRiskGuard.IsFrameRole(entry))
                     {
                         if (act == "hover")
@@ -1136,6 +1185,21 @@ namespace WordAddIn1.BrowserHost
                     if (risk != null)
                     {
                         return BrowserInteractResult.Fail(risk);
+                    }
+
+                    bool numberBox = string.Equals(entry.Role, "spinbutton", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(probe != null ? probe.InputType : null, "number", StringComparison.OrdinalIgnoreCase);
+                    if (numberBox)
+                    {
+                        await BrowserInteractEngine
+                            .ClickAsync(
+                                form,
+                                entry.BackendDomNodeId.Value,
+                                sessionId,
+                                ConfigManager.GetBrowserClickMode("yiwrite"),
+                                entry.Role,
+                                entry.FrameId)
+                            .ConfigureAwait(true);
                     }
 
                     await BrowserInteractEngine.TypeAsync(form, entry.BackendDomNodeId.Value, text, sessionId)
@@ -1642,6 +1706,7 @@ namespace WordAddIn1.BrowserHost
         public string TruncatedReason { get; private set; }
         /// <summary>overview 实际生效的 DOM 补查规格；detail 为 null；off 表示未补查。</summary>
         public string DomSupplement { get; private set; }
+        public string Message { get; private set; }
 
         public static BrowserSnapshotResult Ok(
             BrowserChannel channel,
@@ -1652,7 +1717,8 @@ namespace WordAddIn1.BrowserHost
             string snapshot,
             bool truncated,
             string truncatedReason,
-            string domSupplement = null)
+            string domSupplement = null,
+            string message = null)
         {
             return new BrowserSnapshotResult
             {
@@ -1666,6 +1732,7 @@ namespace WordAddIn1.BrowserHost
                 Truncated = truncated,
                 TruncatedReason = truncatedReason,
                 DomSupplement = domSupplement,
+                Message = message,
             };
         }
 

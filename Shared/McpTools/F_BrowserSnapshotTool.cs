@@ -113,6 +113,11 @@ namespace WordAddIn1
                         data["dom_supplement"] = result.DomSupplement;
                     }
 
+                    if (!string.IsNullOrEmpty(result.Message))
+                    {
+                        data["message"] = result.Message;
+                    }
+
                     if (result.Truncated && !string.IsNullOrEmpty(result.TruncatedReason))
                     {
                         data["truncated_reason"] = result.TruncatedReason;

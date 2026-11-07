@@ -12,7 +12,7 @@ namespace WordAddIn1.BrowserHost
     {
         private static readonly Regex RefToken = new Regex(@"ref=(e\d+)\b", RegexOptions.CultureInvariant);
 
-        public static void Apply(string channelId, BrowserAxBuildResult built)
+        public static void Apply(string channelId, BrowserAxBuildResult built, bool preserveAbsent = false)
         {
             if (built == null || !built.Success || built.Refs == null)
             {
@@ -21,7 +21,7 @@ namespace WordAddIn1.BrowserHost
 
             string tree = built.TreeText ?? "";
             string focus = built.FocusRef;
-            Apply(channelId, built.Refs, ref tree, built.ModalRootBackendId, ref focus);
+            Apply(channelId, built.Refs, ref tree, built.ModalRootBackendId, ref focus, preserveAbsent);
             built.TreeText = tree;
             built.FocusRef = focus;
         }
@@ -31,7 +31,8 @@ namespace WordAddIn1.BrowserHost
             Dictionary<string, BrowserRefEntry> map,
             ref string treeText,
             int? modalRoot,
-            ref string focusRef)
+            ref string focusRef,
+            bool preserveAbsent = false)
         {
             if (string.IsNullOrWhiteSpace(channelId) || map == null || map.Count == 0)
             {
@@ -46,7 +47,8 @@ namespace WordAddIn1.BrowserHost
             }
 
             BrowserRefStore.Stored prev = BrowserRefStore.Peek(channelId);
-            Dictionary<string, string> remap = BuildRemap(prev, map, order, modalRoot);
+            Dictionary<string, string> remap = BuildRemap(
+                channelId, prev, map, order, modalRoot, preserveAbsent);
             if (remap != null && remap.Count > 0)
             {
                 tree = RewriteTree(tree, remap);
@@ -85,6 +87,22 @@ namespace WordAddIn1.BrowserHost
                     }
                 }
 
+                if (preserveAbsent && prev != null && prev.Map != null)
+                {
+                    IList<string> prevOrder = prev.Order ?? new List<string>();
+                    foreach (string id in prevOrder)
+                    {
+                        BrowserRefEntry old;
+                        if (next.ContainsKey(id) || !prev.Map.TryGetValue(id, out old) || old == null)
+                        {
+                            continue;
+                        }
+
+                        next[id] = old;
+                        nextOrder.Add(id);
+                    }
+                }
+
                 map.Clear();
                 foreach (KeyValuePair<string, BrowserRefEntry> kv in next)
                 {
@@ -110,29 +128,44 @@ namespace WordAddIn1.BrowserHost
                 nextSeq = prev.NextSeq;
             }
 
+            int issuedSeq = BrowserRefStore.NextIssuedSeq(channelId);
+            if (issuedSeq > nextSeq)
+            {
+                nextSeq = issuedSeq;
+            }
+
+            foreach (KeyValuePair<string, BrowserRefEntry> kv in map)
+            {
+                if (kv.Value != null && !string.IsNullOrEmpty(kv.Value.XPath))
+                {
+                    BrowserRefStore.RememberIssued(channelId, kv.Value.XPath, kv.Key);
+                }
+            }
+
             treeText = tree;
             BrowserRefStore.Replace(channelId, map, order, modalRoot, nextSeq);
         }
 
         private static Dictionary<string, string> BuildRemap(
+            string channelId,
             BrowserRefStore.Stored prev,
             Dictionary<string, BrowserRefEntry> map,
             List<string> order,
-            int? modalRoot)
+            int? modalRoot,
+            bool preserveAbsent)
         {
-            if (prev == null || prev.Map == null || prev.Map.Count == 0 || prev.Order == null || prev.Order.Count == 0)
+            if (prev != null
+                && prev.Map != null
+                && prev.Map.Count > 0
+                && (prev.ModalRootBackendId.HasValue != modalRoot.HasValue
+                    || (modalRoot.HasValue && prev.ModalRootBackendId.Value != modalRoot.Value)))
             {
                 return Identity(order);
             }
 
-            if (prev.ModalRootBackendId.HasValue != modalRoot.HasValue
-                || (modalRoot.HasValue && prev.ModalRootBackendId.Value != modalRoot.Value))
-            {
-                return Identity(order);
-            }
-
-            var oldByBackend = UniqueBackend(prev.Map);
-            var oldByCss = UniqueCss(prev.Map);
+            bool hasPrev = prev != null && prev.Map != null && prev.Map.Count > 0 && prev.Order != null;
+            var oldByBackend = hasPrev ? UniqueBackend(prev.Map) : new Dictionary<int, string>();
+            var oldByCss = hasPrev ? UniqueCss(prev.Map) : new Dictionary<string, string>(StringComparer.Ordinal);
             var usedOld = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var remap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (string temp in order)
@@ -143,7 +176,16 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 string oldId = null;
-                if (neu.BackendDomNodeId.HasValue
+                bool xpathOwned = !string.IsNullOrEmpty(neu.XPath);
+                if (xpathOwned)
+                {
+                    if (BrowserRefStore.TryIssued(channelId, neu.XPath, out string byX)
+                        && !usedOld.Contains(byX))
+                    {
+                        oldId = byX;
+                    }
+                }
+                else if (neu.BackendDomNodeId.HasValue
                     && oldByBackend.TryGetValue(neu.BackendDomNodeId.Value, out string byB)
                     && !usedOld.Contains(byB))
                 {
@@ -166,21 +208,31 @@ namespace WordAddIn1.BrowserHost
             }
 
             var oldRest = new List<string>();
-            foreach (string id in prev.Order)
+            if (hasPrev)
             {
-                if (!usedOld.Contains(id) && prev.Map.ContainsKey(id))
+                foreach (string id in prev.Order)
                 {
-                    oldRest.Add(id);
+                    if (!usedOld.Contains(id) && prev.Map.ContainsKey(id))
+                    {
+                        oldRest.Add(id);
+                    }
                 }
             }
 
             var newRest = new List<string>();
             foreach (string temp in order)
             {
-                if (!remap.ContainsKey(temp) && map.ContainsKey(temp))
+                if (remap.ContainsKey(temp) || !map.TryGetValue(temp, out BrowserRefEntry pending))
                 {
-                    newRest.Add(temp);
+                    continue;
                 }
+
+                if (pending != null && !string.IsNullOrEmpty(pending.XPath))
+                {
+                    continue;
+                }
+
+                newRest.Add(temp);
             }
 
             string[] oldKeys = new string[oldRest.Count];
@@ -201,8 +253,31 @@ namespace WordAddIn1.BrowserHost
                 usedOld.Add(oldRest[pair.Item1]);
             }
 
-            int seq = prev.NextSeq > 0 ? prev.NextSeq : MaxNum(prev.Map) + 1;
+            int seq = 1;
+            if (hasPrev && prev.NextSeq > 0)
+            {
+                seq = prev.NextSeq;
+            }
+            else if (hasPrev)
+            {
+                seq = MaxNum(prev.Map) + 1;
+            }
+
+            int issued = BrowserRefStore.NextIssuedSeq(channelId);
+            if (issued > seq)
+            {
+                seq = issued;
+            }
+
             var taken = new HashSet<string>(usedOld, StringComparer.OrdinalIgnoreCase);
+            if (preserveAbsent && hasPrev)
+            {
+                foreach (string id in prev.Map.Keys)
+                {
+                    taken.Add(id);
+                }
+            }
+
             foreach (string temp in order)
             {
                 if (remap.ContainsKey(temp))
