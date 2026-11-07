@@ -78,7 +78,9 @@
           aria-label="刷新打开文件"
           :disabled="refreshingOpenFiles"
           @click="handleRefreshOpenFiles"
-        >{{ refreshingOpenFiles ? '检测中' : '刷新' }}</button>
+        >
+          <img :src="refreshIcon" alt="" class="open-files-refresh-icon" aria-hidden="true" />
+        </button>
         <button
           type="button"
           class="section-chevron-btn"
@@ -279,6 +281,7 @@ import addIcon from '../assets/images/add.png'
 import knowledgeBaseIcon from '../assets/images/knowledge_base.png'
 import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
 import userIcon from '../assets/images/avatar.png'
+import refreshIcon from '../assets/images/refresh.png'
 import { openFileSelectionKey } from '../utils/selectedOpenFiles.js'
 import { listPersistentOpenFileGroups, resolveOpenFileAppGroupKey, resolveOpenFileTypeIcon } from '../utils/openFileAppIcon.js'
 
@@ -996,17 +999,29 @@ button.section-header:hover {
 
 .open-files-refresh {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
   margin: 0;
-  padding: 2px 6px;
+  padding: 0;
   border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: #6b6963;
+}
+
+.open-files-refresh-icon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  display: block;
 }
 
 .open-files-refresh:disabled {
   cursor: default;
-  opacity: 0.6;
+}
+
+.open-files-refresh:disabled .open-files-refresh-icon {
+  opacity: 0.45;
 }
 
 .section-title {
