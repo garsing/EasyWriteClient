@@ -20,6 +20,7 @@ namespace BrowserNavigateTest
             CompileEmpty(run);
             CompileMissing(run);
             CompileMix(run);
+            CompileDedupe(run);
             CompileKeepsBadItem(run);
             MsgAllOk(run);
             MsgPartial(run);
@@ -33,7 +34,7 @@ namespace BrowserNavigateTest
             Console.WriteLine("正式用例 通过 " + run.CasesPassed
                 + "  失败 " + run.CasesFailed
                 + "  跳过 " + run.CasesSkipped
-                + "  （目标 12）");
+                + "  （目标 13）");
             return run.CasesFailed == 0 ? 0 : 1;
         }
 
@@ -157,6 +158,42 @@ namespace BrowserNavigateTest
                     && string.Equals(steps[1].Ref, "e1", StringComparison.Ordinal)
                     && string.Equals(steps[2].Text, "乙", StringComparison.Ordinal),
                 err ?? (ok ? "顶层 action 未并进 actions 前面" : "编译失败"));
+        }
+
+        private static void CompileDedupe(TestRun run)
+        {
+            var args = new Dictionary<string, object>
+            {
+                ["action"] = "click",
+                ["ref"] = "e1",
+                ["actions"] = new List<object>
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["action"] = "click",
+                        ["ref"] = "e1",
+                    },
+                    new Dictionary<string, object>
+                    {
+                        ["action"] = "type",
+                        ["ref"] = "e2",
+                        ["text"] = "乙",
+                    },
+                },
+            };
+            List<BrowserInteractStep> steps;
+            string err;
+            bool ok = BrowserInteractBatch.TryCompile(args, out steps, out err);
+            IntCases.Ok(
+                run,
+                "bat-unit-mix-dedupe",
+                ok
+                    && steps != null
+                    && steps.Count == 2
+                    && string.Equals(steps[0].Action, "click", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(steps[0].Ref, "e1", StringComparison.Ordinal)
+                    && string.Equals(steps[1].Text, "乙", StringComparison.Ordinal),
+                err ?? (ok ? "相同一步被加了两次" : "编译失败"));
         }
 
         private static void CompileKeepsBadItem(TestRun run)

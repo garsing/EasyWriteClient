@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using WordAddIn1;
+using WordAddIn1.PresentationHost;
 
 namespace ReadFileToolTest
 {
@@ -344,10 +346,392 @@ namespace ReadFileToolTest
                 }
             }
 
+            if (Want("mi-"))
+            {
+                RunManyImages(run, registry, fx, Want);
+            }
+
             SkipE(run, Want, "rf-chat-short");
             SkipE(run, Want, "rf-chat-long");
             SkipE(run, Want, "rf-brpdf-short");
             SkipE(run, Want, "rf-brpdf-long");
+        }
+
+        private static void RunManyImages(
+            TestRun run,
+            Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> registry,
+            Fixtures fx,
+            Func<string, bool> want)
+        {
+            byte[] png = Convert.FromBase64String(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+            string[] names = { "a.png", "b.png", "c.png", "d.png", "e.png", "f.png", "g.png", "h.png", "i.png", "j.png" };
+            var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < names.Length; i++)
+            {
+                string path = Path.Combine(fx.Dir, names[i]);
+                File.WriteAllBytes(path, png);
+                files[names[i]] = path;
+            }
+
+            string notes = Path.Combine(fx.Dir, "notes.txt");
+            File.WriteAllText(notes, "not-an-image");
+
+            ToolResult Call(Dictionary<string, object> args)
+            {
+                return Program.Call(registry, args);
+            }
+
+            List<string> PathsOf(params string[] keys)
+            {
+                var list = new List<string>();
+                for (int i = 0; i < keys.Length; i++)
+                {
+                    list.Add(keys[i] == "notes.txt" ? notes : files[keys[i]]);
+                }
+
+                return list;
+            }
+
+            if (want("mi-path-one"))
+            {
+                ToolResult r = Call(new Dictionary<string, object> { ["path"] = files["a.png"] });
+                JObject d = Program.Data(r);
+                int edge = Math.Max(d.Value<int?>("width_px") ?? 0, d.Value<int?>("height_px") ?? 0);
+                if (r.Success && d["image_base64"] != null && d["images"] == null && edge > 0 && edge <= 800)
+                {
+                    run.CaseOk("mi-path-one");
+                }
+                else
+                {
+                    run.CaseFail("mi-path-one", r.Success ? "单张形态不对 edge=" + edge : r.Error);
+                }
+            }
+
+            if (want("mi-path-text"))
+            {
+                ToolResult r = Call(new Dictionary<string, object> { ["path"] = notes });
+                JObject d = Program.Data(r);
+                string content = d.Value<string>("content") ?? "";
+                if (r.Success && content.IndexOf("not-an-image", StringComparison.Ordinal) >= 0
+                    && d["images"] == null && d["image_base64"] == null)
+                {
+                    run.CaseOk("mi-path-text");
+                }
+                else
+                {
+                    run.CaseFail("mi-path-text", r.Success ? "文本被当成图" : r.Error);
+                }
+            }
+
+            if (want("mi-paths-two"))
+            {
+                ToolResult r = Call(new Dictionary<string, object> { ["paths"] = PathsOf("a.png", "b.png") });
+                if (ImagesOk(run, "mi-paths-two", r, 2, new[] { "1. a.png", "2. b.png" }, 320, null))
+                {
+                    run.CaseOk("mi-paths-two");
+                }
+            }
+
+            if (want("mi-paths-ten"))
+            {
+                ToolResult r = Call(new Dictionary<string, object>
+                {
+                    ["paths"] = PathsOf("a.png", "b.png", "c.png", "d.png", "e.png", "f.png", "g.png", "h.png", "i.png", "j.png")
+                });
+                if (ImagesOk(run, "mi-paths-ten", r, 9, new[] { "1. a.png", "9. i.png" }, 320, "不能超过 9 张"))
+                {
+                    JObject d = Program.Data(r);
+                    string warning = d.Value<string>("warning") ?? "";
+                    JArray imgs = d["images"] as JArray;
+                    string last = imgs != null && imgs.Count == 9 ? imgs[8].Value<string>("label") : "";
+                    if (warning == "不能超过 9 张" && last == "9. i.png" && (d.ToString().IndexOf("j.png", StringComparison.Ordinal) < 0))
+                    {
+                        run.CaseOk("mi-paths-ten");
+                    }
+                    else
+                    {
+                        run.CaseFail("mi-paths-ten", "warning=" + warning + " last=" + last);
+                    }
+                }
+            }
+
+            if (want("mi-paths-mix"))
+            {
+                ToolResult r = Call(new Dictionary<string, object> { ["paths"] = PathsOf("a.png", "notes.txt", "b.png") });
+                if (ImagesOk(run, "mi-paths-mix", r, 2, new[] { "1. a.png", "2. b.png" }, 320, "路径有非图片"))
+                {
+                    run.CaseOk("mi-paths-mix");
+                }
+            }
+
+            if (want("mi-paths-none"))
+            {
+                ToolResult r = Call(new Dictionary<string, object> { ["paths"] = new List<string> { notes } });
+                string err = r == null ? "" : (r.Error ?? "");
+                if (r != null && !r.Success && err.IndexOf("路径里没有图片", StringComparison.Ordinal) >= 0)
+                {
+                    run.CaseOk("mi-paths-none");
+                }
+                else
+                {
+                    run.CaseFail("mi-paths-none", "success=" + (r != null && r.Success) + " err=" + err);
+                }
+            }
+
+            if (want("mi-paths-merge"))
+            {
+                ToolResult r = Call(new Dictionary<string, object>
+                {
+                    ["path"] = files["c.png"],
+                    ["paths"] = PathsOf("a.png", "b.png")
+                });
+                if (ImagesOk(run, "mi-paths-merge", r, 3, new[] { "1. c.png", "2. a.png", "3. b.png" }, 320, null))
+                {
+                    run.CaseOk("mi-paths-merge");
+                }
+            }
+
+            if (want("mi-paths-dedupe"))
+            {
+                ToolResult r = Call(new Dictionary<string, object>
+                {
+                    ["path"] = files["a.png"],
+                    ["paths"] = PathsOf("a.png", "b.png")
+                });
+                if (ImagesOk(run, "mi-paths-dedupe", r, 2, new[] { "1. a.png", "2. b.png" }, 320, null))
+                {
+                    run.CaseOk("mi-paths-dedupe");
+                }
+            }
+
+            if (want("mi-paths-both-warn"))
+            {
+                var list = PathsOf("a.png", "b.png", "c.png", "d.png", "e.png", "f.png", "g.png", "h.png", "i.png", "j.png");
+                list.Add(notes);
+                ToolResult r = Call(new Dictionary<string, object> { ["paths"] = list });
+                JObject d = Program.Data(r);
+                string warning = d.Value<string>("warning") ?? "";
+                if (r.Success && d.Value<int?>("image_count") == 9
+                    && warning.IndexOf("不能超过 9 张", StringComparison.Ordinal) >= 0
+                    && warning.IndexOf("路径有非图片", StringComparison.Ordinal) >= 0)
+                {
+                    run.CaseOk("mi-paths-both-warn");
+                }
+                else
+                {
+                    run.CaseFail("mi-paths-both-warn", r.Success ? warning : r.Error);
+                }
+            }
+
+            if (want("mi-slide-merge") || want("mi-slide-dedupe"))
+            {
+                if (want("mi-slide-merge"))
+                {
+                    var req = new PresentationManageSlideRequest
+                    {
+                        SlideId = "10",
+                        SlideIds = new[] { "20", "30" }
+                    };
+                    bool ok = req.TryResolveSlideSequence(out string[] seq, out string err);
+                    if (ok && seq != null && seq.Length == 3 && seq[0] == "10" && seq[1] == "20" && seq[2] == "30")
+                    {
+                        run.CaseOk("mi-slide-merge");
+                    }
+                    else
+                    {
+                        run.CaseFail("mi-slide-merge", err ?? string.Join(",", seq ?? new string[0]));
+                    }
+                }
+
+                if (want("mi-slide-dedupe"))
+                {
+                    var req = new PresentationManageSlideRequest
+                    {
+                        SlideId = "20",
+                        SlideIds = new[] { "20", "30" }
+                    };
+                    bool ok = req.TryResolveSlideSequence(out string[] seq, out string err);
+                    if (ok && seq != null && seq.Length == 2 && seq[0] == "20" && seq[1] == "30")
+                    {
+                        run.CaseOk("mi-slide-dedupe");
+                    }
+                    else
+                    {
+                        run.CaseFail("mi-slide-dedupe", err ?? string.Join(",", seq ?? new string[0]));
+                    }
+                }
+            }
+
+            if (want("mi-group-merge") || want("mi-group-only") || want("mi-dup-reject"))
+            {
+                MethodInfo merge = typeof(F_ManagePptShapeTool).GetMethod(
+                    "MergeIds",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+                MethodInfo reject = typeof(F_ManagePptShapeTool).GetMethod(
+                    "TryRejectForeignArgs",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+                if (merge == null || reject == null)
+                {
+                    if (want("mi-group-merge"))
+                    {
+                        run.CaseFail("mi-group-merge", "找不到合并方法");
+                    }
+
+                    if (want("mi-group-only"))
+                    {
+                        run.CaseFail("mi-group-only", "找不到拒绝方法");
+                    }
+
+                    if (want("mi-dup-reject"))
+                    {
+                        run.CaseFail("mi-dup-reject", "找不到拒绝方法");
+                    }
+                }
+                else
+                {
+                    if (want("mi-group-merge"))
+                    {
+                        var ids = (string[])merge.Invoke(null, new object[] { "sid1-s1", new[] { "sid1-s2", "sid1-s3" } });
+                        if (ids != null && ids.Length == 3 && ids[0] == "sid1-s1" && ids[1] == "sid1-s2")
+                        {
+                            run.CaseOk("mi-group-merge");
+                        }
+                        else
+                        {
+                            run.CaseFail("mi-group-merge", ids == null ? "空" : string.Join(",", ids));
+                        }
+                    }
+
+                    if (want("mi-group-only"))
+                    {
+                        var box = new object[]
+                        {
+                            "group",
+                            new Dictionary<string, object> { ["shape_id"] = "sid1-s1" },
+                            null
+                        };
+                        bool accepted = (bool)reject.Invoke(null, box);
+                        string error = box[2] as string ?? "";
+                        if (!accepted && error.IndexOf("单独的 shape_id", StringComparison.Ordinal) >= 0)
+                        {
+                            run.CaseOk("mi-group-only");
+                        }
+                        else
+                        {
+                            run.CaseFail("mi-group-only", error);
+                        }
+                    }
+
+                    if (want("mi-dup-reject"))
+                    {
+                        var box = new object[]
+                        {
+                            "duplicate_group",
+                            new Dictionary<string, object> { ["shape_ids"] = new[] { "sid1-s1" } },
+                            null
+                        };
+                        bool accepted = (bool)reject.Invoke(null, box);
+                        string error = box[2] as string ?? "";
+                        if (!accepted && error.IndexOf("shape_ids", StringComparison.Ordinal) >= 0)
+                        {
+                            run.CaseOk("mi-dup-reject");
+                        }
+                        else
+                        {
+                            run.CaseFail("mi-dup-reject", error);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static bool ImagesOk(
+            TestRun run,
+            string id,
+            ToolResult r,
+            int count,
+            string[] labels,
+            int maxEdge,
+            string warningHas)
+        {
+            if (r == null || !r.Success)
+            {
+                run.CaseFail(id, r == null ? "无回包" : (r.Error ?? "失败"));
+                return false;
+            }
+
+            JObject d = Program.Data(r);
+            if (d["image_base64"] != null)
+            {
+                run.CaseFail(id, "多张仍带顶层 image_base64");
+                return false;
+            }
+
+            JArray imgs = d["images"] as JArray;
+            if (imgs == null || imgs.Count != count || d.Value<int?>("image_count") != count)
+            {
+                run.CaseFail(id, "image_count=" + d.Value<int?>("image_count") + " 张数=" + (imgs == null ? -1 : imgs.Count));
+                return false;
+            }
+
+            int total = 0;
+            for (int i = 0; i < imgs.Count; i++)
+            {
+                JObject one = imgs[i] as JObject;
+                int edge = Math.Max(one.Value<int?>("width_px") ?? 0, one.Value<int?>("height_px") ?? 0);
+                if (edge <= 0 || edge > maxEdge)
+                {
+                    run.CaseFail(id, "长边 " + edge);
+                    return false;
+                }
+
+                string b64 = one.Value<string>("image_base64") ?? "";
+                if (b64.Length < 16)
+                {
+                    run.CaseFail(id, "第 " + (i + 1) + " 张为空");
+                    return false;
+                }
+
+                total += Convert.FromBase64String(b64).Length;
+            }
+
+            if (total > 204800)
+            {
+                run.CaseFail(id, "合计 " + total + " 字节");
+                return false;
+            }
+
+            for (int i = 0; i < labels.Length; i++)
+            {
+                bool found = false;
+                for (int j = 0; j < imgs.Count; j++)
+                {
+                    if (string.Equals(imgs[j].Value<string>("label"), labels[i], StringComparison.Ordinal))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    run.CaseFail(id, "缺少 " + labels[i]);
+                    return false;
+                }
+            }
+
+            if (warningHas != null)
+            {
+                string warning = d.Value<string>("warning") ?? "";
+                if (warning.IndexOf(warningHas, StringComparison.Ordinal) < 0)
+                {
+                    run.CaseFail(id, "warning=" + warning);
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static void SkipE(TestRun run, Func<string, bool> want, string id)

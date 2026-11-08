@@ -516,7 +516,7 @@ namespace PptHtmlContentRoundtripTest
                 || !s.TryApply(ContentHtml.Section(body), out _, out err)
                 || !s.TryReadSearch(out PptHtmlReadResult tree, out err))
             {
-                FailNeeded(run, filters, err, "cap-grid-2x2", "cap-grid-3x3", "cap-grid-group-mix", "cap-grid-order");
+                FailNeeded(run, filters, err, "cap-grid-2x2", "cap-grid-3x3", "cap-grid-group-mix", "cap-grid-order", "cap-grid-merge", "cap-grid-dedupe");
                 return;
             }
 
@@ -565,6 +565,30 @@ namespace PptHtmlContentRoundtripTest
             {
                 var order = new List<string> { idSmall, idBig, idMid };
                 AssertGrid(run, "cap-grid-order", InvokeGrid(ch, order), order, 2, 2);
+            }
+
+            if (Want(filters, "cap-grid-merge"))
+            {
+                var expect = new List<string> { idBig, idSmall, idMid };
+                AssertGrid(
+                    run,
+                    "cap-grid-merge",
+                    InvokeMerged(ch, idBig, new List<string> { idSmall, idMid }),
+                    expect,
+                    0,
+                    0);
+            }
+
+            if (Want(filters, "cap-grid-dedupe"))
+            {
+                var expect = new List<string> { idSmall, idBig, idMid };
+                AssertGrid(
+                    run,
+                    "cap-grid-dedupe",
+                    InvokeMerged(ch, idBig, new List<string> { idSmall, idBig, idMid }),
+                    expect,
+                    0,
+                    0);
             }
         }
 
@@ -889,6 +913,23 @@ namespace PptHtmlContentRoundtripTest
         private static ToolResult InvokeGrid(IOperationChannel channel, List<string> ids)
         {
             return InvokePrivate("CaptureGrid", new object[] { channel, ids });
+        }
+
+        private static ToolResult InvokeMerged(IOperationChannel channel, string shapeId, List<string> shapeIds)
+        {
+            ChannelRegistry.Register(channel, false);
+            var ids = new List<object>();
+            for (int i = 0; i < shapeIds.Count; i++)
+            {
+                ids.Add(shapeIds[i]);
+            }
+
+            return InvokeShapeTool(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["channel_id"] = channel.ChannelId,
+                ["shape_id"] = shapeId,
+                ["shape_ids"] = ids
+            });
         }
 
         private static ToolResult InvokePrivate(string name, object[] args)
