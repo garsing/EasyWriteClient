@@ -508,12 +508,25 @@ namespace PptHtmlContentRoundtripTest
                 return;
             }
 
-            string blob = (GetString(r, "display_contents") ?? "") + "\n" + JsonConvert.SerializeObject(r.Data);
-            if (blob.IndexOf("电力", StringComparison.Ordinal) >= 0)
+            string display = GetString(r, "display_contents") ?? "";
+            if (display.IndexOf("电力", StringComparison.Ordinal) < 0)
             {
-                fails.Add("概览倾倒了正文");
+                fails.Add("概览应含刚写入的正文");
             }
 
+            string slidesJson = "";
+            var data = r.Data as Dictionary<string, object>;
+            if (data != null && data.TryGetValue("slides", out object slidesRaw) && slidesRaw != null)
+            {
+                slidesJson = JsonConvert.SerializeObject(slidesRaw);
+            }
+
+            if (slidesJson.IndexOf("电力", StringComparison.Ordinal) >= 0)
+            {
+                fails.Add("slides JSON 不应抄正文");
+            }
+
+            string blob = display + "\n" + JsonConvert.SerializeObject(r.Data);
             if (blob.IndexOf("<section", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 fails.Add("概览含 <section>");
@@ -544,9 +557,10 @@ namespace PptHtmlContentRoundtripTest
                 fails.Add("应含「页数：3」");
             }
 
-            if (d.IndexOf("| index | slide_id |", StringComparison.Ordinal) < 0)
+            if (d.IndexOf("index=", StringComparison.Ordinal) < 0
+                || d.IndexOf("slide_id=", StringComparison.Ordinal) < 0)
             {
-                fails.Add("应含 index / slide_id 表头");
+                fails.Add("应含 index= / slide_id= 页块");
             }
 
             if (d.IndexOf("slide_id", StringComparison.Ordinal) < 0

@@ -36,8 +36,6 @@ namespace WordAddIn1.PresentationHost
                 return sb.ToString().TrimEnd();
             }
 
-            sb.AppendLine("| index | slide_id |");
-            sb.AppendLine("|------:|---------:|");
             foreach (PresentationSlideInfo slide in result.Slides)
             {
                 if (slide == null)
@@ -45,31 +43,19 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
-                sb.Append("| ")
-                    .Append(slide.Index)
-                    .Append(" | ")
-                    .Append(EscapeCell(slide.SlideId))
-                    .AppendLine(" |");
+                sb.Append("index=").Append(slide.Index);
+                sb.Append(" slide_id=").Append(slide.SlideId ?? "");
+                sb.AppendLine();
+                string body = string.IsNullOrWhiteSpace(slide.PageText)
+                    ? "（无文字）"
+                    : slide.PageText.Trim();
+                sb.AppendLine(body);
+                sb.AppendLine();
             }
 
-            sb.AppendLine();
-            sb.AppendLine("说明：机器主键用 slide_id（SlideID），不要用「第 N 页」当主键。");
+            sb.Append("说明：机器主键用 slide_id（SlideID），不要用「第 N 页」当主键。");
+            sb.Append("要改某一页或取原图，用该 slide_id 调 F_read_ppt_html。");
             return sb.ToString().TrimEnd();
-        }
-
-        private static string EscapeCell(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-            {
-                return "";
-            }
-
-            return text
-                .Replace("\r\n", " ")
-                .Replace('\r', ' ')
-                .Replace('\n', ' ')
-                .Replace('|', '/')
-                .Trim();
         }
     }
 }

@@ -20,6 +20,9 @@ namespace WordAddIn1.PresentationHost
 
         /// <summary>概览不探测；细读页走 HTML。</summary>
         public bool? HasNotes { get; set; }
+
+        /// <summary>概览里这一页的文字。空页由展示层写成「（无文字）」。</summary>
+        public string PageText { get; set; }
     }
 
     public sealed class PresentationContentResult

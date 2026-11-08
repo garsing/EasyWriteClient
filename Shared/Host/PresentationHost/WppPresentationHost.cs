@@ -1236,6 +1236,14 @@ namespace WordAddIn1.PresentationHost
             {
             }
 
+            try
+            {
+                info.PageText = PresentationSlidePlainText.CollectWpp(slide);
+            }
+            catch (Exception)
+            {
+            }
+
             return info;
         }
 
