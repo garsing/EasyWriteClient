@@ -134,8 +134,12 @@ namespace PptHtmlContentRoundtripTest
                 run,
                 filters,
                 "cap-neg-both-fail",
-                Args(shapeId: "sid1-s1", shapeIds: new[] { "sid1-s2" }),
-                "其一");
+                Args(
+                    shapeId: "sid1-s1",
+                    shapeIds: new[] { "sid1-s2" },
+                    extra: "channel_id",
+                    extraVal: "no-such-channel"),
+                "未知 channel_id");
             ExpectFail(run, filters, "cap-neg-slide-id-fail", Args(shapeId: "sid1-s1", extra: "slide_id", extraVal: "1"), "slide_id");
             ExpectFail(run, filters, "cap-neg-page-fail", Args(shapeId: "sid1-s1", extra: "page_number", extraVal: 1), "F_capture");
             ExpectFail(run, filters, "cap-neg-kb-fail", Args(shapeId: "sid1-s1", extra: "storage_doc_uuid", extraVal: "u"), "ppt/wpp");
@@ -694,15 +698,19 @@ namespace PptHtmlContentRoundtripTest
                 fails.Add("成功应有图");
             }
 
-            if (!string.Equals(GetString(r, "capture_mode"), "shape_contact_sheet", StringComparison.Ordinal))
+            if (!string.Equals(GetString(r, "capture_mode"), "shapes", StringComparison.Ordinal))
             {
-                fails.Add("capture_mode 应为 shape_contact_sheet");
+                fails.Add("capture_mode 应为 shapes");
             }
 
-            if (GetInt(r, "grid_cols") != cols || GetInt(r, "grid_rows") != rows)
+            if (GetInt(r, "image_count") != expectIds.Count)
             {
-                fails.Add("网格 " + GetInt(r, "grid_cols") + "x" + GetInt(r, "grid_rows")
-                    + " 期望 " + cols + "x" + rows);
+                fails.Add("image_count=" + GetInt(r, "image_count") + " 期望 " + expectIds.Count);
+            }
+
+            if (HasTopLevelImage(r))
+            {
+                fails.Add("多张不应再带顶层 image_base64");
             }
 
             if (GetInt(r, "cell_count") != expectIds.Count)
@@ -907,7 +915,7 @@ namespace PptHtmlContentRoundtripTest
             }
         }
 
-        private static bool HasImage(ToolResult r)
+        private static bool HasTopLevelImage(ToolResult r)
         {
             if (r == null || r.Data == null)
             {
@@ -921,6 +929,42 @@ namespace PptHtmlContentRoundtripTest
             }
 
             return Convert.ToString(v).Length > 32;
+        }
+
+        private static bool HasImage(ToolResult r)
+        {
+            if (HasTopLevelImage(r))
+            {
+                return true;
+            }
+
+            var d = r != null ? r.Data as Dictionary<string, object> : null;
+            if (d == null || !d.TryGetValue("images", out object raw) || raw == null)
+            {
+                return false;
+            }
+
+            var enumerable = raw as System.Collections.IEnumerable;
+            if (enumerable == null || raw is string)
+            {
+                return false;
+            }
+
+            foreach (object item in enumerable)
+            {
+                var row = item as Dictionary<string, object>;
+                if (row == null || !row.TryGetValue("image_base64", out object b64) || b64 == null)
+                {
+                    continue;
+                }
+
+                if (Convert.ToString(b64).Length > 32)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool HasNoImage(ToolResult r)

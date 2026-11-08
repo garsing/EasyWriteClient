@@ -79,15 +79,35 @@ namespace WordAddIn1.BrowserHost
                     return false;
                 }
 
-                if (rows.Count == 0)
+                string topAction = ReadString(args, "action");
+                if (!string.IsNullOrWhiteSpace(topAction))
                 {
-                    contractError = "actions 不能为空";
-                    return false;
+                    BrowserInteractStep top = ReadStep(args);
+                    bool already = false;
+                    for (int i = 0; i < rows.Count; i++)
+                    {
+                        if (SameStep(top, ReadStep(rows[i])))
+                        {
+                            already = true;
+                            break;
+                        }
+                    }
+
+                    if (!already)
+                    {
+                        steps.Add(top);
+                    }
                 }
 
                 foreach (Dictionary<string, object> row in rows)
                 {
                     steps.Add(ReadStep(row));
+                }
+
+                if (steps.Count == 0)
+                {
+                    contractError = "actions 不能为空";
+                    return false;
                 }
 
                 return true;
@@ -484,6 +504,21 @@ namespace WordAddIn1.BrowserHost
                 Key = ReadString(row, "key"),
                 Option = ReadString(row, "option"),
             };
+        }
+
+        private static bool SameStep(BrowserInteractStep left, BrowserInteractStep right)
+        {
+            if (left == null || right == null)
+            {
+                return false;
+            }
+
+            return string.Equals(left.Action, right.Action, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(left.Ref ?? "", right.Ref ?? "", StringComparison.Ordinal)
+                && string.Equals(left.Text ?? "", right.Text ?? "", StringComparison.Ordinal)
+                && string.Equals(left.Direction ?? "", right.Direction ?? "", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(left.Key ?? "", right.Key ?? "", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(left.Option ?? "", right.Option ?? "", StringComparison.Ordinal);
         }
 
         private static bool TryReadObjectList(

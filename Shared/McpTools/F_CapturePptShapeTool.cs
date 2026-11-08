@@ -35,11 +35,15 @@ namespace WordAddIn1
                         return Fail(idsError);
                     }
 
-                    bool hasSingle = !string.IsNullOrWhiteSpace(shapeId);
-                    bool hasMulti = shapeIds != null && shapeIds.Count > 0;
-                    if (hasSingle == hasMulti)
+                    List<string> merged = MergeShapeIds(shapeId, shapeIds);
+                    if (merged.Count == 0)
                     {
-                        return Fail("请只传 shape_id（单张）或 shape_ids（宫格）其一");
+                        return Fail("请传 shape_id（单张）或 shape_ids（多张）其一");
+                    }
+
+                    if (merged.Count > ImageCaptureCompressor.ContactSheetMaxPages)
+                    {
+                        return Fail("shape_ids 一次最多 9 个，请拆批");
                     }
 
                     if (!ChannelContext.TryResolveChannel(args, out IOperationChannel channel, out string resolveError))
@@ -52,9 +56,9 @@ namespace WordAddIn1
                         return Fail("仅已打开的 ppt/wpp 支持形状截图");
                     }
 
-                    ToolResult captured = hasSingle
-                        ? CaptureSingle(channel, shapeId.Trim())
-                        : CaptureGrid(channel, shapeIds);
+                    ToolResult captured = merged.Count == 1
+                        ? CaptureSingle(channel, merged[0])
+                        : CaptureGrid(channel, merged);
 
                     if (captured == null || !captured.Success)
                     {
@@ -63,16 +67,26 @@ namespace WordAddIn1
 
                     var data = captured.Data as Dictionary<string, object>
                         ?? ToDict(captured.Data);
-                    byte[] bytes = TryGetBytes(data);
-                    string format = data != null && data.ContainsKey("format")
-                        ? Convert.ToString(data["format"])
-                        : "";
-                    ToolResult pathError = await CapturePathWriter
-                        .TryAttachPathAsync(args, bytes, format, data)
-                        .ConfigureAwait(false);
-                    if (pathError != null)
+                    if (data != null && data.ContainsKey("images"))
                     {
-                        return pathError;
+                        if (CapturePathWriter.HasPath(args))
+                        {
+                            return Fail("一次多张不写 path");
+                        }
+                    }
+                    else
+                    {
+                        byte[] bytes = TryGetBytes(data);
+                        string format = data != null && data.ContainsKey("format")
+                            ? Convert.ToString(data["format"])
+                            : "";
+                        ToolResult pathError = await CapturePathWriter
+                            .TryAttachPathAsync(args, bytes, format, data)
+                            .ConfigureAwait(false);
+                        if (pathError != null)
+                        {
+                            return pathError;
+                        }
                     }
 
                     return new ToolResult { Success = true, Data = data };
@@ -198,34 +212,80 @@ namespace WordAddIn1
                 });
             }
 
-            int cols = shapeIds.Count <= 4 ? 2 : 3;
-            int rows = cols;
-            ImageCaptureCompressor.CompressedImage sheet;
+            List<ImageCaptureCompressor.CompressedImage> packed;
             try
             {
-                sheet = ImageCaptureCompressor.ComposeShapeContactSheet(tiles);
+                var raw = new List<byte[]>(tiles.Count);
+                for (int i = 0; i < tiles.Count; i++)
+                {
+                    raw.Add(tiles[i] == null ? null : tiles[i].ImageBytes);
+                }
+
+                packed = ImageCaptureCompressor.CompressSeparate(raw);
             }
             catch (Exception ex)
             {
-                return Fail("拼形状九宫格失败: " + ex.Message);
+                return Fail("多张截图压缩失败: " + ex.Message);
             }
 
-            return OkImage(
-                sheet,
-                new Dictionary<string, object>
+            var images = new List<Dictionary<string, object>>(packed.Count);
+            for (int i = 0; i < packed.Count; i++)
+            {
+                string id = tiles[i].ShapeId ?? "";
+                images.Add(new Dictionary<string, object>
+                {
+                    ["index"] = i + 1,
+                    ["label"] = id,
+                    ["format"] = packed[i].Format,
+                    ["width_px"] = packed[i].Width,
+                    ["height_px"] = packed[i].Height,
+                    ["image_base64"] = Convert.ToBase64String(packed[i].Bytes)
+                });
+            }
+
+            return new ToolResult
+            {
+                Success = true,
+                Data = new Dictionary<string, object>
                 {
                     ["source_kind"] = kind,
                     ["channel_id"] = channelId,
                     ["page_number"] = pageNumber,
                     ["slide_count"] = slideCount,
                     ["slide_id"] = slideIdOut,
-                    ["capture_mode"] = "shape_contact_sheet",
-                    ["layout"] = "contact_sheet",
+                    ["capture_mode"] = "shapes",
                     ["shape_ids"] = echoedIds,
                     ["cell_count"] = echoedIds.Count,
-                    ["grid_cols"] = cols,
-                    ["grid_rows"] = rows
-                });
+                    ["images"] = images,
+                    ["image_count"] = images.Count,
+                    ["captured_at"] = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz")
+                }
+            };
+        }
+
+        private static List<string> MergeShapeIds(string shapeId, List<string> shapeIds)
+        {
+            var merged = new List<string>();
+            if (shapeIds != null)
+            {
+                for (int i = 0; i < shapeIds.Count; i++)
+                {
+                    string id = (shapeIds[i] ?? "").Trim();
+                    if (id.Length > 0)
+                    {
+                        merged.Add(id);
+                    }
+                }
+            }
+
+            string single = (shapeId ?? "").Trim();
+            if (single.Length > 0
+                && !merged.Exists(existing => string.Equals(existing, single, StringComparison.Ordinal)))
+            {
+                merged.Insert(0, single);
+            }
+
+            return merged;
         }
 
         private static string RejectForbiddenArgs(IReadOnlyDictionary<string, object> args)

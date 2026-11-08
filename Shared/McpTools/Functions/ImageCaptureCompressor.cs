@@ -436,6 +436,96 @@ namespace WordAddIn1
             }
         }
 
+        /// <summary>
+        /// 多张独立图：每张长边先收到 320，合计不超过 MaxImageBytes。
+        /// 仍超出就先降 JPEG 质量，再全体再缩小。
+        /// </summary>
+        public static List<CompressedImage> CompressSeparate(IReadOnlyList<byte[]> sources)
+        {
+            if (sources == null || sources.Count == 0)
+            {
+                throw new ArgumentException("没有图片");
+            }
+
+            var bitmaps = new List<Bitmap>(sources.Count);
+            try
+            {
+                for (int i = 0; i < sources.Count; i++)
+                {
+                    Bitmap bmp = DecodeBitmap(sources[i]);
+                    if (bmp == null)
+                    {
+                        throw new InvalidOperationException("无法解码图片");
+                    }
+
+                    bitmaps.Add(bmp);
+                }
+
+                double scale = 1.0;
+                int quality = JpegQualityStart;
+                while (true)
+                {
+                    var encoded = new List<CompressedImage>(bitmaps.Count);
+                    int total = 0;
+                    int cap = Math.Max(1, (int)Math.Round(ContactSheetCellLongEdge * scale));
+                    for (int i = 0; i < bitmaps.Count; i++)
+                    {
+                        Bitmap bmp = bitmaps[i];
+                        int longEdge = Math.Max(bmp.Width, bmp.Height);
+                        int width = bmp.Width;
+                        int height = bmp.Height;
+                        if (longEdge > cap)
+                        {
+                            double fit = (double)cap / longEdge;
+                            width = Math.Max(1, (int)Math.Round(bmp.Width * fit));
+                            height = Math.Max(1, (int)Math.Round(bmp.Height * fit));
+                        }
+
+                        using (Bitmap resized = ResizeBitmap(bmp, width, height))
+                        {
+                            byte[] jpeg = EncodeJpeg(resized, quality);
+                            total += jpeg.Length;
+                            encoded.Add(new CompressedImage
+                            {
+                                Bytes = jpeg,
+                                Format = "jpeg",
+                                Width = resized.Width,
+                                Height = resized.Height
+                            });
+                        }
+                    }
+
+                    if (total <= MaxImageBytes)
+                    {
+                        return encoded;
+                    }
+
+                    if (quality > 55)
+                    {
+                        quality -= 10;
+                        continue;
+                    }
+
+                    if (scale > 0.35)
+                    {
+                        scale *= 0.85;
+                        quality = JpegQualityStart;
+                        continue;
+                    }
+
+                    throw new InvalidOperationException(
+                        "多张图压缩后仍超过大小限制(" + MaxImageBytes + " bytes)");
+                }
+            }
+            finally
+            {
+                for (int i = 0; i < bitmaps.Count; i++)
+                {
+                    bitmaps[i].Dispose();
+                }
+            }
+        }
+
         public static CompressedImage CompressThumb(Bitmap source, int maxLongEdge = 320, int quality = 80)
         {
             if (source == null)

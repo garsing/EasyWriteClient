@@ -28,13 +28,7 @@ namespace WordAddIn1.PresentationHost
             error = null;
             if (SlideIds != null)
             {
-                if (SlideIds.Length == 0)
-                {
-                    error = "slide_ids 不能为空";
-                    return false;
-                }
-
-                var items = new List<string>(SlideIds.Length);
+                var items = new List<string>();
                 for (int i = 0; i < SlideIds.Length; i++)
                 {
                     string id = (SlideIds[i] ?? "").Trim();
@@ -45,6 +39,19 @@ namespace WordAddIn1.PresentationHost
                     }
 
                     items.Add(id);
+                }
+
+                string single = (SlideId ?? "").Trim();
+                if (single.Length > 0
+                    && !items.Exists(existing => string.Equals(existing, single, StringComparison.Ordinal)))
+                {
+                    items.Insert(0, single);
+                }
+
+                if (items.Count == 0)
+                {
+                    error = "slide_ids 不能为空";
+                    return false;
                 }
 
                 sequence = items.ToArray();

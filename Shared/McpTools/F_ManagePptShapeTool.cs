@@ -56,10 +56,9 @@ namespace WordAddIn1
                     };
 
                     if (string.Equals(action, "delete", StringComparison.Ordinal)
-                        && (request.ShapeIds == null || request.ShapeIds.Length == 0)
-                        && !string.IsNullOrWhiteSpace(request.ShapeId))
+                        || string.Equals(action, "group", StringComparison.Ordinal))
                     {
-                        request.ShapeIds = new[] { request.ShapeId };
+                        request.ShapeIds = MergeIds(request.ShapeId, request.ShapeIds);
                     }
 
                     if (string.Equals(action, "duplicate_group", StringComparison.Ordinal))
@@ -156,9 +155,15 @@ namespace WordAddIn1
 
                     return true;
                 case "group":
-                    if (hasSource || hasToSlide || hasShapeId || hasLeft || hasTop || hasWidth || hasHeight)
+                    if (hasSource || hasToSlide || hasLeft || hasTop || hasWidth || hasHeight)
                     {
-                        error = "group 不接受 source_channel_id / to_slide_id / shape_id / left / top / width / height";
+                        error = "group 不接受 source_channel_id / to_slide_id / left / top / width / height";
+                        return false;
+                    }
+
+                    if (hasShapeId && !hasShapeIds)
+                    {
+                        error = "group 不接受单独的 shape_id";
                         return false;
                     }
 
@@ -296,6 +301,31 @@ namespace WordAddIn1
             }
 
             return Convert.ToString(args[key])?.Trim() ?? "";
+        }
+
+        private static string[] MergeIds(string shapeId, string[] shapeIds)
+        {
+            var items = new List<string>();
+            if (shapeIds != null)
+            {
+                for (int i = 0; i < shapeIds.Length; i++)
+                {
+                    string id = (shapeIds[i] ?? "").Trim();
+                    if (id.Length > 0)
+                    {
+                        items.Add(id);
+                    }
+                }
+            }
+
+            string single = (shapeId ?? "").Trim();
+            if (single.Length > 0
+                && !items.Exists(existing => string.Equals(existing, single, StringComparison.Ordinal)))
+            {
+                items.Insert(0, single);
+            }
+
+            return items.Count == 0 ? null : items.ToArray();
         }
 
         private static string[] TryGetStringArray(Dictionary<string, object> args, string key)

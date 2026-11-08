@@ -150,11 +150,13 @@ namespace BrowserNavigateTest
                 "bat-unit-mix-uses-array",
                 ok
                     && steps != null
-                    && steps.Count == 2
-                    && string.Equals(steps[0].Action, "type", StringComparison.OrdinalIgnoreCase)
-                    && string.Equals(steps[0].Ref, "e1", StringComparison.Ordinal)
-                    && string.Equals(steps[1].Text, "乙", StringComparison.Ordinal),
-                err ?? (ok ? "混入参未只用数组" : "编译失败"));
+                    && steps.Count == 3
+                    && string.Equals(steps[0].Action, "click", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(steps[0].Ref, "e9", StringComparison.Ordinal)
+                    && string.Equals(steps[1].Action, "type", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(steps[1].Ref, "e1", StringComparison.Ordinal)
+                    && string.Equals(steps[2].Text, "乙", StringComparison.Ordinal),
+                err ?? (ok ? "顶层 action 未并进 actions 前面" : "编译失败"));
         }
 
         private static void CompileKeepsBadItem(TestRun run)

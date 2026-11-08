@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -34,6 +35,11 @@ namespace WordAddIn1
                     int offset = args != null && args.ContainsKey("offset") && args["offset"] != null
                         ? Convert.ToInt32(args["offset"])
                         : 0;
+
+                    if (args != null && args.ContainsKey("paths"))
+                    {
+                        return await ReadManyImagesAsync(args).ConfigureAwait(false);
+                    }
 
                     if (!FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out string pathError, "path", "filename"))
                     {
@@ -91,6 +97,184 @@ namespace WordAddIn1
                     return new ToolResult { Success = false, Error = "文件读取失败: " + ex.Message };
                 }
             };
+        }
+
+        private static async Task<ToolResult> ReadManyImagesAsync(Dictionary<string, object> args)
+        {
+            if (HasNonDefaultImageReadArgs(args, out string argError))
+            {
+                return new ToolResult { Success = false, Error = argError };
+            }
+
+            if (ReadDetailedFlag(args))
+            {
+                return new ToolResult { Success = false, Error = "读图片不要传 detailed" };
+            }
+
+            if (!TryParsePaths(args, out List<string> listed, out string parseError))
+            {
+                return new ToolResult { Success = false, Error = parseError };
+            }
+
+            string single = FilePathResolver.TryGetArg(args, "path", "filename");
+            var merged = new List<string>(listed);
+            if (!string.IsNullOrWhiteSpace(single))
+            {
+                string one = single.Trim();
+                bool exists = false;
+                for (int i = 0; i < merged.Count; i++)
+                {
+                    if (string.Equals(merged[i], one, StringComparison.OrdinalIgnoreCase))
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+
+                if (!exists)
+                {
+                    merged.Insert(0, one);
+                }
+            }
+
+            if (merged.Count == 0)
+            {
+                return new ToolResult { Success = false, Error = "须提供 path 或 paths" };
+            }
+
+            var images = new List<Dictionary<string, object>>();
+            var raw = new List<byte[]>();
+            var names = new List<string>();
+            bool skippedNonImage = false;
+            for (int i = 0; i < merged.Count; i++)
+            {
+                if (!FilePathResolver.TryResolve(merged[i], out ResolvedFilePath resolved, out string resolveError))
+                {
+                    return new ToolResult { Success = false, Error = resolveError };
+                }
+
+                var read = await FilePathResolver.ReadBytesAsync(resolved).ConfigureAwait(false);
+                if (!read.Success)
+                {
+                    return new ToolResult { Success = false, Error = read.Error };
+                }
+
+                FileReadKind kind = FileReadClassifier.Classify(resolved.LocalPath, read.Bytes);
+                if (kind != FileReadKind.Image)
+                {
+                    skippedNonImage = true;
+                    continue;
+                }
+
+                if (read.Bytes == null || read.Bytes.Length == 0)
+                {
+                    return new ToolResult { Success = false, Error = "无法解码图片: " + resolved.Display };
+                }
+
+                raw.Add(read.Bytes);
+                names.Add(Path.GetFileName(resolved.Display ?? resolved.LocalPath) ?? "");
+            }
+
+            if (raw.Count == 0)
+            {
+                return new ToolResult { Success = false, Error = "路径里没有图片" };
+            }
+
+            bool truncated = raw.Count > ImageCaptureCompressor.ContactSheetMaxPages;
+            if (truncated)
+            {
+                raw.RemoveRange(ImageCaptureCompressor.ContactSheetMaxPages, raw.Count - ImageCaptureCompressor.ContactSheetMaxPages);
+                names.RemoveRange(ImageCaptureCompressor.ContactSheetMaxPages, names.Count - ImageCaptureCompressor.ContactSheetMaxPages);
+            }
+
+            List<ImageCaptureCompressor.CompressedImage> packed;
+            try
+            {
+                packed = ImageCaptureCompressor.CompressSeparate(raw);
+            }
+            catch (Exception ex)
+            {
+                return new ToolResult { Success = false, Error = "无法解码图片: " + ex.Message };
+            }
+
+            for (int i = 0; i < packed.Count; i++)
+            {
+                images.Add(new Dictionary<string, object>
+                {
+                    ["index"] = i + 1,
+                    ["label"] = (i + 1).ToString() + ". " + names[i],
+                    ["format"] = packed[i].Format,
+                    ["width_px"] = packed[i].Width,
+                    ["height_px"] = packed[i].Height,
+                    ["image_base64"] = Convert.ToBase64String(packed[i].Bytes)
+                });
+            }
+
+            var data = new Dictionary<string, object>
+            {
+                ["source_kind"] = "file",
+                ["images"] = images,
+                ["image_count"] = images.Count
+            };
+            var warnings = new List<string>();
+            if (truncated)
+            {
+                warnings.Add("不能超过 9 张");
+            }
+
+            if (skippedNonImage)
+            {
+                warnings.Add("路径有非图片");
+            }
+
+            if (warnings.Count > 0)
+            {
+                data["warning"] = string.Join("；", warnings);
+            }
+
+            return new ToolResult { Success = true, Data = data };
+        }
+
+        private static bool TryParsePaths(
+            Dictionary<string, object> args,
+            out List<string> paths,
+            out string error)
+        {
+            paths = new List<string>();
+            error = null;
+            if (args == null || !args.ContainsKey("paths") || args["paths"] == null)
+            {
+                error = "paths 须为字符串数组";
+                return false;
+            }
+
+            object raw = args["paths"];
+            if (raw is string)
+            {
+                error = "paths 须为字符串数组";
+                return false;
+            }
+
+            var enumerable = raw as IEnumerable;
+            if (enumerable == null)
+            {
+                error = "paths 须为字符串数组";
+                return false;
+            }
+
+            foreach (object item in enumerable)
+            {
+                string text = Convert.ToString(item)?.Trim() ?? "";
+                if (text.Length == 0)
+                {
+                    error = "paths 中不能有空项";
+                    return false;
+                }
+
+                paths.Add(text);
+            }
+
+            return true;
         }
 
         private static ToolResult ReadImage(

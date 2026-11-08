@@ -95,16 +95,26 @@ namespace WordAddIn1
 
                     var data = captured.Data as Dictionary<string, object>
                         ?? ToDict(captured.Data);
-                    byte[] bytes = TryGetBytes(data);
-                    string format = data != null && data.ContainsKey("format")
-                        ? Convert.ToString(data["format"])
-                        : "";
-                    ToolResult pathError = await CapturePathWriter
-                        .TryAttachPathAsync(args, bytes, format, data)
-                        .ConfigureAwait(false);
-                    if (pathError != null)
+                    if (data != null && data.ContainsKey("images"))
                     {
-                        return pathError;
+                        if (CapturePathWriter.HasPath(args))
+                        {
+                            return Fail("一次多张不写 path");
+                        }
+                    }
+                    else
+                    {
+                        byte[] bytes = TryGetBytes(data);
+                        string format = data != null && data.ContainsKey("format")
+                            ? Convert.ToString(data["format"])
+                            : "";
+                        ToolResult pathError = await CapturePathWriter
+                            .TryAttachPathAsync(args, bytes, format, data)
+                            .ConfigureAwait(false);
+                        if (pathError != null)
+                        {
+                            return pathError;
+                        }
                     }
 
                     return new ToolResult { Success = true, Data = data };
@@ -466,19 +476,42 @@ namespace WordAddIn1
                 });
             }
 
-            ImageCaptureCompressor.CompressedImage sheet;
+            List<ImageCaptureCompressor.CompressedImage> packed;
             try
             {
-                sheet = ImageCaptureCompressor.ComposeContactSheet(tiles);
+                var raw = new List<byte[]>(tiles.Count);
+                for (int i = 0; i < tiles.Count; i++)
+                {
+                    raw.Add(tiles[i] == null ? null : tiles[i].ImageBytes);
+                }
+
+                packed = ImageCaptureCompressor.CompressSeparate(raw);
             }
             catch (Exception ex)
             {
-                return Fail("拼九宫格失败: " + ex.Message);
+                return Fail("多张截图压缩失败: " + ex.Message);
             }
 
-            return OkImage(
-                sheet,
-                new Dictionary<string, object>
+            var images = new List<Dictionary<string, object>>(packed.Count);
+            for (int i = 0; i < packed.Count; i++)
+            {
+                ImageCaptureCompressor.ContactSheetTile tile = tiles[i];
+                string label = "index=" + tile.Index + " slide_id=" + (tile.SlideId ?? "");
+                images.Add(new Dictionary<string, object>
+                {
+                    ["index"] = i + 1,
+                    ["label"] = label,
+                    ["format"] = packed[i].Format,
+                    ["width_px"] = packed[i].Width,
+                    ["height_px"] = packed[i].Height,
+                    ["image_base64"] = Convert.ToBase64String(packed[i].Bytes)
+                });
+            }
+
+            return new ToolResult
+            {
+                Success = true,
+                Data = new Dictionary<string, object>
                 {
                     ["source_kind"] = kind,
                     ["channel_id"] = channelId,
@@ -486,9 +519,12 @@ namespace WordAddIn1
                     ["page_from"] = pageFrom,
                     ["page_to"] = pageTo,
                     ["slide_count"] = slideCount,
-                    ["layout"] = "contact_sheet",
-                    ["pages"] = pages
-                });
+                    ["pages"] = pages,
+                    ["images"] = images,
+                    ["image_count"] = images.Count,
+                    ["captured_at"] = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz")
+                }
+            };
         }
 
         private static async Task<ToolResult> CaptureBrowserAsync(

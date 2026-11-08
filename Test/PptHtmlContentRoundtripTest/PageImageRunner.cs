@@ -984,15 +984,51 @@ namespace PptHtmlContentRoundtripTest
 
         private static List<string> OkSheet(ToolResult r, int pageCount)
         {
-            var f = OkImage(r);
-            if (!string.Equals(GetString(r, "layout"), "contact_sheet", StringComparison.OrdinalIgnoreCase))
+            var f = new List<string>();
+            if (r == null || !r.Success)
             {
-                f.Add("layout 应为 contact_sheet");
+                f.Add(r == null ? "无回包" : (r.Error ?? "失败"));
+                return f;
+            }
+
+            if (HasImage(r) && GetString(r, "image_base64").Length > 32)
+            {
+                f.Add("多张不应再带顶层 image_base64");
+            }
+
+            if (GetInt(r, "image_count") != pageCount)
+            {
+                f.Add("image_count 应为 " + pageCount + " 实际 " + GetInt(r, "image_count"));
             }
 
             if (GetPages(r).Count != pageCount)
             {
                 f.Add("pages 长度应为 " + pageCount + " 实际 " + GetPages(r).Count);
+            }
+
+            IList<Dictionary<string, object>> images = GetImages(r);
+            if (images.Count != pageCount)
+            {
+                f.Add("images 长度应为 " + pageCount + " 实际 " + images.Count);
+            }
+            else
+            {
+                IList<Dictionary<string, object>> pages = GetPages(r);
+                for (int i = 0; i < images.Count; i++)
+                {
+                    string label = GetDictString(images[i], "label");
+                    string b64 = GetDictString(images[i], "image_base64");
+                    if (b64.Length <= 32)
+                    {
+                        f.Add("第 " + (i + 1) + " 张图为空");
+                    }
+
+                    if (pages.Count == images.Count
+                        && label.IndexOf("slide_id=" + GetDictString(pages[i], "slide_id"), StringComparison.Ordinal) < 0)
+                    {
+                        f.Add("第 " + (i + 1) + " 张 label 未含 slide_id");
+                    }
+                }
             }
 
             return f;
@@ -1086,11 +1122,21 @@ namespace PptHtmlContentRoundtripTest
             }
         }
 
+        private static IList<Dictionary<string, object>> GetImages(ToolResult r)
+        {
+            return GetDictList(r, "images");
+        }
+
         private static IList<Dictionary<string, object>> GetPages(ToolResult r)
+        {
+            return GetDictList(r, "pages");
+        }
+
+        private static IList<Dictionary<string, object>> GetDictList(ToolResult r, string key)
         {
             var list = new List<Dictionary<string, object>>();
             var d = r != null ? r.Data as Dictionary<string, object> : null;
-            if (d == null || !d.TryGetValue("pages", out object raw) || raw == null)
+            if (d == null || !d.TryGetValue(key, out object raw) || raw == null)
             {
                 return list;
             }
