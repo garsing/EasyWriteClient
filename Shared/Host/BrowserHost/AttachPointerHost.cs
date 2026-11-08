@@ -178,6 +178,8 @@ namespace WordAddIn1.BrowserHost
                     .FillTemporalValuesAsync(cdp, built, sessionId)
                     .ConfigureAwait(true);
 
+                // hidden_children 暂不暴露。
+                /*
                 if (hiddenChildren
                     && isDetail
                     && !repeatWindow
@@ -193,6 +195,7 @@ namespace WordAddIn1.BrowserHost
                             sessionId)
                         .ConfigureAwait(true);
                 }
+                */
 
                 BrowserRefAlign.Apply(channel.ChannelId, built);
                 channel.UpdatePage(cdp.CurrentUrl, cdp.CurrentTitle, true);

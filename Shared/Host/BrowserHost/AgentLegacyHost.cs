@@ -119,7 +119,9 @@ namespace WordAddIn1.BrowserHost
                     ["ref"] = hasRef ? refId.Trim() : null,
                     ["css_path"] = (!repeatWindow && detailPrior != null) ? detailPrior.AttachCssPath : null,
                     ["dom_supplement"] = domSupplement,
-                    ["hidden_children"] = hiddenChildren && hasRef && !repeatWindow
+                    // hidden_children 暂不暴露。
+                    // ["hidden_children"] = hiddenChildren && hasRef && !repeatWindow
+                    ["hidden_children"] = false
                 };
                 if (repeatWindow)
                 {

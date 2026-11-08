@@ -28,6 +28,9 @@ namespace WordAddIn1
                         return Fail("clear 无效");
                     }
 
+                    // hidden_children 暂不暴露。下游参数保留，这里固定关闭。
+                    bool hiddenChildren = false;
+                    /*
                     if (TryGetBool(args, "hidden_children", out bool hiddenChildren))
                     {
                         if (clear && hiddenChildren)
@@ -44,6 +47,7 @@ namespace WordAddIn1
                     {
                         return Fail("hidden_children 无效");
                     }
+                    */
                     if (!TryGetOptionalInt(args, "range_start", out int? rangeStart, out string rangeErr)
                         || !TryGetOptionalInt(args, "range_end", out int? rangeEnd, out rangeErr))
                     {

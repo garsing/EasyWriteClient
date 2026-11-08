@@ -804,7 +804,9 @@ namespace WordAddIn1.BrowserHost
                     ["css_path"] = (!repeatWindow && prior != null) ? prior.AttachCssPath : null,
                     ["frame_id"] = targetFrame,
                     ["dom_supplement"] = expandingFrame ? null : domSupplement,
-                    ["hidden_children"] = hiddenChildren && hasRef && !repeatWindow && !expandingFrame
+                    // hidden_children 暂不暴露。
+                    // ["hidden_children"] = hiddenChildren && hasRef && !repeatWindow && !expandingFrame
+                    ["hidden_children"] = false
                 };
                 if (repeatWindow)
                 {

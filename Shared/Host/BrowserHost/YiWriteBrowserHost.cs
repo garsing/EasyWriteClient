@@ -717,6 +717,8 @@ namespace WordAddIn1.BrowserHost
                     .FillTemporalValuesAsync(form, built, sessionId)
                     .ConfigureAwait(true);
 
+                // hidden_children 暂不暴露。
+                /*
                 if (hiddenChildren
                     && isDetail
                     && !repeatWindow
@@ -732,6 +734,7 @@ namespace WordAddIn1.BrowserHost
                             sessionId)
                         .ConfigureAwait(true);
                 }
+                */
 
                 await BrowserInteractEngine.StampXPathsAsync(form, built.Refs.Values).ConfigureAwait(true);
                 bool detailOnly = isDetail && !repeatWindow;
