@@ -68,6 +68,17 @@ namespace WordAddIn1.BrowserHost
             return Build(axTreeJson, detailRootRef: null, priorEntry: null, window: null, modalRootBackendId: modalRootBackendId);
         }
 
+        public static BrowserAxBuildResult BuildOverview(string axTreeJson, int? modalRootBackendId, int refBudget)
+        {
+            return Build(
+                axTreeJson,
+                detailRootRef: null,
+                priorEntry: null,
+                window: null,
+                modalRootBackendId: modalRootBackendId,
+                refBudget: refBudget);
+        }
+
         public static BrowserAxBuildResult BuildDetail(
             string axTreeJson,
             string detailRef,
@@ -81,7 +92,8 @@ namespace WordAddIn1.BrowserHost
             string detailRootRef,
             BrowserRefEntry priorEntry,
             RepeatWindowRequest window,
-            int? modalRootBackendId)
+            int? modalRootBackendId,
+            int? refBudget = null)
         {
             var result = new BrowserAxBuildResult();
             if (string.IsNullOrWhiteSpace(axTreeJson))
@@ -179,6 +191,9 @@ namespace WordAddIn1.BrowserHost
             bool windowInvalid = false;
             var printedBackends = new List<int?>();
             var printedCss = new List<string>();
+            int cap = refBudget.HasValue && refBudget.Value > 0
+                ? Math.Min(MaxRefNodes, refBudget.Value)
+                : MaxRefNodes;
 
             void BeginPrinted(int depth)
             {
@@ -240,8 +255,8 @@ namespace WordAddIn1.BrowserHost
                 }
 
                 int limit = (!chrome && pageHasRuns)
-                    ? MaxRefNodes - Math.Max(0, chromeLeft)
-                    : MaxRefNodes;
+                    ? cap - Math.Max(0, chromeLeft)
+                    : cap;
                 if (refs.Count >= limit)
                 {
                     return null;
@@ -524,7 +539,7 @@ namespace WordAddIn1.BrowserHost
                     string frameRef = null;
                     BeginPrinted(depth);
                     List<BrowserPrintedAncestor> frameAncestors = TakeAncestors();
-                    if (refs.Count < MaxRefNodes)
+                    if (refs.Count < cap)
                     {
                         frameRef = "e" + nextRef;
                         nextRef++;

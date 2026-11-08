@@ -178,6 +178,8 @@ namespace WordAddIn1.BrowserHost
                     .FillTemporalValuesAsync(cdp, built, sessionId)
                     .ConfigureAwait(true);
 
+                await BrowserFrameInline.ExpandAsync(cdp, built, frameMap).ConfigureAwait(true);
+
                 // hidden_children 暂不暴露。
                 /*
                 if (hiddenChildren
@@ -795,6 +797,7 @@ namespace WordAddIn1.BrowserHost
             await BrowserAccessibleNameFill
                 .FillTemporalValuesAsync(cdp, built, ax.SessionId)
                 .ConfigureAwait(true);
+            await BrowserFrameInline.ExpandAsync(cdp, built, frameMap).ConfigureAwait(true);
             await BrowserInteractEngine.StampXPathsAsync(cdp, built.Refs.Values).ConfigureAwait(true);
             BrowserRefAlign.Apply(channel.ChannelId, built);
             channel.UpdatePage(cdp.CurrentUrl, cdp.CurrentTitle, true);

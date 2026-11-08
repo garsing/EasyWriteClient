@@ -717,6 +717,8 @@ namespace WordAddIn1.BrowserHost
                     .FillTemporalValuesAsync(form, built, sessionId)
                     .ConfigureAwait(true);
 
+                await BrowserFrameInline.ExpandAsync(form, built, frameMap).ConfigureAwait(true);
+
                 // hidden_children 暂不暴露。
                 /*
                 if (hiddenChildren
@@ -986,6 +988,7 @@ namespace WordAddIn1.BrowserHost
             await BrowserAccessibleNameFill
                 .FillTemporalValuesAsync(form, built, ax.SessionId)
                 .ConfigureAwait(true);
+            await BrowserFrameInline.ExpandAsync(form, built, frameMap).ConfigureAwait(true);
             await BrowserInteractEngine.StampXPathsAsync(form, built.Refs.Values).ConfigureAwait(true);
             BrowserRefAlign.Apply(channel.ChannelId, built);
             try
