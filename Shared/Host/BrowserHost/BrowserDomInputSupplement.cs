@@ -239,6 +239,7 @@ namespace WordAddIn1.BrowserHost
                         sb.Append(" \"").Append(Escape(name.Trim())).Append('"');
                     }
 
+                    sb.Append(" (无法展开)");
                     sb.AppendLine();
                 }
 

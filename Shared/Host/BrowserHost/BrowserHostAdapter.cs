@@ -131,6 +131,16 @@ namespace WordAddIn1.BrowserHost
                 return await ClearThenExpandAsync(channel, refId).ConfigureAwait(true);
             }
 
+            if (!string.IsNullOrWhiteSpace(refId)
+                && channel != null
+                && BrowserRefStore.TryGet(channel.ChannelId, refId.Trim(), out BrowserRefEntry expandPrior)
+                && expandPrior != null
+                && !expandPrior.IsRepeat
+                && !BrowserRiskGuard.IsFrameRole(expandPrior))
+            {
+                return BrowserSnapshotResult.Fail("该节点无法展开");
+            }
+
             if (string.IsNullOrWhiteSpace(refId))
             {
                 if (!BrowserDomInputSupplement.TryResolveSelector(

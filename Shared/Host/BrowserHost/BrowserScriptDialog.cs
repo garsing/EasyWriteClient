@@ -280,20 +280,20 @@ namespace WordAddIn1.BrowserHost
                     .Append(Escape(session.Message))
                     .Append("\" value=\"")
                     .Append(Escape(session.Text))
-                    .Append('"')
+                    .Append("\" (无法展开)")
                     .AppendLine();
             }
 
             string acceptId = "e" + n;
             n++;
             refs[acceptId] = Entry(ControlAccept, "确定", "button");
-            sb.Append("  - button ref=").Append(acceptId).Append(" \"确定\"").AppendLine();
+            sb.Append("  - button ref=").Append(acceptId).Append(" \"确定\" (无法展开)").AppendLine();
 
             if (session.Kind != BrowserScriptDialogKind.Alert)
             {
                 string dismissId = "e" + n;
                 refs[dismissId] = Entry(ControlDismiss, "取消", "button");
-                sb.Append("  - button ref=").Append(dismissId).Append(" \"取消\"").AppendLine();
+                sb.Append("  - button ref=").Append(dismissId).Append(" \"取消\" (无法展开)").AppendLine();
             }
 
             return new BrowserScriptDialogView(sb.ToString(), refs);

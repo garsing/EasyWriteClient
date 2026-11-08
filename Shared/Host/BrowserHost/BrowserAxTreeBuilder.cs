@@ -1022,6 +1022,13 @@ namespace WordAddIn1.BrowserHost
                 sb.Append(" (").Append(note).Append(')');
             }
 
+            if (!string.IsNullOrEmpty(refId)
+                && !FrameRoles.Contains(role ?? "")
+                && !string.Equals(role, "repeat", StringComparison.OrdinalIgnoreCase))
+            {
+                sb.Append(" (无法展开)");
+            }
+
             sb.AppendLine();
         }
 
