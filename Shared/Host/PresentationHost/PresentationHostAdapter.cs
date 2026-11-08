@@ -98,6 +98,63 @@ namespace WordAddIn1.PresentationHost
             return true;
         }
 
+        public static bool TryExtractPresentationImages(
+            IOperationChannel channel,
+            out PresentationContentResult result,
+            out ToolResult errorResult)
+        {
+            result = null;
+            errorResult = null;
+            if (channel == null)
+            {
+                errorResult = new ToolResult { Success = false, Error = "未知 channel_id" };
+                return false;
+            }
+
+            if (channel.Kind == ChannelKind.Word
+                || channel.Kind == ChannelKind.Wps
+                || channel.Kind == ChannelKind.Excel
+                || channel.Kind == ChannelKind.Et)
+            {
+                string host = channel.Kind.ToString().ToLowerInvariant();
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "unsupported: 当前渠道是 " + host
+                        + "，请先打开/切换到演示文稿渠道（ppt: / wpp:），再用 F_extract_presentation_images"
+                };
+                return false;
+            }
+
+            bool ok;
+            string error;
+            if (channel is PptChannel ppt && ppt.TryGetLivePresentation(out Microsoft.Office.Interop.PowerPoint.Presentation presentation))
+            {
+                ok = PresentationImageExtract.TryPowerPoint(presentation, channel.ChannelId, out result, out error);
+            }
+            else if (channel is WppChannel wpp && wpp.TryGetLivePresentation(out object wppPresentation))
+            {
+                ok = PresentationImageExtract.TryWpp(wppPresentation, channel.ChannelId, out result, out error);
+            }
+            else
+            {
+                errorResult = new ToolResult
+                {
+                    Success = false,
+                    Error = "渠道对应的演示文稿已关闭"
+                };
+                return false;
+            }
+
+            if (!ok)
+            {
+                errorResult = new ToolResult { Success = false, Error = error };
+                return false;
+            }
+
+            return true;
+        }
+
         public static bool TryReadPptHtml(
             IOperationChannel channel,
             string slideId,

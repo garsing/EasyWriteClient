@@ -55,6 +55,7 @@ namespace WordAddIn1
                 { "browser.download", "F_browser_download" },
                 { "workbook.getContent", "F_get_workbook_content" },
                 { "presentation.getContent", "F_get_presentation_content" },
+                { "presentation.extractImages", "F_extract_presentation_images" },
                 { "presentation.readHtml", "F_read_ppt_html" },
                 { "presentation.applyHtml", "F_apply_ppt_html" },
                 { "presentation.manageSlide", "F_manage_ppt_slide" },

@@ -16,6 +16,14 @@ namespace WordAddIn1.PresentationHost
 
         public static string CollectPowerPoint(PowerPoint.Slide slide)
         {
+            return CollectPowerPoint(slide, null);
+        }
+
+        /// <summary>pictureLine 为空时仍写「这里有一张图」。返回空字符串表示这张图不出现。</summary>
+        public static string CollectPowerPoint(
+            PowerPoint.Slide slide,
+            Func<PowerPoint.Shape, string> pictureLine)
+        {
             if (slide == null)
             {
                 return "";
@@ -30,7 +38,7 @@ namespace WordAddIn1.PresentationHost
                 {
                     try
                     {
-                        AppendPowerPointShape(shapes[i], lines);
+                        AppendPowerPointShape(shapes[i], lines, pictureLine);
                     }
                     catch (Exception)
                     {
@@ -45,6 +53,11 @@ namespace WordAddIn1.PresentationHost
         }
 
         public static string CollectWpp(object slide)
+        {
+            return CollectWpp(slide, null);
+        }
+
+        public static string CollectWpp(object slide, Func<object, string> pictureLine)
         {
             if (slide == null)
             {
@@ -61,7 +74,7 @@ namespace WordAddIn1.PresentationHost
                     try
                     {
                         object shape = WppCom.Invoke(shapes, "Item", i);
-                        AppendWppShape(shape, lines);
+                        AppendWppShape(shape, lines, pictureLine);
                     }
                     catch (Exception)
                     {
@@ -75,7 +88,10 @@ namespace WordAddIn1.PresentationHost
             return Join(lines);
         }
 
-        private static void AppendPowerPointShape(PowerPoint.Shape shape, List<string> lines)
+        private static void AppendPowerPointShape(
+            PowerPoint.Shape shape,
+            List<string> lines,
+            Func<PowerPoint.Shape, string> pictureLine)
         {
             if (shape == null)
             {
@@ -102,7 +118,7 @@ namespace WordAddIn1.PresentationHost
                     {
                         try
                         {
-                            AppendPowerPointShape(items[i], lines);
+                            AppendPowerPointShape(items[i], lines, pictureLine);
                         }
                         catch (Exception)
                         {
@@ -129,7 +145,7 @@ namespace WordAddIn1.PresentationHost
             if (type == Office.MsoShapeType.msoPicture
                 || type == Office.MsoShapeType.msoLinkedPicture)
             {
-                lines.Add(PictureMark);
+                AddPictureLine(lines, pictureLine == null ? PictureMark : pictureLine(shape));
                 return;
             }
 
@@ -236,7 +252,7 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static void AppendWppShape(object shape, List<string> lines)
+        private static void AppendWppShape(object shape, List<string> lines, Func<object, string> pictureLine)
         {
             if (shape == null)
             {
@@ -263,7 +279,7 @@ namespace WordAddIn1.PresentationHost
                     {
                         try
                         {
-                            AppendWppShape(WppCom.Invoke(items, "Item", i), lines);
+                            AppendWppShape(WppCom.Invoke(items, "Item", i), lines, pictureLine);
                         }
                         catch (Exception)
                         {
@@ -292,7 +308,7 @@ namespace WordAddIn1.PresentationHost
             if (type == (int)Office.MsoShapeType.msoPicture
                 || type == (int)Office.MsoShapeType.msoLinkedPicture)
             {
-                lines.Add(PictureMark);
+                AddPictureLine(lines, pictureLine == null ? PictureMark : pictureLine(shape));
                 return;
             }
 
@@ -369,6 +385,14 @@ namespace WordAddIn1.PresentationHost
             }
             catch (Exception)
             {
+            }
+        }
+
+        private static void AddPictureLine(List<string> lines, string line)
+        {
+            if (!string.IsNullOrEmpty(line))
+            {
+                lines.Add(line);
             }
         }
 
