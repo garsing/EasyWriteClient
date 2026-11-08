@@ -496,7 +496,6 @@ namespace WordAddIn1.BrowserHost
                         sb.Append(" (隐藏)");
                     }
 
-                    sb.Append(" (无法展开)");
                     sb.AppendLine();
                 }
 
@@ -909,11 +908,11 @@ namespace WordAddIn1.BrowserHost
                         || (bool)item["hidden"];
                     if (itemHidden)
                     {
-                        sb.AppendLine(" (隐藏) (无法展开)");
+                        sb.AppendLine(" (隐藏)");
                     }
                     else
                     {
-                        sb.AppendLine(" (无法展开)");
+                        sb.AppendLine();
                     }
                 }
 

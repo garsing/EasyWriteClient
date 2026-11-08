@@ -428,6 +428,9 @@ namespace WordAddIn1.BrowserHost
         /// <summary>网页 DOM 带序号的绝对 XPath。只用于发号，不出现在树正文里。</summary>
         public string XPath { get; set; }
 
+        /// <summary>下面没有再符合快照筛选、能印出来的子节点。</summary>
+        public bool CannotExpand { get; set; }
+
         /// <summary>重复段标题。没有单独的可点节点。</summary>
         public bool IsRepeat { get; set; }
 

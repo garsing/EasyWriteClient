@@ -135,8 +135,7 @@ namespace WordAddIn1.BrowserHost
                 && channel != null
                 && BrowserRefStore.TryGet(channel.ChannelId, refId.Trim(), out BrowserRefEntry expandPrior)
                 && expandPrior != null
-                && !expandPrior.IsRepeat
-                && !BrowserRiskGuard.IsFrameRole(expandPrior))
+                && expandPrior.CannotExpand)
             {
                 return BrowserSnapshotResult.Fail("该节点无法展开");
             }

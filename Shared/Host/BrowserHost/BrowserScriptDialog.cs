@@ -371,6 +371,7 @@ namespace WordAddIn1.BrowserHost
                 ScriptDialogControl = control,
                 Role = role,
                 Name = name ?? "",
+                CannotExpand = true,
             };
         }
 

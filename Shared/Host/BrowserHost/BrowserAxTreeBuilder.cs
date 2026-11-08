@@ -620,12 +620,26 @@ namespace WordAddIn1.BrowserHost
                     }
                 }
 
+                int lineEnd = sb.Length;
+                bool seeChildren = print
+                    && !string.IsNullOrEmpty(refId)
+                    && !FrameRoles.Contains(role)
+                    && !string.Equals(role, "repeat", StringComparison.OrdinalIgnoreCase);
+                bool truncatedBefore = truncated;
                 int childDepth = print ? depth + 1 : depth;
                 string childInherit = namedGroup && !string.IsNullOrWhiteSpace(name)
                     ? name
                     : inheritName;
                 bool childInCard = inCardGroup || namedGroup;
                 VisitChildren(node, childDepth, childInherit, childInCard);
+                if (seeChildren && !truncatedBefore && !truncated && sb.Length == lineEnd)
+                {
+                    MarkCannotExpand(sb, lineEnd);
+                    if (refs.TryGetValue(refId, out BrowserRefEntry leaf))
+                    {
+                        leaf.CannotExpand = true;
+                    }
+                }
             }
 
             Walk(startId, 0, null, false);
@@ -1022,14 +1036,18 @@ namespace WordAddIn1.BrowserHost
                 sb.Append(" (").Append(note).Append(')');
             }
 
-            if (!string.IsNullOrEmpty(refId)
-                && !FrameRoles.Contains(role ?? "")
-                && !string.Equals(role, "repeat", StringComparison.OrdinalIgnoreCase))
+            sb.AppendLine();
+        }
+
+        private static void MarkCannotExpand(StringBuilder sb, int lineEnd)
+        {
+            int nl = Environment.NewLine.Length;
+            if (lineEnd < nl)
             {
-                sb.Append(" (无法展开)");
+                return;
             }
 
-            sb.AppendLine();
+            sb.Insert(lineEnd - nl, " (无法展开)");
         }
 
         private static string Escape(string s)
