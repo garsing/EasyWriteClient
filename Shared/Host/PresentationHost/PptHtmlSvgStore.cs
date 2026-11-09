@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -98,6 +99,51 @@ namespace WordAddIn1.PresentationHost
             node.SvgMarkup = normalized;
             node.SvgMode = "file";
             return null;
+        }
+
+        /// <summary>
+        /// WPS 的 AddPicture 拒绝这些元素。插入失败时点名，没有这些元素则返回 null。
+        /// </summary>
+        public static string DescribeWppUnsupported(string markup)
+        {
+            if (string.IsNullOrWhiteSpace(markup))
+            {
+                return null;
+            }
+
+            XElement root;
+            try
+            {
+                root = XElement.Parse(markup);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+
+            var found = new List<string>();
+            foreach (XElement el in root.Descendants())
+            {
+                string local = el.Name.LocalName;
+                if (!string.Equals(local, "g", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(local, "text", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string tag = "<" + local.ToLowerInvariant() + ">";
+                if (!found.Contains(tag))
+                {
+                    found.Add(tag);
+                }
+            }
+
+            if (found.Count == 0)
+            {
+                return null;
+            }
+
+            return "WPS 不支持 " + string.Join("、", found);
         }
 
         public static bool TryPrepareInsertPath(

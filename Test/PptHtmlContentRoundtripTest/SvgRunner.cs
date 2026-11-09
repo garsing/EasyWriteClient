@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using WordAddIn1;
 using WordAddIn1.OpenFiles;
 using WordAddIn1.PresentationHost;
@@ -49,7 +51,19 @@ namespace PptHtmlContentRoundtripTest
             "svg-update-box",
             "svg-update-file",
             "svg-mix",
-            "svg-child-event"
+            "svg-child-event",
+            "svg-part-miss",
+            "svg-shell-keep",
+            "svg-shell-fix",
+            "svg-omit",
+            "svg-twice",
+            "svg-poly",
+            "svg-g",
+            "svg-text-path",
+            "svg-file-nopart",
+            "svg-two-drop",
+            "svg-bad64",
+            "svg-ellipse"
         };
 
         public static bool Wants(IList<string> nameFilters)
@@ -152,6 +166,48 @@ namespace PptHtmlContentRoundtripTest
             if (Want(filters, "svg-parse-dtd"))
             {
                 Finish(run, "svg-parse-dtd", ParseReject(SvgWith("<!DOCTYPE svg [<!ENTITY x \"y\">]>"), "解析"));
+            }
+
+            if (Want(filters, "svg-parse-shell"))
+            {
+                Finish(run, "svg-parse-shell", ParseShell());
+            }
+
+            if (Want(filters, "svg-parse-repair"))
+            {
+                Finish(run, "svg-parse-repair", ParseRepair());
+            }
+
+            if (Want(filters, "svg-parse-poly"))
+            {
+                Finish(run, "svg-parse-poly", ParseContains(SvgWith("<polygon points=\"0,0 8,0 8,8\"/>"), "polygon"));
+            }
+
+            if (Want(filters, "svg-parse-g"))
+            {
+                Finish(run, "svg-parse-g", ParseContains(SvgWith("<g><path d=\"M3 3\"/></g>"), "M3 3"));
+            }
+
+            if (Want(filters, "svg-parse-onbegin"))
+            {
+                Finish(run, "svg-parse-onbegin", ParseReject(SvgWith("<path d=\"M1 1\" onbegin=\"x\"/>"), "事件"));
+            }
+
+            if (Want(filters, "svg-ser-miss"))
+            {
+                Finish(run, "svg-ser-miss", SerializeMissing());
+            }
+
+            if (Want(filters, "svg-parse-xlink"))
+            {
+                Finish(run, "svg-parse-xlink", ParseReject(
+                    SvgWith("<use xmlns:xlink=\"http://www.w3.org/1999/xlink\" xlink:href=\"https://example.com/a.svg\"/>"),
+                    "链接"));
+            }
+
+            if (Want(filters, "svg-parse-comment"))
+            {
+                Finish(run, "svg-parse-comment", ParseContains(SvgWith("<!-- 注 --><path d=\"M6 6\"/>"), "M6 6"));
             }
         }
 
@@ -734,6 +790,7 @@ namespace PptHtmlContentRoundtripTest
             RunUpdateFile(run, filters, session);
             RunMix(run, filters, session);
             RunFileEdges(run, filters, session);
+            RunMore(run, filters, session);
         }
 
         private static void RunTwo(TestRun run, IList<string> filters, Session session)
@@ -831,9 +888,11 @@ namespace PptHtmlContentRoundtripTest
                 {
                     fails.Add("WPS 不该插入只有文字的 svg");
                 }
-                else if (error == null || error.IndexOf("插入 svg 失败", StringComparison.Ordinal) < 0)
+                else if (error == null
+                    || error.IndexOf("WPS 不支持 <text>", StringComparison.Ordinal) < 0
+                    || error.IndexOf("<g>", StringComparison.Ordinal) >= 0)
                 {
-                    fails.Add(error ?? "没有插入失败");
+                    fails.Add(error ?? "没有点名 <text>");
                 }
                 else if (!session.TryRead(false, out full, out error))
                 {
@@ -1660,6 +1719,740 @@ namespace PptHtmlContentRoundtripTest
             }
 
             return null;
+        }
+
+        private static List<string> ParseShell()
+        {
+            var fails = new List<string>();
+            string html = ContentHtml.Section(
+                "  <svg ShapeId=\"sid260-s4\" data-error=\"svg 原文丢失\" style=\""
+                + ContentHtml.Geo(10, 20, 15, 15) + "\"></svg>");
+            if (!ContentHtml.TryParse(html, "260", out PptHtmlApplyPlan plan, out string error))
+            {
+                fails.Add(error ?? "解析失败");
+                return fails;
+            }
+
+            PptHtmlApplyNode n = plan.Nodes[0];
+            if (!n.SvgLeaveUnchanged || n.IsCreate || !string.IsNullOrEmpty(n.SvgMarkup))
+            {
+                fails.Add("leave=" + n.SvgLeaveUnchanged + " create=" + n.IsCreate + " markup=" + n.SvgMarkup);
+            }
+
+            return fails;
+        }
+
+        private static List<string> ParseRepair()
+        {
+            var fails = new List<string>();
+            string html = ContentHtml.Section(
+                "  <svg ShapeId=\"sid260-s4\" data-error=\"svg 原文丢失\" style=\""
+                + ContentHtml.Geo(10, 20, 15, 15) + "\"><path d=\"M1 1\"/></svg>");
+            if (!ContentHtml.TryParse(html, "260", out PptHtmlApplyPlan plan, out string error))
+            {
+                fails.Add(error ?? "解析失败");
+                return fails;
+            }
+
+            PptHtmlApplyNode n = plan.Nodes[0];
+            string markup = n.SvgMarkup ?? "";
+            if (n.SvgLeaveUnchanged || n.IsCreate
+                || markup.IndexOf("M1 1", StringComparison.Ordinal) < 0
+                || markup.IndexOf("data-error", StringComparison.Ordinal) >= 0)
+            {
+                fails.Add("leave=" + n.SvgLeaveUnchanged + " markup=" + markup);
+            }
+
+            return fails;
+        }
+
+        private static List<string> ParseContains(string html, string needle)
+        {
+            var fails = new List<string>();
+            if (!ContentHtml.TryParse(html, "260", out PptHtmlApplyPlan plan, out string error))
+            {
+                fails.Add(error ?? "解析失败");
+                return fails;
+            }
+
+            PptHtmlApplyNode n = plan.Nodes[0];
+            if (n.ShapeType != "svg" || n.SvgMarkup == null
+                || n.SvgMarkup.IndexOf(needle, StringComparison.Ordinal) < 0)
+            {
+                fails.Add(n.SvgMarkup ?? n.ShapeType);
+            }
+
+            return fails;
+        }
+
+        private static List<string> SerializeMissing()
+        {
+            var fails = new List<string>();
+            string html = PptHtmlSvgStore.FormatInlineElement(
+                new PptHtmlShapeNode
+                {
+                    ShapeType = "svg",
+                    ShapeId = "sid260-s4",
+                    Style = ContentHtml.Geo(10, 20, 15, 15),
+                    SvgSourceMissing = true
+                },
+                "");
+            if (html.IndexOf("data-error=\"svg 原文丢失\"", StringComparison.Ordinal) < 0
+                || html.IndexOf("sid260-s4", StringComparison.Ordinal) < 0
+                || html.IndexOf(HousePath, StringComparison.Ordinal) >= 0)
+            {
+                fails.Add(html);
+            }
+
+            return fails;
+        }
+
+        private static void RunMore(TestRun run, IList<string> filters, Session session)
+        {
+            RunPartMiss(run, filters, session);
+            RunShellKeep(run, filters, session);
+            RunShellFix(run, filters, session);
+            RunOmit(run, filters, session);
+            RunTwice(run, filters, session);
+            RunMarkup(run, filters, session, "svg-poly", "<polygon points=\"0,0 8,0 8,8\"/>", "polygon", null);
+            RunMarkup(run, filters, session, "svg-g", "<g><path d=\"M3 3\"/></g>", "M3 3", "<g>");
+            RunMarkup(run, filters, session, "svg-ellipse", "<ellipse cx=\"12\" cy=\"12\" rx=\"8\" ry=\"4\"/>", "ellipse", null);
+            RunTextPath(run, filters, session);
+            RunFileNoPart(run, filters, session);
+            RunTwoDrop(run, filters, session);
+            RunBad64(run, filters, session);
+        }
+
+        private static void RunPartMiss(TestRun run, IList<string> filters, Session session)
+        {
+            if (!Want(filters, "svg-part-miss"))
+            {
+                return;
+            }
+
+            var fails = new List<string>();
+            if (!ApplySvgAndNote(session, out PptHtmlReadResult full, out string error))
+            {
+                fails.Add(error ?? "铺页失败");
+            }
+            else if (!DropSvgParts(session, out error)
+                || !session.TryRead(false, out PptHtmlReadResult again, out error))
+            {
+                fails.Add(error ?? "去掉部件后读失败");
+            }
+            else
+            {
+                PptHtmlShapeNode svg = FindType(again, "svg");
+                PptHtmlShapeNode note = FindTextNode(again, "旁边");
+                if (svg == null || !svg.SvgSourceMissing || !string.IsNullOrEmpty(svg.SvgMarkup))
+                {
+                    fails.Add("缺原文没有落在这一张上");
+                }
+
+                if ((svg.SvgMarkup ?? "").IndexOf(HousePath, StringComparison.Ordinal) >= 0)
+                {
+                    fails.Add("缺原文仍带路径");
+                }
+
+                if (note == null)
+                {
+                    fails.Add("同页文字丢了");
+                }
+            }
+
+            Finish(run, "svg-part-miss", fails);
+        }
+
+        private static void RunShellKeep(TestRun run, IList<string> filters, Session session)
+        {
+            if (!Want(filters, "svg-shell-keep"))
+            {
+                return;
+            }
+
+            var fails = new List<string>();
+            if (!session.TryNewSlide(out string error)
+                || !session.TryApply(InlineHtml(null, HousePath), out _, out error)
+                || !session.TryRead(false, out PptHtmlReadResult before, out error))
+            {
+                fails.Add(error ?? "铺页失败");
+                Finish(run, "svg-shell-keep", fails);
+                return;
+            }
+
+            PptHtmlShapeNode svg = FindType(before, "svg");
+            string oldId = svg == null ? "" : svg.ShapeId;
+            if (string.IsNullOrEmpty(oldId) || !DropSvgParts(session, out error)
+                || !session.TryRead(false, out PptHtmlReadResult missing, out error))
+            {
+                fails.Add(error ?? "去掉部件失败");
+            }
+            else
+            {
+                PptHtmlShapeNode shell = FindType(missing, "svg");
+                string html = ContentHtml.Section(PptHtmlSvgStore.FormatInlineElement(shell, "  "));
+                if (!session.TryApply(html, out _, out error)
+                    || !session.TryRead(false, out PptHtmlReadResult after, out error))
+                {
+                    fails.Add(error ?? "空壳写回失败");
+                }
+                else
+                {
+                    PptHtmlShapeNode again = FindId(after, oldId);
+                    if (again == null || !again.SvgSourceMissing || !string.Equals(again.ShapeId, oldId, StringComparison.Ordinal))
+                    {
+                        fails.Add("空壳把图换掉了 " + (again == null ? "" : again.ShapeId));
+                    }
+                }
+            }
+
+            Finish(run, "svg-shell-keep", fails);
+        }
+
+        private static void RunShellFix(TestRun run, IList<string> filters, Session session)
+        {
+            if (!Want(filters, "svg-shell-fix"))
+            {
+                return;
+            }
+
+            var fails = new List<string>();
+            if (!session.TryNewSlide(out string error)
+                || !session.TryApply(InlineHtml(null, HousePath), out _, out error)
+                || !session.TryRead(false, out PptHtmlReadResult before, out error))
+            {
+                fails.Add(error ?? "铺页失败");
+                Finish(run, "svg-shell-fix", fails);
+                return;
+            }
+
+            string oldId = FindType(before, "svg") == null ? "" : FindType(before, "svg").ShapeId;
+            if (string.IsNullOrEmpty(oldId) || !DropSvgParts(session, out error)
+                || !session.TryApply(InlineHtml(oldId, "M1 1"), out PptHtmlApplyResult updated, out error)
+                || !session.TryRead(false, out PptHtmlReadResult after, out error))
+            {
+                fails.Add(error ?? "补写失败");
+            }
+            else
+            {
+                PptHtmlShapeNode again = FindType(after, "svg");
+                if (again == null || again.SvgSourceMissing)
+                {
+                    fails.Add("补写后仍缺原文");
+                }
+                else
+                {
+                    CheckReplacedPath(fails, again.SvgMarkup);
+                    if (string.Equals(again.ShapeId, oldId, StringComparison.Ordinal))
+                    {
+                        fails.Add("编号未变");
+                    }
+                }
+
+                if (JoinWarnings(updated).IndexOf("ShapeId 变为", StringComparison.Ordinal) < 0)
+                {
+                    fails.Add("回包没有新编号");
+                }
+            }
+
+            Finish(run, "svg-shell-fix", fails);
+        }
+
+        private static void RunOmit(TestRun run, IList<string> filters, Session session)
+        {
+            if (!Want(filters, "svg-omit"))
+            {
+                return;
+            }
+
+            var fails = new List<string>();
+            if (!ApplySvgAndNote(session, out PptHtmlReadResult full, out string error))
+            {
+                fails.Add(error ?? "铺页失败");
+                Finish(run, "svg-omit", fails);
+                return;
+            }
+
+            PptHtmlShapeNode svg = FindType(full, "svg");
+            PptHtmlShapeNode note = FindTextNode(full, "旁边");
+            if (svg == null || note == null
+                || !session.TryApply(ContentHtml.TextboxUpdate(note.ShapeId, "改过"), out _, out error)
+                || !session.TryRead(false, out PptHtmlReadResult after, out error))
+            {
+                fails.Add(error ?? "只改文字失败");
+            }
+            else
+            {
+                PptHtmlShapeNode again = FindId(after, svg.ShapeId);
+                if (again == null || (again.SvgMarkup ?? "").IndexOf(HousePath, StringComparison.Ordinal) < 0)
+                {
+                    fails.Add("没提到的 svg 被动了");
+                }
+
+                if (FindTextNode(after, "改过") == null)
+                {
+                    fails.Add("文字没改成");
+                }
+            }
+
+            Finish(run, "svg-omit", fails);
+        }
+
+        private static void RunTwice(TestRun run, IList<string> filters, Session session)
+        {
+            if (!Want(filters, "svg-twice"))
+            {
+                return;
+            }
+
+            var fails = new List<string>();
+            if (!session.TryNewSlide(out string error)
+                || !session.TryApply(InlineHtml(null, HousePath), out _, out error)
+                || !session.TryRead(false, out PptHtmlReadResult first, out error))
+            {
+                fails.Add(error ?? "铺页失败");
+                Finish(run, "svg-twice", fails);
+                return;
+            }
+
+            string id0 = FindType(first, "svg").ShapeId;
+            if (!session.TryApply(InlineHtml(id0, "M1 1"), out _, out error)
+                || !session.TryRead(false, out PptHtmlReadResult mid, out error))
+            {
+                fails.Add(error ?? "第一次更新失败");
+                Finish(run, "svg-twice", fails);
+                return;
+            }
+
+            string id1 = FindType(mid, "svg").ShapeId;
+            if (!session.TryApply(InlineHtml(id1, "M2 2"), out _, out error)
+                || !session.TryRead(false, out PptHtmlReadResult after, out error))
+            {
+                fails.Add(error ?? "第二次更新失败");
+            }
+            else
+            {
+                PptHtmlShapeNode again = FindType(after, "svg");
+                string markup = again == null ? "" : (again.SvgMarkup ?? "");
+                if (markup.IndexOf("M2 2", StringComparison.Ordinal) < 0
+                    || markup.IndexOf("M1 1", StringComparison.Ordinal) >= 0
+                    || markup.IndexOf(HousePath, StringComparison.Ordinal) >= 0
+                    || string.Equals(again.ShapeId, id0, StringComparison.Ordinal))
+                {
+                    fails.Add(markup + " id=" + (again == null ? "" : again.ShapeId));
+                }
+            }
+
+            Finish(run, "svg-twice", fails);
+        }
+
+        private static void RunMarkup(
+            TestRun run,
+            IList<string> filters,
+            Session session,
+            string id,
+            string inner,
+            string needle,
+            string wppTag)
+        {
+            if (!Want(filters, id))
+            {
+                return;
+            }
+
+            var fails = new List<string>();
+            if (!session.TryNewSlide(out string error))
+            {
+                fails.Add(error ?? "新建页失败");
+            }
+            else if (session.HostIsWpp && !string.IsNullOrEmpty(wppTag))
+            {
+                if (session.TryApply(SvgWith(inner), out _, out error))
+                {
+                    fails.Add("WPS 不该插入");
+                }
+                else if (error == null || error.IndexOf("WPS 不支持 " + wppTag, StringComparison.Ordinal) < 0)
+                {
+                    fails.Add(error ?? "没有点名 " + wppTag);
+                }
+                else if (!session.TryRead(false, out PptHtmlReadResult empty, out error))
+                {
+                    fails.Add(error ?? "读页失败");
+                }
+                else if (FindType(empty, "svg") != null)
+                {
+                    fails.Add("页上仍有 svg");
+                }
+            }
+            else if (!session.TryApply(SvgWith(inner), out _, out error)
+                || !session.TryRead(false, out PptHtmlReadResult full, out error))
+            {
+                fails.Add(error ?? "失败");
+            }
+            else
+            {
+                PptHtmlShapeNode n = FindType(full, "svg");
+                if (n == null || (n.SvgMarkup ?? "").IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    fails.Add(n == null ? "没有 svg" : n.SvgMarkup);
+                }
+            }
+
+            Finish(run, id, fails);
+        }
+
+        private static void RunTextPath(TestRun run, IList<string> filters, Session session)
+        {
+            if (!Want(filters, "svg-text-path"))
+            {
+                return;
+            }
+
+            var fails = new List<string>();
+            PptHtmlReadResult full = null;
+            if (!session.TryNewSlide(out string error))
+            {
+                fails.Add(error ?? "新建页失败");
+            }
+            else if (session.HostIsWpp)
+            {
+                if (session.TryApply(SvgWith("<path d=\"M4 4\"/><text>房子</text>"), out _, out error))
+                {
+                    fails.Add("WPS 不该插入带 text 的 svg");
+                }
+                else if (error == null
+                    || error.IndexOf("WPS 不支持 <text>", StringComparison.Ordinal) < 0
+                    || error.IndexOf("<path>", StringComparison.Ordinal) >= 0)
+                {
+                    fails.Add(error ?? "没有只点名 <text>");
+                }
+                else if (!session.TryRead(false, out full, out error))
+                {
+                    fails.Add(error ?? "读页失败");
+                }
+                else if (FindType(full, "svg") != null)
+                {
+                    fails.Add("页上仍有 svg");
+                }
+            }
+            else if (!session.TryApply(SvgWith("<path d=\"M4 4\"/><text>房子</text>"), out _, out error)
+                || !session.TryRead(false, out full, out error))
+            {
+                fails.Add(error ?? "失败");
+            }
+            else
+            {
+                PptHtmlShapeNode n = FindType(full, "svg");
+                string markup = n == null ? "" : (n.SvgMarkup ?? "");
+                if (markup.IndexOf("M4 4", StringComparison.Ordinal) < 0
+                    || markup.IndexOf("房子", StringComparison.Ordinal) < 0
+                    || !string.IsNullOrEmpty(n.Text))
+                {
+                    fails.Add(markup + " text=" + (n == null ? "" : n.Text));
+                }
+
+                if (!MatchCount(full, "text", "房子", out int hits, out error))
+                {
+                    fails.Add(error ?? "搜索失败");
+                }
+                else if (hits != 0)
+                {
+                    fails.Add("文字命中 " + hits);
+                }
+            }
+
+            Finish(run, "svg-text-path", fails);
+        }
+
+        private static void RunFileNoPart(TestRun run, IList<string> filters, Session session)
+        {
+            if (!Want(filters, "svg-file-nopart"))
+            {
+                return;
+            }
+
+            var fails = new List<string>();
+            if (WriteHouseFile() == null)
+            {
+                fails.Add("写文件失败");
+                Finish(run, "svg-file-nopart", fails);
+                return;
+            }
+
+            string html = ContentHtml.Section(
+                "  <img data-shape-type=\"picture\" data-src=\"icons/house.svg\" style=\""
+                + ContentHtml.Geo(10, 20, 15, 15) + "\" />");
+            if (!session.TryNewSlide(out string error)
+                || !session.TryApply(html, out _, out error)
+                || !session.TryRead(false, out PptHtmlReadResult full, out error))
+            {
+                fails.Add(error ?? "失败");
+            }
+            else
+            {
+                PptHtmlShapeNode file = FindSrcContaining(full, "house.svg");
+                if (file == null || !PptShapeId.TryParseShape(file.ShapeId, out string slideId, out int comId))
+                {
+                    fails.Add("没有文件引用");
+                }
+                else if (PartHasItem(session, slideId, comId))
+                {
+                    fails.Add("文件引用写进了部件");
+                }
+                else
+                {
+                    fails.AddRange(CheckDisk(file));
+                }
+            }
+
+            Finish(run, "svg-file-nopart", fails);
+        }
+
+        private static void RunTwoDrop(TestRun run, IList<string> filters, Session session)
+        {
+            if (!Want(filters, "svg-two-drop"))
+            {
+                return;
+            }
+
+            var fails = new List<string>();
+            if (!session.TryNewSlide(out string error)
+                || !session.TryApply(TwoSvgHtml(), out _, out error)
+                || !session.TryRead(false, out PptHtmlReadResult full, out error))
+            {
+                fails.Add(error ?? "铺页失败");
+                Finish(run, "svg-two-drop", fails);
+                return;
+            }
+
+            PptHtmlShapeNode keep = FindMarkup(full, HousePath);
+            PptHtmlShapeNode drop = FindMarkup(full, "M8 8");
+            if (keep == null || drop == null
+                || !PptShapeId.TryParseShape(drop.ShapeId, out string slideId, out int comId)
+                || !MutateItem(session, slideId, comId, item => item.Remove(), out error)
+                || !session.TryRead(false, out PptHtmlReadResult after, out error))
+            {
+                fails.Add(error ?? "去掉一条失败");
+            }
+            else
+            {
+                PptHtmlShapeNode still = FindId(after, keep.ShapeId);
+                PptHtmlShapeNode gone = FindId(after, drop.ShapeId);
+                if (still == null || (still.SvgMarkup ?? "").IndexOf(HousePath, StringComparison.Ordinal) < 0)
+                {
+                    fails.Add("留下的那张丢了");
+                }
+
+                if (gone == null || !gone.SvgSourceMissing)
+                {
+                    fails.Add("去掉的那张没有单独报缺");
+                }
+            }
+
+            Finish(run, "svg-two-drop", fails);
+        }
+
+        private static void RunBad64(TestRun run, IList<string> filters, Session session)
+        {
+            if (!Want(filters, "svg-bad64"))
+            {
+                return;
+            }
+
+            var fails = new List<string>();
+            if (!ApplySvgAndNote(session, out PptHtmlReadResult full, out string error))
+            {
+                fails.Add(error ?? "铺页失败");
+                Finish(run, "svg-bad64", fails);
+                return;
+            }
+
+            PptHtmlShapeNode svg = FindType(full, "svg");
+            if (svg == null || !PptShapeId.TryParseShape(svg.ShapeId, out string slideId, out int comId)
+                || !MutateItem(session, slideId, comId, item => item.Value = "!!!!", out error)
+                || !session.TryRead(false, out PptHtmlReadResult after, out error))
+            {
+                fails.Add(error ?? "改坏原文失败");
+            }
+            else
+            {
+                PptHtmlShapeNode again = FindId(after, svg.ShapeId);
+                if (again == null || !again.SvgSourceMissing)
+                {
+                    fails.Add("坏原文没有落在这一张");
+                }
+
+                if (FindTextNode(after, "旁边") == null)
+                {
+                    fails.Add("同页文字丢了");
+                }
+            }
+
+            Finish(run, "svg-bad64", fails);
+        }
+
+        private static bool ApplySvgAndNote(Session session, out PptHtmlReadResult full, out string error)
+        {
+            full = null;
+            string html = ContentHtml.Section(
+                "  <svg style=\"" + ContentHtml.Geo(10, 20, 15, 15)
+                + "\" viewBox=\"0 0 24 24\"><path d=\"" + HousePath + "\"/></svg>\n"
+                + "  <div data-shape-type=\"textbox\" style=\"" + ContentHtml.Geo(40, 20, 20, 10) + "\">旁边</div>");
+            return session.TryNewSlide(out error)
+                && session.TryApply(html, out _, out error)
+                && session.TryRead(false, out full, out error);
+        }
+
+        private static PptHtmlShapeNode FindTextNode(PptHtmlReadResult result, string text)
+        {
+            if (result == null || result.Shapes == null)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < result.Shapes.Count; i++)
+            {
+                PptHtmlShapeNode n = result.Shapes[i];
+                if (n != null && (n.Text ?? "").IndexOf(text, StringComparison.Ordinal) >= 0)
+                {
+                    return n;
+                }
+            }
+
+            return null;
+        }
+
+        private const string PartNs = "urn:easywrite:ppt-svg:v1";
+
+        private static bool DropSvgParts(Session session, out string error)
+        {
+            error = null;
+            try
+            {
+                object parts = Member(session.Pres, "CustomXMLParts");
+                int count = Convert.ToInt32(Member(parts, "Count"), CultureInfo.InvariantCulture);
+                for (int i = count; i >= 1; i--)
+                {
+                    object part = Member(parts, "Item", i);
+                    string xml = Convert.ToString(Member(part, "XML")) ?? "";
+                    if (xml.IndexOf(PartNs, StringComparison.Ordinal) >= 0)
+                    {
+                        Member(part, "Delete");
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static bool PartHasItem(Session session, string slideId, int comId)
+        {
+            if (!TryLoadPart(session, out XElement root, out _))
+            {
+                return false;
+            }
+
+            return root != null && FindPartItem(root, slideId, comId) != null;
+        }
+
+        private static bool MutateItem(Session session, string slideId, int comId, Action<XElement> mutate, out string error)
+        {
+            if (!TryLoadPart(session, out XElement root, out object part))
+            {
+                error = "没有 svg 部件";
+                return false;
+            }
+
+            XElement item = FindPartItem(root, slideId, comId);
+            if (item == null)
+            {
+                error = "部件里没有这条";
+                return false;
+            }
+
+            try
+            {
+                mutate(item);
+                object parts = Member(session.Pres, "CustomXMLParts");
+                string xml = root.ToString(SaveOptions.DisableFormatting);
+                Member(part, "Delete");
+                Member(parts, "Add", xml);
+                error = null;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static bool TryLoadPart(Session session, out XElement root, out object part)
+        {
+            root = null;
+            part = null;
+            try
+            {
+                object parts = Member(session.Pres, "CustomXMLParts");
+                int count = Convert.ToInt32(Member(parts, "Count"), CultureInfo.InvariantCulture);
+                for (int i = 1; i <= count; i++)
+                {
+                    object candidate = Member(parts, "Item", i);
+                    string xml = Convert.ToString(Member(candidate, "XML")) ?? "";
+                    if (xml.IndexOf(PartNs, StringComparison.Ordinal) < 0)
+                    {
+                        continue;
+                    }
+
+                    part = candidate;
+                    root = XElement.Parse(xml);
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return false;
+        }
+
+        private static XElement FindPartItem(XElement root, string slideId, int comId)
+        {
+            string shape = comId.ToString(CultureInfo.InvariantCulture);
+            foreach (XElement item in root.Elements())
+            {
+                if (!string.Equals(item.Name.LocalName, "item", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                XAttribute slide = item.Attribute("slide");
+                XAttribute id = item.Attribute("shape");
+                if (slide != null && id != null
+                    && string.Equals(slide.Value, slideId, StringComparison.Ordinal)
+                    && string.Equals(id.Value, shape, StringComparison.Ordinal))
+                {
+                    return item;
+                }
+            }
+
+            return null;
+        }
+
+        private static object Member(object target, string name, params object[] args)
+        {
+            BindingFlags flags = BindingFlags.InvokeMethod | BindingFlags.GetProperty;
+            if (args == null || args.Length == 0)
+            {
+                return target.GetType().InvokeMember(name, flags, null, target, null);
+            }
+
+            return target.GetType().InvokeMember(name, flags, null, target, args);
         }
 
         private static bool NeedHost(IList<string> filters)

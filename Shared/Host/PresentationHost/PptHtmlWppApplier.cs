@@ -1214,7 +1214,10 @@ namespace WordAddIn1.PresentationHost
                     catch (Exception ex)
                     {
                         PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
-                        error = "插入 svg 失败: " + ex.Message + "；path=" + picPath;
+                        string why = PptHtmlSvgStore.DescribeWppUnsupported(node.SvgMarkup);
+                        error = string.IsNullOrEmpty(why)
+                            ? "插入 svg 失败: " + ex.Message + "；path=" + picPath
+                            : "插入 svg 失败: " + why;
                         return false;
                     }
 
