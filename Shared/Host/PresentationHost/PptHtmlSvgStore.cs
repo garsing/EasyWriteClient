@@ -453,14 +453,19 @@ namespace WordAddIn1.PresentationHost
 
                 mutate(root);
                 string xml = root.ToString(SaveOptions.DisableFormatting);
-                if (part == null)
+                object parts = Member(presentation, "CustomXMLParts");
+                if (part != null)
                 {
-                    object parts = Member(presentation, "CustomXMLParts");
-                    Member(parts, "Add", xml);
-                    return true;
+                    try
+                    {
+                        Member(part, "Delete");
+                    }
+                    catch (Exception)
+                    {
+                    }
                 }
 
-                Member(part, "LoadXML", xml);
+                Member(parts, "Add", xml);
                 return true;
             }
             catch (Exception ex)

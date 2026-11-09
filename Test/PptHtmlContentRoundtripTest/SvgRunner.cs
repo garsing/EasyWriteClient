@@ -15,6 +15,8 @@ namespace PptHtmlContentRoundtripTest
     /// <summary>约定 HTML 的内嵌 svg 与 .svg 文件引用。前缀 svg-。</summary>
     internal static class SvgRunner
     {
+        private static readonly DateTime RunStartedUtc = DateTime.UtcNow;
+
         private const string HousePath = "M4 12 L12 4 L20 12 H17 V20 H7 V12 Z";
 
         private const string HouseSvg =
@@ -439,7 +441,7 @@ namespace PptHtmlContentRoundtripTest
                     {
                         fails.Add(error ?? "更新后读失败");
                     }
-                    else if (session.HostIsWpp)
+                    else
                     {
                         PptHtmlShapeNode again = FindType(after, "svg");
                         if (again == null)
@@ -448,7 +450,7 @@ namespace PptHtmlContentRoundtripTest
                         }
                         else if (string.Equals(again.ShapeId, oldId, StringComparison.Ordinal))
                         {
-                            fails.Add("WPS 编号未变 " + oldId);
+                            fails.Add("编号未变 " + oldId);
                         }
                         else
                         {
@@ -463,23 +465,6 @@ namespace PptHtmlContentRoundtripTest
                         if (warn.IndexOf("ShapeId 变为", StringComparison.Ordinal) < 0)
                         {
                             fails.Add("回包没有新编号：" + warn);
-                        }
-                    }
-                    else
-                    {
-                        if (warn.IndexOf("ShapeId 变为", StringComparison.Ordinal) >= 0)
-                        {
-                            fails.Add(warn);
-                        }
-
-                        PptHtmlShapeNode again = FindId(after, oldId);
-                        if (again == null)
-                        {
-                            fails.Add("更新后找不到原 ShapeId " + oldId);
-                        }
-                        else
-                        {
-                            CheckReplacedPath(fails, again.SvgMarkup);
                         }
                     }
                 }
@@ -893,7 +878,7 @@ namespace PptHtmlContentRoundtripTest
             }
             else
             {
-                PptHtmlShapeNode again = session.HostIsWpp ? FindType(after, "svg") : FindId(after, oldId);
+                PptHtmlShapeNode again = FindType(after, "svg");
                 if (again == null)
                 {
                     fails.Add("更新后没有目标 svg");
@@ -906,27 +891,16 @@ namespace PptHtmlContentRoundtripTest
                         fails.Add("style=" + again.Style);
                     }
 
-                    if (session.HostIsWpp && string.Equals(again.ShapeId, oldId, StringComparison.Ordinal))
+                    if (string.Equals(again.ShapeId, oldId, StringComparison.Ordinal))
                     {
-                        fails.Add("WPS 编号未变");
-                    }
-
-                    if (!session.HostIsWpp && !string.Equals(again.ShapeId, oldId, StringComparison.Ordinal))
-                    {
-                        fails.Add("PPT 编号变了 " + again.ShapeId);
+                        fails.Add("编号未变");
                     }
                 }
 
                 string warn = JoinWarnings(updated);
-                bool warned = warn.IndexOf("ShapeId 变为", StringComparison.Ordinal) >= 0;
-                if (session.HostIsWpp && !warned)
+                if (warn.IndexOf("ShapeId 变为", StringComparison.Ordinal) < 0)
                 {
-                    fails.Add("回包没有新编号");
-                }
-
-                if (!session.HostIsWpp && warned)
-                {
-                    fails.Add(warn);
+                    fails.Add("回包没有新编号：" + warn);
                 }
             }
 
@@ -977,25 +951,15 @@ namespace PptHtmlContentRoundtripTest
                 {
                     fails.Add("读回不是 house2.svg");
                 }
-                else if (session.HostIsWpp && string.Equals(again.ShapeId, oldId, StringComparison.Ordinal))
+                else if (string.Equals(again.ShapeId, oldId, StringComparison.Ordinal))
                 {
-                    fails.Add("WPS 编号未变");
-                }
-                else if (!session.HostIsWpp && !string.Equals(again.ShapeId, oldId, StringComparison.Ordinal))
-                {
-                    fails.Add("PPT 编号变了 " + again.ShapeId);
+                    fails.Add("编号未变");
                 }
 
                 string warn = JoinWarnings(updated);
-                bool warned = warn.IndexOf("ShapeId 变为", StringComparison.Ordinal) >= 0;
-                if (session.HostIsWpp && !warned)
+                if (warn.IndexOf("ShapeId 变为", StringComparison.Ordinal) < 0)
                 {
                     fails.Add("回包没有新编号：" + warn);
-                }
-
-                if (!session.HostIsWpp && warned)
-                {
-                    fails.Add(warn);
                 }
             }
 
@@ -1391,16 +1355,9 @@ namespace PptHtmlContentRoundtripTest
                 WorkspacePathResolver.GetSessionDirectory(),
                 "ppt_svg",
                 slideId + "_" + comId.ToString(CultureInfo.InvariantCulture) + ".svg");
-            if (!File.Exists(file))
+            if (File.Exists(file) && File.GetLastWriteTimeUtc(file) >= RunStartedUtc.AddSeconds(-2))
             {
-                fails.Add("没有文件 " + file);
-                return fails;
-            }
-
-            string text = File.ReadAllText(file, Encoding.UTF8);
-            if (text.IndexOf(HousePath, StringComparison.Ordinal) < 0)
-            {
-                fails.Add("文件里没有原路径");
+                fails.Add("仍写入了 " + file);
             }
 
             return fails;

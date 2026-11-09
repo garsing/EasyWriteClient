@@ -675,7 +675,7 @@ namespace WordAddIn1.PresentationHost
             PptHtmlApplyNode node,
             List<string> hard)
         {
-            if (node == null || hard == null)
+            if (node == null || hard == null || node.SvgLeaveUnchanged)
             {
                 return;
             }
