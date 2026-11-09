@@ -820,9 +820,32 @@ namespace PptHtmlContentRoundtripTest
             }
 
             var fails = new List<string>();
-            if (!session.TryNewSlide(out string error)
-                || !session.TryApply(SvgWith("<text>房子</text>"), out _, out error)
-                || !session.TryRead(false, out PptHtmlReadResult full, out error))
+            PptHtmlReadResult full = null;
+            if (!session.TryNewSlide(out string error))
+            {
+                fails.Add(error ?? "新建页失败");
+            }
+            else if (session.HostIsWpp)
+            {
+                if (session.TryApply(SvgWith("<text>房子</text>"), out _, out error))
+                {
+                    fails.Add("WPS 不该插入只有文字的 svg");
+                }
+                else if (error == null || error.IndexOf("插入 svg 失败", StringComparison.Ordinal) < 0)
+                {
+                    fails.Add(error ?? "没有插入失败");
+                }
+                else if (!session.TryRead(false, out full, out error))
+                {
+                    fails.Add(error ?? "读页失败");
+                }
+                else if (FindType(full, "svg") != null)
+                {
+                    fails.Add("页上仍有 svg");
+                }
+            }
+            else if (!session.TryApply(SvgWith("<text>房子</text>"), out _, out error)
+                || !session.TryRead(false, out full, out error))
             {
                 fails.Add(error ?? "失败");
             }
