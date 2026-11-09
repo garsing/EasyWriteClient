@@ -31,6 +31,8 @@ namespace WordAddIn1
         private static int _readImageSerial;
         private static ZipArchive _readZip;
         private static Dictionary<string, string> _readRelsDict;
+        private static Dictionary<string, string> _readFlatRels;
+        private static Dictionary<string, byte[]> _readFlatBinaries;
 
         private static readonly XNamespace NS_CHART =
             "http://schemas.openxmlformats.org/drawingml/2006/chart";
@@ -188,28 +190,36 @@ namespace WordAddIn1
 
                 if (extractImages)
                 {
-                    if (string.IsNullOrEmpty(docPath))
-                    {
-                        throw new Exception("抽图缺少文档副本路径");
-                    }
-
                     pathForImages = docPath;
                     string docUuid = DocumentState.CurrDocUuid;
-
                     EasyWriteDiagnostics.LogDocumentExtractVerbose($"[WordReader] 文档路径: {pathForImages}");
                     EasyWriteDiagnostics.LogDocumentExtractVerbose($"[WordReader] 文档UUID: {docUuid}");
 
-                    fileHash = CalculateFileHash(pathForImages);
+                    if (!string.IsNullOrEmpty(docPath))
+                    {
+                        fileHash = CalculateFileHash(pathForImages);
+                        imageSaveDir = ImageDirectoryForCopy(pathForImages);
+                    }
+                    else
+                    {
+                        fileHash = "wordopenxml";
+                        imageSaveDir = ImageDirectoryForLiveDocument(document);
+                    }
+
                     if (string.IsNullOrEmpty(fileHash))
                     {
                         fileHash = "extract";
                     }
 
-                    EasyWriteDiagnostics.LogDocumentExtractVerbose($"[WordReader] 文件hash: {fileHash}");
+                    if (string.IsNullOrEmpty(imageSaveDir))
+                    {
+                        throw new Exception("工作区根不可用，无法抽取图片");
+                    }
 
-                    imageSaveDir = ImageDirectoryForCopy(pathForImages);
+                    EasyWriteDiagnostics.LogDocumentExtractVerbose($"[WordReader] 文件hash: {fileHash}");
                     ResetImageDirectory(imageSaveDir);
                     EasyWriteDiagnostics.LogDocumentExtractVerbose($"[WordReader] 图片保存目录: {imageSaveDir}");
+                    IndexFlatOpcPackage(xmlDoc);
                 }
                 else
                 {
@@ -680,6 +690,17 @@ namespace WordAddIn1
             return FormatImageTag(imageId, ResolveImagePathForDrawing(drawing));
         }
 
+        private static string AppendPictContent(XElement pict)
+        {
+            XNamespace vml = "urn:schemas-microsoft-com:vml";
+            XNamespace rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+            XElement imagedata = pict == null ? null : pict.Descendants(vml + "imagedata").FirstOrDefault();
+            string relId = imagedata?.Attribute(rel + "id")?.Value ?? "";
+            string meta = "|||" + relId;
+            string imageId = DocumentState.AllocateUniqueImageId(meta);
+            return FormatImageTag(imageId, ResolveImagePathForRelationship(relId));
+        }
+
         /// <summary>
         /// 规范化拼串：docPrId|docPrName|cx|cy|rId（缺省空串；rId 优先 embed）。
         /// </summary>
@@ -1068,7 +1089,6 @@ namespace WordAddIn1
         private static void BeginReadImageContext(bool extractImages, string docPath, string imageSaveDir, string fileHash)
         {
             _readUseFullImages = extractImages
-                && !string.IsNullOrEmpty(docPath)
                 && !string.IsNullOrEmpty(imageSaveDir)
                 && !string.IsNullOrEmpty(fileHash);
             _readDocPath = docPath;
@@ -1084,6 +1104,8 @@ namespace WordAddIn1
             _readZip?.Dispose();
             _readZip = null;
             _readRelsDict = null;
+            _readFlatRels = null;
+            _readFlatBinaries = null;
             _readUseFullImages = false;
             _readDocPath = null;
             _readImageSaveDir = null;
@@ -1106,7 +1128,7 @@ namespace WordAddIn1
 
         private static void EnsureReadZipAndRels()
         {
-            if (!_readUseFullImages || _readZip != null)
+            if (!_readUseFullImages || _readZip != null || string.IsNullOrEmpty(_readDocPath))
             {
                 return;
             }
@@ -1191,6 +1213,12 @@ namespace WordAddIn1
             var imageEntry = _readZip?.GetEntry(imagePathInZip);
             if (imageEntry == null)
             {
+                string fromPackage = TrySaveFlatPackageImage(relId, imagePathInZip);
+                if (!string.IsNullOrEmpty(fromPackage))
+                {
+                    return fromPackage;
+                }
+
                 System.Diagnostics.Debug.WriteLine($"[WordReader] ⚠️ 图片文件不存在于ZIP中: {imagePathInZip}，使用 placeholder");
                 return AllocatePlaceholderImagePath();
             }
@@ -1248,7 +1276,8 @@ namespace WordAddIn1
 
                 string localName = child.Name.LocalName;
                 if (child.Name == w + "r" || child.Name == w + "hyperlink"
-                    || child.Name == w + "drawing" || localName == "AlternateContent")
+                    || child.Name == w + "drawing" || child.Name == w + "pict"
+                    || localName == "AlternateContent")
                 {
                     seenReadable = true;
                 }
@@ -1299,7 +1328,8 @@ namespace WordAddIn1
                 }
 
                 if (child.Name == w + "r" || child.Name == w + "hyperlink"
-                    || child.Name == w + "drawing" || localName == "AlternateContent")
+                    || child.Name == w + "drawing" || child.Name == w + "pict"
+                    || localName == "AlternateContent")
                 {
                     return false;
                 }
@@ -1517,6 +1547,15 @@ namespace WordAddIn1
                         orderLog.Add(IsChartDrawing(el) ? "chart-drawing" : "drawing");
                     }
                 }
+                else if (el.Name == w + "pict")
+                {
+                    if (emittedDrawings.Add(el))
+                    {
+                        FlushRunText(textBuffer, output);
+                        output.Append(AppendPictContent(el));
+                        orderLog.Add("pict");
+                    }
+                }
                 else if (IsRevisionInsertion(el, w))
                 {
                     orderLog.Add("ins");
@@ -1578,6 +1617,15 @@ namespace WordAddIn1
 
                         output.Append(AppendDrawingContent(child, w));
                         orderLog.Add(IsChartDrawing(child) ? "p:chart-drawing" : "p:drawing");
+                    }
+                }
+                else if (child.Name == w + "pict")
+                {
+                    if (emittedDrawings.Add(child))
+                    {
+                        FlushRunText(textBuffer, output);
+                        output.Append(AppendPictContent(child));
+                        orderLog.Add("p:pict");
                     }
                 }
                 else if (localName == "AlternateContent")
@@ -2226,6 +2274,257 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine($"[WordReader] 计算文件hash失败: {ex.Message}");
                 return null;
             }
+        }
+
+        private static string ResolveImagePathForRelationship(string relId)
+        {
+            if (!_readUseFullImages || string.IsNullOrEmpty(relId))
+            {
+                return AllocatePlaceholderImagePath();
+            }
+
+            EnsureReadZipAndRels();
+            string target = null;
+            if (_readRelsDict != null)
+            {
+                _readRelsDict.TryGetValue(relId, out target);
+            }
+
+            if (string.IsNullOrEmpty(target) && _readFlatRels != null)
+            {
+                _readFlatRels.TryGetValue(relId, out target);
+            }
+
+            if (string.IsNullOrEmpty(target))
+            {
+                System.Diagnostics.Debug.WriteLine($"[WordReader] ⚠️ 无法解析图片 relationship: {relId}，使用 placeholder");
+                return AllocatePlaceholderImagePath();
+            }
+
+            string saved = TrySaveFlatPackageImage(relId, target);
+            if (!string.IsNullOrEmpty(saved))
+            {
+                return saved;
+            }
+
+            if (_readZip != null)
+            {
+                string imagePathInZip = ZipPathForRelationshipTarget(target);
+                var imageEntry = _readZip.GetEntry(imagePathInZip);
+                if (imageEntry != null)
+                {
+                    try
+                    {
+                        return SaveImageBytes(imagePathInZip, ReadZipEntry(imageEntry));
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[WordReader] ⚠️ 单图落盘失败: {ex.Message}，使用 placeholder");
+                    }
+                }
+            }
+
+            return AllocatePlaceholderImagePath();
+        }
+
+        private static string ZipPathForRelationshipTarget(string target)
+        {
+            if (string.IsNullOrEmpty(target))
+            {
+                return "";
+            }
+
+            string cleaned = target.Replace('\\', '/');
+            if (cleaned.StartsWith("/"))
+            {
+                return cleaned.TrimStart('/');
+            }
+
+            if (cleaned.StartsWith("word/", StringComparison.OrdinalIgnoreCase))
+            {
+                return cleaned;
+            }
+
+            if (cleaned.StartsWith("media/", StringComparison.OrdinalIgnoreCase))
+            {
+                return "word/" + cleaned;
+            }
+
+            return "word/media/" + cleaned;
+        }
+
+        private static byte[] ReadZipEntry(ZipArchiveEntry entry)
+        {
+            using (var source = entry.Open())
+            using (var buffer = new MemoryStream())
+            {
+                source.CopyTo(buffer);
+                return buffer.ToArray();
+            }
+        }
+
+        private static string TrySaveFlatPackageImage(string relId, string targetOrZipPath)
+        {
+            if (_readFlatBinaries == null || _readFlatBinaries.Count == 0)
+            {
+                return null;
+            }
+
+            string partName = targetOrZipPath ?? "";
+            if (_readFlatRels != null && !string.IsNullOrEmpty(relId) && _readFlatRels.TryGetValue(relId, out string relTarget))
+            {
+                partName = relTarget;
+            }
+
+            partName = partName.Replace('\\', '/');
+            if (!partName.StartsWith("/"))
+            {
+                if (partName.StartsWith("word/", StringComparison.OrdinalIgnoreCase))
+                {
+                    partName = "/" + partName;
+                }
+                else if (partName.StartsWith("media/", StringComparison.OrdinalIgnoreCase))
+                {
+                    partName = "/word/" + partName;
+                }
+                else
+                {
+                    partName = "/word/media/" + partName.TrimStart('/');
+                }
+            }
+
+            if (!_readFlatBinaries.TryGetValue(partName, out byte[] bytes) || bytes == null || bytes.Length == 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                return SaveImageBytes(partName, bytes);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[WordReader] ⚠️ 单图落盘失败: {ex.Message}，使用 placeholder");
+                return null;
+            }
+        }
+
+        private static string SaveImageBytes(string nameForExtension, byte[] bytes)
+        {
+            string ext = Path.GetExtension(nameForExtension ?? "");
+            if (string.IsNullOrEmpty(ext) || ext.IndexOf('/') >= 0)
+            {
+                ext = ".png";
+            }
+
+            _readImageSerial++;
+            string imageFilename = "image_" + _readImageSerial + ext;
+            string imageSavePath = Path.Combine(_readImageSaveDir, imageFilename);
+            File.WriteAllBytes(imageSavePath, bytes);
+            return Path.GetFullPath(imageSavePath).Replace('\\', '/');
+        }
+
+        private static void IndexFlatOpcPackage(XDocument xmlDoc)
+        {
+            _readFlatRels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            _readFlatBinaries = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            if (xmlDoc == null || xmlDoc.Root == null)
+            {
+                return;
+            }
+
+            XNamespace pkg = "http://schemas.microsoft.com/office/2006/xmlPackage";
+            if (xmlDoc.Root.Name != pkg + "package")
+            {
+                return;
+            }
+
+            XNamespace relNs = "http://schemas.openxmlformats.org/package/2006/relationships";
+            foreach (XElement part in xmlDoc.Root.Elements(pkg + "part"))
+            {
+                string name = part.Attribute(pkg + "name")?.Value ?? "";
+                XElement binary = part.Element(pkg + "binaryData");
+                if (binary != null && !string.IsNullOrWhiteSpace(binary.Value))
+                {
+                    try
+                    {
+                        string b64 = Regex.Replace(binary.Value, @"\s+", "");
+                        _readFlatBinaries[name] = Convert.FromBase64String(b64);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[WordReader] 图片部件解码失败: {name} {ex.Message}");
+                    }
+
+                    continue;
+                }
+
+                if (!name.EndsWith("/word/_rels/document.xml.rels", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                XElement xmlData = part.Element(pkg + "xmlData");
+                if (xmlData == null)
+                {
+                    continue;
+                }
+
+                foreach (XElement rel in xmlData.Descendants(relNs + "Relationship"))
+                {
+                    string id = rel.Attribute("Id")?.Value;
+                    string target = rel.Attribute("Target")?.Value;
+                    if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(target))
+                    {
+                        _readFlatRels[id] = target;
+                    }
+                }
+            }
+        }
+
+        private static string ImageDirectoryForLiveDocument(Word.Document document)
+        {
+            string root = null;
+            try
+            {
+                root = UserService.Instance == null ? null : UserService.Instance.WorkspaceRootEffective;
+            }
+            catch (Exception)
+            {
+                root = null;
+            }
+
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                return null;
+            }
+
+            string baseDir = Path.Combine(root, "curr_docs");
+            Directory.CreateDirectory(baseDir);
+            string raw = "文档";
+            try
+            {
+                if (document != null && !string.IsNullOrWhiteSpace(document.Name))
+                {
+                    raw = Path.GetFileNameWithoutExtension(document.Name);
+                }
+            }
+            catch (Exception)
+            {
+                raw = "文档";
+            }
+
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                raw = "文档";
+            }
+
+            foreach (char c in Path.GetInvalidFileNameChars())
+            {
+                raw = raw.Replace(c, '_');
+            }
+
+            return Path.Combine(baseDir, raw.Trim() + "_word");
         }
 
         private static string ImageDirectoryForCopy(string copyPath)

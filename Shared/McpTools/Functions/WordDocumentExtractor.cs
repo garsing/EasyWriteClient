@@ -923,7 +923,7 @@ namespace WordAddIn1
             // 第一步半：ExtractImages 时把内存另存为副本供解压抽图，不 Save 原文件、不切换活动文档
             string docCopyPath = null;
             string tempFilePath = null;
-            if (options.ExtractImages)
+            if (options.ExtractImages && !IsLegacyBinaryDoc(document))
             {
                 swStep.Restart();
                 if (!TrySaveDocumentCopies(document, createSeparateCopy: true, verbose, out docCopyPath, out tempFilePath)
@@ -2225,6 +2225,8 @@ namespace WordAddIn1
 
                 string safeName = SanitizeDocumentStem(document);
                 tempFilePath = Path.Combine(baseDir, safeName + ".docx");
+                TryDeleteExistingCopy(tempFilePath);
+                TryDeleteExistingCopy(Path.Combine(baseDir, safeName + "_copy.docx"));
                 if (!TryPersistFileCopy(document, tempFilePath))
                 {
                     tempFilePath = null;
@@ -2259,6 +2261,29 @@ namespace WordAddIn1
                 docCopyPath = null;
                 tempFilePath = null;
                 return false;
+            }
+        }
+
+        private static bool IsLegacyBinaryDoc(Word.Document document)
+        {
+            string fullName = ReadDocumentFullName(document);
+            return ".doc".Equals(Path.GetExtension(fullName), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void TryDeleteExistingCopy(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                return;
+            }
+
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[文档副本] 覆盖前删除失败: {path} {ex.Message}");
             }
         }
 
