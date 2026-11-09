@@ -1208,7 +1208,17 @@ namespace WordAddIn1.PresentationHost
             string svgMode = null;
             string svgMarkup = null;
             string svgSrc = null;
-            if (!PptHtmlSvgStore.TryConsumeRead(shape, ref typeName, out svgMode, out svgMarkup, out svgSrc, out error))
+            bool svgMissing = false;
+            if (!PptHtmlSvgStore.TryConsumeRead(
+                shape,
+                slideId,
+                comId,
+                ref typeName,
+                out svgMode,
+                out svgMarkup,
+                out svgSrc,
+                out svgMissing,
+                out error))
             {
                 return false;
             }
@@ -1481,6 +1491,7 @@ namespace WordAddIn1.PresentationHost
                 InnerHtml = innerHtml,
                 SvgMode = svgMode,
                 SvgMarkup = svgMarkup,
+                SvgSourceMissing = svgMissing,
                 DataSrc = string.Equals(svgMode, "file", StringComparison.OrdinalIgnoreCase) ? svgSrc : null,
                 Editable = editable,
                 Fill = typeName == "group" ? null : fill,

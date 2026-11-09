@@ -235,6 +235,12 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
+            if (node.SvgLeaveUnchanged)
+            {
+                unchanged++;
+                return true;
+            }
+
             if (IsGroupType(node.ShapeType))
             {
                 return TryApplyGroup(
@@ -1022,6 +1028,7 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
+            string oldShapeId = node.ShapeId;
             bool keepHtmlGeo = node.HasGeometry
                 && node.LeftPct.HasValue
                 && node.TopPct.HasValue
@@ -1059,6 +1066,13 @@ namespace WordAddIn1.PresentationHost
             if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, warnings, out string newId, out error))
             {
                 return false;
+            }
+
+            if (!string.Equals(oldShapeId, newId, StringComparison.Ordinal)
+                && string.Equals(node.ShapeType, "svg", StringComparison.OrdinalIgnoreCase)
+                && PptShapeId.TryParseShape(oldShapeId, out string oldSlide, out int oldCom))
+            {
+                PptHtmlSvgStore.ForgetInline(WppCom.GetProperty(slide, "Parent"), oldSlide, oldCom);
             }
 
             warnings.Add("svg 已换图，ShapeId 变为 " + (newId ?? ""));
@@ -1193,18 +1207,9 @@ namespace WordAddIn1.PresentationHost
                         return false;
                     }
 
-                    bool linked = false;
                     try
                     {
-                        try
-                        {
-                            shape = Invoke(shapes, "AddPicture", picPath, true, true, left, top, width, height);
-                            linked = true;
-                        }
-                        catch (Exception)
-                        {
-                            shape = Invoke(shapes, "AddPicture", picPath, false, true, left, top, width, height);
-                        }
+                        shape = Invoke(shapes, "AddPicture", picPath, false, true, left, top, width, height);
                     }
                     catch (Exception ex)
                     {
@@ -1222,7 +1227,12 @@ namespace WordAddIn1.PresentationHost
                     {
                     }
 
-                    if (!PptHtmlSvgStore.TryFinishInserted(shape, slideId, node, linked, out error))
+                    if (!PptHtmlSvgStore.TryFinishInserted(
+                        WppCom.GetProperty(slide, "Parent"),
+                        shape,
+                        slideId,
+                        node,
+                        out error))
                     {
                         try
                         {
@@ -1232,36 +1242,8 @@ namespace WordAddIn1.PresentationHost
                         {
                         }
 
-                        if (!linked)
-                        {
-                            PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
-                            return false;
-                        }
-
-                        try
-                        {
-                            shape = Invoke(shapes, "AddPicture", picPath, false, true, left, top, width, height);
-                        }
-                        catch (Exception ex)
-                        {
-                            PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
-                            error = "插入 svg 失败: " + ex.Message + "；path=" + picPath;
-                            return false;
-                        }
-
-                        if (!PptHtmlSvgStore.TryFinishInserted(shape, slideId, node, false, out error))
-                        {
-                            try
-                            {
-                                Invoke(shape, "Delete");
-                            }
-                            catch (Exception)
-                            {
-                            }
-
-                            PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
-                            return false;
-                        }
+                        PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
+                        return false;
                     }
 
                     PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);

@@ -8,13 +8,16 @@ using System.Xml.Linq;
 namespace WordAddIn1.PresentationHost
 {
     /// <summary>
-    /// 约定 HTML 的 SVG：校验后的原文进会话 ppt_svg，形状上只记模式和相对路径。
+    /// 约定 HTML 的 SVG。内嵌原文进演示文稿的自定义 XML 部件，形状上只记模式。
     /// </summary>
     internal static class PptHtmlSvgStore
     {
         private const string ModeTag = "ew-svg-mode";
         private const string FileTag = "ew-svg-file";
         private const string SrcTag = "ew-svg-src";
+        private const string PartNs = "urn:easywrite:ppt-svg:v1";
+        private const string MissingText = "svg 原文丢失";
+        private static readonly XNamespace Ew = PartNs;
 
         public static bool IsSvgNode(PptHtmlApplyNode node)
         {
@@ -151,10 +154,10 @@ namespace WordAddIn1.PresentationHost
         }
 
         public static bool TryFinishInserted(
+            object presentation,
             object shape,
             string slideId,
             PptHtmlApplyNode node,
-            bool linked,
             out string error)
         {
             error = null;
@@ -171,27 +174,22 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            if (!TryPersist(slideId, comId, node.SvgMarkup, out string relative, out string full, out error))
+            bool inline = string.Equals(node.ShapeType, "svg", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(node.SvgMode, "inline", StringComparison.OrdinalIgnoreCase);
+            if (inline)
             {
-                return false;
+                if (!TrySaveInline(presentation, slideId, comId, node.SvgMarkup, out error))
+                {
+                    return false;
+                }
+
+                return TryStamp(shape, "inline", "", "", out error);
             }
 
-            if (linked && !TryRetargetLink(shape, full))
-            {
-                error = "插入 svg 后不能改到工作区文件";
-                return false;
-            }
-
-            string mode = string.Equals(node.ShapeType, "svg", StringComparison.OrdinalIgnoreCase)
-                ? "inline"
-                : "file";
-            return TryStamp(shape, mode, relative, node.DataSrc, out error);
+            return TryStamp(shape, "file", "", node.DataSrc, out error);
         }
 
-        /// <summary>
-        /// 已有链接时覆盖 ppt_svg 并改链接，ShapeId 不变。
-        /// 没有链接时 recreate=true，调用方删掉再插。
-        /// </summary>
+        /// <summary>内嵌没有外部文件可改，调用方删掉再插。旧编号的部件条目由调用方删。</summary>
         public static bool TryReplaceSource(
             object shape,
             PptHtmlApplyNode node,
@@ -206,62 +204,51 @@ namespace WordAddIn1.PresentationHost
                 return false;
             }
 
-            if (!PptShapeId.TryParseShape(node.ShapeId, out string slideId, out int comId))
+            if (!PptShapeId.TryParseShape(node.ShapeId, out _, out _))
             {
                 error = "ShapeId 无法解析";
                 return false;
             }
 
-            if (!TryReadLinkPath(shape, out _))
-            {
-                recreate = true;
-                return true;
-            }
-
-            string full = FullPath(slideId, comId);
-            string previous = null;
-            if (File.Exists(full))
-            {
-                previous = File.ReadAllText(full, Encoding.UTF8);
-            }
-
-            if (!TryPersist(slideId, comId, node.SvgMarkup, out string relative, out full, out error))
-            {
-                return false;
-            }
-
-            if (!TryRetargetLink(shape, full))
-            {
-                Restore(full, previous);
-                recreate = true;
-                return true;
-            }
-
-            string mode = string.Equals(node.ShapeType, "svg", StringComparison.OrdinalIgnoreCase)
-                ? "inline"
-                : "file";
-            if (!TryStamp(shape, mode, relative, node.DataSrc, out error))
-            {
-                Restore(full, previous);
-                return false;
-            }
-
+            recreate = true;
             return true;
+        }
+
+        public static void ForgetInline(object presentation, string slideId, int comId)
+        {
+            try
+            {
+                TryMutate(presentation, root =>
+                {
+                    XElement item = FindItem(root, slideId, comId);
+                    if (item != null)
+                    {
+                        item.Remove();
+                    }
+                }, out _);
+            }
+            catch (Exception)
+            {
+            }
         }
 
         public static bool TryConsumeRead(
             object shape,
+            string slideId,
+            int comId,
             ref string typeName,
             out string mode,
             out string markup,
             out string src,
+            out bool sourceMissing,
             out string error)
         {
             mode = null;
             markup = null;
             src = null;
+            sourceMissing = false;
             error = null;
-            if (!TryReadMarks(shape, out mode, out string relative, out src))
+            if (!TryReadMarks(shape, out mode, out _, out src))
             {
                 mode = null;
                 src = null;
@@ -270,13 +257,24 @@ namespace WordAddIn1.PresentationHost
 
             if (string.Equals(mode, "inline", StringComparison.OrdinalIgnoreCase))
             {
-                if (!TryLoad(relative, out markup, out error))
+                typeName = "svg";
+                if (!TryPresentation(shape, out object presentation, out error))
                 {
-                    error = "svg 原文丢失: " + (error ?? "");
                     return false;
                 }
 
-                typeName = "svg";
+                if (!TryReadInline(presentation, slideId, comId, out markup, out bool missing, out error))
+                {
+                    return false;
+                }
+
+                if (missing)
+                {
+                    sourceMissing = true;
+                    markup = null;
+                    error = null;
+                }
+
                 return true;
             }
 
@@ -294,13 +292,23 @@ namespace WordAddIn1.PresentationHost
         public static string FormatInlineElement(PptHtmlShapeNode node, string indent)
         {
             XElement el;
-            try
-            {
-                el = XElement.Parse(node.SvgMarkup);
-            }
-            catch (Exception)
+            if (node != null && node.SvgSourceMissing)
             {
                 el = new XElement("svg");
+                el.SetAttributeValue("data-error", MissingText);
+            }
+            else
+            {
+                try
+                {
+                    el = XElement.Parse(node.SvgMarkup);
+                }
+                catch (Exception)
+                {
+                    el = new XElement("svg");
+                }
+
+                el.SetAttributeValue("data-error", null);
             }
 
             if (!string.IsNullOrEmpty(node.ShapeId))
@@ -332,117 +340,291 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
-        private static bool TryPersist(
+        private static bool TrySaveInline(
+            object presentation,
             string slideId,
             int comId,
             string markup,
-            out string relative,
-            out string full,
             out string error)
         {
-            relative = null;
-            full = null;
-            error = null;
-            try
+            string payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(markup ?? ""));
+            return TryMutate(presentation, root =>
             {
-                string dir = Path.Combine(WorkspacePathResolver.GetSessionDirectory(), "ppt_svg");
-                Directory.CreateDirectory(dir);
-                string name = SafeId(slideId) + "_" + comId.ToString(CultureInfo.InvariantCulture) + ".svg";
-                full = Path.Combine(dir, name);
-                File.WriteAllText(full, markup, new UTF8Encoding(false));
-                relative = "ppt_svg/" + name;
-                return true;
-            }
-            catch (Exception ex)
-            {
-                error = "保存 svg 原文失败: " + ex.Message;
-                return false;
-            }
+                XElement item = FindItem(root, slideId, comId);
+                if (item == null)
+                {
+                    item = new XElement(Ew + "item");
+                    item.SetAttributeValue("slide", slideId ?? "");
+                    item.SetAttributeValue("shape", comId.ToString(CultureInfo.InvariantCulture));
+                    root.Add(item);
+                }
+
+                item.Value = payload;
+            }, out error);
         }
 
-        private static bool TryLoad(string relative, out string markup, out string error)
+        private static bool TryReadInline(
+            object presentation,
+            string slideId,
+            int comId,
+            out string markup,
+            out bool missing,
+            out string error)
         {
             markup = null;
+            missing = false;
             error = null;
-            if (string.IsNullOrWhiteSpace(relative) || relative.Contains(".."))
+            if (!TryLoadRoot(presentation, out XElement root, out bool found, out error))
             {
-                error = "svg 路径无效";
                 return false;
             }
 
-            try
+            if (!found)
             {
-                string session = WorkspacePathResolver.GetSessionDirectory();
-                string root = Path.GetFullPath(Path.Combine(session, "ppt_svg"));
-                string full = Path.GetFullPath(Path.Combine(
-                    session,
-                    relative.Replace('/', Path.DirectorySeparatorChar)));
-                if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-                    && !string.Equals(full, root, StringComparison.OrdinalIgnoreCase))
-                {
-                    error = "svg 路径无效";
-                    return false;
-                }
-
-                if (!File.Exists(full))
-                {
-                    error = full;
-                    return false;
-                }
-
-                markup = File.ReadAllText(full, Encoding.UTF8);
+                missing = true;
                 return true;
             }
-            catch (Exception ex)
+
+            XElement item = FindItem(root, slideId, comId);
+            if (item == null || string.IsNullOrWhiteSpace(item.Value))
             {
-                error = ex.Message;
-                return false;
+                missing = true;
+                return true;
             }
-        }
 
-        private static string FullPath(string slideId, int comId)
-        {
-            string name = SafeId(slideId) + "_" + comId.ToString(CultureInfo.InvariantCulture) + ".svg";
-            return Path.Combine(WorkspacePathResolver.GetSessionDirectory(), "ppt_svg", name);
-        }
-
-        private static void Restore(string full, string previous)
-        {
             try
             {
-                if (previous == null)
+                byte[] raw = Convert.FromBase64String(item.Value.Trim());
+                markup = Encoding.UTF8.GetString(raw);
+                if (string.IsNullOrWhiteSpace(markup))
                 {
-                    if (File.Exists(full))
-                    {
-                        File.Delete(full);
-                    }
-
-                    return;
+                    missing = true;
+                    markup = null;
                 }
 
-                File.WriteAllText(full, previous, new UTF8Encoding(false));
+                return true;
             }
             catch (Exception)
             {
+                missing = true;
+                markup = null;
+                return true;
             }
         }
 
-        private static string SafeId(string slideId)
+        private static XElement FindItem(XElement root, string slideId, int comId)
         {
-            var sb = new StringBuilder();
-            if (slideId != null)
+            if (root == null)
             {
-                for (int i = 0; i < slideId.Length; i++)
+                return null;
+            }
+
+            string shape = comId.ToString(CultureInfo.InvariantCulture);
+            foreach (XElement item in root.Elements(Ew + "item"))
+            {
+                XAttribute slide = item.Attribute("slide");
+                XAttribute id = item.Attribute("shape");
+                if (slide != null
+                    && id != null
+                    && string.Equals(slide.Value, slideId ?? "", StringComparison.Ordinal)
+                    && string.Equals(id.Value, shape, StringComparison.Ordinal))
                 {
-                    char c = slideId[i];
-                    if (char.IsLetterOrDigit(c) || c == '-' || c == '_')
-                    {
-                        sb.Append(c);
-                    }
+                    return item;
                 }
             }
 
-            return sb.Length == 0 ? "slide" : sb.ToString();
+            return null;
+        }
+
+        private static bool TryMutate(object presentation, Action<XElement> mutate, out string error)
+        {
+            error = null;
+            try
+            {
+                if (!TryFindPart(presentation, out object part, out XElement root, out error))
+                {
+                    return false;
+                }
+
+                if (part == null)
+                {
+                    root = new XElement(Ew + "svgSources");
+                }
+
+                mutate(root);
+                string xml = root.ToString(SaveOptions.DisableFormatting);
+                if (part == null)
+                {
+                    object parts = Member(presentation, "CustomXMLParts");
+                    Member(parts, "Add", xml);
+                    return true;
+                }
+
+                Member(part, "LoadXML", xml);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "保存 svg 原文失败: " + Unwrap(ex).Message;
+                return false;
+            }
+        }
+
+        private static bool TryLoadRoot(
+            object presentation,
+            out XElement root,
+            out bool found,
+            out string error)
+        {
+            if (!TryFindPart(presentation, out _, out root, out error))
+            {
+                found = false;
+                return false;
+            }
+
+            found = root != null;
+            return true;
+        }
+
+        private static bool TryFindPart(
+            object presentation,
+            out object part,
+            out XElement root,
+            out string error)
+        {
+            part = null;
+            root = null;
+            error = null;
+            try
+            {
+                object parts = Member(presentation, "CustomXMLParts");
+                object selected = null;
+                try
+                {
+                    selected = Member(parts, "SelectByNamespace", PartNs);
+                }
+                catch (Exception)
+                {
+                    selected = null;
+                }
+
+                if (selected != null)
+                {
+                    int count = Convert.ToInt32(Member(selected, "Count"), CultureInfo.InvariantCulture);
+                    if (count >= 1)
+                    {
+                        part = Member(selected, "Item", 1);
+                        root = XElement.Parse(Convert.ToString(Member(part, "XML")) ?? "");
+                        return true;
+                    }
+                }
+
+                int all = Convert.ToInt32(Member(parts, "Count"), CultureInfo.InvariantCulture);
+                for (int i = 1; i <= all; i++)
+                {
+                    object candidate = Member(parts, "Item", i);
+                    string xml = Convert.ToString(Member(candidate, "XML")) ?? "";
+                    if (xml.IndexOf(PartNs, StringComparison.Ordinal) < 0)
+                    {
+                        continue;
+                    }
+
+                    part = candidate;
+                    root = XElement.Parse(xml);
+                    return true;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "读取 svg 原文失败: " + Unwrap(ex).Message;
+                return false;
+            }
+        }
+
+        private static Exception Unwrap(Exception ex)
+        {
+            if (ex is TargetInvocationException tie && tie.InnerException != null)
+            {
+                return tie.InnerException;
+            }
+
+            return ex;
+        }
+
+        private static bool TryPresentation(object shape, out object presentation, out string error)
+        {
+            presentation = null;
+            error = null;
+            object current = shape;
+            for (int i = 0; i < 8 && current != null; i++)
+            {
+                object parent;
+                try
+                {
+                    parent = Member(current, "Parent");
+                }
+                catch (Exception)
+                {
+                    parent = null;
+                }
+
+                if (parent == null)
+                {
+                    break;
+                }
+
+                try
+                {
+                    object parts = Member(parent, "CustomXMLParts");
+                    if (parts != null)
+                    {
+                        presentation = parent;
+                        return true;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                current = parent;
+            }
+
+            error = "找不到演示文稿";
+            return false;
+        }
+
+        private static object Member(object target, string name, params object[] args)
+        {
+            if (args == null || args.Length == 0)
+            {
+                try
+                {
+                    return target.GetType().InvokeMember(
+                        name,
+                        BindingFlags.GetProperty | BindingFlags.InvokeMethod,
+                        null,
+                        target,
+                        null);
+                }
+                catch (Exception)
+                {
+                    return target.GetType().InvokeMember(
+                        name,
+                        BindingFlags.InvokeMethod,
+                        null,
+                        target,
+                        null);
+                }
+            }
+
+            return target.GetType().InvokeMember(
+                name,
+                BindingFlags.InvokeMethod | BindingFlags.GetProperty,
+                null,
+                target,
+                args);
         }
 
         private static bool TryStamp(
@@ -483,7 +665,7 @@ namespace WordAddIn1.PresentationHost
             if (string.Equals(mode, "inline", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(mode, "file", StringComparison.OrdinalIgnoreCase))
             {
-                return !string.IsNullOrWhiteSpace(relative);
+                return true;
             }
 
             mode = null;
@@ -555,66 +737,6 @@ namespace WordAddIn1.PresentationHost
             catch (Exception)
             {
                 return "";
-            }
-        }
-
-        private static bool TryRetargetLink(object shape, string fullPath)
-        {
-            try
-            {
-                object link = shape.GetType().InvokeMember(
-                    "LinkFormat",
-                    BindingFlags.GetProperty,
-                    null,
-                    shape,
-                    null);
-                if (link == null)
-                {
-                    return false;
-                }
-
-                link.GetType().InvokeMember(
-                    "SourceFullName",
-                    BindingFlags.SetProperty,
-                    null,
-                    link,
-                    new object[] { fullPath });
-                return true;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        private static bool TryReadLinkPath(object shape, out string path)
-        {
-            path = null;
-            try
-            {
-                object link = shape.GetType().InvokeMember(
-                    "LinkFormat",
-                    BindingFlags.GetProperty,
-                    null,
-                    shape,
-                    null);
-                if (link == null)
-                {
-                    return false;
-                }
-
-                object src = link.GetType().InvokeMember(
-                    "SourceFullName",
-                    BindingFlags.GetProperty,
-                    null,
-                    link,
-                    null);
-                path = Convert.ToString(src);
-                return !string.IsNullOrWhiteSpace(path);
-            }
-            catch (Exception)
-            {
-                return false;
             }
         }
 

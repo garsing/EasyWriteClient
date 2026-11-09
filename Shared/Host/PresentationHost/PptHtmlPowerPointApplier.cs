@@ -610,6 +610,12 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
+            if (node.SvgLeaveUnchanged)
+            {
+                unchanged++;
+                return true;
+            }
+
             if (IsGroupType(node.ShapeType))
             {
                 return TryApplyGroup(
@@ -1219,6 +1225,7 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
+            string oldShapeId = node.ShapeId;
             bool keepHtmlGeo = node.HasGeometry
                 && node.LeftPct.HasValue
                 && node.TopPct.HasValue
@@ -1256,6 +1263,13 @@ namespace WordAddIn1.PresentationHost
             if (!TryCreate(slide, node, slideWidth, slideHeight, warnings, out string newId, out error))
             {
                 return false;
+            }
+
+            if (!string.Equals(oldShapeId, newId, StringComparison.Ordinal)
+                && string.Equals(node.ShapeType, "svg", StringComparison.OrdinalIgnoreCase)
+                && PptShapeId.TryParseShape(oldShapeId, out string oldSlide, out int oldCom))
+            {
+                PptHtmlSvgStore.ForgetInline(slide.Parent, oldSlide, oldCom);
             }
 
             warnings.Add("svg 已换图，ShapeId 变为 " + (newId ?? ""));
@@ -1644,32 +1658,16 @@ namespace WordAddIn1.PresentationHost
                         return false;
                     }
 
-                    bool linked = false;
                     try
                     {
-                        try
-                        {
-                            shape = slide.Shapes.AddPicture(
-                                picPath,
-                                Office.MsoTriState.msoTrue,
-                                Office.MsoTriState.msoTrue,
-                                left,
-                                top,
-                                width,
-                                height);
-                            linked = true;
-                        }
-                        catch (Exception)
-                        {
-                            shape = slide.Shapes.AddPicture(
-                                picPath,
-                                Office.MsoTriState.msoFalse,
-                                Office.MsoTriState.msoTrue,
-                                left,
-                                top,
-                                width,
-                                height);
-                        }
+                        shape = slide.Shapes.AddPicture(
+                            picPath,
+                            Office.MsoTriState.msoFalse,
+                            Office.MsoTriState.msoTrue,
+                            left,
+                            top,
+                            width,
+                            height);
                     }
                     catch (Exception ex)
                     {
@@ -1678,7 +1676,7 @@ namespace WordAddIn1.PresentationHost
                         return false;
                     }
 
-                    if (!PptHtmlSvgStore.TryFinishInserted(shape, planSlideId(slide), node, linked, out error))
+                    if (!PptHtmlSvgStore.TryFinishInserted(slide.Parent, shape, planSlideId(slide), node, out error))
                     {
                         try
                         {
@@ -1688,43 +1686,8 @@ namespace WordAddIn1.PresentationHost
                         {
                         }
 
-                        if (!linked)
-                        {
-                            PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
-                            return false;
-                        }
-
-                        try
-                        {
-                            shape = slide.Shapes.AddPicture(
-                                picPath,
-                                Office.MsoTriState.msoFalse,
-                                Office.MsoTriState.msoTrue,
-                                left,
-                                top,
-                                width,
-                                height);
-                        }
-                        catch (Exception ex)
-                        {
-                            PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
-                            error = "插入 svg 失败: " + ex.Message + "；path=" + picPath;
-                            return false;
-                        }
-
-                        if (!PptHtmlSvgStore.TryFinishInserted(shape, planSlideId(slide), node, false, out error))
-                        {
-                            try
-                            {
-                                shape.Delete();
-                            }
-                            catch (Exception)
-                            {
-                            }
-
-                            PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
-                            return false;
-                        }
+                        PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
+                        return false;
                     }
 
                     PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);

@@ -32,6 +32,9 @@ namespace WordAddIn1.PresentationHost
         /// <summary>内嵌 svg 的原文。读回时原样写回 svg 元素。</summary>
         public string SvgMarkup { get; set; }
 
+        /// <summary>部件里没有内嵌原文。序列化成带 data-error 的空 svg。</summary>
+        public bool SvgSourceMissing { get; set; }
+
         /// <summary>B2：由 freeform/smartart/group/unknown 栅格而来时记原 type</summary>
         public string RasterizedFrom { get; set; }
 

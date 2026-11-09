@@ -32,6 +32,9 @@ namespace WordAddIn1.PresentationHost
         /// <summary>校验后的 svg 原文。</summary>
         public string SvgMarkup { get; set; }
 
+        /// <summary>读回的空壳 data-error，再提交时不换图。</summary>
+        public bool SvgLeaveUnchanged { get; set; }
+
         public string ChartType { get; set; }
 
         /// <summary>B1：null=不改；none=无填充；#RRGGBB=实色</summary>
@@ -701,13 +704,23 @@ namespace WordAddIn1.PresentationHost
                 item.ShapeType = "svg";
                 item.HasText = false;
                 item.Text = "";
-                if (!PptHtmlSvgStore.TryValidateMarkup(el.ToString(SaveOptions.DisableFormatting), out string normalized, out string svgErr))
+                bool shell = el.Attribute("data-error") != null && !el.Elements().Any();
+                if (shell)
                 {
-                    return Reject(Explain(svgErr), out error);
+                    item.SvgLeaveUnchanged = true;
+                    item.SvgMode = "inline";
                 }
+                else
+                {
+                    el.SetAttributeValue("data-error", null);
+                    if (!PptHtmlSvgStore.TryValidateMarkup(el.ToString(SaveOptions.DisableFormatting), out string normalized, out string svgErr))
+                    {
+                        return Reject(Explain(svgErr), out error);
+                    }
 
-                item.SvgMarkup = normalized;
-                item.SvgMode = "inline";
+                    item.SvgMarkup = normalized;
+                    item.SvgMode = "inline";
+                }
             }
             else if (!string.Equals(shapeType, "group", StringComparison.OrdinalIgnoreCase))
             {
