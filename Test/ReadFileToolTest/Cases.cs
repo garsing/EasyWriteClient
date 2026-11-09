@@ -163,6 +163,22 @@ namespace ReadFileToolTest
                 }
             }
 
+            if (Want("rf-img-emf"))
+            {
+                ToolResult r = Read(fx.Emf);
+                JObject d = Program.Data(r);
+                int width = d["width_px"] == null ? 0 : d["width_px"].Value<int>();
+                int height = d["height_px"] == null ? 0 : d["height_px"].Value<int>();
+                if (r.Success && d["image_base64"] != null && width > 0 && height > 0)
+                {
+                    run.CaseOk("rf-img-emf");
+                }
+                else
+                {
+                    run.CaseFail("rf-img-emf", r.Success ? "无 image_base64" : r.Error);
+                }
+            }
+
             if (Want("rf-img-detailed"))
             {
                 FailHas("rf-img-detailed", Read(fx.Png, detailed: true), "detailed");

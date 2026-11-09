@@ -18,7 +18,7 @@ namespace WordAddIn1
     internal static class FileReadClassifier
     {
         private static readonly HashSet<string> ImageExtensions = NewSet(
-            "png", "jpg", "jpeg", "webp", "bmp", "gif");
+            "png", "jpg", "jpeg", "webp", "bmp", "gif", "emf");
 
         private static readonly HashSet<string> TextExtensions = NewSet(
             "txt", "csv", "tsv", "json", "yaml", "yml", "xml", "py", "md",

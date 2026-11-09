@@ -1,4 +1,6 @@
 using System;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
@@ -11,6 +13,7 @@ namespace ReadFileToolTest
         public string Dir { get; }
         public string NotesMd { get; }
         public string Png { get; }
+        public string Emf { get; }
         public string Zip { get; }
         public string ShortDocx { get; }
         public string LongDocx { get; }
@@ -33,6 +36,8 @@ namespace ReadFileToolTest
             Png = Path.Combine(Dir, "dot.png");
             File.WriteAllBytes(Png, Convert.FromBase64String(
                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="));
+            Emf = Path.Combine(Dir, "box.emf");
+            File.WriteAllBytes(Emf, CreateEmfBytes());
             Zip = Path.Combine(Dir, "x.zip");
             using (var z = ZipFile.Open(Zip, ZipArchiveMode.Create))
             {
@@ -95,6 +100,31 @@ namespace ReadFileToolTest
             catch
             {
                 /* keep temp on lock */
+            }
+        }
+
+        private static byte[] CreateEmfBytes()
+        {
+            using (var stream = new MemoryStream())
+            using (var reference = new Bitmap(1, 1))
+            using (var referenceGraphics = Graphics.FromImage(reference))
+            {
+                IntPtr hdc = referenceGraphics.GetHdc();
+                try
+                {
+                    using (var meta = new Metafile(stream, hdc, EmfType.EmfOnly))
+                    using (var canvas = Graphics.FromImage(meta))
+                    {
+                        canvas.Clear(Color.White);
+                        canvas.FillRectangle(Brushes.Black, 4, 4, 24, 16);
+                    }
+                }
+                finally
+                {
+                    referenceGraphics.ReleaseHdc(hdc);
+                }
+
+                return stream.ToArray();
             }
         }
 

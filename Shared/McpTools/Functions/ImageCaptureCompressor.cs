@@ -575,14 +575,13 @@ namespace WordAddIn1
 
         public static CompressedImage CompressBytes(byte[] bytes)
         {
-            if (bytes == null || bytes.Length == 0)
+            using (Bitmap bitmap = DecodeBitmap(bytes))
             {
-                throw new InvalidOperationException("图片字节为空");
-            }
+                if (bitmap == null)
+                {
+                    throw new InvalidOperationException("图片字节为空");
+                }
 
-            using (var stream = new MemoryStream(bytes, writable: false))
-            using (var bitmap = new Bitmap(stream))
-            {
                 return Compress(bitmap);
             }
         }
@@ -627,10 +626,56 @@ namespace WordAddIn1
                 return null;
             }
 
+            if (IsEmf(bytes))
+            {
+                return RasterizeEmf(bytes);
+            }
+
             using (var stream = new MemoryStream(bytes, writable: false))
             using (var loaded = new Bitmap(stream))
             {
                 return new Bitmap(loaded);
+            }
+        }
+
+        private static bool IsEmf(byte[] bytes)
+        {
+            return bytes != null
+                && bytes.Length >= 44
+                && bytes[0] == 0x01
+                && bytes[1] == 0x00
+                && bytes[2] == 0x00
+                && bytes[3] == 0x00
+                && bytes[40] == 0x20
+                && bytes[41] == 0x45
+                && bytes[42] == 0x4D
+                && bytes[43] == 0x46;
+        }
+
+        private static Bitmap RasterizeEmf(byte[] bytes)
+        {
+            using (var stream = new MemoryStream(bytes, writable: false))
+            using (var meta = new Metafile(stream))
+            {
+                GraphicsUnit unit = GraphicsUnit.Pixel;
+                RectangleF frame = meta.GetBounds(ref unit);
+                int width = Math.Max(1, (int)Math.Ceiling(Math.Abs(frame.Width)));
+                int height = Math.Max(1, (int)Math.Ceiling(Math.Abs(frame.Height)));
+                if (Math.Max(width, height) > MaxImageDimension)
+                {
+                    FitExportPixelSize(width, height, out width, out height);
+                }
+
+                var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                using (var graphics = Graphics.FromImage(bitmap))
+                {
+                    graphics.Clear(Color.White);
+                    graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                    graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    graphics.DrawImage(meta, new Rectangle(0, 0, width, height), frame, unit);
+                }
+
+                return bitmap;
             }
         }
 
