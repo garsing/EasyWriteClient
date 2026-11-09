@@ -2325,11 +2325,39 @@ namespace WordAddIn1
             IPersistFile persistFile = GetPersistFile(document);
             if (persistFile == null)
             {
+                LogPersistCopy("IPersistFile 为空，未调用 Save");
                 return false;
             }
 
-            persistFile.Save(fullPath, false);
+            LogPersistCopy(
+                "Save 前 active=" + before
+                + " saved=" + savedBefore
+                + " " + DescribePersistTarget("target", fullPath)
+                + " " + DescribePersistTarget("sibling", SiblingDocxPath(before, fullPath))
+                + " " + DescribeOpenDocuments(document));
+            var saveWatch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                persistFile.Save(fullPath, false);
+            }
+            catch (Exception ex)
+            {
+                saveWatch.Stop();
+                COMException com = ex as COMException;
+                LogPersistCopy(
+                    "Save 抛错 elapsed_ms=" + saveWatch.ElapsedMilliseconds
+                    + " type=" + ex.GetType().Name
+                    + (com == null ? "" : " hr=0x" + com.ErrorCode.ToString("X8"))
+                    + " " + ex.Message);
+                throw;
+            }
+
+            saveWatch.Stop();
             string after = ReadDocumentFullName(document);
+            LogPersistCopy(
+                "Save 返回 elapsed_ms=" + saveWatch.ElapsedMilliseconds
+                + " active=" + after
+                + " " + DescribePersistTarget("target", fullPath));
             if (!string.Equals(before ?? "", after ?? "", StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("抽取图片时活动文档路径被改变");
@@ -2410,6 +2438,239 @@ namespace WordAddIn1
                 }
             }
         }
+
+        private static void LogPersistCopy(string message)
+        {
+            string line = "[抽图副本] " + (message ?? "");
+            System.Diagnostics.Debug.WriteLine(line);
+            try
+            {
+                EasyWriteLog.WriteLine(line);
+                EasyWriteLog.Flush();
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static string SiblingDocxPath(string activeFullName, string targetFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(activeFullName))
+            {
+                return null;
+            }
+
+            string full = activeFullName;
+            try
+            {
+                full = Path.GetFullPath(activeFullName);
+            }
+            catch (Exception)
+            {
+            }
+
+            string ext = Path.GetExtension(full);
+            if (!ext.Equals(".doc", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            string sibling = Path.ChangeExtension(full, ".docx");
+            if (string.Equals(sibling, targetFullPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            return sibling;
+        }
+
+        private static string DescribePersistTarget(string label, string fullPath)
+        {
+            if (string.IsNullOrWhiteSpace(fullPath))
+            {
+                return label + "=无";
+            }
+
+            var text = new StringBuilder();
+            text.Append(label).Append('=').Append(fullPath);
+            try
+            {
+                if (!File.Exists(fullPath))
+                {
+                    text.Append(" exists=false");
+                    return text.ToString();
+                }
+
+                var info = new FileInfo(fullPath);
+                text.Append(" exists=true length=").Append(info.Length);
+                text.Append(" write=").Append(info.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"));
+                text.Append(" exclusive=");
+                try
+                {
+                    using (new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.None))
+                    {
+                    }
+
+                    text.Append("ok");
+                }
+                catch (Exception ex)
+                {
+                    text.Append(ex.GetType().Name);
+                    text.Append(" hr=0x").Append(ex.HResult.ToString("X8"));
+                    text.Append(' ').Append(ex.Message);
+                }
+
+                text.Append(" holders=").Append(QueryFileHolders(fullPath));
+            }
+            catch (Exception ex)
+            {
+                text.Append(" probe_error=").Append(ex.GetType().Name).Append(' ').Append(ex.Message);
+            }
+
+            return text.ToString();
+        }
+
+        private static string DescribeOpenDocuments(Word.Document document)
+        {
+            try
+            {
+                Word.Application app = document.Application;
+                int count = app.Documents.Count;
+                var names = new List<string>();
+                for (int i = 1; i <= count; i++)
+                {
+                    names.Add(ReadDocumentFullName(app.Documents[i]));
+                }
+
+                return "word_open=" + count + " [" + string.Join(" | ", names) + "]";
+            }
+            catch (Exception ex)
+            {
+                return "word_open_error=" + ex.GetType().Name + " " + ex.Message;
+            }
+        }
+
+        private static string QueryFileHolders(string fullPath)
+        {
+            uint handle;
+            var key = new StringBuilder(64);
+            int rc = RmStartSession(out handle, 0, key);
+            if (rc != 0)
+            {
+                return "RmStartSession=" + rc;
+            }
+
+            try
+            {
+                rc = RmRegisterResources(handle, 1, new[] { fullPath }, 0, IntPtr.Zero, 0, null);
+                if (rc != 0)
+                {
+                    return "RmRegisterResources=" + rc;
+                }
+
+                uint needed;
+                uint count = 1;
+                uint reasons = 0;
+                var probe = new RmProcessInfo[1];
+                rc = RmGetList(handle, out needed, ref count, probe, ref reasons);
+                if (rc == 0)
+                {
+                    return count == 0 ? "none" : FormatHolders(probe, count);
+                }
+
+                if (rc != ErrorMoreData)
+                {
+                    return "RmGetList=" + rc;
+                }
+
+                count = needed;
+                var infos = new RmProcessInfo[count];
+                rc = RmGetList(handle, out needed, ref count, infos, ref reasons);
+                if (rc != 0)
+                {
+                    return "RmGetList2=" + rc;
+                }
+
+                return FormatHolders(infos, count);
+            }
+            catch (Exception ex)
+            {
+                return "rm_ex=" + ex.GetType().Name + " " + ex.Message;
+            }
+            finally
+            {
+                RmEndSession(handle);
+            }
+        }
+
+        private static string FormatHolders(RmProcessInfo[] infos, uint count)
+        {
+            if (infos == null || count == 0)
+            {
+                return "none";
+            }
+
+            var parts = new List<string>();
+            int n = (int)Math.Min(count, (uint)infos.Length);
+            for (int i = 0; i < n; i++)
+            {
+                parts.Add(infos[i].Process.ProcessId + ":" + (infos[i].AppName ?? ""));
+            }
+
+            return parts.Count == 0 ? "none" : string.Join(",", parts);
+        }
+
+        private const int ErrorMoreData = 234;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RmUniqueProcess
+        {
+            public int ProcessId;
+            public System.Runtime.InteropServices.ComTypes.FILETIME ProcessStartTime;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct RmProcessInfo
+        {
+            public RmUniqueProcess Process;
+
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+            public string AppName;
+
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
+            public string ServiceShortName;
+
+            public uint ApplicationType;
+            public uint AppStatus;
+            public uint SessionId;
+
+            [MarshalAs(UnmanagedType.Bool)]
+            public bool Restartable;
+        }
+
+        [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+        private static extern int RmStartSession(out uint sessionHandle, int sessionFlags, StringBuilder sessionKey);
+
+        [DllImport("rstrtmgr.dll")]
+        private static extern int RmEndSession(uint sessionHandle);
+
+        [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+        private static extern int RmRegisterResources(
+            uint sessionHandle,
+            uint files,
+            string[] fileNames,
+            uint applications,
+            IntPtr applicationInfo,
+            uint services,
+            string[] serviceNames);
+
+        [DllImport("rstrtmgr.dll")]
+        private static extern int RmGetList(
+            uint sessionHandle,
+            out uint procInfoNeeded,
+            ref uint procInfo,
+            [In, Out] RmProcessInfo[] affectedApps,
+            ref uint rebootReasons);
 
         /// <summary>
         /// 清理临时文件
