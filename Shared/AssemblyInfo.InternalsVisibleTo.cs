@@ -7,3 +7,4 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("ExcelWorkbookRoundtripTest")]
 [assembly: InternalsVisibleTo("WordDocumentRoundtripTest")]
 [assembly: InternalsVisibleTo("BrowserNavigateTest")]
+[assembly: InternalsVisibleTo("ExportImageCaptionTest")]

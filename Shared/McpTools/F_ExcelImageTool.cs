@@ -70,10 +70,11 @@ namespace WordAddIn1
 
                         data["images"] = images;
                         data["images_count"] = hostResult.ImagesCount;
-                        if (hostResult.Action == "export")
-                        {
-                            data["message"] = "抽取成功";
-                        }
+                    if (hostResult.Action == "export")
+                    {
+                        data["message"] = "抽取成功";
+                        ExportImageCaption.ApplyExcelExport(data);
+                    }
                     }
                     else
                     {

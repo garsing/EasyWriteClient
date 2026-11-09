@@ -71,6 +71,8 @@ namespace WordAddIn1
                         }
                     }
 
+                    ExportImageCaption.ApplyDisplayContents(data);
+
                     await Task.CompletedTask;
                     return new ToolResult { Success = true, Data = data };
                 }

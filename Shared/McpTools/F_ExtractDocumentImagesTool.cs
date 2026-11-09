@@ -60,6 +60,8 @@ namespace WordAddIn1
                         { "message", "抽取成功" }
                     };
 
+                    ExportImageCaption.ApplyDocumentContent(resultData);
+
                     return new ToolResult
                     {
                         Success = true,
