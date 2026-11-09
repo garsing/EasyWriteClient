@@ -167,6 +167,11 @@ namespace WordAddIn1.PresentationHost
                 return true;
             }
 
+            if (type == "svg")
+            {
+                return true;
+            }
+
             if (type == "picture")
             {
                 if (!picturesNeedArea)
@@ -350,6 +355,13 @@ namespace WordAddIn1.PresentationHost
         {
             string tag = string.IsNullOrEmpty(node.Tag) ? "div" : node.Tag;
             bool hasKids = node.Children != null && node.Children.Count > 0;
+            if (string.Equals(node.ShapeType, "svg", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrEmpty(node.SvgMarkup))
+            {
+                sb.Append(PptHtmlSvgStore.FormatInlineElement(node, indent));
+                return;
+            }
+
             if (tag == "img" && !hasKids)
             {
                 sb.Append(indent).Append("<img");

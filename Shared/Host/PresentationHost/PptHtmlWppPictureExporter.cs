@@ -60,6 +60,11 @@ namespace WordAddIn1.PresentationHost
                     continue;
                 }
 
+                if (!string.IsNullOrEmpty(node.SvgMode))
+                {
+                    continue;
+                }
+
                 if (!PptShapeId.TryParseShape(node.ShapeId, out _, out int comId))
                 {
                     continue;

@@ -1117,6 +1117,14 @@ namespace WordAddIn1.PresentationHost
                 typeName = "chart";
             }
 
+            string svgMode = null;
+            string svgMarkup = null;
+            string svgSrc = null;
+            if (!PptHtmlSvgStore.TryConsumeRead(shape, ref typeName, out svgMode, out svgMarkup, out svgSrc, out error))
+            {
+                return false;
+            }
+
             List<PptHtmlShapeNode> groupKids = null;
             bool depthCapped = false;
             if (typeName == "group")
@@ -1208,7 +1216,7 @@ namespace WordAddIn1.PresentationHost
                         text = chartTitle;
                     }
                 }
-                else if (typeName != "picture" && typeName != "group" && !PptShapeTypeMap.IsNonEditable(typeName))
+                else if (typeName != "picture" && typeName != "svg" && typeName != "group" && !PptShapeTypeMap.IsNonEditable(typeName))
                 {
                     text = TryReadText(shape);
                     if (mode != GroupReadMode.SearchPage)
@@ -1276,7 +1284,7 @@ namespace WordAddIn1.PresentationHost
                     }
                 }
             }
-            else if (typeName != "picture" && !PptShapeTypeMap.IsNonEditable(typeName))
+            else if (typeName != "picture" && typeName != "svg" && !PptShapeTypeMap.IsNonEditable(typeName))
             {
                 text = TryReadText(shape);
                 text = PptConventionHtml.TruncateText(text, out textTruncated);
@@ -1313,6 +1321,10 @@ namespace WordAddIn1.PresentationHost
 
             bool editable = slim || !PptShapeTypeMap.IsNonEditable(typeName);
             string tag = PptShapeTypeMap.PreferTag(typeName, !string.IsNullOrEmpty(text));
+            if (typeName == "svg")
+            {
+                tag = "svg";
+            }
             string fill = null;
             string fontColor = null;
             double? fontSize = null;
@@ -1380,9 +1392,12 @@ namespace WordAddIn1.PresentationHost
                 ShapeType = typeName,
                 Tag = typeName == "group" ? "div" : tag,
                 Style = style,
-                Text = typeName == "group" ? "" : text,
+                Text = typeName == "group" || typeName == "svg" ? "" : text,
                 TextFromTable = textFromTable,
                 InnerHtml = innerHtml,
+                SvgMode = svgMode,
+                SvgMarkup = svgMarkup,
+                DataSrc = string.Equals(svgMode, "file", StringComparison.OrdinalIgnoreCase) ? svgSrc : null,
                 Editable = editable,
                 Fill = typeName == "group" ? null : fill,
                 FontColor = fontColor,

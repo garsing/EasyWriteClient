@@ -214,9 +214,33 @@ namespace WordAddIn1
                 return null;
             }
 
-            foreach (PptHtmlApplyNode node in plan.Nodes)
+            return await ResolveFileSourceNodesAsync(plan.Nodes).ConfigureAwait(false);
+        }
+
+        private static async Task<string> ResolveFileSourceNodesAsync(IList<PptHtmlApplyNode> nodes)
+        {
+            if (nodes == null)
             {
-                if (node == null || string.IsNullOrWhiteSpace(node.DataSrc))
+                return null;
+            }
+
+            foreach (PptHtmlApplyNode node in nodes)
+            {
+                if (node == null)
+                {
+                    continue;
+                }
+
+                if (node.Children != null && node.Children.Count > 0)
+                {
+                    string childErr = await ResolveFileSourceNodesAsync(node.Children).ConfigureAwait(false);
+                    if (childErr != null)
+                    {
+                        return childErr;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(node.DataSrc))
                 {
                     continue;
                 }
@@ -240,6 +264,12 @@ namespace WordAddIn1
                     }
 
                     node.ResolvedLocalPath = path;
+                    string absoluteSvg = PptHtmlSvgStore.TryAcceptFile(node);
+                    if (absoluteSvg != null)
+                    {
+                        return absoluteSvg;
+                    }
+
                     continue;
                 }
 
@@ -249,6 +279,12 @@ namespace WordAddIn1
                     if (TryResolveLocalWorkspaceFile(workspaceName, out string localFull))
                     {
                         node.ResolvedLocalPath = localFull;
+                        string localSvg = PptHtmlSvgStore.TryAcceptFile(node);
+                        if (localSvg != null)
+                        {
+                            return localSvg;
+                        }
+
                         continue;
                     }
 
@@ -276,6 +312,11 @@ namespace WordAddIn1
                     }
 
                     node.ResolvedLocalPath = Path.GetFullPath(picResolved.LocalPath);
+                    string workspaceSvg = PptHtmlSvgStore.TryAcceptFile(node);
+                    if (workspaceSvg != null)
+                    {
+                        return workspaceSvg;
+                    }
                 }
             }
 

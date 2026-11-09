@@ -107,6 +107,11 @@ namespace WordAddIn1.PresentationHost
                 return "img";
             }
 
+            if (shapeType == "svg")
+            {
+                return "svg";
+            }
+
             if (shapeType == "table")
             {
                 return "table";
@@ -189,6 +194,8 @@ namespace WordAddIn1.PresentationHost
                     case "text_box":
                     case "text-box":
                         return "textbox";
+                    case "svg":
+                        return "svg";
                     default:
                         return t;
                 }
@@ -208,6 +215,11 @@ namespace WordAddIn1.PresentationHost
             if (string.Equals(tag, "img", StringComparison.OrdinalIgnoreCase))
             {
                 return "picture";
+            }
+
+            if (string.Equals(tag, "svg", StringComparison.OrdinalIgnoreCase))
+            {
+                return "svg";
             }
 
             return null;
@@ -232,6 +244,7 @@ namespace WordAddIn1.PresentationHost
             if (shapeType == "textbox"
                 || shapeType == "table"
                 || shapeType == "picture"
+                || shapeType == "svg"
                 || shapeType == "chart"
                 || shapeType == "media"
                 || shapeType == "line")

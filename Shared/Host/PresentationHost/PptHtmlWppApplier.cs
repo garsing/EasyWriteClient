@@ -769,6 +769,10 @@ namespace WordAddIn1.PresentationHost
 
             string existingType = ResolveExistingType(shape);
             PptHtmlTableGrid tableGridForFill = null;
+            if (PptHtmlSvgStore.IsSvgNode(node))
+            {
+                return TryReplaceSvg(shapes, slide, shape, node, slideWidth, slideHeight, warnings, out error);
+            }
 
             if (existingType == "chart")
             {
@@ -997,6 +1001,106 @@ namespace WordAddIn1.PresentationHost
             }
         }
 
+        private static bool TryReplaceSvg(
+            object shapes,
+            object slide,
+            object shape,
+            PptHtmlApplyNode node,
+            double slideWidth,
+            double slideHeight,
+            List<string> warnings,
+            out string error)
+        {
+            if (!PptHtmlSvgStore.TryReplaceSource(shape, node, out bool recreate, out error))
+            {
+                return false;
+            }
+
+            if (!recreate)
+            {
+                ApplySvgBox(shape, node, slideWidth, slideHeight);
+                return true;
+            }
+
+            bool keepHtmlGeo = node.HasGeometry
+                && node.LeftPct.HasValue
+                && node.TopPct.HasValue
+                && node.WidthPct.HasValue
+                && node.HeightPct.HasValue;
+            double left = ReadDouble(shape, "Left");
+            double top = ReadDouble(shape, "Top");
+            double width = ReadDouble(shape, "Width");
+            double height = ReadDouble(shape, "Height");
+            try
+            {
+                Invoke(shape, "Delete");
+            }
+            catch (Exception ex)
+            {
+                error = "删除旧 svg 失败: " + ex.Message;
+                return false;
+            }
+
+            node.IsCreate = true;
+            node.HasGeometry = true;
+            if (!keepHtmlGeo && slideWidth > 0 && slideHeight > 0)
+            {
+                node.LeftPct = left / slideWidth * 100;
+                node.TopPct = top / slideHeight * 100;
+                node.WidthPct = width / slideWidth * 100;
+                node.HeightPct = height / slideHeight * 100;
+            }
+
+            if (!string.Equals(node.ShapeType, "svg", StringComparison.OrdinalIgnoreCase))
+            {
+                node.ShapeType = "picture";
+            }
+
+            if (!TryCreate(shapes, slide, node, slideWidth, slideHeight, warnings, out string newId, out error))
+            {
+                return false;
+            }
+
+            warnings.Add("svg 已换图，ShapeId 变为 " + (newId ?? ""));
+            return true;
+        }
+
+        private static void ApplySvgBox(
+            object shape,
+            PptHtmlApplyNode node,
+            double slideWidth,
+            double slideHeight)
+        {
+            if (shape == null
+                || node == null
+                || !node.HasGeometry
+                || !node.LeftPct.HasValue
+                || !node.TopPct.HasValue
+                || !node.WidthPct.HasValue
+                || !node.HeightPct.HasValue)
+            {
+                return;
+            }
+
+            TrySet(shape, "Left", node.LeftPct.Value / 100.0 * slideWidth);
+            TrySet(shape, "Top", node.TopPct.Value / 100.0 * slideHeight);
+            TrySet(shape, "Width", node.WidthPct.Value / 100.0 * slideWidth);
+            TrySet(shape, "Height", node.HeightPct.Value / 100.0 * slideHeight);
+        }
+
+        private static double ReadDouble(object target, string name)
+        {
+            try
+            {
+                object value = WppCom.GetProperty(target, name);
+                return value == null ? 0 : Convert.ToDouble(value, CultureInfo.InvariantCulture);
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+        }
+
         private static bool TryCreate(
             object shapes,
             object slide,
@@ -1036,6 +1140,7 @@ namespace WordAddIn1.PresentationHost
 
             object shape = null;
             string type = node.ShapeType ?? "";
+            bool svgInserted = false;
             try
             {
                 if (type == "textbox")
@@ -1080,6 +1185,59 @@ namespace WordAddIn1.PresentationHost
                     {
                         warnings.AddRange(tw);
                     }
+                }
+                else if (type == "svg" || string.Equals(node.SvgMode, "file", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!PptHtmlSvgStore.TryPrepareInsertPath(node, out string picPath, out bool tempSvg, out error))
+                    {
+                        return false;
+                    }
+
+                    bool linked = false;
+                    try
+                    {
+                        try
+                        {
+                            shape = Invoke(shapes, "AddPicture", picPath, true, true, left, top, width, height);
+                            linked = true;
+                        }
+                        catch (Exception)
+                        {
+                            shape = Invoke(shapes, "AddPicture", picPath, false, true, left, top, width, height);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
+                        error = "插入 svg 失败: " + ex.Message + "；path=" + picPath;
+                        return false;
+                    }
+
+                    string slideId = "";
+                    try
+                    {
+                        slideId = Convert.ToString(WppCom.GetProperty(slide, "SlideID")) ?? "";
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    if (!PptHtmlSvgStore.TryFinishInserted(shape, slideId, node, linked, out error))
+                    {
+                        try
+                        {
+                            Invoke(shape, "Delete");
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
+                        return false;
+                    }
+
+                    PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
+                    svgInserted = true;
                 }
                 else if (type == "picture")
                 {
@@ -1170,17 +1328,17 @@ namespace WordAddIn1.PresentationHost
             }
 
             // 先字体后颜色：写 NameFarEast 常会把主题字色重置为黑，字色必须最后落盘。
-            if (!TryApplyFont(shape, node, type, out error))
+            if (!svgInserted && !TryApplyFont(shape, node, type, out error))
             {
                 return false;
             }
 
-            if (!TryApplyParagraph(shape, node, type, out error))
+            if (!svgInserted && !TryApplyParagraph(shape, node, type, out error))
             {
                 return false;
             }
 
-            if (!string.IsNullOrEmpty(node.Valign))
+            if (!svgInserted && !string.IsNullOrEmpty(node.Valign))
             {
                 if (!PptHtmlValignIo.TryWriteWpp(shape, node.Valign, out string valignWarn)
                     && !string.IsNullOrEmpty(valignWarn))
@@ -1189,12 +1347,12 @@ namespace WordAddIn1.PresentationHost
                 }
             }
 
-            if (!TryApplyLine(shape, node, type, out error))
+            if (!svgInserted && !TryApplyLine(shape, node, type, out error))
             {
                 return false;
             }
 
-            if (!TryApplyColors(shape, node, type, out error))
+            if (!svgInserted && !TryApplyColors(shape, node, type, out error))
             {
                 return false;
             }
@@ -1215,7 +1373,10 @@ namespace WordAddIn1.PresentationHost
             }
 
             // 新建 AddTextbox 默认内边距会挤窄正文；无 data-margin-* 时置 0
-            LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight, zeroMarginsIfAbsent: true);
+            if (!svgInserted)
+            {
+                LockTextFrameAndGeometry(shape, node, slideWidth, slideHeight, zeroMarginsIfAbsent: true);
+            }
 
             try
             {

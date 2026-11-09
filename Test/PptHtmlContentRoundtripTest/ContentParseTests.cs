@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using WordAddIn1.PresentationHost;
@@ -25,6 +26,11 @@ namespace PptHtmlContentRoundtripTest
             ParseRejectNoStyle(run);
             ParseRejectBadFillOnLaterShape(run);
             ParseRejectBadChartType(run);
+            ParseInlineSvg(run);
+            ParseRejectSvgScript(run);
+            ParseSvgFileSrc(run);
+            SerializeInlineSvg(run);
+            KeepSvgInContentSkeleton(run);
         }
 
         private static void ParseTextbox(TestRun run)
@@ -360,6 +366,104 @@ namespace PptHtmlContentRoundtripTest
                     && error.IndexOf("第1个形状", System.StringComparison.Ordinal) >= 0
                     && error.IndexOf("scatter", System.StringComparison.Ordinal) >= 0,
                 ok ? "应失败" : ("error=" + error));
+        }
+
+        private static void ParseInlineSvg(TestRun run)
+        {
+            string html = ContentHtml.Section(
+                "  <svg style=\"" + ContentHtml.Geo(8, 10, 12, 12)
+                + "\" viewBox=\"0 0 24 24\"><path d=\"M1 2\"/></svg>");
+            if (!ContentHtml.TryParse(html, "260", out PptHtmlApplyPlan plan, out string error))
+            {
+                run.Fail("parse-svg", error);
+                return;
+            }
+
+            PptHtmlApplyNode n = plan.Nodes[0];
+            run.Expect("parse-svg 新建", n.IsCreate, "应新建");
+            run.ExpectEqual("parse-svg 类型", "svg", n.ShapeType);
+            run.ExpectEqual("parse-svg 模式", "inline", n.SvgMode);
+            run.Expect(
+                "parse-svg 原文",
+                n.SvgMarkup != null && n.SvgMarkup.IndexOf("M1 2", System.StringComparison.Ordinal) >= 0,
+                n.SvgMarkup ?? "");
+            run.Expect("parse-svg 不进正文", !n.HasText && string.IsNullOrEmpty(n.Text), n.Text ?? "");
+        }
+
+        private static void ParseRejectSvgScript(TestRun run)
+        {
+            string html = ContentHtml.Section(
+                "  <svg style=\"" + ContentHtml.Geo(8, 10, 12, 12)
+                + "\"><script>bad</script></svg>");
+            bool ok = ContentHtml.TryParse(html, "260", out _, out string error);
+            run.Expect(
+                "parse-svg-script 应失败",
+                !ok && error != null && error.IndexOf("script", System.StringComparison.OrdinalIgnoreCase) >= 0,
+                ok ? "应失败" : ("error=" + error));
+        }
+
+        private static void ParseSvgFileSrc(TestRun run)
+        {
+            string html = ContentHtml.Section(
+                "  <img data-shape-type=\"picture\" data-src=\"icons/house.svg\" style=\""
+                + ContentHtml.Geo(8, 10, 12, 12) + "\" />");
+            if (!ContentHtml.TryParse(html, "260", out PptHtmlApplyPlan plan, out string error))
+            {
+                run.Fail("parse-svg-file", error);
+                return;
+            }
+
+            PptHtmlApplyNode n = plan.Nodes[0];
+            run.ExpectEqual("parse-svg-file 类型", "picture", n.ShapeType);
+            run.ExpectEqual("parse-svg-file 路径", "icons/house.svg", n.DataSrc);
+            run.Expect("parse-svg-file 尚未读文件", string.IsNullOrEmpty(n.SvgMode), n.SvgMode ?? "");
+        }
+
+        private static void SerializeInlineSvg(TestRun run)
+        {
+            var result = new PptHtmlReadResult
+            {
+                SlideId = "260",
+                Shapes = new List<PptHtmlShapeNode>
+                {
+                    new PptHtmlShapeNode
+                    {
+                        ShapeId = "sid260-s3",
+                        ShapeType = "svg",
+                        Tag = "svg",
+                        Style = ContentHtml.Geo(8, 10, 12, 12),
+                        SvgMode = "inline",
+                        SvgMarkup = "<svg viewBox=\"0 0 24 24\"><path d=\"M1 2\"/></svg>",
+                        Editable = true
+                    }
+                }
+            };
+            string html = PptConventionHtml.BuildDisplayContents(result);
+            run.Expect(
+                "serialize-svg 元素",
+                html.IndexOf("<svg", System.StringComparison.Ordinal) >= 0
+                    && html.IndexOf("sid260-s3", System.StringComparison.Ordinal) >= 0
+                    && html.IndexOf("M1 2", System.StringComparison.Ordinal) >= 0
+                    && html.IndexOf("&lt;svg", System.StringComparison.Ordinal) < 0,
+                html);
+        }
+
+        private static void KeepSvgInContentSkeleton(TestRun run)
+        {
+            var shapes = new List<PptHtmlShapeNode>
+            {
+                new PptHtmlShapeNode
+                {
+                    ShapeType = "svg",
+                    Tag = "svg",
+                    Text = "",
+                    SvgMarkup = "<svg><path d=\"M0 0\"/></svg>"
+                }
+            };
+            PptConventionHtml.ApplyContentOnlyFilter(shapes, 1);
+            run.Expect("skeleton-svg 留下", shapes.Count == 1, "count=" + shapes.Count);
+            PptConventionHtml.ApplyCompactFilter(shapes);
+            run.Expect("compact-svg 留下", shapes.Count == 1 && string.IsNullOrEmpty(shapes[0].RasterizedFrom), "被当成装饰删了");
         }
     }
 }

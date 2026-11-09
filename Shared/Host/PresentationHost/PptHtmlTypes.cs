@@ -26,6 +26,12 @@ namespace WordAddIn1.PresentationHost
         /// <summary>图片等文件源，如 workspace:ppt_images/a1b2c3d4.png（内容 hash 前 8 位）</summary>
         public string DataSrc { get; set; }
 
+        /// <summary>inline 或 file。有值时图片导出不再改写 data-src。</summary>
+        public string SvgMode { get; set; }
+
+        /// <summary>内嵌 svg 的原文。读回时原样写回 svg 元素。</summary>
+        public string SvgMarkup { get; set; }
+
         /// <summary>B2：由 freeform/smartart/group/unknown 栅格而来时记原 type</summary>
         public string RasterizedFrom { get; set; }
 

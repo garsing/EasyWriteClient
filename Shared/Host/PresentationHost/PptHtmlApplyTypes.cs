@@ -26,6 +26,12 @@ namespace WordAddIn1.PresentationHost
 
         public string ResolvedLocalPath { get; set; }
 
+        /// <summary>inline=页内 svg 元素；file=data-src 指向工作区 .svg。</summary>
+        public string SvgMode { get; set; }
+
+        /// <summary>校验后的 svg 原文。</summary>
+        public string SvgMarkup { get; set; }
+
         public string ChartType { get; set; }
 
         /// <summary>B1：null=不改；none=无填充；#RRGGBB=实色</summary>
@@ -154,7 +160,7 @@ namespace WordAddIn1.PresentationHost
     {
         private static readonly HashSet<string> AllowedTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "h1", "div", "p", "table", "img", "ul", "li"
+            "h1", "div", "p", "table", "img", "svg", "ul", "li"
         };
 
         public static bool TryParse(string html, string targetSlideId, out PptHtmlApplyPlan plan, out string error)
@@ -689,6 +695,19 @@ namespace WordAddIn1.PresentationHost
             else if (string.Equals(el.Name.LocalName, "img", StringComparison.OrdinalIgnoreCase))
             {
                 item.ShapeType = string.IsNullOrEmpty(item.ShapeType) ? "picture" : item.ShapeType;
+            }
+            else if (string.Equals(el.Name.LocalName, "svg", StringComparison.OrdinalIgnoreCase))
+            {
+                item.ShapeType = "svg";
+                item.HasText = false;
+                item.Text = "";
+                if (!PptHtmlSvgStore.TryValidateMarkup(el.ToString(SaveOptions.DisableFormatting), out string normalized, out string svgErr))
+                {
+                    return Reject(Explain(svgErr), out error);
+                }
+
+                item.SvgMarkup = normalized;
+                item.SvgMode = "inline";
             }
             else if (!string.Equals(shapeType, "group", StringComparison.OrdinalIgnoreCase))
             {
