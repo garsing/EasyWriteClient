@@ -24,15 +24,25 @@ namespace PptHtmlContentRoundtripTest
                 : "宿主 PPT · 解析契约 + COM 正式用例（Applier → Reader）");
             Console.WriteLine();
 
-            if (!formalOnly)
+            bool svgCases = SvgRunner.Wants(nameFilters);
+            if (!formalOnly && !svgCases)
             {
                 Console.WriteLine("--- 解析契约（不启 COM）---");
                 ContentParseTests.Run(run);
             }
 
+            if (svgCases && !formalOnly)
+            {
+                SvgRunner.RunOffline(run, nameFilters);
+            }
+
             if (!parseOnly)
             {
-                if (FixtureSearchRunner.WantsFixture(nameFilters))
+                if (svgCases)
+                {
+                    SvgRunner.RunHost(run, nameFilters, useWpp);
+                }
+                else if (FixtureSearchRunner.WantsFixture(nameFilters))
                 {
                     FixtureSearchRunner.Run(run, nameFilters, useWpp);
                 }
@@ -110,11 +120,14 @@ namespace PptHtmlContentRoundtripTest
                     }
                 }
 
-                Console.WriteLine();
-                Console.WriteLine("正式用例 通过 " + run.CasesPassed
-                    + "  失败 " + run.CasesFailed
-                    + "  跳过 " + run.CasesSkipped
-                    + "  （目标 " + ContentCatalog.Total + "）");
+                if (!svgCases)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("正式用例 通过 " + run.CasesPassed
+                        + "  失败 " + run.CasesFailed
+                        + "  跳过 " + run.CasesSkipped
+                        + "  （目标 " + ContentCatalog.Total + "）");
+                }
             }
 
             Console.WriteLine();

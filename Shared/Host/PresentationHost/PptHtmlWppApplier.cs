@@ -1232,8 +1232,36 @@ namespace WordAddIn1.PresentationHost
                         {
                         }
 
-                        PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
-                        return false;
+                        if (!linked)
+                        {
+                            PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
+                            return false;
+                        }
+
+                        try
+                        {
+                            shape = Invoke(shapes, "AddPicture", picPath, false, true, left, top, width, height);
+                        }
+                        catch (Exception ex)
+                        {
+                            PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
+                            error = "插入 svg 失败: " + ex.Message + "；path=" + picPath;
+                            return false;
+                        }
+
+                        if (!PptHtmlSvgStore.TryFinishInserted(shape, slideId, node, false, out error))
+                        {
+                            try
+                            {
+                                Invoke(shape, "Delete");
+                            }
+                            catch (Exception)
+                            {
+                            }
+
+                            PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
+                            return false;
+                        }
                     }
 
                     PptHtmlSvgStore.DeleteQuiet(picPath, tempSvg);
@@ -1784,6 +1812,11 @@ namespace WordAddIn1.PresentationHost
         private static bool LiveMatchesHtml(object shape, PptHtmlApplyNode node, double slideWidth, double slideHeight)
         {
             if (shape == null || node == null)
+            {
+                return false;
+            }
+
+            if (PptHtmlSvgStore.IsSvgNode(node))
             {
                 return false;
             }
