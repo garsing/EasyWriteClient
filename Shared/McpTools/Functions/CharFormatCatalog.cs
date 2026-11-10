@@ -15,10 +15,9 @@ namespace WordAddIn1
         public const string KindCountKey = "format_kind_count";
         public const string KindNoteKey = "format_note";
 
-        /// <summary>套用顺序：字符样式最先，旧键先于更具体的键。</summary>
+        /// <summary>套用顺序：旧键先于更具体的键。</summary>
         public static readonly string[] ApplyOrder =
         {
-            "character_style",
             "font_name",
             "name", "name_ascii", "name_far_east", "name_bi", "name_other",
             "font_size", "size_bi",
@@ -28,13 +27,12 @@ namespace WordAddIn1
             "has_underline", "underline",
             "has_strikethrough", "double_strikethrough",
             "is_subscript", "is_superscript",
-            "shadow", "outline", "emboss", "engrave", "small_caps", "all_caps", "hidden", "emphasis_mark",
+            "shadow", "outline", "emboss", "engrave", "small_caps", "all_caps", "emphasis_mark",
             "scaling", "spacing", "position", "kerning", "disable_character_space_grid",
             "ligatures", "number_form", "number_spacing", "stylistic_set", "contextual_alternates",
-            "animation",
             "background_color", "shading", "highlight_color_index",
-            "borders", "fill", "glow", "line", "reflection", "text_shadow", "three_d",
-            "language_id", "language_id_far_east", "no_proofing", "fit_text_width", "character_width"
+            "borders", "fill", "glow", "line", "reflection", "text_shadow",
+            "language_id", "language_id_far_east", "no_proofing", "fit_text_width"
         };
 
         private static readonly HashSet<string> KeySet = new HashSet<string>(ApplyOrder, StringComparer.Ordinal);
@@ -138,7 +136,6 @@ namespace WordAddIn1
                 case "engrave":
                 case "small_caps":
                 case "all_caps":
-                case "hidden":
                 case "contextual_alternates":
                 case "disable_character_space_grid":
                 case "no_proofing":
@@ -155,8 +152,6 @@ namespace WordAddIn1
                     return EnumIs(value, "wdUnderlineNone") || EnumIs(value, "wdUnderlineSingle");
                 case "emphasis_mark":
                     return EnumIs(value, "wdEmphasisMarkNone");
-                case "animation":
-                    return EnumIs(value, "wdAnimationNone");
                 case "scaling":
                     return Near(value, 100);
                 case "spacing":
@@ -182,7 +177,6 @@ namespace WordAddIn1
                     return EffectOff(value, "visible") || FillIsPlain(value);
                 case "line":
                 case "text_shadow":
-                case "three_d":
                     return EffectOff(value, "visible");
                 case "glow":
                     return GlowIsDefault(value);
@@ -190,13 +184,9 @@ namespace WordAddIn1
                     return ReflectionIsDefault(value);
                 case "highlight_color_index":
                     return EnumIs(value, "wdNoHighlight");
-                case "character_style":
-                    return IsDefaultCharacterStyle(value);
                 case "language_id":
                 case "language_id_far_east":
                     return EnumIs(value, "wdLanguageNone");
-                case "character_width":
-                    return EnumIs(value, "wdWidthDefault") || EnumIs(value, "wdWidthFullWidth");
                 default:
                     return false;
             }
@@ -337,14 +327,6 @@ namespace WordAddIn1
             }
 
             return EnumIs(type, "msoReflectionTypeNone");
-        }
-
-        private static bool IsDefaultCharacterStyle(object value)
-        {
-            string text = value?.ToString()?.Trim() ?? "";
-            return text.Length == 0
-                || text == "默认段落字体"
-                || string.Equals(text, "Default Paragraph Font", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsAutomaticColor(object value)

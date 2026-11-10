@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Reflection;
 using Office = Microsoft.Office.Core;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -173,7 +172,6 @@ namespace WordAddIn1
                 PutTri(format, "engrave", () => font.Engrave);
                 PutTri(format, "small_caps", () => font.SmallCaps);
                 PutTri(format, "all_caps", () => font.AllCaps);
-                PutTri(format, "hidden", () => font.Hidden);
                 PutEnum(format, "emphasis_mark", () => font.EmphasisMark);
                 PutFloat(format, "scaling", () => (float)font.Scaling);
                 PutFloat(format, "spacing", () => font.Spacing);
@@ -185,7 +183,6 @@ namespace WordAddIn1
                 PutEnum(format, "number_spacing", () => font.NumberSpacing);
                 PutEnum(format, "stylistic_set", () => font.StylisticSet);
                 PutTri(format, "contextual_alternates", () => font.ContextualAlternates);
-                PutEnum(format, "animation", () => font.Animation);
                 Put(format, "shading", () => ReadShading(font));
                 Put(format, "borders", () => ReadBorders(font));
                 Put(format, "fill", () => ReadFill(font.Fill));
@@ -193,22 +190,14 @@ namespace WordAddIn1
                 Put(format, "line", () => ReadLine(font.Line));
                 Put(format, "reflection", () => ReadReflection(font.Reflection));
                 Put(format, "text_shadow", () => ReadShadow(font.TextShadow));
-                Put(format, "three_d", () => ReadThreeD(font.ThreeD));
             }
 
             PutRgb(format, "background_color", () => ReadCharBackground(range));
             PutEnum(format, "highlight_color_index", () => range.HighlightColorIndex);
-            Put(format, "character_style", () =>
-            {
-                Word.Style style = range.CharacterStyle as Word.Style;
-                string name = style?.NameLocal;
-                return string.IsNullOrWhiteSpace(name) ? null : name;
-            });
             PutEnum(format, "language_id", () => range.LanguageID);
             PutEnum(format, "language_id_far_east", () => range.LanguageIDFarEast);
             PutTri(format, "no_proofing", () => range.NoProofing);
             PutFloat(format, "fit_text_width", () => range.FitTextWidth);
-            PutEnum(format, "character_width", () => range.CharacterWidth);
             CharFormatCatalog.OmitReadDefaults(format);
             return format;
         }
@@ -218,15 +207,6 @@ namespace WordAddIn1
             Word.Font font = range.Font;
             switch (key)
             {
-                case "character_style":
-                    object characterStyle = range.Document.Styles[value?.ToString() ?? ""];
-                    range.GetType().InvokeMember(
-                        "CharacterStyle",
-                        BindingFlags.SetProperty,
-                        null,
-                        range,
-                        new[] { characterStyle });
-                    return;
                 case "font_name":
                     ApplyFontName(range, value?.ToString() ?? "");
                     return;
@@ -319,9 +299,6 @@ namespace WordAddIn1
                 case "all_caps":
                     font.AllCaps = TriInt(value);
                     return;
-                case "hidden":
-                    font.Hidden = TriInt(value);
-                    return;
                 case "emphasis_mark":
                     font.EmphasisMark = ParseEnum<Word.WdEmphasisMark>(value);
                     return;
@@ -355,9 +332,6 @@ namespace WordAddIn1
                 case "contextual_alternates":
                     font.ContextualAlternates = TriInt(value);
                     return;
-                case "animation":
-                    font.Animation = ParseEnum<Word.WdAnimation>(value);
-                    return;
                 case "background_color":
                     WriteCharBackground(range, ConvertRgbToWdColor(value?.ToString() ?? ""));
                     return;
@@ -385,9 +359,6 @@ namespace WordAddIn1
                 case "text_shadow":
                     WriteShadow(font.TextShadow, value);
                     return;
-                case "three_d":
-                    WriteThreeD(font.ThreeD, value);
-                    return;
                 case "language_id":
                     range.LanguageID = ParseEnum<Word.WdLanguageID>(value);
                     return;
@@ -399,9 +370,6 @@ namespace WordAddIn1
                     return;
                 case "fit_text_width":
                     range.FitTextWidth = ParseFloat(value);
-                    return;
-                case "character_width":
-                    range.CharacterWidth = ParseEnum<Word.WdCharacterWidth>(value);
                     return;
             }
         }
@@ -1030,80 +998,6 @@ namespace WordAddIn1
             if (map.TryGetValue("fore_color", out object color))
             {
                 WriteColorFormat(shadow.ForeColor, color);
-            }
-        }
-
-        private static object ReadThreeD(Word.ThreeDFormat threeD)
-        {
-            if (threeD == null)
-            {
-                return null;
-            }
-
-            var map = new Dictionary<string, object>();
-            PutTriState(map, "visible", () => threeD.Visible);
-            PutPlainFloat(map, "depth", () => threeD.Depth);
-            PutPlainFloat(map, "contour_width", () => threeD.ContourWidth);
-            try
-            {
-                map["preset_three_d"] = threeD.PresetThreeDFormat.ToString();
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                object color = ReadColorFormat(threeD.ExtrusionColor);
-                if (color != null)
-                {
-                    map["extrusion_color"] = color;
-                }
-            }
-            catch
-            {
-            }
-
-            return map.Count == 0 ? null : map;
-        }
-
-        private static void WriteThreeD(Word.ThreeDFormat threeD, object value)
-        {
-            Dictionary<string, object> map = MapOf(value);
-            if (threeD == null || map == null)
-            {
-                return;
-            }
-
-            if (map.ContainsKey("visible"))
-            {
-                threeD.Visible = ReadBool(map["visible"]) ? Office.MsoTriState.msoTrue : Office.MsoTriState.msoFalse;
-            }
-
-            if (map.TryGetValue("depth", out object depth) && depth != null)
-            {
-                threeD.Depth = ParseFloat(depth);
-            }
-
-            if (map.TryGetValue("contour_width", out object contour) && contour != null)
-            {
-                threeD.ContourWidth = ParseFloat(contour);
-            }
-
-            if (map.TryGetValue("preset_three_d", out object preset) && preset != null)
-            {
-                object presetValue = ParseEnum<Office.MsoPresetThreeDFormat>(preset);
-                threeD.GetType().InvokeMember(
-                    "PresetThreeDFormat",
-                    BindingFlags.SetProperty,
-                    null,
-                    threeD,
-                    new[] { presetValue });
-            }
-
-            if (map.TryGetValue("extrusion_color", out object color))
-            {
-                WriteColorFormat(threeD.ExtrusionColor, color);
             }
         }
 

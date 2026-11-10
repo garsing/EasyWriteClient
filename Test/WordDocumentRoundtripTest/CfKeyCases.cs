@@ -72,7 +72,6 @@ namespace WordDocumentRoundtripTest
                 Bool("cf-key-emboss", "易写键阳文。", "emboss"),
                 Bool("cf-key-engrave", "易写键阴文。", "engrave"),
                 Bool("cf-key-all-caps", "易写键全大写。", "all_caps"),
-                Bool("cf-key-hidden", "易写键隐藏。", "hidden"),
                 Bool("cf-key-grid", "易写键网格。", "disable_character_space_grid"),
                 Bool("cf-key-alternates", "易写键替字。", "contextual_alternates"),
                 Bool("cf-key-noproof", "易写键不校对。", "no_proofing"),
@@ -100,7 +99,6 @@ namespace WordDocumentRoundtripTest
                 Text("cf-key-number-form", "易写键数字形。", Char("number_form", "wdNumberFormLining"), "number_form", "Lining"),
                 Text("cf-key-number-spacing", "易写键数字距。", Char("number_spacing", "wdNumberSpacingProportional"), "number_spacing", "Proportional"),
                 Text("cf-key-stylistic", "易写键样式集。", Char("stylistic_set", "wdStylisticSet01"), "stylistic_set", "01"),
-                Text("cf-key-animation", "易写键动画。", Char("animation", "wdAnimationLasVegas"), "animation", "LasVegas"),
                 Text("cf-key-background", "易写键底色。", Char("background_color", "#00FF00"), "background_color", "#00FF00"),
                 Nested("cf-key-borders", "易写键边框。", "borders",
                     new Dictionary<string, object> { ["outside_line_style"] = "wdLineStyleSingle" },
@@ -117,14 +115,9 @@ namespace WordDocumentRoundtripTest
                 Nested("cf-key-text-shadow", "易写键文字影。", "text_shadow",
                     new Dictionary<string, object> { ["visible"] = true },
                     "visible", "true"),
-                Nested("cf-key-three-d", "易写键立体。", "three_d",
-                    new Dictionary<string, object> { ["visible"] = true, ["depth"] = 6 },
-                    "depth", "6"),
-                Text("cf-key-style", "易写键样式。", Char("character_style", "强调"), "character_style", "强调"),
                 Text("cf-key-lang", "KeyLangEn.", Char("language_id", "wdEnglishUS"), "language_id", "English"),
                 Text("cf-key-lang-east", "易写键东亚语。", Char("language_id_far_east", "wdJapanese"), "language_id_far_east", "Japanese"),
-                NumKey("cf-key-fit", "易写键撑宽。", "fit_text_width", 72),
-                Text("cf-key-width", "易写键宽度。", Char("character_width", "wdWidthHalfWidth"), "character_width", "Half")
+                NumKey("cf-key-fit", "易写键撑宽。", "fit_text_width", 72)
             };
         }
 

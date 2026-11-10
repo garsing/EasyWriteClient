@@ -12,7 +12,7 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static partial class CfCases
     {
-        public const int Target = 72;
+        public const int Target = 67;
 
         private const string Plain = "易写字符甲句。";
         private const string Italic = "易写字符乙斜。";
@@ -121,7 +121,7 @@ namespace WordDocumentRoundtripTest
                     !Has(plainCf, "shadow") && !Has(plainCf, "kerning") && !Has(plainCf, "underline")
                     && !Has(plainCf, "highlight_color_index") && !Has(plainCf, "glow")
                     && !Has(plainCf, "color_index") && !Has(plainCf, "ligatures")
-                    && !Has(plainCf, "fill") && !Has(plainCf, "character_width"),
+                    && !Has(plainCf, "fill"),
                     Dump(plainCf));
                 Ok(run, "cf-plain-flags",
                     Has(plainCf, "is_italic") && !Flag(plainCf, "is_italic")
