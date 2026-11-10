@@ -1355,6 +1355,42 @@ namespace EasyWriteClient.Desktop
                     });
                 bool maxRoundsReached = false;
                 int maxRoundsLimit = 0;
+                int roundContentLen = 0;
+                int roundReasoningLen = 0;
+
+                void MarkModelRound()
+                {
+                    roundContentLen = responseBuilder.Length;
+                    roundReasoningLen = reasoningBuilder.Length;
+                    _bridge.SendToJavaScript("roundStart", new { id = messageId });
+                }
+
+                void RewindModelRound()
+                {
+                    if (responseBuilder.Length > roundContentLen)
+                    {
+                        responseBuilder.Remove(roundContentLen, responseBuilder.Length - roundContentLen);
+                    }
+
+                    if (reasoningBuilder.Length > roundReasoningLen)
+                    {
+                        reasoningBuilder.Remove(roundReasoningLen, reasoningBuilder.Length - roundReasoningLen);
+                    }
+
+                    string content = responseBuilder.ToString();
+                    string reasoning = reasoningBuilder.Length > 0 ? reasoningBuilder.ToString() : null;
+                    streamPump.Rewind(content, reasoning);
+                    _bridge.SendToJavaScript("roundRewind", new { id = messageId });
+                    _bridge.SendToJavaScript("systemMessage", new
+                    {
+                        id = messageId,
+                        content,
+                        reasoningContent = reasoning,
+                        timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
+                        isStreaming = true,
+                        isUpdate = true
+                    });
+                }
 
                 object openChannels = null;
                 try
@@ -1403,6 +1439,18 @@ namespace EasyWriteClient.Desktop
                                 repeats = chunk.easywrite_meta.repeats,
                                 steps = chunk.easywrite_meta.steps
                             });
+                            return;
+                        }
+
+                        if (chunk?.easywrite_meta?.@event == "round_start")
+                        {
+                            MarkModelRound();
+                            return;
+                        }
+
+                        if (chunk?.easywrite_meta?.@event == "round_rewind")
+                        {
+                            RewindModelRound();
                             return;
                         }
 

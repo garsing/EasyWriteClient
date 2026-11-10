@@ -39,6 +39,73 @@ export class ToolCallAccumulator {
     this._activeThinking = null
     /** 已消费的累计 reasoning 长度（对应 C# reasoningContent） */
     this._reasoningAppliedLength = 0
+    /** 最新一轮模型输出的起点。只有一个，重试不另打。 */
+    this._roundMark = null
+  }
+
+  _clonePartial (partial) {
+    return {
+      index: partial.index,
+      id: partial.id,
+      name: partial.name,
+      argumentsParts: partial.argumentsParts.slice(),
+      startIndex: partial.startIndex
+    }
+  }
+
+  _segmentCopy (seg) {
+    return { ...seg }
+  }
+
+  /** 本轮还没吐字时记下当前已提交状态。 */
+  markRoundStart () {
+    const segs = this._committedSegments.map((seg) => this._segmentCopy(seg))
+    const lastRoundTools = new Map()
+    for (const [key, seg] of this._lastRoundTools) {
+      const copy = segs.find((item) =>
+        item.type === 'toolCall'
+        && item.startIndex === seg.startIndex
+        && item.callIndex === seg.callIndex
+      )
+      if (copy) lastRoundTools.set(key, copy)
+    }
+    const awaitingName = new Map()
+    for (const [key, partial] of this._awaitingName) {
+      awaitingName.set(key, this._clonePartial(partial))
+    }
+    this._roundMark = {
+      committedSegments: segs,
+      committedContentLength: this._committedContentLength,
+      reasoningAppliedLength: this._reasoningAppliedLength,
+      lastRoundTools,
+      awaitingName,
+      finishReason: this._finishReason
+    }
+  }
+
+  /** 退回最新一轮的起点，丢掉这一轮的半截正文、思考和未提交工具参数。 */
+  rewindRound () {
+    const mark = this._roundMark
+    this._partials = new Map()
+    this._activeThinking = null
+    if (!mark) return
+    this._committedSegments = mark.committedSegments.map((seg) => this._segmentCopy(seg))
+    this._committedContentLength = mark.committedContentLength
+    this._reasoningAppliedLength = mark.reasoningAppliedLength
+    this._finishReason = mark.finishReason
+    this._lastRoundTools = new Map()
+    for (const [key, seg] of mark.lastRoundTools) {
+      const live = this._committedSegments.find((item) =>
+        item.type === 'toolCall'
+        && item.startIndex === seg.startIndex
+        && item.callIndex === seg.callIndex
+      )
+      if (live) this._lastRoundTools.set(key, live)
+    }
+    this._awaitingName = new Map()
+    for (const [key, partial] of mark.awaitingName) {
+      this._awaitingName.set(key, this._clonePartial(partial))
+    }
   }
 
   /**

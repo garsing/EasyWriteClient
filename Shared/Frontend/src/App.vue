@@ -1164,6 +1164,17 @@ onMounted(() => {
       // 输入框会在发送成功时清除，isProcessing会在后端开始处理时设置为true
       clearInput() // 清除输入框
       pendingInput.value = '' // 清空待发送消息
+    } else if (data.type === 'roundStart' || data.type === 'roundRewind') {
+      const payload = data.data || data
+      const messageId = Number(payload.id) || 0
+      if (messageId) {
+        if (!toolCallAccumulators.has(messageId)) {
+          toolCallAccumulators.set(messageId, new ToolCallAccumulator())
+        }
+        const acc = toolCallAccumulators.get(messageId)
+        if (data.type === 'roundStart') acc.markRoundStart()
+        else acc.rewindRound()
+      }
     } else if (data.type === 'systemMessage') {
       // 系统消息（AI 回复）
       // 消息数据可能在 data.data 中（如果 C# 发送的是 { type: "systemMessage", data: {...} }）

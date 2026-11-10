@@ -24,12 +24,35 @@ namespace WordAddIn1
         private bool _isFirst = true;
         private bool _queued;
         private string _lastSentContent = "";
+        private int _epoch;
         private bool _disposed;
 
         public SystemMessageStreamPump(Control ui, Action<string, string, object, string, bool> send)
         {
             _ui = ui ?? throw new ArgumentNullException(nameof(ui));
             _send = send ?? throw new ArgumentNullException(nameof(send));
+        }
+
+        /// <summary>
+        /// 本轮模型输出作废。丢掉还没刷出的工具片段和结束原因，正文收回到本轮起点。
+        /// </summary>
+        public void Rewind(string content, string reasoning)
+        {
+            lock (_gate)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _epoch++;
+                _content = content ?? "";
+                _reasoning = reasoning;
+                _toolItems.Clear();
+                _finishReason = null;
+                _lastSentContent = _content;
+                _queued = false;
+            }
         }
 
         public void Enqueue(string content, string reasoning, object toolCallsDelta, string finishReason)
@@ -153,8 +176,10 @@ namespace WordAddIn1
             object tools;
             string finish;
             bool first;
+            int epoch;
             lock (_gate)
             {
+                epoch = _epoch;
                 content = _content;
                 reasoning = _reasoning;
                 tools = _toolItems.Count > 0 ? new List<object>(_toolItems) : null;
@@ -163,12 +188,35 @@ namespace WordAddIn1
                 _finishReason = null;
                 first = _isFirst;
                 _isFirst = false;
-                _lastSentContent = content;
+            }
+
+            lock (_gate)
+            {
+                if (_disposed || epoch != _epoch)
+                {
+                    bool pending = _toolItems.Count > 0
+                        || !string.IsNullOrEmpty(_finishReason)
+                        || !string.Equals(_content, _lastSentContent, StringComparison.Ordinal);
+                    _queued = pending;
+                    if (pending)
+                    {
+                        BeginFlush();
+                    }
+
+                    return;
+                }
             }
 
             try
             {
                 _send(content, reasoning, tools, finish, first);
+                lock (_gate)
+                {
+                    if (epoch == _epoch)
+                    {
+                        _lastSentContent = content;
+                    }
+                }
             }
             catch (Exception)
             {
