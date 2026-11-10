@@ -209,6 +209,7 @@ namespace WordAddIn1
             PutTri(format, "no_proofing", () => range.NoProofing);
             PutFloat(format, "fit_text_width", () => range.FitTextWidth);
             PutEnum(format, "character_width", () => range.CharacterWidth);
+            CharFormatCatalog.OmitReadDefaults(format);
             return format;
         }
 
