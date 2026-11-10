@@ -131,6 +131,12 @@ namespace WordAddIn1
                 return false;
             }
 
+            if (WpsChartExtract.IsWpsDocument(doc) && FormatInheritHelper.HasNoProofing(spec.CharFormat))
+            {
+                error = FormatInheritHelper.WpsNoProofingError;
+                return false;
+            }
+
             snapshot = FormatInheritHelper.BuildSnapshotFromCharFormat(spec.CharFormat);
             if (snapshot == null || snapshot.Count == 0)
             {

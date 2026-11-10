@@ -13,6 +13,7 @@ namespace WordDocumentRoundtripTest
             public string Sentence;
             public Dictionary<string, object> Format;
             public Func<JObject, bool> Pass;
+            public bool WpsRejects;
         }
 
         private static void RunKeys(TestRun run, WdSession s)
@@ -47,6 +48,14 @@ namespace WordDocumentRoundtripTest
                     s.GetContent(id);
                     string code = CodeOf(ReadBody(s, id), probe.Sentence);
                     ToolResult applied = s.ApplyDocumentFormat(Apply(id, code, probe.Format));
+                    if (probe.WpsRejects && s.IsWps)
+                    {
+                        Ok(run, probe.Id,
+                            applied != null && !applied.Success && Contains(applied.Error, "不支持"),
+                            applied == null ? "无回包" : (applied.Error ?? Dump(applied.Data == null ? null : JToken.FromObject(applied.Data))));
+                        continue;
+                    }
+
                     s.GetContent(id);
                     string after = CodeOf(ReadBody(s, id), probe.Sentence);
                     JObject cf = CharOf(s, id, string.IsNullOrEmpty(after) ? code : after);
@@ -74,7 +83,7 @@ namespace WordDocumentRoundtripTest
                 Bool("cf-key-all-caps", "易写键全大写。", "all_caps"),
                 Bool("cf-key-grid", "易写键网格。", "disable_character_space_grid"),
                 Bool("cf-key-alternates", "易写键替字。", "contextual_alternates"),
-                Bool("cf-key-noproof", "易写键不校对。", "no_proofing"),
+                WpsReject(Bool("cf-key-noproof", "易写键不校对。", "no_proofing")),
                 Text("cf-key-name", "易写键名称。", Char("name", "黑体"), "font_name", "黑"),
                 Text("cf-key-name-ascii", "易写键西文。", Char("name_ascii", "Calibri"), "name_ascii", "Calibri"),
                 Text("cf-key-name-fareast", "易写键远东。", Char("name_far_east", "楷体"), "font_name", "楷"),
@@ -119,6 +128,12 @@ namespace WordDocumentRoundtripTest
                 Text("cf-key-lang-east", "易写键东亚语。", Char("language_id_far_east", "wdJapanese"), "language_id_far_east", "Japanese"),
                 NumKey("cf-key-fit", "易写键撑宽。", "fit_text_width", 72)
             };
+        }
+
+        private static KeyProbe WpsReject(KeyProbe probe)
+        {
+            probe.WpsRejects = true;
+            return probe;
         }
 
         private static KeyProbe Bool(string id, string sentence, string key)

@@ -150,6 +150,12 @@ namespace WordAddIn1
                         return Done(false, validationError);
                     }
 
+                    if (string.Equals(docHandle.HostName, "wps", StringComparison.OrdinalIgnoreCase)
+                        && FormatInheritHelper.HasNoProofing(charFormat))
+                    {
+                        return Done(false, FormatInheritHelper.WpsNoProofingError);
+                    }
+
                     if (!TryResolveApplyTargets(
                             args,
                             out List<string> targetCodes,

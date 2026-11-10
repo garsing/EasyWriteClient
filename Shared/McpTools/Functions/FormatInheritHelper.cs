@@ -335,6 +335,13 @@ namespace WordAddIn1
             return $"{font}|{size}|{style}|{(bold ? "加粗" : "非加粗")}";
         }
 
+        public const string WpsNoProofingError = "WPS 不支持 no_proofing（不检查拼写或语法）";
+
+        public static bool HasNoProofing(Dictionary<string, object> charFormat)
+        {
+            return charFormat != null && charFormat.ContainsKey("no_proofing");
+        }
+
         /// <summary>
         /// 从 explicit char_format 参数构建快照（仅包含传入字段；Phase 3 不写入 paragraph_style / alignment）。
         /// </summary>
