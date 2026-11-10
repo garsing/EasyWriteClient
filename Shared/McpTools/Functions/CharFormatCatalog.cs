@@ -145,7 +145,7 @@ namespace WordAddIn1
                     return IsFalse(value);
                 case "color_index":
                 case "color_index_bi":
-                    return EnumIs(value, "wdAuto");
+                    return EnumIs(value, "wdAuto") || EnumIs(value, "wdNoHighlight");
                 case "text_color":
                     return TextColorIsDefault(value, format);
                 case "underline_color":
@@ -161,11 +161,13 @@ namespace WordAddIn1
                     return Near(value, 100);
                 case "spacing":
                 case "position":
-                case "kerning":
                 case "fit_text_width":
                     return Near(value, 0);
+                case "kerning":
+                    return Near(value, 0) || Near(value, 1);
                 case "ligatures":
-                    return EnumIs(value, "wdLigaturesNone");
+                    return EnumIs(value, "wdLigaturesNone")
+                        || EnumIs(value, "wdLigaturesStandardContextual");
                 case "number_form":
                     return EnumIs(value, "wdNumberFormDefault");
                 case "number_spacing":
@@ -177,6 +179,7 @@ namespace WordAddIn1
                 case "borders":
                     return BordersAreDefault(value);
                 case "fill":
+                    return EffectOff(value, "visible") || FillIsPlain(value);
                 case "line":
                 case "text_shadow":
                 case "three_d":
@@ -193,7 +196,7 @@ namespace WordAddIn1
                 case "language_id_far_east":
                     return EnumIs(value, "wdLanguageNone");
                 case "character_width":
-                    return EnumIs(value, "wdWidthDefault");
+                    return EnumIs(value, "wdWidthDefault") || EnumIs(value, "wdWidthFullWidth");
                 default:
                     return false;
             }
@@ -251,6 +254,46 @@ namespace WordAddIn1
             return !map.TryGetValue("outside_line_style", out object style)
                 || style == null
                 || EnumIs(style, "wdLineStyleNone");
+        }
+
+        private static bool FillIsPlain(object value)
+        {
+            Dictionary<string, object> map = AsStringDict(value);
+            if (map == null)
+            {
+                return true;
+            }
+
+            if (map.TryGetValue("transparency", out object transparency)
+                && transparency != null
+                && !Near(transparency, 0))
+            {
+                return false;
+            }
+
+            if (!map.TryGetValue("fore_color", out object fore) || fore == null)
+            {
+                return true;
+            }
+
+            Dictionary<string, object> color = AsStringDict(fore);
+            if (color == null)
+            {
+                return IsAutomaticColor(fore) || IsBlack(fore);
+            }
+
+            if (!color.TryGetValue("rgb", out object rgb) || rgb == null)
+            {
+                return true;
+            }
+
+            return IsAutomaticColor(rgb) || IsBlack(rgb);
+        }
+
+        private static bool IsBlack(object value)
+        {
+            return value != null
+                && string.Equals(value.ToString().Trim(), "#000000", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool EffectOff(object value, string visibleKey)

@@ -118,7 +118,9 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "cf-plain-ten", HasTen(plainCf), Dump(plainCf));
                 Ok(run, "cf-plain-omit",
                     !Has(plainCf, "shadow") && !Has(plainCf, "kerning") && !Has(plainCf, "underline")
-                    && !Has(plainCf, "highlight_color_index") && !Has(plainCf, "glow"),
+                    && !Has(plainCf, "highlight_color_index") && !Has(plainCf, "glow")
+                    && !Has(plainCf, "color_index") && !Has(plainCf, "ligatures")
+                    && !Has(plainCf, "fill") && !Has(plainCf, "character_width"),
                     Dump(plainCf));
                 Ok(run, "cf-plain-flags",
                     Has(plainCf, "is_italic") && !Flag(plainCf, "is_italic")
@@ -185,89 +187,86 @@ namespace WordDocumentRoundtripTest
 
             try
             {
-                s.GetContent(id);
-                string body = ReadBody(s, id);
-                string a = CodeOf(body, ApplyA);
-                string b = CodeOf(body, ApplyB);
-                string c = CodeOf(body, ApplyC);
-                string d = CodeOf(body, ApplyD);
-                string e = CodeOf(body, ApplyE);
-                string f = CodeOf(body, ApplyF);
-                string g = CodeOf(body, ApplyG);
-                string h = CodeOf(body, ApplyH);
-                if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(h))
+                string Fresh(string sentence)
+                {
+                    s.GetContent(id);
+                    return CodeOf(ReadBody(s, id), sentence);
+                }
+
+                if (string.IsNullOrEmpty(Fresh(ApplyA)) || string.IsNullOrEmpty(Fresh(ApplyH)))
                 {
                     FailMany(run, "抄不到套用 S_", ids);
                     return;
                 }
 
-                ToolResult italic = s.ApplyDocumentFormat(Apply(id, a, Char("is_italic", true)));
-                Ok(run, "cf-apply-italic", italic.Success && Flag(CharOf(s, id, a), "is_italic"), italic.Error ?? Dump(CharOf(s, id, a)));
+                ToolResult italic = s.ApplyDocumentFormat(Apply(id, Fresh(ApplyA), Char("is_italic", true)));
+                JObject italicCf = CharOf(s, id, Fresh(ApplyA));
+                Ok(run, "cf-apply-italic", italic.Success && Flag(italicCf, "is_italic"), Why(italic, italicCf));
 
-                ToolResult super = s.ApplyDocumentFormat(Apply(id, b, Char("is_superscript", true)));
-                JObject superCf = CharOf(s, id, b);
-                Ok(run, "cf-apply-super", super.Success && Flag(superCf, "is_superscript") && !Flag(superCf, "is_subscript"), Dump(superCf));
+                ToolResult super = s.ApplyDocumentFormat(Apply(id, Fresh(ApplyB), Char("is_superscript", true)));
+                JObject superCf = CharOf(s, id, Fresh(ApplyB));
+                Ok(run, "cf-apply-super", super.Success && Flag(superCf, "is_superscript") && !Flag(superCf, "is_subscript"), Why(super, superCf));
 
-                ToolResult sub = s.ApplyDocumentFormat(Apply(id, c, Char("is_subscript", true)));
-                JObject subCf = CharOf(s, id, c);
-                Ok(run, "cf-apply-sub", sub.Success && Flag(subCf, "is_subscript") && !Flag(subCf, "is_superscript"), Dump(subCf));
+                ToolResult sub = s.ApplyDocumentFormat(Apply(id, Fresh(ApplyC), Char("is_subscript", true)));
+                JObject subCf = CharOf(s, id, Fresh(ApplyC));
+                Ok(run, "cf-apply-sub", sub.Success && Flag(subCf, "is_subscript") && !Flag(subCf, "is_superscript"), Why(sub, subCf));
 
-                ToolResult name = s.ApplyDocumentFormat(Apply(id, d, new Dictionary<string, object>
+                ToolResult name = s.ApplyDocumentFormat(Apply(id, Fresh(ApplyD), new Dictionary<string, object>
                 {
                     ["font_name"] = "楷体",
                     ["font_size"] = 16
                 }));
-                JObject nameCf = CharOf(s, id, d);
+                JObject nameCf = CharOf(s, id, Fresh(ApplyD));
                 Ok(run, "cf-apply-name",
                     name.Success && FontLooksLike(Str(nameCf, "font_name"), "楷") && Near(Num(nameCf, "font_size"), 16, 0.6),
-                    Dump(nameCf));
+                    Why(name, nameCf));
 
-                ToolResult partial = s.ApplyDocumentFormat(Apply(id, e, Char("is_italic", true)));
-                JObject partialCf = CharOf(s, id, e);
+                ToolResult partial = s.ApplyDocumentFormat(Apply(id, Fresh(ApplyE), Char("is_italic", true)));
+                JObject partialCf = CharOf(s, id, Fresh(ApplyE));
                 Ok(run, "cf-apply-partial",
                     partial.Success && Flag(partialCf, "is_italic") && Has(partialCf, "is_bold") && !Flag(partialCf, "is_bold"),
-                    Dump(partialCf));
+                    Why(partial, partialCf));
 
-                ToolResult spacing = s.ApplyDocumentFormat(Apply(id, f, Char("spacing", 2)));
-                JObject spacingCf = CharOf(s, id, f);
-                Ok(run, "cf-apply-spacing", spacing.Success && Near(Num(spacingCf, "spacing"), 2, 0.3), Dump(spacingCf));
+                ToolResult spacing = s.ApplyDocumentFormat(Apply(id, Fresh(ApplyF), Char("spacing", 2)));
+                JObject spacingCf = CharOf(s, id, Fresh(ApplyF));
+                Ok(run, "cf-apply-spacing", spacing.Success && Near(Num(spacingCf, "spacing"), 2, 0.3), Why(spacing, spacingCf));
 
-                ToolResult caps = s.ApplyDocumentFormat(Apply(id, g, Char("small_caps", true)));
-                JObject capsCf = CharOf(s, id, g);
-                Ok(run, "cf-apply-caps", caps.Success && Flag(capsCf, "small_caps"), Dump(capsCf));
+                ToolResult caps = s.ApplyDocumentFormat(Apply(id, Fresh(ApplyG), Char("small_caps", true)));
+                JObject capsCf = CharOf(s, id, Fresh(ApplyG));
+                Ok(run, "cf-apply-caps", caps.Success && Flag(capsCf, "small_caps"), Why(caps, capsCf));
 
                 var warnFmt = Char("is_italic", true);
                 warnFmt["underline"] = "not-an-underline";
-                ToolResult warn = s.ApplyDocumentFormat(Apply(id, h, warnFmt));
-                JObject warnCf = CharOf(s, id, h);
+                ToolResult warn = s.ApplyDocumentFormat(Apply(id, Fresh(ApplyH), warnFmt));
+                JObject warnCf = CharOf(s, id, Fresh(ApplyH));
                 Ok(run, "cf-apply-warn",
                     warn.Success && Flag(warnCf, "is_italic") && Blob(DataObj(warn), "format_warnings"),
-                    warn.Error ?? Dump(DataObj(warn)));
+                    Why(warn, DataObj(warn)));
 
                 Ok(run, "cf-apply-text",
                     StillHas(s, id, ApplyA) && StillHas(s, id, ApplyH),
                     "套用后句子丢了");
 
-                ToolResult glow = s.ApplyDocumentFormat(Apply(id, a, new Dictionary<string, object>
+                ToolResult glow = s.ApplyDocumentFormat(Apply(id, Fresh(ApplyA), new Dictionary<string, object>
                 {
                     ["glow"] = new Dictionary<string, object> { ["radius"] = 8 }
                 }));
-                JObject glowCf = CharOf(s, id, a);
+                JObject glowCf = CharOf(s, id, Fresh(ApplyA));
                 JObject glowObj = Obj(glowCf, "glow");
-                Ok(run, "cf-apply-glow", glow.Success && Near(Num(glowObj, "radius"), 8, 0.6), glow.Error ?? Dump(glowCf));
+                Ok(run, "cf-apply-glow", glow.Success && Near(Num(glowObj, "radius"), 8, 0.6), Why(glow, glowCf));
 
-                ToolResult shading = s.ApplyDocumentFormat(Apply(id, b, new Dictionary<string, object>
+                ToolResult shading = s.ApplyDocumentFormat(Apply(id, Fresh(ApplyB), new Dictionary<string, object>
                 {
                     ["shading"] = new Dictionary<string, object>
                     {
                         ["background_pattern_color"] = "#00FF00"
                     }
                 }));
-                JObject shadingObj = Obj(CharOf(s, id, b), "shading");
+                JObject shadingObj = Obj(CharOf(s, id, Fresh(ApplyB)), "shading");
                 string shade = Str(shadingObj, "background_pattern_color");
                 Ok(run, "cf-apply-shading",
                     shading.Success && string.Equals(shade, "#00FF00", StringComparison.OrdinalIgnoreCase),
-                    shading.Error ?? (shade ?? Dump(shadingObj)));
+                    shading.Success ? (shade ?? Dump(shadingObj)) : (shading.Error ?? ""));
             }
             finally
             {
@@ -287,15 +286,19 @@ namespace WordDocumentRoundtripTest
 
             try
             {
-                s.GetContent(id);
-                string anchor = CodeOf(ReadBody(s, id), Anchor);
-                if (string.IsNullOrEmpty(anchor))
+                string Fresh(string sentence)
+                {
+                    s.GetContent(id);
+                    return CodeOf(ReadBody(s, id), sentence);
+                }
+
+                if (string.IsNullOrEmpty(Fresh(Anchor)))
                 {
                     FailMany(run, "抄不到锚句", ids);
                     return;
                 }
 
-                ToolResult italic = s.ProcessActions(id, InsertAfter(anchor, WroteItalic, new Dictionary<string, object>
+                ToolResult italic = s.ProcessActions(id, InsertAfter(Fresh(Anchor), WroteItalic, new Dictionary<string, object>
                 {
                     ["font_name"] = "宋体",
                     ["font_size"] = 12,
@@ -305,12 +308,11 @@ namespace WordDocumentRoundtripTest
                 string italicCode = CodeOf(ReadBody(s, id), WroteItalic);
                 JObject italicCf = CharOf(s, id, italicCode);
                 Ok(run, "cf-write-italic", italic.Success && Flag(italicCf, "is_italic"), italic.Error ?? Dump(italicCf));
-                string bg = Str(italicCf, "background_color");
                 Ok(run, "cf-write-bg",
-                    !string.IsNullOrEmpty(bg) && !string.Equals(bg, "automatic", StringComparison.OrdinalIgnoreCase),
-                    bg ?? "");
+                    Has(italicCf, "background_color") && Contains(Str(italicCf, "highlight_color_index"), "Yellow"),
+                    Dump(italicCf));
 
-                ToolResult super = s.ProcessActions(id, InsertAfter(anchor, WroteSuper, new Dictionary<string, object>
+                ToolResult super = s.ProcessActions(id, InsertAfter(Fresh(Anchor), WroteSuper, new Dictionary<string, object>
                 {
                     ["font_name"] = "宋体",
                     ["font_size"] = 12,
@@ -562,6 +564,16 @@ namespace WordDocumentRoundtripTest
         private static string Dump(JToken token)
         {
             return token == null ? "空" : token.ToString(Formatting.None);
+        }
+
+        private static string Why(ToolResult result, JToken dump)
+        {
+            if (result != null && !result.Success)
+            {
+                return result.Error ?? "";
+            }
+
+            return Dump(dump);
         }
 
         private static void Ok(TestRun run, string id, bool cond, string reason)
