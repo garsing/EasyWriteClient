@@ -864,6 +864,21 @@ namespace WordDocumentRoundtripTest
                 });
         }
 
+        /// <summary>
+        /// 按正文定位一截，改 Font / Range 上的字符属性。prefixChars &gt; 0 时只铺针的前若干字。
+        /// </summary>
+        public bool PaintNeedle(
+            string fullPath,
+            string needle,
+            int prefixChars,
+            IDictionary<string, object> fontProps,
+            IDictionary<string, object> rangeProps)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc => PaintNeedleCore(doc, needle, prefixChars, fontProps, rangeProps))
+                : WithWordDoc(fullPath, doc => PaintNeedleCore(doc, needle, prefixChars, fontProps, rangeProps));
+        }
+
         public bool SetTextChar(string fullPath, string needle, string fontName, float size, bool bold, bool underline)
         {
             return IsWps
@@ -2928,6 +2943,57 @@ namespace WordDocumentRoundtripTest
             catch
             {
                 return null;
+            }
+        }
+
+        private static bool PaintNeedleCore(
+            object doc,
+            string needle,
+            int prefixChars,
+            IDictionary<string, object> fontProps,
+            IDictionary<string, object> rangeProps)
+        {
+            try
+            {
+                object slice = FindNeedleRangeLate(doc, needle);
+                if (slice == null)
+                {
+                    return false;
+                }
+
+                if (prefixChars > 0)
+                {
+                    int start = Convert.ToInt32(GetProp(slice, "Start"));
+                    int end = Convert.ToInt32(GetProp(slice, "End"));
+                    int cut = start + prefixChars;
+                    if (cut < end)
+                    {
+                        SetProp(slice, "End", cut);
+                    }
+                }
+
+                if (fontProps != null)
+                {
+                    object font = GetProp(slice, "Font");
+                    foreach (KeyValuePair<string, object> pair in fontProps)
+                    {
+                        SetProp(font, pair.Key, pair.Value);
+                    }
+                }
+
+                if (rangeProps != null)
+                {
+                    foreach (KeyValuePair<string, object> pair in rangeProps)
+                    {
+                        SetProp(slice, pair.Key, pair.Value);
+                    }
+                }
+
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 

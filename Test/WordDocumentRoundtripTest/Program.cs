@@ -702,7 +702,10 @@ namespace WordDocumentRoundtripTest
                 && caseFilter.StartsWith("wf-", StringComparison.OrdinalIgnoreCase);
             bool runWriteFmt = !runFindStale && !runLayout && !runActions && !runFromFile
                 && caseFilter.StartsWith("wl-", StringComparison.OrdinalIgnoreCase);
+            bool runCharFmt = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt
+                && caseFilter.StartsWith("cf-", StringComparison.OrdinalIgnoreCase);
             bool runFormat = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt
+                && !runCharFmt
                 && caseFilter.StartsWith("wg-", StringComparison.OrdinalIgnoreCase);
             bool runTable = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt && !runFormat
                 && caseFilter.StartsWith("wt-", StringComparison.OrdinalIgnoreCase);
@@ -751,6 +754,10 @@ namespace WordDocumentRoundtripTest
             else if (runWriteFmt)
             {
                 Console.WriteLine("文字 写入套格式切块（wl-）：用 [写入套格式] 日志断言前/中/后缀");
+            }
+            else if (runCharFmt)
+            {
+                Console.WriteLine("文字 字符格式读写（cf-）");
             }
             else if (runFormat)
             {
@@ -838,6 +845,10 @@ namespace WordDocumentRoundtripTest
                 else if (runWriteFmt)
                 {
                     WlCases.Run(run, host, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+                }
+                else if (runCharFmt)
+                {
+                    CfCases.Run(run, host);
                 }
                 else if (runFormat)
                 {
@@ -1005,6 +1016,11 @@ namespace WordDocumentRoundtripTest
             bool runNotes,
             bool runContent)
         {
+            if (caseFilter != null && caseFilter.StartsWith("cf-", StringComparison.OrdinalIgnoreCase))
+            {
+                return CfCases.Target;
+            }
+
             if (runFindStale)
             {
                 return FindStaleCases.Target;
