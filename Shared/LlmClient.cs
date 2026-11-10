@@ -670,6 +670,24 @@ namespace WordAddIn1
         public string arguments { get; set; }
     }
 
+    /// <summary>对话失败时给气泡的短句。原文只留日志，不进界面。</summary>
+    public static class ChatTurnHint
+    {
+        public const string ModelUnavailable = "模型暂时没有响应，请再试一次";
+        public const string ContextOverflow = "上下文超了";
+
+        public static string ForConversationFailure(Exception ex)
+        {
+            string message = ex?.Message ?? "";
+            if (message.IndexOf(ContextOverflow, StringComparison.Ordinal) >= 0)
+            {
+                return ContextOverflow;
+            }
+
+            return ModelUnavailable;
+        }
+    }
+
     /// <summary>用户日限额与散装灵感值均已用尽（HTTP 402 / DAILY_QUOTA_EXCEEDED）。</summary>
     public class DailyQuotaExceededException : Exception
     {

@@ -1543,14 +1543,16 @@ namespace EasyWriteClient.Desktop
             }
             catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine("[DesktopChatSurface] 对话失败: " + ex);
                 Invoke((MethodInvoker)delegate
                 {
                     _bridge.SendToJavaScript("systemMessage", new
                     {
                         id = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
-                        content = "错误: " + ex.Message,
+                        content = ChatTurnHint.ForConversationFailure(ex),
                         timestamp = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
-                        isStreaming = false
+                        isStreaming = false,
+                        isHint = true
                     });
                     CleanupRequestState();
                 });
