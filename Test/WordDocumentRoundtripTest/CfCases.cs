@@ -10,9 +10,9 @@ namespace WordDocumentRoundtripTest
     /// <summary>
     /// 字符格式全量：读默认省略、COM 铺后再读、套用、写入。对照 docs/测试/word测试/字符格式读写。
     /// </summary>
-    internal static class CfCases
+    internal static partial class CfCases
     {
-        public const int Target = 28;
+        public const int Target = 72;
 
         private const string Plain = "易写字符甲句。";
         private const string Italic = "易写字符乙斜。";
@@ -57,6 +57,7 @@ namespace WordDocumentRoundtripTest
             RunRead(run, s);
             RunApply(run, s);
             RunWrite(run, s);
+            RunKeys(run, s);
         }
 
         private static void RunRead(TestRun run, WdSession s)
