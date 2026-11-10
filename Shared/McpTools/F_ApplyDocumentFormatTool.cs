@@ -16,13 +16,6 @@ namespace WordAddIn1
     /// </summary>
     public static class F_ApplyDocumentFormatTool
     {
-        private static readonly string[] FieldsApplied =
-        {
-            "font_name", "font_size", "font_color", "background_color",
-            "is_bold", "has_underline", "has_strikethrough"
-        };
-
-
         public static void Register(
             Dictionary<string, Func<Dictionary<string, object>, Task<ToolResult>>> toolRegistry,
             object wordApplication)
@@ -149,6 +142,7 @@ namespace WordAddIn1
         {
                 try
                 {
+                    FormatInheritHelper.ResetFormatWarnings();
                     string validationError = ValidateModeArgs(args, out string mode,
                         out Dictionary<string, object> charFormat, out Dictionary<string, object> paraFormat);
                     if (validationError != null)
@@ -324,7 +318,7 @@ namespace WordAddIn1
                         ["success"] = success,
                         ["mode"] = responseMode,
                         ["applied_codes"] = appliedCodes,
-                        ["fields_applied"] = FieldsApplied.ToList(),
+                        ["fields_applied"] = explicitFieldsApplied ?? new List<string>(),
                         ["skipped_codes"] = skippedCodes
                     };
 
@@ -341,6 +335,12 @@ namespace WordAddIn1
                     if (applyErrors.Count > 0)
                     {
                         data["format_apply_error"] = string.Join("; ", applyErrors);
+                    }
+
+                    List<Dictionary<string, object>> formatWarnings = FormatInheritHelper.TakeFormatWarnings();
+                    if (formatWarnings != null)
+                    {
+                        data["format_warnings"] = formatWarnings;
                     }
 
                     if (!success)

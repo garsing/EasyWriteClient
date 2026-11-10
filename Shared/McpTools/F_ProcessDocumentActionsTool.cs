@@ -1258,6 +1258,7 @@ namespace WordAddIn1
 
             try
             {
+                FormatInheritHelper.ResetFormatWarnings();
                 using (EasyWriteDiagnostics.Time(
                     "process_actions.action." + (action.Type ?? "?") + "[" + originalIndex + "]"))
                 {
@@ -1462,6 +1463,7 @@ namespace WordAddIn1
 
             try
             {
+            FormatInheritHelper.ResetFormatWarnings();
             if (cell == null)
             {
                 result.success = false;
@@ -3408,6 +3410,7 @@ namespace WordAddIn1
             ar.success = true;
             ar.format_mode = rep.FormatMode;
             ar.format_apply_error = rep.FormatApplyError;
+            ar.format_warnings = FormatInheritHelper.TakeFormatWarnings();
 
             if (rep.FormatMode == "explicit")
             {
@@ -3458,6 +3461,7 @@ namespace WordAddIn1
             ar.success = ins.Success;
             ar.format_mode = ins.FormatMode;
             ar.format_apply_error = ins.FormatApplyError;
+            ar.format_warnings = FormatInheritHelper.TakeFormatWarnings();
             if (ins.FormatMode == "explicit")
             {
                 ar.format_applied = "char_format";
@@ -3534,6 +3538,7 @@ namespace WordAddIn1
             public string format_applied { get; set; }
             public string format_source { get; set; }
             public string format_apply_error { get; set; }
+            public List<Dictionary<string, object>> format_warnings { get; set; }
             public List<string> PendingNewSentences { get; set; }
             public Dictionary<string, object> PendingPreReplaceSnapshot { get; set; }
 
@@ -3570,6 +3575,11 @@ namespace WordAddIn1
                 if (!string.IsNullOrEmpty(format_apply_error))
                 {
                     dict["format_apply_error"] = format_apply_error;
+                }
+
+                if (format_warnings != null && format_warnings.Count > 0)
+                {
+                    dict["format_warnings"] = format_warnings;
                 }
 
                 return dict;

@@ -9,7 +9,7 @@ namespace WordAddIn1
     /// 字符格式快照：ExtractSnapshot / BuildSnapshotFromCharFormat / ApplySnapshot。
     /// 按 S_ 代抄 inherit_from 已取消；本文件无 inherit 入口。
     /// </summary>
-    public static class FormatInheritHelper
+    public static partial class FormatInheritHelper
     {
         /// <summary>调试日志统一前缀；写入 WordAddIn2/logs/ 当前会话文件，VS 输出窗口可搜：<c>[格式融合][DBG]</c></summary>
         public const string DbgPrefix = "[格式融合][DBG]";
@@ -33,14 +33,17 @@ namespace WordAddIn1
 
             try
             {
-                format["font_name"] = GetEffectiveFontName(range.Font);
-                format["font_size"] = range.Font?.Size ?? 0f;
-                format["font_color"] = ConvertWdColorToRgb(range.Font?.Color ?? Word.WdColor.wdColorAutomatic);
-                format["background_color"] = ConvertWdColorToRgb(ReadCharBackground(range));
-                format["is_bold"] = (range.Font?.Bold ?? 0) != 0;
-                format["has_underline"] = (range.Font?.Underline ?? Word.WdUnderline.wdUnderlineNone)
-                    != Word.WdUnderline.wdUnderlineNone;
-                format["has_strikethrough"] = (range.Font?.StrikeThrough ?? 0) != 0;
+                Dictionary<string, object> merged = ReadMergedCharFormat(range, out int kindCount, out string kindNote);
+                foreach (KeyValuePair<string, object> kv in merged)
+                {
+                    format[kv.Key] = kv.Value;
+                }
+
+                if (kindCount > 1)
+                {
+                    format[CharFormatCatalog.KindCountKey] = kindCount;
+                    format[CharFormatCatalog.KindNoteKey] = kindNote;
+                }
 
                 try
                 {
@@ -346,23 +349,25 @@ namespace WordAddIn1
                 return snapshot;
             }
 
-            string[] allowed =
-            {
-                "font_name", "font_size", "font_color", "background_color",
-                "is_bold", "has_underline", "has_strikethrough"
-            };
-
-            foreach (string key in allowed)
+            foreach (string key in CharFormatCatalog.ApplyOrder)
             {
                 if (!includeBackgroundColor && key == "background_color")
                 {
                     continue;
                 }
 
-                if (charFormat.TryGetValue(key, out object value) && value != null)
+                if (!charFormat.TryGetValue(key, out object value) || value == null)
                 {
-                    snapshot[key] = value;
+                    continue;
                 }
+
+                if (CharFormatCatalog.IsSentinel(value))
+                {
+                    NoteFormatWarning(key, "值为 wdUndefined 或 wdToggle，已忽略");
+                    continue;
+                }
+
+                snapshot[key] = value;
             }
 
             return snapshot;
@@ -837,70 +842,26 @@ namespace WordAddIn1
         {
             // 含段落标记时，后面的 Font.Bold 会把已打上的字符底纹清掉，或把底纹收成段落底纹。
             range = TrimTrailingMarks(range);
-            if (range == null)
+            if (range == null || format == null)
             {
                 return;
             }
 
-            try
+            foreach (string key in CharFormatCatalog.ApplyOrder)
             {
-                if (format.ContainsKey("font_name"))
+                if (!format.ContainsKey(key))
                 {
-                    string fontName = format["font_name"]?.ToString() ?? "";
-                    DbgLog($"ApplyCharFormat font_name=\"{fontName}\"");
-                    ApplyFontName(range, fontName);
+                    continue;
                 }
 
-                if (format.ContainsKey("font_size"))
+                try
                 {
-                    float fontSize = format["font_size"] is float f
-                        ? f
-                        : (format["font_size"] != null && float.TryParse(format["font_size"].ToString(), out float fs) ? fs : 0f);
-                    if (fontSize > 0)
-                    {
-                        range.Font.Size = fontSize;
-                    }
+                    ApplyCharFormatKey(range, key, format[key]);
                 }
-
-                if (format.ContainsKey("font_color"))
+                catch (Exception ex)
                 {
-                    range.Font.Color = ConvertRgbToWdColor(format["font_color"]?.ToString() ?? "");
+                    NoteFormatWarning(key, ex.Message);
                 }
-
-                if (format.ContainsKey("is_bold"))
-                {
-                    bool isBold = format["is_bold"] is bool b
-                        ? b
-                        : (format["is_bold"]?.ToString() == "True" || format["is_bold"]?.ToString() == "true");
-                    range.Font.Bold = isBold ? 1 : 0;
-                }
-
-                if (format.ContainsKey("has_underline"))
-                {
-                    bool hasUnderline = format["has_underline"] is bool b
-                        ? b
-                        : (format["has_underline"]?.ToString() == "True" || format["has_underline"]?.ToString() == "true");
-                    range.Font.Underline = hasUnderline
-                        ? Word.WdUnderline.wdUnderlineSingle
-                        : Word.WdUnderline.wdUnderlineNone;
-                }
-
-                if (format.ContainsKey("has_strikethrough"))
-                {
-                    bool hasStrikethrough = format["has_strikethrough"] is bool b
-                        ? b
-                        : (format["has_strikethrough"]?.ToString() == "True" || format["has_strikethrough"]?.ToString() == "true");
-                    range.Font.StrikeThrough = hasStrikethrough ? 1 : 0;
-                }
-
-                if (format.ContainsKey("background_color"))
-                {
-                    WriteCharBackground(range, ConvertRgbToWdColor(format["background_color"]?.ToString() ?? ""));
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException($"ApplyCharFormat failed: {ex.Message}", ex);
             }
         }
 

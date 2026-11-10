@@ -75,11 +75,7 @@ namespace WordAddIn1
             return null;
         }
 
-        private static readonly string[] CharFormatKeys =
-        {
-            "font_name", "font_size", "font_color", "background_color",
-            "is_bold", "has_underline", "has_strikethrough"
-        };
+        private static readonly string[] CharFormatKeys = CharFormatCatalog.ApplyOrder;
 
         private static readonly string[] ParaFormatKeys = { "alignment" };
 
@@ -461,6 +457,14 @@ namespace WordAddIn1
                 ["char_format"] = PickFields(snapshot, CharFormatKeys),
                 ["para_format"] = ParaFormatReader.Extract(paragraphRange)
             };
+            if (snapshot.TryGetValue(CharFormatCatalog.KindCountKey, out object kindCount))
+            {
+                entry[CharFormatCatalog.KindCountKey] = kindCount;
+                if (snapshot.TryGetValue(CharFormatCatalog.KindNoteKey, out object kindNote))
+                {
+                    entry[CharFormatCatalog.KindNoteKey] = kindNote;
+                }
+            }
             SemanticRoleHelper.AppendRoleFields(entry, role);
             DbgLog(
                 $"entry {code} style_role={role.StyleRole} text_role={role.TextRole} " +
