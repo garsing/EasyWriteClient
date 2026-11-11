@@ -90,8 +90,8 @@ namespace WordDocumentRoundtripTest
                 Text("cf-key-name-bi", "易写键复杂。", Char("name_bi", "Arial"), "name_bi", "Arial"),
                 Text("cf-key-name-other", "易写键其它。", Char("name_other", "Times New Roman"), "name_other", "Times"),
                 NumKey("cf-key-size-bi", "易写键复字号。", "size_bi", 18),
-                Text("cf-key-color-index", "易写键色号。", Char("color_index", "wdRed"), "color_index", "Red"),
-                Text("cf-key-color-index-bi", "易写键复色号。", Char("color_index_bi", "wdBlue"), "color_index_bi", "Blue"),
+                Absent("cf-key-color-index", "易写键色号。", Char("color_index", "wdRed"), "color_index"),
+                Absent("cf-key-color-index-bi", "易写键复色号。", Char("color_index_bi", "wdBlue"), "color_index_bi"),
                 Text("cf-key-text-color", "易写键主题色。",
                     new Dictionary<string, object>
                     {
@@ -99,7 +99,7 @@ namespace WordDocumentRoundtripTest
                     },
                     "font_color", "#112233"),
                 Text("cf-key-underline-color", "易写键线色。", Char("underline_color", "#FF00FF"), "underline_color", "#FF00FF"),
-                Text("cf-key-diacritic-color", "易写键音符色。", Char("diacritic_color", "#00FFFF"), "diacritic_color", "#00FFFF"),
+                Absent("cf-key-diacritic-color", "易写键音符色。", Char("diacritic_color", "#00FFFF"), "diacritic_color"),
                 Text("cf-key-emphasis", "易写键着重。", Char("emphasis_mark", "wdEmphasisMarkOverSolidCircle"), "emphasis_mark", "SolidCircle"),
                 NumKey("cf-key-scaling", "易写键缩放。", "scaling", 150),
                 NumKey("cf-key-position", "易写键位置。", "position", 3),
@@ -155,6 +155,17 @@ namespace WordDocumentRoundtripTest
                 Sentence = sentence,
                 Format = Char(key, expect),
                 Pass = cf => Near(Num(cf, key), expect, 0.6)
+            };
+        }
+
+        private static KeyProbe Absent(string id, string sentence, Dictionary<string, object> format, string key)
+        {
+            return new KeyProbe
+            {
+                Id = id,
+                Sentence = sentence,
+                Format = format,
+                Pass = cf => Has(cf, "font_name") && !Has(cf, key)
             };
         }
 

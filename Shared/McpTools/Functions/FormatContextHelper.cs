@@ -337,17 +337,17 @@ namespace WordAddIn1
             if (targetCodes.Count == 1)
             {
                 Dictionary<string, object> singleEntry = BuildEntryFromRange(
-                    doc,
                     targetCodes[0],
                     span,
-                    isTarget: true);
+                    isTarget: true,
+                    out string readError);
                 if (singleEntry != null)
                 {
                     result.Entries.Add(singleEntry);
                 }
                 else
                 {
-                    result.Errors.Add($"无法读取格式: {targetCodes[0]}");
+                    result.Errors.Add(readError ?? $"无法读取格式: {targetCodes[0]}");
                 }
             }
             else
@@ -359,14 +359,14 @@ namespace WordAddIn1
                         span,
                         code,
                         $"format_context:{code}");
-                    Dictionary<string, object> entry = BuildEntryFromRange(doc, code, range, isTarget: true);
+                    Dictionary<string, object> entry = BuildEntryFromRange(code, range, isTarget: true, out string readError);
                     if (entry != null)
                     {
                         result.Entries.Add(entry);
                     }
                     else
                     {
-                        result.Errors.Add($"无法读取格式: {code}");
+                        result.Errors.Add(readError ?? $"无法读取格式: {code}");
                     }
                 }
             }
@@ -374,7 +374,7 @@ namespace WordAddIn1
             result.Success = result.Entries.Count > 0;
             if (!result.Success)
             {
-                result.Error = "未能组装任何 entries";
+                result.Error = result.Errors.Count > 0 ? result.Errors[0] : "未能组装任何 entries";
             }
 
             DbgLog(
@@ -431,20 +431,44 @@ namespace WordAddIn1
             };
         }
 
+        private static string ParagraphStyleName(Word.Range range)
+        {
+            try
+            {
+                Word.Style style = range?.get_Style() as Word.Style;
+                return style?.NameLocal ?? "";
+            }
+            catch (Exception ex)
+            {
+                DbgLog("paragraph_style 读取失败: " + ex.Message);
+                return "";
+            }
+        }
+
         private static Dictionary<string, object> BuildEntryFromRange(
-            Word.Document doc,
             string code,
             Word.Range range,
-            bool isTarget)
+            bool isTarget,
+            out string error)
         {
+            error = null;
             string content = DocumentState.GetSentenceContent(code);
             if (string.IsNullOrEmpty(content) || range == null)
+            {
+                error = "无法读取格式: " + code;
+                return null;
+            }
+
+            if (!CharFormatRunReader.TryRead(range, out List<Dictionary<string, object>> runs, out error))
             {
                 return null;
             }
 
-            Dictionary<string, object> snapshot = FormatInheritHelper.ExtractSnapshot(range);
-            SemanticRoleHelper.RoleAnalysis role = SemanticRoleHelper.Analyze(code, content, snapshot);
+            var roleSnap = new Dictionary<string, object>
+            {
+                ["paragraph_style"] = ParagraphStyleName(range)
+            };
+            SemanticRoleHelper.RoleAnalysis role = SemanticRoleHelper.Analyze(code, content, roleSnap);
             Word.Range paragraphRange = range.Paragraphs?.Count > 0 ? range.Paragraphs[1].Range : range;
             string paragraphCode = ParagraphCodeResolver.ResolveParagraphFromSentence(code) ?? "";
             var entry = new Dictionary<string, object>
@@ -453,18 +477,9 @@ namespace WordAddIn1
                 ["paragraph_code"] = paragraphCode,
                 ["text_preview"] = BuildTextPreview(content),
                 ["is_target"] = isTarget,
-                ["format_fingerprint"] = FormatInheritHelper.BuildFingerprint(snapshot),
-                ["char_format"] = PickFields(snapshot, CharFormatKeys),
+                ["runs"] = runs,
                 ["para_format"] = ParaFormatReader.Extract(paragraphRange)
             };
-            if (snapshot.TryGetValue(CharFormatCatalog.KindCountKey, out object kindCount))
-            {
-                entry[CharFormatCatalog.KindCountKey] = kindCount;
-                if (snapshot.TryGetValue(CharFormatCatalog.KindNoteKey, out object kindNote))
-                {
-                    entry[CharFormatCatalog.KindNoteKey] = kindNote;
-                }
-            }
             SemanticRoleHelper.AppendRoleFields(entry, role);
             DbgLog(
                 $"entry {code} style_role={role.StyleRole} text_role={role.TextRole} " +

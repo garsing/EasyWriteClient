@@ -47,6 +47,16 @@ namespace WordAddIn1
                 throw new InvalidOperationException("WordOpenXML 为空");
             }
 
+            return Parse(raw);
+        }
+
+        public static OpenXmlPackage Parse(string raw)
+        {
+            if (string.IsNullOrEmpty(raw))
+            {
+                throw new InvalidOperationException("WordOpenXML 为空");
+            }
+
             XDocument xml;
             try
             {

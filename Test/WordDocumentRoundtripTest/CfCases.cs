@@ -130,6 +130,7 @@ namespace WordDocumentRoundtripTest
                     Dump(plainCf));
                 Ok(run, "cf-plain-clean",
                     plainEntry != null && plainEntry["format_note"] == null
+                    && Runs(plainEntry).Count == 1
                     && !Blob(plainEntry, "9999999"),
                     Dump(plainEntry));
 
@@ -153,12 +154,14 @@ namespace WordDocumentRoundtripTest
                     Dump(hiCf));
 
                 JObject mixedEntry = ReadEntry(s, id, mixedCode);
-                JObject mixedCf = Obj(mixedEntry, "char_format");
-                int kinds = Num(mixedEntry, "format_kind_count");
+                JArray mixedRuns = Runs(mixedEntry);
+                JObject mixedTail = mixedRuns.Count == 0 ? new JObject() : Obj((JObject)mixedRuns[mixedRuns.Count - 1], "char_format");
+                JObject mixedHead = mixedRuns.Count == 0 ? new JObject() : Obj((JObject)mixedRuns[0], "char_format");
                 Ok(run, "cf-com-mixed",
-                    kinds == 2
-                    && Contains(Str(mixedEntry, "format_note"), "两种")
-                    && !Has(mixedCf, "is_superscript")
+                    mixedRuns.Count == 2
+                    && mixedEntry["format_note"] == null
+                    && Flag(mixedTail, "is_superscript")
+                    && !Flag(mixedHead, "is_superscript")
                     && !Blob(mixedEntry, "9999999"),
                     Dump(mixedEntry));
             }
@@ -389,7 +392,19 @@ namespace WordDocumentRoundtripTest
 
         private static JObject CharOf(WdSession s, string id, string code)
         {
-            return Obj(ReadEntry(s, id, code), "char_format");
+            JObject entry = ReadEntry(s, id, code);
+            JArray runs = Runs(entry);
+            if (runs.Count > 0)
+            {
+                return Obj((JObject)runs[0], "char_format");
+            }
+
+            return Obj(entry, "char_format");
+        }
+
+        private static JArray Runs(JObject entry)
+        {
+            return entry?["runs"] as JArray ?? new JArray();
         }
 
         private static JObject ReadEntry(WdSession s, string id, string code)

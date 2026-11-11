@@ -210,7 +210,7 @@ namespace WordAddIn1
         }
 
         /// <summary>去掉末尾段落标记和单元格结束符，避免底纹打到段落上。</summary>
-        private static Word.Range TrimTrailingMarks(Word.Range range)
+        internal static Word.Range TrimTrailingMarks(Word.Range range)
         {
             if (range == null)
             {
