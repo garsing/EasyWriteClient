@@ -244,6 +244,15 @@ namespace WordDocumentRoundtripTest
                 return twoRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (string.Equals(caseFilter, "fs-sent-find", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "fs-para-find", StringComparison.OrdinalIgnoreCase))
+            {
+                return FsSentFind.Run(
+                    host,
+                    docPath,
+                    string.Equals(caseFilter, "fs-para-find", StringComparison.OrdinalIgnoreCase));
+            }
+
             if (string.Equals(caseFilter, "wu-locate-doc", StringComparison.OrdinalIgnoreCase))
             {
                 bool paragraph = string.Equals(
