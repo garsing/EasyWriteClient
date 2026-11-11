@@ -515,6 +515,7 @@ namespace WordAddIn1
             public string ImageId { get; set; }
             public int Row { get; set; }
             public int Col { get; set; }
+            public TextSpan TextSpan { get; set; }
         }
 
         private sealed class LocatorParseResult
@@ -634,7 +635,8 @@ namespace WordAddIn1
                     ChartId = s.ChartId,
                     ImageId = s.ImageId,
                     Row = s.Row,
-                    Col = s.Col
+                    Col = s.Col,
+                    TextSpan = s.TextSpan
                 }
             };
         }
@@ -1719,7 +1721,8 @@ namespace WordAddIn1
                 ChartId = target.ChartId,
                 ImageId = target.ImageId,
                 Row = target.Row,
-                Col = target.Col
+                Col = target.Col,
+                TextSpan = target.TextSpan
             };
             switch (target.Kind)
             {

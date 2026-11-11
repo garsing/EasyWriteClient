@@ -99,6 +99,11 @@ namespace WordAddIn1
             var appliedFieldsUnion = new List<string>();
             Word.Range targetSpan = null;
 
+            if (!TextSpanArg.TryRead(args, out TextSpan textSpan, out string textError))
+            {
+                return Task.FromResult(new ToolResult { Success = false, Error = textError });
+            }
+
             targetSpan = ApplyToTargetParagraphSpan(
                 doc,
                 targetParagraphCodes,
@@ -109,7 +114,8 @@ namespace WordAddIn1
                 applyErrors,
                 applyWarnings,
                 appliedFieldsUnion,
-                disallowBackendApi);
+                disallowBackendApi,
+                textSpan);
 
             var data = BuildResponseData(
                 mode,
@@ -147,7 +153,8 @@ namespace WordAddIn1
             List<string> applyErrors,
             List<string> applyWarnings,
             List<string> appliedFieldsUnion,
-            bool disallowBackendApi)
+            bool disallowBackendApi,
+            TextSpan textSpan)
         {
             foreach (string code in targetParagraphCodes)
             {
@@ -168,14 +175,22 @@ namespace WordAddIn1
                 return null;
             }
 
+            Word.Range targetSpan = null;
             var spanLocate = InsertTargetLocatorHelper.TryResolveCodeSpan(
                 doc,
                 targetParagraphCodes,
                 scopeArgs.TableId,
                 InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
                 paragraph: true,
-                disallowBackendApi);
-            Word.Range targetSpan = spanLocate.Success ? spanLocate.Range : null;
+                disallowBackendApi,
+                textSpan);
+            if (!spanLocate.Success && TextSpanArg.IsDirectError(spanLocate.Error))
+            {
+                applyErrors.Add(spanLocate.Error);
+                return null;
+            }
+
+            targetSpan = spanLocate.Success ? spanLocate.Range : null;
             if (targetSpan == null)
             {
                 foreach (string code in targetParagraphCodes)

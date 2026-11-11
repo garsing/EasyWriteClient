@@ -57,6 +57,12 @@ namespace WordAddIn1
             Word.Document doc,
             InteropDocumentHandle docHandle)
         {
+            string siblingIndex = TextSpanArg.RejectSiblingIndex(args);
+            if (siblingIndex != null)
+            {
+                return Task.FromResult(new ToolResult { Success = false, Error = siblingIndex });
+            }
+
             FormatApplyBatchCompiler.CompileResult compiled = FormatApplyBatchCompiler.CompileContext(args);
             if (!string.IsNullOrEmpty(compiled.ContractError))
             {
@@ -154,6 +160,11 @@ namespace WordAddIn1
             Word.Document doc,
             InteropDocumentHandle docHandle)
         {
+                    if (!TextSpanArg.TryRead(args, out TextSpan textSpan, out string textError))
+                    {
+                        return Task.FromResult(new ToolResult { Success = false, Error = textError });
+                    }
+
                     bool hasTargetCodes = args.ContainsKey("target_codes") && args["target_codes"] != null
                         && !string.IsNullOrWhiteSpace(args["target_codes"].ToString());
                     bool hasTargetParagraphCodes = args.ContainsKey("target_paragraph_codes")
@@ -229,7 +240,8 @@ namespace WordAddIn1
                             scopeArgs.TableId,
                             paraPrecheck.TableScope,
                             paraPrecheck.Ambiguity,
-                            docHandle.DisallowBackendApi);
+                            docHandle.DisallowBackendApi,
+                            textSpan);
                     }
                     else
                     {
@@ -285,7 +297,8 @@ namespace WordAddIn1
                             scopeArgs.TableId,
                             sentPrecheck.TableScope,
                             sentPrecheck.Ambiguity,
-                            docHandle.DisallowBackendApi);
+                            docHandle.DisallowBackendApi,
+                            textSpan);
                     }
 
                     if (!built.Success)

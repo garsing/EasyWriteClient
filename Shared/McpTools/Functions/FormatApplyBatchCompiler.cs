@@ -16,6 +16,7 @@ namespace WordAddIn1
             public bool Paragraph { get; set; }
             public List<string> Codes { get; set; }
             public Dictionary<string, object> Format { get; set; }
+            public object Text { get; set; }
         }
 
         public sealed class CompileResult
@@ -339,6 +340,17 @@ namespace WordAddIn1
                     continue;
                 }
 
+                object textRaw = null;
+                if (TextSpanArg.HasNarrowingText(item))
+                {
+                    textRaw = item["text"];
+                    if (codes.Count != 1)
+                    {
+                        result.Warnings.Add(Warning(i, string.Join(",", codes), TextSpanArg.SingleCodeError));
+                        continue;
+                    }
+                }
+
                 if (paragraphTool)
                 {
                     paragraph = true;
@@ -354,7 +366,8 @@ namespace WordAddIn1
                         ItemIndex = i,
                         Paragraph = paragraph || anyP,
                         Codes = run,
-                        Format = format
+                        Format = format,
+                        Text = textRaw
                     });
                 }
             }
@@ -378,6 +391,7 @@ namespace WordAddIn1
             CopyIfPresent(args, flat, "target_codes");
             CopyIfPresent(args, flat, "target_paragraph_codes");
             CopyIfPresent(args, flat, "char_format");
+            CopyIfPresent(args, flat, "text");
             items.Add(flat);
             return true;
         }
@@ -392,6 +406,7 @@ namespace WordAddIn1
             var flat = new Dictionary<string, object>();
             CopyIfPresent(args, flat, "target_codes");
             CopyIfPresent(args, flat, "target_paragraph_codes");
+            CopyIfPresent(args, flat, "text");
             items.Add(flat);
             return true;
         }
@@ -416,6 +431,7 @@ namespace WordAddIn1
             var flat = new Dictionary<string, object>();
             CopyIfPresent(args, flat, "target_paragraph_codes");
             CopyIfPresent(args, flat, "para_format");
+            CopyIfPresent(args, flat, "text");
             items.Add(flat);
             return true;
         }
@@ -502,6 +518,8 @@ namespace WordAddIn1
                     if (pair.Key == "items"
                         || pair.Key == "target_codes"
                         || pair.Key == "target_paragraph_codes"
+                        || pair.Key == "text"
+                        || pair.Key == "index"
                         || (!string.IsNullOrEmpty(formatKey) && pair.Key == formatKey))
                     {
                         continue;
@@ -524,6 +542,11 @@ namespace WordAddIn1
             if (op.Format != null && !string.IsNullOrEmpty(formatKey))
             {
                 one[formatKey] = op.Format;
+            }
+
+            if (op.Text != null)
+            {
+                one["text"] = op.Text;
             }
 
             return one;

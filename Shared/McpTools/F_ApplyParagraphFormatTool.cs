@@ -74,6 +74,12 @@ namespace WordAddIn1
             Word.Document doc,
             bool disallowBackendApi)
         {
+            string siblingIndex = TextSpanArg.RejectSiblingIndex(args);
+            if (siblingIndex != null)
+            {
+                return new ToolResult { Success = false, Error = siblingIndex };
+            }
+
             bool flatParagraph = args != null
                 && args.ContainsKey("target_paragraph_codes")
                 && !string.IsNullOrWhiteSpace(args["target_paragraph_codes"]?.ToString());

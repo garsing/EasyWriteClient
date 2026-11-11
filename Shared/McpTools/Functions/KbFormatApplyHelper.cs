@@ -21,7 +21,8 @@ namespace WordAddIn1
             FormatSourceResolution source,
             string tableId = null,
             Word.Document document = null,
-            bool disallowBackendApi = false)
+            bool disallowBackendApi = false,
+            TextSpan textSpan = null)
         {
             string subtype = (kbDetailedSubtype ?? "").Trim();
             if (string.IsNullOrEmpty(subtype))
@@ -191,7 +192,13 @@ namespace WordAddIn1
                     tableId,
                     InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
                     paragraph: false,
-                    disallowBackendApi);
+                    disallowBackendApi,
+                    textSpan);
+                if (!spanLocate.Success && TextSpanArg.IsDirectError(spanLocate.Error))
+                {
+                    return new ToolResult { Success = false, Error = spanLocate.Error };
+                }
+
                 if (spanLocate.Success)
                 {
                     targetSpan = spanLocate.Range;

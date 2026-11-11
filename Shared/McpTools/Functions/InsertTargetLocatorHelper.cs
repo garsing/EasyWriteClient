@@ -90,6 +90,7 @@ namespace WordAddIn1
             public string ImageId { get; set; }
             public int Row { get; set; }
             public int Col { get; set; }
+            public TextSpan TextSpan { get; set; }
         }
 
         public sealed class LocatorParseResult
@@ -170,11 +171,14 @@ namespace WordAddIn1
                     return FailParse($"{fieldLabel}.{PositionStartOnlyError}");
                 }
 
-                return new LocatorParseResult
-                {
-                    Success = true,
-                    Spec = new LocatorSpec { Kind = LocatorKind.DocumentStart }
-                };
+                return WithText(
+                    new LocatorParseResult
+                    {
+                        Success = true,
+                        Spec = new LocatorSpec { Kind = LocatorKind.DocumentStart }
+                    },
+                    dict,
+                    singleCode: false);
             }
 
             if (hasCodes)
@@ -213,11 +217,14 @@ namespace WordAddIn1
                     };
                 }
 
-                return new LocatorParseResult
-                {
-                    Success = true,
-                    Spec = new LocatorSpec { Kind = LocatorKind.Table, TableId = tableId }
-                };
+                return WithText(
+                    new LocatorParseResult
+                    {
+                        Success = true,
+                        Spec = new LocatorSpec { Kind = LocatorKind.Table, TableId = tableId }
+                    },
+                    dict,
+                    singleCode: false);
             }
 
             if (hasChart)
@@ -232,11 +239,14 @@ namespace WordAddIn1
                     };
                 }
 
-                return new LocatorParseResult
-                {
-                    Success = true,
-                    Spec = new LocatorSpec { Kind = LocatorKind.Chart, ChartId = chartId }
-                };
+                return WithText(
+                    new LocatorParseResult
+                    {
+                        Success = true,
+                        Spec = new LocatorSpec { Kind = LocatorKind.Chart, ChartId = chartId }
+                    },
+                    dict,
+                    singleCode: false);
             }
 
             string imageId = dict["image"].ToString().Trim();
@@ -249,16 +259,48 @@ namespace WordAddIn1
                 };
             }
 
-            return new LocatorParseResult
-            {
-                Success = true,
-                Spec = new LocatorSpec { Kind = LocatorKind.Image, ImageId = imageId }
-            };
+            return WithText(
+                new LocatorParseResult
+                {
+                    Success = true,
+                    Spec = new LocatorSpec { Kind = LocatorKind.Image, ImageId = imageId }
+                },
+                dict,
+                singleCode: false);
         }
 
         private static LocatorParseResult FailParse(string error)
         {
             return new LocatorParseResult { Success = false, Error = error };
+        }
+
+        private static LocatorParseResult WithText(
+            LocatorParseResult parsed,
+            Dictionary<string, object> dict,
+            bool singleCode)
+        {
+            if (parsed == null || !parsed.Success)
+            {
+                return parsed;
+            }
+
+            if (!TextSpanArg.TryRead(dict, out TextSpan span, out string error))
+            {
+                return FailParse(error);
+            }
+
+            if (span == null)
+            {
+                return parsed;
+            }
+
+            if (!singleCode)
+            {
+                return FailParse(TextSpanArg.SingleCodeError);
+            }
+
+            parsed.Spec.TextSpan = span;
+            return parsed;
         }
 
         private static bool TryGetLocatorField(Dictionary<string, object> dict, string key, out string value)
@@ -327,19 +369,22 @@ namespace WordAddIn1
                     return FailParse($"{fieldLabel}.in_table 须等于空格码内表号 {parsedCell.TableId}");
                 }
 
-                return new LocatorParseResult
-                {
-                    Success = true,
-                    Spec = new LocatorSpec
+                return WithText(
+                    new LocatorParseResult
                     {
-                        Kind = LocatorKind.EmptyCell,
-                        Codes = parsedCell.Code,
-                        TableId = parsedCell.TableId,
-                        InTableId = string.IsNullOrEmpty(inTableEmpty) ? parsedCell.TableId : inTableEmpty,
-                        Row = parsedCell.Row,
-                        Col = parsedCell.Col
-                    }
-                };
+                        Success = true,
+                        Spec = new LocatorSpec
+                        {
+                            Kind = LocatorKind.EmptyCell,
+                            Codes = parsedCell.Code,
+                            TableId = parsedCell.TableId,
+                            InTableId = string.IsNullOrEmpty(inTableEmpty) ? parsedCell.TableId : inTableEmpty,
+                            Row = parsedCell.Row,
+                            Col = parsedCell.Col
+                        }
+                    },
+                    dict,
+                    singleCode: false);
             }
 
             foreach (string part in parts)
@@ -373,16 +418,19 @@ namespace WordAddIn1
                 return inTableParsed;
             }
 
-            return new LocatorParseResult
-            {
-                Success = true,
-                Spec = new LocatorSpec
+            return WithText(
+                new LocatorParseResult
                 {
-                    Kind = LocatorKind.Sentence,
-                    Codes = string.Join(",", parts),
-                    InTableId = inTable
-                }
-            };
+                    Success = true,
+                    Spec = new LocatorSpec
+                    {
+                        Kind = LocatorKind.Sentence,
+                        Codes = string.Join(",", parts),
+                        InTableId = inTable
+                    }
+                },
+                dict,
+                singleCode: parts.Count == 1);
         }
 
         private static LocatorParseResult ParseParagraphMode(
@@ -413,16 +461,19 @@ namespace WordAddIn1
                 return inTableParsed;
             }
 
-            return new LocatorParseResult
-            {
-                Success = true,
-                Spec = new LocatorSpec
+            return WithText(
+                new LocatorParseResult
                 {
-                    Kind = LocatorKind.Paragraph,
-                    Codes = string.Join(",", parts),
-                    InTableId = inTable
-                }
-            };
+                    Success = true,
+                    Spec = new LocatorSpec
+                    {
+                        Kind = LocatorKind.Paragraph,
+                        Codes = string.Join(",", parts),
+                        InTableId = inTable
+                    }
+                },
+                dict,
+                singleCode: parts.Count == 1);
         }
 
         /// <summary>
@@ -442,6 +493,11 @@ namespace WordAddIn1
             Dictionary<string, object> targetDict = TryGetTargetDict(args);
             if (targetDict == null)
             {
+                if (TextSpanArg.HasNarrowingText(args))
+                {
+                    return FailResolve(TextSpanArg.SingleCodeError);
+                }
+
                 return new ResolveRangeResult
                 {
                     Success = true,
@@ -454,7 +510,13 @@ namespace WordAddIn1
             LocatorParseResult parsed = ParseLocatorObject(targetDict, sentenceOnly: false, fieldLabel: "target");
             if (!parsed.Success)
             {
-                return FailResolve($"locate_failed: {parsed.Error}");
+                string parsedError = parsed.Error ?? "定位失败";
+                if (TextSpanArg.IsDirectError(parsedError))
+                {
+                    return FailResolve(parsedError);
+                }
+
+                return FailResolve($"locate_failed: {parsedError}");
             }
 
             return TryResolveInsertRange(doc, parsed.Spec, rangeKind, disallowBackendApi, refreshDocument: true);
@@ -485,6 +547,13 @@ namespace WordAddIn1
 
             try
             {
+                if (target.TextSpan != null
+                    && target.Kind != LocatorKind.Sentence
+                    && target.Kind != LocatorKind.Paragraph)
+                {
+                    return FailResolve(TextSpanArg.SingleCodeError);
+                }
+
                 if (target.Kind == LocatorKind.DocumentStart)
                 {
                     Word.Range startRange = RangeAtDocumentStart(doc);
@@ -737,17 +806,24 @@ namespace WordAddIn1
             string inTableId,
             LocateRangeKind rangeKind,
             bool paragraph,
-            bool disallowBackendApi)
+            bool disallowBackendApi,
+            TextSpan textSpan = null)
         {
             var spec = new LocatorSpec
             {
                 Kind = paragraph ? LocatorKind.Paragraph : LocatorKind.Sentence,
                 Codes = codes == null ? "" : string.Join(",", codes.Where(c => !string.IsNullOrWhiteSpace(c))),
-                InTableId = inTableId
+                InTableId = inTableId,
+                TextSpan = textSpan
             };
             if (string.IsNullOrEmpty(spec.Codes))
             {
                 return FailResolve("locate_failed: codes 为空");
+            }
+
+            if (textSpan != null && spec.Codes.IndexOf(',') >= 0)
+            {
+                return FailResolve(TextSpanArg.SingleCodeError);
             }
 
             if (doc == null)
@@ -1063,6 +1139,36 @@ namespace WordAddIn1
             if (range == null)
             {
                 return FailResolve("locate_failed: 已解析编码但无法取得 Word Range");
+            }
+
+            if (target.TextSpan != null)
+            {
+                string[] codeParts = target.Codes.Split(',');
+                int codeCount = 0;
+                string onlyCode = null;
+                foreach (string part in codeParts)
+                {
+                    if (string.IsNullOrWhiteSpace(part))
+                    {
+                        continue;
+                    }
+
+                    codeCount++;
+                    onlyCode = part.Trim();
+                }
+
+                if (codeCount != 1)
+                {
+                    return FailResolve(TextSpanArg.SingleCodeError);
+                }
+
+                ResolveRangeResult narrowed = TextSpanNarrower.TryNarrow(doc, range, target.TextSpan, onlyCode);
+                if (!narrowed.Success || narrowed.Range == null)
+                {
+                    return FailResolve(narrowed.Error ?? TextSpanArg.Missing(onlyCode, target.TextSpan.Value));
+                }
+
+                range = narrowed.Range;
             }
 
             if (rangeKind == LocateRangeKind.InsertAfter)

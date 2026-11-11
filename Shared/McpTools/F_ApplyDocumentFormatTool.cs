@@ -65,6 +65,12 @@ namespace WordAddIn1
             InteropDocumentHandle docHandle,
             object wordApplication)
         {
+            string siblingIndex = TextSpanArg.RejectSiblingIndex(args);
+            if (siblingIndex != null)
+            {
+                return Done(false, siblingIndex);
+            }
+
             FormatApplyBatchCompiler.CompileResult compiled = FormatApplyBatchCompiler.CompileDocument(args);
             if (!string.IsNullOrEmpty(compiled.ContractError))
             {
@@ -264,13 +270,34 @@ namespace WordAddIn1
                     Word.Range targetSpan = null;
                     if (skippedCodes.Count < targetCodes.Count)
                     {
+                        if (!TextSpanArg.TryRead(args, out TextSpan textSpan, out string textError))
+                        {
+                            return Done(false, textError);
+                        }
+
                         var spanLocate = InsertTargetLocatorHelper.TryResolveCodeSpan(
                             doc,
                             targetCodes,
                             scopeArgs.TableId,
                             InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
                             paragraphMode,
-                            docHandle.DisallowBackendApi);
+                            docHandle.DisallowBackendApi,
+                            textSpan);
+                        if (!spanLocate.Success && TextSpanArg.IsDirectError(spanLocate.Error))
+                        {
+                            return Task.FromResult(new ToolResult
+                            {
+                                Success = false,
+                                Error = spanLocate.Error,
+                                Data = new Dictionary<string, object>
+                                {
+                                    ["success"] = false,
+                                    ["checkpoint_cleanup_only"] = true,
+                                    ["format_apply_error"] = spanLocate.Error
+                                }
+                            });
+                        }
+
                         if (spanLocate.Success)
                         {
                             targetSpan = spanLocate.Range;

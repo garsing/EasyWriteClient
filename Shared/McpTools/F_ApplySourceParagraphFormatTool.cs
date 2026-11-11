@@ -16,6 +16,17 @@ namespace WordAddIn1
             {
                 try
                 {
+                    string siblingIndex = TextSpanArg.RejectSiblingIndex(args);
+                    if (siblingIndex != null)
+                    {
+                        return new ToolResult { Success = false, Error = siblingIndex };
+                    }
+
+                    if (!TextSpanArg.TryRead(args, out TextSpan textSpan, out string textError))
+                    {
+                        return new ToolResult { Success = false, Error = textError };
+                    }
+
                     string targetParagraphCodes = FormatSourceResolver.GetArgString(args, "target_paragraph_codes");
                     string clusterId = FormatSourceResolver.GetArgString(args, "cluster_id");
                     string tableId = FormatSourceResolver.GetArgString(args, "in_table");
@@ -64,7 +75,8 @@ namespace WordAddIn1
                         source,
                         tableId,
                         doc,
-                        docHandle.DisallowBackendApi);
+                        docHandle.DisallowBackendApi,
+                        textSpan);
                 }
                 catch (Exception ex)
                 {

@@ -141,10 +141,11 @@ namespace WordAddIn1
             string tableId,
             TableScopeIndex tableScope,
             AmbiguityCheckResult precheckResult,
-            bool disallowBackendApi = false)
+            bool disallowBackendApi = false,
+            TextSpan textSpan = null)
         {
             return BuildSentenceContext(
-                doc, targetCodesCsv, contextWindow, tableId, tableScope, precheckResult, disallowBackendApi);
+                doc, targetCodesCsv, contextWindow, tableId, tableScope, precheckResult, disallowBackendApi, textSpan);
         }
 
         public static FormatContextBuildResult BuildParagraphContext(
@@ -162,7 +163,8 @@ namespace WordAddIn1
             string tableId,
             TableScopeIndex tableScope,
             AmbiguityCheckResult precheckResult,
-            bool disallowBackendApi = false)
+            bool disallowBackendApi = false,
+            TextSpan textSpan = null)
         {
             var result = new FormatContextBuildResult
             {
@@ -209,7 +211,15 @@ namespace WordAddIn1
                 tableId,
                 InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
                 paragraph: true,
-                disallowBackendApi);
+                disallowBackendApi,
+                textSpan);
+            if (!spanLocate.Success && TextSpanArg.IsDirectError(spanLocate.Error))
+            {
+                result.Success = false;
+                result.Error = spanLocate.Error;
+                return result;
+            }
+
             Word.Range span = spanLocate.Success ? spanLocate.Range : null;
             if (span == null)
             {
@@ -277,7 +287,8 @@ namespace WordAddIn1
             string tableId,
             TableScopeIndex tableScope,
             AmbiguityCheckResult precheckResult,
-            bool disallowBackendApi = false)
+            bool disallowBackendApi = false,
+            TextSpan textSpan = null)
         {
             var result = new FormatContextBuildResult
             {
@@ -324,7 +335,15 @@ namespace WordAddIn1
                 tableId,
                 InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
                 paragraph: false,
-                disallowBackendApi);
+                disallowBackendApi,
+                textSpan);
+            if (!spanLocate.Success && TextSpanArg.IsDirectError(spanLocate.Error))
+            {
+                result.Success = false;
+                result.Error = spanLocate.Error;
+                return result;
+            }
+
             Word.Range span = spanLocate.Success ? spanLocate.Range : null;
             if (span == null)
             {
