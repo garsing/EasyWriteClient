@@ -601,6 +601,50 @@ namespace WordDocumentRoundtripTest
                 return afterRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (caseFilter.StartsWith("ts-", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 句子内按字符串定位（ts-）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                Console.WriteLine();
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop（已尝试自动拉起）。请手动打开易写应用，再跑本套。");
+                    return 1;
+                }
+
+                int wordBeforeText = OfficeAlive.Count("WINWORD");
+                int wpsBeforeText = OfficeAlive.Count("wps");
+                bool wordWinBeforeText = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforeText = OfficeAlive.HasWindow("wps");
+                WdSession.SweepBeforeRun(host);
+                var textRun = new TestRun { TotalTarget = TsCases.Target };
+                var textSw = Stopwatch.StartNew();
+                try
+                {
+                    TsCases.Run(
+                        textRun,
+                        host,
+                        wordBeforeText,
+                        wpsBeforeText,
+                        wordWinBeforeText,
+                        wpsWinBeforeText);
+                }
+                finally
+                {
+                    textSw.Stop();
+                    WdSession.SweepAfterRun(host);
+                }
+
+                Console.WriteLine();
+                Console.WriteLine("正式用例 通过 " + textRun.CasesPassed
+                    + "  失败 " + textRun.CasesFailed
+                    + "  跳过 " + textRun.CasesSkipped
+                    + "  （目标 " + TsCases.Target + "）");
+                Console.WriteLine("ELAPSED_SEC=" + textSw.Elapsed.TotalSeconds.ToString("F1"));
+                return textRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("wb-", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("文字 一次调用改多个格式（wb-）");
