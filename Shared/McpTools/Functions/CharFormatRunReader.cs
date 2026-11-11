@@ -41,8 +41,6 @@ namespace WordAddIn1
 
             var styles = LoadStyles(pkg);
             ThemeFonts theme = LoadTheme(pkg);
-            theme.WpsAlpha = wordOpenXml != null
-                && wordOpenXml.IndexOf("http://www.wps.cn/", StringComparison.Ordinal) >= 0;
             var spans = new List<Dictionary<string, object>>();
             var joined = new StringBuilder();
             var fields = new Stack<bool>();
@@ -98,8 +96,91 @@ namespace WordAddIn1
             {
                 FillWpsExportGaps(trimmed, runs);
             }
+            else
+            {
+                FillWordClassicBools(trimmed, runs);
+            }
 
             return true;
+        }
+
+        private static void FillWordClassicBools(Word.Range range, List<Dictionary<string, object>> runs)
+        {
+            bool hasEffect = false;
+            foreach (Dictionary<string, object> format in RunFormats(runs))
+            {
+                if (format.ContainsKey("text_shadow") || format.ContainsKey("line"))
+                {
+                    hasEffect = true;
+                    break;
+                }
+            }
+
+            if (!hasEffect)
+            {
+                return;
+            }
+
+            bool shadow = false;
+            bool emboss = false;
+            bool engrave = false;
+            try
+            {
+                Word.Font font = range.Font;
+                shadow = ComOn(font.Shadow);
+                emboss = ComOn(font.Emboss);
+                engrave = ComOn(font.Engrave);
+            }
+            catch
+            {
+                return;
+            }
+
+            if (!shadow && !emboss && !engrave)
+            {
+                return;
+            }
+
+            foreach (Dictionary<string, object> format in RunFormats(runs))
+            {
+                if (shadow && !format.ContainsKey("shadow"))
+                {
+                    format["shadow"] = true;
+                }
+
+                if (emboss && !format.ContainsKey("emboss"))
+                {
+                    format["emboss"] = true;
+                }
+
+                if (engrave && !format.ContainsKey("engrave"))
+                {
+                    format["engrave"] = true;
+                }
+
+                CharFormatCatalog.OmitReadDefaults(format);
+            }
+        }
+
+        private static bool ComOn(object raw)
+        {
+            if (raw == null)
+            {
+                return false;
+            }
+
+            if (raw is bool flag)
+            {
+                return flag;
+            }
+
+            if (raw is int number)
+            {
+                return number == -1 || number == 1;
+            }
+
+            string text = raw.ToString();
+            return text == "-1" || text == "1" || string.Equals(text, "true", StringComparison.OrdinalIgnoreCase);
         }
 
         private static void FillWpsExportGaps(Word.Range range, List<Dictionary<string, object>> runs)
@@ -308,7 +389,6 @@ namespace WordAddIn1
             public string MinorBidi = "";
             public Dictionary<string, string> MajorScript = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, string> MinorScript = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            public bool WpsAlpha;
         }
 
         private static Dictionary<string, StyleRec> LoadStyles(OpenXmlPackage pkg)
@@ -1188,7 +1268,7 @@ namespace WordAddIn1
             }
 
             var map = new Dictionary<string, object> { ["visible"] = true };
-            double transparency = AlphaTransparency(color, theme);
+            double transparency = AlphaTransparency(color);
             if (transparency > 0)
             {
                 map["transparency"] = transparency;
@@ -1224,7 +1304,7 @@ namespace WordAddIn1
             XElement color = glow.Element(W14 + "srgbClr") ?? glow.Element(W14 + "schemeClr");
             if (color != null)
             {
-                map["transparency"] = AlphaTransparency(color, theme);
+                map["transparency"] = AlphaTransparency(color);
                 Dictionary<string, object> obj = DrawingColor(color, null);
                 if (obj != null)
                 {
@@ -1261,7 +1341,7 @@ namespace WordAddIn1
             XElement color = fill?.Element(W14 + "srgbClr") ?? fill?.Element(W14 + "schemeClr");
             if (color != null)
             {
-                map["transparency"] = AlphaTransparency(color, theme);
+                map["transparency"] = AlphaTransparency(color);
                 Dictionary<string, object> fore = DrawingColor(color, null);
                 if (fore != null)
                 {
@@ -1332,7 +1412,7 @@ namespace WordAddIn1
             XElement color = shadow.Element(W14 + "srgbClr") ?? shadow.Element(W14 + "schemeClr");
             if (color != null)
             {
-                map["transparency"] = AlphaTransparency(color, theme);
+                map["transparency"] = AlphaTransparency(color);
                 Dictionary<string, object> fore = DrawingColor(color, null);
                 if (fore != null)
                 {
@@ -1343,7 +1423,7 @@ namespace WordAddIn1
             format["text_shadow"] = map;
         }
 
-        private static double AlphaTransparency(XElement color, ThemeFonts theme)
+        private static double AlphaTransparency(XElement color)
         {
             string raw = (string)color?.Element(W14 + "alpha")?.Attribute(W14 + "val");
             if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double alpha))
@@ -1351,12 +1431,7 @@ namespace WordAddIn1
                 return 0;
             }
 
-            if (theme != null && theme.WpsAlpha)
-            {
-                return Math.Round(alpha / 100000.0, 4);
-            }
-
-            return Math.Round(1.0 - alpha / 100000.0, 4);
+            return Math.Round(alpha / 100000.0, 4);
         }
 
         private static Dictionary<string, object> DrawingColor(XElement color, ThemeFonts theme)
