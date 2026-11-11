@@ -115,7 +115,7 @@ namespace WordDocumentRoundtripTest
                 }
 
                 JObject plainEntry = ReadEntry(s, id, plainCode);
-                JObject plainCf = Obj(plainEntry, "char_format");
+                JObject plainCf = CharOf(s, id, plainCode);
                 Ok(run, "cf-plain-ten", HasTen(plainCf), Dump(plainCf));
                 Ok(run, "cf-plain-omit",
                     !Has(plainCf, "shadow") && !Has(plainCf, "kerning") && !Has(plainCf, "underline")
@@ -160,8 +160,8 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "cf-com-mixed",
                     mixedRuns.Count == 2
                     && mixedEntry["format_note"] == null
-                    && Flag(mixedTail, "is_superscript")
-                    && !Flag(mixedHead, "is_superscript")
+                    && Flag(mixedHead, "is_superscript")
+                    && !Flag(mixedTail, "is_superscript")
                     && !Blob(mixedEntry, "9999999"),
                     Dump(mixedEntry));
             }

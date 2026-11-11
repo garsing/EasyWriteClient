@@ -41,6 +41,8 @@ namespace WordAddIn1
 
             var styles = LoadStyles(pkg);
             ThemeFonts theme = LoadTheme(pkg);
+            theme.WpsAlpha = wordOpenXml != null
+                && wordOpenXml.IndexOf("http://www.wps.cn/", StringComparison.Ordinal) >= 0;
             var spans = new List<Dictionary<string, object>>();
             var joined = new StringBuilder();
             var fields = new Stack<bool>();
@@ -92,7 +94,167 @@ namespace WordAddIn1
                 return false;
             }
 
+            if (xml.IndexOf("http://www.wps.cn/", StringComparison.Ordinal) >= 0)
+            {
+                FillWpsExportGaps(trimmed, runs);
+            }
+
             return true;
+        }
+
+        private static void FillWpsExportGaps(Word.Range range, List<Dictionary<string, object>> runs)
+        {
+            if (runs == null || runs.Count == 0)
+            {
+                return;
+            }
+
+            bool needSize = false;
+            bool needLigatures = false;
+            bool needStylistic = false;
+            foreach (Dictionary<string, object> format in RunFormats(runs))
+            {
+                if (IsZeroSize(format))
+                {
+                    needSize = true;
+                }
+
+                if (format.TryGetValue("ligatures", out object ligatures)
+                    && string.Equals(ligatures?.ToString(), "wdLigaturesAll", StringComparison.Ordinal))
+                {
+                    needLigatures = true;
+                }
+
+                if (!format.ContainsKey("stylistic_set"))
+                {
+                    needStylistic = true;
+                }
+            }
+
+            if (!needSize && !needLigatures && !needStylistic)
+            {
+                return;
+            }
+
+            float size = 0;
+            string ligatureName = "";
+            string stylisticName = "";
+            Word.Font font = null;
+            try
+            {
+                font = range.Font;
+            }
+            catch
+            {
+                return;
+            }
+
+            if (needSize)
+            {
+                try
+                {
+                    float raw = font.Size;
+                    if (raw > 0 && raw < 10000)
+                    {
+                        size = raw;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            if (needLigatures)
+            {
+                try
+                {
+                    ligatureName = DefinedEnum(font.Ligatures);
+                }
+                catch
+                {
+                }
+            }
+
+            if (needStylistic)
+            {
+                try
+                {
+                    stylisticName = DefinedEnum(font.StylisticSet);
+                }
+                catch
+                {
+                }
+            }
+
+            foreach (Dictionary<string, object> format in RunFormats(runs))
+            {
+                if (size > 0 && IsZeroSize(format))
+                {
+                    format["font_size"] = size;
+                }
+
+                if (!string.IsNullOrEmpty(ligatureName)
+                    && format.TryGetValue("ligatures", out object ligatures)
+                    && string.Equals(ligatures?.ToString(), "wdLigaturesAll", StringComparison.Ordinal))
+                {
+                    format["ligatures"] = ligatureName;
+                }
+
+                if (!string.IsNullOrEmpty(stylisticName) && !format.ContainsKey("stylistic_set"))
+                {
+                    format["stylistic_set"] = stylisticName;
+                }
+
+                CharFormatCatalog.OmitReadDefaults(format);
+            }
+        }
+
+        private static IEnumerable<Dictionary<string, object>> RunFormats(List<Dictionary<string, object>> runs)
+        {
+            foreach (Dictionary<string, object> run in runs)
+            {
+                if (run != null
+                    && run.TryGetValue("char_format", out object raw)
+                    && raw is Dictionary<string, object> format)
+                {
+                    yield return format;
+                }
+            }
+        }
+
+        private static bool IsZeroSize(Dictionary<string, object> format)
+        {
+            if (!format.TryGetValue("font_size", out object value) || value == null)
+            {
+                return true;
+            }
+
+            return double.TryParse(value.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double number)
+                && Math.Abs(number) < 0.001;
+        }
+
+        private static string DefinedEnum(object raw)
+        {
+            if (raw == null)
+            {
+                return "";
+            }
+
+            if (raw is int number && (number == 9999999 || number == 9999998))
+            {
+                return "";
+            }
+
+            string text = raw.ToString();
+            if (text == "9999999"
+                || text == "9999998"
+                || text.IndexOf("Undefined", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("Toggle", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "";
+            }
+
+            return text;
         }
 
         private static string ReadWordOpenXml(Word.Range range, out string error)
@@ -144,6 +306,9 @@ namespace WordAddIn1
             public string MinorEastAsia = "";
             public string MajorBidi = "";
             public string MinorBidi = "";
+            public Dictionary<string, string> MajorScript = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, string> MinorScript = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            public bool WpsAlpha;
         }
 
         private static Dictionary<string, StyleRec> LoadStyles(OpenXmlPackage pkg)
@@ -211,6 +376,8 @@ namespace WordAddIn1
                 theme.MinorEastAsia = Typeface(fonts, "minorFont", "ea");
                 theme.MajorBidi = Typeface(fonts, "majorFont", "cs");
                 theme.MinorBidi = Typeface(fonts, "minorFont", "cs");
+                LoadScripts(fonts.Element(A + "majorFont"), theme.MajorScript);
+                LoadScripts(fonts.Element(A + "minorFont"), theme.MinorScript);
             }
 
             return theme;
@@ -219,6 +386,49 @@ namespace WordAddIn1
         private static string Typeface(XElement fonts, string group, string slot)
         {
             return (string)fonts.Element(A + group)?.Element(A + slot)?.Attribute("typeface") ?? "";
+        }
+
+        private static void LoadScripts(XElement group, Dictionary<string, string> into)
+        {
+            if (group == null)
+            {
+                return;
+            }
+
+            foreach (XElement font in group.Elements(A + "font"))
+            {
+                string script = (string)font.Attribute("script");
+                string face = (string)font.Attribute("typeface");
+                if (!string.IsNullOrEmpty(script) && !string.IsNullOrEmpty(face))
+                {
+                    into[script] = face;
+                }
+            }
+        }
+
+        private static XElement ChildCi(XElement parent, XNamespace ns, string local)
+        {
+            if (parent == null)
+            {
+                return null;
+            }
+
+            XElement exact = parent.Element(ns + local);
+            if (exact != null)
+            {
+                return exact;
+            }
+
+            foreach (XElement child in parent.Elements())
+            {
+                if (child.Name.Namespace == ns
+                    && string.Equals(child.Name.LocalName, local, StringComparison.OrdinalIgnoreCase))
+                {
+                    return child;
+                }
+            }
+
+            return null;
         }
 
         private static void Walk(
@@ -460,7 +670,7 @@ namespace WordAddIn1
             }
 
             ApplyRpr(format, direct, theme);
-            FinishFontName(format);
+            FinishFontName(format, theme);
             return format;
         }
 
@@ -483,8 +693,20 @@ namespace WordAddIn1
             return leafToRoot;
         }
 
-        private static void FinishFontName(Dictionary<string, object> format)
+        private static void FinishFontName(Dictionary<string, object> format, ThemeFonts theme)
         {
+            if (string.IsNullOrWhiteSpace(Text(format, "name_far_east")))
+            {
+                string face = ScriptFace(theme, Text(format, "__east_token"), EastScript(format));
+                if (!string.IsNullOrEmpty(face))
+                {
+                    format["name_far_east"] = face;
+                }
+            }
+
+            format.Remove("__east_token");
+            format.Remove("__hint");
+
             string east = Text(format, "name_far_east");
             string ascii = Text(format, "name_ascii");
             string other = Text(format, "name_other");
@@ -518,6 +740,51 @@ namespace WordAddIn1
             return "";
         }
 
+        private static string EastScript(Dictionary<string, object> format)
+        {
+            string lang = Text(format, "language_id_far_east");
+            if (lang.IndexOf("Japanese", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "Jpan";
+            }
+
+            if (lang.IndexOf("Korean", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "Hang";
+            }
+
+            if (lang.IndexOf("Traditional", StringComparison.OrdinalIgnoreCase) >= 0
+                || lang.IndexOf("HongKong", StringComparison.OrdinalIgnoreCase) >= 0
+                || lang.IndexOf("Macao", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "Hant";
+            }
+
+            if (lang.IndexOf("Chinese", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "Hans";
+            }
+
+            if (string.Equals(Text(format, "__hint"), "eastAsia", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Hans";
+            }
+
+            return "";
+        }
+
+        private static string ScriptFace(ThemeFonts theme, string token, string script)
+        {
+            if (theme == null || string.IsNullOrEmpty(token) || string.IsNullOrEmpty(script))
+            {
+                return "";
+            }
+
+            bool major = token.StartsWith("major", StringComparison.OrdinalIgnoreCase);
+            Dictionary<string, string> map = major ? theme.MajorScript : theme.MinorScript;
+            return map != null && map.TryGetValue(script, out string face) ? face : "";
+        }
+
         private static string Text(Dictionary<string, object> format, string key)
         {
             return format.TryGetValue(key, out object value) ? value?.ToString() ?? "" : "";
@@ -533,6 +800,12 @@ namespace WordAddIn1
             XElement fonts = rPr.Element(W + "rFonts");
             if (fonts != null)
             {
+                string hint = (string)fonts.Attribute(W + "hint");
+                if (!string.IsNullOrEmpty(hint))
+                {
+                    format["__hint"] = hint;
+                }
+
                 PutSlot(format, "name_ascii", fonts, "ascii", "asciiTheme", theme, latin: true);
                 PutSlot(format, "name_far_east", fonts, "eastAsia", "eastAsiaTheme", theme, latin: false, east: true);
                 PutSlot(format, "name_bi", fonts, "cs", "cstheme", theme, latin: false, bidi: true);
@@ -577,16 +850,16 @@ namespace WordAddIn1
             }
 
             PutTwips(format, "fit_text_width", rPr.Element(W + "fitText"));
-            PutEnum(format, "ligatures", rPr.Element(W14 + "ligatures"), LigatureMap);
-            PutEnum(format, "number_form", rPr.Element(W14 + "numForm"), NumberFormMap);
-            PutEnum(format, "number_spacing", rPr.Element(W14 + "numSpacing"), NumberSpacingMap);
-            ApplyStylistic(format, rPr.Element(W14 + "stylisticSets"));
-            PutBool(format, "contextual_alternates", rPr.Element(W14 + "cntxtAlts"));
-            ApplyTextFill(format, rPr.Element(W14 + "textFill"), theme);
-            ApplyGlow(format, rPr.Element(W14 + "glow"));
-            ApplyLine(format, rPr.Element(W14 + "textOutline"));
-            ApplyReflection(format, rPr.Element(W14 + "reflection"));
-            ApplyTextShadow(format, rPr.Element(W14 + "shadow"));
+            PutEnum(format, "ligatures", ChildCi(rPr, W14, "ligatures"), LigatureMap);
+            PutEnum(format, "number_form", ChildCi(rPr, W14, "numForm"), NumberFormMap);
+            PutEnum(format, "number_spacing", ChildCi(rPr, W14, "numSpacing"), NumberSpacingMap);
+            ApplyStylistic(format, ChildCi(rPr, W14, "stylisticSets"));
+            PutBool(format, "contextual_alternates", ChildCi(rPr, W14, "cntxtAlts"));
+            ApplyTextFill(format, ChildCi(rPr, W14, "textFill"), theme);
+            ApplyGlow(format, ChildCi(rPr, W14, "glow"), theme);
+            ApplyLine(format, ChildCi(rPr, W14, "textOutline"), theme);
+            ApplyReflection(format, ChildCi(rPr, W14, "reflection"));
+            ApplyTextShadow(format, ChildCi(rPr, W14, "shadow"), theme);
         }
 
         private static void PutSlot(
@@ -600,15 +873,27 @@ namespace WordAddIn1
             bool east = false,
             bool bidi = false)
         {
+            string token = (string)fonts.Attribute(W + themeAttr);
             string name = (string)fonts.Attribute(W + concrete);
             if (string.IsNullOrWhiteSpace(name))
             {
-                name = ThemeFace(theme, (string)fonts.Attribute(W + themeAttr), latin, east, bidi);
+                name = ThemeFace(theme, token, latin, east, bidi);
             }
 
             if (!string.IsNullOrWhiteSpace(name))
             {
                 format[key] = name;
+                if (east)
+                {
+                    format.Remove("__east_token");
+                }
+
+                return;
+            }
+
+            if (east && !string.IsNullOrEmpty(token))
+            {
+                format["__east_token"] = token;
             }
         }
 
@@ -804,6 +1089,11 @@ namespace WordAddIn1
                 ?? borders.Element(W + "right");
             if (side == null)
             {
+                side = borders.Attribute(W + "val") != null ? borders : null;
+            }
+
+            if (side == null)
+            {
                 return;
             }
 
@@ -869,7 +1159,7 @@ namespace WordAddIn1
                 return;
             }
 
-            string id = (string)sets.Element(W14 + "styleSet")?.Attribute(W14 + "id");
+            string id = (string)ChildCi(sets, W14, "styleSet")?.Attribute(W14 + "id");
             if (string.IsNullOrEmpty(id))
             {
                 return;
@@ -898,7 +1188,7 @@ namespace WordAddIn1
             }
 
             var map = new Dictionary<string, object> { ["visible"] = true };
-            double transparency = AlphaTransparency(color);
+            double transparency = AlphaTransparency(color, theme);
             if (transparency > 0)
             {
                 map["transparency"] = transparency;
@@ -918,7 +1208,7 @@ namespace WordAddIn1
             format["fill"] = map;
         }
 
-        private static void ApplyGlow(Dictionary<string, object> format, XElement glow)
+        private static void ApplyGlow(Dictionary<string, object> format, XElement glow, ThemeFonts theme)
         {
             if (glow == null)
             {
@@ -934,7 +1224,7 @@ namespace WordAddIn1
             XElement color = glow.Element(W14 + "srgbClr") ?? glow.Element(W14 + "schemeClr");
             if (color != null)
             {
-                map["transparency"] = AlphaTransparency(color);
+                map["transparency"] = AlphaTransparency(color, theme);
                 Dictionary<string, object> obj = DrawingColor(color, null);
                 if (obj != null)
                 {
@@ -948,7 +1238,7 @@ namespace WordAddIn1
             }
         }
 
-        private static void ApplyLine(Dictionary<string, object> format, XElement line)
+        private static void ApplyLine(Dictionary<string, object> format, XElement line, ThemeFonts theme)
         {
             if (line == null)
             {
@@ -971,7 +1261,7 @@ namespace WordAddIn1
             XElement color = fill?.Element(W14 + "srgbClr") ?? fill?.Element(W14 + "schemeClr");
             if (color != null)
             {
-                map["transparency"] = AlphaTransparency(color);
+                map["transparency"] = AlphaTransparency(color, theme);
                 Dictionary<string, object> fore = DrawingColor(color, null);
                 if (fore != null)
                 {
@@ -1016,7 +1306,7 @@ namespace WordAddIn1
             }
         }
 
-        private static void ApplyTextShadow(Dictionary<string, object> format, XElement shadow)
+        private static void ApplyTextShadow(Dictionary<string, object> format, XElement shadow, ThemeFonts theme)
         {
             if (shadow == null)
             {
@@ -1042,7 +1332,7 @@ namespace WordAddIn1
             XElement color = shadow.Element(W14 + "srgbClr") ?? shadow.Element(W14 + "schemeClr");
             if (color != null)
             {
-                map["transparency"] = AlphaTransparency(color);
+                map["transparency"] = AlphaTransparency(color, theme);
                 Dictionary<string, object> fore = DrawingColor(color, null);
                 if (fore != null)
                 {
@@ -1053,12 +1343,17 @@ namespace WordAddIn1
             format["text_shadow"] = map;
         }
 
-        private static double AlphaTransparency(XElement color)
+        private static double AlphaTransparency(XElement color, ThemeFonts theme)
         {
             string raw = (string)color?.Element(W14 + "alpha")?.Attribute(W14 + "val");
             if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double alpha))
             {
                 return 0;
+            }
+
+            if (theme != null && theme.WpsAlpha)
+            {
+                return Math.Round(alpha / 100000.0, 4);
             }
 
             return Math.Round(1.0 - alpha / 100000.0, 4);
