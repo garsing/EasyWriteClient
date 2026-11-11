@@ -12,7 +12,7 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static partial class CfCases
     {
-        public const int Target = 67;
+        public const int Target = 97;
 
         private const string Plain = "易写字符甲句。";
         private const string Italic = "易写字符乙斜。";
@@ -58,6 +58,7 @@ namespace WordDocumentRoundtripTest
             RunApply(run, s);
             RunWrite(run, s);
             RunKeys(run, s);
+            RunSpans(run, s);
         }
 
         private static void RunRead(TestRun run, WdSession s)

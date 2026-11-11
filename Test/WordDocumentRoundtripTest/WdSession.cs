@@ -879,6 +879,22 @@ namespace WordDocumentRoundtripTest
                 : WithWordDoc(fullPath, doc => PaintNeedleCore(doc, needle, prefixChars, fontProps, rangeProps));
         }
 
+        /// <summary>
+        /// 只铺句子里的一截。charCount &lt;= 0 表示从 startChar 铺到句末。
+        /// </summary>
+        public bool PaintSlice(
+            string fullPath,
+            string needle,
+            int startChar,
+            int charCount,
+            IDictionary<string, object> fontProps,
+            IDictionary<string, object> rangeProps)
+        {
+            return IsWps
+                ? WithWpsDoc(fullPath, doc => PaintSliceCore(doc, needle, startChar, charCount, fontProps, rangeProps))
+                : WithWordDoc(fullPath, doc => PaintSliceCore(doc, needle, startChar, charCount, fontProps, rangeProps));
+        }
+
         public bool SetTextChar(string fullPath, string needle, string fontName, float size, bool bold, bool underline)
         {
             return IsWps
@@ -2986,6 +3002,57 @@ namespace WordDocumentRoundtripTest
                     foreach (KeyValuePair<string, object> pair in rangeProps)
                     {
                         SetProp(slice, pair.Key, pair.Value);
+                    }
+                }
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool PaintSliceCore(
+            object doc,
+            string needle,
+            int startChar,
+            int charCount,
+            IDictionary<string, object> fontProps,
+            IDictionary<string, object> rangeProps)
+        {
+            try
+            {
+                object slice = FindNeedleRangeLate(doc, needle);
+                if (slice == null || startChar < 0)
+                {
+                    return false;
+                }
+
+                int start = Convert.ToInt32(GetProp(slice, "Start"));
+                int end = Convert.ToInt32(GetProp(slice, "End"));
+                int cutStart = start + startChar;
+                int cutEnd = charCount > 0 ? cutStart + charCount : end;
+                if (cutStart >= end || cutEnd > end || cutStart >= cutEnd)
+                {
+                    return false;
+                }
+
+                object piece = Invoke(doc, "Range", cutStart, cutEnd);
+                if (fontProps != null)
+                {
+                    object font = GetProp(piece, "Font");
+                    foreach (KeyValuePair<string, object> pair in fontProps)
+                    {
+                        SetProp(font, pair.Key, pair.Value);
+                    }
+                }
+
+                if (rangeProps != null)
+                {
+                    foreach (KeyValuePair<string, object> pair in rangeProps)
+                    {
+                        SetProp(piece, pair.Key, pair.Value);
                     }
                 }
 
