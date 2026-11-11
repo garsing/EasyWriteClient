@@ -365,6 +365,7 @@ namespace WordAddIn1
                                 }
 
                                 action.SentenceNames = originalLoc.Spec.Codes;
+                                action.LocateText = originalLoc.Spec.TextSpan;
                                 action.OriginalScopeFields = new CodeAnchorScopeFields { TableId = originalLoc.Spec.InTableId };
                                 
                                 if (!detail.ContainsKey("new"))
@@ -402,6 +403,7 @@ namespace WordAddIn1
                                 }
 
                                 action.SentenceNames = deletionLoc.Spec.Codes;
+                                action.LocateText = deletionLoc.Spec.TextSpan;
                                 action.DeletionScopeFields = new CodeAnchorScopeFields { TableId = deletionLoc.Spec.InTableId };
                                 break;
 
@@ -1280,7 +1282,8 @@ namespace WordAddIn1
                                 doc,
                                 action.SentenceNames,
                                 action.DeletionScopeFields?.TableId,
-                                disallowBackendApi);
+                                disallowBackendApi,
+                                action.LocateText);
                             FillDeleteActionResult(result, del);
                             break;
                         }
@@ -1776,7 +1779,8 @@ namespace WordAddIn1
                     action.OriginalScopeFields?.TableId,
                     payload,
                     tableScope,
-                    disallowBackendApi);
+                    disallowBackendApi,
+                    action.LocateText);
             }
 
             if (!ActionFormatHelper.TryBuildSnapshot(
@@ -1792,7 +1796,8 @@ namespace WordAddIn1
                 action.OriginalScopeFields?.TableId,
                 snapshot,
                 formatMode,
-                disallowBackendApi);
+                disallowBackendApi,
+                action.LocateText);
         }
 
         private static InsertExecutionResult ExecuteInsertWithPayload(
@@ -1844,7 +1849,8 @@ namespace WordAddIn1
             string tableId,
             ActionContentHelper.Payload payload,
             TableScopeIndex tableScope,
-            bool disallowBackendApi)
+            bool disallowBackendApi,
+            TextSpan textSpan = null)
         {
             var result = new ReplaceExecutionResult { Success = false, NewSentences = new List<string>() };
             var names = ParseCodeList(sentenceNames);
@@ -1868,7 +1874,8 @@ namespace WordAddIn1
                 {
                     Kind = SpanLocatorKind(sentenceNames),
                     Codes = sentenceNames,
-                    InTableId = tableId
+                    InTableId = tableId,
+                    TextSpan = textSpan
                 },
                 InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
                 disallowBackendApi,
@@ -2403,7 +2410,8 @@ namespace WordAddIn1
             string tableId,
             Dictionary<string, object> formatSnapshot,
             string formatMode,
-            bool disallowBackendApi)
+            bool disallowBackendApi,
+            TextSpan textSpan = null)
         {
             var result = new ReplaceExecutionResult { Success = false, NewSentences = new List<string>() };
 
@@ -2447,7 +2455,8 @@ namespace WordAddIn1
                     {
                         Kind = SpanLocatorKind(sentenceNames),
                         Codes = sentenceNames,
-                        InTableId = tableId
+                        InTableId = tableId,
+                        TextSpan = textSpan
                     },
                     InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
                     disallowBackendApi,
@@ -2603,7 +2612,8 @@ namespace WordAddIn1
             Word.Document doc,
             string sentenceNames,
             string tableId,
-            bool disallowBackendApi)
+            bool disallowBackendApi,
+            TextSpan textSpan = null)
         {
             var result = new DeleteExecutionResult { Success = false };
 
@@ -2643,7 +2653,8 @@ namespace WordAddIn1
                     {
                         Kind = SpanLocatorKind(sentenceNames),
                         Codes = sentenceNames,
-                        InTableId = tableId
+                        InTableId = tableId,
+                        TextSpan = textSpan
                     },
                     InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
                     disallowBackendApi,
@@ -3181,6 +3192,7 @@ namespace WordAddIn1
             
             // 用于通过句子编号定位的字段
             public string SentenceNames { get; set; }
+            public TextSpan LocateText { get; set; }
             public LocatorSpec TargetLocator { get; set; }
 
             public CodeAnchorScopeFields OriginalScopeFields { get; set; } = new CodeAnchorScopeFields();

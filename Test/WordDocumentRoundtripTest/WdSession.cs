@@ -916,6 +916,20 @@ namespace WordDocumentRoundtripTest
             return ok;
         }
 
+        /// <summary>
+        /// 去掉段末标记后看上标。exact 为真时正文必须等于 needle，只看第一个字。
+        /// 否则正文包含 needle，看去掉段末标记后的整段。返回 1 全是上标，0 都不是，2 混排。
+        /// </summary>
+        public bool TryParagraphSuper(string fullPath, string needle, bool exact, out int state)
+        {
+            int found = -1;
+            bool ok = IsWps
+                ? WithWpsDoc(fullPath, doc => ParagraphSuperLate(doc, needle, exact, out found))
+                : WithWordDoc(fullPath, doc => ParagraphSuperWord(doc, needle, exact, out found));
+            state = found;
+            return ok;
+        }
+
         public bool SetNthParagraphUnderline(string fullPath, string needle, int nth, bool underline)
         {
             return IsWps
@@ -3094,6 +3108,142 @@ namespace WordDocumentRoundtripTest
                 ? Word.WdUnderline.wdUnderlineSingle
                 : Word.WdUnderline.wdUnderlineNone;
             return true;
+        }
+
+        private static bool ParagraphSuperWord(Word.Document doc, string needle, bool exact, out int state)
+        {
+            state = -1;
+            for (int i = 1; i <= doc.Paragraphs.Count; i++)
+            {
+                Word.Range para = doc.Paragraphs[i].Range;
+                string body = StripCellMarks(para.Text);
+                bool hit = exact
+                    ? string.Equals(body, needle, StringComparison.Ordinal)
+                    : body.IndexOf(needle, StringComparison.Ordinal) >= 0;
+                if (!hit)
+                {
+                    continue;
+                }
+
+                Word.Range slice = para.Duplicate;
+                DropTrailingMarks(slice);
+                if (exact && slice.End > slice.Start)
+                {
+                    slice.End = slice.Start + 1;
+                }
+
+                state = SuperState(slice.Font.Superscript);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool ParagraphSuperLate(object doc, string needle, bool exact, out int state)
+        {
+            state = -1;
+            object paras = GetProp(doc, "Paragraphs");
+            int count = Convert.ToInt32(GetProp(paras, "Count"));
+            for (int i = 1; i <= count; i++)
+            {
+                object para = Invoke(paras, "Item", i);
+                object range = GetProp(para, "Range");
+                string text = Convert.ToString(GetProp(range, "Text")) ?? "";
+                string body = StripCellMarks(text);
+                bool hit = exact
+                    ? string.Equals(body, needle, StringComparison.Ordinal)
+                    : body.IndexOf(needle, StringComparison.Ordinal) >= 0;
+                if (!hit)
+                {
+                    continue;
+                }
+
+                int start = Convert.ToInt32(GetProp(range, "Start"));
+                int keep = text.Length;
+                while (keep > 0 && (char.IsWhiteSpace(text[keep - 1]) || IsCellMark(text[keep - 1])))
+                {
+                    keep--;
+                }
+
+                int sliceEnd = start + (exact ? Math.Min(1, keep) : keep);
+                if (sliceEnd < start)
+                {
+                    sliceEnd = start;
+                }
+
+                object slice = Invoke(doc, "Range", start, sliceEnd);
+                state = SuperState(GetProp(GetProp(slice, "Font"), "Superscript"));
+                return true;
+            }
+
+            return false;
+        }
+
+        private static void DropTrailingMarks(Word.Range range)
+        {
+            while (range.End > range.Start)
+            {
+                string text = range.Text ?? "";
+                if (text.Length == 0 || !IsCellMark(text[text.Length - 1]))
+                {
+                    return;
+                }
+
+                range.End = range.End - 1;
+            }
+        }
+
+        private static bool IsCellMark(char value)
+        {
+            return value == '\r' || value == '\a' || value == '\n' || value == '\v' || value == '\f';
+        }
+
+        private static string StripCellMarks(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            int end = text.Length;
+            while (end > 0 && (char.IsWhiteSpace(text[end - 1]) || IsCellMark(text[end - 1])))
+            {
+                end--;
+            }
+
+            int start = 0;
+            while (start < end && char.IsWhiteSpace(text[start]))
+            {
+                start++;
+            }
+
+            return text.Substring(start, end - start);
+        }
+
+        private static int SuperState(object value)
+        {
+            if (value is bool flag)
+            {
+                return flag ? 1 : 0;
+            }
+
+            int number;
+            if (!int.TryParse(Convert.ToString(value), out number))
+            {
+                return 2;
+            }
+
+            if (number == 0)
+            {
+                return 0;
+            }
+
+            if (number == 1 || number == -1)
+            {
+                return 1;
+            }
+
+            return 2;
         }
 
         private static bool TryNeedleCharWord(

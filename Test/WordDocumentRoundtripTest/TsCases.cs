@@ -121,10 +121,10 @@ namespace WordDocumentRoundtripTest
 
                 string code = doc.Sentence(Two);
                 ToolResult applied = s.ApplyDocumentFormat(Flat(doc.Id, "target_codes", code, TextObj("[1]", 2), Super()));
-                List<bool> marks = SuperFlags(Entry(s, doc, code, false), "[1]");
+                JObject entry = Entry(s, doc, code, false);
                 Ok(run, "ts-s-index2",
-                    applied.Success && marks.Count == 2 && !marks[0] && marks[1] && OthersPlain(Entry(s, doc, code, false), "[1]"),
-                    applied.Success ? "第二处 [1] 没有单独上标: " + Dump(Entry(s, doc, code, false)) : (applied.Error ?? ""));
+                    applied.Success && NthMarkOnly(entry, "[1]", 2),
+                    applied.Success ? "第二处 [1] 没有单独上标: " + Dump(entry) : (applied.Error ?? ""));
             }
 
             using (Planted doc = Plant(s, Two))
@@ -136,10 +136,10 @@ namespace WordDocumentRoundtripTest
 
                 string code = doc.Sentence(Two);
                 ToolResult applied = s.ApplyDocumentFormat(Flat(doc.Id, "target_codes", code, TextObj("[1]", 1), Super()));
-                List<bool> marks = SuperFlags(Entry(s, doc, code, false), "[1]");
+                JObject entry = Entry(s, doc, code, false);
                 Ok(run, "ts-s-index1",
-                    applied.Success && marks.Count == 2 && marks[0] && !marks[1] && OthersPlain(Entry(s, doc, code, false), "[1]"),
-                    applied.Success ? "第一处 [1] 没有单独上标: " + Dump(Entry(s, doc, code, false)) : (applied.Error ?? ""));
+                    applied.Success && NthMarkOnly(entry, "[1]", 1),
+                    applied.Success ? "第一处 [1] 没有单独上标: " + Dump(entry) : (applied.Error ?? ""));
             }
 
             using (Planted doc = Plant(s, Two))
@@ -223,10 +223,11 @@ namespace WordDocumentRoundtripTest
                 }
 
                 string code = doc.Paragraph(Para);
+                string sentence = doc.Sentence(Para);
                 ToolResult applied = s.ApplyDocumentFormat(Flat(doc.Id, "target_paragraph_codes", code, "[1]", Super()));
                 Ok(run, "ts-p-slice",
-                    applied.Success && OnlySuper(s, doc, code, true, "[1]") && doc.Has(Para),
-                    applied.Success ? "段落里的 [1] 没有单独上标" : (applied.Error ?? ""));
+                    applied.Success && OnlySuper(s, doc, sentence, false, "[1]") && doc.Has(Para),
+                    applied.Success ? "段落里的 [1] 没有单独上标: " + Dump(Entry(s, doc, sentence, false)) : (applied.Error ?? ""));
             }
 
             using (Planted doc = PlantTable(s, CellLong))
@@ -238,17 +239,21 @@ namespace WordDocumentRoundtripTest
 
                 string early = doc.Paragraph("格内前乙");
                 string late = doc.Paragraph("格内后乙完");
-                if (string.IsNullOrEmpty(early) || string.IsNullOrEmpty(late))
+                string earlySentence = doc.Sentence("格内前乙");
+                string lateSentence = doc.Sentence("格内后乙完");
+                if (string.IsNullOrEmpty(early) || string.IsNullOrEmpty(late)
+                    || string.IsNullOrEmpty(earlySentence) || string.IsNullOrEmpty(lateSentence))
                 {
                     run.CaseFail("ts-p-cell", "抄不到格内两段");
                     return;
                 }
+
                 ToolResult applied = s.ApplyDocumentFormat(Flat(doc.Id, "target_paragraph_codes", late, "乙", Super()));
                 Ok(run, "ts-p-cell",
                     applied.Success
-                        && OnlySuper(s, doc, late, true, "乙")
-                        && !AnySuper(s, doc, early, true),
-                    applied.Success ? "格末段落的「乙」没有单独上标: " + Dump(Entry(s, doc, late, true)) : (applied.Error ?? ""));
+                        && OnlySuper(s, doc, lateSentence, false, "乙")
+                        && !AnySuper(s, doc, earlySentence, false),
+                    applied.Success ? "格末段落的「乙」没有单独上标: " + Dump(Entry(s, doc, lateSentence, false)) : (applied.Error ?? ""));
             }
 
             using (Planted doc = PlantTable(s, CellOne))
@@ -265,12 +270,17 @@ namespace WordDocumentRoundtripTest
                     run.CaseFail("ts-p-one", "抄不到单字段");
                     return;
                 }
+
                 ToolResult applied = s.ApplyDocumentFormat(Flat(doc.Id, "target_paragraph_codes", late, "乙", Super()));
+                int lateState;
+                int earlyState;
+                bool lateRead = s.TryParagraphSuper(doc.Path, "乙", true, out lateState);
+                bool earlyRead = s.TryParagraphSuper(doc.Path, "前文乙句", false, out earlyState);
                 Ok(run, "ts-p-one",
+                    applied.Success && lateRead && earlyRead && lateState == 1 && earlyState == 0,
                     applied.Success
-                        && OnlySuper(s, doc, late, true, "乙")
-                        && !AnySuper(s, doc, early, true),
-                    applied.Success ? "只有一个「乙」的格末段没有上标: " + Dump(Entry(s, doc, late, true)) : (applied.Error ?? ""));
+                        ? "只有一个「乙」的格末段没有上标: late=" + lateState + " early=" + earlyState
+                        : (applied.Error ?? ""));
             }
         }
 
@@ -454,6 +464,71 @@ namespace WordDocumentRoundtripTest
                     }
                 }
             };
+        }
+
+        private static bool NthMarkOnly(JObject entry, string exact, int index)
+        {
+            int seen = 0;
+            bool hit = false;
+            foreach (JToken token in Runs(entry))
+            {
+                JObject run = token as JObject;
+                if (run == null)
+                {
+                    continue;
+                }
+
+                string text = Txt(run, "text");
+                bool super = Flag(Obj(run, "char_format"), "is_superscript");
+                int count = CountOf(text, exact);
+                if (super)
+                {
+                    if (text != exact || seen != index - 1)
+                    {
+                        return false;
+                    }
+
+                    hit = true;
+                }
+
+                seen += count;
+            }
+
+            return hit && seen >= index;
+        }
+
+        private static int CountOf(string text, string exact)
+        {
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(exact))
+            {
+                return 0;
+            }
+
+            int count = 0;
+            int at = 0;
+            while (at <= text.Length - exact.Length)
+            {
+                int found = text.IndexOf(exact, at, StringComparison.Ordinal);
+                if (found < 0)
+                {
+                    break;
+                }
+
+                count++;
+                at = found + exact.Length;
+            }
+
+            return count;
+        }
+
+        private static string StripMarks(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            return text.Trim().TrimEnd('\r', '\a', '\n', '\v', '\f');
         }
 
         private static bool OnlySuper(WdSession s, Planted doc, string code, bool paragraph, string exact)
@@ -702,9 +777,13 @@ namespace WordDocumentRoundtripTest
                 int seen = 0;
                 foreach (Marker marker in markers)
                 {
+                    string body = StripMarks(Regex.Replace(
+                        marker.Text ?? "",
+                        @"\[in_table=[^\]]+\]",
+                        ""));
                     bool hit = exact
-                        ? string.Equals(marker.Text.Trim(), needle, StringComparison.Ordinal)
-                        : marker.Text.IndexOf(needle, StringComparison.Ordinal) >= 0;
+                        ? string.Equals(body, needle, StringComparison.Ordinal)
+                        : body.IndexOf(needle, StringComparison.Ordinal) >= 0;
                     if (!hit)
                     {
                         continue;
