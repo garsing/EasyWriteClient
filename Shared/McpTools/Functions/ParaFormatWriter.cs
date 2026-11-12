@@ -403,7 +403,7 @@ namespace WordAddIn1
             bool join = list.ContainsKey("continue_previous") && IsTrue(list["continue_previous"]);
             if (kind.Length > 0)
             {
-                if (!(join && TryJoinPreviousList(range, listFormat)))
+                if (!(join && IsWpsHost(range) && TryJoinPreviousList(range, listFormat)))
                 {
                     ApplyListKind(listFormat, kind, list);
                 }
@@ -432,6 +432,12 @@ namespace WordAddIn1
             if (kind == "none" || listFormat.ListTemplate == null)
             {
                 throw new InvalidOperationException("这段还没有列表，不能写编号样子");
+            }
+
+            if (IsWpsHost(range))
+            {
+                ApplyWpsListLook(range, listFormat, list, kind, restart);
+                return;
             }
 
             int level = listFormat.ListLevelNumber;
@@ -464,12 +470,10 @@ namespace WordAddIn1
 
             if (list.ContainsKey("picture_path") && kind != "picture_bullet")
             {
-                ApplyPictureBullet(listFormat, listLevel, list["picture_path"]?.ToString());
-            }
-
-            if (kind != "picture_bullet")
-            {
-                ReapplyListTemplate(listFormat, continuePrevious: !restart, wholeList: !restart);
+                if (!TryApplyPictureBullet(listFormat, listLevel, list["picture_path"]?.ToString()))
+                {
+                    throw new InvalidOperationException("图片项目符号没有写上");
+                }
             }
         }
 
@@ -502,7 +506,13 @@ namespace WordAddIn1
 
                     listFormat.ApplyBulletDefault(ref behavior);
                     int level = listFormat.ListLevelNumber < 1 ? 1 : listFormat.ListLevelNumber;
-                    ApplyPictureBullet(listFormat, listFormat.ListTemplate.ListLevels[level], path);
+                    Word.Range owner = listFormat.Parent as Word.Range;
+                    if (!TryApplyPictureBullet(listFormat, listFormat.ListTemplate.ListLevels[level], path)
+                        && (owner == null || !IsWpsHost(owner)))
+                    {
+                        throw new InvalidOperationException("图片项目符号没有写上");
+                    }
+
                     break;
                 default:
                     throw new InvalidOperationException("无法识别的 list.kind " + kind);
@@ -521,6 +531,88 @@ namespace WordAddIn1
             object applyTo = Word.WdListApplyTo.wdListApplyToSelection;
             object behavior = Word.WdDefaultListBehavior.wdWord10ListBehavior;
             listFormat.ApplyListTemplate(template, ref continuePrevious, ref applyTo, ref behavior);
+        }
+
+        private static void ApplyWpsListLook(
+            Word.Range range,
+            Word.ListFormat listFormat,
+            Dictionary<string, object> list,
+            string kind,
+            bool restart)
+        {
+            int level = listFormat.ListLevelNumber;
+            if (level < 1)
+            {
+                level = 1;
+            }
+
+            object outline = string.Equals(kind, "outline", StringComparison.Ordinal);
+            object name = Type.Missing;
+            Word.ListTemplate fresh = range.Document.ListTemplates.Add(ref outline, ref name);
+            Word.ListLevel src = listFormat.ListTemplate.ListLevels[level];
+            Word.ListLevel dst = fresh.ListLevels[level];
+            CopyListLevel(src, dst);
+            if (list.ContainsKey("bullet_char"))
+            {
+                dst.NumberStyle = Word.WdListNumberStyle.wdListNumberStyleBullet;
+                dst.NumberFormat = list["bullet_char"]?.ToString() ?? "";
+            }
+
+            if (list.ContainsKey("number_style"))
+            {
+                dst.NumberStyle = ParseEnum<Word.WdListNumberStyle>(list["number_style"]);
+            }
+
+            if (list.ContainsKey("number_format"))
+            {
+                dst.NumberFormat = list["number_format"]?.ToString() ?? "";
+            }
+
+            if (list.ContainsKey("start_at"))
+            {
+                dst.StartAt = Convert.ToInt32(list["start_at"], CultureInfo.InvariantCulture);
+            }
+
+            object cont = !restart;
+            object applyTo = Word.WdListApplyTo.wdListApplyToWholeList;
+            object behavior = Word.WdDefaultListBehavior.wdWord10ListBehavior;
+            listFormat.ApplyListTemplate(fresh, ref cont, ref applyTo, ref behavior);
+            if (list.ContainsKey("picture_path"))
+            {
+                int appliedLevel = listFormat.ListLevelNumber < 1 ? 1 : listFormat.ListLevelNumber;
+                if (!TryApplyPictureBullet(listFormat, listFormat.ListTemplate.ListLevels[appliedLevel], list["picture_path"]?.ToString()))
+                {
+                    throw new InvalidOperationException("图片项目符号没有写上");
+                }
+            }
+        }
+
+        private static void CopyListLevel(Word.ListLevel src, Word.ListLevel dst)
+        {
+            try { dst.NumberStyle = src.NumberStyle; } catch { }
+            try { dst.NumberFormat = src.NumberFormat; } catch { }
+            try { dst.StartAt = src.StartAt; } catch { }
+            try { dst.Alignment = src.Alignment; } catch { }
+            try { dst.TrailingCharacter = src.TrailingCharacter; } catch { }
+            try { dst.NumberPosition = src.NumberPosition; } catch { }
+            try { dst.TextPosition = src.TextPosition; } catch { }
+            try { dst.TabPosition = src.TabPosition; } catch { }
+            try { dst.ResetOnHigher = src.ResetOnHigher; } catch { }
+            try { dst.Font.Name = src.Font.Name; } catch { }
+        }
+
+        private static bool IsWpsHost(Word.Range range)
+        {
+            try
+            {
+                string name = range.Application?.Name ?? "";
+                return name.IndexOf("WPS", StringComparison.OrdinalIgnoreCase) >= 0
+                    || name.IndexOf("Kingsoft", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>接到上一段的同一份列表。WPS 上 ApplyNumberDefault 会另起一份。</summary>
@@ -569,29 +661,50 @@ namespace WordAddIn1
             listFormat.ApplyListTemplate(template, ref cont, ref applyTo, ref behavior);
         }
 
-        private static void ApplyPictureBullet(Word.ListFormat listFormat, Word.ListLevel listLevel, string path)
+        private static bool TryApplyPictureBullet(Word.ListFormat listFormat, Word.ListLevel listLevel, string path)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
                 throw new InvalidOperationException("picture_path 为空");
             }
 
-            listLevel.ApplyPictureBullet(path);
+            try
+            {
+                listLevel.ApplyPictureBullet(path);
+            }
+            catch
+            {
+                /* 换 bmp 再试 */
+            }
+
             if (listFormat.ListType == Word.WdListType.wdListPictureBullet)
             {
-                return;
+                return true;
             }
 
-            string bmp = EnsureBmp(path);
+            string bmp = null;
+            try
+            {
+                bmp = EnsureBmp(path);
+            }
+            catch
+            {
+                return false;
+            }
+
             if (!string.Equals(bmp, path, StringComparison.OrdinalIgnoreCase))
             {
-                listLevel.ApplyPictureBullet(bmp);
+                try
+                {
+                    listLevel.ApplyPictureBullet(bmp);
+                }
+                catch
+                {
+                    return listFormat.ListType == Word.WdListType.wdListPictureBullet;
+                }
             }
 
-            if (listFormat.ListType != Word.WdListType.wdListPictureBullet)
-            {
-                throw new InvalidOperationException("图片项目符号没有写上");
-            }
+            return listFormat.ListType == Word.WdListType.wdListPictureBullet;
         }
 
         private static string EnsureBmp(string path)
@@ -639,10 +752,43 @@ namespace WordAddIn1
             }
 
             PatchFarEastSpacingXml(range, alpha, value != 0);
-            if (!FarEastSpacingMatches(pf, value, alpha))
+            if (FarEastSpacingMatches(pf, value, alpha))
+            {
+                return;
+            }
+
+            string tag = alpha ? "autoSpaceDE" : "autoSpaceDN";
+            string xml = "";
+            try
+            {
+                xml = range.Paragraphs[1].Range.WordOpenXML ?? "";
+            }
+            catch
+            {
+                xml = "";
+            }
+
+            if (!XmlBoolIs(xml, tag, value != 0))
             {
                 throw new InvalidOperationException(name + " 写上后读回不是预期值");
             }
+        }
+
+        private static bool XmlBoolIs(string xml, string tag, bool on)
+        {
+            if (string.IsNullOrEmpty(xml))
+            {
+                return false;
+            }
+
+            Match match = Regex.Match(xml, "<w:" + tag + "\\b[^>]*/>");
+            if (!match.Success)
+            {
+                return false;
+            }
+
+            bool isOff = match.Value.IndexOf("w:val=\"0\"", StringComparison.Ordinal) >= 0;
+            return on ? !isOff : isOff;
         }
 
         private static bool FarEastSpacingMatches(Word.ParagraphFormat pf, int value, bool alpha)

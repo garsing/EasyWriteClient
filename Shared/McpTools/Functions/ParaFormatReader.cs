@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
@@ -73,8 +74,7 @@ namespace WordAddIn1
             TryReadBool(format, "word_wrap", () => pf.WordWrap);
             TryReadBool(format, "hanging_punctuation", () => pf.HangingPunctuation);
             TryReadBool(format, "half_width_punctuation_on_top_of_line", () => pf.HalfWidthPunctuationOnTopOfLine);
-            TryReadBool(format, "add_space_between_far_east_and_alpha", () => pf.AddSpaceBetweenFarEastAndAlpha);
-            TryReadBool(format, "add_space_between_far_east_and_digit", () => pf.AddSpaceBetweenFarEastAndDigit);
+            TryReadFarEastSpacing(format, range, pf);
             TryReadBool(format, "collapsed_by_default", () => pf.CollapsedByDefault);
             TryReadEnum(format, "outline_level", () => pf.OutlineLevel);
             TryReadEnum(format, "baseline_alignment", () => pf.BaseLineAlignment);
@@ -516,6 +516,64 @@ namespace WordAddIn1
             {
                 DbgLog(key + " 读取失败: " + ex.Message);
             }
+        }
+
+        private static void TryReadFarEastSpacing(Dictionary<string, object> format, Word.Range range, Word.ParagraphFormat pf)
+        {
+            string xml = "";
+            try
+            {
+                if (range.Paragraphs != null && range.Paragraphs.Count > 0)
+                {
+                    xml = range.Paragraphs[1].Range.WordOpenXML ?? "";
+                }
+            }
+            catch (Exception ex)
+            {
+                DbgLog("中西文间距 XML 读取失败: " + ex.Message);
+            }
+
+            ReadFarEastOne(format, "add_space_between_far_east_and_alpha", () => pf.AddSpaceBetweenFarEastAndAlpha, xml, "autoSpaceDE");
+            ReadFarEastOne(format, "add_space_between_far_east_and_digit", () => pf.AddSpaceBetweenFarEastAndDigit, xml, "autoSpaceDN");
+        }
+
+        private static void ReadFarEastOne(
+            Dictionary<string, object> format,
+            string key,
+            Func<int> readCom,
+            string xml,
+            string tag)
+        {
+            bool? fromXml = ReadPPrBool(xml, tag);
+            if (fromXml.HasValue)
+            {
+                format[key] = fromXml.Value;
+                return;
+            }
+
+            TryReadBool(format, key, readCom);
+        }
+
+        private static bool? ReadPPrBool(string xml, string tag)
+        {
+            if (string.IsNullOrEmpty(xml))
+            {
+                return null;
+            }
+
+            Match match = Regex.Match(xml, "<w:" + tag + "\\b[^>]*/>");
+            if (!match.Success)
+            {
+                return null;
+            }
+
+            Match val = Regex.Match(match.Value, "w:val=\"(\\d+)\"");
+            if (!val.Success)
+            {
+                return true;
+            }
+
+            return val.Groups[1].Value != "0";
         }
 
         private static void TryReadBool(Dictionary<string, object> format, string key, Func<int> read)

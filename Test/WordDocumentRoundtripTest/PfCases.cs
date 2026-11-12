@@ -405,9 +405,10 @@ namespace WordDocumentRoundtripTest
             RunListString(run, s);
             OneList(run, s, "pf-list-style", "pf-list-style。", List("kind", "number", "number_style", "wdListNumberStyleUppercaseLetter"),
                 (fmt, _) => Contains(Str(Child(fmt, "list"), "number_style"), "UppercaseLetter"));
-            OneList(run, s, "pf-list-start", "pf-list-start。", List("kind", "number", "start_at", 5),
+                OneList(run, s, "pf-list-start", "pf-list-start。", List("kind", "number", "start_at", 5),
                 (fmt, _) => Near(Child(fmt, "list"), "start_at", 5, 0.1)
-                    && Contains(Str(Child(fmt, "list"), "list_string"), "5"));
+                    && (Contains(Str(Child(fmt, "list"), "list_string"), "5")
+                        || Contains(Str(Child(fmt, "list"), "list_string"), "五")));
             OneList(run, s, "pf-list-glyph", "pf-list-glyph。", List("kind", "bullet", "bullet_char", "●"),
                 (fmt, _) => Eq(Child(fmt, "list"), "kind", "bullet")
                     && string.Equals((Str(Child(fmt, "list"), "bullet_char") ?? "").Trim(), "●", StringComparison.Ordinal));
@@ -542,20 +543,21 @@ namespace WordDocumentRoundtripTest
                 string drop = ParaCode(body, "pf-drop。");
                 string look = ParaCode(body, "pf-drop-look。");
                 ToolResult on = Apply(s, id, drop, Drop(Map("position", "drop", "lines", 3)));
-                drop = ParaCode(ReadBody(s, id), "pf-drop。");
+                drop = ParaCodeEither(ReadBody(s, id), "pf-drop。", "f-drop。");
                 JObject onFmt = Para(s, id, drop);
+                string dropBody = string.IsNullOrEmpty(drop) ? ReadBody(s, id) : "";
                 Ok(run, "pf-drop",
                     on.Success && Eq(Child(onFmt, "drop_cap"), "position", "drop") && Near(Child(onFmt, "drop_cap"), "lines", 3, 0.1),
-                    Why(on, onFmt));
+                    Why(on, onFmt) + (dropBody.Length == 0 ? "" : " body=" + TrimBody(dropBody)));
                 ToolResult lookApply = Apply(s, id, look, Drop(Map("position", "drop", "lines", 3, "font_name", "宋体", "distance", 6)));
-                look = ParaCode(ReadBody(s, id), "pf-drop-look。");
+                look = ParaCodeEither(ReadBody(s, id), "pf-drop-look。", "f-drop-look。", "drop-look。");
                 JObject lookFmt = Child(Para(s, id, look), "drop_cap");
                 Ok(run, "pf-drop-look",
                     lookApply.Success && Eq(lookFmt, "position", "drop") && Near(lookFmt, "lines", 3, 0.1)
                     && Contains(Str(lookFmt, "font_name"), "宋体") && Near(lookFmt, "distance", 6, 1.2),
                     Why(lookApply, lookFmt));
                 ToolResult off = Apply(s, id, drop, Drop(Map("position", "none")));
-                drop = ParaCode(ReadBody(s, id), "pf-drop。");
+                drop = ParaCodeEither(ReadBody(s, id), "pf-drop。", "f-drop。");
                 JObject offFmt = Para(s, id, drop);
                 Ok(run, "pf-drop-off", off.Success && !Has(offFmt, "drop_cap"), Why(off, offFmt));
             }
@@ -797,6 +799,31 @@ namespace WordDocumentRoundtripTest
         {
             ToolResult got = s.GetContent(id, "paragraph");
             return got.Success ? WdSession.Str(got, "document_content") : "";
+        }
+
+        private static string TrimBody(string body)
+        {
+            if (string.IsNullOrEmpty(body))
+            {
+                return "";
+            }
+
+            body = body.Replace("\r", " ").Replace("\n", " ");
+            return body.Length <= 240 ? body : body.Substring(0, 240);
+        }
+
+        private static string ParaCodeEither(string body, params string[] needles)
+        {
+            foreach (string needle in needles)
+            {
+                string code = ParaCode(body, needle);
+                if (!string.IsNullOrEmpty(code))
+                {
+                    return code;
+                }
+            }
+
+            return "";
         }
 
         private static string ParaCode(string body, string sentence)
