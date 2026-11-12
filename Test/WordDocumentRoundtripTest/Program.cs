@@ -251,6 +251,45 @@ namespace WordDocumentRoundtripTest
                 return RpParaProbe.Run(host);
             }
 
+            if (caseFilter.StartsWith("ce-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "ce", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 ClearExtra 用写入范围取段落（ce-）：用 [autonum] 日志断言");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                int wordBeforeCe = OfficeAlive.Count("WINWORD");
+                int wpsBeforeCe = OfficeAlive.Count("wps");
+                bool wordWinBeforeCe = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforeCe = OfficeAlive.HasWindow("wps");
+                WdSession.SweepBeforeRun(host);
+                var ceRun = new TestRun { TotalTarget = CeCases.Target };
+                var ceSw = Stopwatch.StartNew();
+                try
+                {
+                    CeCases.IdFilter = caseFilter;
+                    CeCases.Run(
+                        ceRun, host, wordBeforeCe, wpsBeforeCe, wordWinBeforeCe, wpsWinBeforeCe);
+                }
+                finally
+                {
+                    ceSw.Stop();
+                    WdSession.SweepAfterRun(host);
+                }
+
+                Console.WriteLine("正式用例 通过 " + ceRun.CasesPassed
+                    + "  失败 " + ceRun.CasesFailed
+                    + "  跳过 " + ceRun.CasesSkipped
+                    + "  （目标 " + CeCases.Target + "）");
+                Console.WriteLine("ELAPSED_SEC=" + ceSw.Elapsed.TotalSeconds.ToString("F1"));
+                return ceRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (string.Equals(caseFilter, "fs-sent-find", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "fs-para-find", StringComparison.OrdinalIgnoreCase))
             {

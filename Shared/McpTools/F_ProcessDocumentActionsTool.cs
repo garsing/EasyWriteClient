@@ -226,6 +226,7 @@ namespace WordAddIn1
                             "process_actions.total",
                             swTotal.ElapsedMilliseconds,
                             "actions=" + timedActionCount);
+                        EasyWriteLog.Flush();
                     }
                 }
                 catch (OperationCanceledException)
