@@ -1481,7 +1481,6 @@ namespace WordAddIn1
             Session.SegSnapshot = segSnap;
             Session.ParagraphSnapshot = paraSnap;
             Session.ParagraphSegSnapshot = paraSegSnap;
-            PrunePreReplaceCache(GetOrderedSentenceCodesFromSnapshot(Session.Snapshot));
 
             EasyWriteDiagnostics.LogDocumentExtractVerbose(
                 $"[SnapshotHistory] append index={record.Index} source={record.Source} " +
@@ -1723,48 +1722,6 @@ namespace WordAddIn1
                 }
 
                 return list;
-            }
-        }
-
-        public static void AttachPreReplaceToNewCodes(IList<string> newCodes, Dictionary<string, object> snapshot)
-        {
-            if (newCodes == null || newCodes.Count == 0 || snapshot == null || snapshot.Count == 0)
-            {
-                return;
-            }
-
-            Dictionary<string, object> copy = CloneSnapshot(snapshot);
-            foreach (string code in newCodes)
-            {
-                if (!string.IsNullOrEmpty(code) && code.StartsWith("S_", StringComparison.Ordinal))
-                {
-                    Session.PreReplaceByNewCode[code] = CloneSnapshot(copy);
-                }
-            }
-        }
-
-        public static Dictionary<string, object> TryGetPreReplaceFormat(string code)
-        {
-            if (string.IsNullOrEmpty(code))
-            {
-                return null;
-            }
-
-            if (Session.PreReplaceByNewCode.TryGetValue(code, out Dictionary<string, object> snapshot))
-            {
-                return CloneSnapshot(snapshot);
-            }
-
-            return null;
-        }
-
-        private static void PrunePreReplaceCache(IEnumerable<string> validCodes)
-        {
-            var valid = new HashSet<string>(validCodes ?? Enumerable.Empty<string>(), StringComparer.Ordinal);
-            var stale = Session.PreReplaceByNewCode.Keys.Where(k => !valid.Contains(k)).ToList();
-            foreach (string key in stale)
-            {
-                Session.PreReplaceByNewCode.Remove(key);
             }
         }
 

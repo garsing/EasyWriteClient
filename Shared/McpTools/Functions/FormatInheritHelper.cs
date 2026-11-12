@@ -6,8 +6,9 @@ using Word = Microsoft.Office.Interop.Word;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 字符格式快照：ExtractSnapshot / BuildSnapshotFromCharFormat / ApplySnapshot。
+    /// 字符格式快照：BuildSnapshotFromCharFormat / ApplySnapshot。
     /// 按 S_ 代抄 inherit_from 已取消；本文件无 inherit 入口。
+    /// 写前不再逐字读替换目标；文档上的字符格式只由 CharFormatRunReader 读。
     /// </summary>
     public static partial class FormatInheritHelper
     {
@@ -19,54 +20,6 @@ namespace WordAddIn1
         /// </summary>
         /// <summary>调试开关；用 static readonly（非 const）避免 EnableDbg=false 时 CS0162 不可达警告。</summary>
         public static readonly bool EnableDbg = false;
-
-        public static Dictionary<string, object> ExtractSnapshot(Word.Range range)
-        {
-            var format = new Dictionary<string, object>();
-            if (range == null)
-            {
-                DbgLog("ExtractSnapshot range=null");
-                return format;
-            }
-
-            DbgLogRangeFonts("ExtractSnapshot BEFORE", range);
-
-            try
-            {
-                Dictionary<string, object> merged = ReadMergedCharFormat(range, out int kindCount, out string kindNote);
-                foreach (KeyValuePair<string, object> kv in merged)
-                {
-                    format[kv.Key] = kv.Value;
-                }
-
-                if (kindCount > 1)
-                {
-                    format[CharFormatCatalog.KindCountKey] = kindCount;
-                    format[CharFormatCatalog.KindNoteKey] = kindNote;
-                }
-
-                try
-                {
-                    var style = range.get_Style() as Word.Style;
-                    format["paragraph_style"] = style?.NameLocal ?? "";
-                }
-                catch (Exception ex)
-                {
-                    DbgLog($"ExtractSnapshot paragraph_style 读取失败: {ex.Message}");
-                    format["paragraph_style"] = "";
-                }
-
-                format["alignment"] = MapAlignment(range.ParagraphFormat?.Alignment ?? Word.WdParagraphAlignment.wdAlignParagraphLeft);
-
-                DbgLog($"ExtractSnapshot snapshot={SnapshotToDebugString(format)}");
-            }
-            catch (Exception ex)
-            {
-                DbgLog($"ExtractSnapshot 异常: {ex.Message}");
-            }
-
-            return format;
-        }
 
         /// <summary>
         /// 写路径：缺 <c>background_color</c> 或值为 automatic 时填入 InsertBackground 的 RGB。
@@ -802,23 +755,6 @@ namespace WordAddIn1
             }
         }
 
-        private static string GetEffectiveFontName(Word.Font font)
-        {
-            if (font == null)
-            {
-                return "";
-            }
-
-            string farEast = SafeFontString(() => font.NameFarEast);
-            string name = SafeFontString(() => font.Name);
-            if (!string.IsNullOrWhiteSpace(farEast))
-            {
-                return farEast.Trim();
-            }
-
-            return name;
-        }
-
         private static void ApplyFontName(Word.Range range, string fontName)
         {
             if (string.IsNullOrEmpty(fontName))
@@ -869,21 +805,6 @@ namespace WordAddIn1
                 {
                     NoteFormatWarning(key, ex.Message);
                 }
-            }
-        }
-
-        private static string MapAlignment(Word.WdParagraphAlignment alignment)
-        {
-            switch (alignment)
-            {
-                case Word.WdParagraphAlignment.wdAlignParagraphCenter:
-                    return "center";
-                case Word.WdParagraphAlignment.wdAlignParagraphRight:
-                    return "right";
-                case Word.WdParagraphAlignment.wdAlignParagraphJustify:
-                    return "justify";
-                default:
-                    return "left";
             }
         }
 

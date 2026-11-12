@@ -8,7 +8,7 @@ using WordAddIn1.DocumentMapping.CodeResolve;
 namespace WordAddIn1
 {
     /// <summary>
-    /// Phase 2：格式上下文组装（邻居遍历、fingerprint、char/para 摘要、pre_replace 读取）。
+    /// 格式上下文组装。字符格式来自 CharFormatRunReader，不附 pre_replace_format。
     /// </summary>
     public static class FormatContextHelper
     {
@@ -74,10 +74,6 @@ namespace WordAddIn1
 
             return null;
         }
-
-        private static readonly string[] CharFormatKeys = CharFormatCatalog.ApplyOrder;
-
-        private static readonly string[] ParaFormatKeys = { "alignment" };
 
         public static void DbgLog(string message)
         {
@@ -504,15 +500,6 @@ namespace WordAddIn1
                 $"entry {code} style_role={role.StyleRole} text_role={role.TextRole} " +
                 $"semantic_role={role.SemanticRole ?? "(null)"} conflict={role.RoleConflict}");
 
-            if (isTarget)
-            {
-                Dictionary<string, object> preReplace = DocumentState.TryGetPreReplaceFormat(code);
-                if (preReplace != null && preReplace.Count > 0)
-                {
-                    entry["pre_replace_format"] = BuildPreReplaceFormat(preReplace);
-                }
-            }
-
             return entry;
         }
 
@@ -529,47 +516,6 @@ namespace WordAddIn1
                 .Select(s => s.Trim())
                 .Where(s => !string.IsNullOrEmpty(s) && s.StartsWith("S_", StringComparison.Ordinal))
                 .ToList();
-        }
-
-        private static Dictionary<string, object> BuildPreReplaceFormat(Dictionary<string, object> snapshot)
-        {
-            var pre = new Dictionary<string, object>
-            {
-                ["format_fingerprint"] = FormatInheritHelper.BuildFingerprint(snapshot),
-                ["char_format"] = PickFields(snapshot, CharFormatKeys),
-                ["para_format"] = PickFields(snapshot, ParaFormatKeys)
-            };
-
-            foreach (string key in CharFormatKeys.Concat(ParaFormatKeys))
-            {
-                if (snapshot.TryGetValue(key, out object value))
-                {
-                    pre[key] = value;
-                }
-            }
-
-            return pre;
-        }
-
-        private static Dictionary<string, object> PickFields(
-            Dictionary<string, object> snapshot,
-            IEnumerable<string> keys)
-        {
-            var picked = new Dictionary<string, object>();
-            if (snapshot == null)
-            {
-                return picked;
-            }
-
-            foreach (string key in keys)
-            {
-                if (snapshot.TryGetValue(key, out object value))
-                {
-                    picked[key] = value;
-                }
-            }
-
-            return picked;
         }
 
         private static string BuildTextPreview(string content)

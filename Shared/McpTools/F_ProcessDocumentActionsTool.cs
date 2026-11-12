@@ -2502,16 +2502,6 @@ namespace WordAddIn1
                     $"ExecuteReplace newSentenceCount={newSentences.Count} codes={names.Count} " +
                     $"format_mode={formatMode}");
 
-                Dictionary<string, object> pendingPreReplaceSnapshot = null;
-                if (names.Count >= 3)
-                {
-                    pendingPreReplaceSnapshot = FormatInheritHelper.ExtractSnapshot(targetRange);
-                    result.PendingPreReplaceSnapshot = pendingPreReplaceSnapshot;
-                    FormatContextHelper.DbgLog(
-                        $"ExecuteReplace Extract 暂存 pre_replace 首句={names[0]} " +
-                        $"fingerprint={FormatInheritHelper.BuildFingerprint(pendingPreReplaceSnapshot)}");
-                }
-
                 var newContentBuilder = new StringBuilder();
                 foreach (var sentence in newSentences)
                 {
@@ -3302,16 +3292,6 @@ namespace WordAddIn1
                     ApplySnapshotDiffToActionResult(mr, diff);
                 }
 
-                if (mr.type == "replace"
-                    && mr.PendingPreReplaceSnapshot != null
-                    && mr.new_codes != null
-                    && mr.new_codes.Count > 0)
-                {
-                    DocumentState.AttachPreReplaceToNewCodes(mr.new_codes, mr.PendingPreReplaceSnapshot);
-                    FormatContextHelper.DbgLog(
-                        $"Attach pre_replace → new_codes=[{string.Join(",", mr.new_codes)}]");
-                }
-
                 LogPendingVsSnapshotDiff(mr);
             }
         }
@@ -3409,7 +3389,6 @@ namespace WordAddIn1
         {
             ar.affected_codes = rep.OriginalCodes ?? new List<string>();
             ar.PendingNewSentences = rep.NewSentences ?? new List<string>();
-            ar.PendingPreReplaceSnapshot = rep.PendingPreReplaceSnapshot;
 
             if (!rep.Success)
             {
@@ -3510,7 +3489,6 @@ namespace WordAddIn1
             public List<string> NewSentences { get; set; }
             public string FormatMode { get; set; }
             public string FormatApplyError { get; set; }
-            public Dictionary<string, object> PendingPreReplaceSnapshot { get; set; }
         }
 
         private sealed class DeleteExecutionResult
@@ -3551,7 +3529,6 @@ namespace WordAddIn1
             public string format_apply_error { get; set; }
             public List<Dictionary<string, object>> format_warnings { get; set; }
             public List<string> PendingNewSentences { get; set; }
-            public Dictionary<string, object> PendingPreReplaceSnapshot { get; set; }
 
             public object ToResponseObject()
             {

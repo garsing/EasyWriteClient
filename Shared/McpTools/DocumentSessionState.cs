@@ -71,9 +71,6 @@ namespace WordAddIn1
 
         public ProcessDocumentCacheEntry LastProcessCache { get; set; }
 
-        public Dictionary<string, Dictionary<string, object>> PreReplaceByNewCode { get; } =
-            new Dictionary<string, Dictionary<string, object>>(StringComparer.Ordinal);
-
         public int SnapshotIdx { get; set; } = -1;
 
         public Dictionary<string, Dictionary<string, object>> SentenceNameToHeadingMap { get; } =
@@ -111,7 +108,6 @@ namespace WordAddIn1
         /// <summary>UUID 变更后清除易失状态；checkpoint restore 后亦调用（I6/B：不清 SentenceNameMapping）。</summary>
         public void ClearVolatileState()
         {
-            PreReplaceByNewCode.Clear();
             LastProcessCache = null;
             SnapshotHistory.Clear();
             NextSnapshotHistoryIndex = 0;
