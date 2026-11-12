@@ -99,8 +99,7 @@ namespace WordAddIn1
                 written = WordBreakWriteHelper.WriteTextWithBreaks(doc, target, story);
             }
 
-            Dbg("WriteReplace written " + RangeBrief(written)
-                + " lists=" + ListsBrief(written));
+            Dbg("WriteReplace written " + RangeBrief(written));
             return written;
         }
 
@@ -116,8 +115,7 @@ namespace WordAddIn1
                 + " story=" + Snip(story)
                 + " " + RangeBrief(insertAt));
             Word.Range written = WordBreakWriteHelper.WriteTextWithBreaks(doc, insertAt, story);
-            Dbg("WriteInsert written " + RangeBrief(written)
-                + " lists=" + ListsBrief(written));
+            Dbg("WriteInsert written " + RangeBrief(written));
             return written;
         }
 
@@ -138,19 +136,15 @@ namespace WordAddIn1
             int si = 0;
             try
             {
-                Word.Document doc = written.Document;
                 int start = written.Start;
                 int end = written.End;
-                for (int i = 1; i <= doc.Paragraphs.Count; i++)
+                Word.Paragraphs paras = written.Paragraphs;
+                int count = paras.Count;
+                for (int i = 1; i <= count; i++)
                 {
-                    Word.Paragraph p = doc.Paragraphs[i];
+                    Word.Paragraph p = paras[i];
                     Word.Range pr = p.Range;
-                    if (pr.End <= start || pr.Start >= end)
-                    {
-                        continue;
-                    }
-
-                    if (pr.Start < start)
+                    if (pr.End <= start || pr.Start >= end || pr.Start < start)
                     {
                         continue;
                     }
@@ -162,7 +156,7 @@ namespace WordAddIn1
 
                     string ls = ListStringOf(p);
                     bool want = AutonumConvert.SegmentHasOriginalTypePrefix(segs[si], originalMarks);
-                    Dbg("ClearExtra i=" + i
+                    Dbg("ClearExtra rp=" + i
                         + " ls=\"" + (ls ?? "") + "\""
                         + " seg=" + Snip(segs[si])
                         + " wantPrefix=" + want
@@ -183,7 +177,7 @@ namespace WordAddIn1
                     si++;
                 }
 
-                Dbg("ClearExtra done lists=" + ListsBrief(written));
+                Dbg("ClearExtra done checked=" + si);
             }
             catch (Exception ex)
             {
@@ -257,48 +251,13 @@ namespace WordAddIn1
 
                 Word.Range synth = doc.Range(start, end);
                 Dbg("TryFindReplace synth start=" + start + " end=" + end
-                    + " synthText=" + Snip(SafeText(synth))
-                    + " lists=" + ListsBrief(synth));
+                    + " synthText=" + Snip(SafeText(synth)));
                 return synth;
             }
             catch (Exception ex)
             {
                 Dbg("TryFindReplace err=" + ex.Message);
                 return null;
-            }
-        }
-
-        private static string ListsBrief(Word.Range range)
-        {
-            if (range == null)
-            {
-                return "(null)";
-            }
-
-            try
-            {
-                Word.Document doc = range.Document;
-                int start = range.Start;
-                int end = range.End;
-                var parts = new List<string>();
-                for (int i = 1; i <= doc.Paragraphs.Count; i++)
-                {
-                    Word.Paragraph p = doc.Paragraphs[i];
-                    Word.Range pr = p.Range;
-                    if (pr.End <= start || pr.Start >= end)
-                    {
-                        continue;
-                    }
-
-                    string ls = ListStringOf(p);
-                    parts.Add("p" + i + "[\"" + (ls ?? "") + "\"]" + Snip(SafeText(pr)));
-                }
-
-                return parts.Count == 0 ? "(none)" : string.Join(";", parts);
-            }
-            catch (Exception ex)
-            {
-                return "lists-err=" + ex.Message;
             }
         }
 

@@ -244,6 +244,13 @@ namespace WordDocumentRoundtripTest
                 return twoRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (string.Equals(caseFilter, "rp-paras", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Range.Paragraphs 是否只含圈定范围");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                return RpParaProbe.Run(host);
+            }
+
             if (string.Equals(caseFilter, "fs-sent-find", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "fs-para-find", StringComparison.OrdinalIgnoreCase))
             {
