@@ -573,17 +573,104 @@ namespace WordAddIn1
                 dst.StartAt = Convert.ToInt32(list["start_at"], CultureInfo.InvariantCulture);
             }
 
-            object cont = !restart;
-            object applyTo = Word.WdListApplyTo.wdListApplyToWholeList;
-            object behavior = Word.WdDefaultListBehavior.wdWord10ListBehavior;
-            listFormat.ApplyListTemplate(fresh, ref cont, ref applyTo, ref behavior);
             if (list.ContainsKey("picture_path"))
             {
-                int appliedLevel = listFormat.ListLevelNumber < 1 ? 1 : listFormat.ListLevelNumber;
-                if (!TryApplyPictureBullet(listFormat, listFormat.ListTemplate.ListLevels[appliedLevel], list["picture_path"]?.ToString()))
+                PaintPictureBullet(dst, list["picture_path"]?.ToString());
+            }
+
+            foreach (Word.Range target in WpsLookTargets(range, listFormat, restart))
+            {
+                object cont = !restart;
+                object applyTo = Word.WdListApplyTo.wdListApplyToSelection;
+                object behavior = Word.WdDefaultListBehavior.wdWord10ListBehavior;
+                target.ListFormat.ApplyListTemplate(fresh, ref cont, ref applyTo, ref behavior);
+            }
+
+            if (list.ContainsKey("picture_path")
+                && listFormat.ListType != Word.WdListType.wdListPictureBullet)
+            {
+                throw new InvalidOperationException("图片项目符号没有写上");
+            }
+        }
+
+        /// <summary>
+        /// WPS 的 ApplyNumberDefault 会把相邻段拆成两份列表。改样子时把当前这份和紧挨着的上一份都套上。
+        /// 整份列表套用会丢掉自定义编号格式，所以按段、按选区套。
+        /// </summary>
+        private static List<Word.Range> WpsLookTargets(Word.Range range, Word.ListFormat listFormat, bool restart)
+        {
+            var targets = new List<Word.Range>();
+            AddListRanges(targets, listFormat?.List);
+            if (targets.Count == 0 && range != null)
+            {
+                targets.Add(range);
+            }
+
+            if (restart || range?.Paragraphs == null || range.Paragraphs.Count < 1)
+            {
+                return targets;
+            }
+
+            try
+            {
+                Word.Paragraph prev = range.Paragraphs[1].Previous();
+                if (prev?.Range?.ListFormat != null
+                    && prev.Range.ListFormat.ListType != Word.WdListType.wdListNoNumbering)
                 {
-                    throw new InvalidOperationException("图片项目符号没有写上");
+                    AddListRanges(targets, prev.Range.ListFormat.List);
                 }
+            }
+            catch
+            {
+                /* 没有上一段 */
+            }
+
+            return targets;
+        }
+
+        private static void AddListRanges(List<Word.Range> targets, Word.List list)
+        {
+            if (list == null)
+            {
+                return;
+            }
+
+            Word.ListParagraphs paragraphs = list.ListParagraphs;
+            if (paragraphs == null)
+            {
+                return;
+            }
+
+            for (int i = 1; i <= paragraphs.Count; i++)
+            {
+                Word.Range item = paragraphs[i].Range;
+                if (item != null)
+                {
+                    targets.Add(item);
+                }
+            }
+        }
+
+        private static void PaintPictureBullet(Word.ListLevel listLevel, string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || listLevel == null)
+            {
+                throw new InvalidOperationException("picture_path 为空");
+            }
+
+            try
+            {
+                listLevel.ApplyPictureBullet(path);
+            }
+            catch
+            {
+                /* 换 bmp 再试 */
+            }
+
+            string bmp = EnsureBmp(path);
+            if (!string.Equals(bmp, path, StringComparison.OrdinalIgnoreCase))
+            {
+                listLevel.ApplyPictureBullet(bmp);
             }
         }
 
@@ -605,9 +692,22 @@ namespace WordAddIn1
         {
             try
             {
-                string name = range.Application?.Name ?? "";
-                return name.IndexOf("WPS", StringComparison.OrdinalIgnoreCase) >= 0
-                    || name.IndexOf("Kingsoft", StringComparison.OrdinalIgnoreCase) >= 0;
+                Word.Application app = range.Application;
+                string name = app?.Name ?? "";
+                string path = "";
+                try
+                {
+                    path = app?.Path ?? "";
+                }
+                catch
+                {
+                    path = "";
+                }
+
+                string blob = name + " " + path;
+                return blob.IndexOf("WPS", StringComparison.OrdinalIgnoreCase) >= 0
+                    || blob.IndexOf("Kingsoft", StringComparison.OrdinalIgnoreCase) >= 0
+                    || blob.IndexOf("金山", StringComparison.Ordinal) >= 0;
             }
             catch
             {
