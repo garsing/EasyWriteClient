@@ -6,6 +6,7 @@
       @click="toggleExpand"
     >
       <span class="tool-run-title">{{ title }}</span>
+      <span v-if="progressLabel" class="tool-run-progress">{{ progressLabel }}</span>
       <span
         class="chevron"
         :class="isExpanded ? 'chevron-down' : 'chevron-right'"
@@ -40,6 +41,7 @@ import { computed, ref, watch } from 'vue'
 import ToolCallBoxDisplayRule from './ToolCallBoxDisplayRule.vue'
 import ThinkingBox from './ThinkingBox.vue'
 import { currentRunTitle } from '../utils/toolRunGroup'
+import { formatActionProgressLabel } from '../utils/toolActionProgress'
 import { getToolAlias } from '../utils/toolAlias'
 
 const props = defineProps({
@@ -67,6 +69,14 @@ const toolName = computed(() => runTitle.value.toolName)
 const title = computed(() => {
   if (runTitle.value.thinking) return '思考'
   return toolAlias.value || toolName.value
+})
+
+const progressLabel = computed(() => {
+  if (runTitle.value.thinking) return ''
+  return formatActionProgressLabel({
+    progressCurrent: runTitle.value.progressCurrent,
+    progressTotal: runTitle.value.progressTotal
+  })
 })
 
 watch(
@@ -172,6 +182,14 @@ function childKey (segment, index) {
   font-size: 13px;
   font-weight: 500;
   color: #666;
+}
+
+.tool-run-progress {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #999;
+  font-variant-numeric: tabular-nums;
 }
 
 .tool-run-body {

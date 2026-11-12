@@ -144,29 +144,41 @@ function makeRun (run) {
 }
 
 /**
- * 折叠条标题：从后往前找当前这张已知名的工具。
- * 尾部还没补上 function.name 时沿用上一张。
+ * 折叠条当前工具：从后往前找已知名的那张。
+ * 尾部还没补上 function.name 时沿用上一张，进度也跟这张走。
  */
-export function currentToolName (segments) {
+export function currentToolSegment (segments) {
   const segs = segments || []
   for (let i = segs.length - 1; i >= 0; i--) {
     if (segs[i]?.type !== 'toolCall') continue
     const name = String(segs[i].toolName || '').trim()
-    if (name) return name
+    if (name) return segs[i]
   }
-  return ''
+  return null
+}
+
+export function currentToolName (segments) {
+  const seg = currentToolSegment(segments)
+  return seg ? String(seg.toolName || '').trim() : ''
 }
 
 /**
  * 外层折叠标题。末段仍是进行中的思考时显示「思考」，否则显示当前工具。
+ * 当前工具带进度时带上 current/total，标题栏折叠时也能看见。
  */
 export function currentRunTitle (segments) {
   const segs = segments || []
   const last = segs.length ? segs[segs.length - 1] : null
   if (last && last.type === 'thinking' && !last.isComplete) {
-    return { thinking: true, toolName: '' }
+    return { thinking: true, toolName: '', progressCurrent: 0, progressTotal: 0 }
   }
-  return { thinking: false, toolName: currentToolName(segs) }
+  const seg = currentToolSegment(segs)
+  return {
+    thinking: false,
+    toolName: seg ? String(seg.toolName || '').trim() : '',
+    progressCurrent: seg?.progressCurrent || 0,
+    progressTotal: seg?.progressTotal || 0
+  }
 }
 
 export function toolRunKey (run, index) {
