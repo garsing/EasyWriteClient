@@ -1,7 +1,12 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.Globalization;
+using System.IO;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
@@ -73,8 +78,8 @@ namespace WordAddIn1
             TryBool(paragraphRange, snap, applied, formatWarnings, "word_wrap", (pf, v) => pf.WordWrap = v);
             TryBool(paragraphRange, snap, applied, formatWarnings, "hanging_punctuation", (pf, v) => pf.HangingPunctuation = v);
             TryBool(paragraphRange, snap, applied, formatWarnings, "half_width_punctuation_on_top_of_line", (pf, v) => pf.HalfWidthPunctuationOnTopOfLine = v);
-            TryBool(paragraphRange, snap, applied, formatWarnings, "add_space_between_far_east_and_alpha", (pf, v) => pf.AddSpaceBetweenFarEastAndAlpha = v);
-            TryBool(paragraphRange, snap, applied, formatWarnings, "add_space_between_far_east_and_digit", (pf, v) => pf.AddSpaceBetweenFarEastAndDigit = v);
+            TryBool(paragraphRange, snap, applied, formatWarnings, "add_space_between_far_east_and_alpha", (pf, v) => WriteFarEastSpacing(paragraphRange, pf, v, true));
+            TryBool(paragraphRange, snap, applied, formatWarnings, "add_space_between_far_east_and_digit", (pf, v) => WriteFarEastSpacing(paragraphRange, pf, v, false));
             TryEnum<Word.WdTextboxTightWrap>(paragraphRange, snap, applied, formatWarnings, "textbox_tight_wrap", (pf, v) => pf.TextboxTightWrap = v);
             TryBool(paragraphRange, snap, applied, formatWarnings, "collapsed_by_default", (pf, v) => pf.CollapsedByDefault = v);
 
@@ -394,12 +399,17 @@ namespace WordAddIn1
             string kind = list.TryGetValue("kind", out object kindObj)
                 ? (kindObj?.ToString() ?? "").Trim().ToLowerInvariant()
                 : "";
+            bool restart = list.ContainsKey("continue_previous") && !IsTrue(list["continue_previous"]);
+            bool join = list.ContainsKey("continue_previous") && IsTrue(list["continue_previous"]);
             if (kind.Length > 0)
             {
-                ApplyListKind(listFormat, kind, list);
+                if (!(join && TryJoinPreviousList(range, listFormat)))
+                {
+                    ApplyListKind(listFormat, kind, list);
+                }
             }
 
-            if (list.ContainsKey("continue_previous") && !IsTrue(list["continue_previous"]))
+            if (restart)
             {
                 RestartList(listFormat);
             }
@@ -454,13 +464,12 @@ namespace WordAddIn1
 
             if (list.ContainsKey("picture_path") && kind != "picture_bullet")
             {
-                string path = list["picture_path"]?.ToString() ?? "";
-                if (path.Length == 0)
-                {
-                    throw new InvalidOperationException("picture_path 为空");
-                }
+                ApplyPictureBullet(listFormat, listLevel, list["picture_path"]?.ToString());
+            }
 
-                listLevel.ApplyPictureBullet(path);
+            if (kind != "picture_bullet")
+            {
+                ReapplyListTemplate(listFormat, continuePrevious: !restart, wholeList: !restart);
             }
         }
 
@@ -493,7 +502,7 @@ namespace WordAddIn1
 
                     listFormat.ApplyBulletDefault(ref behavior);
                     int level = listFormat.ListLevelNumber < 1 ? 1 : listFormat.ListLevelNumber;
-                    listFormat.ListTemplate.ListLevels[level].ApplyPictureBullet(path);
+                    ApplyPictureBullet(listFormat, listFormat.ListTemplate.ListLevels[level], path);
                     break;
                 default:
                     throw new InvalidOperationException("无法识别的 list.kind " + kind);
@@ -512,6 +521,188 @@ namespace WordAddIn1
             object applyTo = Word.WdListApplyTo.wdListApplyToSelection;
             object behavior = Word.WdDefaultListBehavior.wdWord10ListBehavior;
             listFormat.ApplyListTemplate(template, ref continuePrevious, ref applyTo, ref behavior);
+        }
+
+        /// <summary>接到上一段的同一份列表。WPS 上 ApplyNumberDefault 会另起一份。</summary>
+        private static bool TryJoinPreviousList(Word.Range range, Word.ListFormat listFormat)
+        {
+            if (range.Paragraphs == null || range.Paragraphs.Count < 1)
+            {
+                return false;
+            }
+
+            Word.Paragraph prev = range.Paragraphs[1].Previous();
+            for (int i = 0; i < 20 && prev != null; i++)
+            {
+                Word.ListFormat prevList = prev.Range.ListFormat;
+                if (prevList != null
+                    && prevList.ListTemplate != null
+                    && prevList.ListType != Word.WdListType.wdListNoNumbering)
+                {
+                    object cont = true;
+                    object applyTo = Word.WdListApplyTo.wdListApplyToSelection;
+                    object behavior = Word.WdDefaultListBehavior.wdWord10ListBehavior;
+                    listFormat.ApplyListTemplate(prevList.ListTemplate, ref cont, ref applyTo, ref behavior);
+                    return true;
+                }
+
+                prev = prev.Previous();
+            }
+
+            return false;
+        }
+
+        /// <summary>改完列表级后再套一次，WPS 才会把编号样子写进段落。</summary>
+        private static void ReapplyListTemplate(Word.ListFormat listFormat, bool continuePrevious, bool wholeList)
+        {
+            Word.ListTemplate template = listFormat.ListTemplate;
+            if (template == null)
+            {
+                return;
+            }
+
+            object cont = continuePrevious;
+            object applyTo = wholeList
+                ? (object)Word.WdListApplyTo.wdListApplyToWholeList
+                : Word.WdListApplyTo.wdListApplyToSelection;
+            object behavior = Word.WdDefaultListBehavior.wdWord10ListBehavior;
+            listFormat.ApplyListTemplate(template, ref cont, ref applyTo, ref behavior);
+        }
+
+        private static void ApplyPictureBullet(Word.ListFormat listFormat, Word.ListLevel listLevel, string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new InvalidOperationException("picture_path 为空");
+            }
+
+            listLevel.ApplyPictureBullet(path);
+            if (listFormat.ListType == Word.WdListType.wdListPictureBullet)
+            {
+                return;
+            }
+
+            string bmp = EnsureBmp(path);
+            if (!string.Equals(bmp, path, StringComparison.OrdinalIgnoreCase))
+            {
+                listLevel.ApplyPictureBullet(bmp);
+            }
+
+            if (listFormat.ListType != Word.WdListType.wdListPictureBullet)
+            {
+                throw new InvalidOperationException("图片项目符号没有写上");
+            }
+        }
+
+        private static string EnsureBmp(string path)
+        {
+            if (path.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase))
+            {
+                return path;
+            }
+
+            string bmp = Path.Combine(Path.GetTempPath(), "ew-pf-" + Guid.NewGuid().ToString("N") + ".bmp");
+            using (Image image = Image.FromFile(path))
+            {
+                image.Save(bmp, ImageFormat.Bmp);
+            }
+
+            return bmp;
+        }
+
+        private static void WriteFarEastSpacing(Word.Range range, Word.ParagraphFormat pf, int value, bool alpha)
+        {
+            if (alpha)
+            {
+                pf.AddSpaceBetweenFarEastAndAlpha = value;
+            }
+            else
+            {
+                pf.AddSpaceBetweenFarEastAndDigit = value;
+            }
+
+            if (FarEastSpacingMatches(pf, value, alpha))
+            {
+                return;
+            }
+
+            string name = alpha ? "AddSpaceBetweenFarEastAndAlpha" : "AddSpaceBetweenFarEastAndDigit";
+            pf.GetType().InvokeMember(
+                name,
+                BindingFlags.SetProperty,
+                null,
+                pf,
+                new object[] { value != 0 });
+            if (FarEastSpacingMatches(pf, value, alpha))
+            {
+                return;
+            }
+
+            PatchFarEastSpacingXml(range, alpha, value != 0);
+            if (!FarEastSpacingMatches(pf, value, alpha))
+            {
+                throw new InvalidOperationException(name + " 写上后读回不是预期值");
+            }
+        }
+
+        private static bool FarEastSpacingMatches(Word.ParagraphFormat pf, int value, bool alpha)
+        {
+            int got = alpha ? pf.AddSpaceBetweenFarEastAndAlpha : pf.AddSpaceBetweenFarEastAndDigit;
+            if (got == ParaFormatCatalog.WdUndefined || got == ParaFormatCatalog.WdToggle)
+            {
+                return false;
+            }
+
+            return (got != 0) == (value != 0);
+        }
+
+        private static void PatchFarEastSpacingXml(Word.Range range, bool alpha, bool on)
+        {
+            if (range.Paragraphs == null || range.Paragraphs.Count < 1)
+            {
+                throw new InvalidOperationException("没有段落可写中西文间距");
+            }
+
+            Word.Range para = range.Paragraphs[1].Range;
+            string xml = para.WordOpenXML;
+            if (string.IsNullOrEmpty(xml))
+            {
+                throw new InvalidOperationException("段落 XML 为空");
+            }
+
+            string tag = alpha ? "autoSpaceDE" : "autoSpaceDN";
+            string patched = UpsertPPrBool(xml, tag, on ? "1" : "0");
+            para.InsertXML(patched);
+        }
+
+        private static string UpsertPPrBool(string xml, string tag, string val)
+        {
+            string element = "<w:" + tag + " w:val=\"" + val + "\"/>";
+            var existing = new Regex("<w:" + tag + "\\b[^>]*/>");
+            if (existing.IsMatch(xml))
+            {
+                return existing.Replace(xml, element, 1);
+            }
+
+            int close = xml.IndexOf("</w:pPr>", StringComparison.Ordinal);
+            if (close >= 0)
+            {
+                return xml.Insert(close, element);
+            }
+
+            int open = xml.IndexOf("<w:p", StringComparison.Ordinal);
+            if (open < 0)
+            {
+                throw new InvalidOperationException("段落 XML 里没有 w:p");
+            }
+
+            int gt = xml.IndexOf('>', open);
+            if (gt < 0)
+            {
+                throw new InvalidOperationException("段落 XML 的 w:p 不完整");
+            }
+
+            return xml.Insert(gt + 1, "<w:pPr>" + element + "</w:pPr>");
         }
 
         private static void WriteDropCap(Word.Range range, object raw)

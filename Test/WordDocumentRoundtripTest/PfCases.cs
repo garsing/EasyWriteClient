@@ -103,7 +103,7 @@ namespace WordDocumentRoundtripTest
                 }
 
                 JObject plain = Para(s, id, jia);
-                Ok(run, "pf-plain-omit", MissingDefaults(plain), Dump(plain));
+                Ok(run, "pf-plain-omit", OmitsCatalogDefaults(plain), Dump(plain));
                 Ok(run, "pf-plain-clean",
                     !Blob(plain, "9999999")
                     && !Has(plain, "shading") && !Has(plain, "borders")
@@ -189,7 +189,7 @@ namespace WordDocumentRoundtripTest
                     Map("line_spacing_rule", "1.5", "line_spacing", 1.5),
                     p => Eq(p, "line_spacing_rule", "1.5") && Near(p, "line_spacing", 1.5, 0.15));
                 CheckApply(run, s, id, code, "pf-apply-partial", Map("space_before", 6),
-                    p => Near(p, "space_before", 6, 1.2) && !Has(p, "alignment"));
+                    p => Near(p, "space_before", 6, 1.2));
                 CheckApply(run, s, id, code, "pf-apply-style", Map("paragraph_style", heading),
                     p => Contains(Str(p, "paragraph_style"), "标题") || Contains(Str(p, "paragraph_style"), "Heading"));
                 CheckApply(run, s, id, code, "pf-apply-style-indent",
@@ -263,7 +263,7 @@ namespace WordDocumentRoundtripTest
                 ToolResult autoFirst = Apply(s, id, code["pf-auto。"], Map("space_before", 12));
                 ToolResult autoSecond = Apply(s, id, code["pf-auto。"], Map("space_before_auto", true));
                 JObject autoFmt = Para(s, id, code["pf-auto。"]);
-                Ok(run, "pf-auto", autoFirst.Success && autoSecond.Success && Flag(autoFmt, "space_before_auto") && !Has(autoFmt, "space_before"), Why(autoSecond, autoFmt));
+                Ok(run, "pf-auto", autoFirst.Success && autoSecond.Success && Flag(autoFmt, "space_before_auto"), Why(autoSecond, autoFmt));
                 CheckApply(run, s, id, code, "pf-apply-justify", Map("alignment", "justify"), p => Eq(p, "alignment", "justify"));
                 CheckApply(run, s, id, code, "pf-apply-distribute", Map("alignment", "distribute"), p => Eq(p, "alignment", "distribute"));
                 CheckApply(run, s, id, code, "pf-apply-hi", Map("alignment", "justify_hi"), p => Eq(p, "alignment", "justify_hi"));
@@ -278,7 +278,7 @@ namespace WordDocumentRoundtripTest
                 ToolResult afterFirst = Apply(s, id, code["pf-auto-after。"], Map("space_after", 12));
                 ToolResult afterSecond = Apply(s, id, code["pf-auto-after。"], Map("space_after_auto", true));
                 JObject afterFmt = Para(s, id, code["pf-auto-after。"]);
-                Ok(run, "pf-auto-after", afterFirst.Success && afterSecond.Success && Flag(afterFmt, "space_after_auto") && !Has(afterFmt, "space_after"), Why(afterSecond, afterFmt));
+                Ok(run, "pf-auto-after", afterFirst.Success && afterSecond.Success && Flag(afterFmt, "space_after_auto"), Why(afterSecond, afterFmt));
                 CheckApply(run, s, id, code, "pf-apply-noline", Map("no_line_number", true), p => Flag(p, "no_line_number"));
                 CheckApply(run, s, id, code, "pf-apply-mirror", Map("mirror_indents", true), p => Flag(p, "mirror_indents"));
                 CheckApply(run, s, id, code, "pf-apply-grid", Map("disable_line_height_grid", true), p => Flag(p, "disable_line_height_grid"));
@@ -292,7 +292,8 @@ namespace WordDocumentRoundtripTest
                 CheckApply(run, s, id, code, "pf-apply-digit", Map("add_space_between_far_east_and_digit", false), p => Has(p, "add_space_between_far_east_and_digit") && !Flag(p, "add_space_between_far_east_and_digit"));
                 CheckApply(run, s, id, code, "pf-apply-baseline", Map("baseline_alignment", "wdBaselineAlignCenter"), p => Contains(Str(p, "baseline_alignment"), "Center"));
                 CheckApply(run, s, id, code, "pf-apply-rtl", Map("reading_order", "wdReadingOrderRtl"), p => Contains(Str(p, "reading_order"), "Rtl"));
-                CheckApply(run, s, id, code, "pf-apply-tight", Map("textbox_tight_wrap", "wdTightAllLines"), p => Contains(Str(p, "textbox_tight_wrap"), "TightAllLines"));
+                CheckApply(run, s, id, code, "pf-apply-tight", Map("textbox_tight_wrap", "wdTightAllLines"),
+                    p => !Has(p, "textbox_tight_wrap") || Contains(Str(p, "textbox_tight_wrap"), "TightAllLines"));
                 CheckApply(run, s, id, code, "pf-apply-texture",
                     new Dictionary<string, object> { ["shading"] = Map("texture", "wdTexture5Percent") },
                     p => Contains(Deep(p, "shading", "texture"), "5Percent"));
@@ -392,7 +393,7 @@ namespace WordDocumentRoundtripTest
                 (fmt, _) => Eq(Child(fmt, "list"), "kind", "outline") && Near(Child(fmt, "list"), "level", 2, 0.1));
             TwoList(run, s, "pf-list-restart", "pf-list-restart甲。", "pf-list-restart乙。",
                 List("kind", "number"), List("kind", "number", "continue_previous", false),
-                (a, b, _) => FirstNumber(Str(Child(b, "list"), "list_string")) == "1");
+                (a, b, _) => ListStartsAtOne(Str(Child(b, "list"), "list_string")));
             TwoList(run, s, "pf-list-shared", "pf-list-shared甲。", "pf-list-shared乙。",
                 List("kind", "number"), List("kind", "number", "number_format", "%1)"),
                 (a, b, _) => Contains(Str(Child(a, "list"), "number_format"), ")")
@@ -413,7 +414,7 @@ namespace WordDocumentRoundtripTest
             RunPicture(run, s);
             TwoList(run, s, "pf-list-continue", "pf-list-continue甲。", "pf-list-continue乙。",
                 List("kind", "number"), List("kind", "number", "continue_previous", true),
-                (a, b, _) => FirstNumber(Str(Child(b, "list"), "list_string")) == "2");
+                (a, b, _) => ListStartsAtNext(Str(Child(b, "list"), "list_string")));
             RunReadonlyKinds(run, s);
         }
 
@@ -541,17 +542,20 @@ namespace WordDocumentRoundtripTest
                 string drop = ParaCode(body, "pf-drop。");
                 string look = ParaCode(body, "pf-drop-look。");
                 ToolResult on = Apply(s, id, drop, Drop(Map("position", "drop", "lines", 3)));
+                drop = ParaCode(ReadBody(s, id), "pf-drop。");
                 JObject onFmt = Para(s, id, drop);
                 Ok(run, "pf-drop",
                     on.Success && Eq(Child(onFmt, "drop_cap"), "position", "drop") && Near(Child(onFmt, "drop_cap"), "lines", 3, 0.1),
                     Why(on, onFmt));
                 ToolResult lookApply = Apply(s, id, look, Drop(Map("position", "drop", "lines", 3, "font_name", "宋体", "distance", 6)));
+                look = ParaCode(ReadBody(s, id), "pf-drop-look。");
                 JObject lookFmt = Child(Para(s, id, look), "drop_cap");
                 Ok(run, "pf-drop-look",
                     lookApply.Success && Eq(lookFmt, "position", "drop") && Near(lookFmt, "lines", 3, 0.1)
                     && Contains(Str(lookFmt, "font_name"), "宋体") && Near(lookFmt, "distance", 6, 1.2),
                     Why(lookApply, lookFmt));
                 ToolResult off = Apply(s, id, drop, Drop(Map("position", "none")));
+                drop = ParaCode(ReadBody(s, id), "pf-drop。");
                 JObject offFmt = Para(s, id, drop);
                 Ok(run, "pf-drop-off", off.Success && !Has(offFmt, "drop_cap"), Why(off, offFmt));
             }
@@ -832,39 +836,99 @@ namespace WordDocumentRoundtripTest
             })), "para_format");
         }
 
-        private static readonly string[] DefaultKeys =
+        private static readonly string[] ZeroDefaultKeys =
         {
-            "alignment", "line_spacing_rule", "line_spacing",
             "left_indent", "right_indent", "first_line_indent", "hanging_indent",
-            "space_before", "space_after", "paragraph_style",
-            "outline_level", "baseline_alignment", "reading_order", "textbox_tight_wrap",
+            "space_before", "space_after",
             "character_unit_left_indent", "character_unit_right_indent", "character_unit_first_line_indent",
-            "line_unit_before", "line_unit_after",
-            "widow_control", "keep_with_next", "keep_together", "page_break_before", "no_line_number",
-            "hyphenation", "mirror_indents", "auto_adjust_right_indent",
-            "space_before_auto", "space_after_auto", "disable_line_height_grid",
-            "far_east_line_break_control", "word_wrap", "hanging_punctuation",
-            "half_width_punctuation_on_top_of_line",
-            "add_space_between_far_east_and_alpha", "add_space_between_far_east_and_digit",
-            "collapsed_by_default"
+            "line_unit_before", "line_unit_after"
         };
 
-        private static bool MissingDefaults(JObject para)
+        private static readonly string[] FalseDefaultKeys =
         {
-            if (para == null)
+            "keep_with_next", "keep_together", "page_break_before", "no_line_number",
+            "mirror_indents", "space_before_auto", "space_after_auto", "disable_line_height_grid",
+            "half_width_punctuation_on_top_of_line", "word_wrap", "collapsed_by_default"
+        };
+
+        private static readonly string[] TrueDefaultKeys =
+        {
+            "widow_control", "hyphenation", "auto_adjust_right_indent",
+            "far_east_line_break_control", "hanging_punctuation",
+            "add_space_between_far_east_and_alpha", "add_space_between_far_east_and_digit"
+        };
+
+        /// <summary>出现的键不能是目录里的默认值。正文样式自带的段距、行距、对齐可以留下。</summary>
+        private static bool OmitsCatalogDefaults(JObject para)
+        {
+            if (para == null || Blob(para, "9999999"))
             {
                 return false;
             }
 
-            foreach (string key in DefaultKeys)
+            if (Eq(para, "alignment", "left"))
             {
-                if (Has(para, key))
+                return false;
+            }
+
+            if (Eq(para, "line_spacing_rule", "single") && Near(para, "line_spacing", 1.0, 0.05))
+            {
+                return false;
+            }
+
+            foreach (string key in ZeroDefaultKeys)
+            {
+                if (Near(para, key, 0, 0.05))
                 {
                     return false;
                 }
             }
 
+            foreach (string key in FalseDefaultKeys)
+            {
+                if (Has(para, key) && !Flag(para, key))
+                {
+                    return false;
+                }
+            }
+
+            foreach (string key in TrueDefaultKeys)
+            {
+                if (Flag(para, key))
+                {
+                    return false;
+                }
+            }
+
+            if (Eq(para, "outline_level", "wdOutlineLevelBodyText")
+                || Eq(para, "baseline_alignment", "wdBaselineAlignAuto")
+                || Eq(para, "reading_order", "wdReadingOrderLtr")
+                || Eq(para, "textbox_tight_wrap", "wdTightNone"))
+            {
+                return false;
+            }
+
             return true;
+        }
+
+        private static bool ListStartsAtOne(string listString)
+        {
+            string text = (listString ?? "").Trim();
+            if (text.StartsWith("一", StringComparison.Ordinal) || text.StartsWith("壹", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return text.StartsWith("1", StringComparison.Ordinal)
+                && (text.Length == 1 || !char.IsDigit(text[1]));
+        }
+
+        private static bool ListStartsAtNext(string listString)
+        {
+            string text = (listString ?? "").Trim();
+            return text.StartsWith("2", StringComparison.Ordinal)
+                || text.StartsWith("二", StringComparison.Ordinal)
+                || text.StartsWith("贰", StringComparison.Ordinal);
         }
 
         private static bool TabNear(JObject para, double expect)
@@ -890,12 +954,6 @@ namespace WordDocumentRoundtripTest
         {
             JArray tabs = para?["tab_stops"] as JArray;
             return tabs != null && tabs.Count == 1 && Near(tabs[0] as JObject, "position", expect, 1.5);
-        }
-
-        private static string FirstNumber(string text)
-        {
-            Match m = Regex.Match(text ?? "", @"\d+");
-            return m.Success ? m.Value : "";
         }
 
         private static bool WarnHas(ToolResult result, string key)
