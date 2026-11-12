@@ -13,19 +13,6 @@ namespace WordAddIn1
     /// </summary>
     public static class ParaFormatClusterExtractor
     {
-        private static readonly string[] FingerprintKeys =
-        {
-            "alignment",
-            "first_line_indent",
-            "left_indent",
-            "right_indent",
-            "hanging_indent",
-            "line_spacing_rule",
-            "line_spacing",
-            "space_before",
-            "space_after",
-        };
-
         public static Dictionary<string, object> Extract(Word.Document document, bool disallowBackendApi = false)
         {
             ProcessDocumentOptions options = ProcessDocumentOptions.ForGetDocumentContent("source_para_clusters");
@@ -210,7 +197,7 @@ namespace WordAddIn1
             }
 
             var sb = new StringBuilder();
-            foreach (string key in FingerprintKeys)
+            foreach (string key in ParaFormatCatalog.FingerprintKeys)
             {
                 if (!paraFormat.TryGetValue(key, out object val) || val == null)
                 {

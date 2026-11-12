@@ -5,7 +5,7 @@ using Word = Microsoft.Office.Interop.Word;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 批次 2：从 Word 段落 Range 读取 §2.1 para_format（effective COM）。
+    /// 从段落 Range 读取 para_format。默认值由 ParaFormatCatalog.OmitReadDefaults 拿掉。
     /// </summary>
     public static class ParaFormatReader
     {
@@ -31,86 +31,577 @@ namespace WordAddIn1
                 return format;
             }
 
-            try
-            {
-                Word.ParagraphFormat pf = paragraphRange.ParagraphFormat;
-                if (pf == null)
-                {
-                    DbgLog("Extract ParagraphFormat=null");
-                    ApplyDefaultLineSpacing(format);
-                    return format;
-                }
-
-                string alignment = MapAlignment(pf.Alignment);
-                if (!string.IsNullOrEmpty(alignment))
-                {
-                    format["alignment"] = alignment;
-                }
-
-                AppendIndentFields(format, pf);
-                AppendSpacingFields(format, pf);
-                ApplyDefaultLineSpacing(format);
-            }
-            catch (Exception ex)
-            {
-                DbgLog($"Extract 异常: {ex.Message}");
-                ApplyDefaultLineSpacing(format);
-            }
-
+            string normalStyle = ReadNormalStyleName(paragraphRange);
+            TryRead(format, "alignment", () => MapAlignment(paragraphRange.ParagraphFormat.Alignment));
+            TryReadParagraphFormat(format, paragraphRange);
+            TryReadStyle(format, paragraphRange);
+            TryReadShading(format, paragraphRange);
+            TryReadBorders(format, paragraphRange);
+            TryReadTabStops(format, paragraphRange);
+            TryReadList(format, paragraphRange);
+            TryReadDropCap(format, paragraphRange);
+            ParaFormatCatalog.OmitReadDefaults(format, normalStyle);
             return format;
         }
 
-        private static void AppendIndentFields(Dictionary<string, object> format, Word.ParagraphFormat pf)
+        private static void TryReadParagraphFormat(Dictionary<string, object> format, Word.Range range)
         {
-            float left = pf.LeftIndent;
-            if (IsNonZero(left))
+            Word.ParagraphFormat pf = range.ParagraphFormat;
+            if (pf == null)
             {
-                format["left_indent"] = RoundPt(left);
+                return;
             }
 
-            float right = pf.RightIndent;
-            if (IsNonZero(right))
+            TryReadIndentAndSpacing(format, pf);
+            TryReadFloat(format, "character_unit_left_indent", () => pf.CharacterUnitLeftIndent);
+            TryReadFloat(format, "character_unit_right_indent", () => pf.CharacterUnitRightIndent);
+            TryReadFloat(format, "character_unit_first_line_indent", () => pf.CharacterUnitFirstLineIndent);
+            TryReadFloat(format, "line_unit_before", () => pf.LineUnitBefore);
+            TryReadFloat(format, "line_unit_after", () => pf.LineUnitAfter);
+            TryReadBool(format, "mirror_indents", () => pf.MirrorIndents);
+            TryReadBool(format, "auto_adjust_right_indent", () => pf.AutoAdjustRightIndent);
+            TryReadBool(format, "space_before_auto", () => pf.SpaceBeforeAuto);
+            TryReadBool(format, "space_after_auto", () => pf.SpaceAfterAuto);
+            TryReadBool(format, "disable_line_height_grid", () => pf.DisableLineHeightGrid);
+            TryReadBool(format, "widow_control", () => pf.WidowControl);
+            TryReadBool(format, "keep_with_next", () => pf.KeepWithNext);
+            TryReadBool(format, "keep_together", () => pf.KeepTogether);
+            TryReadBool(format, "page_break_before", () => pf.PageBreakBefore);
+            TryReadBool(format, "no_line_number", () => pf.NoLineNumber);
+            TryReadBool(format, "hyphenation", () => pf.Hyphenation);
+            TryReadBool(format, "far_east_line_break_control", () => pf.FarEastLineBreakControl);
+            TryReadBool(format, "word_wrap", () => pf.WordWrap);
+            TryReadBool(format, "hanging_punctuation", () => pf.HangingPunctuation);
+            TryReadBool(format, "half_width_punctuation_on_top_of_line", () => pf.HalfWidthPunctuationOnTopOfLine);
+            TryReadBool(format, "add_space_between_far_east_and_alpha", () => pf.AddSpaceBetweenFarEastAndAlpha);
+            TryReadBool(format, "add_space_between_far_east_and_digit", () => pf.AddSpaceBetweenFarEastAndDigit);
+            TryReadBool(format, "collapsed_by_default", () => pf.CollapsedByDefault);
+            TryReadEnum(format, "outline_level", () => pf.OutlineLevel);
+            TryReadEnum(format, "baseline_alignment", () => pf.BaseLineAlignment);
+            TryReadEnum(format, "reading_order", () => pf.ReadingOrder);
+            TryReadEnum(format, "textbox_tight_wrap", () => pf.TextboxTightWrap);
+        }
+
+        private static void TryReadIndentAndSpacing(Dictionary<string, object> format, Word.ParagraphFormat pf)
+        {
+            TryReadFloat(format, "left_indent", () => pf.LeftIndent);
+            TryReadFloat(format, "right_indent", () => pf.RightIndent);
+            try
             {
-                format["right_indent"] = RoundPt(right);
+                float firstLine = pf.FirstLineIndent;
+                if (Math.Abs(firstLine - ParaFormatCatalog.WdUndefined) < 1f)
+                {
+                    return;
+                }
+
+                if (firstLine < -0.05f)
+                {
+                    format["hanging_indent"] = RoundPt(Math.Abs(firstLine));
+                }
+                else
+                {
+                    format["first_line_indent"] = RoundPt(firstLine);
+                }
+            }
+            catch (Exception ex)
+            {
+                DbgLog("first_line_indent 读取失败: " + ex.Message);
             }
 
-            float firstLine = pf.FirstLineIndent;
-            if (firstLine < -0.05f)
+            TryReadFloat(format, "space_before", () => pf.SpaceBefore);
+            TryReadFloat(format, "space_after", () => pf.SpaceAfter);
+            try
             {
-                format["hanging_indent"] = RoundPt(-firstLine);
+                Dictionary<string, object> linePair = ReadLineSpacing(pf);
+                format["line_spacing_rule"] = linePair["line_spacing_rule"];
+                format["line_spacing"] = linePair["line_spacing"];
             }
-            else if (IsNonZero(firstLine))
+            catch (Exception ex)
             {
-                format["first_line_indent"] = RoundPt(firstLine);
+                DbgLog("line_spacing 读取失败: " + ex.Message);
             }
         }
 
-        private static void AppendSpacingFields(Dictionary<string, object> format, Word.ParagraphFormat pf)
+        private static void TryReadStyle(Dictionary<string, object> format, Word.Range range)
         {
-            float spaceBefore = pf.SpaceBefore;
-            if (IsNonZero(spaceBefore))
+            try
             {
-                format["space_before"] = RoundPt(spaceBefore);
+                object styleObj = range.ParagraphFormat?.get_Style();
+                Word.Style style = styleObj as Word.Style;
+                string name = style?.NameLocal;
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    format["paragraph_style"] = name;
+                }
             }
-
-            float spaceAfter = pf.SpaceAfter;
-            if (IsNonZero(spaceAfter))
+            catch (Exception ex)
             {
-                format["space_after"] = RoundPt(spaceAfter);
+                DbgLog("paragraph_style 读取失败: " + ex.Message);
             }
-
-            Dictionary<string, object> linePair = ReadLineSpacing(pf);
-            format["line_spacing_rule"] = linePair["line_spacing_rule"];
-            format["line_spacing"] = linePair["line_spacing"];
         }
 
-        private static void ApplyDefaultLineSpacing(Dictionary<string, object> format)
+        private static string ReadNormalStyleName(Word.Range range)
         {
-            if (!format.ContainsKey("line_spacing_rule") || !format.ContainsKey("line_spacing"))
+            try
             {
-                format["line_spacing_rule"] = "single";
-                format["line_spacing"] = 1.0;
+                object index = Word.WdBuiltinStyle.wdStyleNormal;
+                Word.Style style = range.Document.Styles.get_Item(ref index);
+                return style?.NameLocal ?? "";
             }
+            catch (Exception ex)
+            {
+                DbgLog("Normal 样式名读取失败: " + ex.Message);
+                return "";
+            }
+        }
+
+        private static void TryReadShading(Dictionary<string, object> format, Word.Range range)
+        {
+            try
+            {
+                Word.Shading shading = range.ParagraphFormat.Shading;
+                var map = new Dictionary<string, object>();
+                TryPutEnum(map, "texture", () => shading.Texture);
+                TryPutColor(map, "background_pattern_color", () => shading.BackgroundPatternColor);
+                TryPutColor(map, "foreground_pattern_color", () => shading.ForegroundPatternColor);
+                if (map.Count > 0)
+                {
+                    format["shading"] = map;
+                }
+            }
+            catch (Exception ex)
+            {
+                DbgLog("shading 读取失败: " + ex.Message);
+            }
+        }
+
+        private static void TryReadBorders(Dictionary<string, object> format, Word.Range range)
+        {
+            try
+            {
+                Word.Borders borders = range.ParagraphFormat.Borders;
+                var map = new Dictionary<string, object>();
+                ReadBorder(map, borders, "top", Word.WdBorderType.wdBorderTop);
+                ReadBorder(map, borders, "bottom", Word.WdBorderType.wdBorderBottom);
+                ReadBorder(map, borders, "left", Word.WdBorderType.wdBorderLeft);
+                ReadBorder(map, borders, "right", Word.WdBorderType.wdBorderRight);
+                ReadBorder(map, borders, "horizontal", Word.WdBorderType.wdBorderHorizontal);
+                if (map.Count > 0)
+                {
+                    format["borders"] = map;
+                }
+            }
+            catch (Exception ex)
+            {
+                DbgLog("borders 读取失败: " + ex.Message);
+            }
+        }
+
+        private static void ReadBorder(
+            Dictionary<string, object> map,
+            Word.Borders borders,
+            string key,
+            Word.WdBorderType which)
+        {
+            try
+            {
+                Word.Border border = borders[which];
+                if (border == null || border.LineStyle == Word.WdLineStyle.wdLineStyleNone)
+                {
+                    return;
+                }
+
+                var edge = new Dictionary<string, object>();
+                string lineStyle = Enum.GetName(typeof(Word.WdLineStyle), border.LineStyle);
+                if (!string.IsNullOrEmpty(lineStyle))
+                {
+                    edge["line_style"] = lineStyle;
+                }
+
+                string lineWidth = Enum.GetName(typeof(Word.WdLineWidth), border.LineWidth);
+                if (!string.IsNullOrEmpty(lineWidth))
+                {
+                    edge["line_width"] = lineWidth;
+                }
+
+                edge["color"] = ColorToRgb(border.Color);
+                if (edge.Count > 0)
+                {
+                    map[key] = edge;
+                }
+            }
+            catch (Exception ex)
+            {
+                DbgLog("border " + key + " 读取失败: " + ex.Message);
+            }
+        }
+
+        private static void TryReadTabStops(Dictionary<string, object> format, Word.Range range)
+        {
+            try
+            {
+                var tabs = new List<Dictionary<string, object>>();
+                foreach (Word.TabStop stop in range.ParagraphFormat.TabStops)
+                {
+                    try
+                    {
+                        if (!stop.CustomTab)
+                        {
+                            continue;
+                        }
+
+                        var item = new Dictionary<string, object>
+                        {
+                            ["position"] = RoundPt(stop.Position),
+                        };
+                        string alignment = Enum.GetName(typeof(Word.WdTabAlignment), stop.Alignment);
+                        if (!string.IsNullOrEmpty(alignment))
+                        {
+                            item["alignment"] = alignment;
+                        }
+
+                        string leader = Enum.GetName(typeof(Word.WdTabLeader), stop.Leader);
+                        if (!string.IsNullOrEmpty(leader))
+                        {
+                            item["leader"] = leader;
+                        }
+
+                        tabs.Add(item);
+                    }
+                    catch (Exception ex)
+                    {
+                        DbgLog("tab 读取失败: " + ex.Message);
+                    }
+                }
+
+                if (tabs.Count > 0)
+                {
+                    format["tab_stops"] = tabs;
+                }
+            }
+            catch (Exception ex)
+            {
+                DbgLog("tab_stops 读取失败: " + ex.Message);
+            }
+        }
+
+        private static void TryReadList(Dictionary<string, object> format, Word.Range range)
+        {
+            try
+            {
+                Word.ListFormat listFormat = range.ListFormat;
+                if (listFormat == null)
+                {
+                    return;
+                }
+
+                string kind = MapListKind(listFormat.ListType);
+                if (string.IsNullOrEmpty(kind))
+                {
+                    return;
+                }
+
+                var list = new Dictionary<string, object>
+                {
+                    ["kind"] = kind,
+                };
+                try
+                {
+                    list["level"] = listFormat.ListLevelNumber;
+                }
+                catch (Exception ex)
+                {
+                    DbgLog("list.level 读取失败: " + ex.Message);
+                }
+
+                try
+                {
+                    string shown = listFormat.ListString;
+                    if (!string.IsNullOrEmpty(shown))
+                    {
+                        list["list_string"] = shown;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DbgLog("list_string 读取失败: " + ex.Message);
+                }
+
+                TryReadListLevel(list, listFormat, kind);
+                format["list"] = list;
+            }
+            catch (Exception ex)
+            {
+                DbgLog("list 读取失败: " + ex.Message);
+            }
+        }
+
+        private static void TryReadListLevel(Dictionary<string, object> list, Word.ListFormat listFormat, string kind)
+        {
+            try
+            {
+                Word.ListTemplate template = listFormat.ListTemplate;
+                if (template == null)
+                {
+                    return;
+                }
+
+                int level = 1;
+                if (list.TryGetValue("level", out object levelObj))
+                {
+                    level = Convert.ToInt32(levelObj);
+                }
+
+                if (level < 1)
+                {
+                    level = 1;
+                }
+
+                Word.ListLevel listLevel = template.ListLevels[level];
+                string numberStyle = Enum.GetName(typeof(Word.WdListNumberStyle), listLevel.NumberStyle);
+                if (!string.IsNullOrEmpty(numberStyle))
+                {
+                    list["number_style"] = numberStyle;
+                }
+
+                if (kind == "bullet" || kind == "picture_bullet")
+                {
+                    if (!string.IsNullOrEmpty(listLevel.NumberFormat))
+                    {
+                        list["bullet_char"] = listLevel.NumberFormat;
+                    }
+                }
+                else if (!string.IsNullOrEmpty(listLevel.NumberFormat))
+                {
+                    list["number_format"] = listLevel.NumberFormat;
+                }
+
+                list["start_at"] = listLevel.StartAt;
+            }
+            catch (Exception ex)
+            {
+                DbgLog("list level 读取失败: " + ex.Message);
+            }
+        }
+
+        private static void TryReadDropCap(Dictionary<string, object> format, Word.Range range)
+        {
+            try
+            {
+                if (range.Paragraphs == null || range.Paragraphs.Count < 1)
+                {
+                    return;
+                }
+
+                Word.DropCap drop = range.Paragraphs[1].DropCap;
+                if (drop == null)
+                {
+                    return;
+                }
+
+                var map = new Dictionary<string, object>
+                {
+                    ["position"] = MapDropPosition(drop.Position),
+                };
+                map["lines"] = drop.LinesToDrop;
+                if (!string.IsNullOrEmpty(drop.FontName))
+                {
+                    map["font_name"] = drop.FontName;
+                }
+
+                map["distance"] = RoundPt(drop.DistanceFromText);
+                format["drop_cap"] = map;
+            }
+            catch (Exception ex)
+            {
+                DbgLog("drop_cap 读取失败: " + ex.Message);
+            }
+        }
+
+        private static string MapListKind(Word.WdListType listType)
+        {
+            switch (listType)
+            {
+                case Word.WdListType.wdListBullet:
+                    return "bullet";
+                case Word.WdListType.wdListPictureBullet:
+                    return "picture_bullet";
+                case Word.WdListType.wdListSimpleNumbering:
+                    return "number";
+                case Word.WdListType.wdListOutlineNumbering:
+                    return "outline";
+                case Word.WdListType.wdListMixedNumbering:
+                    return "mixed";
+                case Word.WdListType.wdListListNumOnly:
+                    return "list_num_only";
+                default:
+                    return null;
+            }
+        }
+
+        private static string MapDropPosition(Word.WdDropPosition position)
+        {
+            switch (position)
+            {
+                case Word.WdDropPosition.wdDropNormal:
+                    return "drop";
+                case Word.WdDropPosition.wdDropMargin:
+                    return "margin";
+                default:
+                    return "none";
+            }
+        }
+
+        private static string MapAlignment(Word.WdParagraphAlignment alignment)
+        {
+            if ((int)alignment == ParaFormatCatalog.WdUndefined)
+            {
+                return null;
+            }
+
+            switch (alignment)
+            {
+                case Word.WdParagraphAlignment.wdAlignParagraphCenter:
+                    return "center";
+                case Word.WdParagraphAlignment.wdAlignParagraphRight:
+                    return "right";
+                case Word.WdParagraphAlignment.wdAlignParagraphJustify:
+                    return "justify";
+                case Word.WdParagraphAlignment.wdAlignParagraphDistribute:
+                    return "distribute";
+                case Word.WdParagraphAlignment.wdAlignParagraphJustifyMed:
+                    return "justify_med";
+                case Word.WdParagraphAlignment.wdAlignParagraphJustifyHi:
+                    return "justify_hi";
+                case Word.WdParagraphAlignment.wdAlignParagraphJustifyLow:
+                    return "justify_low";
+                case Word.WdParagraphAlignment.wdAlignParagraphThaiJustify:
+                    return "thai_justify";
+                case Word.WdParagraphAlignment.wdAlignParagraphLeft:
+                    return "left";
+                default:
+                    return null;
+            }
+        }
+
+        private static void TryRead(Dictionary<string, object> format, string key, Func<string> read)
+        {
+            try
+            {
+                string value = read();
+                if (!string.IsNullOrEmpty(value))
+                {
+                    format[key] = value;
+                }
+            }
+            catch (Exception ex)
+            {
+                DbgLog(key + " 读取失败: " + ex.Message);
+            }
+        }
+
+        private static void TryReadFloat(Dictionary<string, object> format, string key, Func<float> read)
+        {
+            try
+            {
+                float value = read();
+                if (Math.Abs(value - ParaFormatCatalog.WdUndefined) < 1f)
+                {
+                    return;
+                }
+
+                format[key] = RoundPt(value);
+            }
+            catch (Exception ex)
+            {
+                DbgLog(key + " 读取失败: " + ex.Message);
+            }
+        }
+
+        private static void TryReadBool(Dictionary<string, object> format, string key, Func<int> read)
+        {
+            try
+            {
+                int value = read();
+                if (value == ParaFormatCatalog.WdUndefined || value == ParaFormatCatalog.WdToggle)
+                {
+                    return;
+                }
+
+                format[key] = value != 0;
+            }
+            catch (Exception ex)
+            {
+                DbgLog(key + " 读取失败: " + ex.Message);
+            }
+        }
+
+        private static void TryReadEnum<T>(Dictionary<string, object> format, string key, Func<T> read)
+            where T : struct
+        {
+            try
+            {
+                T value = read();
+                int number = Convert.ToInt32(value);
+                if (number == ParaFormatCatalog.WdUndefined || number == ParaFormatCatalog.WdToggle)
+                {
+                    return;
+                }
+
+                string name = Enum.GetName(typeof(T), value);
+                if (!string.IsNullOrEmpty(name))
+                {
+                    format[key] = name;
+                }
+            }
+            catch (Exception ex)
+            {
+                DbgLog(key + " 读取失败: " + ex.Message);
+            }
+        }
+
+        private static void TryPutEnum<T>(Dictionary<string, object> map, string key, Func<T> read)
+            where T : struct
+        {
+            try
+            {
+                T value = read();
+                string name = Enum.GetName(typeof(T), value);
+                if (!string.IsNullOrEmpty(name))
+                {
+                    map[key] = name;
+                }
+            }
+            catch (Exception ex)
+            {
+                DbgLog(key + " 读取失败: " + ex.Message);
+            }
+        }
+
+        private static void TryPutColor(Dictionary<string, object> map, string key, Func<Word.WdColor> read)
+        {
+            try
+            {
+                map[key] = ColorToRgb(read());
+            }
+            catch (Exception ex)
+            {
+                DbgLog(key + " 读取失败: " + ex.Message);
+            }
+        }
+
+        private static string ColorToRgb(Word.WdColor wdColor)
+        {
+            if (wdColor == Word.WdColor.wdColorAutomatic || (int)wdColor == -16777216)
+            {
+                return "automatic";
+            }
+
+            int colorValue = (int)wdColor;
+            int b = (colorValue & 0xFF0000) >> 16;
+            int g = (colorValue & 0x00FF00) >> 8;
+            int r = colorValue & 0x0000FF;
+            return $"#{r:X2}{g:X2}{b:X2}";
         }
 
         internal static Dictionary<string, object> ReadLineSpacing(Word.ParagraphFormat pf)
@@ -194,28 +685,6 @@ namespace WordAddIn1
                 ["line_spacing_rule"] = rule,
                 ["line_spacing"] = spacing,
             };
-        }
-
-        private static string MapAlignment(Word.WdParagraphAlignment alignment)
-        {
-            switch (alignment)
-            {
-                case Word.WdParagraphAlignment.wdAlignParagraphCenter:
-                    return "center";
-                case Word.WdParagraphAlignment.wdAlignParagraphRight:
-                    return "right";
-                case Word.WdParagraphAlignment.wdAlignParagraphJustify:
-                    return "justify";
-                case Word.WdParagraphAlignment.wdAlignParagraphDistribute:
-                    return "distribute";
-                default:
-                    return "left";
-            }
-        }
-
-        private static bool IsNonZero(float value)
-        {
-            return Math.Abs(value) > 0.05f;
         }
 
         private static double RoundPt(float value)

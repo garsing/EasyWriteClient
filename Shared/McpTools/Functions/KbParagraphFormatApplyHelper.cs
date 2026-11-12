@@ -188,6 +188,7 @@ namespace WordAddIn1
             var skippedParagraphCodes = new List<string>();
             var applyErrors = new List<string>();
             var applyWarnings = new List<string>();
+            var formatWarnings = new List<Dictionary<string, object>>();
             var appliedFieldsUnion = new List<string>();
 
             foreach (string code in targetParagraphCodes)
@@ -241,7 +242,13 @@ namespace WordAddIn1
                     try
                     {
                         List<string> fieldWarnings;
-                        List<string> appliedFields = ParaFormatWriter.Apply(targetSpan, paraFormat, out fieldWarnings);
+                        List<Dictionary<string, object>> fieldFormatWarnings;
+                        List<string> appliedFields = ParaFormatWriter.Apply(
+                            targetSpan, paraFormat, out fieldWarnings, out fieldFormatWarnings);
+                        if (fieldFormatWarnings != null)
+                        {
+                            formatWarnings.AddRange(fieldFormatWarnings);
+                        }
                         foreach (string w in fieldWarnings)
                         {
                             if (!applyWarnings.Contains(w))
@@ -285,6 +292,7 @@ namespace WordAddIn1
                 appliedParagraphCodes,
                 skippedParagraphCodes,
                 applyWarnings,
+                formatWarnings,
                 appliedFieldsUnion,
                 applyErrors,
                 storageUuid,
@@ -315,6 +323,7 @@ namespace WordAddIn1
             List<string> appliedParagraphCodes,
             List<string> skippedParagraphCodes,
             List<string> warnings,
+            List<Dictionary<string, object>> formatWarnings,
             List<string> appliedFields,
             List<string> applyErrors,
             string storageUuid,
@@ -357,6 +366,11 @@ namespace WordAddIn1
             if (warnings.Count > 0)
             {
                 data["warnings"] = warnings;
+            }
+
+            if (formatWarnings != null && formatWarnings.Count > 0)
+            {
+                data["format_warnings"] = formatWarnings;
             }
 
             if (applyErrors.Count > 0)

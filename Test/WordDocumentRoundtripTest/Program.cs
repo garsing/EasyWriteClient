@@ -803,8 +803,11 @@ namespace WordDocumentRoundtripTest
                 && caseFilter.StartsWith("wl-", StringComparison.OrdinalIgnoreCase);
             bool runCharFmt = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt
                 && caseFilter.StartsWith("cf-", StringComparison.OrdinalIgnoreCase);
-            bool runFormat = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt
+            bool runParaFmt = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt
                 && !runCharFmt
+                && caseFilter.StartsWith("pf-", StringComparison.OrdinalIgnoreCase);
+            bool runFormat = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt
+                && !runCharFmt && !runParaFmt
                 && caseFilter.StartsWith("wg-", StringComparison.OrdinalIgnoreCase);
             bool runTable = !runFindStale && !runLayout && !runActions && !runFromFile && !runWriteFmt && !runFormat
                 && caseFilter.StartsWith("wt-", StringComparison.OrdinalIgnoreCase);
@@ -857,6 +860,10 @@ namespace WordDocumentRoundtripTest
             else if (runCharFmt)
             {
                 Console.WriteLine("文字 字符格式读写（cf-）");
+            }
+            else if (runParaFmt)
+            {
+                Console.WriteLine("文字 段落格式读写（pf-）");
             }
             else if (runFormat)
             {
@@ -948,6 +955,10 @@ namespace WordDocumentRoundtripTest
                 else if (runCharFmt)
                 {
                     CfCases.Run(run, host);
+                }
+                else if (runParaFmt)
+                {
+                    PfCases.Run(run, host);
                 }
                 else if (runFormat)
                 {
@@ -1118,6 +1129,11 @@ namespace WordDocumentRoundtripTest
             if (caseFilter != null && caseFilter.StartsWith("cf-", StringComparison.OrdinalIgnoreCase))
             {
                 return CfCases.Target;
+            }
+
+            if (caseFilter != null && caseFilter.StartsWith("pf-", StringComparison.OrdinalIgnoreCase))
+            {
+                return PfCases.Target;
             }
 
             if (runFindStale)

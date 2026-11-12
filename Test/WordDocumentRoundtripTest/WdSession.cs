@@ -879,6 +879,84 @@ namespace WordDocumentRoundtripTest
                 : WithWordDoc(fullPath, doc => PaintNeedleCore(doc, needle, prefixChars, fontProps, rangeProps));
         }
 
+        /// <summary>按正文找到所在段，把段落对象交给回调。Word / WPS 都走这段。</summary>
+        public bool EditParagraph(string fullPath, string needle, Action<object> edit)
+        {
+            if (edit == null || string.IsNullOrEmpty(needle))
+            {
+                return false;
+            }
+
+            try
+            {
+                return IsWps
+                    ? WithWpsDoc(fullPath, doc => EditParagraphCore(doc, needle, edit))
+                    : WithWordDoc(fullPath, doc => EditParagraphCore(doc, needle, edit));
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Word 强类型段落。WPS 请用 <see cref="EditParagraph"/>。</summary>
+        public bool EditWordParagraph(string fullPath, string needle, Action<Word.Paragraph> edit)
+        {
+            if (IsWps || edit == null || string.IsNullOrEmpty(needle))
+            {
+                return false;
+            }
+
+            return WithWordDoc(fullPath, doc =>
+            {
+                foreach (Word.Paragraph para in doc.Paragraphs)
+                {
+                    string text = para.Range.Text ?? "";
+                    if (text.IndexOf(needle, StringComparison.Ordinal) < 0)
+                    {
+                        continue;
+                    }
+
+                    edit(para);
+                    return true;
+                }
+
+                return false;
+            });
+        }
+
+        public string BuiltinStyleName(string fullPath, int wdBuiltinStyle)
+        {
+            string name = "";
+            bool ok = IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    name = ReadStyleName(doc, wdBuiltinStyle);
+                    return name.Length > 0;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    name = ReadStyleName(doc, wdBuiltinStyle);
+                    return name.Length > 0;
+                });
+            return ok ? name : "";
+        }
+
+        public static object ComGet(object target, string name)
+        {
+            return GetProp(target, name);
+        }
+
+        public static void ComSet(object target, string name, object value)
+        {
+            SetProp(target, name, value);
+        }
+
+        public static object ComCall(object target, string name, params object[] args)
+        {
+            return Invoke(target, name, args);
+        }
+
         /// <summary>
         /// 只铺句子里的一截。charCount &lt;= 0 表示从 startChar 铺到句末。
         /// </summary>
@@ -2973,6 +3051,48 @@ namespace WordDocumentRoundtripTest
             catch
             {
                 return null;
+            }
+        }
+
+        private static bool EditParagraphCore(object doc, string needle, Action<object> edit)
+        {
+            try
+            {
+                object paras = GetProp(doc, "Paragraphs");
+                int n = Convert.ToInt32(GetProp(paras, "Count"));
+                for (int i = 1; i <= n; i++)
+                {
+                    object para = Invoke(paras, "Item", i);
+                    object range = GetProp(para, "Range");
+                    string text = Convert.ToString(GetProp(range, "Text")) ?? "";
+                    if (text.IndexOf(needle, StringComparison.Ordinal) < 0)
+                    {
+                        continue;
+                    }
+
+                    edit(para);
+                    return true;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
+            return false;
+        }
+
+        private static string ReadStyleName(object doc, int wdBuiltinStyle)
+        {
+            try
+            {
+                object styles = GetProp(doc, "Styles");
+                object style = Invoke(styles, "Item", wdBuiltinStyle);
+                return Convert.ToString(GetProp(style, "NameLocal")) ?? "";
+            }
+            catch
+            {
+                return "";
             }
         }
 
