@@ -244,6 +244,18 @@ namespace WordDocumentRoundtripTest
                 return twoRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (string.Equals(caseFilter, "cf-super-bleed", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("分片上标是否粘到后文");
+                return SuperBleedProbe.Run();
+            }
+
+            if (string.Equals(caseFilter, "cf-super-bleed-show", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("打开对照稿：旧路径与新路径");
+                return SuperBleedProbe.Show();
+            }
+
             if (string.Equals(caseFilter, "rp-paras", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("Range.Paragraphs 是否只含圈定范围");
