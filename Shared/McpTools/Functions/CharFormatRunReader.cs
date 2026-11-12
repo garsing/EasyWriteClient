@@ -19,6 +19,12 @@ namespace WordAddIn1
         private static readonly XNamespace A = "http://schemas.openxmlformats.org/drawingml/2006/main";
         private static readonly XNamespace Mc = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
+        /// <summary>
+        /// 读到默认黄突出显示时挂在区间上，不放进 char_format，避免被抄回去写成格式键。
+        /// </summary>
+        public const string InsertHighlightNote =
+            "highlight_color_index 为 wdYellow 时，可能是插入或替换自动加上的突出显示，用来标出写入位置，不要当成异常格式。";
+
         public static bool TryParse(
             string wordOpenXml,
             out List<Dictionary<string, object>> runs,
@@ -640,11 +646,18 @@ namespace WordAddIn1
                 }
             }
 
-            spans.Add(new Dictionary<string, object>
+            var span = new Dictionary<string, object>
             {
                 ["text"] = text,
                 ["char_format"] = snap
-            });
+            };
+            if (snap.TryGetValue("highlight_color_index", out object highlight)
+                && string.Equals(highlight?.ToString(), "wdYellow", StringComparison.OrdinalIgnoreCase))
+            {
+                span["highlight_note"] = InsertHighlightNote;
+            }
+
+            spans.Add(span);
         }
 
         private static string RunText(XElement run)
