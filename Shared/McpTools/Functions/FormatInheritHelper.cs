@@ -22,6 +22,45 @@ namespace WordAddIn1
         public static readonly bool EnableDbg = false;
 
         /// <summary>
+        /// 写路径上会粘住插入点的开关。没传就写成关掉。套格式工具不要调用。
+        /// </summary>
+        private static readonly string[] WriteDefaultOffKeys =
+        {
+            "is_bold", "is_italic", "has_underline", "has_strikethrough",
+            "is_superscript", "is_subscript",
+            "bold_bi", "italic_bi", "double_strikethrough",
+            "shadow", "outline", "emboss", "engrave",
+            "small_caps", "all_caps", "contextual_alternates",
+            "disable_character_space_grid"
+        };
+
+        /// <summary>
+        /// 写路径：没传的开关写成关掉，没传的 <c>font_color</c> 写成 automatic。
+        /// 已传入的键不动。字体名、字号、浅黄、突出显示、<c>no_proofing</c>、下划线线型、对象键不补。
+        /// 套格式工具不要调用。
+        /// </summary>
+        public static void FillUnspecifiedWriteDefaults(Dictionary<string, object> snapshot)
+        {
+            if (snapshot == null)
+            {
+                return;
+            }
+
+            foreach (string key in WriteDefaultOffKeys)
+            {
+                if (!snapshot.ContainsKey(key))
+                {
+                    snapshot[key] = false;
+                }
+            }
+
+            if (!snapshot.ContainsKey("font_color"))
+            {
+                snapshot["font_color"] = "automatic";
+            }
+        }
+
+        /// <summary>
         /// 写路径：缺 <c>background_color</c> 或值为 automatic 时填入 InsertBackground 的 RGB。
         /// 具体色不动。套格式工具不要调用。
         /// </summary>
@@ -55,12 +94,13 @@ namespace WordAddIn1
                 ConfigManager.DocumentColorHelper.InsertBackground);
         }
 
-        /// <summary>写格后套字符格式：先补浅黄再 <see cref="ApplySnapshot"/>。</summary>
+        /// <summary>写格后套字符格式：先补未传开关和字色、再补浅黄，然后 <see cref="ApplySnapshot"/>。</summary>
         public static void ApplyWrittenSnapshot(
             Word.Range range,
             Dictionary<string, object> snapshot,
             bool charFormatOnly = true)
         {
+            FillUnspecifiedWriteDefaults(snapshot);
             EnsureWrittenBackground(snapshot);
             ApplySnapshot(range, snapshot, charFormatOnly);
         }
@@ -403,6 +443,7 @@ namespace WordAddIn1
                 return;
             }
 
+            FillUnspecifiedWriteDefaults(snapshot);
             EnsureWrittenBackground(snapshot);
 
             string payload = payloadText ?? "";
