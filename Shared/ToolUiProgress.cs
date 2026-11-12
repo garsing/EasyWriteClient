@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace WordAddIn1
 {
@@ -8,6 +9,17 @@ namespace WordAddIn1
     public static class ToolUiProgress
     {
         public static Action<string, object> SendToJavaScript { get; set; }
+
+        public static string ResolveToolCallId(Dictionary<string, object> args)
+        {
+            string id = OpenDocumentPath.TryGetString(args, "__ew_tool_call_id");
+            if (string.IsNullOrEmpty(id))
+            {
+                id = ConversationContext.CurrentToolCallId;
+            }
+
+            return id;
+        }
 
         public static void Report(string toolCallId, int current, int total)
         {

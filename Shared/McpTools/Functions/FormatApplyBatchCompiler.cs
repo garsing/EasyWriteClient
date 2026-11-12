@@ -31,6 +31,29 @@ namespace WordAddIn1
             return args != null && args.ContainsKey("items");
         }
 
+        /// <summary>进度分母：有 items 时用数组条数；没有则按编译出的项号，不按拆开后的子操作数。</summary>
+        public static int ProgressItemCount(Dictionary<string, object> args, CompileResult compiled)
+        {
+            if (HasItems(args) && args["items"] is ICollection list && list.Count > 0)
+            {
+                return list.Count;
+            }
+
+            int max = -1;
+            if (compiled?.Ops != null)
+            {
+                foreach (CompiledOp op in compiled.Ops)
+                {
+                    if (op.ItemIndex > max)
+                    {
+                        max = op.ItemIndex;
+                    }
+                }
+            }
+
+            return max + 1;
+        }
+
         public static string ValidateDocumentItems(Dictionary<string, object> args)
         {
             if (ActionFormatHelper.HasCancelledInheritKeys(args))

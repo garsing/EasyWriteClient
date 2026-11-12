@@ -70,8 +70,11 @@ namespace WordAddIn1
                 int lastAddEnd = -1;
                 bool haveLastAdd = false;
 
+                string progressId = ToolUiProgress.ResolveToolCallId(args);
+                int progressTotal = items.Count;
                 for (int i = 0; i < items.Count; i++)
                 {
+                    ToolUiProgress.Report(progressId, i + 1, progressTotal);
                     CommentItem item = items[i];
                     var row = new Dictionary<string, object>
                     {
@@ -130,6 +133,8 @@ namespace WordAddIn1
 
                     results.Add(row);
                 }
+
+                ToolUiProgress.Report(progressId, progressTotal, progressTotal);
 
                 if (addCount > 0)
                 {

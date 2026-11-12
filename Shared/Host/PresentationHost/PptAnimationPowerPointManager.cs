@@ -183,8 +183,11 @@ namespace WordAddIn1.PresentationHost
 
             int cleared = ClearSequence(slide.TimeLine.MainSequence, null);
             int added = 0;
+            string progressId = ToolUiProgress.ResolveToolCallId(null);
+            int progressTotal = planned.Count;
             foreach (PlannedEffect one in planned)
             {
+                ToolUiProgress.Report(progressId, added + 1, progressTotal);
                 PowerPoint.Shape shape = FindShapeById(slide.Shapes, one.ComId);
                 if (!TryAddEffect(slide, shape, one, out error))
                 {
@@ -193,6 +196,8 @@ namespace WordAddIn1.PresentationHost
 
                 added++;
             }
+
+            ToolUiProgress.Report(progressId, progressTotal, progressTotal);
 
             var effects = ReadEffects(slide, slideId, null, out List<string> warnings);
             result = BuildResult(channelId, "ppt", "replace_all", slideId, effects, added, cleared, warnings);

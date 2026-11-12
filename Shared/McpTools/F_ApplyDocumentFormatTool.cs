@@ -92,28 +92,41 @@ namespace WordAddIn1
                 warnings.Add(warning);
             }
 
-            foreach (FormatApplyBatchCompiler.CompiledOp op in compiled.Ops)
+            int itemCount = FormatApplyBatchCompiler.ProgressItemCount(args, compiled);
+            string progressId = ToolUiProgress.ResolveToolCallId(args);
+            for (int k = 1; k <= itemCount; k++)
             {
-                Dictionary<string, object> oneArgs = FormatApplyBatchCompiler.CopyArgsForOp(args, op, "char_format");
-                ToolResult one = ApplyOne(oneArgs, doc, docHandle, wordApplication).GetAwaiter().GetResult();
-                string codes = string.Join(",", op.Codes ?? new List<string>());
-                if (one != null && one.Success)
+                ToolUiProgress.Report(progressId, k, itemCount);
+                foreach (FormatApplyBatchCompiler.CompiledOp op in compiled.Ops)
                 {
-                    applied.Add(new Dictionary<string, object>
+                    if (op.ItemIndex != k - 1)
                     {
-                        ["item_index"] = op.ItemIndex,
-                        ["codes"] = codes,
-                        ["data"] = one.Data
-                    });
-                }
-                else
-                {
-                    warnings.Add(FormatApplyBatchCompiler.Warning(
-                        op.ItemIndex,
-                        codes,
-                        one?.Error ?? "无法定位"));
+                        continue;
+                    }
+
+                    Dictionary<string, object> oneArgs = FormatApplyBatchCompiler.CopyArgsForOp(args, op, "char_format");
+                    ToolResult one = ApplyOne(oneArgs, doc, docHandle, wordApplication).GetAwaiter().GetResult();
+                    string codes = string.Join(",", op.Codes ?? new List<string>());
+                    if (one != null && one.Success)
+                    {
+                        applied.Add(new Dictionary<string, object>
+                        {
+                            ["item_index"] = op.ItemIndex,
+                            ["codes"] = codes,
+                            ["data"] = one.Data
+                        });
+                    }
+                    else
+                    {
+                        warnings.Add(FormatApplyBatchCompiler.Warning(
+                            op.ItemIndex,
+                            codes,
+                            one?.Error ?? "无法定位"));
+                    }
                 }
             }
+
+            ToolUiProgress.Report(progressId, itemCount, itemCount);
 
             var data = new Dictionary<string, object>
             {

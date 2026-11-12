@@ -231,8 +231,11 @@ namespace WordAddIn1.PresentationHost
 
             int cleared = ClearSequence(sequence, null);
             int added = 0;
+            string progressId = ToolUiProgress.ResolveToolCallId(null);
+            int progressTotal = plannedList.Count;
             foreach (Planned one in plannedList)
             {
+                ToolUiProgress.Report(progressId, added + 1, progressTotal);
                 if (!TryGetMainSequence(slide, out sequence, out error))
                 {
                     error = "替换动画时无法读取时间线: " + error;
@@ -247,6 +250,8 @@ namespace WordAddIn1.PresentationHost
 
                 added++;
             }
+
+            ToolUiProgress.Report(progressId, progressTotal, progressTotal);
 
             if (!TryGetMainSequence(slide, out sequence, out error))
             {

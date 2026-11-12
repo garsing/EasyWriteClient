@@ -131,8 +131,11 @@ namespace WordAddIn1.BrowserHost
             string stopReason = null;
             bool stopped = false;
 
+            string progressId = ToolUiProgress.ResolveToolCallId(null);
+            int progressTotal = steps == null ? 0 : steps.Count;
             for (int i = 0; i < steps.Count; i++)
             {
+                ToolUiProgress.Report(progressId, i + 1, progressTotal);
                 BrowserInteractStep step = steps[i] ?? new BrowserInteractStep();
                 if (stopped)
                 {
@@ -183,6 +186,7 @@ namespace WordAddIn1.BrowserHost
                 }
             }
 
+            ToolUiProgress.Report(progressId, progressTotal, progressTotal);
             return await FinishAsync(channel, items, lastSuccess).ConfigureAwait(true);
         }
 

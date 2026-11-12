@@ -44,8 +44,11 @@ namespace WordAddIn1
                         ProcessDocumentOptions.ForProcessActions("locate"));
 
                     var rendered = new List<RenderedProvenanceItem>();
+                    string progressId = ToolUiProgress.ResolveToolCallId(args);
+                    int progressTotal = items.Count;
                     for (int i = 0; i < items.Count; i++)
                     {
+                        ToolUiProgress.Report(progressId, i + 1, progressTotal);
                         AgentRunCancellation.ThrowIfCancelled();
                         ProvenanceItemInput item = items[i];
                         ProvenanceAnchorKind kind = DataProvenanceParamValidator.ResolveKind(item.Anchor?.Code);
@@ -121,6 +124,7 @@ namespace WordAddIn1
                     }
 
                     DataProvenanceWriteHelper.WriteReferenceSection(doc, sentenceItems);
+                    ToolUiProgress.Report(progressId, progressTotal, progressTotal);
 
                     return new ToolResult
                     {

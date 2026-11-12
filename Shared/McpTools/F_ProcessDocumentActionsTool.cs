@@ -95,11 +95,7 @@ namespace WordAddIn1
                     TakeInoperable(actions, itemFailed);
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] 解析操作成功，待写 {actions.Count} 个，已失败 {itemFailed.Count} 个");
                     timedActionCount = actions.Count + itemFailed.Count;
-                    string toolCallId = OpenDocumentPath.TryGetString(args, "__ew_tool_call_id");
-                    if (string.IsNullOrEmpty(toolCallId))
-                    {
-                        toolCallId = ConversationContext.CurrentToolCallId;
-                    }
+                    string toolCallId = ToolUiProgress.ResolveToolCallId(args);
                     ToolUiProgress.Report(toolCallId, 1, Math.Max(1, timedActionCount));
 
                     InsertTargetLocatorHelper.PrecheckResult precheck = null;

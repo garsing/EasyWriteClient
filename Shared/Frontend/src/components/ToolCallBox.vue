@@ -171,7 +171,6 @@ const displayName = computed(() => {
 })
 
 const progressLabel = computed(() => formatActionProgressLabel({
-  toolName: props.toolName,
   progressCurrent: props.progressCurrent,
   progressTotal: props.progressTotal
 }))
