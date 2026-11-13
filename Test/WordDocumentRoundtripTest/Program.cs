@@ -716,7 +716,13 @@ namespace WordDocumentRoundtripTest
                 bool wordWinBeforeText = OfficeAlive.HasWindow("WINWORD");
                 bool wpsWinBeforeText = OfficeAlive.HasWindow("wps");
                 WdSession.SweepBeforeRun(host);
-                var textRun = new TestRun { TotalTarget = TsCases.Target };
+                TsCases.IdFilter = caseFilter.StartsWith("ts-x", StringComparison.OrdinalIgnoreCase)
+                    ? caseFilter
+                    : null;
+                var textRun = new TestRun
+                {
+                    TotalTarget = TsCases.IdFilter == null ? TsCases.Target : 30
+                };
                 var textSw = Stopwatch.StartNew();
                 try
                 {

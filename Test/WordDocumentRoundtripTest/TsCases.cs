@@ -10,9 +10,11 @@ namespace WordDocumentRoundtripTest
     /// <summary>
     /// 句子内按字符串定位。铺稿用 COM，抄当次 S_ / P_。
     /// </summary>
-    internal static class TsCases
+    internal static partial class TsCases
     {
-        public const int Target = 18;
+        public const int Target = 48;
+
+        public static string IdFilter;
 
         private const string One = "见方法[1]与说明。";
         private const string Two = "见方法[1]与结果[1]。";
@@ -31,10 +33,18 @@ namespace WordDocumentRoundtripTest
             bool wpsWinBefore)
         {
             var s = new WdSession(host);
-            RunSentence(run, s);
-            RunParagraph(run, s);
-            RunOtherTool(run, s);
-            RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+            if (string.IsNullOrEmpty(IdFilter))
+            {
+                RunSentence(run, s);
+                RunParagraph(run, s);
+                RunOtherTool(run, s);
+            }
+
+            RunReinforce(run, s);
+            if (string.IsNullOrEmpty(IdFilter))
+            {
+                RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
+            }
         }
 
         private static void RunSentence(TestRun run, WdSession s)
@@ -419,7 +429,7 @@ namespace WordDocumentRoundtripTest
             };
         }
 
-        private static List<Dictionary<string, object>> ReplaceSlice(string code, string text, string neu)
+        private static List<Dictionary<string, object>> ReplaceSlice(string code, object text, string neu)
         {
             return new List<Dictionary<string, object>>
             {
@@ -440,7 +450,28 @@ namespace WordDocumentRoundtripTest
             };
         }
 
-        private static List<Dictionary<string, object>> InsertAfterSlice(string code, string text, string insert)
+        private static List<Dictionary<string, object>> ReplaceParagraphSlice(string code, object text, string neu)
+        {
+            return new List<Dictionary<string, object>>
+            {
+                new Dictionary<string, object>
+                {
+                    ["type"] = "replace",
+                    ["detail"] = new Dictionary<string, object>
+                    {
+                        ["original"] = new Dictionary<string, object>
+                        {
+                            ["paragraph_codes"] = code,
+                            ["text"] = text
+                        },
+                        ["new"] = neu,
+                        ["format"] = DefaultFormat()
+                    }
+                }
+            };
+        }
+
+        private static List<Dictionary<string, object>> InsertAfterSlice(string code, object text, string insert)
         {
             return InsertAt(new Dictionary<string, object>
             {
