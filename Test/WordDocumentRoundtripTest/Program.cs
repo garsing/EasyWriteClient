@@ -256,6 +256,46 @@ namespace WordDocumentRoundtripTest
                 return SuperBleedProbe.Show();
             }
 
+            if (caseFilter.StartsWith("cd-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "cd", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 写入未指定字符格式按默认（cd-）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                int wordBeforeCd = OfficeAlive.Count("WINWORD");
+                int wpsBeforeCd = OfficeAlive.Count("wps");
+                bool wordWinBeforeCd = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforeCd = OfficeAlive.HasWindow("wps");
+                WdSession.SweepBeforeRun(host);
+                var cdRun = new TestRun { TotalTarget = CdCases.Count(caseFilter) };
+                var cdSw = Stopwatch.StartNew();
+                try
+                {
+                    CdCases.Run(
+                        cdRun, host, caseFilter,
+                        wordBeforeCd, wpsBeforeCd, wordWinBeforeCd, wpsWinBeforeCd);
+                }
+                finally
+                {
+                    cdSw.Stop();
+                    WdSession.SweepAfterRun(host);
+                }
+
+                Console.WriteLine();
+                Console.WriteLine("正式用例 通过 " + cdRun.CasesPassed
+                    + "  失败 " + cdRun.CasesFailed
+                    + "  跳过 " + cdRun.CasesSkipped
+                    + "  （目标 " + cdRun.TotalTarget + "）");
+                Console.WriteLine("ELAPSED_SEC=" + cdSw.Elapsed.TotalSeconds.ToString("F1"));
+                return cdRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (string.Equals(caseFilter, "rp-paras", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("Range.Paragraphs 是否只含圈定范围");
