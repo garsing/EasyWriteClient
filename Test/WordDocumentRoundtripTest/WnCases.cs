@@ -13,7 +13,7 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static class WnCases
     {
-        public const int Target = 34;
+        public const int Target = 37;
 
         private const string SentA = "易写批注甲句。";
         private const string SentB = "易写批注乙句。";
@@ -40,6 +40,7 @@ namespace WordDocumentRoundtripTest
             RunRestore(run, s);
             RunDeletes(run, s);
             RunList(run, s);
+            RunContent(run, s);
             RunNoQuit(run, wordBefore, wpsBefore, wordWinBefore, wpsWinBefore);
         }
 
@@ -50,7 +51,8 @@ namespace WordDocumentRoundtripTest
             string[] ids =
             {
                 "wn-neg-no-comments", "wn-neg-empty", "wn-neg-blank", "wn-neg-mixed",
-                "wn-neg-author", "wn-neg-del-extra", "wn-neg-del-index"
+                "wn-neg-author", "wn-neg-text-content", "wn-neg-bad-path",
+                "wn-neg-del-extra", "wn-neg-del-index"
             };
             string path, id;
             if (!TryOpen(run, s, out path, out id, ids))
@@ -84,6 +86,35 @@ namespace WordDocumentRoundtripTest
                     ["target"] = new Dictionary<string, object> { ["position"] = "start" }
                 })),
                 "index");
+            ExpectFail(
+                run,
+                "wn-neg-text-content",
+                s.ProcessComments(id, Arr(new Dictionary<string, object>
+                {
+                    ["type"] = "add",
+                    ["text"] = NoteA,
+                    ["content"] = new object[]
+                    {
+                        new Dictionary<string, object> { ["type"] = "text", ["text"] = "见" }
+                    }
+                })),
+                "同时");
+            ExpectFail(
+                run,
+                "wn-neg-bad-path",
+                s.ProcessComments(id, Arr(new Dictionary<string, object>
+                {
+                    ["type"] = "add",
+                    ["content"] = new object[]
+                    {
+                        new Dictionary<string, object>
+                        {
+                            ["type"] = "image",
+                            ["path"] = @"C:\EasyWriteMissing\no-such-comment-image.png"
+                        }
+                    }
+                })),
+                "不存在");
             ToolResult badIndex = s.ProcessComments(id, Arr(DelItem(0)));
             string after = Ops(s, id);
             ToolResult listed = s.ListComments(id, null);
@@ -402,6 +433,81 @@ namespace WordDocumentRoundtripTest
                     && body.IndexOf("<image", StringComparison.Ordinal) >= 0
                     && body.IndexOf(NoteA, StringComparison.Ordinal) < 0,
                 !ins.Success ? (ins.Error ?? "插图失败") : (added.Error ?? "anchor=" + Anchor(Obj(added), 0)));
+            s.CloseDocByPath(path);
+        }
+
+        private static void RunContent(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, "wn-add-content"))
+            {
+                return;
+            }
+
+            string png = FixturePng.Ensure();
+            ToolResult added = s.ProcessComments(id, Arr(new Dictionary<string, object>
+            {
+                ["type"] = "add",
+                ["content"] = new object[]
+                {
+                    new Dictionary<string, object> { ["type"] = "text", ["text"] = "见" },
+                    new Dictionary<string, object> { ["type"] = "image", ["path"] = png },
+                    new Dictionary<string, object> { ["type"] = "text", ["text"] = "附图" }
+                }
+            }));
+            JArray rows = Comments(s.ListComments(id, null));
+            JObject row = rows.Count == 0 ? null : rows[rows.Count - 1] as JObject;
+            JArray content = row == null ? null : row["content"] as JArray;
+            string text = row == null ? "" : (row.Value<string>("text") ?? "");
+            int imageAt = -1;
+            if (content != null)
+            {
+                for (int i = 0; i < content.Count; i++)
+                {
+                    if ((content[i].Value<string>("type") ?? "") == "image")
+                    {
+                        imageAt = i;
+                        break;
+                    }
+                }
+            }
+
+            bool before = false;
+            bool after = false;
+            if (content != null && imageAt > 0)
+            {
+                for (int i = 0; i < imageAt; i++)
+                {
+                    if ((content[i].Value<string>("text") ?? "").IndexOf("见", StringComparison.Ordinal) >= 0)
+                    {
+                        before = true;
+                    }
+                }
+
+                for (int i = imageAt + 1; i < content.Count; i++)
+                {
+                    if ((content[i].Value<string>("text") ?? "").IndexOf("附图", StringComparison.Ordinal) >= 0)
+                    {
+                        after = true;
+                    }
+                }
+            }
+
+            bool order = before && after;
+            bool wordsOnly = text.IndexOf("见", StringComparison.Ordinal) >= 0
+                && text.IndexOf("附图", StringComparison.Ordinal) >= 0
+                && text.IndexOf("\u0001", StringComparison.Ordinal) < 0;
+            JObject image = imageAt >= 0 ? content[imageAt] as JObject : null;
+            string b64 = image == null ? "" : (image.Value<string>("image_base64") ?? "");
+            string note = image == null ? "" : (image.Value<string>("note") ?? "");
+            bool picture = !string.IsNullOrEmpty(b64)
+                || (string.Equals(s.Host, "wps", StringComparison.OrdinalIgnoreCase)
+                    && note == "该宿主未带出批注图片");
+            Ok(run, "wn-add-content",
+                added.Success && order && wordsOnly && picture,
+                !added.Success
+                    ? (added.Error ?? "增加失败")
+                    : "text=" + text + " note=" + note + " b64=" + (string.IsNullOrEmpty(b64) ? "0" : "1"));
             s.CloseDocByPath(path);
         }
 

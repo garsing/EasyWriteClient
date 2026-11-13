@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Threading.Tasks;
 using WordAddIn1.DocumentHost;
 using Word = Microsoft.Office.Interop.Word;
@@ -241,8 +242,22 @@ namespace WordAddIn1
                         return true;
                     }
 
-                    if (!dict.TryGetValue("text", out object textRaw) || textRaw == null
-                        || string.IsNullOrWhiteSpace(textRaw.ToString()))
+                    bool hasContent = dict.ContainsKey("content") && dict["content"] != null;
+                    bool hasText = dict.ContainsKey("text") && dict["text"] != null;
+                    if (hasContent && hasText)
+                    {
+                        failure = DocumentCheckpointMutatingTools.Fail("add 不能同时传 text 和 content");
+                        return true;
+                    }
+
+                    if (hasContent)
+                    {
+                        if (!TryValidateContent(dict["content"], out failure))
+                        {
+                            return true;
+                        }
+                    }
+                    else if (!hasText || string.IsNullOrWhiteSpace(dict["text"].ToString()))
                     {
                         failure = DocumentCheckpointMutatingTools.Fail("add 的 text 不能为空");
                         return true;
@@ -270,10 +285,10 @@ namespace WordAddIn1
                 }
                 else
                 {
-                    if (dict.ContainsKey("text") || dict.ContainsKey("target"))
+                    if (dict.ContainsKey("text") || dict.ContainsKey("target") || dict.ContainsKey("content"))
                     {
                         failure = DocumentCheckpointMutatingTools.Fail(
-                            "delete 只接受 index，不接受 text 或 target");
+                            "delete 只接受 index，不接受 text、target 或 content");
                         return true;
                     }
 
@@ -352,8 +367,139 @@ namespace WordAddIn1
 
             rangeStart = range.Start;
             rangeEnd = range.End;
+            if (item.Segments != null)
+            {
+                object placeholder = " ";
+                Word.Comment comment = doc.Comments.Add(range, ref placeholder);
+                if (!TryWriteContent(comment, item.Segments, out error))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+
             object text = item.Text;
             doc.Comments.Add(range, ref text);
+            return true;
+        }
+
+        private static bool TryWriteContent(
+            Word.Comment comment,
+            List<CommentSegment> segments,
+            out string error)
+        {
+            error = null;
+            try
+            {
+                Word.Range body = comment.Range;
+                if (body != null && !string.IsNullOrEmpty(body.Text))
+                {
+                    body.Text = "";
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "清空批注占位失败: " + ex.Message;
+                return false;
+            }
+
+            foreach (CommentSegment segment in segments)
+            {
+                try
+                {
+                    Word.Range end = comment.Range;
+                    end.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+                    if (segment.Kind == "text")
+                    {
+                        end.InsertAfter(segment.Text ?? "");
+                    }
+                    else
+                    {
+                        end.InlineShapes.AddPicture(
+                            FileName: segment.ImagePath,
+                            LinkToFile: false,
+                            SaveWithDocument: true);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    error = "写入批注内容失败: " + ex.Message;
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TryValidateContent(object raw, out ToolResult failure)
+        {
+            failure = null;
+            if (!TryEnumerateItems(raw, out List<object> parts, out _) || parts.Count == 0)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("content 必须是非空数组");
+                return false;
+            }
+
+            bool any = false;
+            foreach (object part in parts)
+            {
+                Dictionary<string, object> dict = ActionFormatHelper.CoerceDict(part);
+                if (dict == null || !dict.TryGetValue("type", out object typeRaw) || typeRaw == null
+                    || string.IsNullOrWhiteSpace(typeRaw.ToString()))
+                {
+                    failure = DocumentCheckpointMutatingTools.Fail("content 的段必须有 type");
+                    return false;
+                }
+
+                string kind = typeRaw.ToString().Trim().ToLowerInvariant();
+                if (kind != "text" && kind != "image")
+                {
+                    failure = DocumentCheckpointMutatingTools.Fail("content 的 type 只能是 text 或 image");
+                    return false;
+                }
+
+                if (kind == "text")
+                {
+                    if (!dict.TryGetValue("text", out object textRaw) || textRaw == null
+                        || string.IsNullOrWhiteSpace(textRaw.ToString()))
+                    {
+                        failure = DocumentCheckpointMutatingTools.Fail("content 的 text 不能为空");
+                        return false;
+                    }
+
+                    any = true;
+                    continue;
+                }
+
+                if (!dict.TryGetValue("path", out object pathRaw) || pathRaw == null
+                    || string.IsNullOrWhiteSpace(pathRaw.ToString()))
+                {
+                    failure = DocumentCheckpointMutatingTools.Fail("content 的 image 必须有 path");
+                    return false;
+                }
+
+                if (!FilePathResolver.TryResolve(pathRaw.ToString(), out ResolvedFilePath resolved, out string resolveError)
+                    || resolved == null
+                    || string.IsNullOrEmpty(resolved.LocalPath)
+                    || !File.Exists(resolved.LocalPath))
+                {
+                    string shown = string.IsNullOrEmpty(resolveError)
+                        ? pathRaw.ToString().Trim()
+                        : resolveError;
+                    failure = DocumentCheckpointMutatingTools.Fail("图片路径不存在: " + shown);
+                    return false;
+                }
+
+                any = true;
+            }
+
+            if (!any)
+            {
+                failure = DocumentCheckpointMutatingTools.Fail("content 里要有文字或图片");
+                return false;
+            }
+
             return true;
         }
 
@@ -459,7 +605,15 @@ namespace WordAddIn1
                 var item = new CommentItem { Type = type };
                 if (type == "add")
                 {
-                    item.Text = dict["text"].ToString().Trim();
+                    if (dict.ContainsKey("content") && dict["content"] != null)
+                    {
+                        item.Segments = ReadSegments(dict["content"]);
+                    }
+                    else
+                    {
+                        item.Text = dict["text"].ToString().Trim();
+                    }
+
                     if (dict.TryGetValue("target", out object targetRaw) && targetRaw != null)
                     {
                         item.Target = ActionFormatHelper.CoerceDict(targetRaw);
@@ -475,6 +629,31 @@ namespace WordAddIn1
             }
 
             return items;
+        }
+
+        private static List<CommentSegment> ReadSegments(object raw)
+        {
+            TryEnumerateItems(raw, out List<object> parts, out _);
+            var segments = new List<CommentSegment>();
+            foreach (object part in parts)
+            {
+                Dictionary<string, object> dict = ActionFormatHelper.CoerceDict(part);
+                string kind = dict["type"].ToString().Trim().ToLowerInvariant();
+                var segment = new CommentSegment { Kind = kind };
+                if (kind == "text")
+                {
+                    segment.Text = dict["text"].ToString();
+                }
+                else
+                {
+                    FilePathResolver.TryResolve(dict["path"].ToString(), out ResolvedFilePath resolved, out _);
+                    segment.ImagePath = resolved.LocalPath;
+                }
+
+                segments.Add(segment);
+            }
+
+            return segments;
         }
 
         private static bool TryEnumerateItems(
@@ -558,8 +737,16 @@ namespace WordAddIn1
         {
             public string Type;
             public string Text;
+            public List<CommentSegment> Segments;
             public Dictionary<string, object> Target;
             public int CommentIndex;
+        }
+
+        private sealed class CommentSegment
+        {
+            public string Kind;
+            public string Text;
+            public string ImagePath;
         }
     }
 }

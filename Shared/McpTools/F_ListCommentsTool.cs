@@ -90,8 +90,10 @@ namespace WordAddIn1
                             continue;
                         }
 
-                        rows.Add(ToRow(i, comment));
+                        rows.Add(ToRow(i, comment, docHandle.HostName));
                     }
+
+                    CommentImageContent.ApplySendBudget(rows);
 
                     string message = rows.Count == 0
                         ? (count == 0 ? "当前稿没有批注。" : "该范围里没有批注。")
@@ -142,19 +144,23 @@ namespace WordAddIn1
             }
         }
 
-        private static Dictionary<string, object> ToRow(int index, Word.Comment comment)
+        private static Dictionary<string, object> ToRow(int index, Word.Comment comment, string host)
         {
             string text = "";
             string author = "";
             string scopeText = "";
             bool point = false;
+            object body = null;
             try
             {
+                body = comment.Range;
                 text = comment.Range == null ? "" : (comment.Range.Text ?? "");
             }
             catch (Exception)
             {
             }
+
+            text = CommentImageContent.StripPictureControls(text);
 
             try
             {
@@ -188,11 +194,12 @@ namespace WordAddIn1
                 ["author"] = author,
                 ["scope_text"] = scopeText,
                 ["point"] = point,
-                ["replies"] = ReadReplies(comment)
+                ["content"] = CommentImageContent.Read(body, host),
+                ["replies"] = ReadReplies(comment, host)
             };
         }
 
-        private static List<Dictionary<string, object>> ReadReplies(Word.Comment comment)
+        private static List<Dictionary<string, object>> ReadReplies(Word.Comment comment, string host)
         {
             var replies = new List<Dictionary<string, object>>();
             try
@@ -204,13 +211,17 @@ namespace WordAddIn1
                     dynamic reply = bag[i];
                     string text = "";
                     string author = "";
+                    object replyRange = null;
                     try
                     {
+                        replyRange = reply.Range;
                         text = reply.Range.Text ?? "";
                     }
                     catch (Exception)
                     {
                     }
+
+                    text = CommentImageContent.StripPictureControls(text);
 
                     try
                     {
@@ -223,7 +234,8 @@ namespace WordAddIn1
                     replies.Add(new Dictionary<string, object>
                     {
                         ["text"] = text,
-                        ["author"] = author
+                        ["author"] = author,
+                        ["content"] = CommentImageContent.Read(replyRange, host)
                     });
                 }
             }
