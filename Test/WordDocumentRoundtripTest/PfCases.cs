@@ -15,7 +15,7 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static class PfCases
     {
-        public const int Target = 83;
+        public const int Target = 133;
 
         private const int AlignCenter = 1;
         private const int Heading1 = -2;
@@ -30,6 +30,7 @@ namespace WordDocumentRoundtripTest
             RunLists(run, s);
             RunDrop(run, s);
             RunDropTable(run, s);
+            RunExtra(run, s);
         }
 
         private static void RunRead(TestRun run, WdSession s)
@@ -600,6 +601,242 @@ namespace WordDocumentRoundtripTest
             {
                 s.CloseDocByPath(path);
             }
+        }
+
+        private static void RunExtra(TestRun run, WdSession s)
+        {
+            string[] ids =
+            {
+                "pf-x-exact", "pf-x-atleast", "pf-x-double", "pf-x-multi", "pf-x-single",
+                "pf-x-left36", "pf-x-first36", "pf-x-hang18", "pf-x-before24", "pf-x-after16", "pf-x-both-indent",
+                "pf-x-ol2", "pf-x-ol9", "pf-x-ol-body",
+                "pf-x-base-top", "pf-x-base-east", "pf-x-base-auto", "pf-x-rtl-back",
+                "pf-x-widow-back", "pf-x-hyphen-back", "pf-x-east-back", "pf-x-digit-back",
+                "pf-x-fe-back", "pf-x-hangpunct-back", "pf-x-adj-back",
+                "pf-x-keep-next", "pf-x-keep-back", "pf-x-page-back", "pf-x-wrap-back",
+                "pf-x-collapse-back", "pf-x-grid-back", "pf-x-mirror-back",
+                "pf-x-right", "pf-x-back-left", "pf-x-combo", "pf-x-keep-indent",
+                "pf-x-border-bot", "pf-x-border-off", "pf-x-shade-mag", "pf-x-shade-off",
+                "pf-x-tabs-two", "pf-x-tab-right", "pf-x-tab-dash",
+                "pf-x-unknown", "pf-x-sentinel", "pf-x-bad-align",
+                "pf-x-list-center", "pf-x-list-space",
+                "pf-x-neighbor", "pf-x-drop-margin"
+            };
+            var lines = new List<string>();
+            foreach (string caseId in ids)
+            {
+                if (caseId == "pf-x-neighbor")
+                {
+                    lines.Add("pf-x-neighbor甲。");
+                    lines.Add("pf-x-neighbor乙。");
+                    continue;
+                }
+
+                lines.Add(caseId + "。");
+            }
+
+            string path, id;
+            if (!OpenPlain(s, string.Join("\r", lines), out path, out id))
+            {
+                FailMany(run, "铺巩固稿失败", ids);
+                return;
+            }
+
+            try
+            {
+                string body = ReadBody(s, id);
+                var code = new Dictionary<string, string>();
+                foreach (string line in lines)
+                {
+                    code[line] = ParaCode(body, line);
+                }
+
+                if (string.IsNullOrEmpty(code["pf-x-exact。"]) || string.IsNullOrEmpty(code["pf-x-neighbor乙。"]))
+                {
+                    FailMany(run, "抄不到巩固 P_", ids);
+                    return;
+                }
+
+                CheckApply(run, s, id, code, "pf-x-exact", Map("line_spacing_rule", "exact", "line_spacing", 20),
+                    p => Eq(p, "line_spacing_rule", "exact") && Near(p, "line_spacing", 20, 1.5));
+                CheckApply(run, s, id, code, "pf-x-atleast", Map("line_spacing_rule", "at_least", "line_spacing", 16),
+                    p => Eq(p, "line_spacing_rule", "at_least") && Near(p, "line_spacing", 16, 1.5));
+                CheckApply(run, s, id, code, "pf-x-double", Map("line_spacing_rule", "double", "line_spacing", 2),
+                    p => Eq(p, "line_spacing_rule", "double"));
+                CheckApply(run, s, id, code, "pf-x-multi", Map("line_spacing_rule", "multiple", "line_spacing", 1.25),
+                    p => Eq(p, "line_spacing_rule", "multiple") && Near(p, "line_spacing", 1.25, 0.08));
+                CheckApply(run, s, id, code, "pf-x-single", Map("line_spacing_rule", "single", "line_spacing", 1),
+                    p => (!Has(p, "line_spacing_rule") && !Has(p, "line_spacing"))
+                        || (Eq(p, "line_spacing_rule", "single") && Near(p, "line_spacing", 1, 0.05)));
+                CheckApply(run, s, id, code, "pf-x-left36", Map("left_indent", 36), p => Near(p, "left_indent", 36, 1.2));
+                CheckApply(run, s, id, code, "pf-x-first36", Map("first_line_indent", 36), p => Near(p, "first_line_indent", 36, 1.2));
+                CheckApply(run, s, id, code, "pf-x-hang18", Map("hanging_indent", 18), p => Near(p, "hanging_indent", 18, 1.2));
+                CheckApply(run, s, id, code, "pf-x-before24", Map("space_before", 24), p => Near(p, "space_before", 24, 1.2));
+                CheckApply(run, s, id, code, "pf-x-after16", Map("space_after", 16), p => Near(p, "space_after", 16, 1.2));
+                CheckApply(run, s, id, code, "pf-x-both-indent", Map("left_indent", 12, "right_indent", 12),
+                    p => Near(p, "left_indent", 12, 1.2) && Near(p, "right_indent", 12, 1.2));
+                CheckApply(run, s, id, code, "pf-x-ol2", Map("outline_level", "wdOutlineLevel2"),
+                    p => Contains(Str(p, "outline_level"), "2") && !Contains(Str(p, "outline_level"), "BodyText"));
+                CheckApply(run, s, id, code, "pf-x-ol9", Map("outline_level", "wdOutlineLevel9"),
+                    p => Contains(Str(p, "outline_level"), "9"));
+                CheckTwo(run, s, id, code, "pf-x-ol-body",
+                    Map("outline_level", "wdOutlineLevel2"),
+                    Map("outline_level", "wdOutlineLevelBodyText"),
+                    p => !Has(p, "outline_level") || Contains(Str(p, "outline_level"), "BodyText"));
+                CheckApply(run, s, id, code, "pf-x-base-top", Map("baseline_alignment", "wdBaselineAlignTop"),
+                    p => Contains(Str(p, "baseline_alignment"), "Top"));
+                CheckApply(run, s, id, code, "pf-x-base-east", Map("baseline_alignment", "wdBaselineAlignFarEast50"),
+                    p => Contains(Str(p, "baseline_alignment"), "FarEast"));
+                CheckTwo(run, s, id, code, "pf-x-base-auto",
+                    Map("baseline_alignment", "wdBaselineAlignCenter"),
+                    Map("baseline_alignment", "wdBaselineAlignAuto"),
+                    p => !Has(p, "baseline_alignment") || Contains(Str(p, "baseline_alignment"), "Auto"));
+                CheckTwo(run, s, id, code, "pf-x-rtl-back",
+                    Map("reading_order", "wdReadingOrderRtl"),
+                    Map("reading_order", "wdReadingOrderLtr"),
+                    p => !Has(p, "reading_order") || Contains(Str(p, "reading_order"), "Ltr"));
+                BackTrue(run, s, id, code, "pf-x-widow-back", "widow_control");
+                BackTrue(run, s, id, code, "pf-x-hyphen-back", "hyphenation");
+                BackTrue(run, s, id, code, "pf-x-east-back", "add_space_between_far_east_and_alpha");
+                BackTrue(run, s, id, code, "pf-x-digit-back", "add_space_between_far_east_and_digit");
+                BackTrue(run, s, id, code, "pf-x-fe-back", "far_east_line_break_control");
+                BackTrue(run, s, id, code, "pf-x-hangpunct-back", "hanging_punctuation");
+                BackTrue(run, s, id, code, "pf-x-adj-back", "auto_adjust_right_indent");
+                CheckApply(run, s, id, code, "pf-x-keep-next", Map("keep_with_next", true), p => Flag(p, "keep_with_next"));
+                BackFalse(run, s, id, code, "pf-x-keep-back", "keep_together");
+                BackFalse(run, s, id, code, "pf-x-page-back", "page_break_before");
+                BackFalse(run, s, id, code, "pf-x-wrap-back", "word_wrap");
+                BackFalse(run, s, id, code, "pf-x-collapse-back", "collapsed_by_default");
+                BackFalse(run, s, id, code, "pf-x-grid-back", "disable_line_height_grid");
+                BackFalse(run, s, id, code, "pf-x-mirror-back", "mirror_indents");
+                CheckApply(run, s, id, code, "pf-x-right", Map("alignment", "right"), p => Eq(p, "alignment", "right"));
+                CheckTwo(run, s, id, code, "pf-x-back-left", Map("alignment", "center"), Map("alignment", "left"),
+                    p => !Eq(p, "alignment", "center"));
+                CheckApply(run, s, id, code, "pf-x-combo",
+                    Map("alignment", "center", "space_before", 10, "keep_together", true),
+                    p => Eq(p, "alignment", "center") && Near(p, "space_before", 10, 1.2) && Flag(p, "keep_together"));
+                CheckTwo(run, s, id, code, "pf-x-keep-indent",
+                    Map("alignment", "center", "left_indent", 20),
+                    Map("space_before", 9),
+                    p => Eq(p, "alignment", "center") && Near(p, "left_indent", 20, 1.2) && Near(p, "space_before", 9, 1.2));
+                CheckApply(run, s, id, code, "pf-x-border-bot",
+                    Border("bottom", Map("line_style", "wdLineStyleSingle")),
+                    p => Contains(Deep(p, "borders", "bottom", "line_style"), "Single"));
+                CheckTwo(run, s, id, code, "pf-x-border-off",
+                    Border("top", Map("line_style", "wdLineStyleSingle")),
+                    Border("top", Map("line_style", "wdLineStyleNone")),
+                    p => !Has(p, "borders"));
+                CheckApply(run, s, id, code, "pf-x-shade-mag",
+                    Map("shading", Map("background_pattern_color", "#FF00FF")),
+                    p => Contains(Deep(p, "shading", "background_pattern_color"), "FF00FF"));
+                CheckTwo(run, s, id, code, "pf-x-shade-off",
+                    Map("shading", Map("background_pattern_color", "#00FF00")),
+                    Map("shading", Map(
+                        "texture", "wdTextureNone",
+                        "background_pattern_color", "automatic",
+                        "foreground_pattern_color", "automatic")),
+                    p => !Has(p, "shading"));
+                CheckApply(run, s, id, code, "pf-x-tabs-two", Tabs(36, 72),
+                    p => TabNear(p, 36) && TabNear(p, 72) && ((p["tab_stops"] as JArray)?.Count ?? 0) == 2);
+                CheckApply(run, s, id, code, "pf-x-tab-right",
+                    Map("tab_stops", new List<Dictionary<string, object>>
+                    {
+                        Map("position", 48, "alignment", "wdAlignTabRight")
+                    }),
+                    p => TabNear(p, 48) && Contains(Deep(p, "tab_stops"), "Right"));
+                CheckApply(run, s, id, code, "pf-x-tab-dash",
+                    Map("tab_stops", new List<Dictionary<string, object>>
+                    {
+                        Map("position", 60, "leader", "wdTabLeaderDashes")
+                    }),
+                    p => TabNear(p, 60) && Contains(Deep(p, "tab_stops"), "Dash"));
+                Dictionary<string, object> unknown = Map("alignment", "center", "not_a_para_key", 1);
+                string unknownCode = code["pf-x-unknown。"];
+                ToolResult unknownApply = Apply(s, id, unknownCode, unknown);
+                JObject unknownFmt = Para(s, id, unknownCode);
+                Ok(run, "pf-x-unknown",
+                    unknownApply.Success && WarnHas(unknownApply, "not_a_para_key") && Eq(unknownFmt, "alignment", "center"),
+                    Why(unknownApply, unknownFmt));
+                string sentinelCode = code["pf-x-sentinel。"];
+                ToolResult sentinelApply = Apply(s, id, sentinelCode, Map("alignment", "center", "space_before", 9999999));
+                JObject sentinelFmt = Para(s, id, sentinelCode);
+                Ok(run, "pf-x-sentinel",
+                    sentinelApply.Success && WarnHas(sentinelApply, "space_before") && Eq(sentinelFmt, "alignment", "center")
+                    && !Near(sentinelFmt, "space_before", 9999999, 1),
+                    Why(sentinelApply, sentinelFmt));
+                string badCode = code["pf-x-bad-align。"];
+                ToolResult badApply = Apply(s, id, badCode, Map("alignment", "diagonal"));
+                JObject badFmt = Para(s, id, badCode);
+                Ok(run, "pf-x-bad-align",
+                    badApply.Success && WarnHas(badApply, "alignment") && !Eq(badFmt, "alignment", "diagonal"),
+                    Why(badApply, badFmt));
+                Dictionary<string, object> listCenter = List("kind", "number");
+                listCenter["alignment"] = "center";
+                CheckApply(run, s, id, code, "pf-x-list-center", listCenter,
+                    p => Eq(p, "alignment", "center") && Eq(Child(p, "list"), "kind", "number"));
+                Dictionary<string, object> listSpace = List("kind", "bullet");
+                listSpace["space_before"] = 6;
+                CheckApply(run, s, id, code, "pf-x-list-space", listSpace,
+                    p => Eq(Child(p, "list"), "kind", "bullet") && Near(p, "space_before", 6, 1.2));
+                string neighborA = code["pf-x-neighbor甲。"];
+                string neighborB = code["pf-x-neighbor乙。"];
+                ToolResult neighborApply = Apply(s, id, neighborA, Map("alignment", "center"));
+                JObject neighborFmtA = Para(s, id, neighborA);
+                JObject neighborFmtB = Para(s, id, neighborB);
+                Ok(run, "pf-x-neighbor",
+                    neighborApply.Success && Eq(neighborFmtA, "alignment", "center") && !Eq(neighborFmtB, "alignment", "center"),
+                    Why(neighborApply, neighborFmtB));
+                string dropCode = code["pf-x-drop-margin。"];
+                ToolResult dropApply = Apply(s, id, dropCode, Drop(Map("position", "margin", "lines", 2)));
+                dropCode = ParaCodeEither(ReadBody(s, id), "pf-x-drop-margin。", "f-x-drop-margin。", "drop-margin。");
+                JObject dropFmt = Para(s, id, dropCode);
+                Ok(run, "pf-x-drop-margin",
+                    dropApply.Success && Eq(Child(dropFmt, "drop_cap"), "position", "margin") && Near(Child(dropFmt, "drop_cap"), "lines", 2, 0.1),
+                    Why(dropApply, dropFmt));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void BackTrue(
+            TestRun run,
+            WdSession s,
+            string id,
+            Dictionary<string, string> code,
+            string caseId,
+            string key)
+        {
+            CheckTwo(run, s, id, code, caseId, Map(key, false), Map(key, true), p => !Has(p, key));
+        }
+
+        private static void BackFalse(
+            TestRun run,
+            WdSession s,
+            string id,
+            Dictionary<string, string> code,
+            string caseId,
+            string key)
+        {
+            CheckTwo(run, s, id, code, caseId, Map(key, true), Map(key, false), p => !Has(p, key));
+        }
+
+        private static void CheckTwo(
+            TestRun run,
+            WdSession s,
+            string id,
+            Dictionary<string, string> code,
+            string caseId,
+            Dictionary<string, object> first,
+            Dictionary<string, object> second,
+            Func<JObject, bool> check)
+        {
+            string para = code[caseId + "。"];
+            ToolResult firstApply = Apply(s, id, para, first);
+            ToolResult secondApply = Apply(s, id, para, second);
+            JObject fmt = Para(s, id, para);
+            Ok(run, caseId, firstApply.Success && secondApply.Success && check(fmt), Why(secondApply, fmt));
         }
 
         private static void OneList(
