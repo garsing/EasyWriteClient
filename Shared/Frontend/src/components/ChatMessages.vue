@@ -148,6 +148,14 @@ const NEAR_BOTTOM_PX = 50
 let suppressScrollUntil = 0
 let resizeObserver = null
 const pinTimers = []
+let scrollLock = 0
+let lastScrollTop = 0
+let alignGen = 0
+let pointerDown = false
+let gestureActive = false
+let gestureStartTop = 0
+let gestureDelta = 0
+let gestureTimer = null
 
 function clearPinTimers () {
   while (pinTimers.length) {
@@ -157,9 +165,61 @@ function clearPinTimers () {
 
 function pinNow () {
   const el = messagesContainer.value
-  if (!el) return
+  if (!el || gestureActive) return
+  setScrollTop(el, el.scrollHeight)
+}
+
+function setScrollTop (el, value) {
+  scrollLock += 1
   suppressScrollUntil = performance.now() + 300
-  el.scrollTop = el.scrollHeight
+  el.scrollTop = value
+  lastScrollTop = el.scrollTop
+  scrollLock -= 1
+}
+
+function disarmUserPin () {
+  if (!userPinLatched.value || !userPinArmed.value) return
+  userPinArmed.value = false
+  shouldAutoScroll.value = false
+  alignGen += 1
+}
+
+function rearmUserPin () {
+  if (!userPinLatched.value || userPinArmed.value) return
+  userPinArmed.value = true
+  shouldAutoScroll.value = true
+  alignUserBubbleToTop()
+}
+
+function finishUserGesture () {
+  gestureTimer = null
+  gestureActive = false
+  const el = messagesContainer.value
+  if (!el || !userPinLatched.value) return
+  const top = el.scrollTop
+  const movedUp = top < gestureStartTop - 4
+  const movedDown = top > gestureStartTop + 4
+  const nearBottom = el.scrollHeight - top - el.clientHeight < NEAR_BOTTOM_PX
+  if (userPinArmed.value && movedUp) {
+    disarmUserPin()
+    return
+  }
+  if (!userPinArmed.value && movedDown && nearBottom) {
+    rearmUserPin()
+    return
+  }
+  if (userPinArmed.value) alignUserBubbleToTop()
+}
+
+function beginUserGesture (startTop) {
+  if (!gestureActive) {
+    gestureActive = true
+    gestureStartTop = startTop
+    gestureDelta = 0
+    alignGen += 1
+  }
+  if (gestureTimer) clearTimeout(gestureTimer)
+  gestureTimer = setTimeout(finishUserGesture, 180)
 }
 
 function lastUserTurn () {
@@ -174,9 +234,11 @@ function lastUserTurn () {
 }
 
 function alignUserBubbleToTop () {
+  if (gestureActive || !userPinArmed.value) return
+  const gen = alignGen
   nextTick(() => {
     requestAnimationFrame(() => {
-      if (!userPinArmed.value) return
+      if (gen !== alignGen || gestureActive || !userPinArmed.value) return
       const el = messagesContainer.value
       const found = lastUserTurn()
       if (!el || !found || el.clientHeight <= 0) return
@@ -185,9 +247,8 @@ function alignUserBubbleToTop () {
         userPinSpacerHeight.value = 0
         nextTick(() => {
           const box = messagesContainer.value
-          if (!box || !userPinArmed.value) return
-          suppressScrollUntil = performance.now() + 300
-          box.scrollTop = box.scrollHeight
+          if (!box || gen !== alignGen || gestureActive || !userPinArmed.value) return
+          setScrollTop(box, box.scrollHeight)
         })
         return
       }
@@ -195,11 +256,10 @@ function alignUserBubbleToTop () {
       nextTick(() => {
         const box = messagesContainer.value
         const again = lastUserTurn()
-        if (!box || !again || !userPinArmed.value) return
-        suppressScrollUntil = performance.now() + 300
+        if (!box || !again || gen !== alignGen || gestureActive || !userPinArmed.value) return
         const boxRect = box.getBoundingClientRect()
         const bubbleRect = again.bubble.getBoundingClientRect()
-        box.scrollTop = box.scrollTop + (bubbleRect.top - boxRect.top)
+        setScrollTop(box, box.scrollTop + (bubbleRect.top - boxRect.top))
       })
     })
   })
@@ -225,36 +285,49 @@ function forcePinToLatest () {
   pinTimers.push(setTimeout(pinNow, 200))
 }
 
+function onUserWheel (event) {
+  if (!userPinLatched.value || !event.deltaY) return
+  beginUserGesture(messagesContainer.value?.scrollTop ?? lastScrollTop)
+  gestureDelta += event.deltaY
+  if (gestureDelta < -8) disarmUserPin()
+}
+
+function onPointerDown () {
+  pointerDown = true
+}
+
+function onPointerUp () {
+  pointerDown = false
+}
+
 const handleScroll = () => {
-  if (!messagesContainer.value) return
-  if (performance.now() < suppressScrollUntil) return
-
   const container = messagesContainer.value
+  if (!container) return
   const scrollTop = container.scrollTop
-  const scrollHeight = container.scrollHeight
-  const clientHeight = container.clientHeight
-
-  const nearBottom = scrollHeight - scrollTop - clientHeight < NEAR_BOTTOM_PX
-  shouldAutoScroll.value = nearBottom
-  if (!userPinLatched.value) return
-  if (nearBottom) {
-    if (!userPinArmed.value) {
-      userPinArmed.value = true
-      alignUserBubbleToTop()
-    }
+  const prev = lastScrollTop
+  if (scrollLock > 0) {
+    lastScrollTop = scrollTop
     return
   }
-  if (userPinArmed.value) userPinArmed.value = false
+  lastScrollTop = scrollTop
+  if (!userPinLatched.value) {
+    shouldAutoScroll.value = container.scrollHeight - scrollTop - container.clientHeight < NEAR_BOTTOM_PX
+    return
+  }
+  if (performance.now() < suppressScrollUntil && !pointerDown && !gestureActive) return
+  const moved = Math.abs(scrollTop - prev) > 1
+  if (pointerDown && moved) beginUserGesture(prev)
+  else if (gestureActive) beginUserGesture(gestureStartTop)
+  if (gestureActive && userPinArmed.value && scrollTop < gestureStartTop - 4) disarmUserPin()
 }
 
 const scrollToBottom = () => {
-  if (shouldAutoScroll.value) {
-    nextTick(() => {
-      if (messagesContainer.value && shouldAutoScroll.value) {
-        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
-      }
-    })
-  }
+  if (gestureActive || !shouldAutoScroll.value) return
+  nextTick(() => {
+    const el = messagesContainer.value
+    if (!el || gestureActive || !shouldAutoScroll.value) return
+    setScrollTop(el, el.scrollHeight)
+  })
 }
 
 function applySearchHighlight () {
@@ -275,8 +348,12 @@ onMounted(() => {
   nextTick(() => {
     if (messagesContainer.value) {
       messagesContainer.value.addEventListener('scroll', handleScroll, { passive: true })
+      messagesContainer.value.addEventListener('wheel', onUserWheel, { passive: true })
+      messagesContainer.value.addEventListener('pointerdown', onPointerDown)
+      window.addEventListener('pointerup', onPointerUp)
       if (typeof ResizeObserver !== 'undefined') {
         resizeObserver = new ResizeObserver(() => {
+          if (gestureActive) return
           if (userPinArmed.value) alignUserBubbleToTop()
           else if (shouldAutoScroll.value) pinNow()
         })
@@ -291,12 +368,16 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearPinTimers()
+  if (gestureTimer) clearTimeout(gestureTimer)
+  window.removeEventListener('pointerup', onPointerUp)
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
   }
   if (messagesContainer.value) {
     messagesContainer.value.removeEventListener('scroll', handleScroll)
+    messagesContainer.value.removeEventListener('wheel', onUserWheel)
+    messagesContainer.value.removeEventListener('pointerdown', onPointerDown)
   }
 })
 
