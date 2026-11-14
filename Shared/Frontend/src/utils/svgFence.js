@@ -87,47 +87,159 @@ export function scanFences (text) {
   return fences
 }
 
-function svgFences (text) {
-  return scanFences(text).filter((fence) => fence.lang === 'svg')
+function isNameBoundary (text, index) {
+  if (index >= text.length) return true
+  return /[\s/>]/.test(text[index])
 }
 
-export function stripSvgFences (text) {
+function endOfTag (text, start) {
+  let quote = ''
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+    if (quote) {
+      if (ch === quote) quote = ''
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      continue
+    }
+    if (ch === '>') return i + 1
+  }
+  return -1
+}
+
+function findSvgOpen (text, from) {
+  const lower = text.toLowerCase()
+  let i = from
+  while (i < text.length) {
+    const at = lower.indexOf('<svg', i)
+    if (at < 0) return -1
+    if (isNameBoundary(text, at + 4)) return at
+    i = at + 4
+  }
+  return -1
+}
+
+/** 从 `<svg` 起找到配对的结束位置。没闭合返回 -1。 */
+function findSvgClose (text, start) {
+  const lower = text.toLowerCase()
+  let i = start
+  let depth = 0
+  while (i < text.length) {
+    if (text.startsWith('<!--', i)) {
+      const end = text.indexOf('-->', i + 4)
+      if (end < 0) return -1
+      i = end + 3
+      continue
+    }
+    if (text.startsWith('<![CDATA[', i)) {
+      const end = text.indexOf(']]>', i + 9)
+      if (end < 0) return -1
+      i = end + 3
+      continue
+    }
+    if (lower.startsWith('<svg', i) && isNameBoundary(text, i + 4)) {
+      const tagEnd = endOfTag(text, i)
+      if (tagEnd < 0) return -1
+      const selfClose = /\/\s*>$/.test(text.slice(i, tagEnd))
+      if (selfClose) {
+        if (depth === 0) return tagEnd
+      } else {
+        depth += 1
+      }
+      i = tagEnd
+      continue
+    }
+    if (lower.startsWith('</svg', i) && isNameBoundary(text, i + 5)) {
+      const tagEnd = endOfTag(text, i)
+      if (tagEnd < 0) return -1
+      depth -= 1
+      i = tagEnd
+      if (depth === 0) return i
+      continue
+    }
+    i += 1
+  }
+  return -1
+}
+
+function svgPieces (text) {
   const src = normalizeNewlines(text)
-  const fences = svgFences(src)
-  if (!fences.length) return src.trim().replace(/\n{3,}/g, '\n\n')
+  const fences = scanFences(src)
+  const pieces = []
+  for (const fence of fences) {
+    if (fence.lang !== 'svg') continue
+    pieces.push({
+      start: fence.start,
+      end: fence.end,
+      closed: fence.closed,
+      inner: fence.inner
+    })
+  }
+  let i = 0
+  while (i < src.length) {
+    const covering = fences.find((fence) => i >= fence.start && i < fence.end)
+    if (covering) {
+      i = covering.end
+      continue
+    }
+    const start = findSvgOpen(src, i)
+    if (start < 0) break
+    const inside = fences.find((fence) => start >= fence.start && start < fence.end)
+    if (inside) {
+      i = inside.end
+      continue
+    }
+    const end = findSvgClose(src, start)
+    if (end < 0) break
+    pieces.push({
+      start,
+      end,
+      closed: true,
+      inner: src.slice(start, end)
+    })
+    i = end
+  }
+  pieces.sort((a, b) => a.start - b.start)
+  return { src, pieces }
+}
+
+function removePieces (src, pieces) {
+  if (!pieces.length) return src.trim().replace(/\n{3,}/g, '\n\n')
   let out = ''
   let cursor = 0
-  for (const fence of fences) {
-    out += src.slice(cursor, fence.start)
-    cursor = fence.end
+  for (const piece of pieces) {
+    out += src.slice(cursor, piece.start)
+    cursor = piece.end
   }
   out += src.slice(cursor)
   return out.trim().replace(/\n{3,}/g, '\n\n')
 }
 
+export function stripSvgFences (text) {
+  const { src, pieces } = svgPieces(text)
+  return removePieces(src, pieces)
+}
+
 /**
- * 闭合且 sanitize(inner) 有结果的 svg 围栏换成单行占位。
- * 未闭合、非 svg、未通过门禁的原文留下。
+ * 闭合的 svg 围栏，以及正文里完整的 `<svg>…</svg>`，通过门禁后换成占位。
+ * 未闭合、未通过门禁的原文留下。
  */
 export function prepareSvgFences (text, sanitize) {
-  const src = normalizeNewlines(text)
-  const fences = svgFences(src)
+  const { src, pieces } = svgPieces(text)
   const slots = []
   let out = ''
   let cursor = 0
-  for (const fence of fences) {
-    if (!fence.closed) {
-      out += src.slice(cursor)
-      cursor = src.length
-      break
-    }
-    const safe = sanitize(fence.inner)
+  for (const piece of pieces) {
+    if (!piece.closed) break
+    const safe = sanitize(piece.inner)
     if (!safe) continue
     const id = slots.length
     slots.push(safe)
-    out += src.slice(cursor, fence.start)
+    out += src.slice(cursor, piece.start)
     out += `\n\n<div class="md-svg" data-svg-slot="${id}"></div>\n\n`
-    cursor = fence.end
+    cursor = piece.end
   }
   out += src.slice(cursor)
   return { text: out, slots }
