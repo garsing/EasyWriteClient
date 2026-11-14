@@ -46,6 +46,7 @@
       @mousedown.stop
     >
       <button type="button" class="history-ctx-item" @click="startRename">
+        <img :src="renameEditIcon" alt="" class="history-rename-icon" aria-hidden="true" />
         重命名
       </button>
     </div>
@@ -55,6 +56,7 @@
 <script setup>
 import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { formatRelativeTime, prepareRenameTitle } from '../services/conversationsApi.js'
+import renameEditIcon from '../assets/images/rename-edit.png'
 
 const props = defineProps({
   tasks: { type: Array, default: () => [] },
@@ -95,7 +97,7 @@ function onItemClick (item) {
 
 function openMenu (event, item) {
   if (item?.isDraft) return
-  const menuW = 128
+  const menuW = 96
   const menuH = 44
   let left = event.clientX
   let top = event.clientY
@@ -147,7 +149,7 @@ function onPointerDown (e) {
   if (editingId.value != null && !e.target?.closest?.('.history-title-input')) {
     commitRename()
   }
-  if (!e.target?.closest?.('.history-popover')) closeMenu()
+  closeMenu()
 }
 
 function onKeyDown (e) {
@@ -294,7 +296,7 @@ function onHistoryScroll (e) {
 .history-ctx-menu {
   position: fixed;
   z-index: 1100;
-  min-width: 128px;
+  width: max-content;
   padding: 4px;
   border-radius: 8px;
   background: #ffffff;
@@ -303,8 +305,11 @@ function onHistoryScroll (e) {
 }
 
 .history-ctx-item {
-  display: block;
-  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  white-space: nowrap;
   border: none;
   background: transparent;
   text-align: left;
@@ -314,6 +319,14 @@ function onHistoryScroll (e) {
   font-size: 13px;
   color: #1f1e1c;
   cursor: pointer;
+}
+
+.history-rename-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  flex-shrink: 0;
+  display: block;
 }
 
 .history-ctx-item:hover {

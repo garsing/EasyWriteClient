@@ -241,11 +241,12 @@
 
     <div
       v-if="taskMenu.visible"
-      class="open-file-ctx-menu"
+      class="open-file-ctx-menu task-rename-menu"
       :style="{ top: taskMenu.top + 'px', left: taskMenu.left + 'px' }"
       @mousedown.stop
     >
-      <button type="button" class="open-file-ctx-item" @click="startTaskRename">
+      <button type="button" class="open-file-ctx-item task-rename-item" @click="startTaskRename">
+        <img :src="renameEditIcon" alt="" class="task-rename-icon" aria-hidden="true" />
         重命名
       </button>
     </div>
@@ -356,6 +357,7 @@ import knowledgeBaseIcon from '../assets/images/knowledge_base.png'
 import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
 import userIcon from '../assets/images/avatar.png'
 import refreshIcon from '../assets/images/refresh.png'
+import renameEditIcon from '../assets/images/rename-edit.png'
 import { openFileSelectionKey } from '../utils/selectedOpenFiles.js'
 import { getToolAlias } from '../utils/toolAlias.js'
 import { listPersistentOpenFileGroups, resolveOpenFileAppGroupKey, resolveOpenFileTypeIcon } from '../utils/openFileAppIcon.js'
@@ -570,7 +572,7 @@ function openTaskContextMenu (event, item) {
   hideHoverTip()
   closeFileContextMenu()
   closeCreateMenu()
-  const menuW = 128
+  const menuW = 96
   const menuH = 44
   let left = event.clientX
   let top = event.clientY
@@ -1121,11 +1123,13 @@ function onGlobalPointerDown (e) {
   if (e.target?.closest?.('.open-file-ctx-menu')) return
   if (e.target?.closest?.('.open-file-group-add')) {
     closeFileContextMenu()
+    closeTaskMenu()
     hideCreateFailTip()
     return
   }
   closeFileContextMenu()
   closeCreateMenu()
+  closeTaskMenu()
   hideCreateFailTip()
 }
 
@@ -1713,6 +1717,27 @@ button.section-header {
 .open-file-ctx-item:disabled {
   color: #9a978f;
   cursor: not-allowed;
+}
+
+.task-rename-menu {
+  min-width: 0;
+  width: max-content;
+}
+
+.task-rename-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  white-space: nowrap;
+}
+
+.task-rename-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  flex-shrink: 0;
+  display: block;
 }
 
 .open-file-history-menu {
