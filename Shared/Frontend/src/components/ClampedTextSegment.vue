@@ -199,11 +199,38 @@ onUnmounted(() => {
 
 .text-segment-inner :deep(.md-svg-pending) {
   display: block;
-  margin: 10px 0;
-  color: #999;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 8px 10px 8px 0;
   font-size: 13px;
+  font-weight: 500;
   line-height: 1.4;
   user-select: none;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background-color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    #333 0%,
+    #333 42%,
+    #9a9a9a 50%,
+    #333 58%,
+    #333 100%
+  );
+  background-size: 280% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: svg-pending-shine 3.4s linear infinite;
+}
+
+@keyframes svg-pending-shine {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
 }
 
 .text-segment-inner :deep(.md-svg) {
@@ -226,6 +253,21 @@ onUnmounted(() => {
 
 .text-segment--clamped :deep(*) {
   color: inherit;
+}
+
+.text-segment--clamped :deep(.md-svg-pending) {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-segment-inner :deep(.md-svg-pending),
+  .text-segment--clamped :deep(.md-svg-pending) {
+    color: #666;
+    -webkit-text-fill-color: #666;
+    background-image: none;
+    animation: none;
+  }
 }
 
 .text-segment--clamped :deep(a) {
