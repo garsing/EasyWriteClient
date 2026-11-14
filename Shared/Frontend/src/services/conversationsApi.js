@@ -48,6 +48,53 @@ export async function listConversations ({ page = 1, pageSize = CONVERSATION_PAG
   }
 }
 
+/** 与自动标题 TITLE_MAX_CHARS 相同，按码点计数。 */
+export const CONVERSATION_TITLE_MAX = 20
+
+function oneLineTitle (value) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * 手改要提交的标题。删光或没改字时返回原字符串（不截断旧的长标题）；改了才截到 20 字。
+ */
+export function prepareRenameTitle (raw, original) {
+  const next = oneLineTitle(raw)
+  const prev = oneLineTitle(original)
+  if (!next || next === prev) {
+    return original == null ? '' : String(original)
+  }
+  return Array.from(next).slice(0, CONVERSATION_TITLE_MAX).join('')
+}
+
+/**
+ * 用户重命名。只改 title，不改最后消息时间。
+ */
+export async function renameConversation (id, title) {
+  const { headers, baseUrl } = await buildHeaders(true)
+  if (!headers.get('Authorization')) {
+    throw new Error('未登录')
+  }
+  const url = `${baseUrl.replace(/\/$/, '')}/conversations/rename`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ id: Number(id), title: title == null ? '' : String(title) })
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    let detail = ''
+    try {
+      const parsed = JSON.parse(text)
+      if (parsed && typeof parsed.detail === 'string') detail = parsed.detail
+    } catch {
+      detail = ''
+    }
+    throw new Error(detail || '重命名失败')
+  }
+  return res.json()
+}
+
 /**
  * 后端会话时间多为 utcnow() 的 naive ISO（无时区后缀）。
  * 浏览器会把无后缀的 ISO 当成本地时间，中国区会固定偏早 8 小时 → 「刚提问却显示 8 小时前」。

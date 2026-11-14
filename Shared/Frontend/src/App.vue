@@ -24,6 +24,7 @@
       @select-open-file="handleSelectOpenFile"
       @load-more="loadMoreTasks"
       @refresh-open-files="applyOpenFiles"
+      @rename="handleRenameTask"
     />
     <div
       class="chat-container"
@@ -58,6 +59,7 @@
           @select="handleCompactSelectTask"
           @close="historyPopoverOpen = false"
           @load-more="loadMoreTasks"
+          @rename="handleRenameTask"
         />
       </div>
       <ChatMessages
@@ -115,7 +117,7 @@ import { useWebViewBridge } from './composables/useWebViewBridge'
 import { useChatFileUpload } from './composables/useChatFileUpload'
 import { ToolCallAccumulator } from './utils/toolCallAccumulator'
 import { fetchChatEmptyState } from './services/chatEmptyStateApi.js'
-import { listConversations, CONVERSATION_PAGE_SIZE } from './services/conversationsApi.js'
+import { listConversations, renameConversation, CONVERSATION_PAGE_SIZE } from './services/conversationsApi.js'
 import { clearApiConfigCache } from './services/knowledgeBaseApi.js'
 import {
   MAX_SELECTED_OPEN_FILES,
@@ -216,6 +218,25 @@ async function toggleHistoryPopover () {
 async function handleCompactSelectTask (item) {
   await handleDesktopSelectTask(item)
   historyPopoverOpen.value = false
+}
+
+async function handleRenameTask ({ id, title, previous }) {
+  const item = taskList.value.find((t) => String(t.id) === String(id))
+  if (!item || item.isDraft) return
+  item.title = title
+  try {
+    const data = await renameConversation(id, title)
+    if (data && typeof data.title === 'string') {
+      item.title = data.title
+    }
+  } catch (e) {
+    item.title = previous
+    const msg = e?.message || '重命名失败'
+    panelHint.value = msg
+    setTimeout(() => {
+      if (panelHint.value === msg) panelHint.value = ''
+    }, 2000)
+  }
 }
 const taskList = ref([])
 const taskListLoading = ref(false)

@@ -180,19 +180,35 @@
             <div v-else-if="!isLoggedIn" class="hint empty">暂无对话</div>
             <div v-else-if="error && !tasks.length" class="hint error">{{ error }}</div>
             <div v-else-if="!tasks.length" class="hint empty">暂无对话</div>
-            <button
+            <div
               v-for="item in visibleTasks"
               :key="item.id"
-              type="button"
               class="task-item"
-              :class="{ active: String(item.id) === String(activeId), draft: !!item.isDraft }"
+              :class="{ active: String(item.id) === String(activeId), draft: !!item.isDraft, editing: isEditingTask(item) }"
+              role="button"
+              :tabindex="isEditingTask(item) ? -1 : 0"
               @mouseenter="showHoverTip($event, taskTooltip(item))"
               @mouseleave="hideHoverTip"
-              @click="$emit('select', item)"
+              @click="onTaskItemClick(item)"
+              @keydown.enter.prevent="onTaskItemClick(item)"
+              @contextmenu.prevent="openTaskContextMenu($event, item)"
             >
-              <span class="task-title">{{ item.title || '未命名任务' }}</span>
+              <input
+                v-if="isEditingTask(item)"
+                v-model="editingTitle"
+                class="task-title-input"
+                type="text"
+                :aria-label="'重命名 ' + (item.title || '未命名任务')"
+                @click.stop
+                @mousedown.stop
+                @keydown.enter.stop.prevent="commitTaskRename"
+                @keydown.esc.stop.prevent="commitTaskRename"
+                @blur="commitTaskRename"
+                @contextmenu.prevent
+              />
+              <span v-else class="task-title">{{ item.title || '未命名任务' }}</span>
               <span v-if="!item.isDraft" class="task-time">{{ formatRelativeTime(item.last_message_at || item.updated_at) }}</span>
-            </button>
+            </div>
             <div v-if="loadingMore" class="hint">加载更多…</div>
           </div>
         </div>
@@ -222,6 +238,17 @@
         maxWidth: hoverTip.maxWidth + 'px'
       }"
     >{{ hoverTip.text }}</div>
+
+    <div
+      v-if="taskMenu.visible"
+      class="open-file-ctx-menu"
+      :style="{ top: taskMenu.top + 'px', left: taskMenu.left + 'px' }"
+      @mousedown.stop
+    >
+      <button type="button" class="open-file-ctx-item" @click="startTaskRename">
+        重命名
+      </button>
+    </div>
 
     <!-- 打开文件右键菜单：文档可「打开文件夹」；均可「复制名称」 -->
     <div
@@ -321,8 +348,8 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { formatRelativeTime } from '../services/conversationsApi.js'
+import { computed, ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { formatRelativeTime, prepareRenameTitle } from '../services/conversationsApi.js'
 import { useWebViewBridge } from '../composables/useWebViewBridge'
 import addIcon from '../assets/images/add.png'
 import knowledgeBaseIcon from '../assets/images/knowledge_base.png'
@@ -351,7 +378,7 @@ const props = defineProps({
   error: { type: String, default: '' }
 })
 
-const emit = defineEmits(['toggle', 'new-task', 'select', 'select-open-file', 'load-more', 'refresh-open-files'])
+const emit = defineEmits(['toggle', 'new-task', 'select', 'select-open-file', 'load-more', 'refresh-open-files', 'rename'])
 
 const { sendMessage, onMessage } = useWebViewBridge()
 
@@ -453,6 +480,19 @@ const createMenu = ref({
   plusRect: null
 })
 
+const taskMenu = ref({
+  visible: false,
+  top: 0,
+  left: 0,
+  id: null,
+  title: ''
+})
+
+const editingId = ref(null)
+const editingTitle = ref('')
+const editingOriginal = ref('')
+let taskRenameLock = false
+
 let createFailTipTimer = null
 const CREATE_FAIL_TIP_MS = 2500
 
@@ -504,7 +544,81 @@ function taskTooltip (item) {
   return (item?.title || '未命名任务').trim()
 }
 
+function isEditingTask (item) {
+  return editingId.value != null && String(item?.id) === String(editingId.value)
+}
+
+function closeTaskMenu () {
+  taskMenu.value = {
+    visible: false,
+    top: 0,
+    left: 0,
+    id: null,
+    title: ''
+  }
+}
+
+function onTaskItemClick (item) {
+  if (isEditingTask(item)) return
+  hideHoverTip()
+  closeTaskMenu()
+  emit('select', item)
+}
+
+function openTaskContextMenu (event, item) {
+  if (item?.isDraft) return
+  hideHoverTip()
+  closeFileContextMenu()
+  closeCreateMenu()
+  const menuW = 128
+  const menuH = 44
+  let left = event.clientX
+  let top = event.clientY
+  if (left + menuW > window.innerWidth - 8) {
+    left = Math.max(8, window.innerWidth - menuW - 8)
+  }
+  if (top + menuH > window.innerHeight - 8) {
+    top = Math.max(8, window.innerHeight - menuH - 8)
+  }
+  taskMenu.value = {
+    visible: true,
+    top,
+    left,
+    id: item.id,
+    title: item.title || ''
+  }
+}
+
+async function startTaskRename () {
+  const id = taskMenu.value.id
+  const title = taskMenu.value.title || ''
+  closeTaskMenu()
+  if (id == null) return
+  editingId.value = String(id)
+  editingTitle.value = title
+  editingOriginal.value = title
+  await nextTick()
+  const el = document.querySelector('.task-sidebar .task-title-input')
+  if (!el) return
+  el.focus()
+  el.select()
+}
+
+function commitTaskRename () {
+  if (editingId.value == null || taskRenameLock) return
+  taskRenameLock = true
+  const id = editingId.value
+  const previous = editingOriginal.value
+  const title = prepareRenameTitle(editingTitle.value, previous)
+  editingId.value = null
+  editingTitle.value = ''
+  editingOriginal.value = ''
+  emit('rename', { id, title, previous })
+  taskRenameLock = false
+}
+
 function showHoverTip (event, text) {
+  if (editingId.value != null) return
   const content = (text || '').trim()
   if (!content) {
     hideHoverTip()
@@ -596,6 +710,7 @@ function closeCreateMenu () {
 function closeSidebarPopovers () {
   closeFileContextMenu()
   closeCreateMenu()
+  closeTaskMenu()
   hideCreateFailTip()
 }
 
@@ -698,6 +813,7 @@ async function handleCreateNew (kindKey) {
 function openFileContextMenu (event, item) {
   hideHoverTip()
   closeCreateMenu()
+  closeTaskMenu()
   const path = (item?.fullPath || item?.full_path || '').trim()
   const browser = isBrowserOpenFile(item)
   const canOpenFolder = !browser
@@ -999,6 +1115,9 @@ async function handleOpenContainingFolder () {
 }
 
 function onGlobalPointerDown (e) {
+  if (editingId.value != null && !e.target?.closest?.('.task-title-input')) {
+    commitTaskRename()
+  }
   if (e.target?.closest?.('.open-file-ctx-menu')) return
   if (e.target?.closest?.('.open-file-group-add')) {
     closeFileContextMenu()
@@ -1011,11 +1130,15 @@ function onGlobalPointerDown (e) {
 }
 
 function onGlobalKeyDown (e) {
-  if (e.key === 'Escape') {
-    closeFileContextMenu()
-    closeCreateMenu()
-    hideCreateFailTip()
+  if (e.key !== 'Escape') return
+  if (editingId.value != null) {
+    commitTaskRename()
+    return
   }
+  closeFileContextMenu()
+  closeCreateMenu()
+  closeTaskMenu()
+  hideCreateFailTip()
 }
 
 function onAuthChanged () {
@@ -1044,6 +1167,7 @@ onUnmounted(() => {
   window.removeEventListener('scroll', closeSidebarPopovers, true)
   clearCreateFailTipTimer()
   if (typeof offAuthChanged === 'function') offAuthChanged()
+  commitTaskRename()
 })
 
 async function handleOpenKnowledgeBase () {
@@ -1701,6 +1825,34 @@ button.section-header {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  font: inherit;
+  color: inherit;
+  box-sizing: border-box;
+  user-select: none;
+}
+
+.task-title-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  margin: 0;
+  padding: 0 6px;
+  border: 1px solid #3b82f6;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  line-height: 22px;
+  color: #1f1e1c;
+  outline: none;
+  box-sizing: border-box;
+  user-select: text;
+  cursor: text;
+}
+
+.task-title-input::selection {
+  background: #3b82f6;
+  color: #fff;
 }
 
 .task-item:hover {
