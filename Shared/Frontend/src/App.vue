@@ -1155,8 +1155,21 @@ function normalizeHistoryMessage(m) {
   }
 }
 
+function isEditableContextTarget (target) {
+  const el = target && target.nodeType === 1 ? target : target?.parentElement
+  if (!el || typeof el.closest !== 'function') return false
+  return !!el.closest('input, textarea, [contenteditable="true"]')
+}
+
+/** WebView 默认右键菜单。输入框里留着，方便复制粘贴；其余地方关掉。 */
+function onShellContextMenu (event) {
+  if (isEditableContextTarget(event.target)) return
+  event.preventDefault()
+}
+
 // 监听来自 C# 的消息
 onMounted(() => {
+  window.addEventListener('contextmenu', onShellContextMenu, true)
   loadEmptyState()
   if (isDesktopHost) {
     refreshTaskList()
@@ -1537,6 +1550,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('contextmenu', onShellContextMenu, true)
   clearTodoBarHideTimer()
   clearLiveTimer()
 })
