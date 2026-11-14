@@ -16,6 +16,7 @@
             v-else-if="segment.type === 'text'"
             :content="segment.content"
             :clamped="isClampedText(segment, index)"
+            :svg-pending="!!message.isStreaming"
           />
           <ToolCallBoxDisplayRule
             v-else-if="segment.type === 'toolCall'"

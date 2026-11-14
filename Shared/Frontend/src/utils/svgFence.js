@@ -192,7 +192,15 @@ function svgPieces (text) {
       continue
     }
     const end = findSvgClose(src, start)
-    if (end < 0) break
+    if (end < 0) {
+      pieces.push({
+        start,
+        end: src.length,
+        closed: false,
+        inner: src.slice(start)
+      })
+      break
+    }
     pieces.push({
       start,
       end,
@@ -222,22 +230,32 @@ export function stripSvgFences (text) {
   return removePieces(src, pieces)
 }
 
+const PENDING_HTML = '\n\n<div class="md-svg-pending">正在画图</div>\n\n'
+
 /**
- * 闭合的 svg 围栏，以及正文里完整的 `<svg>…</svg>`，通过门禁后换成占位。
- * 未闭合、未通过门禁的原文留下。
+ * 通过门禁的完整 SVG 换成图片占位。
+ * 还没闭合时换成「正在画图」，不把源码留在正文里。
+ * pending 为 false 时，没画成的片段直接拿掉，仍不露出源码。
  */
-export function prepareSvgFences (text, sanitize) {
+export function prepareSvgFences (text, sanitize, pending = false) {
   const { src, pieces } = svgPieces(text)
   const slots = []
   let out = ''
   let cursor = 0
   for (const piece of pieces) {
-    if (!piece.closed) break
+    out += src.slice(cursor, piece.start)
+    if (!piece.closed) {
+      if (pending) out += PENDING_HTML
+      cursor = piece.end
+      break
+    }
     const safe = sanitize(piece.inner)
-    if (!safe) continue
+    if (!safe) {
+      cursor = piece.end
+      continue
+    }
     const id = slots.length
     slots.push(safe)
-    out += src.slice(cursor, piece.start)
     out += `\n\n<div class="md-svg" data-svg-slot="${id}"></div>\n\n`
     cursor = piece.end
   }

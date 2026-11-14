@@ -23,6 +23,11 @@ const props = defineProps({
   clamped: {
     type: Boolean,
     default: false
+  },
+  /** 正文还在往外流：没画完的 SVG 显示「正在画图」 */
+  svgPending: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -54,7 +59,7 @@ const html = computed(() => {
   const text = normalizeTextContent(props.content)
   if (!text) return ''
   try {
-    const prepared = prepareSvgFences(text, sanitizeSvg)
+    const prepared = prepareSvgFences(text, sanitizeSvg, props.svgPending)
     const parsed = wrapMarkdownTables(marked.parse(splitUrlFromFollowingText(prepared.text)))
     return fillSvgSlots(parsed, prepared.slots)
   } catch {
@@ -190,6 +195,15 @@ onUnmounted(() => {
 .text-segment-inner :deep(th[align='right']),
 .text-segment-inner :deep(td[align='right']) {
   text-align: right;
+}
+
+.text-segment-inner :deep(.md-svg-pending) {
+  display: block;
+  margin: 10px 0;
+  color: #999;
+  font-size: 13px;
+  line-height: 1.4;
+  user-select: none;
 }
 
 .text-segment-inner :deep(.md-svg) {
