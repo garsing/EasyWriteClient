@@ -1,5 +1,14 @@
 <template>
   <div class="chat-header" :class="{ 'chat-header--compact': variant === 'compact' }">
+    <ConversationTitle
+      v-if="variant === 'compact'"
+      class="header-title"
+      size="compact"
+      :title="title"
+      :editable="editable"
+      :conversation-id="conversationId"
+      @rename="(payload) => emit('rename', payload)"
+    />
     <div class="header-buttons">
       <!-- 插件：知识库；缩小版：历史对话弹出 -->
       <button
@@ -14,7 +23,7 @@
       </button>
       <button
         v-else
-        class="header-button"
+        class="header-button header-history-button"
         type="button"
         title="历史对话"
         aria-label="历史对话"
@@ -47,6 +56,7 @@
 
 <script setup>
 import { useWebViewBridge } from '../composables/useWebViewBridge'
+import ConversationTitle from './ConversationTitle.vue'
 import knowledgeBaseIcon from '../assets/images/knowledge_base.png'
 import historyIcon from '../assets/images/chat-history-line.png'
 import addIcon from '../assets/images/add.png'
@@ -58,10 +68,13 @@ const props = defineProps({
     type: String,
     default: 'plugin',
     validator: (v) => v === 'plugin' || v === 'compact'
-  }
+  },
+  title: { type: String, default: '' },
+  editable: { type: Boolean, default: false },
+  conversationId: { type: [String, Number], default: null }
 })
 
-const emit = defineEmits(['history', 'add'])
+const emit = defineEmits(['history', 'add', 'rename'])
 
 const { sendMessage } = useWebViewBridge()
 
@@ -133,7 +146,20 @@ const handleKnowledgeBase = async () => {
 
 /* 缩小版顶栏：略矮；图标约等于正文（~14–16px）的视觉大小 */
 .chat-header--compact {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
   padding: 4px 12px;
+}
+
+.header-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-header--compact .header-buttons {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .chat-header--compact .header-button {

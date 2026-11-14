@@ -37,6 +37,15 @@
       @paste.capture="onChatPaste"
     >
       <div v-if="chatDragOver" class="chat-drop-hint">拖放到此处以上传为对话附件</div>
+      <ConversationTitle
+        v-if="isDesktopHost && layoutMode === 'expanded'"
+        class="chat-title-bar"
+        size="expanded"
+        :title="headerConversation.title"
+        :editable="headerConversation.editable"
+        :conversation-id="headerConversation.id"
+        @rename="handleRenameTask"
+      />
       <!-- 插件顶栏；缩小版顶栏：历史 / 新建 / 设置 -->
       <ChatHeader v-if="!isDesktopHost" />
       <div
@@ -46,8 +55,12 @@
       >
         <ChatHeader
           variant="compact"
+          :title="headerConversation.title"
+          :editable="headerConversation.editable"
+          :conversation-id="headerConversation.id"
           @history="toggleHistoryPopover"
           @add="handleDesktopNewTask"
+          @rename="handleRenameTask"
         />
         <ConversationHistoryPopover
           v-if="historyPopoverOpen"
@@ -109,6 +122,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import ChatHeader from './components/ChatHeader.vue'
+import ConversationTitle from './components/ConversationTitle.vue'
 import ChatMessages from './components/ChatMessages.vue'
 import ChatEmptyState from './components/ChatEmptyState.vue'
 import ChatInput from './components/ChatInput.vue'
@@ -292,6 +306,31 @@ function isOnNewChatDraft () {
   return activeTaskId.value == null
     || activeTaskId.value === ''
     || String(activeTaskId.value) === '-1'
+}
+
+const headerConversation = computed(() => {
+  if (isOnNewChatDraft()) {
+    return { title: '新对话', editable: false, id: null }
+  }
+  const item = displayTaskList.value.find((t) => String(t.id) === String(activeTaskId.value))
+  if (!item || item.isDraft) {
+    return { title: '新对话', editable: false, id: null }
+  }
+  return {
+    title: item.title || '未命名任务',
+    editable: true,
+    id: item.id
+  }
+})
+
+function onHistoryOutsidePointerDown (e) {
+  if (!historyPopoverOpen.value) return
+  const t = e.target
+  if (t?.closest?.('.history-popover')) return
+  if (t?.closest?.('.history-ctx-menu')) return
+  if (t?.closest?.('.history-delete-confirm')) return
+  if (t?.closest?.('.header-history-button')) return
+  historyPopoverOpen.value = false
 }
 
 function clearInputBox () {
@@ -1200,6 +1239,7 @@ function onShellContextMenu (event) {
 // 监听来自 C# 的消息
 onMounted(() => {
   window.addEventListener('contextmenu', onShellContextMenu, true)
+  window.addEventListener('mousedown', onHistoryOutsidePointerDown, true)
   loadEmptyState()
   if (isDesktopHost) {
     refreshTaskList()
@@ -1581,6 +1621,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('contextmenu', onShellContextMenu, true)
+  window.removeEventListener('mousedown', onHistoryOutsidePointerDown, true)
   clearTodoBarHideTimer()
   clearLiveTimer()
 })
@@ -1641,6 +1682,14 @@ const restoreInputValue = (value) => {
   background: #f7f7f5;
   border-radius: 14px;
   overflow: hidden;
+}
+
+.chat-title-bar {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 14px 20px 6px;
+  background: #f7f7f5;
 }
 
 /* 缩小版：聊天区铺满标题栏下方（无工作台留白与圆角） */
