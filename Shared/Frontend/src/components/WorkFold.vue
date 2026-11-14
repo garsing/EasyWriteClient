@@ -1,10 +1,8 @@
 <template>
   <div class="work-fold">
     <div class="work-fold-header" @click="toggleExpand">
-      <span class="work-fold-title">
-        奋力工作的记录
-        <span v-if="durationText" class="work-fold-duration">{{ durationText }}</span>
-      </span>
+      <span class="chat-title">奋力工作的记录</span>
+      <span v-if="durationText" class="work-fold-duration">{{ durationText }}</span>
       <span
         class="chevron"
         :class="isExpanded ? 'chevron-down' : 'chevron-right'"
@@ -93,15 +91,9 @@ const toggleExpand = () => {
   transform: rotate(45deg);
 }
 
-.work-fold-title {
-  flex: 0 1 auto;
-  font-size: 13px;
-  font-weight: 500;
-  color: #666;
-}
-
 .work-fold-duration {
-  margin-left: 8px;
+  flex-shrink: 0;
+  font-size: 13px;
   font-weight: 400;
   color: #999;
 }

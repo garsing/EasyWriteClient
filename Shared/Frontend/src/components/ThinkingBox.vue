@@ -1,7 +1,7 @@
 <template>
   <div v-if="content" class="thinking-box">
     <div class="thinking-header" @click="toggleExpand">
-      <span class="thinking-title">思考</span>
+      <span class="chat-title">思考</span>
       <span
         class="chevron"
         :class="isExpanded ? 'chevron-down' : 'chevron-right'"
@@ -92,14 +92,6 @@ const toggleExpand = () => {
 
 .chevron-down {
   transform: rotate(45deg);
-}
-
-.thinking-title {
-  flex: 0 1 auto;
-  font-size: 13px;
-  font-weight: 500;
-  color: #666;
-  min-width: 0;
 }
 
 .thinking-body {

@@ -1,7 +1,7 @@
 <template>
   <div class="tool-call-box">
     <div class="tool-call-header" :class="{ 'no-expand': !allowExpand }" @click="allowExpand && toggleExpand()">
-      <span class="tool-name">{{ displayName }}</span>
+      <span class="chat-title tool-name">{{ displayName }}</span>
       <span v-if="progressLabel" class="tool-progress">{{ progressLabel }}</span>
       <span
         v-if="allowExpand"
@@ -354,10 +354,6 @@ const toggleExpand = () => {
 }
 
 .tool-name {
-  flex: 0 1 auto;
-  font-size: 13px;
-  font-weight: 500;
-  color: #666;
   min-width: 0;
 }
 

@@ -5,7 +5,7 @@
       :class="{ 'tool-run-header--busy': busy }"
       @click="toggleExpand"
     >
-      <span class="tool-run-title">{{ title }}</span>
+      <span class="chat-title">{{ title }}</span>
       <span v-if="progressLabel" class="tool-run-progress">{{ progressLabel }}</span>
       <span
         class="chevron"
@@ -117,43 +117,6 @@ function childKey (segment, index) {
   background-color: transparent;
 }
 
-.tool-run-header--busy .tool-run-title {
-  display: inline-block;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  background-color: transparent;
-  background-image: linear-gradient(
-    90deg,
-    #333 0%,
-    #333 42%,
-    #9a9a9a 50%,
-    #333 58%,
-    #333 100%
-  );
-  background-size: 280% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  animation: tool-run-shine 3.4s linear infinite;
-}
-
-@keyframes tool-run-shine {
-  0% {
-    background-position: 100% 0;
-  }
-  100% {
-    background-position: -120% 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tool-run-header--busy .tool-run-title {
-    color: #666;
-    -webkit-text-fill-color: #666;
-    background-image: none;
-    animation: none;
-  }
-}
-
 .chevron {
   flex: 0 0 auto;
   width: 6px;
@@ -175,13 +138,6 @@ function childKey (segment, index) {
 
 .chevron-down {
   transform: rotate(45deg);
-}
-
-.tool-run-title {
-  flex: 0 1 auto;
-  font-size: 13px;
-  font-weight: 500;
-  color: #666;
 }
 
 .tool-run-progress {

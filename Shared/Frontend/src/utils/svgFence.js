@@ -230,7 +230,7 @@ export function stripSvgFences (text) {
   return removePieces(src, pieces)
 }
 
-const PENDING_HTML = '\n\n<div class="md-svg-pending">正在画图</div>\n\n'
+const PENDING_HTML = '\n\n<div class="chat-title md-svg-pending">正在画图</div>\n\n'
 
 /**
  * 通过门禁的完整 SVG 换成图片占位。
