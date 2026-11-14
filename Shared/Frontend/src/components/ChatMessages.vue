@@ -20,6 +20,7 @@
         />
       </div>
     </div>
+    <div class="user-pin-spacer" :style="{ height: userPinSpacerHeight + 'px' }"></div>
     </div>
   </div>
 </template>
@@ -48,6 +49,11 @@ const props = defineProps({
   },
   /** 递增则强制钉到最新（切历史 / 切形态 / 发送新消息）；不沿用上翻取消跟随 */
   pinToLatestToken: {
+    type: [Number, String],
+    default: 0
+  },
+  /** 递增则把刚发出的用户气泡对齐到可见区顶部，并在下面留空 */
+  pinUserToTopToken: {
     type: [Number, String],
     default: 0
   },
@@ -130,6 +136,10 @@ const displayTurns = computed(() => {
 
 const messagesContainer = ref(null)
 const shouldAutoScroll = ref(true)
+const userPinArmed = ref(false)
+const userPinLatched = ref(false)
+const userPinSpacerHeight = ref(0)
+const NEAR_BOTTOM_PX = 50
 let suppressScrollUntil = 0
 let resizeObserver = null
 const pinTimers = []
@@ -145,6 +155,44 @@ function pinNow () {
   if (!el) return
   suppressScrollUntil = performance.now() + 300
   el.scrollTop = el.scrollHeight
+}
+
+function lastUserTurn () {
+  const root = messagesContainer.value
+  if (!root) return null
+  const bubbles = root.querySelectorAll('.chat-turn-user')
+  const bubble = bubbles[bubbles.length - 1]
+  if (!bubble) return null
+  const turn = bubble.closest('.chat-turn')
+  if (!turn) return null
+  return { bubble, turn }
+}
+
+function alignUserBubbleToTop () {
+  const el = messagesContainer.value
+  const found = lastUserTurn()
+  if (!el || !found || el.clientHeight <= 0) return
+  const { bubble, turn } = found
+  if (turn.offsetHeight >= el.clientHeight) {
+    userPinSpacerHeight.value = 0
+    nextTick(() => {
+      const box = messagesContainer.value
+      if (!box) return
+      suppressScrollUntil = performance.now() + 300
+      box.scrollTop = box.scrollHeight
+    })
+    return
+  }
+  userPinSpacerHeight.value = Math.max(0, el.clientHeight - turn.offsetHeight)
+  nextTick(() => {
+    const box = messagesContainer.value
+    const again = lastUserTurn()
+    if (!box || !again) return
+    suppressScrollUntil = performance.now() + 300
+    const boxRect = box.getBoundingClientRect()
+    const bubbleRect = again.bubble.getBoundingClientRect()
+    box.scrollTop = box.scrollTop + (bubbleRect.top - boxRect.top)
+  })
 }
 
 /** 强制跟到底：恢复跟随，并多次钉底以等 WebView2 / 原生改尺寸落稳 */
@@ -169,8 +217,17 @@ const handleScroll = () => {
   const scrollHeight = container.scrollHeight
   const clientHeight = container.clientHeight
 
-  const isNearBottom = scrollHeight - scrollTop - clientHeight < 50
-  shouldAutoScroll.value = isNearBottom
+  const nearBottom = scrollHeight - scrollTop - clientHeight < NEAR_BOTTOM_PX
+  shouldAutoScroll.value = nearBottom
+  if (!userPinLatched.value) return
+  if (nearBottom) {
+    if (!userPinArmed.value) {
+      userPinArmed.value = true
+      alignUserBubbleToTop()
+    }
+    return
+  }
+  if (userPinArmed.value) userPinArmed.value = false
 }
 
 const scrollToBottom = () => {
@@ -203,7 +260,8 @@ onMounted(() => {
       messagesContainer.value.addEventListener('scroll', handleScroll, { passive: true })
       if (typeof ResizeObserver !== 'undefined') {
         resizeObserver = new ResizeObserver(() => {
-          if (shouldAutoScroll.value) pinNow()
+          if (userPinArmed.value) alignUserBubbleToTop()
+          else if (shouldAutoScroll.value) pinNow()
         })
         resizeObserver.observe(messagesContainer.value)
       }
@@ -226,22 +284,33 @@ onUnmounted(() => {
 
 watch(() => props.pinToLatestToken, (next, prev) => {
   if (next === prev) return
+  userPinArmed.value = false
+  userPinLatched.value = false
+  userPinSpacerHeight.value = 0
   forcePinToLatest()
+})
+
+watch(() => props.pinUserToTopToken, (next, prev) => {
+  if (next === prev) return
+  userPinLatched.value = true
+  userPinArmed.value = true
+  shouldAutoScroll.value = true
+  alignUserBubbleToTop()
 })
 
 watch(() => props.messages.length, (newLength, oldLength) => {
   console.log('[ChatMessages] 消息数量变化:', oldLength, '->', newLength, '消息列表:', props.messages.map(m => ({ id: m.id, role: m.role, content: m.content?.substring(0, 20) })))
   const last = props.messages[props.messages.length - 1]
-  // 新发一条用户消息：无论之前是否上翻取消跟随，都重新钉住最新输出
-  if (newLength > (oldLength ?? 0) && last?.role === 'user') {
-    forcePinToLatest()
-    return
-  }
+  if (newLength > (oldLength ?? 0) && last?.role === 'user') return
+  if (userPinArmed.value) return
   scrollToBottom()
 })
 
-watch(() => props.messages, (newMessages, oldMessages) => {
-  console.log('[ChatMessages] 消息列表变化，当前消息:', newMessages.map(m => ({ id: m.id, role: m.role, contentLength: m.content?.length || 0 })))
+watch(() => props.messages, () => {
+  if (userPinArmed.value) {
+    alignUserBubbleToTop()
+    return
+  }
   scrollToBottom()
 }, { deep: true })
 </script>
@@ -281,6 +350,12 @@ watch(() => props.messages, (newMessages, oldMessages) => {
   min-width: 0;
   margin: 0 auto;
   box-sizing: border-box;
+}
+
+.user-pin-spacer {
+  width: 100%;
+  flex-shrink: 0;
+  pointer-events: none;
 }
 
 .chat-turn {
