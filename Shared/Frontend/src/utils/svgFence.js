@@ -225,19 +225,26 @@ function removePieces (src, pieces) {
   return out.trim().replace(/\n{3,}/g, '\n\n')
 }
 
+export function hasPendingSvg (text) {
+  return svgPieces(text).pieces.some((piece) => !piece.closed)
+}
+
 export function stripSvgFences (text) {
   const { src, pieces } = svgPieces(text)
   return removePieces(src, pieces)
 }
 
-const PENDING_HTML = '\n\n<div class="chat-title md-svg-pending">正在画图</div>\n\n'
+function pendingHtml (live) {
+  const liveClass = live ? ' is-live' : ''
+  return `\n\n<div class="chat-title${liveClass} md-svg-pending">正在画图</div>\n\n`
+}
 
 /**
  * 通过门禁的完整 SVG 换成图片占位。
  * 还没闭合时换成「正在画图」，不把源码留在正文里。
  * pending 为 false 时，没画成的片段直接拿掉，仍不露出源码。
  */
-export function prepareSvgFences (text, sanitize, pending = false) {
+export function prepareSvgFences (text, sanitize, pending = false, pendingLive = false) {
   const { src, pieces } = svgPieces(text)
   const slots = []
   let out = ''
@@ -245,7 +252,7 @@ export function prepareSvgFences (text, sanitize, pending = false) {
   for (const piece of pieces) {
     out += src.slice(cursor, piece.start)
     if (!piece.closed) {
-      if (pending) out += PENDING_HTML
+      if (pending) out += pendingHtml(pendingLive)
       cursor = piece.end
       break
     }

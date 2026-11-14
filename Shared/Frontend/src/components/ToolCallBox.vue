@@ -1,7 +1,7 @@
 <template>
   <div class="tool-call-box">
     <div class="tool-call-header" :class="{ 'no-expand': !allowExpand }" @click="allowExpand && toggleExpand()">
-      <span class="chat-title tool-name">{{ displayName }}</span>
+      <span class="chat-title tool-name" :class="{ 'is-live': live }">{{ displayName }}</span>
       <span v-if="progressLabel" class="tool-progress">{{ progressLabel }}</span>
       <span
         v-if="allowExpand"
@@ -60,6 +60,11 @@ const props = defineProps({
     required: true
   },
   isComplete: {
+    type: Boolean,
+    default: false
+  },
+  /** 当前唯一还在跑的折叠栏 */
+  live: {
     type: Boolean,
     default: false
   },

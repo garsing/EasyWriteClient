@@ -11,18 +11,21 @@
             v-if="segment.type === 'thinking'"
             :content="segment.content"
             :is-complete="segment.isComplete"
+            :live="isLiveFold(index)"
           />
           <ClampedTextSegment
             v-else-if="segment.type === 'text'"
             :content="segment.content"
             :clamped="isClampedText(segment, index)"
             :svg-pending="!!message.isStreaming"
+            :svg-live="isLiveFold(index)"
           />
           <ToolCallBoxDisplayRule
             v-else-if="segment.type === 'toolCall'"
             :tool-name="segment.toolName"
             :content="segment.content"
             :is-complete="segment.isComplete"
+            :live="isLiveFold(index)"
             :result="segment.result"
             :output-text="segment.outputText"
             :output-done="segment.outputDone"
@@ -32,7 +35,7 @@
           <ToolRunFold
             v-else-if="segment.type === 'toolRun'"
             :segments="segment.segments"
-            :busy="isToolRunBusy(index)"
+            :busy="isLiveFold(index)"
           />
         </template>
       </div>
@@ -50,6 +53,7 @@ import ToolRunFold from './ToolRunFold.vue'
 import ThinkingBox from './ThinkingBox.vue'
 import ClampedTextSegment from './ClampedTextSegment.vue'
 import { groupToolRuns, toolRunKey } from '../utils/toolRunGroup'
+import { hasPendingSvg } from '../utils/svgFence'
 
 const props = defineProps({
   message: {
@@ -110,15 +114,32 @@ function isClampedText (segment, index) {
   return lastToolIndex.value > index
 }
 
-/** 进行中且这组后面还没有正文/新工具：标题走亮光滑动 */
-function isToolRunBusy (index) {
-  if (!props.message.isStreaming) return false
+/**
+ * 只闪当前最后一个还在跑的折叠栏。
+ * 正文已经往下写、且不是半截 SVG 时，前面的思考和工具不再闪。
+ * 收组只闪组标题，组里的条目不单独闪。
+ */
+const liveFoldIndex = computed(() => {
+  if (!props.message.isStreaming) return -1
   const segs = displaySegments.value
-  for (let i = index + 1; i < segs.length; i++) {
-    const type = segs[i] && segs[i].type
-    if (type === 'text' || type === 'toolCall' || type === 'toolRun') return false
+  for (let i = segs.length - 1; i >= 0; i--) {
+    const seg = segs[i]
+    if (!seg) continue
+    if (seg.type === 'text') {
+      if (hasPendingSvg(seg.content)) return i
+      return -1
+    }
+    if (seg.type === 'thinking') {
+      if (seg.isComplete === false) return i
+      return -1
+    }
+    if (seg.type === 'toolCall' || seg.type === 'toolRun') return i
   }
-  return true
+  return -1
+})
+
+function isLiveFold (index) {
+  return liveFoldIndex.value === index
 }
 
 function segmentKey (segment, index) {

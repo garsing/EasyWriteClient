@@ -5,7 +5,7 @@
       :class="{ 'tool-run-header--busy': busy }"
       @click="toggleExpand"
     >
-      <span class="chat-title">{{ title }}</span>
+      <span class="chat-title" :class="{ 'is-live': busy }">{{ title }}</span>
       <span v-if="progressLabel" class="tool-run-progress">{{ progressLabel }}</span>
       <span
         class="chevron"

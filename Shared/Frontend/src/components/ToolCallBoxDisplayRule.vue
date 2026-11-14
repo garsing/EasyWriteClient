@@ -5,6 +5,7 @@
     :tool-name="toolName"
     :content="formattedContent"
     :is-complete="isComplete"
+    :live="live"
     :allow-expand="shouldShowDetails"
     :language="languageType"
     :result="result"
@@ -30,6 +31,10 @@ const props = defineProps({
     required: true
   },
   isComplete: {
+    type: Boolean,
+    default: false
+  },
+  live: {
     type: Boolean,
     default: false
   },

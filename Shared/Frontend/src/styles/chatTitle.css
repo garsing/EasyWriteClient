@@ -8,6 +8,10 @@
   font-size: 13px;
   font-weight: 500;
   line-height: 1.4;
+  color: #666;
+}
+
+.chat-title.is-live {
   color: transparent;
   -webkit-text-fill-color: transparent;
   background-color: transparent;
@@ -42,7 +46,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-title {
+  .chat-title.is-live {
     color: #666;
     -webkit-text-fill-color: #666;
     background-image: none;

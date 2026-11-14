@@ -28,6 +28,11 @@ const props = defineProps({
   svgPending: {
     type: Boolean,
     default: false
+  },
+  /** 这一行是当前唯一还在跑的折叠栏 */
+  svgLive: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -59,7 +64,7 @@ const html = computed(() => {
   const text = normalizeTextContent(props.content)
   if (!text) return ''
   try {
-    const prepared = prepareSvgFences(text, sanitizeSvg, props.svgPending)
+    const prepared = prepareSvgFences(text, sanitizeSvg, props.svgPending, props.svgLive)
     const parsed = wrapMarkdownTables(marked.parse(splitUrlFromFollowingText(prepared.text)))
     return fillSvgSlots(parsed, prepared.slots)
   } catch {

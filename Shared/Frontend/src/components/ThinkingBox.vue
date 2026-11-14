@@ -1,7 +1,7 @@
 <template>
   <div v-if="content" class="thinking-box">
     <div class="thinking-header" @click="toggleExpand">
-      <span class="chat-title">思考</span>
+      <span class="chat-title" :class="{ 'is-live': live }">思考</span>
       <span
         class="chevron"
         :class="isExpanded ? 'chevron-down' : 'chevron-right'"
@@ -25,6 +25,11 @@ const props = defineProps({
     default: ''
   },
   isComplete: {
+    type: Boolean,
+    default: false
+  },
+  /** 当前唯一还在跑的折叠栏 */
+  live: {
     type: Boolean,
     default: false
   }
