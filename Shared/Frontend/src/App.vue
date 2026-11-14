@@ -37,15 +37,35 @@
       @paste.capture="onChatPaste"
     >
       <div v-if="chatDragOver" class="chat-drop-hint">拖放到此处以上传为对话附件</div>
-      <ConversationTitle
+      <div
         v-if="isDesktopHost && layoutMode === 'expanded' && headerConversation.show"
         class="chat-title-bar"
-        size="expanded"
-        :title="headerConversation.title"
-        :editable="headerConversation.editable"
-        :conversation-id="headerConversation.id"
-        @rename="handleRenameTask"
-      />
+      >
+        <ConversationTitle
+          size="expanded"
+          :title="headerConversation.title"
+          :editable="headerConversation.editable"
+          :conversation-id="headerConversation.id"
+          @rename="handleRenameTask"
+        />
+        <ConversationSearch
+          ref="conversationSearchRef"
+          :open="convSearchOpen"
+          :query="convSearchQuery"
+          :index="convSearchIndex"
+          :total="convSearchTotal"
+          @open="openConvSearch"
+          @close="closeConvSearch"
+          @query="onConvSearchQuery"
+          @enter="onConvSearchEnter"
+          @prev="stepConvSearch(-1)"
+          @next="stepConvSearch(1)"
+        />
+      </div>
+      <div v-if="convSearchMiss" class="conv-search-miss" role="status">
+        <span class="conv-search-miss-icon" aria-hidden="true">i</span>
+        未找到匹配内容
+      </div>
       <!-- 插件顶栏；缩小版顶栏：历史 / 新建 / 设置 -->
       <ChatHeader v-if="!isDesktopHost" />
       <div
@@ -84,6 +104,10 @@
         :running="visibleTurnRunning"
         :live-timer-text="liveTimerText"
         :pin-to-latest-token="pinToLatestToken"
+        :search-query="convSearchQuery"
+        :search-index="convSearchIndex"
+        :search-scroll-token="convSearchScrollToken"
+        @search-count="onConvSearchCount"
       />
       <ChatEmptyState
         v-else
@@ -124,6 +148,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import ChatHeader from './components/ChatHeader.vue'
 import ConversationTitle from './components/ConversationTitle.vue'
+import ConversationSearch from './components/ConversationSearch.vue'
 import ChatMessages from './components/ChatMessages.vue'
 import ChatEmptyState from './components/ChatEmptyState.vue'
 import ChatInput from './components/ChatInput.vue'
@@ -323,6 +348,93 @@ const headerConversation = computed(() => {
     editable: true,
     id: item.id
   }
+})
+
+const convSearchOpen = ref(false)
+const convSearchQuery = ref('')
+const convSearchIndex = ref(0)
+const convSearchTotal = ref(0)
+const convSearchScrollToken = ref(0)
+const convSearchMiss = ref(false)
+const conversationSearchRef = ref(null)
+let convSearchMissTimer = null
+
+function hideConvSearchMiss () {
+  convSearchMiss.value = false
+  if (convSearchMissTimer != null) {
+    clearTimeout(convSearchMissTimer)
+    convSearchMissTimer = null
+  }
+}
+
+function showConvSearchMiss () {
+  convSearchMiss.value = true
+  if (convSearchMissTimer != null) clearTimeout(convSearchMissTimer)
+  convSearchMissTimer = setTimeout(() => {
+    convSearchMiss.value = false
+    convSearchMissTimer = null
+  }, 2000)
+}
+
+function closeConvSearch () {
+  convSearchOpen.value = false
+  convSearchQuery.value = ''
+  convSearchIndex.value = 0
+  convSearchTotal.value = 0
+  hideConvSearchMiss()
+}
+
+function openConvSearch () {
+  if (!isDesktopHost || layoutMode.value !== 'expanded' || !headerConversation.value.show) return
+  convSearchOpen.value = true
+  nextTick(() => conversationSearchRef.value?.focus())
+}
+
+function onConvSearchQuery (value) {
+  convSearchQuery.value = value == null ? '' : String(value)
+  convSearchIndex.value = 0
+  hideConvSearchMiss()
+}
+
+function onConvSearchCount (count) {
+  const n = Number(count) || 0
+  convSearchTotal.value = n
+  if (n > 0 && convSearchIndex.value >= n) convSearchIndex.value = n - 1
+}
+
+function stepConvSearch (dir) {
+  const n = convSearchTotal.value
+  if (n < 1) return
+  convSearchIndex.value = (convSearchIndex.value + dir + n) % n
+  convSearchScrollToken.value += 1
+}
+
+function onConvSearchEnter () {
+  if (!convSearchQuery.value.trim()) return
+  if (convSearchTotal.value < 1) {
+    showConvSearchMiss()
+    return
+  }
+  stepConvSearch(1)
+}
+
+function onConvSearchKeyDown (e) {
+  if (e.key === 'Escape' && convSearchOpen.value) {
+    const inTitleEdit = e.target?.closest?.('.conv-title-input')
+    closeConvSearch()
+    if (!inTitleEdit) e.stopPropagation()
+    return
+  }
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+    if (!isDesktopHost || layoutMode.value !== 'expanded' || !headerConversation.value.show) return
+    e.preventDefault()
+    openConvSearch()
+  }
+}
+
+watch(activeTaskId, (next, prev) => {
+  if (prev == null || String(next) === String(prev)) return
+  closeConvSearch()
 })
 
 function onHistoryOutsidePointerDown (e) {
@@ -1242,6 +1354,7 @@ function onShellContextMenu (event) {
 onMounted(() => {
   window.addEventListener('contextmenu', onShellContextMenu, true)
   window.addEventListener('mousedown', onHistoryOutsidePointerDown, true)
+  window.addEventListener('keydown', onConvSearchKeyDown, true)
   loadEmptyState()
   if (isDesktopHost) {
     refreshTaskList()
@@ -1624,6 +1737,8 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('contextmenu', onShellContextMenu, true)
   window.removeEventListener('mousedown', onHistoryOutsidePointerDown, true)
+  window.removeEventListener('keydown', onConvSearchKeyDown, true)
+  hideConvSearchMiss()
   clearTodoBarHideTimer()
   clearLiveTimer()
 })
@@ -1692,7 +1807,53 @@ const restoreInputValue = (value) => {
   width: 100%;
   padding: 14px 20px 6px;
   background: #f7f7f5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
+
+.chat-title-bar :deep(.conv-title) {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.chat-title-bar :deep(.conv-title.is-editing) {
+  flex: 0 0 25%;
+  width: 25%;
+  min-width: 160px;
+}
+
+.conv-search-miss {
+  position: absolute;
+  z-index: 20;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+  color: #1f1e1c;
+  white-space: nowrap;
+}
+
+.conv-search-miss-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
 
 /* 缩小版：聊天区铺满标题栏下方（无工作台留白与圆角） */
 .app-shell.host-desktop.layout-compact {

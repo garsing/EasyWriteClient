@@ -29,6 +29,7 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import UserMessageBubble from './UserMessageBubble.vue'
 import SystemMessageBubble from './SystemMessageBubble.vue'
 import AssistantTurnBlock from './AssistantTurnBlock.vue'
+import { applyConversationSearch, setConversationSearchCurrent } from '../utils/conversationSearchHighlight.js'
 
 const props = defineProps({
   messages: {
@@ -49,8 +50,13 @@ const props = defineProps({
   pinToLatestToken: {
     type: [Number, String],
     default: 0
-  }
+  },
+  searchQuery: { type: String, default: '' },
+  searchIndex: { type: Number, default: 0 },
+  searchScrollToken: { type: Number, default: 0 }
 })
+
+const emit = defineEmits(['search-count'])
 
 /** 用户气泡 / 提示单独一项；连续助手消息合成一轮。
  * 归档：后面已有用户消息；或这一轮已经不在跑（含历史）。刚点停止的本轮先展开。 */
@@ -177,6 +183,20 @@ const scrollToBottom = () => {
   }
 }
 
+function applySearchHighlight () {
+  nextTick(() => {
+    const count = applyConversationSearch(messagesContainer.value, props.searchQuery)
+    emit('search-count', count)
+    setConversationSearchCurrent(props.searchIndex, false)
+  })
+}
+
+watch(() => props.searchQuery, applySearchHighlight)
+watch(() => props.messages, applySearchHighlight, { deep: true })
+watch(() => props.searchScrollToken, () => {
+  nextTick(() => setConversationSearchCurrent(props.searchIndex, true))
+})
+
 onMounted(() => {
   nextTick(() => {
     if (messagesContainer.value) {
@@ -189,6 +209,7 @@ onMounted(() => {
       }
     }
     forcePinToLatest()
+    applySearchHighlight()
   })
 })
 
@@ -224,6 +245,19 @@ watch(() => props.messages, (newMessages, oldMessages) => {
   scrollToBottom()
 }, { deep: true })
 </script>
+
+<style>
+.chat-messages mark.conv-search-hit {
+  background: #d6e4ff;
+  color: inherit;
+  border-radius: 2px;
+}
+
+.chat-messages mark.conv-search-hit--current {
+  background: #3b82f6;
+  color: #fff;
+}
+</style>
 
 <style scoped>
 .chat-messages {
