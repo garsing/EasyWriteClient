@@ -105,6 +105,7 @@
         :live-timer-text="liveTimerText"
         :pin-to-latest-token="pinToLatestToken"
         :pin-user-to-top-token="pinUserToTopToken"
+        :pending-user-pin="pendingUserPin"
         :search-query="convSearchQuery"
         :search-index="convSearchIndex"
         :search-scroll-token="convSearchScrollToken"
@@ -213,6 +214,7 @@ const sidebarCollapsed = ref(false)
 /** 递增后 ChatMessages 强制钉到最新（切历史 / 切形态 / 发送新消息） */
 const pinToLatestToken = ref(0)
 const pinUserToTopToken = ref(0)
+const pendingUserPin = ref(false)
 
 const historyPopoverOpen = ref(false)
 
@@ -236,6 +238,7 @@ function applyLayoutMode (mode) {
   if (!changed) return
   // 形态一变容器高度先抖：立刻重新钉底，避免 scroll 把跟随打掉后流式不再贴最新
   nextTick(() => {
+    pendingUserPin.value = false
     pinToLatestToken.value++
   })
 }
@@ -958,6 +961,7 @@ const handleSend = async (content) => {
   }
   console.log('[App] 添加用户消息:', { id: userMessage.id, content: userMessage.content.substring(0, 20), messageCount: messages.value.length })
   messages.value.push(userMessage)
+  pendingUserPin.value = true
   pinUserToTopToken.value++
   receivedBackendMessages.value.add(userMessage.id)
   console.log('[App] 用户消息已添加，当前消息数量:', messages.value.length)
@@ -1607,6 +1611,7 @@ onMounted(() => {
       if (!messages.value.length) {
         loadEmptyState()
       } else {
+        pendingUserPin.value = false
         pinToLatestToken.value++
       }
     } else if (data.type === 'conversationIdChanged') {

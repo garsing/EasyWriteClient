@@ -57,6 +57,11 @@ const props = defineProps({
     type: [Number, String],
     default: 0
   },
+  /** 这次挂载是刚发送的用户消息，而不是打开历史 */
+  pendingUserPin: {
+    type: Boolean,
+    default: false
+  },
   searchQuery: { type: String, default: '' },
   searchIndex: { type: Number, default: 0 },
   searchScrollToken: { type: Number, default: 0 }
@@ -169,30 +174,42 @@ function lastUserTurn () {
 }
 
 function alignUserBubbleToTop () {
-  const el = messagesContainer.value
-  const found = lastUserTurn()
-  if (!el || !found || el.clientHeight <= 0) return
-  const { bubble, turn } = found
-  if (turn.offsetHeight >= el.clientHeight) {
-    userPinSpacerHeight.value = 0
-    nextTick(() => {
-      const box = messagesContainer.value
-      if (!box) return
-      suppressScrollUntil = performance.now() + 300
-      box.scrollTop = box.scrollHeight
-    })
-    return
-  }
-  userPinSpacerHeight.value = Math.max(0, el.clientHeight - turn.offsetHeight)
   nextTick(() => {
-    const box = messagesContainer.value
-    const again = lastUserTurn()
-    if (!box || !again) return
-    suppressScrollUntil = performance.now() + 300
-    const boxRect = box.getBoundingClientRect()
-    const bubbleRect = again.bubble.getBoundingClientRect()
-    box.scrollTop = box.scrollTop + (bubbleRect.top - boxRect.top)
+    requestAnimationFrame(() => {
+      if (!userPinArmed.value) return
+      const el = messagesContainer.value
+      const found = lastUserTurn()
+      if (!el || !found || el.clientHeight <= 0) return
+      const { turn } = found
+      if (turn.offsetHeight >= el.clientHeight) {
+        userPinSpacerHeight.value = 0
+        nextTick(() => {
+          const box = messagesContainer.value
+          if (!box || !userPinArmed.value) return
+          suppressScrollUntil = performance.now() + 300
+          box.scrollTop = box.scrollHeight
+        })
+        return
+      }
+      userPinSpacerHeight.value = Math.max(0, el.clientHeight - turn.offsetHeight)
+      nextTick(() => {
+        const box = messagesContainer.value
+        const again = lastUserTurn()
+        if (!box || !again || !userPinArmed.value) return
+        suppressScrollUntil = performance.now() + 300
+        const boxRect = box.getBoundingClientRect()
+        const bubbleRect = again.bubble.getBoundingClientRect()
+        box.scrollTop = box.scrollTop + (bubbleRect.top - boxRect.top)
+      })
+    })
   })
+}
+
+function armUserPin () {
+  userPinLatched.value = true
+  userPinArmed.value = true
+  shouldAutoScroll.value = true
+  alignUserBubbleToTop()
 }
 
 /** 强制跟到底：恢复跟随，并多次钉底以等 WebView2 / 原生改尺寸落稳 */
@@ -266,7 +283,8 @@ onMounted(() => {
         resizeObserver.observe(messagesContainer.value)
       }
     }
-    forcePinToLatest()
+    if (props.pendingUserPin) armUserPin()
+    else forcePinToLatest()
     applySearchHighlight()
   })
 })
@@ -292,17 +310,14 @@ watch(() => props.pinToLatestToken, (next, prev) => {
 
 watch(() => props.pinUserToTopToken, (next, prev) => {
   if (next === prev) return
-  userPinLatched.value = true
-  userPinArmed.value = true
-  shouldAutoScroll.value = true
-  alignUserBubbleToTop()
-})
+  armUserPin()
+}, { flush: 'post' })
 
 watch(() => props.messages.length, (newLength, oldLength) => {
   console.log('[ChatMessages] 消息数量变化:', oldLength, '->', newLength, '消息列表:', props.messages.map(m => ({ id: m.id, role: m.role, content: m.content?.substring(0, 20) })))
   const last = props.messages[props.messages.length - 1]
   if (newLength > (oldLength ?? 0) && last?.role === 'user') return
-  if (userPinArmed.value) return
+  if (userPinArmed.value || props.pendingUserPin) return
   scrollToBottom()
 })
 
@@ -311,6 +326,7 @@ watch(() => props.messages, () => {
     alignUserBubbleToTop()
     return
   }
+  if (props.pendingUserPin) return
   scrollToBottom()
 }, { deep: true })
 </script>
