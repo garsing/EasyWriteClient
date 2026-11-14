@@ -36,6 +36,7 @@ import SystemMessageBubble from './SystemMessageBubble.vue'
 import WorkFold from './WorkFold.vue'
 import MessageCopyBar from './MessageCopyBar.vue'
 import { foldTextStuckBetweenThinking } from '../utils/toolRunGroup'
+import { stripSvgFences } from '../utils/svgFence'
 
 const props = defineProps({
   messages: {
@@ -190,8 +191,10 @@ const copyText = computed(() => collectText(props.messages))
 
 const finalCopyText = computed(() => {
   const seg = split.value.final
-  if (seg?.content && String(seg.content).trim()) return String(seg.content).trim()
-  return copyText.value
+  if (seg?.content && String(seg.content).trim()) {
+    return stripSvgFences(String(seg.content))
+  }
+  return stripSvgFences(copyText.value)
 })
 
 /** 没有可收进「奋力工作的记录」的过程时，回复上面写后端耗时。 */

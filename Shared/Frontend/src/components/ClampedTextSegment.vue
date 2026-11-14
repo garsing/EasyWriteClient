@@ -12,6 +12,8 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { marked } from 'marked'
+import { fillSvgSlots, prepareSvgFences } from '../utils/svgFence'
+import { sanitizeSvg } from '../utils/svgSanitize'
 
 const props = defineProps({
   content: {
@@ -49,10 +51,12 @@ function wrapMarkdownTables (html) {
 }
 
 const html = computed(() => {
-  const text = splitUrlFromFollowingText(normalizeTextContent(props.content))
+  const text = normalizeTextContent(props.content)
   if (!text) return ''
   try {
-    return wrapMarkdownTables(marked.parse(text))
+    const prepared = prepareSvgFences(text, sanitizeSvg)
+    const parsed = wrapMarkdownTables(marked.parse(splitUrlFromFollowingText(prepared.text)))
+    return fillSvgSlots(parsed, prepared.slots)
   } catch {
     return text
   }
@@ -186,6 +190,18 @@ onUnmounted(() => {
 .text-segment-inner :deep(th[align='right']),
 .text-segment-inner :deep(td[align='right']) {
   text-align: right;
+}
+
+.text-segment-inner :deep(.md-svg) {
+  display: block;
+  max-width: 100%;
+  margin: 10px 0;
+}
+
+.text-segment-inner :deep(.md-svg svg) {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 .text-segment-inner :deep(a) {
