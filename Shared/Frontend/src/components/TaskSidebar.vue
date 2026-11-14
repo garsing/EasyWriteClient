@@ -2053,6 +2053,10 @@ button.section-header {
   background: #e4e2dc;
 }
 
+.task-item.active .task-title {
+  font-weight: 700;
+}
+
 .task-title {
   flex: 1;
   min-width: 0;
