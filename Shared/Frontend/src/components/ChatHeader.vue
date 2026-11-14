@@ -1,7 +1,7 @@
 <template>
   <div class="chat-header" :class="{ 'chat-header--compact': variant === 'compact' }">
     <ConversationTitle
-      v-if="variant === 'compact'"
+      v-if="variant === 'compact' && showTitle"
       class="header-title"
       size="compact"
       :title="title"
@@ -69,6 +69,7 @@ const props = defineProps({
     default: 'plugin',
     validator: (v) => v === 'plugin' || v === 'compact'
   },
+  showTitle: { type: Boolean, default: false },
   title: { type: String, default: '' },
   editable: { type: Boolean, default: false },
   conversationId: { type: [String, Number], default: null }

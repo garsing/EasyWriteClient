@@ -38,7 +38,7 @@
     >
       <div v-if="chatDragOver" class="chat-drop-hint">拖放到此处以上传为对话附件</div>
       <ConversationTitle
-        v-if="isDesktopHost && layoutMode === 'expanded'"
+        v-if="isDesktopHost && layoutMode === 'expanded' && headerConversation.show"
         class="chat-title-bar"
         size="expanded"
         :title="headerConversation.title"
@@ -55,6 +55,7 @@
       >
         <ChatHeader
           variant="compact"
+          :show-title="headerConversation.show"
           :title="headerConversation.title"
           :editable="headerConversation.editable"
           :conversation-id="headerConversation.id"
@@ -310,13 +311,14 @@ function isOnNewChatDraft () {
 
 const headerConversation = computed(() => {
   if (isOnNewChatDraft()) {
-    return { title: '新对话', editable: false, id: null }
+    return { show: false, title: '', editable: false, id: null }
   }
   const item = displayTaskList.value.find((t) => String(t.id) === String(activeTaskId.value))
   if (!item || item.isDraft) {
-    return { title: '新对话', editable: false, id: null }
+    return { show: false, title: '', editable: false, id: null }
   }
   return {
+    show: true,
     title: item.title || '未命名任务',
     editable: true,
     id: item.id

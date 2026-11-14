@@ -117,7 +117,8 @@ onUnmounted(() => {
 
 .conv-title.is-editing {
   display: flex;
-  width: 100%;
+  width: 25%;
+  min-width: 160px;
 }
 
 .conv-title-text {
@@ -160,6 +161,7 @@ onUnmounted(() => {
 .conv-title-input {
   width: 100%;
   min-width: 0;
+  max-width: 100%;
   height: 28px;
   margin: 0;
   padding: 0 8px;
